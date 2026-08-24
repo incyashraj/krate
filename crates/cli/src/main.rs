@@ -5155,6 +5155,9 @@ fn claude_author_prompt(app_dir: &str, request: &str, krate_bin: &str) -> String
     if let Some(change) = request.strip_prefix(CHANGE_MARKER) {
         return change_prompt(app_dir, change, krate_bin);
     }
+    let example = authoring_context::closest_example(request);
+    let example_name = example.name;
+    let example_shows = example.shows;
     format!(
         "You are building a Krate desktop app in Rust from this request:\n\
 \n\
@@ -5166,13 +5169,17 @@ builds cleanly, and imports only krate:* -- but it does nothing yet. Your job is
 to make it the app the request describes.\n\
 \n\
 How to work:\n\
-1. Read KRATE_AUTHORING.md in this directory first. It lists every function you\n\
-   can call, every capability a manifest may declare, the no_std rules, the GUI\n\
-   interfaces, and an index of the shipped example apps. It is generated from\n\
-   the real SDK, so everything in it is accurate.\n\
-2. Find the closest example in section 5 and read that app's src/lib.rs and\n\
-   manifest.toml under the apps/ directory. Adapt its proven, working code --\n\
-   do not write the no_std/krate:* discipline from a blank page.\n\
+1. Read KRATE_AUTHORING.md in this directory first -- the WHOLE file in ONE\n\
+   read call, never in grepped pieces (reading it fragment by fragment is the\n\
+   single biggest time sink in authoring). It lists every function you can\n\
+   call, every capability a manifest may declare, the no_std rules, and the\n\
+   GUI interfaces. It is generated from the real SDK, so everything in it is\n\
+   accurate.\n\
+2. Your model app is EXAMPLE.rs in this directory ({example_name}: {example_shows}),\n\
+   picked for this request, with its manifest beside it as\n\
+   EXAMPLE.manifest.toml. Read it once, whole, and adapt its proven, working\n\
+   code -- do not write the no_std/krate:* discipline from a blank page, and\n\
+   do not go hunting the filesystem for other examples.\n\
 3. Write the app: edit src/lib.rs, and set manifest.toml to exactly the\n\
    capabilities the app uses.\n\
 4. While you are working, check with:\n\
@@ -5230,7 +5237,17 @@ Use this only when you are certain. If the request merely sounds ambitious, or\n
 could be read as wanting a local, offline, or example-data version of the\n\
 thing, build that version -- and make the app itself honest about it on screen\n\
 (a label saying the data is built-in sample data, say). Building something\n\
-useful is almost always the right answer; refusing something buildable is not."
+useful is almost always the right answer; refusing something buildable is not.\n\
+\n\
+Never type the KRATE-CANNOT-BUILD marker anywhere except in that file, as a\n\
+final refusal -- not while thinking out loud, not to note a doubt you later\n\
+resolve. Krate reads the marker as your verdict.\n\
+\n\
+And so you do not doubt them: these all genuinely work in every Krate app --\n\
+store.kv and store.sql PERSIST across app restarts on the user's disk; mouse\n\
+clicks, mouse position and key input all arrive through krate:ui/events;\n\
+windows resize; the camera streams real frames; net.http reaches the\n\
+internet. KRATE_AUTHORING.md is the authority, not your prior."
     )
 }
 
@@ -6317,8 +6334,7 @@ fn ai_status_json() -> Result<u8> {
             .iter()
             .map(|provider| {
                 scope.spawn(move || {
-                    let readiness =
-                        agent_provider::probe(*provider, std::time::Duration::from_secs(20));
+                    let readiness = probe_with_cache(*provider);
                     let (state, detail, remedy) = match &readiness {
                         agent_provider::Readiness::Working => ("working", String::new(), None),
                         agent_provider::Readiness::NotReady { summary, remedy } => {
@@ -6354,6 +6370,84 @@ fn ai_status_json() -> Result<u8> {
     });
     println!("{}", serde_json::to_string_pretty(&rows)?);
     Ok(0)
+}
+
+/// Where one provider's cached probe verdict lives. One file per provider,
+/// because the probes run in parallel and a shared file's read-modify-write
+/// would let one thread's save drop another's row.
+fn probe_cache_file(provider: &str) -> Option<PathBuf> {
+    if !provider.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return None;
+    }
+    Some(
+        home_dir()?
+            .join(".krate")
+            .join("cache")
+            .join(format!("ai-probe-{provider}.json")),
+    )
+}
+
+/// A probe, answered from cache when the cached answer still holds.
+///
+/// The real probe runs each tool (a text-only check misses the failures that
+/// matter -- see probe_args), so probing every provider costs seconds and one
+/// slow tool holds the whole answer to its 20-second timeout. The Studio asks
+/// on every launch and again on window focus, which made opening the app feel
+/// broken: the home screen waited twenty seconds on a question whose answer
+/// had not changed since the last launch.
+///
+/// Only WORKING verdicts are cached, for fifteen minutes, keyed to the tool's
+/// resolved path and mtime. A working tool rarely stops working inside a
+/// quarter hour, and a reinstall or update changes the mtime and re-probes.
+/// Not-ready and missing are never cached: those are exactly the states a
+/// person is actively fixing, and the recheck existing to notice the fix must
+/// not be blinded by its own cache.
+fn probe_with_cache(provider: &dyn agent_provider::AgentProvider) -> agent_provider::Readiness {
+    const TTL: u64 = 15 * 60;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let resolved = agent_provider::which_on_path(provider.program());
+    let key = resolved.as_ref().map(|p| {
+        let mtime = std::fs::metadata(p)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        (p.display().to_string(), mtime)
+    });
+
+    let cache_file = probe_cache_file(provider.name());
+    let row: Option<serde_json::Value> = cache_file
+        .as_ref()
+        .and_then(|f| fs::read_to_string(f).ok())
+        .and_then(|t| serde_json::from_str(&t).ok());
+    if let (Some((path, mtime)), Some(row)) = (&key, &row) {
+        let fresh = row["when"].as_u64().is_some_and(|w| now.saturating_sub(w) < TTL);
+        let same = row["path"].as_str() == Some(path.as_str())
+            && row["mtime"].as_u64() == Some(*mtime)
+            && row["verdict"].as_str() == Some("working");
+        if fresh && same {
+            return agent_provider::Readiness::Working;
+        }
+    }
+
+    let readiness = agent_provider::probe(provider, std::time::Duration::from_secs(20));
+    if let (Some((path, mtime)), agent_provider::Readiness::Working, Some(file)) =
+        (&key, &readiness, &cache_file)
+    {
+        let _ = std::fs::create_dir_all(file.parent().unwrap_or(Path::new(".")));
+        let row = serde_json::json!({
+            "path": path,
+            "mtime": mtime,
+            "verdict": "working",
+            "when": now,
+        });
+        let _ = fs::write(file, row.to_string());
+    }
+    readiness
 }
 
 /// Show which AI coding tools are on this machine.
@@ -6667,6 +6761,19 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
         ctx.app_dir.join("KRATE_AUTHORING.md"),
         authoring_context::generate(ctx.app_dir),
     )?;
+    // The model app for THIS request, picked here rather than hunted by the
+    // agent. "Find the closest example" used to cost minutes of exploratory
+    // reads on a dev machine and was impossible on an installed Krate, where
+    // apps/ does not exist. Written fresh each run (unlike the skeleton):
+    // it is reference material, never the agent's work in progress.
+    {
+        let example = authoring_context::closest_example(ctx.request);
+        let _ = fs::write(ctx.app_dir.join("EXAMPLE.rs"), example.lib);
+        let _ = fs::write(
+            ctx.app_dir.join("EXAMPLE.manifest.toml"),
+            example.manifest,
+        );
+    }
 
     // Warm the dependency cache while the model thinks. The skeleton
     // compiles the whole shared dep graph in the background, so the agent's

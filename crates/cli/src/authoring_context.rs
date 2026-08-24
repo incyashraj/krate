@@ -1599,6 +1599,95 @@ fn find_apps_dir(app_dir: &Path) -> Option<std::path::PathBuf> {
     None
 }
 
+/// One shipped example, carried inside the binary.
+///
+/// The pack's example index points at `apps/` -- which exists only in a repo
+/// checkout. On an installed Krate the agent had exactly one worked example
+/// and no model for a game, a database app, a fetch app, or a timer, and the
+/// prompt's "find the closest example" sent it hunting a directory that is
+/// not there. These five cover the shapes people actually ask for; Krate
+/// picks the closest one for the request and writes it into the workspace as
+/// `EXAMPLE.rs`, so the agent's model app costs one read on any machine.
+pub struct EmbeddedExample {
+    pub name: &'static str,
+    /// What this example is the model FOR, in the prompt's own words.
+    pub shows: &'static str,
+    keywords: &'static [&'static str],
+    pub lib: &'static str,
+    pub manifest: &'static str,
+}
+
+pub const EMBEDDED_EXAMPLES: &[EmbeddedExample] = &[
+    EmbeddedExample {
+        name: "krate-bounce",
+        shows: "a canvas game: its own event loop, key-held movement, collision, redraw pacing",
+        keywords: &[
+            "game", "ball", "arcade", "jump", "physics", "gravity", "breaker", "snake",
+            "runner", "platform", "shoot", "invader", "tetris", "pong", "maze", "play",
+            "score", "enemy", "level", "animate", "animation", "particle", "draw", "paint",
+        ],
+        lib: include_str!("../../../apps/krate-bounce/src/lib.rs"),
+        manifest: include_str!("../../../apps/krate-bounce/manifest.toml"),
+    },
+    EmbeddedExample {
+        name: "krate-checklist",
+        shows: "a list app that saves: widget tree, text input, buttons, store.kv persistence",
+        keywords: &[
+            "list", "todo", "task", "check", "track", "habit", "note", "item", "grocery",
+            "shopping", "journal", "log", "streak", "goal", "plan", "remember", "save",
+        ],
+        lib: include_str!("../../../apps/krate-checklist/src/lib.rs"),
+        manifest: include_str!("../../../apps/krate-checklist/manifest.toml"),
+    },
+    EmbeddedExample {
+        name: "krate-contacts",
+        shows: "records in a real database: store.sql schema, insert, query, list and detail views",
+        keywords: &[
+            "database", "record", "contact", "crm", "inventory", "catalog", "sql",
+            "address", "customer", "collection", "library", "expense", "budget",
+        ],
+        lib: include_str!("../../../apps/krate-contacts/src/lib.rs"),
+        manifest: include_str!("../../../apps/krate-contacts/manifest.toml"),
+    },
+    EmbeddedExample {
+        name: "krate-fetch",
+        shows: "an app that reaches the internet: net.http requests, async polling, showing results",
+        keywords: &[
+            "fetch", "api", "weather", "news", "internet", "http", "online", "quote",
+            "stock", "crypto", "price", "feed", "download", "search", "lookup",
+        ],
+        lib: include_str!("../../../apps/krate-fetch/src/lib.rs"),
+        manifest: include_str!("../../../apps/krate-fetch/manifest.toml"),
+    },
+    EmbeddedExample {
+        name: "krate-focus",
+        shows: "a timer: the wait(timeout) clock loop, time.monotonic pacing, start/pause/reset",
+        keywords: &[
+            "timer", "pomodoro", "clock", "countdown", "stopwatch", "alarm", "session",
+            "focus", "break", "interval", "minute", "remind",
+        ],
+        lib: include_str!("../../../apps/krate-focus/src/lib.rs"),
+        manifest: include_str!("../../../apps/krate-focus/manifest.toml"),
+    },
+];
+
+/// The embedded example closest to a request, by keyword hits. Ties and
+/// no-hits fall to the checklist: a list that saves is the most common shape
+/// asked for, and its tree/input/persist trio transfers to almost anything.
+pub fn closest_example(request: &str) -> &'static EmbeddedExample {
+    let lower = request.to_lowercase();
+    EMBEDDED_EXAMPLES
+        .iter()
+        .max_by_key(|ex| {
+            ex.keywords
+                .iter()
+                .filter(|k| lower.contains(**k))
+                .count()
+        })
+        .filter(|ex| ex.keywords.iter().any(|k| lower.contains(*k)))
+        .unwrap_or(&EMBEDDED_EXAMPLES[1])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
