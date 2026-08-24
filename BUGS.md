@@ -133,7 +133,13 @@ Fix:      all bundles repacked with scripts/pack-store-apps.sh and verified to
 
 ### K-160 -- A stale mid-run refusal outranks the working app the agent delivered
 
-Status:   fixed (pending re-proof on the PC)
+Status:   fixed (proven: the v0.1.53 PC ladder ran four grok builds -- tip
+          calculator, habit tracker, brick breaker, photo booth -- and grok
+          typed the marker mid-run in ALL FOUR; every app was delivered,
+          passed check-app, and was kept, with the note quoting the doubt.
+          Without the fix the entire ladder would have been thrown away.
+          The prompt now also forbids the marker outside the refusal file
+          and corrects the capabilities grok kept doubting.)
 Owner:    claude
 Severity: serious
 Class:    our-code
