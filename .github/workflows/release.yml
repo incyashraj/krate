@@ -933,6 +933,23 @@ jobs:
             hdiutil detach "$mp"; exit 1
           fi
 
+          # 1b. GATEKEEPER itself must accept it -- the question a new
+          #     user's Mac actually asks. Coherence alone is not enough:
+          #     v0.1.54's studio had a coherent signature and a REJECTED
+          #     notarization, sailed through this job, and greeted every
+          #     downloader with the malware dialog and "Move to Bin"
+          #     (K-172). spctl is the source of truth for "will this open".
+          if ! spctl --assess --type exec -vv "$app" 2>&1; then
+            echo "::error::Gatekeeper refuses the studio -- a new user gets the malware dialog"
+            hdiutil detach "$mp"; exit 1
+          fi
+          #     And the ticket must be STAPLED, so it opens offline too --
+          #     an un-stapled app passes spctl online and fails on a plane.
+          if ! xcrun stapler validate "$app" 2>&1; then
+            echo "::error::no notarization ticket stapled to the studio"
+            hdiutil detach "$mp"; exit 1
+          fi
+
           # 2. The engine must be inside. Without it the studio installs
           #    cleanly and cannot build anything.
           test -f "$app/Contents/Resources/bin/krate" \
@@ -972,9 +989,40 @@ jobs:
             esac
           done
 
-          echo "studio dmg: signature coherent, engine present, no type collision, universal"
+          echo "studio dmg: signature coherent, Gatekeeper-accepted, stapled, engine present, no type collision, universal"
           codesign -dv --verbose=2 "$app" 2>&1 | grep -E "Signature|flags" || true
           hdiutil detach "$mp" >/dev/null
+
+      - name: Gatekeeper accepts the Player as downloaded
+        if: contains(matrix.target, 'apple')
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd verify
+          zip_name="krate-app-${TAG#v}-${{ matrix.target }}.zip"
+          if ! gh release download "$TAG" -R "${{ github.repository }}" -p "$zip_name"; then
+            echo "::warning::no player zip in this release; skipping"
+            exit 0
+          fi
+          # Quarantine the archive as a browser would, extract the way
+          # Archive Utility does (ditto, which propagates the flag), and ask
+          # Gatekeeper the new-user question about what came out.
+          xattr -w com.apple.quarantine "0083;00000000;Safari;" "$zip_name"
+          ditto -x -k "$zip_name" player-unpacked
+          papp="player-unpacked/Krate Player.app"
+          test -d "$papp" || { echo "::error::no 'Krate Player.app' in the zip"; exit 1; }
+          if ! spctl --assess --type exec -vv "$papp" 2>&1; then
+            echo "::error::Gatekeeper refuses the player -- a new user gets the malware dialog"
+            exit 1
+          fi
+          if ! xcrun stapler validate "$papp" 2>&1; then
+            echo "::error::no notarization ticket stapled to the player"
+            exit 1
+          fi
+          echo "player zip: Gatekeeper-accepted, stapled"
 
       - name: Build an app with the published binary, and run it headless
         shell: bash
