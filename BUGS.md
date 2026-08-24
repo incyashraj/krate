@@ -73,7 +73,10 @@ Fix:      what needs to happen, or the commit that did it.
 
 ### K-168 -- A full-bleed app on Windows has no close or minimize button at all
 
-Status:   fixed (pending windowed re-proof on the PC)
+Status:   fixed (proven on the PC's real desktop: the overlay buttons render
+          top-right of the frameless chess window, and a synthetic click on
+          the drawn close button exited the app -- "clicked close at 1912,46
+          exited=True")
 Owner:    claude
 Severity: serious
 Class:    our-code
@@ -95,7 +98,9 @@ Fix:      the adapters now draw their own minimize and close controls over
 
 ### K-167 -- Windows creates app windows bigger than the screen, bottom hanging off it
 
-Status:   fixed (pending windowed re-proof on the PC)
+Status:   fixed (proven on the PC's real desktop: the same chess bundle now
+          opens at 1918x992 physical at (24,24) -- fully on a 1080p screen --
+          with every rank, file, and panel visible)
 Owner:    claude
 Severity: serious
 Class:    our-code
