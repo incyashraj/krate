@@ -73,7 +73,8 @@ Fix:      what needs to happen, or the commit that did it.
 
 ### K-169 -- Windows and Linux rendered every canvas at 1x and stretched it: the "broken low quality pixels"
 
-Status:   fixed (pending visual re-proof on the PC)
+Status:   fixed (proven: the desktop screenshot after the fix is visibly
+          native-density -- text edges and piece shading match the Mac)
 Owner:    claude
 Severity: serious
 Class:    our-code
@@ -94,7 +95,13 @@ Fix:      both winit adapters override window_scale from the live window's
 
 ### K-170 -- A full-bleed window on Windows could not be moved or maximized at all
 
-Status:   fixed (pending re-proof on the PC)
+Status:   fixed (proven by scripted input on the real desktop: a band drag
+          moved the window; a double-press maximized it to the full work
+          area. Two rounds of refinement were needed and are worth keeping:
+          the drag must start on the first cursor MOVE, not on the press --
+          drag-on-press ate the second click and maximize could never fire --
+          and the K-167 resize clamp must exempt maximized/fullscreen
+          windows, because it un-maximized every maximize one resize later.)
 Owner:    claude
 Severity: serious
 Class:    our-code

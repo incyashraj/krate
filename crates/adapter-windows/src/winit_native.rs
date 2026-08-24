@@ -108,10 +108,14 @@ mod real {
         undecorated: bool,
         /// The overlay sprite, cached per pixel density (key: density x100).
         overlay_cache: Option<(u32, Vec<u8>, u32, u32)>,
-        /// When the drag band was last pressed, for double-press maximize.
-        last_band_press: Option<std::time::Instant>,
-        /// A band press was consumed; its release must not reach the app.
-        band_press_active: bool,
+        /// Where the drag band was pressed, if a press is in flight. The drag
+        /// starts on the first MOVE from here, never on the press itself --
+        /// starting on press ate the second click of a double-press, so
+        /// maximize could never fire.
+        band_press_at: Option<(f32, f32)>,
+        /// When the band was last clicked (press and release, no drag), for
+        /// double-click maximize.
+        last_band_click: Option<std::time::Instant>,
     }
 
     impl TrackedWindow {
@@ -342,8 +346,8 @@ mod real {
                             pressed_widget: None,
                             undecorated: false,
                             overlay_cache: None,
-                            last_band_press: None,
-                            band_press_active: false,
+                            band_press_at: None,
+                            last_band_click: None,
                         },
                     );
                 }
@@ -413,7 +417,14 @@ mod real {
                     // pulled back (guarded by the 1-unit slack so the
                     // re-request cannot ping-pong).
                     if let Some(tracked) = self.windows.get(&native) {
-                        if let Some(monitor) = tracked.window.current_monitor() {
+                        // A maximized (or fullscreen) window is the OS's own
+                        // geometry and always fits the work area; clamping it
+                        // UNDID every maximize one resize later -- the trace
+                        // showed set_maximized land at 1920x1008 and this
+                        // block immediately shove it back to 1896x936.
+                        if tracked.window.is_maximized() || tracked.window.fullscreen().is_some() {
+                            // Nothing to do; the size is the OS's answer.
+                        } else if let Some(monitor) = tracked.window.current_monitor() {
                             let m = monitor.size();
                             let max_w = ((f64::from(m.width) / scale) - 16.0).max(320.0);
                             let max_h = ((f64::from(m.height) / scale) - 96.0).max(240.0);
@@ -451,6 +462,15 @@ mod real {
                     let (x, y) = ((position.x / scale) as f32, (position.y / scale) as f32);
                     self.cursor.insert(native, (x, y));
                     if let Some(tracked) = self.windows.get_mut(&native) {
+                        // An armed drag-band press that actually moves is a
+                        // drag: hand the window to the OS (K-170).
+                        if let Some((px, py)) = tracked.band_press_at {
+                            if (x - px).abs() > 3.0 || (y - py).abs() > 3.0 {
+                                tracked.band_press_at = None;
+                                tracked.last_band_click = None;
+                                let _ = tracked.window.drag_window();
+                            }
+                        }
                         let hovered = krate_adapter_common::painter::topmost_interactive_at(
                             &tracked.placements,
                             x,
@@ -499,32 +519,40 @@ mod real {
                         }
                         // The drag band (K-170): an undecorated window has no
                         // title bar to grab, so its top strip IS the title
-                        // bar -- press to drag, double-press to maximize --
-                        // the same contract macOS full-bleed windows get from
-                        // their transparent title band. The overlay cluster
-                        // already returned above, so this never fights the
-                        // buttons; a consumed press swallows its own release
-                        // so the app never sees half a click.
+                        // bar. A press only ARMS it; the drag starts on the
+                        // first cursor movement (see CursorMoved), because
+                        // starting on the press ate the second click of every
+                        // double-press and maximize could never fire. A
+                        // press-and-release with no movement is a click, and
+                        // two clicks inside 400ms toggle maximize -- the same
+                        // contract a real title bar honours. The overlay
+                        // cluster already returned above; a consumed press
+                        // swallows its own release so the app never sees
+                        // half a click.
                         if let Some(tracked) = self.windows.get_mut(&native) {
                             if tracked.undecorated {
                                 if pressed && y < krate_adapter_common::overlay::DRAG_BAND_H {
+                                    tracked.band_press_at = Some((x, y));
+                                    return;
+                                }
+                                if !pressed && tracked.band_press_at.take().is_some() {
                                     let now = std::time::Instant::now();
-                                    let double = tracked.last_band_press.take().is_some_and(|t| {
+                                    let double = tracked.last_band_click.take().is_some_and(|t| {
                                         now.duration_since(t)
                                             < std::time::Duration::from_millis(400)
                                     });
-                                    tracked.band_press_active = true;
+                                    if std::env::var_os("KRATE_EVENT_TRACE").is_some() {
+                                        eprintln!(
+                                            "krate-band: click double={double} maximized={}",
+                                            tracked.window.is_maximized()
+                                        );
+                                    }
                                     if double {
                                         let maxed = tracked.window.is_maximized();
                                         tracked.window.set_maximized(!maxed);
                                     } else {
-                                        tracked.last_band_press = Some(now);
-                                        let _ = tracked.window.drag_window();
+                                        tracked.last_band_click = Some(now);
                                     }
-                                    return;
-                                }
-                                if !pressed && tracked.band_press_active {
-                                    tracked.band_press_active = false;
                                     return;
                                 }
                             }
