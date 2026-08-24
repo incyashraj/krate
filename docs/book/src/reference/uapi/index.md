@@ -24,6 +24,7 @@ The current world imports these interfaces:
 - `krate:store/kv@0.1.0`
 - `krate:store/sql@0.1.0`
 - `krate:store/secret@0.1.0`
+- `krate:store/shared@0.1.0`
 - `krate:random/bytes@0.1.0`
 
 The app exports:
@@ -910,6 +911,70 @@ Shared network request, response, and error types.
 
 - `too-large`
 > The secret store could not be read or written.
+
+- `io`: `string`
+
+
+## `krate:store/shared@0.1.0`
+
+### Functions
+
+> The invite code of this app's share, or `none` before create or join.
+
+- `code() -> result<option<string>, shared-error>`
+> Create a fresh share and return its invite code. Requires the network;
+> the code is minted by krate.tech so it is unique.
+
+- `create() -> result<string, shared-error>`
+> Join an existing share by its invite code. Local keys are kept and
+> merged: the newest write of each key wins.
+
+- `join(code: string) -> result<_, shared-error>`
+> Leave the share: keeps the local copy, stops syncing, forgets the code.
+
+- `leave() -> result<_, shared-error>`
+> Read one key from the local copy. Never touches the network.
+
+- `get(key: string) -> result<option<list<u8>>, shared-error>`
+> Write one key locally and queue it for sync.
+
+- `set(key: string, value: list<u8>) -> result<_, shared-error>`
+> Delete one key locally and queue the removal for sync.
+
+- `delete(key: string) -> result<_, shared-error>`
+> The keys present in the local copy.
+
+- `keys() -> result<list<string>, shared-error>`
+> Exchange changes with krate.tech now: push queued writes, pull what
+> other machines wrote. Returns `true` when the local copy changed, so
+> the app knows to redraw. Offline is not an error -- it returns `false`
+> and the queue keeps waiting. Call it on launch, after writes, and on a
+> timer of ten seconds or more; the host rate-limits anything faster.
+
+- `sync() -> result<bool, shared-error>`
+
+### Types
+
+#### `shared-error` variant
+
+> Error returned by a shared-store operation.
+
+> The app did not receive the `store.shared` capability.
+
+- `denied`
+> No share has been created or joined yet.
+
+- `not-joined`
+> The invite code was not a share that exists.
+
+- `no-such-share`
+> The key was empty, too long, or used unsupported syntax.
+
+- `invalid-name`
+> The value is larger than the runtime's bounded limit.
+
+- `too-large`
+> The store could not be read or written.
 
 - `io`: `string`
 
