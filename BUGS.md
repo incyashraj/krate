@@ -1161,6 +1161,19 @@ Two changes:
   first thing anyone is told to run -- is not a command on Windows even after
   installing. Appended only when absent, so PATH cannot grow on every launch.
 
+**What is proven and what is not.** The ordering fault is proven by reading:
+`first_run_setup` sat after two `return`s in `main`, and both fire when the
+studio is launched with an argument. The registry keys are proven to WRITE
+correctly on the VM. What is NOT yet proven end to end is that a double-click
+then opens the app, because Azure Run Command executes as SYSTEM: it writes to
+SYSTEM's hive, and `assoc`/`ftype` from a service context do not reflect a
+user's HKCU classes. Confirmed that is an artifact rather than a finding by
+writing a throwaway `.ktest` class and seeing the same non-result.
+
+So this needs one check on a machine somebody is actually logged into: install,
+double-click a `.krate`, confirm it opens. Until then the fix is
+argued-and-compiled, not demonstrated.
+
 ### K-157 -- A double-clicked app on Windows and Linux is refused, not asked
 
 Class: our-code
