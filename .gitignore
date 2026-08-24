@@ -87,3 +87,4 @@ ehthumbs.db
 # into the .app at build time. Built by `cp target/release/krate
 # studio/bin/krate`, never edited, and version-controlled nowhere.
 /studio/bin/
+.last-full-check

@@ -53,6 +53,32 @@ pub trait AgentProvider: Send + Sync {
         None
     }
 
+    /// Plan arguments whose OUTPUT carries a recoverable session id, for the
+    /// plan-then-build merge: the build resumes the session that planned, so
+    /// the request and the agreed plan are already in its context. `None`
+    /// keeps the plain plan form and the build cold-starts as before.
+    fn plan_args_with_session(&self, _prompt: &str) -> Option<Vec<String>> {
+        None
+    }
+
+    /// Resume an earlier session AND deliver a large prompt on stdin -- the
+    /// combination the plan-then-build merge needs, because the planning
+    /// session was toolless and has never seen the inlined essentials.
+    fn author_args_stdin_resuming(&self, _session_id: &str) -> Option<Vec<String>> {
+        None
+    }
+
+    /// The arguments for an authoring run whose prompt arrives on STDIN.
+    ///
+    /// A prompt carrying the inlined essentials is tens of kilobytes --
+    /// beyond the Windows 32K command line. Providers that can read the
+    /// prompt from stdin return the argument list for that mode; `None`
+    /// keeps the argv form, and large prompts then only ride on platforms
+    /// whose argv can carry them.
+    fn author_args_stdin(&self) -> Option<Vec<String>> {
+        None
+    }
+
     /// The arguments to RESUME an earlier session with a follow-up prompt.
     ///
     /// This is the hot-session lever: a repair round or a revise that resumes
@@ -770,6 +796,31 @@ impl AgentProvider for ClaudeProvider {
         vec!["-p".to_string(), prompt.to_string()]
     }
 
+    fn author_args_stdin(&self) -> Option<Vec<String>> {
+        // `claude -p` with no prompt argument reads the prompt from stdin.
+        let mut args = self.author_args("");
+        args.retain(|arg| !arg.is_empty());
+        Some(args)
+    }
+
+    fn plan_args_with_session(&self, prompt: &str) -> Option<Vec<String>> {
+        // The json envelope carries the answer AND the session_id, and the
+        // plan extractor already descends envelopes.
+        Some(vec![
+            "-p".to_string(),
+            prompt.to_string(),
+            "--output-format".to_string(),
+            "json".to_string(),
+        ])
+    }
+
+    fn author_args_stdin_resuming(&self, session_id: &str) -> Option<Vec<String>> {
+        let mut args = self.author_args_stdin()?;
+        args.push("--resume".to_string());
+        args.push(session_id.to_string());
+        Some(args)
+    }
+
     fn session_id_in_transcript(&self, transcript: &str) -> Option<String> {
         // Every stream-json event carries the run's session_id.
         last_json_string_field(transcript, "session_id")
@@ -1122,6 +1173,12 @@ impl AgentProvider for CodexProvider {
         .iter()
         .map(|s| s.to_string())
         .collect()
+    }
+
+    fn author_args_stdin(&self) -> Option<Vec<String>> {
+        // `codex exec -` reads the prompt from stdin -- its own banner even
+        // says "Reading additional input from stdin...".
+        Some(self.author_args("-"))
     }
 
     fn configure(&self, command: &mut ProcessCommand) {

@@ -25,7 +25,16 @@ use tauri::{Emitter, Manager};
 /// whole tree -- the agent CLI and cargo underneath it -- not just the
 /// parent, which would leave an orphan burning the person's AI quota after
 /// they pressed Stop.
-struct Running(Mutex<Option<u32>>);
+struct Running(Mutex<Option<u32>>, std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+impl Running {
+    fn fresh() -> Self {
+        Running(
+            Mutex::new(None),
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        )
+    }
+}
 
 /// Whether the main window has been shown. The window starts hidden so that
 /// a double-clicked .krate can pass through the studio without the studio
@@ -596,6 +605,7 @@ async fn create_app(
     attachments: Vec<String>,
     out_dir: String,
     session: String,
+    plan_session: Option<String>,
 ) -> Result<CreateResult, String> {
     // Trace the create lifecycle to stderr. A build has frozen on "While I work"
     // with no workspace and no error more than once (K-136), always right after
@@ -640,6 +650,11 @@ async fn create_app(
         // is what we want (the whole session's history in one place). Read it
         // with `krate study-report <this file>`. Harmless when nothing reads it.
         cmd.env("KRATE_TRACE", session_work.join("trace.jsonl"));
+        // The planning session, if the plan step produced one: the engine
+        // seeds the workspace with it and the build resumes hot.
+        if let Some(tagged) = plan_session.as_deref().filter(|s| !s.is_empty()) {
+            cmd.env("KRATE_PLAN_SESSION", tagged);
+        }
         for file in &attachments {
             cmd.args(["--attach", file]);
         }
@@ -697,6 +712,15 @@ async fn revise_app(
 /// made (K-131). This is the ground truth the build screen polls.
 #[tauri::command]
 fn build_alive(state: tauri::State<Running>) -> Result<bool, String> {
+    // Answered from the liveness flag the authoring waiter maintains, not by
+    // spawning tasklist: the old form ran a process every four seconds for
+    // the whole build -- about two hundred spawns per app -- to ask a
+    // question the thread that owns child.wait() already knows the answer
+    // to. The pid check stays as the backstop for a flag that was somehow
+    // left stale.
+    if state.1.load(std::sync::atomic::Ordering::SeqCst) {
+        return Ok(true);
+    }
     let mut guard = state.0.lock().map_err(|_| "poisoned")?;
     match *guard {
         Some(pid) if pid_alive(pid) => Ok(true),
@@ -1003,6 +1027,18 @@ fn run_author(
 
     let running = app.state::<Running>();
     *running.0.lock().map_err(|_| "poisoned")? = Some(child.id());
+    // The liveness flag is lowered by DROP, not by reaching a particular
+    // line: any exit from this function -- success, error, panic -- lowers
+    // it, because a flag stuck true is the eternal-spinner bug (K-131)
+    // wearing a new coat.
+    struct AliveGuard(std::sync::Arc<std::sync::atomic::AtomicBool>);
+    impl Drop for AliveGuard {
+        fn drop(&mut self) {
+            self.0.store(false, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+    running.1.store(true, std::sync::atomic::Ordering::SeqCst);
+    let _alive = AliveGuard(running.1.clone());
 
     // The agent's own test frames, streamed to the UI as they appear.
     let shots_stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -2361,7 +2397,7 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
-        .manage(Running(Mutex::new(None)))
+        .manage(Running::fresh())
         .setup(|_app| {
             // One title bar, ours. On Windows the native frame stacked a
             // second bar with its own name and buttons above the studio's;

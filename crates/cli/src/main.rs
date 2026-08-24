@@ -4186,7 +4186,12 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
         .unwrap_or_else(|| PathBuf::from(provider.program()));
     let mut command = ProcessCommand::new(program);
     agent_provider::with_tool_path(&mut command);
-    command.args(provider.plan_args(&prompt));
+    // The session-carrying form when the provider has one: the build that
+    // follows can then RESUME the session that planned, request and agreed
+    // plan already in context, instead of paying a fresh cold start.
+    let session_capable = provider.plan_args_with_session(&prompt);
+    let wants_session = session_capable.is_some();
+    command.args(session_capable.unwrap_or_else(|| provider.plan_args(&prompt)));
     provider.configure(&mut command);
     let scratch = std::env::temp_dir().join(format!("krate-plan-{}", std::process::id()));
     let _ = fs::create_dir_all(&scratch);
@@ -4231,6 +4236,22 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
         // build", the same as an AI that decided the request was ready.
         serde_json::json!({ "plan": "", "needs": [] }).to_string()
     });
+    // Ride the planning session's id along, tagged with the provider, so
+    // the studio can hand it to create and the build resumes hot.
+    let json = if wants_session {
+        match (
+            serde_json::from_str::<serde_json::Value>(&json),
+            provider.session_id_in_transcript(&text),
+        ) {
+            (Ok(mut value), Some(id)) if value.is_object() => {
+                value["agent_session"] = serde_json::json!(format!("{}:{}", provider.name(), id));
+                value.to_string()
+            }
+            _ => json,
+        }
+    } else {
+        json
+    };
     println!("{json}");
     Ok(0)
 }
@@ -5150,6 +5171,15 @@ Do not explain what you did; make the change until the check passes."
 }
 
 fn claude_author_prompt(app_dir: &str, request: &str, krate_bin: &str) -> String {
+    claude_author_prompt_with(app_dir, request, krate_bin, false)
+}
+
+fn claude_author_prompt_with(
+    app_dir: &str,
+    request: &str,
+    krate_bin: &str,
+    inline: bool,
+) -> String {
     // A change carries a marker rather than a flag, because the request
     // travels to the author-agent child as one environment variable.
     if let Some(change) = request.strip_prefix(CHANGE_MARKER) {
@@ -5158,7 +5188,7 @@ fn claude_author_prompt(app_dir: &str, request: &str, krate_bin: &str) -> String
     let example = authoring_context::closest_example(request);
     let example_name = example.name;
     let example_shows = example.shows;
-    format!(
+    let mut prompt = format!(
         "You are building a Krate desktop app in Rust from this request:\n\
 \n\
     {request}\n\
@@ -5248,7 +5278,21 @@ store.kv and store.sql PERSIST across app restarts on the user's disk; mouse\n\
 clicks, mouse position and key input all arrive through krate:ui/events;\n\
 windows resize; the camera streams real frames; net.http reaches the\n\
 internet. KRATE_AUTHORING.md is the authority, not your prior."
-    )
+    );
+    if inline {
+        // The essentials ride inside this very prompt: zero read round-trips
+        // for the patterns, the rules, the catalog, and the model app. Only
+        // an exact SDK signature still needs the disk, and that is one read.
+        prompt.push_str(&authoring_context::inline_essentials(request));
+        prompt.push_str(
+            "
+---
+
+Because the essentials are inlined above, steps 1 and 2              change: do NOT read KRATE_AUTHORING.md or EXAMPLE.rs up front --              everything they would tell you is already in this message. Consult              KRATE_AUTHORING.md's section 1 on disk ONLY if you need an exact              function signature not shown here, and read it once, whole, when              you do.
+",
+        );
+    }
+    prompt
 }
 
 /// The file name an agent writes to say the request is out of reach.
@@ -5386,7 +5430,17 @@ fn run_provider_author(
         .ok()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|| "krate".to_string());
-    let prompt = claude_author_prompt(app_dir, request, &krate_bin);
+    // Inline the essentials when the prompt can actually be delivered: via
+    // stdin where the provider reads it, or via argv on Unix, whose limit is
+    // roomy. Windows argv caps at 32K characters, so a provider without a
+    // stdin mode there gets the compact prompt and reads from disk as
+    // before. KRATE_INLINE_PACK=0 is the escape hatch.
+    let stdin_args = provider.author_args_stdin();
+    let inline = std::env::var("KRATE_INLINE_PACK").as_deref() != Ok("0")
+        && !request.starts_with(CHANGE_MARKER)
+        && (stdin_args.is_some() || !cfg!(windows));
+    let prompt = claude_author_prompt_with(app_dir, request, &krate_bin, inline);
+    let prompt_via_stdin = inline && stdin_args.is_some() && prompt.len() > 6_000;
     let transcript = Path::new(app_dir).join(".agent-transcript.txt");
     // A snapshot of the skeleton, to detect an agent that answered in chat and
     // never wrote code -- that would leave the blank skeleton, which builds and
@@ -5424,15 +5478,35 @@ fn run_provider_author(
         take_agent_session(&session_files, provider.name())
             .and_then(|id| provider.author_args_resuming(&prompt, &id))
     } else {
-        None
+        // A fresh create resumes ONLY a session deliberately placed in this
+        // workspace -- the planning session, seeded via KRATE_PLAN_SESSION.
+        // The app-identity file is never consulted here: a new app must not
+        // inherit some earlier app's conversation. The planning session was
+        // toolless, so it has never seen the essentials -- when the inline
+        // prompt can ride stdin it does, resumed; otherwise argv carries it
+        // where argv is roomy enough to.
+        take_agent_session(&session_files[..1], provider.name()).and_then(|id| {
+            if prompt_via_stdin {
+                provider.author_args_stdin_resuming(&id)
+            } else {
+                provider.author_args_resuming(&prompt, &id)
+            }
+        })
     };
     let resumed = resume_args.is_some();
     if resumed {
-        eprintln!("    continuing the session that wrote this app");
+        if request.starts_with(CHANGE_MARKER) {
+            eprintln!("    continuing the session that wrote this app");
+        } else {
+            eprintln!("    continuing the session that planned this app");
+        }
     }
     match resume_args {
         Some(args) => {
             command.args(args);
+        }
+        None if prompt_via_stdin => {
+            command.args(stdin_args.expect("checked by prompt_via_stdin"));
         }
         None => {
             command.args(provider.author_args(&prompt));
@@ -5441,6 +5515,12 @@ fn run_provider_author(
     // Provider-specific spawn setup: closing stdin so a headless run never
     // blocks on input, plus anything else that provider needs.
     provider.configure(&mut command);
+    // The stdin route re-opens what configure just closed: the prompt is
+    // written down the pipe and the pipe is dropped, so the agent still
+    // sees EOF and can never hang waiting for more.
+    if prompt_via_stdin {
+        command.stdin(std::process::Stdio::piped());
+    }
     // stdout is piped, not sent straight to the transcript: the reporter reads
     // the streamed events to show live progress and writes every line it reads
     // to the transcript, so the file ends up with the same content it always
@@ -5474,6 +5554,15 @@ fn run_provider_author(
             name = provider.name(),
         )
     })?;
+    // The large prompt goes down the pipe, then the pipe closes so the
+    // agent sees EOF -- an open pipe is exactly the hang configure's
+    // stdin-null exists to prevent.
+    if prompt_via_stdin {
+        if let Some(mut sin) = child.stdin.take() {
+            use std::io::Write as _;
+            let _ = sin.write_all(prompt.as_bytes());
+        }
+    }
 
     // Read the agent's streamed events on a worker thread and turn each one
     // into a plain-English progress line. The thread owns the pipe and appends
@@ -6809,6 +6898,17 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
         ctx.app_dir.join("KRATE_AUTHORING.md"),
         authoring_context::generate(ctx.app_dir),
     )?;
+    // The planning session, when the caller carried one over
+    // (KRATE_PLAN_SESSION, set by the studio from `krate plan`'s answer).
+    // Written into the workspace so the authoring run RESUMES the session
+    // that planned: the request and the agreed plan are already in its
+    // context instead of being re-sent to a cold start.
+    if let Ok(tagged) = std::env::var("KRATE_PLAN_SESSION") {
+        let tagged = tagged.trim();
+        if !tagged.is_empty() && tagged.len() < 160 {
+            let _ = fs::write(ctx.app_dir.join(".agent-session-id"), tagged);
+        }
+    }
     // The model app for THIS request, picked here rather than hunted by the
     // agent. "Find the closest example" used to cost minutes of exploratory
     // reads on a dev machine and was impossible on an installed Krate, where
@@ -12251,7 +12351,7 @@ fn app_shared_path(app_id: &str) -> PathBuf {
 fn agent_session_files(app_dir: &str) -> Vec<PathBuf> {
     let mut files = vec![Path::new(app_dir).join(".agent-session-id")];
     if let Ok(manifest) =
-        krate_manifest::Manifest::parse_file(&Path::new(app_dir).join("manifest.toml"))
+        krate_manifest::Manifest::parse_file(Path::new(app_dir).join("manifest.toml"))
     {
         files.push(app_store_path(&manifest.app.id).with_extension("agent-session"));
     }

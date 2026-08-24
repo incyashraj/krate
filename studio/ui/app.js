@@ -1330,6 +1330,10 @@ async function runPlan() {
       agent: state.agent,
     });
     const answer = JSON.parse(raw);
+    // The planning session's id, when the engine carried one: the build
+    // resumes that session, so the request and the agreed plan are already
+    // in the AI's context instead of being re-sent to a cold start.
+    if (answer.agent_session) state.planning.agentSession = answer.agent_session;
     if (answer.ask && answer.ask.length && state.planning.rounds < 1) {
       // ONE round of questions, ever. The first live session got two
       // rounds and called it what it is: frustrating.
@@ -1393,10 +1397,10 @@ function finishPlanningAndBuild() {
   if (p.plan) {
     enriched += `\n\n(The agreed plan: ${p.plan})`;
   }
-  return buildNow(enriched, p.files, false);
+  return buildNow(enriched, p.files, false, p.agentSession || "");
 }
 
-async function buildNow(request, files, revising) {
+async function buildNow(request, files, revising, planSession) {
   if (state.buildingSession) { invoke("dbg_log", { line: "buildNow() BAILED: buildingSession set" }).catch(()=>{}); return; }
   // The composer stays live during a build so a thought can be queued
   // rather than lost.
@@ -1461,6 +1465,7 @@ async function buildNow(request, files, revising) {
           attachments: files,
           outDir: state.outDir,
           session: state.session.id,
+          planSession: planSession || "",
         });
     finishBuild(result);
   } catch (err) {

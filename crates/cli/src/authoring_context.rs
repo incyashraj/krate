@@ -1668,6 +1668,56 @@ fn find_apps_dir(app_dir: &Path) -> Option<std::path::PathBuf> {
     None
 }
 
+/// The essentials of the pack, assembled for INLINING into the prompt.
+///
+/// The study measured 4 to 11 minutes of every build spent on the agent
+/// reading the pack and hunting examples through its own file tools. The
+/// EXAMPLE.rs pre-pick cut the hunting; this cuts the reading round-trips to
+/// zero for everything except exact SDK signatures: the design patterns, the
+/// backend and shared-store shapes, the no_std rules, the capability
+/// catalog, and the picked example's full source ride inside the prompt
+/// itself. Everything here is the same generated text the pack carries, so
+/// nothing can drift.
+pub fn inline_essentials(request: &str) -> String {
+    let example = closest_example(request);
+    let mut out = String::new();
+    out.push_str(
+        "
+
+---
+
+THE ESSENTIALS, INLINED. Everything below is authoritative and          identical to the pack on disk -- do not re-read it from files.
+",
+    );
+    out.push_str(&capability_catalog_section());
+    out.push_str(DESIGN_PATTERNS_SECTION);
+    out.push_str(BACKEND_CLIENT_SECTION);
+    out.push_str(NO_STD_SECTION);
+    out.push_str(&format!(
+        "
+---
+
+# Your model app, inlined: `{}` ({})
+
+         Adapt this proven, working code -- do not write the no_std/krate:*          discipline from a blank page.
+
+### manifest.toml
+
+```toml
+{}
+```
+
+         ### src/lib.rs
+
+```rust
+{}
+```
+",
+        example.name, example.shows, example.manifest, example.lib,
+    ));
+    out
+}
+
 /// One shipped example, carried inside the binary.
 ///
 /// The pack's example index points at `apps/` -- which exists only in a repo
