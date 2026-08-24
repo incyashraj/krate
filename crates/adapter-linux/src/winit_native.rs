@@ -227,15 +227,11 @@ mod real {
                             f64::from(inner.height) / scale,
                         );
                         if cur_w > max_w || cur_h > max_h {
-                            let _ = window.request_inner_size(
-                                winit::dpi::LogicalSize::new(
-                                    cur_w.min(max_w),
-                                    cur_h.min(max_h),
-                                ),
-                            );
-                            window.set_outer_position(
-                                winit::dpi::LogicalPosition::new(16.0, 16.0),
-                            );
+                            let _ = window.request_inner_size(winit::dpi::LogicalSize::new(
+                                cur_w.min(max_w),
+                                cur_h.min(max_h),
+                            ));
+                            window.set_outer_position(winit::dpi::LogicalPosition::new(16.0, 16.0));
                         }
                     }
                     let actual = window.inner_size();
@@ -245,10 +241,8 @@ mod real {
                     );
                     if (lw, lh) != (pending.size.width, pending.size.height) {
                         if let Ok(size) = WindowSize::new(lw.max(1), lh.max(1)) {
-                            self.events.push((
-                                pending.krate,
-                                WinitWindowNativeEvent::Resized(size),
-                            ));
+                            self.events
+                                .push((pending.krate, WinitWindowNativeEvent::Resized(size)));
                         }
                     }
                     self.windows.insert(
