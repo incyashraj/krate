@@ -6376,7 +6376,10 @@ fn ai_status_json() -> Result<u8> {
 /// because the probes run in parallel and a shared file's read-modify-write
 /// would let one thread's save drop another's row.
 fn probe_cache_file(provider: &str) -> Option<PathBuf> {
-    if !provider.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+    if !provider
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-')
+    {
         return None;
     }
     Some(
@@ -6425,7 +6428,9 @@ fn probe_with_cache(provider: &dyn agent_provider::AgentProvider) -> agent_provi
         .and_then(|f| fs::read_to_string(f).ok())
         .and_then(|t| serde_json::from_str(&t).ok());
     if let (Some((path, mtime)), Some(row)) = (&key, &row) {
-        let fresh = row["when"].as_u64().is_some_and(|w| now.saturating_sub(w) < TTL);
+        let fresh = row["when"]
+            .as_u64()
+            .is_some_and(|w| now.saturating_sub(w) < TTL);
         let same = row["path"].as_str() == Some(path.as_str())
             && row["mtime"].as_u64() == Some(*mtime)
             && row["verdict"].as_str() == Some("working");
@@ -6769,10 +6774,7 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
     {
         let example = authoring_context::closest_example(ctx.request);
         let _ = fs::write(ctx.app_dir.join("EXAMPLE.rs"), example.lib);
-        let _ = fs::write(
-            ctx.app_dir.join("EXAMPLE.manifest.toml"),
-            example.manifest,
-        );
+        let _ = fs::write(ctx.app_dir.join("EXAMPLE.manifest.toml"), example.manifest);
     }
 
     // Warm the dependency cache while the model thinks. The skeleton
@@ -12489,8 +12491,35 @@ mod create_tests {
     fn a_new_app_still_gets_the_full_instructions() {
         let prompt = claude_author_prompt("/work/app", "a tip calculator", "/usr/local/bin/krate");
         assert!(prompt.contains("Read KRATE_AUTHORING.md"));
-        assert!(prompt.contains("Find the closest example"));
+        // The example is pre-picked and written into the workspace; the
+        // prompt names it instead of sending the agent hunting.
+        assert!(prompt.contains("Your model app is EXAMPLE.rs"));
         assert!(!prompt.contains("This is an edit"));
+    }
+
+    /// The example picker: the model app matches the request's shape, and a
+    /// request matching nothing falls back to the checklist.
+    #[test]
+    fn the_closest_example_matches_the_request() {
+        use crate::authoring_context::closest_example;
+        assert_eq!(
+            closest_example("a brick breaker game with a ball").name,
+            "krate-bounce"
+        );
+        assert_eq!(
+            closest_example("a habit tracker that saves my streaks").name,
+            "krate-checklist"
+        );
+        assert_eq!(
+            closest_example("a contact book with a database").name,
+            "krate-contacts"
+        );
+        assert_eq!(
+            closest_example("show me the weather from an api").name,
+            "krate-fetch"
+        );
+        assert_eq!(closest_example("a pomodoro timer").name, "krate-focus");
+        assert_eq!(closest_example("something nice").name, "krate-checklist");
     }
 
     #[test]

@@ -1622,9 +1622,30 @@ pub const EMBEDDED_EXAMPLES: &[EmbeddedExample] = &[
         name: "krate-bounce",
         shows: "a canvas game: its own event loop, key-held movement, collision, redraw pacing",
         keywords: &[
-            "game", "ball", "arcade", "jump", "physics", "gravity", "breaker", "snake",
-            "runner", "platform", "shoot", "invader", "tetris", "pong", "maze", "play",
-            "score", "enemy", "level", "animate", "animation", "particle", "draw", "paint",
+            "game",
+            "ball",
+            "arcade",
+            "jump",
+            "physics",
+            "gravity",
+            "breaker",
+            "snake",
+            "runner",
+            "platform",
+            "shoot",
+            "invader",
+            "tetris",
+            "pong",
+            "maze",
+            "play",
+            "score",
+            "enemy",
+            "level",
+            "animate",
+            "animation",
+            "particle",
+            "draw",
+            "paint",
         ],
         lib: include_str!("../../../apps/krate-bounce/src/lib.rs"),
         manifest: include_str!("../../../apps/krate-bounce/manifest.toml"),
@@ -1643,18 +1664,30 @@ pub const EMBEDDED_EXAMPLES: &[EmbeddedExample] = &[
         name: "krate-contacts",
         shows: "records in a real database: store.sql schema, insert, query, list and detail views",
         keywords: &[
-            "database", "record", "contact", "crm", "inventory", "catalog", "sql",
-            "address", "customer", "collection", "library", "expense", "budget",
+            "database",
+            "record",
+            "contact",
+            "crm",
+            "inventory",
+            "catalog",
+            "sql",
+            "address",
+            "customer",
+            "collection",
+            "library",
+            "expense",
+            "budget",
         ],
         lib: include_str!("../../../apps/krate-contacts/src/lib.rs"),
         manifest: include_str!("../../../apps/krate-contacts/manifest.toml"),
     },
     EmbeddedExample {
         name: "krate-fetch",
-        shows: "an app that reaches the internet: net.http requests, async polling, showing results",
+        shows:
+            "an app that reaches the internet: net.http requests, async polling, showing results",
         keywords: &[
-            "fetch", "api", "weather", "news", "internet", "http", "online", "quote",
-            "stock", "crypto", "price", "feed", "download", "search", "lookup",
+            "fetch", "api", "weather", "news", "internet", "http", "online", "quote", "stock",
+            "crypto", "price", "feed", "download", "search", "lookup",
         ],
         lib: include_str!("../../../apps/krate-fetch/src/lib.rs"),
         manifest: include_str!("../../../apps/krate-fetch/manifest.toml"),
@@ -1663,8 +1696,18 @@ pub const EMBEDDED_EXAMPLES: &[EmbeddedExample] = &[
         name: "krate-focus",
         shows: "a timer: the wait(timeout) clock loop, time.monotonic pacing, start/pause/reset",
         keywords: &[
-            "timer", "pomodoro", "clock", "countdown", "stopwatch", "alarm", "session",
-            "focus", "break", "interval", "minute", "remind",
+            "timer",
+            "pomodoro",
+            "clock",
+            "countdown",
+            "stopwatch",
+            "alarm",
+            "session",
+            "focus",
+            "break",
+            "interval",
+            "minute",
+            "remind",
         ],
         lib: include_str!("../../../apps/krate-focus/src/lib.rs"),
         manifest: include_str!("../../../apps/krate-focus/manifest.toml"),
@@ -1678,12 +1721,7 @@ pub fn closest_example(request: &str) -> &'static EmbeddedExample {
     let lower = request.to_lowercase();
     EMBEDDED_EXAMPLES
         .iter()
-        .max_by_key(|ex| {
-            ex.keywords
-                .iter()
-                .filter(|k| lower.contains(**k))
-                .count()
-        })
+        .max_by_key(|ex| ex.keywords.iter().filter(|k| lower.contains(**k)).count())
         .filter(|ex| ex.keywords.iter().any(|k| lower.contains(*k)))
         .unwrap_or(&EMBEDDED_EXAMPLES[1])
 }
