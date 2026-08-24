@@ -68,7 +68,24 @@ print("\t".join(str(x) for x in [
 ]))
 ')" || { echo "could not read the stats payload" >&2; exit 1; }
 
-header="date	source	views	installs	makes	opens	publishes	open_failed	distinct_installs"
+# GitHub's own numbers ride along when `gh` is signed in; blank otherwise.
+# Downloads are cumulative forever (a rate needs two snapshots -- which is
+# what this file is). Repo traffic is a rolling 14-day window that GitHub
+# forgets, so snapshotting it here is the only way it survives.
+gh_row="			"
+if command -v gh >/dev/null 2>&1; then
+  gh_row="$(
+    {
+      gh api repos/incyashraj/krate/releases --paginate \
+        --jq '[.[].assets[]] | [([.[] | select(.name | test("studio";"i"))] | map(.download_count) | add // 0), ([.[] | select(.name | test("studio";"i") | not)] | map(.download_count) | add // 0)] | @tsv' 2>/dev/null
+      gh api repos/incyashraj/krate/traffic/views --jq '[.count, .uniques] | @tsv' 2>/dev/null
+    } | paste -s - 2>/dev/null
+  )"
+  [ -n "$gh_row" ] || gh_row="			"
+fi
+row="$row	$gh_row"
+
+header="date	source	views	installs	makes	opens	publishes	open_failed	distinct_installs	gh_dl_studio	gh_dl_cli	gh_repo_views_14d	gh_repo_uniques_14d"
 
 if [ "$print_only" = "1" ]; then
   printf '%s\n%s\n' "$header" "$row" | column -t -s "$(printf '\t')"

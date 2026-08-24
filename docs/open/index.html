@@ -487,5 +487,20 @@
       </div>
     </div>
   </footer>
+<script>
+// One anonymous page view -- the page name and the day, to our own hub.
+// No cookie, no id, no referrer; strictly less than any analytics vendor.
+(function () {
+  try {
+    fetch("https://hub.krate.tech/view", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ page: location.pathname }),
+      keepalive: true,
+      mode: "cors",
+    }).catch(function () {});
+  } catch (e) {}
+})();
+</script>
 </body>
 </html>
