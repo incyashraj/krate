@@ -196,6 +196,33 @@ def main():
       The earlier gap (no arm64 Linux binary in rc5) is closed.
     </p>
 
+    <h2>New this month</h2>
+    <ul>
+      <li><strong>Shared apps without accounts.</strong> Two machines holding
+          the same ten-character invite code see the same data, synced through
+          krate.tech. A grocery list built by an AI in one sentence ("a shared
+          grocery list my wife and I can both edit") showed one merged list on
+          a Mac and a Windows PC. No sign-up, no server of yours.</li>
+      <li><strong>The machine's senses.</strong> Generated apps now use the
+          microphone, the camera, local speech-to-text and sound. Asked for
+          "a voice memo app", the AI shipped one on the first try: record
+          button, live level meter, playback, memos kept between launches.</li>
+      <li><strong>Mac downloads open clean.</strong> Krate Studio and the
+          runtime are signed and notarized with a Developer ID; macOS opens
+          them like any other download, offline included.</li>
+      <li><strong>You can only download a verified release.</strong> Every
+          release is born unlisted and is promoted to the public channel only
+          after the published files themselves pass checksum, Gatekeeper, and
+          run-a-real-app checks on all three systems.</li>
+      <li><strong>Windows looks right.</strong> Native-density rendering,
+          window controls on every app window, drag and double-click-to-
+          maximize -- verified on a physical Windows PC, not an emulator.</li>
+      <li><strong>The AI starts warm.</strong> Everything the AI needs rides
+          inside its first instruction, and the build continues the very
+          conversation that planned it -- so it writes code from the first
+          minute instead of reading files.</li>
+    </ul>
+
     <h2>How much of the system is real</h2>
     <ul>
       <li>{interfaces} Two more interfaces are partial.</li>
