@@ -71,6 +71,28 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-175 -- ui.dropzone is declared, consent-worded, and recommended -- and does not exist
+
+Status:   claimed
+Owner:    claude
+Severity: serious
+Class:    runtime-hole
+Found:    2026-08-25, claude, building the capability coverage matrix
+          (Plan/Capability-Coverage-2026-08.md).
+Evidence: `grep -rn dropzone crates/ wit/` -- hits in manifest validation
+          (mime resource), consent wordings (authoring_context.rs:451 "accept
+          dragged files", tui.rs:1315 "accept files you drag onto it"), and
+          the PORT ANALYZER which actively recommends declaring it
+          (port/src/lib.rs:1060). Zero hits in wit/, zero host functions,
+          zero DroppedFile/HoveredFile handling in any adapter. An app that
+          declares it puts a promise on the consent sheet the runtime cannot
+          keep -- the exact hollow-permission shape K-086 was about.
+Fix:      implement it: winit DroppedFile/HoveredFile -> a phase3 event apps
+          can poll/receive, mime-filtered by the declared scope, behind the
+          existing wall; six gates + pack teaching + an example. Until it
+          lands, the port analyzer must stop recommending a capability that
+          does not work.
+
 ### K-174 -- The Studio setup shows NSIS's raw "Error opening file for writing" when the engine is running
 
 Status:   open
