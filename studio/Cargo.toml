@@ -37,3 +37,6 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 
 # Detached from the repository workspace on purpose; see the header comment.
 [workspace]
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading"] }

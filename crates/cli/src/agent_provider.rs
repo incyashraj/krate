@@ -359,13 +359,7 @@ pub fn probe(provider: &dyn AgentProvider, timeout: Duration) -> Readiness {
                     // is enough because these tools do not detach. The reader
                     // threads end on their own once the pipes close.
                     #[cfg(windows)]
-                    {
-                        let _ = ProcessCommand::new("taskkill")
-                            .args(["/PID", &child.id().to_string(), "/T", "/F"])
-                            .stdout(Stdio::null())
-                            .stderr(Stdio::null())
-                            .status();
-                    }
+                    crate::winproc::kill_process_tree(child.id());
                     let _ = child.kill();
                     return Readiness::NotReady {
                         summary: format!("did not answer within {}s", timeout.as_secs()),

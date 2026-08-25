@@ -71,6 +71,66 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-178 -- A double-clicked game on Windows shows consent, gets approved, and never opens
+
+Status:   open
+Owner:    claude
+Severity: serious
+Class:    our-code
+Found:    2026-08-25, by Yashraj on the Windows PC with the multiplayer Ice
+          Climber (v0.1.57 engine confirmed on the machine).
+Evidence: the same .krate runs and paints on that PC when launched with
+          --grant flags over SSH (C:\krate\mp-pc.png, 49KB), so the app,
+          the runtime, and net.ws all work there. The failure is specific to
+          the consent path: dialog appears, Allow clicked, no window. Remote
+          reproduction blocked by the machine's locked interactive session;
+          next signal is stderr from a terminal run:
+          %LOCALAPPDATA%\Krate\bin\krate.exe run <file> --consent
+          2> C:\krate\err.txt
+Fix:      pending that stderr. Suspects: the post-consent continuation in
+          the association context, or security software (see K-177 -- the
+          same machine shows dialogs about taskkill.exe).
+
+### K-177 -- Stopping a build could make security software pop a dialog about taskkill.exe
+
+Status:   fixed
+Owner:    claude
+Severity: annoyance
+Class:    our-code
+Found:    2026-08-25, by Yashraj on the Windows PC: "sudden dialogue box
+          saying taskkill.exe not working".
+Evidence: the Studio's kill_tree and the CLI's agent-probe timeout both
+          shelled out to taskkill /PID x /T /F. Both suppressed its OUTPUT
+          (K-159), but the spawn itself is what endpoint security watches:
+          an unsigned app launching a system kill tool reads as suspicious,
+          and the watchdog's dialog is outside our control.
+Fix:      no external process at all: kill_process_tree walks
+          CreateToolhelp32Snapshot and TerminateProcess-es the tree,
+          children first, in-process -- nothing for a watchdog to flag, no
+          console to flash, same semantics. crates/cli/src/winproc.rs and
+          the studio twin; compile-proven for the msvc target.
+
+### K-176 -- Windows consent is all-or-nothing; the per-capability choice is macOS-only
+
+Status:   claimed
+Owner:    claude
+Severity: serious
+Class:    our-code
+Found:    2026-08-25, by Yashraj comparing platforms: "I cannot agree or
+          disagree to selected terms rather than agreeing everything".
+Evidence: consent_for_session_grants: the rich per-capability window is
+          macOS-only by decision (2026-07-23, "a later P3-OPEN slice");
+          Windows double-click falls back to one rfd::MessageDialog with
+          Allow-all/Cancel (main.rs ~9390). The permission wall's whole
+          pitch is informed, granular consent -- on the OS most users run,
+          it is a yes/no box.
+Fix:      a native Win32 dialog built in-process (DialogBoxIndirect or a
+          drawn window through the adapter): one checkbox per capability
+          with the same plain-words rationale the terminal prompt prints,
+          optional capabilities pre-unchecked exactly like macOS. The
+          macOS invisible-checkbox lesson applies: verify by pixels on the
+          real PC before shipping.
+
 ### K-175 -- ui.dropzone is declared, consent-worded, and recommended -- and does not exist
 
 Status:   claimed

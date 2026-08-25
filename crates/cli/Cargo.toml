@@ -87,4 +87,4 @@ winresource = "0.1"
 
 [target.'cfg(windows)'.dependencies]
 # Detaching the console a double-click hands us; see detach_owned_console.
-windows-sys = { version = "0.59", features = ["Win32_System_Console", "Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Media"] }
+windows-sys = { version = "0.59", features = ["Win32_System_Console", "Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Media", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading"] }

@@ -32,6 +32,8 @@ mod style;
 mod trace;
 mod tui;
 mod usage;
+#[cfg(windows)]
+mod winproc;
 
 const MAX_PHASE2_ARGS_RAW_BYTES: usize = 64 * 1024;
 const MAX_PHASE2_ARG_COUNT: usize = 1024;

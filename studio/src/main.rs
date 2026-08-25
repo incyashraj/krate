@@ -779,6 +779,59 @@ fn pid_alive(pid: u32) -> bool {
 /// The agent CLI and cargo are children of the engine, so signalling only
 /// the engine leaves them running -- an invisible process still spending the
 /// person's AI quota after they thought they had stopped.
+
+/// Terminate a process tree with API calls -- the same walk `taskkill /T /F`
+/// does, without the external executable security software watches (K-177).
+/// Best effort: an already-gone or untouchable process is skipped.
+#[cfg(windows)]
+fn kill_tree_native(pid: u32) {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32First, Process32Next, PROCESSENTRY32,
+        TH32CS_SNAPPROCESS,
+    };
+    use windows_sys::Win32::System::Threading::{OpenProcess, TerminateProcess, PROCESS_TERMINATE};
+
+    let mut table = Vec::new();
+    unsafe {
+        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snapshot as isize == -1 {
+            return;
+        }
+        let mut entry: PROCESSENTRY32 = core::mem::zeroed();
+        entry.dwSize = core::mem::size_of::<PROCESSENTRY32>() as u32;
+        if Process32First(snapshot, &mut entry) != 0 {
+            loop {
+                table.push((entry.th32ProcessID, entry.th32ParentProcessID));
+                if Process32Next(snapshot, &mut entry) == 0 {
+                    break;
+                }
+            }
+        }
+        CloseHandle(snapshot);
+    }
+    let mut doomed = vec![pid];
+    let mut index = 0;
+    while index < doomed.len() {
+        let parent = doomed[index];
+        for (child, child_parent) in &table {
+            if *child_parent == parent && !doomed.contains(child) {
+                doomed.push(*child);
+            }
+        }
+        index += 1;
+    }
+    for target in doomed.iter().rev() {
+        unsafe {
+            let handle = OpenProcess(PROCESS_TERMINATE, 0, *target);
+            if !handle.is_null() {
+                TerminateProcess(handle, 1);
+                CloseHandle(handle);
+            }
+        }
+    }
+}
+
 fn kill_tree(pid: u32) {
     #[cfg(unix)]
     unsafe {
@@ -787,11 +840,12 @@ fn kill_tree(pid: u32) {
     }
     #[cfg(windows)]
     {
-        // silent_cmd for the same reason as pid_alive: pressing Stop must not
-        // flash a console (K-159).
-        let _ = silent_cmd("taskkill")
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
-            .status();
+        // In-process, not `taskkill`: the external exe flashed nothing
+        // (K-159 was fixed with silent_cmd) but security software watches
+        // system tools, and a locked-down machine answered a Stop click
+        // with a dialog about taskkill.exe (K-177). API calls give a
+        // watchdog nothing to flag.
+        kill_tree_native(pid);
     }
 }
 

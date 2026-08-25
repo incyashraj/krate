@@ -1996,6 +1996,7 @@ dependencies = [
  "tauri-plugin-notification",
  "ureq",
  "url",
+ "windows-sys 0.59.0",
  "zip",
 ]
 
