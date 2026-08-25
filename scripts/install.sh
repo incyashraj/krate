@@ -260,6 +260,23 @@ case ":${PATH}:" in
     ;;
 esac
 
+# ---- does `krate` actually reach what was just installed? -------------------
+#
+# "Installed!" is a lie if a different krate sits earlier on PATH -- a dev's
+# debug build, an old copy in /usr/local/bin -- because the person then runs
+# the stale one, hits "built against different versions of the app
+# interface", and reads the error's own advice: update Krate. Which they just
+# did. Say the true thing instead: name the shadowing binary and the exact
+# command that runs the new one.
+resolved="$(command -v krate 2>/dev/null || true)"
+if [ -n "$resolved" ] && [ "$resolved" != "${dir}/krate" ]; then
+  say ""
+  say "Heads up: 'krate' in this shell runs ${resolved},"
+  say "not the copy just installed. Until your PATH puts ${dir} first,"
+  say "use the full path:"
+  say "  ${dir}/krate run app.krate"
+fi
+
 # ---- the invitation ---------------------------------------------------------
 
 # End on the one word, in the colour that says "you are done". Someone who

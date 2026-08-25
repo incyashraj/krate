@@ -217,6 +217,21 @@ try {
         $env:Path = "$env:Path;$dir"
     }
 
+    # "Installed!" is a lie if a different krate sits earlier on PATH -- a
+    # dev's debug build, an old copy elsewhere -- because the person then
+    # runs the stale one, hits "built against different versions of the app
+    # interface", and reads the error's own advice: update Krate. Which they
+    # just did. Say the true thing instead: name the shadowing binary and
+    # the exact command that runs the new one.
+    $resolvedNow = Get-Command krate -ErrorAction SilentlyContinue
+    if ($resolvedNow -and ($resolvedNow.Source -ine (Join-Path $dir $binary))) {
+        Write-Say ""
+        Write-Say "Heads up: 'krate' in this shell runs $($resolvedNow.Source),"
+        Write-Say "not the copy just installed. Until your PATH puts $dir first,"
+        Write-Say "use the full path:"
+        Write-Say "  $(Join-Path $dir $binary) run app.krate"
+    }
+
     # Register the .krate double-click handler so a bundle someone sends you
     # opens by double-clicking it in Explorer, not only from the command line.
     # The logic lives in scripts/install-krate-desktop.ps1, which writes a
