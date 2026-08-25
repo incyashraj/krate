@@ -1,0 +1,14 @@
+captured_utc	2026-08-25T08:56:44Z
+hostname	Yashrajs-MacBook-Air.local
+git_commit	c3d6f644db30c132f040b860279bd72cfd548497
+macos_version	27.0
+macos_build	26A5388g
+kernel	Darwin Yashrajs-MacBook-Air.local 27.0.0 Darwin Kernel Version 27.0.0: Tue Jul 14 21:40:50 PDT 2026; root:xnu-13432.0.94.501.4~1/RELEASE_ARM64_T8132 arm64
+host_arch	arm64
+cpu	Apple M4
+memory_bytes	17179869184
+logical_cpus	10
+physical_cpus	10
+low_power_mode	0
+power_source	Now drawing from AC Power
+display_summary	Resolution: 1920 x 1080 (1080p FHD - Full High Definition); UI Looks like: 1920 x 1080 @ 60.00Hz; Main Display: Yes; Resolution: 2560 x 1664 Retina; 

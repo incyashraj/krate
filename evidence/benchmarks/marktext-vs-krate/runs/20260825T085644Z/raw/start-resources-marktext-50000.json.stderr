@@ -1,0 +1,4 @@
+strict mode: missing type "string" for keyword "pattern" at "#/properties/spellcheckerLanguage" (strictTypes)
+[83736:0825/170554.788811:ERROR:gpu_process_host.cc(957)] GPU process exited unexpectedly: exit_code=15
+17:05:54.892 › The renderer process has crashed unexpected or is killed (killed).
+[83736:0825/170555.210632:ERROR:network_service_instance_impl.cc(333)] Network service crashed, restarting service.

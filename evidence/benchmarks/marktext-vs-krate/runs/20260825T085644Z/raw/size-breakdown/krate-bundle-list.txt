@@ -1,0 +1,10 @@
+Archive:  /Users/yashrajpardeshi/Krate Apps/mark-replica.krate
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+      762  08-16-2026 12:07   manifest.toml
+    44327  08-16-2026 12:07   code.wasm
+     2107  08-16-2026 12:07   source/Cargo.toml
+      802  08-16-2026 12:07   source/manifest.toml
+    58906  08-16-2026 12:07   source/src/lib.rs
+---------                     -------
+   106904                     5 files

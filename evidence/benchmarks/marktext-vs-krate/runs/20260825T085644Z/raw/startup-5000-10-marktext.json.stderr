@@ -1,0 +1,4 @@
+strict mode: missing type "string" for keyword "pattern" at "#/properties/spellcheckerLanguage" (strictTypes)
+[80951:0825/165720.471522:ERROR:gpu_process_host.cc(957)] GPU process exited unexpectedly: exit_code=15
+[80951:0825/165720.492124:ERROR:command_buffer_proxy_impl.cc(328)] GPU state invalid after WaitForGetOffsetInRange.
+16:57:20.492 › The renderer process has crashed unexpected or is killed (killed).

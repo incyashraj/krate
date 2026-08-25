@@ -1,0 +1,5 @@
+timestamp_utc	artifact	measurement	value	unit	sha256	path
+2026-08-25T08:56:45Z	MarkText_0.17.1_ARM64	installed_size	291468	KiB	-	/Users/yashrajpardeshi/Downloads/MarkText.app
+2026-08-25T08:56:45Z	MarkText_binary	file_size	219944	bytes	ae19e19cf14a529406d1964e6fd2827e611d9181ec522959386e4cb0d88e5537	/Users/yashrajpardeshi/Downloads/MarkText.app/Contents/MacOS/MarkText
+2026-08-25T08:56:45Z	Krate_notes_bundle	file_size	37489	bytes	f2f8027ed356e8217e2e1d2764a8befe2d02be58fef5f4e1ce4bd932f074be44	/Users/yashrajpardeshi/Krate Apps/mark-replica.krate
+2026-08-25T08:56:45Z	Krate_Studio_shared_runtime	installed_size	90688	KiB	-	/Applications/Krate.app

@@ -1,0 +1,8 @@
+kind	path	bytes_or_kib	sha256	version_or_arch
+marktext_zip_or_app	/Users/yashrajpardeshi/Downloads/MarkText.app	291468 KiB	-	0.17.1
+marktext_binary	/Users/yashrajpardeshi/Downloads/MarkText.app/Contents/MacOS/MarkText	219944 bytes	ae19e19cf14a529406d1964e6fd2827e611d9181ec522959386e4cb0d88e5537	/Users/yashrajpardeshi/Downloads/MarkText.app/Contents/MacOS/MarkText: Mach-O 64-bit executable arm64
+krate_bundle	/Users/yashrajpardeshi/Krate Apps/mark-replica.krate	37489 bytes	f2f8027ed356e8217e2e1d2764a8befe2d02be58fef5f4e1ce4bd932f074be44	bundle
+krate_binary	/Users/yashrajpardeshi/.local/bin/krate	25755728 bytes	e2588abf4da0a90af10d509187a3c0ddefd6d2962a84052d470fcda66e130869	commit=ce0176d2128a; /Users/yashrajpardeshi/.local/bin/krate: Mach-O 64-bit executable arm64
+krate_studio	/Applications/Krate.app	90688 KiB	-	0.1.57
+fixture	/Users/yashrajpardeshi/Projects/layer6x6/evidence/benchmarks/marktext-vs-krate/fixtures/notes-5000.md	495484 bytes	2a4700117e9c5e661916c9b4d660a374ff603509d5984a288e58f114b5eaabef	UTF-8 Markdown
+fixture	/Users/yashrajpardeshi/Projects/layer6x6/evidence/benchmarks/marktext-vs-krate/fixtures/notes-50000.md	5005786 bytes	e2f69c96593e3d936d5f8f72e87c0775cde0fa432aaa3d3a9a180788c9f1baa2	UTF-8 Markdown
