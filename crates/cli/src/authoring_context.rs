@@ -49,6 +49,8 @@ pub fn generate(app_dir: &Path) -> String {
     out.push_str(&capability_catalog_section());
     out.push_str(DESIGN_PATTERNS_SECTION);
     out.push_str(BACKEND_CLIENT_SECTION);
+    out.push_str(SENSES_SECTION);
+    out.push_str(GAME_FEEL_SECTION);
     out.push_str(NO_STD_SECTION);
     out.push_str(&gui_world_section());
     out.push_str(&example_index_section(app_dir));
@@ -525,6 +527,88 @@ and queues; never show an error for being offline, show a quiet \
 4. **Deletes are real.** `shared::delete(key)` removes the item everywhere; \
 the runtime keeps the tombstone so it cannot come back. Do not implement \
 soft-delete flags on top.\n\n";
+
+/// Section 2e: capabilities the runtime has had all along that no app ever
+/// used, because nothing taught them. The coverage matrix
+/// (Plan/Capability-Coverage-2026-08.md) found microphone capture, speech,
+/// sound, notifications, and open-in-browser all shipped and all invisible --
+/// the founder himself asked for "microphone support" that already existed.
+/// What the pack does not teach, no generated app does.
+const SENSES_SECTION: &str = "\n---\n\n\
+# 2e. Sound, microphone, notifications, and the browser\n\n\
+These are real, shipped capabilities. Use them when the request calls for \
+them -- do not avoid them as exotic.\n\n\
+**Sound effects** (`audio.playback`, granted by default): open one output \
+stream at startup and keep it: `audio::playback::open(StreamConfig { \
+sample_rate: 44_100, channels: 1, format: SampleFormat::PcmS16, \
+buffer_frames: 1024 })`. For effects, synthesize or embed short PCM, load \
+once with `load_sound(stream, &bytes)`, then `play_sound(stream, handle, \
+1.0)` on the frame it happens -- it mixes, returns immediately, and playing \
+it again overlaps a second copy. A dozen lines of generated square-wave PCM \
+makes a click, a beep, a hit; no asset files needed.\n\n\
+**Microphone** (`audio.capture`, an explicit ask -- the person sees \
+\"record from the microphone\"): same `open` shape on \
+`audio::capture` with `sample_rate: 16_000, channels: 1, format: PcmS16`, \
+then `start(stream)`, and in the event loop `read(stream, 32_768)` returns \
+whatever arrived since the last read (an empty list is normal). `stop` when \
+the person ends the recording. Draw a level meter from the samples so the \
+person can SEE it hearing them.\n\n\
+**Speech to text** (`krate:speech/transcription`): \
+`transcribe(model_asset, &pcm_s16_le, 16_000, None)` turns captured mono \
+16kHz PCM into text -- but the whisper model file must be bundled in the \
+app's `assets/` directory and named by `model_asset`. Only reach for it \
+when the request is really about transcription and a model is provided; \
+for \"voice memo\" requests, recording + playback without transcription \
+ships today and satisfies most of them.\n\n\
+**Notifications** (`ui.notify`, an explicit ask): \
+`ui::notify::show(\"Timer done\", \"The pasta is ready\")`. The OS \
+attributes it to the app. Use it when the thing the app waits for finishes \
+-- a timer, a long job -- because the person has usually switched windows. \
+No reply channel exists; do not build flows that depend on the person \
+clicking it.\n\n\
+**Open in the browser** (`ui.open-url`, an explicit ask): \
+`ui::launch::open_url(\"https://...\")` hands a link to the person's \
+browser. Pairs with 2c: a \"get your API token\" button that opens the \
+backend's token page beats explaining where to click. Never open a URL the \
+person did not just ask for.\n\n";
+
+/// Section 2f: game feel. The Ice Climber A/B (one request, two agents)
+/// showed the runtime treats every agent the same and the results still
+/// differ wildly: the agent with taste shipped a HUD, a palette, and juice;
+/// the agent without shipped flat rectangles. Taste can be written down.
+/// This section is the floor-raiser for every agent that is not the best
+/// one.
+const GAME_FEEL_SECTION: &str = "\n---\n\n\
+# 2f. Making a game feel finished\n\n\
+A playable game and a finished-feeling game differ by a dozen small \
+decisions. Make all of them:\n\n\
+1. **Fixed-step update.** Run game logic on a fixed tick (16 ms via \
+`events::wait(Some(16))`), never \"whenever an event arrives\". Movement \
+speeds are per-tick constants; nothing depends on frame timing.\n\n\
+2. **Design size + integer scale.** Pick a small logical resolution, \
+`set_design_size` once, and draw sprites on an integer grid. Pixel art \
+reads as deliberate; fractional scaling reads as broken.\n\n\
+3. **A real palette.** Choose 6-10 colours before drawing -- background \
+darkest, one accent for the player, one for danger, one for reward. Give \
+sprites a 1px darker outline; it is the difference between \"shapes on a \
+gradient\" and \"a game\".\n\n\
+4. **Track key STATE, not key repeats.** On key-down set a flag, on key-up \
+clear it, move while it is set. OS auto-repeat as a movement source feels \
+underwater. Space/Z/arrows for actions; show the controls on the title \
+screen and let both arrows and WASD work.\n\n\
+5. **A HUD.** Score top-left, lives as icons top-centre or top-right, \
+level top-right. Six-digit zero-padded score. The HUD is what makes it \
+look like a game in a screenshot.\n\n\
+6. **Juice on every player action.** A sound per jump/hit/score (see 2e \
+sound effects -- synthesized PCM is enough), a 2-3 frame white flash on \
+damage, a 100-150 ms screen shake on big hits, particles on destruction \
+(eight 2px squares with velocity and gravity are plenty).\n\n\
+7. **Title, pause, game over.** Title screen: name, one-line goal, \
+controls, \"press space\". Esc pauses. Game over shows the score and \
+restarts on space, keeping the high score in `store.kv`.\n\n\
+8. **Ramp the difficulty.** Start winnable for thirty seconds, then speed \
+up or add hazards on a schedule. The first death should teach, not \
+ambush.\n\n";
 
 /// Section 3: the no_std discipline. Authored, because it is the reasoning
 /// behind the rules, not a list that can be scraped. The concrete facts it
@@ -1692,6 +1776,20 @@ THE ESSENTIALS, INLINED. Everything below is authoritative and          identica
     out.push_str(&capability_catalog_section());
     out.push_str(DESIGN_PATTERNS_SECTION);
     out.push_str(BACKEND_CLIENT_SECTION);
+    out.push_str(SENSES_SECTION);
+    // Game feel rides the prompt only when the request smells like a game;
+    // for everything else it is dead weight. The pack on disk always carries
+    // it, so a mis-detected game still finds it in section 2f there.
+    let lower = request.to_lowercase();
+    if [
+        "game", "arcade", "platform", "shooter", "puzzle", "snake", "tetris", "breakout", "pong",
+        "invader", "climber", "runner", "jump", "maze", "asteroid", "flappy",
+    ]
+    .iter()
+    .any(|w| lower.contains(w))
+    {
+        out.push_str(GAME_FEEL_SECTION);
+    }
     out.push_str(NO_STD_SECTION);
     out.push_str(&format!(
         "

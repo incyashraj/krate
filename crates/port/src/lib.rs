@@ -1057,8 +1057,13 @@ fn inspect_content(path: &str, text: &str, analysis: &mut Analysis) {
         text,
         Severity::Change,
         "Files dragged onto the window",
-        "Krate's `ui.dropzone` capability covers this. It is worth declaring separately from a file dialog: a drop hands the app a file without the person opening a picker.",
-        Some("ui.dropzone"),
+        // ui.dropzone is declared in the manifest specs but the runtime does
+        // not deliver drop events yet (K-175). Until it does, recommending it
+        // would put a hollow promise on the consent sheet -- point at the
+        // dialog that works instead, and this note flips back when K-175
+        // lands.
+        "Krate does not deliver drag-and-drop events yet (K-175). Use `ui.dialog:file-open` for now: a picker hands the app the same file with one extra click.",
+        Some("ui.dialog:file-open"),
     );
     // Running work on the GPU, as opposed to drawing with it. Basic drawing is
     // granted to every app; compute is not, because it is a general-purpose
@@ -2272,11 +2277,14 @@ dependencies = [
         .unwrap();
 
         let plan = analyze(dir.path()).unwrap();
+        // Until K-175 implements drop events, the honest suggestion for a
+        // dropped-files read is the file dialog that works. When dropzone
+        // lands, this flips back to ui.dropzone.
         assert!(
             plan.suggested_capabilities
                 .iter()
-                .any(|c| c == "ui.dropzone"),
-            "a real dropped_files read should still suggest ui.dropzone: {:?}",
+                .any(|c| c == "ui.dialog:file-open"),
+            "a real dropped_files read should suggest the working file dialog: {:?}",
             plan.suggested_capabilities
         );
     }
