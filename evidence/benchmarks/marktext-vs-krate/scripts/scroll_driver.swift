@@ -53,8 +53,13 @@ for index in 0..<expected {
     event.post(tap: .cghidEventTap)
     posted += 1
     let target = started + UInt64(Double(index + 1) * interval * 1_000_000_000)
-    while DispatchTime.now().uptimeNanoseconds < target {
-        let remaining = target - DispatchTime.now().uptimeNanoseconds
+    // One clock read per pass. Reading the clock again to compute `remaining`
+    // raced the deadline: when it passed between the two reads, the unsigned
+    // subtraction underflowed and the driver died with SIGTRAP mid-run.
+    while true {
+        let now = DispatchTime.now().uptimeNanoseconds
+        if now >= target { break }
+        let remaining = target - now
         if remaining > 1_000_000 {
             Thread.sleep(forTimeInterval: Double(remaining - 500_000) / 1_000_000_000)
         }
