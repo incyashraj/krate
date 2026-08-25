@@ -150,3 +150,63 @@ interface http-client {
   /// already been retired.
   cancel: func(handle: u64);
 }
+/// Live two-way connections: WebSocket, ws:// and wss://.
+///
+/// The permission story is the same one HTTP has: opening a connection is a
+/// `net.connect` to that host and port, checked at `open` on the calling
+/// thread, before anything dials. There is no separate capability to declare
+/// -- an app granted `net.connect:example.com:443` may fetch from it and may
+/// hold a socket to it, which is the same promise to the person either way.
+///
+/// Everything here returns immediately. The connection lives on a host
+/// thread; the guest polls for events from its own loop exactly as it polls
+/// `http-client` fetches, so a stalled server can never freeze a frame.
+interface ws {
+  use types.{net-error};
+
+  /// One message, either direction.
+  variant ws-message {
+    /// UTF-8 text.
+    text(string),
+    /// Raw bytes.
+    binary(list<u8>),
+  }
+
+  /// What `poll` found.
+  variant ws-event {
+    /// Nothing new. The normal answer; keep drawing and ask later.
+    pending,
+    /// The handshake finished; the connection is live. Reported once.
+    opened,
+    /// The server sent a message.
+    message(ws-message),
+    /// The connection closed cleanly. Terminal; the handle is retired.
+    closed,
+    /// The connection failed, with the reason. Terminal; the handle is
+    /// retired.
+    failed(string),
+    /// Never opened, or already closed, cancelled, or retired.
+    unknown-handle,
+  }
+
+  /// Open a connection to a `ws://` or `wss://` URL and return a handle.
+  ///
+  /// The capability check happens here: the URL's host and port must be
+  /// covered by a `net.connect` grant, exactly as for a fetch. `wss://`
+  /// verifies certificates, always; there is no way to ask it not to.
+  open: func(url: string) -> result<u64, net-error>;
+
+  /// Queue one message to send. Returns immediately; the host thread
+  /// delivers it in order. Sending on a connection that has not finished
+  /// opening queues the message for when it has.
+  send: func(handle: u64, message: ws-message) -> result<_, net-error>;
+
+  /// Ask for the next event. Returns immediately, always; `pending` is the
+  /// normal answer. Messages arrive in order. A terminal event retires the
+  /// handle.
+  poll: func(handle: u64) -> ws-event;
+
+  /// Close the connection politely. Safe on a handle already retired; the
+  /// final `closed` event still arrives through `poll`.
+  close: func(handle: u64);
+}

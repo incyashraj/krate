@@ -56,6 +56,7 @@ pub struct Phase2Host<'a> {
     /// Lives here so it dies with the run: a handle cannot outlive the app
     /// that made it, the same way a chosen-file token cannot.
     async_fetches: crate::async_fetch::AsyncFetches,
+    async_ws: crate::async_ws::AsyncWs,
 }
 
 impl<'a> Phase2Host<'a> {
@@ -80,6 +81,7 @@ impl<'a> Phase2Host<'a> {
             chosen_files: Default::default(),
             random_granted: false,
             async_fetches: crate::async_fetch::AsyncFetches::new(),
+            async_ws: crate::async_ws::AsyncWs::new(),
             default_http_timeout_millis,
         }
     }
@@ -965,6 +967,54 @@ impl net::http_client::Host for Phase2Host<'_> {
     }
 }
 
+impl net::ws::Host for Phase2Host<'_> {
+    fn open(&mut self, url: String) -> wasmtime::Result<Result<u64, net::types::NetError>> {
+        // The grant is checked here, before any worker exists, exactly as
+        // for a fetch: same wall, same wording, same refusal shape.
+        if let Err(err) = self.dispatcher().check_ws_url(&url) {
+            return Ok(Err(bridge::net_error_to_wit(err.into())));
+        }
+        Ok(self.async_ws.open(url).map_err(net::types::NetError::Other))
+    }
+
+    fn send(
+        &mut self,
+        handle: u64,
+        message: net::ws::WsMessage,
+    ) -> wasmtime::Result<Result<(), net::types::NetError>> {
+        let message = match message {
+            net::ws::WsMessage::Text(text) => crate::async_ws::WsMessage::Text(text),
+            net::ws::WsMessage::Binary(bytes) => crate::async_ws::WsMessage::Binary(bytes),
+        };
+        Ok(self
+            .async_ws
+            .send(handle, message)
+            .map_err(net::types::NetError::Other))
+    }
+
+    fn poll(&mut self, handle: u64) -> wasmtime::Result<net::ws::WsEvent> {
+        use crate::async_ws::{WsEvent, WsMessage};
+        Ok(match self.async_ws.poll(handle) {
+            WsEvent::Pending => net::ws::WsEvent::Pending,
+            WsEvent::Opened => net::ws::WsEvent::Opened,
+            WsEvent::Message(WsMessage::Text(text)) => {
+                net::ws::WsEvent::Message(net::ws::WsMessage::Text(text))
+            }
+            WsEvent::Message(WsMessage::Binary(bytes)) => {
+                net::ws::WsEvent::Message(net::ws::WsMessage::Binary(bytes))
+            }
+            WsEvent::Closed => net::ws::WsEvent::Closed,
+            WsEvent::Failed(reason) => net::ws::WsEvent::Failed(reason),
+            WsEvent::UnknownHandle => net::ws::WsEvent::UnknownHandle,
+        })
+    }
+
+    fn close(&mut self, handle: u64) -> wasmtime::Result<()> {
+        self.async_ws.close(handle);
+        Ok(())
+    }
+}
+
 impl time::clock::Host for Phase2Host<'_> {
     fn now_millis(&mut self) -> wasmtime::Result<u64> {
         self.dispatcher()
@@ -1398,6 +1448,52 @@ mod tests {
 
         assert_eq!(response, b"ok".to_vec());
         assert_eq!(adapter.calls.borrow().last_timeout_millis, Some(Some(2500)));
+    }
+
+    #[test]
+    fn a_ws_open_without_the_grant_is_refused_before_any_socket() {
+        let adapter = RecordingAdapter::default();
+        let guard = UapiGuard::new(SessionPolicy::from_grants([]));
+        let mut host = Phase2Host::new(guard, Box::new(adapter));
+
+        let refused = net::ws::Host::open(&mut host, "ws://example.com:9001".to_string())
+            .unwrap()
+            .unwrap_err();
+        assert!(
+            matches!(refused, net::types::NetError::PermissionDenied),
+            "expected permission-denied, got {refused:?}"
+        );
+    }
+
+    #[test]
+    fn a_ws_open_with_the_grant_issues_a_handle_and_close_is_safe() {
+        let adapter = RecordingAdapter::default();
+        let guard = UapiGuard::new(SessionPolicy::from_grants(["net.connect:localhost:1"
+            .parse()
+            .unwrap()]));
+        let mut host = Phase2Host::new(guard, Box::new(adapter));
+
+        // The wall passes, so a handle is issued; the dial itself fails on
+        // the worker (nothing listens on port 1) and reports through poll.
+        let handle = net::ws::Host::open(&mut host, "ws://localhost:1".to_string())
+            .unwrap()
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            match net::ws::Host::poll(&mut host, handle).unwrap() {
+                net::ws::WsEvent::Failed(_) => break,
+                net::ws::WsEvent::Pending if std::time::Instant::now() < deadline => {
+                    std::thread::sleep(std::time::Duration::from_millis(10))
+                }
+                other => panic!("expected the dial to fail, got {other:?}"),
+            }
+        }
+        // A retired handle answers unknown-handle, and close on it is safe.
+        assert!(matches!(
+            net::ws::Host::poll(&mut host, handle).unwrap(),
+            net::ws::WsEvent::UnknownHandle
+        ));
+        net::ws::Host::close(&mut host, handle).unwrap();
     }
 
     #[test]

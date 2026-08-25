@@ -156,7 +156,7 @@ fn is_non_unicast_resolved_target(addr: SocketAddr) -> bool {
     }
 }
 
-fn parse_url_endpoint_with_default(
+pub fn parse_url_endpoint_with_default(
     rest: &str,
     default_port: u16,
 ) -> Result<UrlEndpoint, UrlEndpointError> {

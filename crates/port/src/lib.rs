@@ -1027,8 +1027,31 @@ fn inspect_content(path: &str, text: &str, analysis: &mut Analysis) {
         text,
         Severity::Change,
         "Playing sound",
-        "`audio.playback` is declared but the runtime refuses every call to it today, so a ported app cannot make a sound. Remove the audio, or wait for it. `audio.capture` -- the microphone -- does work, and is a separate capability.",
+        "Krate's `audio.playback` covers this: open one output stream, `load-sound` short effects once, `play-sound` on the frame they happen. `audio.capture` -- the microphone -- is a separate capability.",
         Some("audio.playback"),
+    );
+    // A live two-way connection. Krate serves it through krate:net/ws under
+    // the same net.connect grant HTTP uses, so a ported chat client or live
+    // feed keeps working without a new permission concept.
+    detect_pattern(
+        analysis,
+        "websocket",
+        &[
+            "websocket",
+            "web_socket",
+            "ws://",
+            "wss://",
+            "socket.io",
+            "signalr",
+            "eventsource",
+            "server-sent events",
+        ],
+        path,
+        text,
+        Severity::Change,
+        "A live connection to a server",
+        "Krate's `krate:net/ws` covers this: a WebSocket under the same `net.connect` grant HTTP uses. `open` returns a handle; the event loop polls it, so a stalled server never freezes a frame.",
+        Some("net.connect"),
     );
     // Files dragged onto the window. Worth naming because it is the one way an
     // app receives a file without a dialog, and people do not think of a drop

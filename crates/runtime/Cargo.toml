@@ -27,6 +27,7 @@ speech = ["dep:whisper-rs"]
 # HTTPS for guest apps. Same TLS stack the CLI and bundle crates already use,
 # so there is one certificate story in the workspace rather than two.
 ureq.workspace = true
+tungstenite.workspace = true
 rusqlite.workspace = true
 sha2 = "0.10.9"
 # Encoding a window frame to a PNG for `krate shoot` and headless verification.

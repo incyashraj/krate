@@ -564,6 +564,20 @@ impl<'a> UapiDispatcher<'a> {
         Ok(())
     }
 
+    /// The permission half of a live connection, on its own.
+    ///
+    /// The same `net.connect` judgment a fetch gets, applied to a `ws://` or
+    /// `wss://` URL, on the calling thread, before any socket exists. A
+    /// handle is only ever issued for a host the person granted.
+    pub fn check_ws_url(&self, url: &str) -> std::result::Result<(), NetDispatchError> {
+        let (host, port) =
+            crate::async_ws::ws_url_endpoint(url).map_err(|_| NetDispatchError::InvalidUrl)?;
+        self.guard
+            .check(&UapiCall::Net(NetCall::Connect { host, port }))
+            .map_err(map_net_policy)?;
+        Ok(())
+    }
+
     pub fn now_millis(&self) -> DispatchResult<u64> {
         self.check(&UapiCall::Time(TimeCall::Clock))?;
         self.adapter.time().now_millis().map_err(Into::into)

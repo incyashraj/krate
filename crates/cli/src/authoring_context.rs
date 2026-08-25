@@ -499,6 +499,16 @@ last synced\" line. An app that opens to an error screen because the wifi \
 dropped is worse than the web page it replaced.\n\n\
 `apps/krate-fetch` shows the non-blocking request loop; add the header and \
 the secret on top of its shape.\n\n\
+6. **Live connections are the same grant.** For chat, live feeds, and \
+multiplayer, `krate:net/ws` opens a WebSocket to any host the person \
+granted -- `ws::open(\"wss://host/path\")` is checked against the same \
+`net.connect` line a fetch is, so nothing new appears on the consent \
+sheet. It never blocks: `open` returns a handle, and the event loop calls \
+`ws::poll(handle)` each tick -- `pending` is the normal answer; `opened` \
+arrives once; `message(text|binary)` are the server's messages in order; \
+`closed`/`failed` retire the handle. `ws::send(handle, message)` queues \
+and returns. Reconnect on `failed` with a short backoff, and keep \
+rendering the last known state meanwhile, exactly like rule 5.\n\n\
 # 2d. Sharing data between people: the shared store\n\n\
 For \"my wife and I see the same list\", \"a meal plan the family edits\", \
 \"share this with my roommate\" -- declare `store.shared` and use \

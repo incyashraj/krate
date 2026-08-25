@@ -15,6 +15,7 @@ The current world imports these interfaces:
 - `krate:fs/files@0.1.0`
 - `krate:net/types@0.1.0`
 - `krate:net/http-client@0.1.0`
+- `krate:net/ws@0.1.0`
 - `krate:time/clock@0.1.0`
 - `krate:time/sleep@0.1.0`
 - `krate:locale/types@0.1.0`
@@ -743,6 +744,76 @@ Shared network request, response, and error types.
 > This handle was never issued, or has already been answered or
 > cancelled. Distinct from `failed` so a double-poll is not mistaken
 > for a network problem.
+
+- `unknown-handle`
+
+
+## `krate:net/ws@0.1.0`
+
+### Capability Notes
+
+Accepted capability strings for this module, generated from the runtime manifest table:
+
+- `net.connect:<host>:<port>` - manifest or session grant
+
+### Functions
+
+> Open a connection to a `ws://` or `wss://` URL and return a handle.
+> 
+> The capability check happens here: the URL's host and port must be
+> covered by a `net.connect` grant, exactly as for a fetch. `wss://`
+> verifies certificates, always; there is no way to ask it not to.
+
+- `open(url: string) -> result<u64, net-error>`
+> Queue one message to send. Returns immediately; the host thread
+> delivers it in order. Sending on a connection that has not finished
+> opening queues the message for when it has.
+
+- `send(handle: u64, message: ws-message) -> result<_, net-error>`
+> Ask for the next event. Returns immediately, always; `pending` is the
+> normal answer. Messages arrive in order. A terminal event retires the
+> handle.
+
+- `poll(handle: u64) -> ws-event`
+> Close the connection politely. Safe on a handle already retired; the
+> final `closed` event still arrives through `poll`.
+
+- `close(handle: u64)`
+
+### Types
+
+#### `ws-message` variant
+
+> One message, either direction.
+
+> UTF-8 text.
+
+- `text`: `string`
+> Raw bytes.
+
+- `binary`: `list<u8>`
+
+#### `ws-event` variant
+
+> What `poll` found.
+
+> Nothing new. The normal answer; keep drawing and ask later.
+
+- `pending`
+> The handshake finished; the connection is live. Reported once.
+
+- `opened`
+> The server sent a message.
+
+- `message`: `ws-message`
+> The connection closed cleanly. Terminal; the handle is retired.
+
+- `closed`
+> The connection failed, with the reason. Terminal; the handle is
+> retired.
+
+- `failed`: `string`
+> Never opened, or already closed, cancelled, or retired.
 
 - `unknown-handle`
 

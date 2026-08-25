@@ -85,6 +85,8 @@ zip = { version = "2.2", default-features = false, features = ["deflate"] }
 # needed to build.
 rfd = "0.17"
 ureq = { version = "2.12", default-features = false, features = ["tls"] }
+# WebSocket framing for net.ws; TLS through the same rustls family ureq uses.
+tungstenite = { version = "0.24", default-features = false, features = ["handshake", "rustls-tls-webpki-roots"] }
 tempfile = "3.27.0"
 taffy = "0.11.0-experimental-cache-fix.3"
 toml = "0.9.12"
