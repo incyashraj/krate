@@ -972,7 +972,7 @@ impl net::ws::Host for Phase2Host<'_> {
         // The grant is checked here, before any worker exists, exactly as
         // for a fetch: same wall, same wording, same refusal shape.
         if let Err(err) = self.dispatcher().check_ws_url(&url) {
-            return Ok(Err(bridge::net_error_to_wit(err.into())));
+            return Ok(Err(bridge::net_error_to_wit(err)));
         }
         Ok(self.async_ws.open(url).map_err(net::types::NetError::Other))
     }
