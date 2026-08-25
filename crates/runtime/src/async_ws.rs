@@ -340,6 +340,51 @@ mod tests {
         assert!(table.open("ws://localhost:1".to_string()).is_err());
     }
 
+    /// Opt-in: proves wss:// against the production relay -- real TLS,
+    /// real internet, the actual room two players would meet in. Run with
+    /// KRATE_WS_LIVE_TEST=1.
+    #[test]
+    fn a_wss_round_trip_through_the_production_relay() {
+        if std::env::var("KRATE_WS_LIVE_TEST").as_deref() != Ok("1") {
+            return;
+        }
+        let mut table = AsyncWs::new();
+        let a = table
+            .open("wss://hub.krate.tech/play/krateselftest".to_string())
+            .unwrap();
+        let b = table
+            .open("wss://hub.krate.tech/play/krateselftest".to_string())
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        let mut b_open = false;
+        let mut relayed = None;
+        while std::time::Instant::now() < deadline && relayed.is_none() {
+            match table.poll(a) {
+                WsEvent::Opened => {}
+                WsEvent::Message(WsMessage::Text(text)) if text.contains("peer-joined") => {
+                    table
+                        .send(a, WsMessage::Text("{\"t\":\"hello\"}".to_string()))
+                        .unwrap();
+                }
+                WsEvent::Failed(reason) => panic!("a failed: {reason}"),
+                _ => {}
+            }
+            match table.poll(b) {
+                WsEvent::Opened => b_open = true,
+                WsEvent::Message(WsMessage::Text(text)) if text.contains("hello") => {
+                    relayed = Some(text);
+                }
+                WsEvent::Failed(reason) => panic!("b failed: {reason}"),
+                _ => {}
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(b_open, "second connection never opened");
+        assert!(relayed.is_some(), "the relay never delivered the message");
+        table.close(a);
+        table.close(b);
+    }
+
     #[test]
     fn a_live_round_trip_against_a_local_server() {
         use std::net::TcpListener;

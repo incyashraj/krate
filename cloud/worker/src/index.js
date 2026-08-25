@@ -81,6 +81,22 @@ export default {
       if (request.method === "POST" && pathname === "/share/new") {
         return cors(await shareNew(env));
       }
+      if (request.method === "GET" && pathname.startsWith("/play/")) {
+        // A live game room. The code IS the room: the Durable Object named
+        // by it springs into existence on the first connection, the second
+        // connection becomes player 2, and everything either sends is
+        // relayed to the other. Same possession-is-membership model as the
+        // shared store: anyone holding the code is in the room.
+        if (request.headers.get("Upgrade") !== "websocket") {
+          return cors(text("this endpoint speaks WebSocket", 426));
+        }
+        const code = pathname.slice("/play/".length);
+        if (!/^[a-z0-9]{4,32}$/.test(code)) {
+          return cors(text("bad room code", 400));
+        }
+        const id = env.ROOMS.idFromName(code);
+        return env.ROOMS.get(id).fetch(request);
+      }
       if (request.method === "GET" && pathname.startsWith("/share/")) {
         return cors(await shareGet(pathname.slice(7), env));
       }
@@ -1297,4 +1313,65 @@ function cors(response) {
     "authorization, content-type, x-krate-name, x-krate-description, x-krate-category, x-krate-session, x-krate-version, x-krate-os, x-krate-note",
   );
   return new Response(response.body, { status: response.status, headers });
+}
+
+
+// One live game room: up to two players, everything relayed to the other.
+//
+// The room holds no game state and never inspects a message -- the players'
+// machines own the game, the room owns only the pipe. That keeps it correct
+// for any game an app invents, and keeps this code too small to be wrong.
+export class Room {
+  constructor(state) {
+    this.state = state;
+    this.sessions = [];
+  }
+
+  async fetch(request) {
+    if (request.headers.get("Upgrade") !== "websocket") {
+      return new Response("this endpoint speaks WebSocket", { status: 426 });
+    }
+    if (this.sessions.length >= 2) {
+      return new Response("room is full", { status: 409 });
+    }
+    const pair = new WebSocketPair();
+    const [client, server] = Object.values(pair);
+    server.accept();
+    const player = this.sessions.length === 0 ? 1 : 2;
+    const session = { socket: server, player };
+    this.sessions.push(session);
+
+    // Tell the joiner who they are, and both sides who is present.
+    server.send(JSON.stringify({ t: "role", p: player, peers: this.sessions.length - 1 }));
+    for (const other of this.sessions) {
+      if (other !== session) {
+        other.socket.send(JSON.stringify({ t: "peer-joined", p: player }));
+      }
+    }
+
+    server.addEventListener("message", (event) => {
+      // Relay only; bounded so one player cannot balloon the other's memory.
+      if (typeof event.data === "string" && event.data.length > 8192) return;
+      for (const other of this.sessions) {
+        if (other !== session) {
+          try {
+            other.socket.send(event.data);
+          } catch (e) {}
+        }
+      }
+    });
+
+    const drop = () => {
+      this.sessions = this.sessions.filter((s) => s !== session);
+      for (const other of this.sessions) {
+        try {
+          other.socket.send(JSON.stringify({ t: "peer-gone", p: player }));
+        } catch (e) {}
+      }
+    };
+    server.addEventListener("close", drop);
+    server.addEventListener("error", drop);
+
+    return new Response(null, { status: 101, webSocket: client });
+  }
 }

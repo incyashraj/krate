@@ -36,3 +36,14 @@ KRATE_ADMINS = "incyashraj"
 [[analytics_engine_datasets]]
 binding = "USAGE"
 dataset = "krate_usage"
+
+# Live game rooms: one Durable Object per room code, holding the two
+# players' sockets and relaying between them. SQLite-backed classes are the
+# free-plan flavor; the room never actually touches storage.
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+[[migrations]]
+tag = "v1-rooms"
+new_sqlite_classes = ["Room"]
