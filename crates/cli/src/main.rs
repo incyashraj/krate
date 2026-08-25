@@ -978,7 +978,26 @@ fn main() -> ExitCode {
     match run() {
         Ok(code) => ExitCode::from(code),
         Err(err) => {
-            eprintln!("error: {}", friendly_error(&err));
+            let message = friendly_error(&err);
+            eprintln!("error: {message}");
+            // A double-clicked run has no console -- detach_owned_console
+            // freed it at startup -- so the line above went nowhere and the
+            // person saw an app that "never opens" (K-178): consent shown,
+            // Allow clicked, then silence, with the real error dying in a
+            // window that no longer exists. Windowless is detectable, so
+            // put the same words where they can be read. A terminal run
+            // still has a console and never gets a dialog.
+            #[cfg(windows)]
+            unsafe {
+                use windows_sys::Win32::System::Console::GetConsoleWindow;
+                if GetConsoleWindow().is_null() {
+                    let _ = rfd::MessageDialog::new()
+                        .set_title("Krate could not open this app")
+                        .set_description(&message)
+                        .set_buttons(rfd::MessageButtons::Ok)
+                        .show();
+                }
+            }
             ExitCode::from(1)
         }
     }
