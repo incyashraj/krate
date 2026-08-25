@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="What Krate collects, what it never collects, and how to turn all of it off." />
+  <link rel="canonical" href="https://krate.tech/privacy/" />
+  <title>Krate privacy</title>
+  <link rel="icon" href="/krate-favicon.png" />
+  <link rel="stylesheet" href="/site.css" />
+</head>
+<body>
+  <header class="subnav">
+    <div class="wrap subnav-inner">
+      <a class="brand" href="/"><img src="/krate-glyph-white.png" alt="" width="22" height="22" /> KRATE</a>
+      <nav>
+        <a href="/#install">Start</a>
+        <a href="/docs/">Docs</a>
+        <a href="/cloud/">Cloud</a>
+      </nav>
+    </div>
+  </header>
+  <main class="page-wide">
+    <p class="page-kicker">PRIVACY</p>
+    <h1>What Krate collects, in plain words.</h1>
+    <p>Last updated 2026-08-25. This page is written from the source code, which
+    is public; every claim here can be checked against it.</p>
+
+    <h2>Apps you run</h2>
+    <p>Krate apps run in a permission sandbox. An app can only touch what you
+    granted on its consent screen, and the list you approve is the whole list.
+    App data stays on your computer unless the app declares a network or shared
+    capability and you approve it.</p>
+
+    <h2>Anonymous usage counting</h2>
+    <p>The Krate tool counts how many people use it, without learning who they
+    are. What is sent: a random id generated on your machine, the Krate
+    version, the operating system name, and which of a fixed set of actions
+    happened (make, open, publish). What is never sent: app names, prompts,
+    file paths, usernames, email, location, or any hardware identifier. The id
+    is random bytes in a file; deleting the file makes your install a new
+    anonymous one. The first run prints one line explaining this. Turn it off
+    permanently with <code>KRATE_NO_USAGE=1</code>.</p>
+
+    <h2>The website</h2>
+    <p>krate.tech pages send one anonymous view event: the page path and the
+    day. No cookies, no identifiers, no referrer, and no third-party
+    analytics.</p>
+
+    <h2>Krate Cloud, if you sign in</h2>
+    <p>Publishing to Krate Cloud uses GitHub sign-in. We store your GitHub
+    login and the apps you publish, because published apps are credited to
+    their publisher. Nothing else about your account is read or stored.
+    Shared-store data (an app feature you opt into per app) is synced through
+    krate.tech and readable by anyone holding that store's invite code, which
+    the consent screen says before you approve it.</p>
+
+    <h2>Questions</h2>
+    <p>Open an issue at
+    <a href="https://github.com/incyashraj/krate">github.com/incyashraj/krate</a>
+    -- the same place the code that this page describes lives.</p>
+
+    <p style="margin-top:3rem"><a href="/">&larr; Back to krate.tech</a></p>
+  </main>
+  <footer class="subfoot">
+    <div class="wrap subfoot-inner">
+      <span>© 2026 Krate Labs</span>
+      <span><a href="/docs/">Docs</a> <a href="https://github.com/incyashraj/krate">GitHub</a></span>
+    </div>
+  </footer>
+</body>
+</html>
