@@ -841,9 +841,16 @@ more. The two REAL gaps were camera and full-bleed, and both are now closed.
 Confirmed missing on Windows (each degrades honestly, so nothing "breaks" --
 apps just quietly do less):
 
-- **camera.capture** -- `platform_backend()` returns `None`. Every webcam app
-  reports `unsupported`. macOS got AVFoundation on 2026-08-20 (K-119); Windows
-  needs Media Foundation, Linux needs V4L2 or PipeWire.
+- ~~**camera.capture**~~ -- NO LONGER a gap in code. Corrected 2026-08-27:
+  `platform_backend()` returns `NokhwaCameraBackend` for BOTH Windows
+  (`input-msmf`, Media Foundation) and Linux (`input-v4l`, V4L2), shipped in
+  021f19e01 (K-148) after this line was written. The dependency is declared
+  per target in crates/runtime/Cargo.toml, so it compiles into both builds.
+  UNVERIFIED AGAINST REAL HARDWARE on either system: there is no evidence run,
+  and the code path has only ever been reasoned about, never pointed at a
+  physical webcam. Treat "implemented" and "works" as separate claims until a
+  device test exists. This entry read "returns None" for six days after it
+  stopped being true, which is why a stale gap list is worse than none.
 - ~~**ui.clipboard**~~ -- NOT a gap. Corrected 2026-08-20: the Windows adapter
   implements clipboard through `arboard`; the `Unsupported` arms are the
   `#[cfg(not(target_os = "windows"))]` fallbacks, which is the opposite of what

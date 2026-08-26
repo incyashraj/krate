@@ -4147,10 +4147,20 @@ fn report_workspace_from(session_json: &str) -> Option<PathBuf> {
 ///
 /// Membership is deliberately narrow. Every entry here is a door that does
 /// not exist in KRATE_CAPABILITY_SPECS -- not one that is merely unfinished
-/// on some platform. The camera is the cautionary case and is NOT listed:
-/// `camera.capture` is real and shipped on macOS (K-119), so telling a Mac
-/// user "Krate cannot do cameras" would be a lie told confidently, which is
-/// worse than the forty-minute discovery this gate exists to prevent.
+/// on some platform.
+///
+/// The camera is the cautionary case and is NOT listed. `camera.capture` is
+/// declared, and a backend exists on all three desktop systems: AVFoundation
+/// on macOS (K-119), and nokhwa over Media Foundation and V4L2 on Windows and
+/// Linux (K-148). Saying "Krate cannot do cameras" would be false everywhere.
+///
+/// The reason it stays out is worth keeping even if that changes. This gate
+/// answers "does the door exist", which is a fact about the manifest and is
+/// the same on every machine. It must not try to answer "will it work here",
+/// which depends on hardware, drivers and permissions -- nobody has pointed
+/// the Windows or Linux camera path at a physical webcam yet. A request that
+/// might work has to be allowed to try; only a door that does not exist at
+/// all is safe to refuse from a keyword.
 ///
 /// A wrong hit here refuses work Krate can really do, so the words that
 /// trigger each one have to be words that cannot plausibly mean anything
@@ -12987,8 +12997,10 @@ mod wall_tests {
             "a note app with a background image",
             "a game with a scrolling background",
             "a photo viewer for images I drop on it",
-            // The camera, deliberately: it is real on macOS (K-119), so it
-            // must never be gated as a wall.
+            // The camera, deliberately. A backend exists on all three desktop
+            // systems (K-119 macOS, K-148 Windows and Linux), so refusing it
+            // would be false everywhere -- and even where hardware might let
+            // it down, "might not work here" is not this gate's question.
             "an app that shows my webcam feed with a photo button",
             "a camera app that takes a picture",
         ];
