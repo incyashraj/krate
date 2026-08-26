@@ -116,9 +116,29 @@ Fix:      Two changes, both proven:
              desktop.is_dir(), and stat-ing a TCC-guarded folder is itself
              the trigger; the new default_app_dir() creates ~/Krate Apps
              instead and never probes a guarded path.
-          Regression test: the_agent_never_inherits_the_persons_home asserts
-          HOME is the agent dir and the toolchain vars still resolve from the
-          real home.
+          3. The ENGINE confines too, not just the Studio. `krate create` in
+             a terminal is its own door and the Studio delegates builds to
+             the engine, so the Studio-only fix leaked. Found by testing,
+             not by reading.
+          Two near-misses caught in a FRESH macOS account (user "test",
+          created for this), both of which would have shipped:
+            - Rebasing HOME without moving the credential: every build died
+              "Not logged in · Please run /login". The engine now seeds the
+              credential into the confined home first.
+            - Then confining only when seeding SUCCEEDED, which silently
+              handed the real home back to anyone with no credential yet --
+              a first-time user, exactly the person meeting these prompts.
+              Measured in the fresh account: AGENT_SEES_HOME=/Users/test.
+              Confinement is now unconditional; after the fix the same probe
+              reports AGENT_SEES_HOME=/Users/test/.krate/agent-home with
+              CARGO_HOME=/Users/test/.cargo intact.
+          Cold-room evidence: a fresh macOS account installed Krate from
+          krate.tech and ran an app (115 KB screenshot) with ZERO entries in
+          the TCC log. A bundle given an identity macOS had never seen
+          launched with zero protected-folder handles and no dialogs.
+          Regression tests: the_agent_never_inherits_the_persons_home (studio),
+          the_agents_home_is_confined_for_everyone_including_first_time_users
+          (engine), finished_apps_never_land_in_a_folder_macos_guards (cli).
 
 ### K-178 -- A double-clicked game on Windows shows consent, gets approved, and never opens
 

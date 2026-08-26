@@ -5429,6 +5429,72 @@ fn run_provider_author_resuming(
 /// writing code, the progress reporting, the timeout, and the `check-app`
 /// verdict. Only the argument list, the spawn setup, and the progress parsing
 /// come from the provider -- which is exactly the split the trait draws.
+/// Copy what the agent needs to sign in into its confined home.
+///
+/// Returns whether the agent can be expected to authenticate from
+/// `agent_home`. The caller confines HOME only when this says yes, because
+/// a confined agent that cannot log in cannot write anything at all -- and
+/// a permission prompt is a smaller harm than a product that does not work
+/// (K-179).
+///
+/// Only the credential and the settings travel. Project history does not:
+/// it is a list of the person's own paths, and the whole point of the
+/// confined home is that the agent has no map of their disk.
+/// Whether the agent's home is confined, given a real home.
+///
+/// Split out so the rule can be asserted: confinement does NOT depend on
+/// seeding, on a credential existing, or on anything about how long the
+/// person has used Krate. A fresh account confines exactly like an old one.
+fn agent_home_for(real_home: &Path) -> PathBuf {
+    real_home.join(".krate").join("agent-home")
+}
+
+fn seed_agent_home(real_home: &Path, agent_home: &Path) -> bool {
+    // Settings, minus the history of places the person has worked.
+    if let Ok(text) = fs::read_to_string(real_home.join(".claude.json")) {
+        if let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&text) {
+            value["projects"] = serde_json::json!({});
+            let _ = fs::write(
+                agent_home.join(".claude.json"),
+                serde_json::to_string(&value).unwrap_or_default(),
+            );
+        }
+    }
+
+    // The credential itself. The keychain is the macOS home for it; a file
+    // is the form everywhere else and the fallback here.
+    let config = agent_home.join(".claude");
+    let _ = fs::create_dir_all(&config);
+    let dest = config.join(".credentials.json");
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(out) = ProcessCommand::new("/usr/bin/security")
+            .args([
+                "find-generic-password",
+                "-s",
+                "Claude Code-credentials",
+                "-w",
+            ])
+            .output()
+        {
+            if out.status.success() && !out.stdout.is_empty() {
+                if fs::write(&dest, out.stdout.trim_ascii()).is_ok() {
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        let _ = fs::set_permissions(&dest, fs::Permissions::from_mode(0o600));
+                    }
+                    return true;
+                }
+            }
+        }
+    }
+    if !dest.exists() {
+        let _ = fs::copy(real_home.join(".claude/.credentials.json"), &dest);
+    }
+    dest.exists()
+}
+
 fn run_provider_author(
     provider: &'static dyn agent_provider::AgentProvider,
     app_dir: &str,
@@ -5485,6 +5551,51 @@ fn run_provider_author(
     // codex refused all of them -- so codex could never author anything, and
     // the person saw a generic "that build didn't come together" (K-139).
     command.current_dir(app_dir);
+    // And the agent's `~` is OURS, not the person's (K-179).
+    //
+    // The working directory above decides where the agent starts; HOME
+    // decides what `~` means, and an agent running with permissions
+    // bypassed will happily `ls ~/Downloads`. On macOS a child's file
+    // access is attributed to the PARENT BUNDLE, so that listing became the
+    // system demanding the person's Downloads folder in Krate's name --
+    // measured: with the real HOME the agent read actual private documents
+    // out of ~/Downloads; with this rebased it reports the path does not
+    // exist.
+    //
+    // The Studio sets this too, but the engine must set it as well: `krate
+    // create` in a terminal is its own door, and the Studio delegates the
+    // build to this very code.
+    if let Some(home) = home_dir() {
+        let agent_home = agent_home_for(&home);
+        // Seed the credential into the confined home, then confine
+        // REGARDLESS of whether seeding found one.
+        //
+        // The first cut rebased HOME without moving the credential and every
+        // build died with "Not logged in". The second cut over-corrected:
+        // it confined only when seeding SUCCEEDED, which silently handed the
+        // real home back to exactly the person who most needs confining --
+        // a brand-new user with no credential yet. Measured in a fresh macOS
+        // account: the agent was handed HOME=/Users/test, the real one, and
+        // the prompts would have returned (K-179).
+        //
+        // So: always confine. A person who has never signed the agent in is
+        // told to sign in either way; that message is the agent's own and
+        // arrives whatever HOME says. What must never happen is Krate
+        // quietly asking for their Downloads folder.
+        let _ = seed_agent_home(&home, &agent_home);
+        if std::fs::create_dir_all(&agent_home).is_ok() {
+            command.env("HOME", &agent_home);
+            // cargo and rustup resolve their homes from $HOME, and the agent
+            // builds the app it writes -- pin them to the real one or
+            // confining the agent costs it its compiler.
+            if std::env::var_os("CARGO_HOME").is_none() {
+                command.env("CARGO_HOME", home.join(".cargo"));
+            }
+            if std::env::var_os("RUSTUP_HOME").is_none() {
+                command.env("RUSTUP_HOME", home.join(".rustup"));
+            }
+        }
+    }
     // Hot sessions (the last piece of the speed study): a repair round or a
     // revise RESUMES the session that wrote the app instead of cold-starting
     // one that must re-read everything -- measured cold, the reading alone
@@ -12687,7 +12798,31 @@ mod home_tests {
 
 #[cfg(test)]
 mod create_tests {
-    use super::{change_prompt, extract_plan_json, CHANGE_MARKER};
+    use super::{agent_home_for, change_prompt, extract_plan_json, CHANGE_MARKER};
+
+    /// A brand-new person gets confined exactly like an old one.
+    ///
+    /// This test exists because the fix nearly shipped broken in the other
+    /// direction: an earlier cut confined the agent only when a credential
+    /// could be seeded into the confined home, which meant somebody who had
+    /// never signed the agent in -- a first-time user, the very person
+    /// meeting these prompts -- silently kept the real home. Measured in a
+    /// fresh macOS account: the agent was handed HOME=/Users/test (K-179).
+    #[test]
+    fn the_agents_home_is_confined_for_everyone_including_first_time_users() {
+        let real = Path::new("/Users/newcomer");
+        let confined = agent_home_for(real);
+
+        assert!(
+            confined.starts_with(real.join(".krate")),
+            "the agent's home must live under Krate's own directory, got {}",
+            confined.display()
+        );
+        assert_ne!(
+            confined, real,
+            "the agent must never be handed the person's real home"
+        );
+    }
 
     /// A change and a new app are different jobs and must get different
     /// instructions. They used to share one prompt, so an AI asked to move a

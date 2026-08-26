@@ -1660,6 +1660,34 @@ fn humanise_bytes(bytes: u64) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// A finished app must never land in a folder macOS guards.
+    ///
+    /// The default was `~/Desktop`, and finding it called `is_dir()` --
+    /// stat-ing a TCC-guarded folder is itself what makes the system demand
+    /// access to it in Krate's name. Somebody who typed `krate create` to
+    /// make a calculator was asked to hand over their Desktop (K-179).
+    #[test]
+    fn finished_apps_never_land_in_a_folder_macos_guards() {
+        let dir = super::default_app_dir();
+        let text = dir.to_string_lossy();
+        for guarded in [
+            "/Desktop",
+            "/Documents",
+            "/Downloads",
+            "/Movies",
+            "/Pictures",
+        ] {
+            assert!(
+                !text.contains(guarded),
+                "the default output folder must not be inside {guarded}, got {text}"
+            );
+        }
+        assert!(
+            text.ends_with("Krate Apps") || text == ".",
+            "expected ~/Krate Apps (or the fallback), got {text}"
+        );
+    }
+
     #[test]
     fn permissions_are_said_in_words_a_person_would_use() {
         // Opening an app from the menu grants everything its manifest asks
