@@ -71,6 +71,41 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-189 -- the confined agent home carries only Claude's sign-in, so every other AI runs signed out
+
+Status:   fix written, NOT verified end to end
+Owner:    claude
+Severity: blocker
+Class:    our-code
+Found:    2026-08-27. Aanchala's Grok builds failed with "Not signed in",
+          twice. Yashraj then had her run `grok` in a terminal: the TUI opened
+          and she could talk to it, so she WAS signed in and the transcript
+          was telling the truth about a state Krate had created.
+Evidence: Krate rebases the agent's HOME to ~/.krate/agent-home (K-179, so the
+          agent cannot ask for the person's Downloads folder in Krate's name),
+          and seed_agent_home copies exactly four paths across:
+            .claude.json, .claude, .claude/.credentials.json, .credentials.json
+          All Claude. Nothing for Grok, Codex, Gemini or Copilot, whose
+          credentials live in ~/.grok/auth.json and friends.
+          Measured on this machine, same signed-in Grok, one variable changed:
+            HOME=<real>               -> 0 "not signed in"
+            HOME=~/.krate/agent-home  -> 2 "not signed in", identical text
+          So the confinement that protects the person's files also signs them
+          out of every AI except Claude.
+Fix       seed_agent_home now shallow-copies ~/.grok, ~/.codex, ~/.gemini,
+written:  ~/.copilot and the ~/.config variants into the confined home, and
+          creates the directory first (the caller created it AFTER seeding, so
+          on a first run every copy landed nowhere -- Claude's survived only
+          because it makes its own subdirectory on the way).
+NOT       An end-to-end `krate create --agent grok` still printed "not signed
+verified: in" after the change and auth.json was still absent from the copy. I
+          do not know why, and I stopped rather than guess further. The change
+          is safe (it copies files if present and ignores failure) but it must
+          not be described as fixed until a run proves it. Next step is to
+          instrument seed_agent_home and watch one real authoring run, not to
+          reason about it.
+
+
 ### K-187 -- two writers tear the transcript in half, so a signed-out AI reports nothing
 
 Status:   fixed
@@ -325,7 +360,23 @@ Note:     The machinery is all there, which makes this a wiring bug rather
               FOUR of the five: claude @anthropic-ai/claude-code, codex
               @openai/codex, gemini @google/gemini-cli, copilot @github/copilot.
               Only grok is None (no npm package).
-Tested 2026-08-27, and this is where the guessing has to stop. Driving the
+SETTLED 2026-08-27 by his own output. He ran the engine from inside the
+          bundle and `krate ai --json` returned, on HIS machine:
+            claude  state=missing  install_package=@anthropic-ai/claude-code
+            codex   state=working  install_package=@openai/codex
+            gemini  state=missing  install_package=@google/gemini-cli
+            copilot state=missing  install_package=@github/copilot
+            grok    state=missing  install_package=null
+          So the data was right: three rows (claude, gemini, copilot) were
+          "missing" WITH a package, which is exactly the branch that draws an
+          Install button, and only grok legitimately has none. The engine is
+          not at fault and neither is the row logic.
+          What remains unexplained is only the screenshot, and it is no longer
+          worth chasing from here: the picker he saw may predate the build he
+          now has, or the buttons may have been below his fold. Re-check on
+          the next release with a fresh screenshot before spending more on it.
+
+Earlier testing, kept because it rules things out: Driving the
           REAL openAiSheet() in a browser with HIS exact rows -- claude
           missing, codex working, gemini/copilot/grok missing -- produces:
             Claude  -> Install (82px, visible)

@@ -4094,17 +4094,41 @@ fn report_command(session: &str, output: Option<&Path>) -> Result<u8> {
             .unwrap_or_else(|| "not on PATH".to_string());
         about.push_str(&format!("{tool}: {found}\n"));
     }
+    // The same three states the AI picker shows, not a yes/no.
+    //
+    // This said only "installed" or "missing", and "installed" covers both a
+    // tool that works and one that is signed out -- which is the difference
+    // between a build that runs and a build that dies in one second. Two
+    // outside reports in a row could not be told apart from their own report
+    // files, and both needed a round trip to the person to learn something
+    // their machine already knew (K-182, K-187).
     for provider in agent_provider::PROVIDERS {
-        about.push_str(&format!(
-            "agent {}: {}\n",
-            provider.name(),
-            if agent_provider::is_installed(*provider) {
-                "installed"
-            } else {
-                "missing"
+        let state = match probe_with_cache(*provider) {
+            agent_provider::Readiness::Working => "working".to_string(),
+            agent_provider::Readiness::NotReady { summary, .. } => {
+                let summary = summary.trim();
+                if summary.is_empty() {
+                    "installed but not ready".to_string()
+                } else {
+                    format!("installed but not ready -- {summary}")
+                }
             }
-        ));
+            agent_provider::Readiness::Missing => "missing".to_string(),
+        };
+        about.push_str(&format!("agent {}: {state}\n", provider.name()));
     }
+    // Where the engine is, which is the other thing a report could not say.
+    // A Studio user has no `krate` on PATH at all (K-188), so "which krate"
+    // is not a question they can answer.
+    if let Ok(exe) = std::env::current_exe() {
+        about.push_str(&format!("engine: {}\n", exe.display()));
+    }
+    about.push_str(&format!(
+        "engine on PATH: {}\n",
+        agent_provider::which_on_path("krate")
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "no".to_string())
+    ));
     files.push(("about.txt".to_string(), about.into_bytes()));
 
     let file = fs::File::create(&out).with_context(|| format!("write {}", out.display()))?;
@@ -5661,6 +5685,13 @@ fn agent_home_for(real_home: &Path) -> PathBuf {
 }
 
 fn seed_agent_home(real_home: &Path, agent_home: &Path) -> bool {
+    // The directory has to exist before anything is copied into it. The
+    // caller creates it too, but AFTER this runs, so on a first run every
+    // copy here landed in a directory that was not there yet and failed
+    // silently. Claude's seeding survived only because it makes its own
+    // subdirectory on the way; the per-provider copies below did not.
+    let _ = fs::create_dir_all(agent_home);
+
     // Settings, minus the history of places the person has worked.
     if let Ok(text) = fs::read_to_string(real_home.join(".claude.json")) {
         if let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&text) {
@@ -5703,7 +5734,59 @@ fn seed_agent_home(real_home: &Path, agent_home: &Path) -> bool {
     if !dest.exists() {
         let _ = fs::copy(real_home.join(".claude/.credentials.json"), &dest);
     }
+
+    // Every OTHER tool's sign-in, for the same reason Claude's is here.
+    //
+    // Confining the agent's HOME (K-179) stops it asking for the person's
+    // Downloads folder in Krate's name. It also hides every credential that
+    // lives under the real home -- and only Claude's was ever copied across,
+    // so Grok, Codex, Gemini and Copilot were all signed OUT the moment they
+    // ran under Krate, on machines where the person had signed in perfectly
+    // well.
+    //
+    // The first outside user to try Grok hit exactly this. Her `grok` TUI
+    // worked; her Krate build said "Not signed in". Measured on this
+    // machine, same signed-in tool, one variable changed:
+    //   HOME=<real>                  -> 0 "not signed in"
+    //   HOME=~/.krate/agent-home     -> 2 "not signed in"   (K-189)
+    //
+    // Copied, never moved or symlinked: the confined copy is the agent's to
+    // read, and a symlink would put the real file back inside the sandbox
+    // this confinement exists to draw.
+    for dir in [".grok", ".codex", ".gemini", ".copilot"] {
+        let from = real_home.join(dir);
+        if from.is_dir() {
+            let _ = copy_dir_shallow(&from, &agent_home.join(dir));
+        }
+    }
+    // Gemini and Copilot also use ~/.config on some installs.
+    for dir in ["gemini", "github-copilot"] {
+        let from = real_home.join(".config").join(dir);
+        if from.is_dir() {
+            let to = agent_home.join(".config").join(dir);
+            let _ = fs::create_dir_all(agent_home.join(".config"));
+            let _ = copy_dir_shallow(&from, &to);
+        }
+    }
+
     dest.exists()
+}
+
+/// Copy the files directly inside `from` into `to`, creating `to`.
+///
+/// Shallow on purpose. A credential is a small file at the top of a tool's
+/// config directory; the deep contents are caches, logs and session history
+/// -- the very material the confined home exists to keep out of reach, and
+/// copying it would be both slow and contrary to the point.
+fn copy_dir_shallow(from: &Path, to: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(to)?;
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        if entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+            let _ = fs::copy(entry.path(), to.join(entry.file_name()));
+        }
+    }
+    Ok(())
 }
 
 fn run_provider_author(
