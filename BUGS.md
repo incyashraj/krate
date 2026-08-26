@@ -73,8 +73,8 @@ Fix:      what needs to happen, or the commit that did it.
 
 ### K-181 -- the notes.krate published on krate.tech exits 2 while working correctly
 
-Status:   unclaimed
-Owner:    unclaimed
+Status:   fixed in source, awaiting republish
+Owner:    claude
 Severity: serious
 Class:    example-bug
 Found:    2026-08-26, claude, reading the nightly CI failure before cutting
@@ -100,9 +100,22 @@ matters:  wraps it -- a script, a launcher, CI, `&&` in a shell -- sees a
           failed program. It also silently disarms the cold-path gate: the
           test that exists to prove a stranger's first run works has been
           red on every platform since it started failing.
-Next:     Find the exit path in the notes app source, return 0 on success,
-          rebuild and republish notes.krate, then confirm the three
-          cold-install jobs go green.
+Cause:    apps/krate-notes/src/lib.rs ended run() with
+            if close_requested { 2 } else { 0 }
+          and close_requested is set by types::Event::CloseRequested -- the
+          event a person generates by clicking the X. So the app reported
+          failure for the ordinary way of quitting it, not only headless.
+          Headless just makes it deterministic: the host closes the window,
+          so the demo failed on every CI run on all three platforms.
+Fixed:    return 0. Verified with the exact commands the cold-install gate
+          runs, both halves:
+            no grants  -> exit 5, "needs permission"   (gate wants 5)
+            with grants-> exit 0, note:Ship the demo   (gate wants 0)
+          check-app passes every stage.
+Next:     Republish notes.krate to the notes-v0.1.0 release asset that
+          pages.yml pulls from (release.yml does not build this app), then
+          confirm the three cold-install jobs go green. Blocked on the
+          GitHub Actions outage that began 2026-08-26 15:11 UTC.
 
 ### K-180 -- a dev Studio silently loses the planning conversation, because studio/bin/krate goes stale
 

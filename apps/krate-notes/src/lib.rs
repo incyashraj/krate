@@ -922,11 +922,13 @@ impl bindings::Guest for Component {
             let _ = out.write(b"saved:yes\n");
         }
 
-        if close_requested {
-            2
-        } else {
-            0
-        }
+        // Closing the window is how a person quits an app, not a failure.
+        // This returned 2 for it, so the demo the website hands a stranger
+        // reported failure every time it was used correctly: headless, where
+        // the host closes the window, and equally for anyone who clicked the
+        // X. Anything wrapping the app -- a script, a shell `&&`, the
+        // cold-install gate in CI -- saw a program that had failed (K-181).
+        0
     }
 }
 
