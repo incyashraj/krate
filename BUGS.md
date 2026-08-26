@@ -71,6 +71,85 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-187 -- two writers tear the transcript in half, so a signed-out AI reports nothing
+
+Status:   fixed
+Owner:    claude
+Severity: blocker
+Class:    our-code
+Found:    2026-08-27. Aanchala, a first-time user on her own MacBook, tried to
+          make a photo editor and then a calendar with Grok. Both died in one
+          second and said only "the grok agent did not finish successfully;
+          see <file>". She sent the file, and it said, in plain English:
+            Error: Not signed in. To authenticate without a browser, run:
+              grok login --device-code
+          Krate had the answer on disk the whole time and showed her none of it.
+Evidence: Reproduced exactly: a signed-out grok exits 1 and writes the SAME
+          error twice -- once as a JSON event on stdout, once as prose on
+          stderr:
+            {"type":"error","message":"Not signed in. To authenticate ..."}
+            Error: Not signed in. To authenticate without a browser, run:
+          The JSON event parses correctly (type=error + message, both of which
+          agent_failure_reason_in already reads), so it should have been
+          quoted. It was not, and her file shows why. It ends with the orphan
+          fragment:
+            achine with a browser."}
+          which is the TAIL of that JSON event, cut in two. The transcript has
+          two independent writers and no lock between them: stderr is wired
+          straight to the file at spawn (main.rs:5882), while the reporter
+          thread opens its own append handle and writes every stdout line
+          (main.rs:5929). A stderr write landed in the middle of the JSON
+          line, so it no longer began with `{`, the parser skipped it, and
+          agent_failure_reason returned None.
+Fixed:    agent_failure_reason_in now also reads a plain-text "Error:" line
+          and the indented continuation under it, and prefers a surviving
+          JSON event when there is one. The reason is now independent of
+          whether the JSON won the race. Verified against her real transcript,
+          reconstructed with the tear in the same place:
+            REASON: "Not signed in. To authenticate without a browser, run:
+                     grok login --device-code"
+          The continuation matters: the first line names the problem and the
+          second carries the cure, and a reason without the cure sends the
+          person to a search engine.
+Still     The interleaving itself is NOT fixed -- stderr and the reporter
+open:     still share the file with no coordination, so any long JSON line can
+          still be torn. The parser no longer depends on it, so this is now a
+          cosmetic corruption rather than a silent failure, but the real fix
+          is to pipe stderr through the same thread that owns the file. Left
+          out of this change deliberately: it is a spawn-path change with a
+          real risk of losing stderr entirely, and it should not ride along
+          with a fix people are waiting on.
+
+### K-188 -- `krate` is not on PATH after installing Krate Studio
+
+Status:   unclaimed
+Owner:    unclaimed
+Severity: serious
+Class:    our-code
+Found:    2026-08-27, Nakshatra's MacBook, while trying to run a diagnostic:
+            $ krate ai --json
+            zsh: command not found: krate
+            $ krate --version
+            zsh: command not found: krate
+          He has Krate Studio installed and working -- he opened apps from the
+          cloud successfully in the same session -- so this is not a broken
+          install.
+Cause:    The .dmg installs Krate.app, and the engine lives inside the bundle
+          at Contents/Resources/bin/krate. engine() finds it there, which is
+          why the Studio works. Nothing ever puts it on the shell PATH; only
+          the CLI tarball from krate.tech does that.
+Why it    Every support instruction we give starts with a `krate` command, and
+matters:  for a Studio-only user none of them work. It also makes a Studio
+          user unable to answer the one question that would diagnose their own
+          problem, which is how K-183 stalled.
+Next:     Decide deliberately, do not guess: either the Studio offers to
+          symlink its engine into /usr/local/bin (asking first, because
+          writing there needs a password), or support instructions stop
+          assuming a `krate` on PATH and give the in-bundle path instead. The
+          second is free and works today:
+            /Applications/Krate.app/Contents/Resources/bin/krate ai --json
+
+
 ### K-185 -- every support report sent from the Studio arrives without the evidence
 
 Status:   fixed

@@ -6566,9 +6566,52 @@ fn agent_failure_reason(transcript: &Path) -> Option<String> {
 /// two were indistinguishable there, and a refusal became a build (K-182).
 fn agent_failure_reason_in(text: &str) -> Option<String> {
     let mut last = None;
+    // A plain-text error, kept separately and used only if no JSON event is
+    // found. Tools write their fatal error to stderr as prose as well as
+    // emitting it as an event, and the prose is the copy that survives.
+    let mut plain: Option<String> = None;
+    let mut plain_wants_more = false;
     for line in text.lines() {
         let line = line.trim();
         if !line.starts_with('{') {
+            // Grok's "Error: Not signed in..." arrives here.
+            //
+            // The transcript has two writers with no lock between them --
+            // stderr is wired to the file at spawn, and the reporter thread
+            // appends every stdout line to the same file -- so a long JSON
+            // event can be torn in half by a stderr write landing mid-line.
+            // That is exactly what happened to the first outside user who
+            // tried Grok: her transcript ends with the orphan fragment
+            //   achine with a browser."}
+            // which is the tail of the error event, cut in two. The JSON was
+            // unparseable, this loop skipped every line, and she was told
+            // "the grok agent did not finish successfully; see <file>" when
+            // the file itself said "Not signed in" in plain English (K-187).
+            //
+            // Reading the prose too makes the answer independent of whether
+            // the JSON survived the race.
+            if let Some(rest) = line.strip_prefix("Error:").or_else(|| line.strip_prefix("error:"))
+            {
+                let rest = rest.trim();
+                if !rest.is_empty() && plain.is_none() {
+                    plain = Some(rest.to_string());
+                    // Keep collecting: the command that fixes it is on the
+                    // NEXT line ("  grok login --device-code"), and a reason
+                    // that names the problem without the cure sends the
+                    // person back to a search engine.
+                    plain_wants_more = true;
+                    continue;
+                }
+            }
+            // The indented continuation of an error we just started reading.
+            if plain_wants_more {
+                if line.is_empty() {
+                    plain_wants_more = false;
+                } else if let Some(existing) = plain.as_mut() {
+                    existing.push(' ');
+                    existing.push_str(line);
+                }
+            }
             continue;
         }
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
@@ -6607,7 +6650,9 @@ fn agent_failure_reason_in(text: &str) -> Option<String> {
             last = Some(unwrapped.trim().to_string());
         }
     }
-    last.map(|reason| {
+    // A JSON event is preferred -- it is the structured, intended channel --
+    // but the prose stands in when the event did not survive.
+    last.or(plain).map(|reason| {
         // One sentence, not a wall. Long provider errors repeat themselves.
         let trimmed: String = reason.chars().take(300).collect();
         // An expired sign-in is the commonest failure of all and the message
@@ -13103,6 +13148,46 @@ mod refusal_tests {
                 "this is an unreadable answer, not a refusal: {text:?}"
             );
         }
+    }
+
+    /// Her transcript, as it actually arrived: the JSON event torn in half by
+    /// a stderr write, leaving an orphan fragment, and the same error present
+    /// only as prose. Before this, every line was skipped and she was told
+    /// "the grok agent did not finish successfully; see <file>" while the
+    /// file said "Not signed in" in plain English (K-187).
+    #[test]
+    fn a_plain_text_error_is_read_when_the_json_event_was_torn_in_half() {
+        let hers = concat!(
+            "Error: Not signed in. To authenticate without a browser, run:\n",
+            "  grok login --device-code\n",
+            "\n",
+            "Alternatively, set the XAI_API_KEY environment variable or run ",
+            "`grok login` on a machine with a browser.\n",
+            // The tail of the JSON event, cut in two by the interleaving.
+            "achine with a browser.\"}\n",
+        );
+        let reason = agent_failure_reason_in(hers)
+            .expect("the prose must be read when the JSON did not survive");
+        assert!(
+            reason.contains("Not signed in"),
+            "she must be told what her tool actually said: {reason}"
+        );
+    }
+
+    /// The JSON event still wins when it survives, because it is the clean
+    /// single sentence rather than the first line of a wrapped paragraph.
+    #[test]
+    fn a_surviving_json_event_is_preferred_over_the_prose() {
+        let both = concat!(
+            r#"{"type":"error","message":"Not signed in. Run: grok login --device-code"}"#,
+            "\n",
+            "Error: Not signed in. To authenticate without a browser, run:\n",
+        );
+        let reason = agent_failure_reason_in(both).expect("an error is present");
+        assert!(
+            reason.contains("Run: grok login"),
+            "the structured event is the better copy: {reason}"
+        );
     }
 
     /// A real plan still parses, so neither check can swallow a good answer.
