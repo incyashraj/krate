@@ -71,6 +71,34 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-192 -- cutting any non-rc tag silently repoints the website, overriding a deliberate rollback
+
+Status:   unclaimed
+Owner:    unclaimed
+Severity: serious
+Class:    our-code
+Found:    2026-08-27. Yashraj decided to serve v0.1.57 from the website while
+          the 0.2.x line was unstable, and it was set. Twenty minutes later
+          the v0.2.1 build finished, its promote job ran, and the website was
+          pointing at v0.2.1 again. Nobody chose that.
+Evidence: release.yml's promote job runs for every tag without "-rc" and
+          does:
+            gh release edit "$TAG" --prerelease=false --latest
+          There is no check for whether someone has deliberately pinned an
+          older release. The pin is a GitHub flag with no record in the repo,
+          so the pipeline cannot see it and overwrites it.
+Why it    A rollback is the thing you do when users are hitting a bug. The one
+matters:  moment it must hold is exactly when a fix is being built -- and that
+          is precisely when the pipeline undoes it. It is silent: the run is
+          green, nothing warns, and the only way to notice is to check the
+          flag by hand afterwards.
+Next:     Make the pin visible to the pipeline. A CHANNEL file in the repo
+          naming the tag the website should serve, with promote refusing to
+          move latest when the file names a different tag, keeps the decision
+          in version control where it can be reviewed -- rather than in a
+          GitHub flag that a later build silently wins.
+
+
 ### K-191 -- the Studio has its OWN credential seeding, and it was Claude-only too
 
 Status:   fixed
