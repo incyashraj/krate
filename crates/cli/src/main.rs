@@ -6203,11 +6203,50 @@ fn run_provider_author(
                 provider.program(),
                 transcript.display()
             ),
-            None => anyhow::bail!(
-                "the {} agent did not finish successfully; see {}",
-                provider.name(),
-                transcript.display()
-            ),
+            None => {
+                // No error event in the transcript, which is the hardest
+                // case to diagnose and was arriving with nothing attached:
+                // a person saw "did not finish successfully; see <file>",
+                // the file stayed on their disk, and a build that died in
+                // one second could not be told apart from one that ran for
+                // ten minutes (K-186).
+                //
+                // Everything known here goes into the message: how the tool
+                // exited, how long it lasted, and the last lines it wrote.
+                // A one-second exit with an empty transcript says "the tool
+                // never started"; a long one with output says something
+                // else entirely, and neither could be seen before.
+                let code = status
+                    .and_then(|s| s.code())
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "killed by a signal".to_string());
+                let text = fs::read_to_string(&transcript).unwrap_or_default();
+                let tail: String = text
+                    .lines()
+                    .rev()
+                    .take(12)
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let evidence = if tail.trim().is_empty() {
+                    format!(
+                        "It wrote nothing at all, which usually means the tool \
+                         failed to start rather than failed to work."
+                    )
+                } else {
+                    format!("The last thing it wrote:\n\n{tail}")
+                };
+                anyhow::bail!(
+                    "the {} agent stopped without saying why (exit {code}).\n\n{evidence}\n\n\
+                     Check that `{}` runs on its own, then try again. The full \
+                     transcript is at {}.",
+                    provider.name(),
+                    provider.program(),
+                    transcript.display()
+                )
+            }
         }
     }
     let lib_after = fs::read_to_string(Path::new(app_dir).join("src/lib.rs")).unwrap_or_default();
