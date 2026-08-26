@@ -71,6 +71,39 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-181 -- the notes.krate published on krate.tech exits 2 while working correctly
+
+Status:   unclaimed
+Owner:    unclaimed
+Severity: serious
+Class:    example-bug
+Found:    2026-08-26, claude, reading the nightly CI failure before cutting
+          v0.2.0. Three jobs failed -- ubuntu, macOS and windows cold-install
+          -- on a commit that had passed the day before, which is what made
+          it worth chasing rather than dismissing as flake.
+Evidence: The cold-install walk runs the demo app the website hands a new
+          person, and asserts it exits 0:
+            krate run --headless --grant 'fs.read:notes/**' \
+              --grant 'fs.write:notes/**' https://krate.tech/notes.krate
+            => exit 2
+            stdout: note:Ship the demo
+                    saved:yes
+            stderr: (empty)
+          Reproduced locally on macOS with the current engine. The app does
+          its job -- it reads its note and saves -- and then reports failure.
+          Exit 2 out of the runtime is InvalidComponent, but that path prints
+          to stderr and stderr is empty, so this is RunOutcome::Exited(2):
+          the guest's own return value. The bug is in the published bundle,
+          not in the engine.
+Why it   A person following the website runs this app first. Anything that
+matters:  wraps it -- a script, a launcher, CI, `&&` in a shell -- sees a
+          failed program. It also silently disarms the cold-path gate: the
+          test that exists to prove a stranger's first run works has been
+          red on every platform since it started failing.
+Next:     Find the exit path in the notes app source, return 0 on success,
+          rebuild and republish notes.krate, then confirm the three
+          cold-install jobs go green.
+
 ### K-180 -- a dev Studio silently loses the planning conversation, because studio/bin/krate goes stale
 
 Status:   fixed
