@@ -957,6 +957,38 @@ fn watch_build_shots(
 }
 
 /// Spawn an authoring child, stream its lines to the UI, read the result.
+/// The environment that keeps the agent out of the person's home folder.
+///
+/// Confining the agent's working directory was half the fix; this is the
+/// other half, and without it the first half leaks. The agent runs with
+/// `--permission-mode bypassPermissions`, so nothing in it declines to look
+/// at a path -- and on macOS a child process's file access is attributed to
+/// the PARENT BUNDLE. So every `~/Downloads` the agent decided to glance at
+/// became the system asking, in Krate's name, for the person's Downloads
+/// folder. A stranger installing Krate met a burst of those prompts before
+/// they had made anything, which reads as an app rummaging through their
+/// files -- the precise opposite of what the permission wall promises
+/// (K-179).
+///
+/// With HOME rebased, `~` inside the agent resolves to a directory holding
+/// its own config and nothing of the person's. Proven by running the agent
+/// under this environment and asking it to `ls ~/Downloads`: it reports the
+/// path does not exist, and the system is never asked.
+///
+/// CARGO_HOME and RUSTUP_HOME must then be pinned to the REAL home, because
+/// cargo and rustup resolve them from `$HOME` and the agent builds the app
+/// it writes -- rebasing HOME without this costs the agent its compiler.
+fn agent_home_env(agent_home: &Path, real_home: &Path) -> Vec<(&'static str, PathBuf)> {
+    let mut env: Vec<(&'static str, PathBuf)> = vec![("HOME", agent_home.to_path_buf())];
+    if std::env::var_os("CARGO_HOME").is_none() {
+        env.push(("CARGO_HOME", real_home.join(".cargo")));
+    }
+    if std::env::var_os("RUSTUP_HOME").is_none() {
+        env.push(("RUSTUP_HOME", real_home.join(".rustup")));
+    }
+    env
+}
+
 fn run_author(
     app: &tauri::AppHandle,
     mut cmd: Command,
@@ -1002,6 +1034,10 @@ fn run_author(
     let _ = std::fs::create_dir_all(&agent_home);
     seed_agent_config(&agent_home);
     cmd.env("CLAUDE_CONFIG_DIR", &agent_home);
+
+    for (key, value) in agent_home_env(&agent_home, &dirs_home()) {
+        cmd.env(key, value);
+    }
 
     // USER, when the launcher did not set it: a Finder-launched app does not
     // reliably have it, and the agent needs it to resolve its account.
@@ -2718,7 +2754,38 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::slugify;
+    use super::{agent_home_env, slugify};
+    use std::path::{Path, PathBuf};
+
+    /// The agent's `~` must never be the person's home. This is the line
+    /// between "an AI wrote you an app" and "an app asked for your
+    /// Downloads folder" (K-179).
+    #[test]
+    fn the_agent_never_inherits_the_persons_home() {
+        let agent = Path::new("/Users/someone/.krate/studio/agent");
+        let real = Path::new("/Users/someone");
+        let env = agent_home_env(agent, real);
+
+        let home = env
+            .iter()
+            .find(|(key, _)| *key == "HOME")
+            .map(|(_, value)| value.clone())
+            .expect("HOME is always set");
+        assert_eq!(home, PathBuf::from(agent));
+        assert_ne!(home, PathBuf::from(real));
+
+        // And the toolchain still points at the real one, or the agent
+        // cannot build what it writes.
+        for (key, value) in &env {
+            if *key == "CARGO_HOME" || *key == "RUSTUP_HOME" {
+                assert!(
+                    value.starts_with(real) && !value.starts_with(agent),
+                    "{key} must resolve from the real home, got {}",
+                    value.display()
+                );
+            }
+        }
+    }
 
     /// The file carries the app's name, not the sentence that asked for it.
     #[test]

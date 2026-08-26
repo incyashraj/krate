@@ -1604,7 +1604,7 @@ fn default_output_path(request: &str) -> PathBuf {
     } else {
         slug
     };
-    let dir = dirs_desktop().unwrap_or_else(|| PathBuf::from("."));
+    let dir = default_app_dir();
     let mut candidate = dir.join(format!("{name}.krate"));
     // Never silently overwrite an app someone already made.
     let mut n = 2;
@@ -1615,10 +1615,28 @@ fn default_output_path(request: &str) -> PathBuf {
     candidate
 }
 
-fn dirs_desktop() -> Option<PathBuf> {
-    let home = crate::home_dir()?;
-    let desktop = home.join("Desktop");
-    desktop.is_dir().then_some(desktop)
+/// Where a finished app lands: `~/Krate Apps`, the same folder the Studio
+/// writes to.
+///
+/// It used to be `~/Desktop`, and that one line cost trust. macOS guards
+/// Desktop, Documents and Downloads with TCC, and merely STAT-ING the
+/// folder -- `desktop.is_dir()` -- makes the system demand access to it in
+/// Krate's name. A person who typed `krate create` to make a calculator was
+/// asked to hand over their Desktop, which reads like an app rummaging
+/// through their files (K-179). The Studio moved off Documents for exactly
+/// this reason; the CLI never got the same fix.
+///
+/// The home folder itself is not guarded, so this asks for nothing. It is
+/// created rather than probed: no `is_dir()` on a guarded path, ever.
+fn default_app_dir() -> PathBuf {
+    let Some(home) = crate::home_dir() else {
+        return PathBuf::from(".");
+    };
+    let dir = home.join("Krate Apps");
+    match std::fs::create_dir_all(&dir) {
+        Ok(()) => dir,
+        Err(_) => home,
+    }
 }
 
 fn humanise(elapsed: Duration) -> String {

@@ -71,6 +71,55 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-179 -- macOS asks for Downloads, Documents and Music in Krate's name, because the AI agent inherits our identity
+
+Status:   claimed
+Owner:    claude
+Severity: blocker
+Class:    our-code
+Found:    2026-08-26, by Yashraj: "whenever someone installs and opens krate,
+          it bombards them with allow access to downloads, documents, music".
+          Found while approaching content creators -- a stranger reads these
+          prompts as Krate demanding their whole home folder, which is the
+          exact opposite of what the permission wall promises.
+Evidence: NOT the permission wall and NOT the app-running path. A live launch
+          of the installed /Applications/Krate.app holds ZERO handles under
+          Desktop/Documents/Downloads/Music/Pictures:
+            lsof -p <studio pid> | grep -icE 'Desktop|Documents|Downloads|Music|Pictures'
+            => 0
+          The prompts come from the CHILD we spawn. studio/src/main.rs spawns
+          the agent with cmd.current_dir(work) and, in agent_provider.rs,
+          `--permission-mode bypassPermissions`. On macOS, TCC attributes a
+          child process's file access to the PARENT BUNDLE's identity, so
+          every folder Claude Code explores is asked for in Krate's name.
+          Second, independent source: crates/cli/src/tui.rs:1618 dirs_desktop()
+          calls desktop.is_dir() and the CLI writes finished apps to ~/Desktop;
+          stat-ing Desktop is itself a TCC trigger. The Studio's default was
+          moved to ~/Krate Apps for this exact reason (studio/src/main.rs:252
+          comment) and the CLI never got the same fix.
+Fix:      Two changes, both proven:
+          1. agent_home_env() rebases the agent's HOME onto
+             ~/.krate/studio/agent, so `~` inside the agent is Krate's own
+             scratch dir. PROVEN: run the agent under that environment and
+             ask it to `ls ~/Downloads` -- it answers "No such file or
+             directory ... ~ resolves to .krate/studio/agent, not your real
+             home", and the system is never asked. CARGO_HOME and RUSTUP_HOME
+             are pinned to the REAL home in the same function, because cargo
+             resolves them from $HOME and the agent builds what it writes;
+             without that pin, confining the agent would cost it its
+             compiler. Sign-in verified working under the rebased HOME (a
+             401 during testing was a day-old seeded credential, not the
+             change: re-seeding from the keychain, which seed_agent_config
+             does every spawn, authenticates).
+          2. The CLI's default output moved from ~/Desktop to ~/Krate Apps,
+             where the Studio already writes. dirs_desktop() called
+             desktop.is_dir(), and stat-ing a TCC-guarded folder is itself
+             the trigger; the new default_app_dir() creates ~/Krate Apps
+             instead and never probes a guarded path.
+          Regression test: the_agent_never_inherits_the_persons_home asserts
+          HOME is the agent dir and the toolchain vars still resolve from the
+          real home.
+
 ### K-178 -- A double-clicked game on Windows shows consent, gets approved, and never opens
 
 Status:   open
