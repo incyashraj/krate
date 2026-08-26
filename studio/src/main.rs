@@ -2067,6 +2067,60 @@ fn autorun() -> Option<String> {
 ///    directory needs an administrator -- asking for a password on first
 ///    launch is worse than not having the shortcut.
 /// 3. **Record that this ran**, so it happens once rather than every launch.
+/// Whether `krate` is reachable from a terminal, and where from.
+///
+/// /usr/local/bin is the first entry in /etc/paths on a stock Mac, so a
+/// symlink there is on PATH for every shell without touching a dotfile.
+#[cfg(target_os = "macos")]
+fn krate_link_path() -> PathBuf {
+    PathBuf::from("/usr/local/bin/krate")
+}
+
+/// Link the engine onto PATH without ever asking for a password.
+///
+/// Returns whether `krate` is now reachable. Fails quietly and often: on a
+/// stock Mac /usr/local/bin is root:wheel, so this only succeeds where
+/// something (Homebrew, a developer setup) has already made it writable.
+/// The password-asking version lives behind a button in Settings, because
+/// a prompt nobody asked for on first launch is worse than no shortcut.
+#[cfg(target_os = "macos")]
+fn link_krate_onto_path(engine: &Path) -> bool {
+    let link = krate_link_path();
+    // An existing link to the CURRENT engine is done; one pointing at an
+    // engine that has moved is worse than none, because the terminal then
+    // runs a version that no longer matches the app.
+    if let Ok(target) = std::fs::read_link(&link) {
+        if target == engine {
+            return true;
+        }
+        let _ = std::fs::remove_file(&link);
+    } else if link.exists() {
+        // A real file, not our symlink -- somebody's own CLI install. Leave
+        // it alone; overwriting a person's tools is never ours to do.
+        return true;
+    }
+    let Some(dir) = link.parent() else { return false };
+    if !dir.is_dir() || !writable(dir) {
+        return false;
+    }
+    std::os::unix::fs::symlink(engine, &link).is_ok()
+}
+
+#[cfg(target_os = "macos")]
+fn writable(dir: &Path) -> bool {
+    // Ask the filesystem rather than reasoning about ownership: a directory
+    // can be group-writable, ACL-writable, or owned outright, and only a
+    // real attempt settles it.
+    let probe = dir.join(".krate-write-probe");
+    match std::fs::File::create(&probe) {
+        Ok(_) => {
+            let _ = std::fs::remove_file(&probe);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
 #[cfg(target_os = "macos")]
 fn first_run_setup() {
     let marker = studio_dir().join("setup-done");
@@ -2093,17 +2147,17 @@ fn first_run_setup() {
                 .status();
         }
 
-        // `krate` on PATH, for the terminal. Only where it does not need a
-        // password: /usr/local/bin is writable by the admin user on most
-        // machines, and when it is not, this is simply skipped.
-        let link = PathBuf::from("/usr/local/bin/krate");
-        if !link.exists() {
-            if let Some(dir) = link.parent() {
-                if dir.is_dir() {
-                    let _ = std::os::unix::fs::symlink(&engine, &link);
-                }
-            }
-        }
+        // `krate` on PATH, for the terminal. Still no password on first
+        // launch -- being asked for one by an app you just dragged in is
+        // worse than not having the shortcut -- but the assumption that
+        // /usr/local/bin is writable by an admin was simply wrong. It is
+        // root:wheel on a stock Mac, so the symlink failed silently on
+        // every machine, `setup-done` was written anyway, and it never
+        // tried again. A first user then found `krate --version` was
+        // "command not found" after a normal drag-to-Applications install,
+        // which is also the first step of every support instruction we
+        // give (K-188).
+        let _ = link_krate_onto_path(&engine);
     }
 
     let _ = std::fs::write(&marker, "1");
@@ -2636,6 +2690,76 @@ fn restart_for_update(app: tauri::AppHandle) -> Result<(), String> {
 /// the caller: a string from the UI that reaches a shell is a hole, and
 /// this one only ever assembles a bare tool name that the engine already
 /// told us about.
+/// Is `krate` reachable from a terminal, and can we fix it without a
+/// password? Read-only: this never changes the machine.
+#[tauri::command]
+fn terminal_status() -> serde_json::Value {
+    #[cfg(target_os = "macos")]
+    {
+        // Reachable if something answers to that name where the stock PATH
+        // looks first. A person's own CLI install counts -- the question is
+        // "does `krate` work in a terminal", not "did we put it there".
+        let link = krate_link_path();
+        return serde_json::json!({
+            "supported": true,
+            "linked": link.exists(),
+            "path": link.display().to_string(),
+        });
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        serde_json::json!({ "supported": false, "linked": false, "path": "" })
+    }
+}
+
+/// `krate` on PATH, asked for on purpose.
+///
+/// /usr/local/bin is root:wheel on a stock Mac, so this needs an
+/// administrator once. It is a button rather than something first launch
+/// does, because being asked for a password by an app you have just
+/// dragged in is worse than not having the shortcut (K-188).
+///
+/// The command is BUILT HERE and takes nothing from the caller. The only
+/// variable part is the engine's own path, which this process resolved
+/// itself, and it is quoted before it reaches osascript.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+async fn link_terminal_tool() -> Result<String, String> {
+    let engine = engine()?;
+    // The cheap way first: on a machine where /usr/local/bin is already
+    // writable, nobody should be asked for anything.
+    if link_krate_onto_path(&engine) {
+        return Ok("Ready. Open a new terminal and run `krate --version`.".to_string());
+    }
+
+    let link = krate_link_path();
+    let engine_q = engine.display().to_string().replace('\'', "'\\''");
+    let link_q = link.display().to_string().replace('\'', "'\\''");
+    // mkdir -p, then a forced symlink: the directory may not exist at all
+    // on a Mac that has never had developer tools.
+    let script = format!(
+        "do shell script \"mkdir -p '/usr/local/bin' && ln -sf '{engine_q}' '{link_q}'\" \
+         with administrator privileges"
+    );
+    let out = silent_cmd("osascript")
+        .arg("-e")
+        .arg(&script)
+        .output()
+        .map_err(|err| format!("could not ask for permission: {err}"))?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        // A cancelled password box is a decision, not a fault.
+        if stderr.contains("-128") || stderr.to_lowercase().contains("cancel") {
+            return Err("Cancelled -- nothing was changed.".to_string());
+        }
+        return Err(format!(
+            "could not link krate: {}",
+            stderr.trim().lines().next().unwrap_or("unknown error")
+        ));
+    }
+    Ok("Ready. Open a new terminal and run `krate --version`.".to_string())
+}
+
 #[tauri::command]
 async fn sign_in_agent(name: String) -> Result<(), String> {
     // A tool name, not a command line. Anything else is refused.
@@ -2917,6 +3041,9 @@ fn main() {
             studio_version,
             open_external,
             sign_in_agent,
+            terminal_status,
+            #[cfg(target_os = "macos")]
+            link_terminal_tool,
             install_update,
             restart_for_update,
             win_minimize,

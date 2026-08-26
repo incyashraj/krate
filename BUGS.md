@@ -203,8 +203,8 @@ open:     still share the file with no coordination, so any long JSON line can
 
 ### K-188 -- `krate` is not on PATH after installing Krate Studio
 
-Status:   unclaimed
-Owner:    unclaimed
+Status:   fixed
+Owner:    claude
 Severity: serious
 Class:    our-code
 Found:    2026-08-27, Nakshatra's MacBook, while trying to run a diagnostic:
@@ -223,12 +223,28 @@ Why it    Every support instruction we give starts with a `krate` command, and
 matters:  for a Studio-only user none of them work. It also makes a Studio
           user unable to answer the one question that would diagnose their own
           problem, which is how K-183 stalled.
-Next:     Decide deliberately, do not guess: either the Studio offers to
-          symlink its engine into /usr/local/bin (asking first, because
-          writing there needs a password), or support instructions stop
-          assuming a `krate` on PATH and give the in-bundle path instead. The
-          second is free and works today:
-            /Applications/Krate.app/Contents/Resources/bin/krate ai --json
+Real      first_run_setup DID try to symlink into /usr/local/bin. It was
+cause:    guarded by `if dir.is_dir()`, and the comment claimed the directory
+          "is writable by the admin user on most machines". Measured here, as
+          an admin:
+            /usr/local/bin  ->  root:wheel, NOT writable
+          So the symlink failed silently on every machine, `setup-done` was
+          written regardless, and it never tried again.
+Fixed:    Two halves.
+          - first_run_setup still never asks for a password, but now probes
+            writability by attempting a file rather than assuming ownership,
+            and replaces a stale link that points at a moved engine.
+          - Settings gains a "Terminal" row: one button, one password, and
+            `krate` is on PATH. A button rather than a prompt on launch --
+            being asked for a password by an app you just dragged in is worse
+            than not having the shortcut.
+          /usr/local/bin is the right target: it is the FIRST entry in
+          /etc/paths on a stock Mac, so a link there is on PATH for every
+          shell without touching anyone's dotfiles.
+Verified: a symlink to the in-bundle engine resolves correctly --
+            /tmp/linktest/krate --version   -> krate v0.2.0
+            /tmp/linktest/krate ai --json   -> 5 agents
+          so the engine finds its own resources through the link.
 
 
 ### K-185 -- every support report sent from the Studio arrives without the evidence

@@ -3323,6 +3323,7 @@ async function loadSettingsPage() {
     const agent = $("setAgent");
     if (agent) agent.textContent = settings.agent || "claude";
   } catch (e) { /* the page still renders without them */ }
+  paintTerminalSetting();
   checkForUpdate();
 }
 
@@ -3854,4 +3855,55 @@ $("replayOnboard")?.addEventListener("click", () => {
   localStorage.removeItem(ONBOARD_KEY);
   showView("onboard");
   obGo(1);
+});
+
+/* ---- the `krate` command in a terminal (K-188) -------------------------
+ *
+ * A person who drags Krate.app into Applications has no `krate` on PATH:
+ * the engine lives inside the bundle, and /usr/local/bin is root:wheel on a
+ * stock Mac, so first-run setup could never make the symlink. Every support
+ * instruction we give starts with a `krate` command, so this was a dead end
+ * for exactly the people who most need help.
+ *
+ * A button, not a prompt on launch: being asked for a password by an app you
+ * have just installed is worse than not having the shortcut.
+ */
+async function paintTerminalSetting() {
+  const group = $("setTerminalGroup");
+  if (!group) return;
+  let info;
+  try {
+    info = await invoke("terminal_status");
+  } catch {
+    return;
+  }
+  if (!info || !info.supported) return;
+  group.classList.remove("hidden");
+  const hint = $("setTermHint");
+  const btn = $("setTermBtn");
+  if (info.linked) {
+    hint.textContent = "Ready -- run `krate --version` in a terminal";
+    btn.textContent = "Done";
+    btn.disabled = true;
+  } else {
+    hint.textContent = "Not set up yet -- needs your password once";
+    btn.textContent = "Set up";
+    btn.disabled = false;
+  }
+}
+
+$("setTermBtn")?.addEventListener("click", async () => {
+  const btn = $("setTermBtn");
+  const hint = $("setTermHint");
+  btn.disabled = true;
+  btn.textContent = "Asking…";
+  try {
+    hint.textContent = await invoke("link_terminal_tool");
+    btn.textContent = "Done";
+  } catch (err) {
+    // A cancelled password box is a decision, not a fault.
+    hint.textContent = String(err && err.message ? err.message : err);
+    btn.textContent = "Set up";
+    btn.disabled = false;
+  }
 });
