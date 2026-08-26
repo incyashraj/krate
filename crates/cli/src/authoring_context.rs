@@ -668,8 +668,8 @@ manifest came from a std example fails until you add the dependency:\n\
 `impl std::error::Error` behind a feature nobody turns on.\n\
 \u{20}\u{20}4. build strings with a `pure_string`-style helper and allocate directly; \
 avoid `format!`, `.unwrap()`, and `a[i]` indexing.\n\n\
-`apps/krate-contacts` and `apps/krate-fractal` are shipped `no_std` GUI apps to \
-copy this wiring from.\n\n\
+`apps/krate-contacts` is a shipped `no_std` GUI app to copy this wiring \
+from.\n\n\
 ## A dependency that needs randomness (getrandom / rand / uuid)\n\n\
 These do not build on a target with no OS entropy unless a backend is \
 registered. Do not hand-shim it. Add `features = [\"getrandom-backend\"]` to the \
@@ -765,8 +765,15 @@ the method names are easy to guess wrong):\n\n\
 \u{20}\u{20}\u{20}\u{20}let rgba = dec.decode_raw()?;            // Vec<u8>, RGBA\n\
 \u{20}\u{20}\u{20}\u{20}let (w, h) = dec.dimensions().unwrap();  // (usize, usize) -- cast to u32\n\n\
 The methods are `dimensions()`, `colorspace()`, `depth()` -- not `get_dimensions` \
-and friends. `apps/krate-fractal` shows the set_pixels side; `krate:fs/files` \
-plus `ui::dialog::open_file` is how you let the person pick the file.\n\n\
+and friends. `krate:fs/files` plus `ui::dialog::open_file` is how you let the \
+person pick the file.\n\n\
+Putting pixels on screen is an Image node plus one call. Upsert the node \
+once, then hand it RGBA bytes -- `width * height * 4`, row by row from the \
+top-left:\n\n\
+\u{20}\u{20}\u{20}\u{20}let picture = image::ImagePixels { width, height, rgba };\n\
+\u{20}\u{20}\u{20}\u{20}image::set_pixels(win, IMAGE_ID, &picture)?;\n\n\
+Recompute and call `set_pixels` again to change what is shown; the node \
+stays where the layout put it.\n\n\
 ## Getting input into a CLI app\n\n\
 Command-line arguments (`krate::io::args`) are single-line only: an argument \
 may not contain a newline, because Phase 2 delivers all args as one \
@@ -1722,7 +1729,6 @@ fn curated_shape(name: &str) -> Option<&'static str> {
         "krate-nova2" => "GUI canvas game with textured sprites and image assets",
         "krate-bounce" => "GUI canvas game, the smallest playable loop",
         "krate-cubes" => "GUI animated canvas, no input",
-        "krate-fractal" => "GUI image widget via set_pixels (no_std)",
         "krate-tidy" => "GUI folder tidier: pick-is-the-grant, zero fs capabilities (no_std)",
         "krate-gram" => {
             "GUI photo feed: canvas-size layout, momentum scroll, springs, shadows (no_std)"

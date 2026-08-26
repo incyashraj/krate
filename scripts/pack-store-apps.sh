@@ -51,7 +51,6 @@ APPS=(
   krate-clip
   krate-fetch
   krate-nova
-  krate-fractal
   krate-savings
   krate-eo2
   krate-mdview

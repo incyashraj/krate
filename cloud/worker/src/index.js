@@ -151,6 +151,9 @@ export default {
       if (request.method === "DELETE" && pathname.startsWith("/app/")) {
         return cors(await unpublish(request, pathname.slice(5), env));
       }
+      if (request.method === "DELETE" && pathname.startsWith("/blob/")) {
+        return cors(await purgeBundle(request, pathname.slice(6), env));
+      }
       if (request.method === "GET" && pathname.startsWith("/a/")) {
         return cors(await fetchBundle(request, url, pathname.slice(3), env));
       }
@@ -396,8 +399,46 @@ async function unpublish(request, hash, env) {
   if (meta.author_login !== identity.login) {
     return text("only the app's author can remove it", 403);
   }
+  // Delisting is not deleting. The listing is one of four places an app
+  // exists: the bundle blob (served by /a/<hash> forever), the short-link
+  // alias that resolves to it, and the screenshot. Removing only the
+  // listing left the app downloadable by anyone holding the URL -- which is
+  // the opposite of what "remove it" means to the person clicking it.
   await env.APPS.delete(`app:${hash}`);
+  await env.BUNDLES.delete(hash);
+  await env.BUNDLES.delete(`shot:${hash}`);
+  await env.BUNDLES.delete(`icon:${hash}`);
+  // The alias is keyed by prefix, so clear every prefix length a short link
+  // could have used.
+  for (let length = 8; length <= 32; length += 1) {
+    await env.APPS.delete(`alias:${hash.slice(0, length)}`);
+  }
   return json({ ok: true });
+}
+
+/// Remove a bundle whose listing is already gone.
+///
+/// Unpublish used to delete only the listing, so bundles published before
+/// that was fixed are still downloadable by anyone holding the URL with no
+/// endpoint able to remove them: unpublish 404s on the missing listing
+/// before it reaches the blob. This is the way to finish that job.
+///
+/// Gated on an admin login rather than the app's own metadata -- the
+/// metadata is exactly what is missing here.
+async function purgeBundle(request, hash, env) {
+  const identity = await verifyGitHub(request, env);
+  if (!identity) return text("sign in first", 401);
+  const admins = (env.KRATE_ADMINS || "").split(",").map((name) => name.trim());
+  if (!admins.includes(identity.login)) return text("not found", 404);
+  if (!/^[0-9a-f]{64}$/.test(hash)) return text("not found", 404);
+  await env.APPS.delete(`app:${hash}`);
+  await env.BUNDLES.delete(hash);
+  await env.BUNDLES.delete(`shot:${hash}`);
+  await env.BUNDLES.delete(`icon:${hash}`);
+  for (let length = 8; length <= 32; length += 1) {
+    await env.APPS.delete(`alias:${hash.slice(0, length)}`);
+  }
+  return json({ ok: true, purged: hash });
 }
 
 /// Store a small square logo for a published app. Same contract as the

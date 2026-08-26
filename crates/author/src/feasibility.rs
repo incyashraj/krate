@@ -618,7 +618,6 @@ mod tests {
             "a bouncing ball screensaver",
             "a starfield animation",
             "a spirograph drawing toy",
-            "a fractal viewer showing the mandelbrot set",
         ];
         for request in BUILDABLE {
             if let Verdict::Refuse(r) = screen(request) {

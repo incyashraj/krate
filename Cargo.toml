@@ -40,7 +40,6 @@ exclude = [
     "apps/krate-paint",
     "apps/krate-contacts",
     "apps/krate-settings",
-    "apps/krate-fractal",
     "apps/krate-nova",
     "apps/krate-spriteproof",
     "apps/krate-nova2",
