@@ -11,7 +11,7 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::io::BufRead;
+use std::io::{BufRead, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
@@ -2458,6 +2458,198 @@ fn studio_version(app: tauri::AppHandle) -> String {
     app.package_info().version.to_string()
 }
 
+/// Download a new Studio and stage it for install.
+///
+/// The old flow opened a browser download and left the person to find the
+/// file, mount it, and drag it over the app they were running. This does
+/// the download in the app and hands the file to the platform's own
+/// installer, which is the part a person cannot reasonably do wrong.
+///
+/// The bytes are verified against the release's SHA256SUMS before anything
+/// is run: an update channel that installs whatever it downloaded is a
+/// worse hole than the one it closes.
+#[tauri::command]
+fn install_update(version: String) -> Result<String, String> {
+    // The tag is ours, but it arrives from the network, so it is checked
+    // rather than trusted into a URL.
+    if !version
+        .chars()
+        .all(|c| c.is_ascii_digit() || c == '.' || c == '-' || c.is_ascii_alphanumeric())
+        || version.len() > 32
+    {
+        return Err("that does not look like a version".to_string());
+    }
+
+    let file = if cfg!(windows) {
+        format!("krate-studio-{version}-windows-x64-setup.exe")
+    } else if cfg!(target_os = "macos") {
+        format!("krate-studio-{version}-universal.dmg")
+    } else {
+        format!("krate-studio-{version}-linux-x86_64.AppImage")
+    };
+    let base = format!("https://github.com/incyashraj/krate/releases/download/v{version}");
+
+    // The checksums first: knowing what the bytes should be before fetching
+    // them means a mismatch is a refusal, not a judgement call.
+    let sums = ureq::get(&format!("{base}/SHA256SUMS"))
+        .call()
+        .map_err(|e| format!("could not reach the update: {e}"))?
+        .into_string()
+        .map_err(|e| format!("could not read the checksums: {e}"))?;
+    let expected = sums
+        .lines()
+        .find(|line| line.ends_with(&file))
+        .and_then(|line| line.split_whitespace().next())
+        .ok_or_else(|| "this release has no checksum for this platform".to_string())?
+        .to_lowercase();
+
+    let mut body = Vec::new();
+    ureq::get(&format!("{base}/{file}"))
+        .call()
+        .map_err(|e| format!("the download failed: {e}"))?
+        .into_reader()
+        .read_to_end(&mut body)
+        .map_err(|e| format!("the download was cut short: {e}"))?;
+
+    let got = {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(&body);
+        format!("{:x}", hasher.finalize())
+    };
+    if got != expected {
+        return Err("the downloaded file did not match its checksum".to_string());
+    }
+
+    let staged = studio_dir().join("updates");
+    std::fs::create_dir_all(&staged).map_err(|e| e.to_string())?;
+    let path = staged.join(&file);
+    std::fs::write(&path, &body).map_err(|e| format!("could not save the update: {e}"))?;
+    Ok(path.display().to_string())
+}
+
+/// Open the staged update and step aside.
+///
+/// Deliberately not a silent self-replace: on macOS a running app cannot
+/// swap its own bundle safely, and a person deserves to see what is being
+/// installed. This opens the installer the download produced and closes the
+/// Studio so the file it is replacing is not in use.
+#[tauri::command]
+fn restart_for_update(app: tauri::AppHandle) -> Result<(), String> {
+    let staged = studio_dir().join("updates");
+    let newest = std::fs::read_dir(&staged)
+        .map_err(|_| "nothing has been downloaded yet".to_string())?
+        .filter_map(|e| e.ok())
+        .max_by_key(|e| {
+            e.metadata()
+                .and_then(|m| m.modified())
+                .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+        })
+        .ok_or_else(|| "nothing has been downloaded yet".to_string())?
+        .path();
+
+    #[cfg(target_os = "macos")]
+    let opened = Command::new("/usr/bin/open").arg(&newest).status();
+    #[cfg(windows)]
+    let opened = Command::new("cmd")
+        .args(["/C", "start", ""])
+        .arg(&newest)
+        .status();
+    #[cfg(target_os = "linux")]
+    let opened = Command::new("xdg-open").arg(&newest).status();
+
+    opened.map_err(|e| format!("could not open the update: {e}"))?;
+    // Give the installer a moment to take over before this process ends,
+    // so the person never sees both gone at once.
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(900));
+        app.exit(0);
+    });
+    Ok(())
+}
+
+/// Open a terminal running one command, for the steps a GUI cannot do.
+///
+/// Signing an AI tool in is interactive by nature: it prints a URL, waits
+/// for a paste, or opens a browser and expects the process to still be
+/// attached. Running it hidden the way `install_agent` runs npm would
+/// hang forever with nobody to answer it, which is why the sheet used to
+/// print an instruction and leave the person to find Terminal themselves.
+///
+/// The command is BUILT HERE from the agent's own name, never taken from
+/// the caller: a string from the UI that reaches a shell is a hole, and
+/// this one only ever assembles a bare tool name that the engine already
+/// told us about.
+#[tauri::command]
+async fn sign_in_agent(name: String) -> Result<(), String> {
+    // A tool name, not a command line. Anything else is refused.
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') || name.len() > 24 {
+        return Err("that is not a tool name".to_string());
+    }
+    let engine = engine()?;
+    // Ask the engine which binary this agent runs, so a rename upstream
+    // cannot leave us launching something that no longer exists.
+    let listed = silent_cmd(&engine)
+        .args(["ai", "--json"])
+        .output()
+        .map_err(|err| format!("could not run the Krate engine: {err}"))?;
+    let rows: serde_json::Value =
+        serde_json::from_slice(&listed.stdout).map_err(|err| err.to_string())?;
+    let known = rows
+        .as_array()
+        .map(|rows| rows.iter().any(|row| row["name"] == serde_json::json!(name)))
+        .unwrap_or(false);
+    if !known {
+        return Err("Krate does not know that tool".to_string());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        // osascript rather than `open -a Terminal`: it runs the command in a
+        // new window AND brings Terminal forward, which is what a person
+        // expects to happen when they click "Sign in".
+        let script = format!(
+            "tell application \"Terminal\"\nactivate\ndo script \"{name}\"\nend tell"
+        );
+        Command::new("/usr/bin/osascript")
+            .args(["-e", &script])
+            .status()
+            .map_err(|err| format!("could not open Terminal: {err}"))?;
+    }
+    #[cfg(windows)]
+    {
+        Command::new("cmd")
+            .args(["/C", "start", "cmd", "/K", &name])
+            .status()
+            .map_err(|err| format!("could not open the console: {err}"))?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // Whichever terminal this desktop actually has.
+        let terms = [
+            ("x-terminal-emulator", vec!["-e"]),
+            ("gnome-terminal", vec!["--"]),
+            ("konsole", vec!["-e"]),
+            ("xterm", vec!["-e"]),
+        ];
+        let mut started = false;
+        for (term, args) in terms {
+            let mut cmd = Command::new(term);
+            cmd.args(args).arg(&name);
+            if cmd.spawn().is_ok() {
+                started = true;
+                break;
+            }
+        }
+        if !started {
+            return Err(format!(
+                "No terminal was found. Run `{name}` yourself to sign in."
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Open an https link in the person's browser -- the update banner's door.
 #[tauri::command]
 fn open_external(url: String) -> Result<(), String> {
@@ -2668,6 +2860,9 @@ fn main() {
             build_progress,
             studio_version,
             open_external,
+            sign_in_agent,
+            install_update,
+            restart_for_update,
             win_minimize,
             win_toggle_max,
             win_close

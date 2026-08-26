@@ -7,9 +7,6 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="horizon" aria-hidden="true"></div>
-  <div class="grain" aria-hidden="true"></div>
-
 
   <!-- Window controls we draw ourselves on Windows, where the native frame
        is removed (it stacked a second title bar over ours). Fixed to the
@@ -39,7 +36,6 @@
 
         <div id="gateStart" class="reveal">
           <button class="btn btn-primary btn-big" id="loginBrowserBtn">Sign in with krate.tech</button>
-          <button class="btn btn-ghost" id="gateSkip">Skip. I just want to make an app</button>
           <button class="btn btn-ghost hidden" id="loginBtn">Use a code instead</button>
           <p class="gate-hint">Opens your browser; you're back here signed in.
           Krate never sees your password - GitHub asks you directly.</p>
@@ -58,63 +54,27 @@
     </div>
   </div>
 
-  <!-- First run.
-       Three beats, not a form: see what you could make, choose who builds
-       it, then make one. The fanned cards are real apps built with Krate,
-       because "you can make these" is the whole promise and a screenshot
-       argues it better than a paragraph. -->
-  <div class="view hidden" id="viewOnboard">
-    <div class="ob-sky" aria-hidden="true"></div>
-    <button class="ob-skip" id="obSkipAll">Skip</button>
-
-    <div class="ob-stage">
-
-      <section class="ob-scene on" data-step="1">
-        <div class="fan" id="fan">
-          <img class="fan-card" src="cards/card1.jpg" alt="" />
-          <img class="fan-card" src="cards/card2.jpg" alt="" />
-          <img class="fan-card lead" src="cards/card3.jpg" alt="" />
-          <img class="fan-card" src="cards/card4.jpg" alt="" />
-          <img class="fan-card" src="cards/card5.jpg" alt="" />
-        </div>
-        <h1 class="ob-h">People made these by describing them</h1>
-        <button class="ob-cta" data-go="2">Start<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8h9M8.4 4.2L12.2 8l-3.8 3.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-      </section>
-
-      <section class="ob-scene" data-step="2">
-        <h1 class="ob-h">Who writes it?</h1>
-        <p class="ob-p">Krate hands your words to an AI you already have.</p>
-        <div class="ob-agents" id="obAgents"></div>
-        <button class="ob-cta" data-go="3" id="obAgentNext">Continue<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8h9M8.4 4.2L12.2 8l-3.8 3.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-      </section>
-
-      <section class="ob-scene" data-step="3">
-        <h1 class="ob-h">What should we call you?</h1>
-        <input class="ob-input" id="obName" type="text" placeholder="First name" autocomplete="given-name" maxlength="40" />
-        <button class="ob-cta" id="obFinish">Make my first app<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8h9M8.4 4.2L12.2 8l-3.8 3.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-        <button class="ob-quiet" id="obSignIn">Sign in to publish later</button>
-      </section>
-
-    </div>
-  </div>
-
   <div class="view hidden" id="viewHome">
     <header class="titlebar">
       <div class="brand"><img src="krate-glyph-white.png" alt="" /><span>KRATE</span></div>
       <div class="spacer"></div>
       <button class="link-btn update-chip hidden" id="updateChip" title="A newer Krate is ready">Update ready</button>
-      <button class="icon-btn" id="themeBtn" title="Switch to light"></button>
-      <button class="icon-btn hidden" id="cloudBtn" title="Cloud"></button>
-      <button class="agent-chip hidden" id="agentChip"><span class="dot" id="agentDot"></span><span id="agentName">checking…</span></button>
-      <button class="icon-btn hidden" id="accountBtn"><img id="avatar" class="avatar hidden" alt="" /><span id="accountInitial">·</span></button>
+      <button class="link-btn" id="cloudBtn" title="Apps published to Krate Cloud">Cloud</button>
+      <button class="agent-chip" id="agentChip"><span class="dot" id="agentDot"></span><span id="agentName">checking…</span></button>
+      <button class="icon-btn" id="settingsBtn" title="Settings">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.4" stroke="currentColor" stroke-width="1.4"/><path d="M8 1.6v1.9M8 12.5v1.9M1.6 8h1.9M12.5 8h1.9M3.5 3.5l1.35 1.35M11.15 11.15l1.35 1.35M12.5 3.5l-1.35 1.35M4.85 11.15L3.5 12.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+      </button>
+      <button class="icon-btn" id="accountBtn" title="Account"><img id="avatar" class="avatar hidden" alt="" /><span id="accountInitial">·</span></button>
     </header>
 
     <main class="home">
 
+      <div class="home-glow" aria-hidden="true"><i></i><i></i></div>
       <div class="home-hero">
-        <p class="home-greet reveal" id="homeGreet"></p>
-        <h1 class="display home-title reveal" id="homeTitle">Make an app you can actually send someone</h1>
-        <p class="home-sub reveal">One sentence is enough. It becomes a real app you can send to anyone.</p>
+        <h1 class="display home-title reveal">Make an app you can
+          <span class="rot"><span class="word" id="rotWord">keep</span></span>
+        </h1>
+        <p class="home-sub reveal">Describe it in plain words. A few minutes later it's a real app.</p>
         <div class="composer-shell reveal">
           <div class="bigbar">
             <div class="attach-row hidden" id="homeAttachRow"></div>
@@ -131,11 +91,6 @@
               <button id="homeSend" class="send" title="Make it (Enter)"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 13V3.5M8 3.5L3.8 7.7M8 3.5l4.2 4.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
             </div>
           </div>
-          <div class="sugg-list reveal" id="suggList">
-            <button type="button" data-sugg="a habit tracker that saves my streaks"><span class="trend"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.8 11.2L6 7l3 3 5.2-5.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.6 4.4h3.8v3.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>A habit tracker that saves my streaks<svg class="go" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8 6 12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-            <button type="button" data-sugg="a tip splitter for dinners with friends"><span class="trend"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.8 11.2L6 7l3 3 5.2-5.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.6 4.4h3.8v3.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>A tip splitter for dinners with friends<svg class="go" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8 6 12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-            <button type="button" data-sugg="a snake game I can play offline"><span class="trend"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.8 11.2L6 7l3 3 5.2-5.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.6 4.4h3.8v3.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>A snake game I can play offline<svg class="go" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8 6 12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-          </div>
           <div class="airow">
             <button class="aichip" id="builtByChip"><span class="dot" id="builtByDot"></span>Built by <b id="builtByName">…</b><span class="chev">· change ▾</span></button>
           </div>
@@ -148,7 +103,10 @@
         <button class="bn-stop" id="buildingNowStop" title="Stop this build">Stop</button>
       </div>
 
-
+      <section class="apps reveal" id="appsSection">
+        <div class="apps-head"><h2 class="label">Your apps</h2></div>
+        <div class="apps-grid" id="appsGrid"></div>
+      </section>
     </main>
   </div>
 
@@ -245,149 +203,6 @@
           </div>
         </div>
       </section>
-    </div>
-  </div>
-
-  <div class="view hidden" id="viewApps">
-    <header class="titlebar">
-      <div class="brand"><img src="krate-glyph-white.png" alt="" /><span>KRATE</span></div>
-      <div class="spacer"></div>
-    </header>
-    <div class="page-scroll" data-scroller>
-      <div class="page-inner">
-        <div class="page-head">
-          <div>
-            <h1>Your apps</h1>
-            <p>Everything you have made on this computer. Open one to change it or send it on.</p>
-          </div>
-          <div class="side"><span class="set-val" id="appsCount"></span></div>
-        </div>
-        <div class="apps-grid" id="appsGrid"></div>
-      </div>
-    </div>
-  </div>
-
-  <div class="view hidden" id="viewSettings">
-    <header class="titlebar">
-      <div class="brand"><img src="krate-glyph-white.png" alt="" /><span>KRATE</span></div>
-      <div class="spacer"></div>
-    </header>
-    <div class="page-scroll" data-scroller>
-      <div class="page-inner set-col">
-        <div class="page-head">
-          <div>
-            <h1>Settings</h1>
-            <p>How Krate builds, and where it puts what it makes.</p>
-          </div>
-        </div>
-
-        <div class="set-group">
-          <h2>Updates</h2>
-          <div class="upd" id="upd">
-            <div class="upd-top">
-              <span class="upd-ic" id="updIc">
-                <svg width="17" height="17" viewBox="0 0 16 16" fill="none"><path d="M8 11V3M8 3L4.6 6.4M8 3l3.4 3.4" stroke="#6291ff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.8 12.4h10.4" stroke="#6291ff" stroke-width="1.6" stroke-linecap="round"/></svg>
-              </span>
-              <div>
-                <div class="upd-t" id="updT">Checking for updates…</div>
-                <div class="upd-s" id="updS">Version <span id="updCurrent">—</span></div>
-              </div>
-              <div class="upd-act" id="updAct"></div>
-            </div>
-            <div class="upd-bar"><i id="updBar"></i></div>
-            <div class="upd-notes" id="updNotes">
-              <h3>What changed</h3>
-              <ul id="updList"></ul>
-            </div>
-          </div>
-        </div>
-
-        <div class="set-group">
-          <h2>Who writes your apps</h2>
-          <div class="set-row">
-            <div><div class="lab">AI assistant</div><div class="hint">The tool that writes and tests the code</div></div>
-            <div class="ctl"><span class="set-val" id="setAgent">…</span><button class="set-mini" id="setAgentBtn">Change</button></div>
-          </div>
-          <div class="set-row soon">
-            <div><div class="lab">Ask before building</div><div class="hint">Krate checks the plan with you first</div></div>
-            <div class="ctl"><span class="soon-tag">soon</span><button class="sw on" id="swPlan" data-soon aria-label="Ask before building" disabled></button></div>
-          </div>
-        </div>
-
-        <div class="set-group">
-          <h2>Where apps are saved</h2>
-          <div class="set-row">
-            <div><div class="lab">Folder</div><div class="hint">Finished .krate files land here</div></div>
-            <div class="ctl"><span class="set-val" id="setOutDir">…</span><button class="set-mini" id="setOutBtn">Choose</button></div>
-          </div>
-        </div>
-
-        <div class="set-group">
-          <h2>Getting started</h2>
-          <div class="set-row">
-            <div><div class="lab">Show the welcome again</div><div class="hint">The three screens you saw the first time</div></div>
-            <div class="ctl"><button class="set-mini" id="replayOnboard">Show me</button></div>
-          </div>
-        </div>
-
-        <div class="set-group">
-          <h2>Privacy</h2>
-          <div class="set-row soon">
-            <div><div class="lab">Anonymous usage counting</div><div class="hint">A random id and which action happened. Nothing else.</div></div>
-            <div class="ctl"><span class="soon-tag">soon</span><button class="sw on" id="swUsage" data-soon aria-label="Usage counting" disabled></button></div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="view hidden" id="viewProfile">
-    <header class="titlebar">
-      <div class="brand"><img src="krate-glyph-white.png" alt="" /><span>KRATE</span></div>
-      <div class="spacer"></div>
-    </header>
-    <div class="page-scroll" data-scroller>
-      <div class="page-inner set-col">
-        <div class="prof-head">
-          <div class="prof-av" id="profAv"><span id="profInitial">·</span></div>
-          <div>
-            <div class="prof-name" id="profName">Signed in</div>
-            <div class="prof-mail" id="profMail"></div>
-          </div>
-          <div class="prof-stat">
-            <div><div class="n" id="profMade">0</div><div class="l">apps made</div></div>
-            <div><div class="n" id="profPub">0</div><div class="l">published</div></div>
-            <div><div class="n" id="profSize">—</div><div class="l">all together</div></div>
-          </div>
-        </div>
-
-        <div class="set-group">
-          <h2>Sign in with</h2>
-          <div class="conn-row">
-            <span class="lg"><svg width="17" height="17" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.6 12.2c0-.7-.1-1.4-.2-2H12v3.9h6c-.3 1.4-1.1 2.6-2.3 3.4v2.8h3.7c2.2-2 3.4-5 3.4-8.1z"/><path fill="#34A853" d="M12 23c3.1 0 5.7-1 7.6-2.8l-3.7-2.8c-1 .7-2.3 1.1-3.9 1.1-3 0-5.5-2-6.4-4.7H1.8v2.9C3.7 20.5 7.6 23 12 23z"/><path fill="#FBBC05" d="M5.6 13.8c-.2-.7-.4-1.4-.4-2.3s.1-1.6.4-2.3V6.3H1.8C1 7.9.5 9.9.5 11.5s.5 3.6 1.3 5.2l3.8-2.9z"/><path fill="#EA4335" d="M12 4.6c1.7 0 3.2.6 4.4 1.7l3.3-3.3C17.7 1.1 15.1 0 12 0 7.6 0 3.7 2.5 1.8 6.3l3.8 2.9C6.5 6.6 9 4.6 12 4.6z"/></svg></span>
-            <div><div class="nm">Google</div><div class="sub" id="connGoogleSub">Sign in with your Google account</div></div>
-            <div class="act" id="connGoogleAct"><span class="soon-tag">soon</span></div>
-          </div>
-          <div class="conn-row">
-            <span class="lg"><svg width="17" height="17" viewBox="0 0 24 24" fill="#fff"><path d="M17.05 12.5c0-2.1 1.7-3.1 1.8-3.2-1-1.4-2.5-1.6-3-1.7-1.3-.1-2.5.8-3.1.8-.6 0-1.6-.8-2.7-.8-1.4 0-2.7.8-3.4 2-1.4 2.5-.4 6.2 1 8.2.7 1 1.5 2.1 2.5 2 1-.04 1.4-.65 2.6-.65s1.6.65 2.7.63c1.1-.02 1.8-1 2.5-2 .8-1.15 1.1-2.26 1.1-2.32-.03-.01-2.1-.8-2.1-3.2zM15.1 6.2c.55-.67.92-1.6.82-2.53-.79.03-1.75.53-2.32 1.2-.51.58-.96 1.53-.84 2.43.88.07 1.79-.45 2.34-1.1z"/></svg></span>
-            <div><div class="nm">Apple</div><div class="sub">Sign in with your Apple ID</div></div>
-            <div class="act"><span class="soon-tag">soon</span></div>
-          </div>
-          <div class="conn-row">
-            <span class="lg"><svg width="17" height="17" viewBox="0 0 16 16" fill="#fff"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></span>
-            <div><div class="nm">GitHub</div><div class="sub" id="connGhSub">Used for publishing to Krate Cloud</div></div>
-            <div class="act" id="connGhAct"></div>
-          </div>
-        </div>
-
-        <div class="set-group">
-          <h2>Your account</h2>
-          <div class="set-row">
-            <div><div class="lab">Sign out</div><div class="hint">Your apps stay on this computer</div></div>
-            <div class="ctl"><button class="set-mini" id="profSignOut">Sign out</button></div>
-          </div>
-        </div>
-      </div>
     </div>
   </div>
 
@@ -566,20 +381,6 @@
       </div>
       <button class="btn btn-ghost sheet-close" data-close="settingsSheet">Close</button>
     </div>
-  </div>
-
-  <div class="dockwrap hidden" id="dockwrap">
-    <nav class="dock" id="dock" aria-label="Sections">
-      <span class="glide" id="dockGlide"></span>
-      <button class="on" data-page="home">
-        <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M2.5 7L8 2.5L13.5 7v6a1 1 0 01-1 1h-9a1 1 0 01-1-1V7z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/></svg>
-        Home
-      </button>
-      <button data-page="apps">Your apps</button>
-      <button data-page="cloud">Cloud</button>
-      <button data-page="settings">Settings<span class="badge" id="dockBadge"></span></button>
-    </nav>
-    <button class="dock-solo" id="dockProfile" aria-label="Profile"><span class="in" id="dockInitial">·</span></button>
   </div>
 
   <script src="app.js"></script>

@@ -686,7 +686,13 @@ jobs:
           # next to the downloaded asset, which is the whole point of the file.
           # Assets from different target dirs never share a basename, so this
           # cannot make two lines collide.
-          find dist -type f \( -name '*.tar.gz' -o -name '*.zip' \) -print0 \
+          # Every published artifact, not just the CLI archives. The Studio
+          # installers were missing, which meant the in-app updater -- which
+          # verifies what it downloads against this file before running it --
+          # refused every update with "no checksum for this platform". An
+          # updater that cannot verify is an updater that cannot update.
+          find dist -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.dmg' \
+            -o -name '*.exe' -o -name '*.AppImage' \) -print0 \
             | sort -z \
             | xargs -0 sha256sum \
             | sed -E 's#(^[0-9a-f]+  ).*/#\1#' > SHA256SUMS

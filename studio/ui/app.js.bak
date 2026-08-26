@@ -148,63 +148,15 @@ function liveRecord() {
 /* ---- views ------------------------------------------------------------ */
 
 function showView(name) {
-  for (const id of [
-    "viewGate", "viewHome", "viewSession", "viewCloud", "viewApp",
-    "viewApps", "viewSettings", "viewProfile", "viewOnboard",
-  ]) {
+  for (const id of ["viewGate", "viewHome", "viewSession", "viewCloud", "viewApp"]) {
     $(id).classList.add("hidden");
   }
   const view = $({
     gate: "viewGate", home: "viewHome", session: "viewSession",
-    cloud: "viewCloud", appDetail: "viewApp", apps: "viewApps",
-    settings: "viewSettings", profile: "viewProfile", onboard: "viewOnboard",
+    cloud: "viewCloud", appDetail: "viewApp",
   }[name]);
   view.classList.remove("hidden");
   revealIn(view);
-  syncDock(name);
-}
-
-/* ---- the dock ----------------------------------------------------------
- * One element for the whole app, so switching pages never moves it. It
- * shows on the pages a person navigates between and hides during a build,
- * where the only way out is the session's own back button.
- *
- * The sliding pill is measured, not guessed: a label's width changes with
- * its text, so the highlight reads offsetLeft/offsetWidth of whatever is
- * selected rather than assuming equal buttons. */
-const DOCK_PAGES = { home: "home", apps: "apps", cloud: "cloud", settings: "settings" };
-
-function syncDock(view) {
-  const wrap = $("dockwrap");
-  if (!wrap) return;
-  const shown = view === "home" || view === "apps" || view === "cloud"
-    || view === "settings" || view === "profile";
-  // Onboarding is a single path with its own buttons; a nav bar there
-  // invites people to wander out of the one flow that explains the app.
-  wrap.classList.toggle("hidden", !shown);
-  if (!shown) return;
-
-  const buttons = [...document.querySelectorAll("#dock button[data-page]")];
-  const profile = $("dockProfile");
-  buttons.forEach((b) => b.classList.remove("on"));
-  profile.classList.toggle("on", view === "profile");
-
-  const match = buttons.find((b) => DOCK_PAGES[b.dataset.page] === view);
-  if (match) {
-    match.classList.add("on");
-    moveGlide(match);
-  } else {
-    // profile: the pill has nothing to sit under, so it collapses away
-    $("dockGlide").style.width = "0px";
-  }
-  document.body.classList.remove("scrolled");
-}
-
-function moveGlide(button) {
-  const glide = $("dockGlide");
-  if (!glide || !button) return;
-  glide.style.width = `${button.offsetWidth}px`;
-  glide.style.transform = `translateX(${button.offsetLeft - 5}px)`;
 }
 
 /* The site's one motion idiom: translateY(14px) + opacity over 0.5s, on a
@@ -251,28 +203,9 @@ async function boot() {
     const account = await invoke("account_status");
     if (account && account.signed_in) {
       state.account = account;
-      // Signed in, but possibly never onboarded -- somebody who signed in
-      // on an older build has an account and has still never been told
-      // what a .krate is.
-      if (needsOnboarding()) {
-        showView("onboard");
-        obGo(1);
-        return;
-      }
       enterHome();
       return;
     }
-    // Not signed in. That is no longer a wall: nothing but publishing
-    // needs an account, so a first run goes to onboarding and everyone
-    // else goes straight to the prompt box. The sign-in door is inside
-    // onboarding (skippable) and on the profile page.
-    if (needsOnboarding()) {
-      showView("onboard");
-      obGo(1);
-      return;
-    }
-    enterHome();
-    return;
   } catch (err) {
     // A missing engine shows on the gate too -- there is nowhere better,
     // and a person facing a broken install needs the real reason rather
@@ -340,7 +273,6 @@ function onLoginStep(step) {
 /* ---- home ------------------------------------------------------------- */
 
 async function enterHome() {
-  paintGreeting();
   showView("home");
   renderAccount();
   // Settings FIRST, then agents.
@@ -406,11 +338,6 @@ function renderAccount() {
 
 function renderSessions(sessions) {
   const grid = $("appsGrid");
-  // The grid lives on its own page now. Startup still calls this before
-  // that page has ever been shown, which is fine -- but a guard means a
-  // future layout change cannot turn a missing element into a thrown
-  // error on the path that boots the app.
-  if (!grid) return;
   grid.innerHTML = "";
   // Cards are added below with .reveal; stagger them once the grid is built.
   setTimeout(() => revealIn(grid), 0);
@@ -1442,19 +1369,6 @@ async function runPlan() {
     // error prose (the first live run printed a build error inside a
     // parenthesis inside an apology).
     console.warn("plan step failed:", err);
-    // A question is not a build request. When the plan step cannot answer
-    // AND the message reads as a question about Krate, answer it instead
-    // of spending fifteen minutes building a reply to it.
-    const asked = state.planning && state.planning.request;
-    if (looksLikeAQuestion(asked)) {
-      say("KRATE", "Yes -- tell me what the app should do and I'll build it. "
-        + "A window, saved data, drawing, sound, the network: all fair game. "
-        + "One sentence is enough to start.");
-      $("prompt").placeholder = "Describe the app you want\u2026";
-      setIdleNote("Tell me what to make and I'll start.");
-      $("send").disabled = false;
-      return;
-    }
     say("KRATE", "I'll skip the questions this time and build right away.");
     return finishPlanningAndBuild();
   } finally {
@@ -1643,38 +1557,6 @@ function plainWords(err) {
 
 /* ---- agents ----------------------------------------------------------- */
 
-
-/* ---- the AI marks ------------------------------------------------------
- * Drawn inline rather than shipped as files: five small SVGs cost less
- * than five network-free image assets and inherit the theme's colours.
- * Each is the tool's own recognisable shape, simplified to one flat mark
- * so the row reads at a glance instead of being decoded. */
-const AI_LOGOS = {
-  claude:
-    '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">' +
-    '<path fill="#D97757" d="M6.1 15.6l3.4-1.9.06-.17-.06-.09h-.17l-.58-.04-1.98-.05-1.71-.07-1.66-.09-.42-.09-.39-.51.04-.26.35-.23.5.04 1.11.08 1.66.11 1.2.07 1.79.19h.28l.04-.11-.1-.07-.07-.07-1.68-1.14-1.82-1.2-.95-.7-.52-.35-.26-.33-.11-.72.47-.52.63.04.16.04.64.49 1.36 1.05 1.78 1.31.26.22.1-.07.01-.05-.12-.2-.98-1.77-1.05-1.8-.47-.75-.12-.45a2.2 2.2 0 01-.08-.53l.54-.73.3-.1.72.1.3.26.45 1.03.73 1.62 1.13 2.2.33.65.18.6.07.19h.12v-.11l.1-1.31.18-1.61.18-2.07.06-.58.29-.71.58-.38.45.22.37.53-.05.34-.22 1.45-.44 2.28-.29 1.53h.17l.19-.19.78-1.03 1.3-1.63.58-.65.67-.71.43-.34h.81l.6.89-.27.92-.84 1.06-.69.9-1 1.34-.62 1.07.06.09.15-.01 2.27-.48 1.23-.22 1.46-.25.66.31.07.31-.26.64-1.56.39-1.83.37-2.73.64-.03.02.04.05 1.23.11.53.03h1.29l2.4.18.63.41.37.51-.06.38-.97.49-1.3-.31-3.05-.72-1.04-.26h-.15v.09l.87.85 1.6 1.44 2 1.86.1.46-.26.36-.27-.04-1.78-1.34-.69-.6-1.55-1.31h-.1v.14l.36.52 1.89 2.84.1.87-.14.29-.49.17-.54-.1-1.11-1.56-1.15-1.76-.93-1.58-.11.07-.55 5.9-.26.3-.59.23-.5-.38-.26-.61.26-1.2.32-1.57.26-1.25.23-1.55.14-.51-.01-.04-.11.02-1.16 1.59-1.76 2.38-1.39 1.49-.34.13-.58-.3.05-.53.32-.48 1.94-2.46.68-.89 1.28-1.5-.01-.14h-.05L6.9 18.3l-1.15.15-.5-.47.06-.76.24-.25 1.96-1.35z"/></svg>',
-  codex:
-    '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">' +
-    '<path fill="currentColor" d="M22.28 9.82a5.98 5.98 0 00-.52-4.91 6.05 6.05 0 00-6.51-2.9A6 6 0 004.98 4.18a5.98 5.98 0 00-4 2.9 6.05 6.05 0 00.74 7.1 5.98 5.98 0 00.51 4.91 6.05 6.05 0 006.52 2.9A5.98 5.98 0 0019.02 19.8a5.98 5.98 0 004-2.9 6.05 6.05 0 00-.74-7.09zm-9.02 12.6a4.48 4.48 0 01-2.88-1.04l.14-.08 4.78-2.76a.79.79 0 00.4-.68v-6.74l2.02 1.17a.07.07 0 01.04.05v5.58a4.5 4.5 0 01-4.5 4.5zM3.6 18.3a4.47 4.47 0 01-.54-3.01l.14.08 4.78 2.76a.78.78 0 00.78 0l5.84-3.37v2.33a.07.07 0 01-.03.06L9.73 19.95a4.5 4.5 0 01-6.14-1.65zM2.34 7.9a4.48 4.48 0 012.34-1.97v5.68a.78.78 0 00.39.67l5.81 3.36-2.02 1.17a.07.07 0 01-.07 0L4 14.03A4.5 4.5 0 012.34 7.9zm16.6 3.86l-5.84-3.4L15.12 7.2a.07.07 0 01.07 0l4.83 2.79a4.49 4.49 0 01-.68 8.1v-5.68a.78.78 0 00-.39-.66zm2.01-3.03l-.14-.09-4.77-2.78a.78.78 0 00-.79 0L9.42 9.24V6.9a.07.07 0 01.03-.06l4.83-2.79a4.5 4.5 0 016.68 4.66zM8.32 12.86L6.3 11.7a.07.07 0 01-.04-.06V6.07a4.5 4.5 0 017.38-3.45l-.14.08L8.72 5.46a.79.79 0 00-.4.68v6.72zm1.1-2.37L12.02 9l2.6 1.5v3l-2.6 1.5-2.6-1.5v-3z"/></svg>',
-  gemini:
-    '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">' +
-    '<defs><linearGradient id="gemg" x1="0" y1="0" x2="1" y2="1">' +
-    '<stop offset="0" stop-color="#4796E3"/><stop offset="0.5" stop-color="#9177C7"/>' +
-    '<stop offset="1" stop-color="#D96570"/></linearGradient></defs>' +
-    '<path fill="url(#gemg)" d="M12 1.5c.35 4.02 1.9 6.9 4.3 8.55 1.3.9 2.9 1.5 4.7 1.8v.3c-4.02.35-6.9 1.9-8.55 4.3-.9 1.3-1.5 2.9-1.8 4.7h-.3c-.35-4.02-1.9-6.9-4.3-8.55-1.3-.9-2.9-1.5-4.7-1.8v-.3c4.02-.35 6.9-1.9 8.55-4.3.9-1.3 1.5-2.9 1.8-4.7h.3z"/></svg>',
-  copilot:
-    '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">' +
-    '<path fill="currentColor" d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.44 9.8 8.21 11.39.6.11.82-.26.82-.58v-2.23c-3.34.73-4.04-1.42-4.04-1.42-.55-1.39-1.34-1.76-1.34-1.76-1.09-.75.08-.73.08-.73 1.2.08 1.84 1.24 1.84 1.24 1.07 1.83 2.81 1.3 3.5.99.11-.78.42-1.31.76-1.61-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.13-.3-.54-1.52.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 016.01 0c2.29-1.55 3.3-1.23 3.3-1.23.66 1.66.24 2.88.12 3.18.77.84 1.23 1.91 1.23 3.22 0 4.61-2.8 5.62-5.48 5.92.43.37.81 1.1.81 2.22v3.29c0 .32.22.7.83.58A12 12 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>',
-  grok:
-    '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">' +
-    '<path fill="currentColor" d="M3.3 20.7l9.2-9.2 3.3 3.3-6 6H3.3zm0-5.4L14.6 4h4.8L8.1 15.3H3.3zm14.1 5.4V9.9l3.3-3.3v14.1h-3.3z"/></svg>',
-};
-
-function aiLogo(name) {
-  return AI_LOGOS[name] || '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">'
-    + '<circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
-}
-
 async function refreshAgents() {
   try {
     state.agents = await invoke("agents");
@@ -1745,7 +1627,7 @@ function openAiSheet() {
       a.state === "working" ? (a.name === state.agent ? "ready · in use" : "ready")
       : a.detail || (a.state === "missing" ? "not installed" : "not ready");
     row.innerHTML = `
-      <span class="ai-mark">${aiLogo(a.name)}<i class="dot ${dot}"></i></span>
+      <span class="dot ${dot}"></span>
       <div class="grow">
         <p class="ai-name"></p>
         <p class="ai-detail"></p>
@@ -1765,25 +1647,6 @@ function openAiSheet() {
         $("aiSheet").classList.add("hidden");
       });
       row.appendChild(use);
-    } else if (a.state === "not-ready") {
-      // Installed but unusable, which almost always means "not signed in".
-      // The engine's own detail says why; the button does something about
-      // it instead of asking the person to read and retype a command.
-      const fix = document.createElement("button");
-      fix.className = "btn";
-      fix.textContent = "Sign in";
-      fix.addEventListener("click", async () => {
-        const note = row.querySelector(".ai-detail");
-        try {
-          await invoke("sign_in_agent", { name: a.name });
-          note.textContent = "Finish in the terminal, then check again.";
-          fix.textContent = "Check again";
-          fix.onclick = () => { refreshAgents(); openAiSheet(); };
-        } catch (err) {
-          note.textContent = String(err);
-        }
-      });
-      row.appendChild(fix);
     } else if (a.state === "missing" && a.install_package) {
       // Installing here, rather than printing a command. Someone making their
       // first app should never have to find a terminal, leave this window,
@@ -1799,21 +1662,8 @@ function openAiSheet() {
         try {
           await invoke("install_agent", { name: a.name });
           note.classList.remove("installing");
-          note.textContent = "Installed. One sign-in left.";
-          // Signing in is interactive, so it needs a terminal. Offering the
-          // button beats printing the command and hoping.
-          add.textContent = "Sign in";
-          add.disabled = false;
-          add.onclick = async () => {
-            try {
-              await invoke("sign_in_agent", { name: a.name });
-              note.textContent = "Finish signing in, then come back.";
-              add.textContent = "Check again";
-              add.onclick = () => { refreshAgents(); openAiSheet(); };
-            } catch (err) {
-              note.textContent = String(err);
-            }
-          };
+          note.textContent = "installed -- sign in to it once to finish";
+          add.textContent = "Done";
           refreshAgents();
         } catch (err) {
           note.classList.remove("installing");
@@ -2013,14 +1863,9 @@ function appTile(name) {
 async function openCloud() {
   showView("cloud");
   $("cloudError").classList.add("hidden");
-  // The skeleton replaces the old "Reading Krate Cloud…" line: cards in
-  // the shape of the answer, in the place the answer lands, so the wait
-  // reads as loading rather than as nothing happening. Painted here --
-  // after the grid is cleared -- because clearing it first wiped it.
-  $("cloudLoading").classList.add("hidden");
+  $("cloudLoading").classList.remove("hidden");
   $("cloudGrid").innerHTML = "";
   $("cloudCount").textContent = "";
-  showCloudSkeleton();
   try {
     const payload = JSON.parse(await invoke("cloud_apps"));
     state.cloud = (payload.apps || []).map((app) => ({ ...app, cats: catOf(app) }));
@@ -2526,13 +2371,6 @@ function setupDivider() {
     rail.style.width = rail.style.minWidth = saved + "px";
   }
 
-  // Double-click restores the default split: a person who drags the rail
-  // to an unusable width needs a way back that is not "guess 320px".
-  divider.addEventListener("dblclick", () => {
-    rail.style.width = rail.style.minWidth = "320px";
-    localStorage.setItem("krate.railWidth", "320");
-  });
-
   divider.addEventListener("mousedown", (e) => {
     e.preventDefault();
     document.body.classList.add("resizing");
@@ -2554,28 +2392,6 @@ function setupDivider() {
 }
 
 /* ---- wiring ----------------------------------------------------------- */
-
-/* Does this read as a request to build, or a question about Krate?
- *
- * The engine's plan step can only answer with questions or a plan -- it
- * has no way to say "that was not a request", so anything conversational
- * fell through to a fifteen-minute build. "can we make any app?" produced
- * an app. This catches the shapes people actually type, and it errs
- * toward building: wrongly calling a request a question is far worse than
- * building something somebody half-meant. */
-function looksLikeAQuestion(text) {
-  const t = String(text || "").trim().toLowerCase();
-  if (!t.endsWith("?")) return false;   // no question mark, no doubt
-  if (t.length > 90) return false;      // long enough to be a spec
-  if (!/^(can|could|does|do|is|are|will|would|what|how|why|which|who|when)\b/.test(t)) {
-    return false;
-  }
-  // A polite request names its thing -- "can you make me a tip calculator?"
-  // Vague scope words mean they are asking about the tool, not ordering.
-  const vague = /\b(any|anything|what kind|what sort|whatever|something)\b/.test(t);
-  const namesAThing = /\b(a|an|me|my)\s+[a-z]+/.test(t) && !vague;
-  return !namesAThing;
-}
 
 function startFromHome() {
   const text = $("homePrompt").value.trim();
@@ -2748,9 +2564,7 @@ $("buildingNowOpen")?.addEventListener("click", () => {
   if (state.buildingSession) openSession(state.buildingSession);
 });
 $("buildingNowStop")?.addEventListener("click", stopBuild);
-// Settings is a dock page now; the old titlebar gear became the theme
-// switch. The sheet stays reachable from the page's own controls.
-$("settingsBtn")?.addEventListener("click", openSettings);
+$("settingsBtn").addEventListener("click", openSettings);
 $("accountBtn").addEventListener("click", openAccount);
 $("changeDirBtn").addEventListener("click", async () => {
   const dir = await invoke("pick_folder");
@@ -2938,634 +2752,4 @@ boot().then(async () => {
       startFromHome();
     }
   } catch (e) {}
-});
-
-/* =======================================================================
- * The dock, the two new pages, and the updater.
- *
- * Added at the end so the file above is untouched: every existing view and
- * flow keeps working exactly as it did, and these listeners layer the new
- * navigation on top.
- * ===================================================================== */
-
-/* ---- dock navigation --------------------------------------------------- */
-/* The dock's avatar carries the person's initial from the moment the app
- * knows who they are -- it showed a bare dot until the profile page was
- * visited, which is a page most people never open. */
-async function seedDockAvatar() {
-  try {
-    const account = await invoke("account_status");
-    const name = account?.name || account?.login || "";
-    if (!name) return;
-    const solo = $("dockProfile");
-    if (account.avatar_url && solo) {
-      solo.innerHTML = `<img src="${account.avatar_url}" alt="" />`;
-    } else {
-      const initial = $("dockInitial");
-      if (initial) initial.textContent = name.trim().charAt(0).toUpperCase();
-    }
-  } catch (e) { /* signed out: the dot is the honest answer */ }
-}
-seedDockAvatar();
-
-document.querySelectorAll("#dock button[data-page]").forEach((button) => {
-  button.addEventListener("click", () => {
-    const page = button.dataset.page;
-    if (page === "apps") { showView("apps"); loadAppsPage(); return; }
-    if (page === "cloud") { openCloud(); return; }
-    if (page === "settings") { showView("settings"); loadSettingsPage(); return; }
-    showView("home");
-  });
-});
-
-$("dockProfile")?.addEventListener("click", () => {
-  showView("profile");
-  loadProfilePage();
-});
-
-/* Scrolling drops the dock lower and makes it solid, then it settles back.
- * Bound per scroller because each page owns its own scroll container. */
-(function bindDockScroll() {
-  let idle = null;
-  const attach = (el) => {
-    if (!el || el.dataset.dockBound) return;
-    el.dataset.dockBound = "1";
-    el.addEventListener("scroll", () => {
-      // Low and solid WHILE the page is moving; back to rest the moment it
-      // stops, wherever it stopped. Tying the resting state to scrollTop
-      // meant the dock stayed pinned down for as long as somebody was
-      // scrolled -- which is most of the time on a full page.
-      document.body.classList.add("scrolled");
-      clearTimeout(idle);
-      idle = setTimeout(() => document.body.classList.remove("scrolled"), 260);
-    }, { passive: true });
-  };
-  document.querySelectorAll("[data-scroller]").forEach(attach);
-  // The home view scrolls in its own element.
-  attach(document.querySelector(".home"));
-})();
-
-/* Keep the pill aligned when the window resizes -- a label's box moves. */
-window.addEventListener("resize", () => {
-  const on = document.querySelector("#dock button.on");
-  if (on) moveGlide(on);
-});
-
-/* ---- starter suggestions ---------------------------------------------- */
-document.querySelectorAll("#suggList button[data-sugg]").forEach((button) => {
-  button.addEventListener("click", () => {
-    const box = $("homePrompt");
-    if (!box) return;
-    box.value = button.dataset.sugg;
-    box.focus();
-    box.dispatchEvent(new Event("input"));
-  });
-});
-
-/* ---- your apps page ----------------------------------------------------
- * The grid moved off the home screen: home is the prompt and nothing else,
- * and a person's library is a place they go to, not a wall they scroll past
- * to reach the thing they came for. renderSessions still owns the cards, so
- * there is one list, not two that can disagree. */
-async function loadAppsPage() {
-  try {
-    const sessions = await invoke("sessions_list");
-    renderSessions(sessions || []);
-    const made = (sessions || []).filter((s) => s.result && s.result.path).length;
-    const count = $("appsCount");
-    if (count) count.textContent = made === 1 ? "1 app" : `${made} apps`;
-  } catch (e) { /* the page still renders its empty state */ }
-}
-
-/* ---- settings page ----------------------------------------------------- */
-async function loadSettingsPage() {
-  try {
-    const settings = await invoke("settings_get");
-    const dir = $("setOutDir");
-    if (dir) dir.textContent = (settings.out_dir || "").replace(/^\/Users\/[^/]+/, "~");
-    const agent = $("setAgent");
-    if (agent) agent.textContent = settings.agent || "claude";
-  } catch (e) { /* the page still renders without them */ }
-  checkForUpdate();
-}
-
-$("setOutBtn")?.addEventListener("click", async () => {
-  try {
-    const dir = await invoke("pick_folder");
-    if (!dir) return;
-    state.outDir = dir;
-    await invoke("settings_set", { settings: { out_dir: dir, agent: state.agent } });
-    const el = $("setOutDir");
-    if (el) el.textContent = dir.replace(/^\/Users\/[^/]+/, "~");
-  } catch (e) { /* cancelled */ }
-});
-
-$("setAgentBtn")?.addEventListener("click", () => {
-  // The agent picker already exists as a sheet; reuse it rather than
-  // building a second one that can drift.
-  const chip = $("builtByChip");
-  if (chip) chip.click();
-});
-
-// Only the switches wired to something real respond. A control that
-// flips and changes nothing is a lie told in one click.
-document.querySelectorAll(".sw:not([data-soon])").forEach((sw) => {
-  sw.addEventListener("click", () => sw.classList.toggle("on"));
-});
-
-/* ---- the updater -------------------------------------------------------
- * Four states, and the words matter as much as the mechanism: a person
- * being asked to restart an app deserves to know what they get, how long
- * it takes, and that their work survives.
- *
- * Downloading and installing are the Studio's job, not a browser's: the
- * old flow opened a download page and left the person to find the file,
- * mount it, and drag it over the running app. */
-let updateInfo = null;
-
-function updIcon(kind) {
-  const el = $("updIc");
-  if (!el) return;
-  if (kind === "working") { el.innerHTML = '<span class="upd-spin"></span>'; return; }
-  if (kind === "done") {
-    el.innerHTML = '<svg width="17" height="17" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.4l3 3 6-6.4" stroke="#6cf4d7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    return;
-  }
-  el.innerHTML = '<svg width="17" height="17" viewBox="0 0 16 16" fill="none"><path d="M8 11V3M8 3L4.6 6.4M8 3l3.4 3.4" stroke="#6291ff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.8 12.4h10.4" stroke="#6291ff" stroke-width="1.6" stroke-linecap="round"/></svg>';
-}
-
-async function checkForUpdate() {
-  const card = $("upd");
-  if (!card) return;
-  card.classList.remove("ready", "done", "working");
-  updIcon("working");
-  $("updT").textContent = "Checking for updates…";
-  $("updAct").innerHTML = "";
-
-  let mine = "";
-  try { mine = String(await invoke("studio_version")).replace(/^v/, ""); } catch (e) {}
-  $("updCurrent").textContent = mine || "unknown";
-
-  try {
-    const res = await fetch("https://api.github.com/repos/incyashraj/krate/releases/latest");
-    const rel = await res.json();
-    const latest = String(rel.tag_name || "").replace(/^v/, "");
-    const newer = latest && mine
-      && latest.localeCompare(mine, undefined, { numeric: true }) > 0;
-
-    if (!newer) {
-      updIcon("done");
-      $("updT").textContent = "You are on the newest version";
-      $("updS").textContent = `Version ${mine} · checked just now`;
-      $("updAct").innerHTML = '<button class="set-mini" id="updCheckAgain">Check again</button>';
-      $("updCheckAgain").addEventListener("click", checkForUpdate);
-      $("dockBadge")?.classList.remove("show");
-      $("updateChip")?.classList.add("hidden");
-      return;
-    }
-
-    updateInfo = { latest, notes: rel.body || "" };
-    card.classList.add("ready");
-    updIcon("ready");
-    $("updT").textContent = `Version ${latest} is ready`;
-    $("updS").textContent = `You have ${mine}`;
-    $("updAct").innerHTML =
-      '<button class="set-mini" id="updLater">Later</button>' +
-      '<button class="set-mini go" id="updNow">Update now</button>';
-    $("updNow").addEventListener("click", () => runUpdate(latest));
-    $("updLater").addEventListener("click", () => {
-      $("updT").textContent = "Update postponed";
-      $("updS").textContent = "It stays here whenever you want it";
-      $("updAct").innerHTML = '<button class="set-mini go" id="updUndo">Update now</button>';
-      $("updUndo").addEventListener("click", () => runUpdate(latest));
-    });
-    $("dockBadge")?.classList.add("show");
-
-    // Release notes, trimmed to the lines a person can act on.
-    const list = $("updList");
-    if (list) {
-      const lines = (rel.body || "")
-        .split("\n")
-        .map((l) => l.replace(/^[-*]\s*/, "").trim())
-        .filter((l) => l && !l.startsWith("#") && l.length < 120)
-        .slice(0, 4);
-      list.innerHTML = lines.length
-        ? lines.map((l) => `<li>${escapeHtml(l)}</li>`).join("")
-        : "<li>Fixes and improvements</li>";
-    }
-  } catch (e) {
-    updIcon("ready");
-    // Title first, then the body. Setting them in the other order left
-    // "Checking for updates..." sitting above "No internet", which reads
-    // as two different states at once.
-    $("updT").textContent = "Could not check for updates";
-    $("updS").textContent = "No internet, or GitHub is busy. Your Krate still works.";
-    $("upd").classList.remove("ready", "working", "done");
-    $("updAct").innerHTML = '<button class="set-mini" id="updRetry">Try again</button>';
-    $("updRetry").addEventListener("click", checkForUpdate);
-  }
-}
-
-async function runUpdate(latest) {
-  const card = $("upd");
-  card.classList.remove("ready");
-  card.classList.add("working");
-  updIcon("working");
-  $("updT").textContent = `Downloading version ${latest}`;
-  $("updS").textContent = "Krate keeps working while this happens";
-  $("updAct").innerHTML = "";
-
-  try {
-    await invoke("install_update", { version: latest });
-    card.classList.remove("working");
-    card.classList.add("done");
-    updIcon("done");
-    $("updT").textContent = `Version ${latest} is ready to install`;
-    $("updS").textContent = "Takes about five seconds. Your apps and history stay.";
-    $("updAct").innerHTML = '<button class="set-mini go" id="updRestart">Restart Krate</button>';
-    $("updRestart").addEventListener("click", () => invoke("restart_for_update").catch(() => {}));
-  } catch (err) {
-    // Falling back to the browser is honest, not a failure: the file is
-    // real and the person can finish it by hand.
-    card.classList.remove("working");
-    updIcon("ready");
-    $("updT").textContent = "Download it from your browser";
-    $("updS").textContent = "The in-app update could not run on this machine.";
-    $("updAct").innerHTML = '<button class="set-mini go" id="updOpen">Open the download</button>';
-    $("updOpen").addEventListener("click", () => {
-      const ua = navigator.userAgent;
-      const file = ua.includes("Windows")
-        ? `krate-studio-${latest}-windows-x64-setup.exe`
-        : ua.includes("Linux") && !ua.includes("Android")
-          ? `krate-studio-${latest}-linux-x86_64.AppImage`
-          : `krate-studio-${latest}-universal.dmg`;
-      invoke("open_external", {
-        url: `https://github.com/incyashraj/krate/releases/download/v${latest}/${file}`,
-      }).catch(() => {});
-    });
-  }
-}
-
-/* ---- profile page ------------------------------------------------------ */
-async function loadProfilePage() {
-  try {
-    const account = await invoke("account_status");
-    const name = account?.name || account?.login || "Signed in";
-    $("profName").textContent = name;
-    $("profMail").textContent = account?.login ? `@${account.login}` : "";
-    const initial = (name || "?").trim().charAt(0).toUpperCase();
-    $("profInitial").textContent = initial;
-    const dockInitial = $("dockInitial");
-    if (dockInitial) dockInitial.textContent = initial;
-    if (account?.avatar_url) {
-      $("profAv").innerHTML = `<img src="${account.avatar_url}" alt="" />`;
-      const solo = $("dockProfile");
-      if (solo) solo.innerHTML = `<img src="${account.avatar_url}" alt="" />`;
-    }
-    // GitHub is how publishing is authorised, so it is connected by
-    // definition once somebody is signed in.
-    $("connGhSub").textContent = account?.login
-      ? `${account.login} · used for publishing`
-      : "Used for publishing to Krate Cloud";
-    $("connGhAct").innerHTML = account?.login
-      ? '<span class="linked"><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5.2l2 2L8 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Connected</span>'
-      : '<button class="set-mini" data-connect="github">Connect</button>';
-  } catch (e) { /* signed out; the page still renders */ }
-
-  // The numbers are the person's own work, read from what the app already
-  // knows: finished sessions are apps made, and the cloud listing filtered
-  // to this account is what they published. No new backend command, so
-  // nothing here can disagree with the rest of the UI.
-  try {
-    const sessions = await invoke("sessions_list");
-    const made = (sessions || []).filter((s) => s.result && s.result.path);
-    $("profMade").textContent = String(made.length);
-    // result.size is a display string the build wrote ("24 KB", "1.2 MB"),
-    // not a number -- summing it raw produced "NaN KB" on the profile.
-    const kb = made.reduce((sum, s) => {
-      const text = String((s.result && s.result.size) || "");
-      const value = parseFloat(text);
-      if (!Number.isFinite(value)) return sum;
-      return sum + (/mb/i.test(text) ? value * 1024 : value);
-    }, 0);
-    $("profSize").textContent = kb >= 1024
-      ? `${(kb / 1024).toFixed(1)} MB`
-      : `${Math.round(kb)} KB`;
-  } catch (e) {}
-  try {
-    const raw = await invoke("cloud_apps");
-    const data = JSON.parse(raw || "{}");
-    const login = ($("profMail").textContent || "").replace(/^@/, "");
-    const mine = (data.apps || []).filter(
-      (a) => login && a.meta && a.meta.author_login === login
-    );
-    $("profPub").textContent = String(mine.length);
-  } catch (e) {}
-}
-
-document.querySelectorAll("button[data-connect]").forEach((button) => {
-  button.addEventListener("click", () => {
-    // Google and Apple sign-in ride the same browser hop GitHub uses; the
-    // hub owns the flow, so the app only has to open the door.
-    const provider = button.dataset.connect;
-    invoke("open_external", {
-      url: `https://hub.krate.tech/login/${provider}/start`,
-    }).catch(() => {});
-  });
-});
-
-$("profSignOut")?.addEventListener("click", async () => {
-  try { await invoke("account_logout"); } catch (e) {}
-  showView("gate");
-});
-
-function escapeHtml(text) {
-  return String(text).replace(/[&<>"']/g, (c) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  })[c]);
-}
-
-
-/* ---- the cloud's loading shell -----------------------------------------
- * "Reading Krate Cloud…" on an empty screen reads as a stall. Cards in
- * the shape of the real ones say the same thing without the doubt, and
- * they occupy the space the answer will land in, so nothing jumps. */
-function showCloudSkeleton() {
-  const grid = $("cloudGrid");
-  if (!grid) return;
-  grid.innerHTML = Array.from({ length: 8 })
-    .map((_, i) => `<div class="skel-card" style="animation-delay:${i * 70}ms">
-        <div class="skel-thumb"></div>
-        <div class="skel-line"></div>
-        <div class="skel-line short"></div>
-      </div>`)
-    .join("");
-}
-
-
-/* ---- theme ------------------------------------------------------------
- * The sun in the titlebar looked like a theme switch and did nothing.
- * Now it is one: it flips the app between the dark room it was designed
- * in and a light one, and remembers the choice. */
-(function themeToggle() {
-  const button = document.getElementById("themeBtn");
-  if (!button) return;
-  const saved = localStorage.getItem("krate-theme");
-  if (saved === "light") document.body.classList.add("light");
-  paintThemeIcon();
-
-  button.addEventListener("click", () => {
-    document.body.classList.toggle("light");
-    localStorage.setItem(
-      "krate-theme",
-      document.body.classList.contains("light") ? "light" : "dark"
-    );
-    paintThemeIcon();
-  });
-
-  function paintThemeIcon() {
-    const light = document.body.classList.contains("light");
-    button.title = light ? "Switch to dark" : "Switch to light";
-    button.innerHTML = light
-      ? '<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M13.4 9.4A5.6 5.6 0 016.6 2.6a5.6 5.6 0 106.8 6.8z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/></svg>'
-      : '<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="3.1" stroke="currentColor" stroke-width="1.35"/><path d="M8 1.4v1.7M8 12.9v1.7M1.4 8h1.7M12.9 8h1.7M3.4 3.4l1.2 1.2M11.4 11.4l1.2 1.2M12.6 3.4l-1.2 1.2M4.6 11.4l-1.2 1.2" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>';
-  }
-})();
-
-/* =======================================================================
- * First run, the greeting, and the examples.
- * ===================================================================== */
-
-/* The examples people actually see.
- *
- * Chosen against what this Studio has really built (the sessions in
- * ~/.krate/studio/builds) rather than invented: each one is a shape Krate
- * is known to do well, each names a concrete outcome instead of a
- * category, and together they cover the three reasons somebody opens
- * this -- keep something, do a small job, play. "A habit tracker" was
- * one of three that all sounded like homework. */
-const EXAMPLES = [
-  "a habit tracker that shows my streak going",
-  "a tip splitter for dinners with friends",
-  "a snake game I can play offline",
-  "a countdown to a date that matters",
-  "a photo booth that uses my webcam",
-  "a shared grocery list my partner can edit too",
-  "a voice memo recorder with playback",
-  "a flashcard app for spanish words",
-];
-
-function pickExamples(n) {
-  // Rotate rather than randomise: a person who reopens the app should not
-  // feel the ground move, but the set should not be frozen forever either.
-  const day = Math.floor(Date.now() / 86400000);
-  const out = [];
-  for (let i = 0; i < n; i += 1) {
-    out.push(EXAMPLES[(day + i * 3) % EXAMPLES.length]);
-  }
-  return out;
-}
-
-function paintExamples() {
-  const list = $("suggList");
-  if (!list) return;
-  const trend = '<span class="trend"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.8 11.2L6 7l3 3 5.2-5.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><path d="M10.6 4.4h3.8v3.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></span>';
-  list.innerHTML = pickExamples(3)
-    .map((text) => {
-      const shown = text.charAt(0).toUpperCase() + text.slice(1);
-      return `<button type="button" data-sugg="${text.replace(/"/g, "&quot;")}">
-        <span class="trend"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.8 11.2L6 7l3 3 5.2-5.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.6 4.4h3.8v3.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-        ${shown}
-        <svg class="go" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8 6 12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>`;
-    })
-    .join("");
-  list.querySelectorAll("button[data-sugg]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const box = $("homePrompt");
-      if (!box) return;
-      box.value = button.dataset.sugg;
-      box.focus();
-      box.dispatchEvent(new Event("input"));
-    });
-  });
-}
-
-/* The greeting: "Hi Y" -- their first name's initial, from whichever
- * source knows it. The account's name wins because it is theirs; the
- * onboarding name is the fallback for anyone who skipped signing in. */
-function paintGreeting() {
-  const greet = $("homeGreet");
-  const title = $("homeTitle") || document.querySelector(".home-title");
-  const fromAccount = state.account && state.account.name;
-  const saved = localStorage.getItem("krate-name") || "";
-  const name = (fromAccount || saved || "").trim();
-  const initial = name ? name.trim().charAt(0).toUpperCase() : "";
-  // "What are we making, Y?" -- the greeting IS the headline, so the
-  // screen asks one question instead of stacking a label above a slogan.
-  // A small pill with the initial in it, then the greeting: at 15px of
-  // faint grey the old line was there and unreadable, and a name is the
-  // one thing on this screen that should feel addressed to a person.
-  if (greet) {
-    greet.innerHTML = initial
-      ? `<span class="greet-badge">${initial}</span><span>Hi, ${
-          (name.split(/\s+/)[0] || "").replace(/[<>]/g, "")
-        }</span>`
-      : "";
-  }
-  if (title) title.textContent = "Make an app you can actually send someone";
-}
-
-/* ---- onboarding -------------------------------------------------------- */
-const ONBOARD_KEY = "krate-onboarded";
-
-function needsOnboarding() {
-  return !localStorage.getItem(ONBOARD_KEY);
-}
-
-function obGo(step) {
-  document.querySelectorAll(".ob-scene").forEach((scene) => {
-    const on = Number(scene.dataset.step) === step;
-    scene.classList.toggle("on", on);
-    if (on) {
-      // Re-trigger the entrance: a scene that has already played would
-      // otherwise appear fully formed, and the stagger is the point.
-      scene.querySelectorAll(".ob-h, .ob-p, .ob-cta, .ob-agents, .ob-input, .ob-quiet, .fan-card")
-        .forEach((el) => {
-          el.style.animation = "none";
-          void el.offsetWidth;
-          el.style.animation = "";
-        });
-    }
-  });
-  if (step === 2) obLoadAgents();
-}
-
-async function obLoadAgents() {
-  const box = $("obAgents");
-  const next = $("obAgentNext");
-  if (!box) return;
-  try {
-    const agents = await invoke("agents");
-    const usable = (agents || []).filter((a) => a.state === "working");
-    if (!agents || !agents.length) throw new Error("none");
-    box.innerHTML = agents
-      .map((a) => {
-        const ok = a.state === "working";
-        return `<button class="ob-agent${ok ? "" : " off"}" data-agent="${a.name}" ${ok ? "" : "disabled"}>
-          <span class="ob-agent-mark">${aiLogo(a.name)}</span>
-          <span class="ob-agent-name">${a.label}</span>
-          <span class="ob-agent-state">${ok ? "ready" : "not installed"}</span>
-        </button>`;
-      })
-      .join("");
-    // Preselect the one that works, so the common case is one click.
-    if (usable.length) {
-      const first = box.querySelector(`[data-agent="${usable[0].name}"]`);
-      if (first) first.classList.add("picked");
-      state.agent = usable[0].name;
-      if (next) next.disabled = false;
-    }
-    box.querySelectorAll("button[data-agent]").forEach((button) => {
-      const info = (agents || []).find((x) => x.name === button.dataset.agent);
-      if (info && info.state !== "working") {
-        // An unavailable tool is not a dead row: it is one click from
-        // being the tool they use.
-        button.disabled = false;
-        button.classList.remove("off");
-        button.addEventListener("click", async () => {
-          const label = button.querySelector(".ob-agent-state");
-          if (label) label.textContent = "installing";
-          try {
-            if (info.state === "missing" && info.install_package) {
-              await invoke("install_agent", { name: info.name });
-            }
-            await invoke("sign_in_agent", { name: info.name });
-            if (label) label.textContent = "finish in terminal";
-          } catch (err) {
-            if (label) label.textContent = "could not install";
-          }
-        });
-        return;
-      }
-      button.addEventListener("click", async () => {
-        box.querySelectorAll("button").forEach((b) => b.classList.remove("picked"));
-        button.classList.add("picked");
-        state.agent = button.dataset.agent;
-        if (next) next.disabled = false;
-        try {
-          const settings = await invoke("settings_get");
-          await invoke("settings_set", {
-            settings: { out_dir: settings.out_dir, agent: state.agent },
-          });
-        } catch (e) {}
-      });
-    });
-    if (!usable.length) {
-      // Honest, and actionable: name the tool and how to get it.
-      const help = (agents || [])[0];
-      box.innerHTML += `<p class="ob-none">No AI tool found yet. ${
-        help && help.detail ? help.detail : "Install one, then come back — Krate will notice it."
-      }</p>`;
-      if (next) next.disabled = false;
-    }
-  } catch (e) {
-    box.innerHTML = `<p class="ob-none">Krate could not check for AI tools.
-      You can pick one later in Settings.</p>`;
-    if (next) next.disabled = false;
-  }
-}
-
-
-function finishOnboarding() {
-  const name = ($("obName") && $("obName").value.trim()) || "";
-  if (name) localStorage.setItem("krate-name", name);
-  localStorage.setItem(ONBOARD_KEY, "1");
-  showView("home");
-  paintGreeting();
-  paintExamples();
-  // Land them on the prompt box with the cursor already in it: the last
-  // thing onboarding promised was "make my first app".
-  const box = $("homePrompt");
-  if (box) setTimeout(() => box.focus(), 260);
-}
-
-// Bound by data-go, not by class: the rebuild renamed .ob-next to .ob-cta
-// and the old selector matched nothing, so Start did nothing at all.
-document.querySelectorAll("[data-go]").forEach((button) => {
-  button.addEventListener("click", () => obGo(Number(button.dataset.go)));
-});
-$("obFinish")?.addEventListener("click", finishOnboarding);
-$("obSkipAll")?.addEventListener("click", () => {
-  localStorage.setItem(ONBOARD_KEY, "1");
-  showView("home");
-  paintGreeting();
-  paintExamples();
-});
-$("obSignIn")?.addEventListener("click", () => {
-  invoke("login_browser").catch(() => {});
-});
-$("obName")?.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") finishOnboarding();
-});
-
-paintExamples();
-paintGreeting();
-
-/* Signing in is not required to make an app -- only to publish one. The
- * gate offered no way past, so anyone who reached it signed out was stuck
- * behind an account wall guarding nothing. */
-$("gateSkip")?.addEventListener("click", () => {
-  localStorage.setItem(ONBOARD_KEY, "1");
-  enterHome();
-});
-
-/* Replaying the welcome. Onboarding runs once, which makes it the hardest
- * screen in the app to look at again -- including for whoever is building
- * it. This is the honest way to see it, and it belongs in Settings rather
- * than in a console command only we would know. */
-$("replayOnboard")?.addEventListener("click", () => {
-  localStorage.removeItem(ONBOARD_KEY);
-  showView("onboard");
-  obGo(1);
 });

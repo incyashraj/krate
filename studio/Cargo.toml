@@ -32,6 +32,8 @@ url = "2"
 # Reading Krate Cloud. Same version and features as the workspace's own hub
 # client, so the studio and the engine speak to the hub identically.
 ureq = { version = "2.12", default-features = false, features = ["tls", "json"] }
+# Verifying the update we downloaded before running it.
+sha2 = "0.10"
 tauri-plugin-notification = "2"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
