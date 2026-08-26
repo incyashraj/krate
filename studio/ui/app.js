@@ -1442,6 +1442,20 @@ async function runPlan() {
     // error prose (the first live run printed a build error inside a
     // parenthesis inside an apology).
     console.warn("plan step failed:", err);
+    // A broken tool must not be reported as a decision. When the engine
+    // beside this Studio is too old to plan, "I'll skip the questions this
+    // time" describes a choice nobody made, and the person reads it as the
+    // product quietly changing behaviour -- which is exactly how K-180 cost
+    // an afternoon. Say what is wrong and what fixes it, then still build,
+    // because refusing to work would be a worse answer than working without
+    // the conversation.
+    if (String(err).includes("STALE_ENGINE")) {
+      say("KRATE", "The Krate engine on this machine is older than this "
+        + "Studio, so I cannot talk an app through before building it. "
+        + "Updating Krate restores the questions. I'll build directly for now.");
+      setIdleNote("Old engine: building without the planning step.");
+      return finishPlanningAndBuild();
+    }
     // A question is not a build request. When the plan step cannot answer
     // AND the message reads as a question about Krate, answer it instead
     // of spending fifteen minutes building a reply to it.

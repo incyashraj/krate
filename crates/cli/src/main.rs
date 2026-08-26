@@ -4143,6 +4143,119 @@ fn report_workspace_from(session_json: &str) -> Option<PathBuf> {
 /// case: "Sadas" must become a question, never an app. Everything else goes
 /// to the person's own AI for one short text call that returns either
 /// questions or a plan.
+/// Something the runtime has no capability for at all, on any platform.
+///
+/// Membership is deliberately narrow. Every entry here is a door that does
+/// not exist in KRATE_CAPABILITY_SPECS -- not one that is merely unfinished
+/// on some platform. The camera is the cautionary case and is NOT listed:
+/// `camera.capture` is real and shipped on macOS (K-119), so telling a Mac
+/// user "Krate cannot do cameras" would be a lie told confidently, which is
+/// worse than the forty-minute discovery this gate exists to prevent.
+///
+/// A wrong hit here refuses work Krate can really do, so the words that
+/// trigger each one have to be words that cannot plausibly mean anything
+/// else.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Wall {
+    ScreenCapture,
+    OtherApps,
+    Hardware,
+    Background,
+}
+
+impl Wall {
+    /// What the person is told. Says what cannot happen, then what can --
+    /// the plan step's existing contract is to describe the closest thing
+    /// that truly works rather than to refuse, and a person who came to
+    /// build something deserves a door, not a wall.
+    fn plan(self) -> &'static str {
+        match self {
+            Wall::ScreenCapture =>
+                "Krate cannot record or capture the screen: a sandboxed app is \
+                 given its own window and no view of anything else, and there \
+                 is no screen-capture permission to ask for. I can build the \
+                 app around a recording you already have, or an app that works \
+                 on images you drop into it.",
+            Wall::OtherApps =>
+                "Krate cannot type into, click, or read other programs. That is \
+                 the sandbox working rather than a missing feature: an app gets \
+                 its own window and nothing outside it. I can build something \
+                 that does the job inside its own window, and you copy the \
+                 result where you need it.",
+            Wall::Hardware =>
+                "Krate has no capability for MIDI, Bluetooth, USB or serial \
+                 devices, so an app cannot reach one. I can build the same idea \
+                 driven by the keyboard, the mouse, or a file you give it.",
+            Wall::Background =>
+                "A Krate app is one window and one run: it cannot keep working \
+                 after you close it, and there is no background permission to \
+                 ask for. I can build it to remember where you were and pick \
+                 up when you open it again.",
+        }
+    }
+}
+
+/// Read a request for a wall the runtime cannot cross.
+///
+/// Two-part matching, never a single keyword. "screen" alone appears in
+/// "full screen" and "screen saver", both buildable; only "record/capture
+/// the screen" is the wall. The cost of being wrong is refusing real work,
+/// so every rule needs an action word AND its object.
+fn wall_in_request(request: &str) -> Option<Wall> {
+    let text = request.to_lowercase();
+    let any = |needles: &[&str]| needles.iter().any(|n| text.contains(n));
+
+    // Screen capture: recording or grabbing the display itself.
+    if any(&["screen record", "screen-record", "record the screen",
+             "record my screen", "screen capture", "screen-capture",
+             "capture the screen", "screenshot of my screen",
+             "record the display"])
+    {
+        return Some(Wall::ScreenCapture);
+    }
+
+    // Driving other programs. The action has to name another program or the
+    // system; "type into a box" inside our own window is ordinary work.
+    if any(&["other apps", "other applications", "other programs",
+             "another app", "another application", "another program",
+             "whatever field", "whatever app", "whatever window",
+             "active window", "focused field", "focused window",
+             "any application", "control my computer", "control the os",
+             "automate my mac", "automate windows"])
+        && any(&["type", "click", "press", "send", "control", "read",
+                 "automate", "paste into", "fill"])
+    {
+        return Some(Wall::OtherApps);
+    }
+
+    // Physical devices with no capability of any kind.
+    if any(&["midi", "bluetooth", " usb", "usb ", "serial port", "gamepad",
+             "game controller", "arduino"])
+        && any(&["connect", "connected", "my ", "read", "listen", "play",
+                 "device", "controller", "keyboard", "piano"])
+    {
+        return Some(Wall::Hardware);
+    }
+
+    // Running when the window is not open.
+    //
+    // "background" alone is not the wall -- "an app with a dark background"
+    // is a buildable request, and an earlier cut of this rule refused it,
+    // because the word satisfied both halves of the match by itself. The
+    // wall is background *running*, so the word has to be next to a verb
+    // about continuing, or the phrase has to be explicit on its own.
+    if any(&["after i close", "after closing", "even when closed",
+             "even after i close", "keeps running", "keep running",
+             "runs in the tray", "system tray", "menu bar app",
+             "background process", "background task", "background timer",
+             "in the background", "runs in background"])
+    {
+        return Some(Wall::Background);
+    }
+
+    None
+}
+
 fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> Result<u8> {
     // Deterministic thin gate. name_from_request already knows which words
     // carry meaning; a request it cannot name and that has no sentence
@@ -4159,6 +4272,21 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
                     "What should this app do? Describe it in a sentence or two -- \
                      what you would use it for, and what it should show."
                 ]
+            })
+        );
+        return Ok(0);
+    }
+
+    // A wall the runtime genuinely cannot cross is worth naming in ten
+    // seconds rather than discovering forty minutes into a build. This step
+    // costs nothing -- no AI, no network -- and it runs before the provider
+    // is even resolved.
+    if let Some(wall) = wall_in_request(request) {
+        println!(
+            "{}",
+            serde_json::json!({
+                "plan": wall.plan(),
+                "needs": Vec::<String>::new(),
             })
         );
         return Ok(0);
@@ -12798,6 +12926,79 @@ mod home_tests {
             "these read HOME with no USERPROFILE fallback, so they do nothing \
              on Windows -- use crate::home_dir(): {offenders:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod wall_tests {
+    use super::{wall_in_request, Wall};
+
+    /// The walls the gate is allowed to name are the ones with no capability
+    /// at all. Naming them costs ten seconds instead of the forty minutes a
+    /// build takes to discover the same thing.
+    #[test]
+    fn a_request_for_something_krate_cannot_do_is_named_before_building() {
+        let cases: &[(&str, Wall)] = &[
+            ("a screen recorder that saves an mp4", Wall::ScreenCapture),
+            ("an app to record my screen while I talk", Wall::ScreenCapture),
+            ("an app that types my signature into whatever field is focused",
+             Wall::OtherApps),
+            ("something that clicks buttons in other apps for me", Wall::OtherApps),
+            ("a MIDI keyboard app that plays my connected piano", Wall::Hardware),
+            ("read my bluetooth heart rate device", Wall::Hardware),
+            ("a background timer that keeps running after I close the window",
+             Wall::Background),
+        ];
+        for (request, expected) in cases {
+            assert_eq!(
+                wall_in_request(request),
+                Some(*expected),
+                "should have been caught as a wall: {request}"
+            );
+        }
+    }
+
+    /// The half that matters more. A false hit refuses work Krate can really
+    /// do, which is a worse failure than the slow discovery this gate
+    /// replaces -- so ordinary requests, and every request that merely uses
+    /// a wall's vocabulary innocently, must pass straight through.
+    #[test]
+    fn ordinary_requests_are_never_mistaken_for_walls() {
+        let buildable = [
+            // Plain apps.
+            "a tip calculator with a bill field and buttons for 15 and 20 percent",
+            "a to-do list I can check off, that remembers my items",
+            "a snake game I play with arrow keys",
+            "a markdown note editor with live preview",
+            "a weather dashboard that fetches the current weather for a city",
+            // Words a wall rule uses, in innocent senses.
+            "a full screen clock app",
+            "a screen saver with bouncing shapes",
+            "a game that fills the whole screen",
+            "an app that types out my notes as I press keys",
+            "a drawing app I control with the mouse",
+            "a keyboard trainer that shows which key to press",
+            "a piano app I play with the computer keyboard",
+            "a timer that runs in its own window",
+            // The word "background" is not the wall; background RUNNING is.
+            // An earlier cut of the rule refused this, because "background"
+            // satisfied both halves of the match on its own.
+            "an app with a dark background and big buttons",
+            "a note app with a background image",
+            "a game with a scrolling background",
+            "a photo viewer for images I drop on it",
+            // The camera, deliberately: it is real on macOS (K-119), so it
+            // must never be gated as a wall.
+            "an app that shows my webcam feed with a photo button",
+            "a camera app that takes a picture",
+        ];
+        for request in buildable {
+            assert_eq!(
+                wall_in_request(request),
+                None,
+                "a buildable request was refused as a wall: {request}"
+            );
+        }
     }
 }
 
