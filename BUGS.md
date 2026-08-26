@@ -112,7 +112,7 @@ Note:     This exposed how wide K-189 is. With the probe telling the truth,
 
 ### K-189 -- the confined agent home carries only Claude's sign-in, so every other AI runs signed out
 
-Status:   fix written, NOT verified end to end
+Status:   fixed
 Owner:    claude
 Severity: blocker
 Class:    our-code
@@ -136,13 +136,20 @@ written:  ~/.copilot and the ~/.config variants into the confined home, and
           creates the directory first (the caller created it AFTER seeding, so
           on a first run every copy landed nowhere -- Claude's survived only
           because it makes its own subdirectory on the way).
-NOT       An end-to-end `krate create --agent grok` still printed "not signed
-verified: in" after the change and auth.json was still absent from the copy. I
-          do not know why, and I stopped rather than guess further. The change
-          is safe (it copies files if present and ignores failure) but it must
-          not be described as fixed until a run proves it. Next step is to
-          instrument seed_agent_home and watch one real authoring run, not to
-          reason about it.
+Real      The copies were unreachable. seed_agent_home ends with a macOS
+cause:    branch that reads Claude's credential out of the keychain and, on
+          success, did `return true` -- leaving the function before any other
+          provider was touched. On any machine with Claude signed in (which
+          is every machine we develop on) Grok, Codex, Gemini and Copilot
+          silently got nothing. Found by instrumenting the function and
+          watching one real run: the entry trace fired, the loop trace never
+          did.
+Verified: with the early return replaced by a flag,
+            ~/.krate/agent-home/.grok/auth.json   SEEDED
+            ~/.krate/agent-home/.codex/auth.json  SEEDED
+          the probe reports grok and codex "working" instead of "not signed
+          in", and a real `krate create --agent grok` gets past authentication
+          and into authoring -- reading Krate's API and writing code.
 
 
 ### K-187 -- two writers tear the transcript in half, so a signed-out AI reports nothing

@@ -5708,6 +5708,8 @@ fn seed_agent_home(real_home: &Path, agent_home: &Path) -> bool {
     let config = agent_home.join(".claude");
     let _ = fs::create_dir_all(&config);
     let dest = config.join(".credentials.json");
+    #[allow(unused_mut, unused_assignments)]
+    let mut claude_ready = false;
     #[cfg(target_os = "macos")]
     {
         if let Ok(out) = ProcessCommand::new("/usr/bin/security")
@@ -5726,7 +5728,16 @@ fn seed_agent_home(real_home: &Path, agent_home: &Path) -> bool {
                         use std::os::unix::fs::PermissionsExt;
                         let _ = fs::set_permissions(&dest, fs::Permissions::from_mode(0o600));
                     }
-                    return true;
+                    // Deliberately NOT an early return.
+                    //
+                    // It was one, and that single `return true` is why every
+                    // other AI ran signed out: the moment Claude's keychain
+                    // credential was written, the function left, and the
+                    // per-provider copies below never executed. On a machine
+                    // with Claude signed in -- which is every machine we
+                    // develop on -- Grok, Codex, Gemini and Copilot silently
+                    // got nothing (K-189).
+                    claude_ready = true;
                 }
             }
         }
@@ -5769,7 +5780,7 @@ fn seed_agent_home(real_home: &Path, agent_home: &Path) -> bool {
         }
     }
 
-    dest.exists()
+    claude_ready || dest.exists()
 }
 
 /// Copy the files directly inside `from` into `to`, creating `to`.
