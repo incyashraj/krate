@@ -4278,10 +4278,15 @@ fn ai_lists_what_this_machine_can_author_with() {
             "krate ai must mention {provider}: {stdout}"
         );
     }
-    // It must end with something the person can actually do next.
+    // It must end with something the person can actually do next -- which is
+    // "krate create" when a tool is ready, and a way to fix one when none
+    // is. Asserting only the first made this test depend on the machine
+    // running it being signed in to an AI, so it began failing the moment
+    // the readiness probe started telling the truth about the confined home
+    // (K-190). What matters is that the person is never left at a dead end.
     assert!(
-        stdout.contains("krate create"),
-        "krate ai must show the next command: {stdout}"
+        stdout.contains("krate create") || stdout.contains("run `krate ai` again"),
+        "krate ai must show a next step, either a command to run or a fix: {stdout}"
     );
 }
 

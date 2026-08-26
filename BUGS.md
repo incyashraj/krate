@@ -71,6 +71,45 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-190 -- the readiness probe runs in a different home from the build, so the chip is green while every build fails
+
+Status:   fixed
+Owner:    claude
+Severity: blocker
+Class:    our-code
+Found:    2026-08-27, chasing why Aanchala's Grok said "Not signed in" while
+          her `grok` TUI worked and her Studio chip was GREEN.
+Evidence: Authoring confines HOME to ~/.krate/agent-home (K-179). The probe in
+          agent_provider::probe did not -- it inherited the real home. So the
+          two asked different machines the same question:
+            probe     (real HOME)     -> working, green dot
+            authoring (confined HOME) -> "Not signed in. Run: grok login ..."
+          Both measured here on one machine with one signed-in Grok. The chip
+          was not merely unhelpful, it was actively wrong: it reported the
+          state of a home the build never uses.
+          Not Grok-specific. Under the confined home, codex fails the same way
+          -- a real run produced 11 error events and 19 auth-failure lines.
+Fixed:    probe now runs under the same home authoring will use, when that
+          directory exists. It returns None rather than creating it, because a
+          probe must observe and never set the machine up; on a first run
+          there is nothing to confine to, authoring creates it, and from then
+          on the two agree.
+          Verified: with no seeded credential, grok now probes as
+          "not-ready -- is installed but not signed in" instead of "working".
+          Her chip would have been red, with the reason, before she typed a
+          word.
+Note:     This exposed how wide K-189 is. With the probe telling the truth,
+          claude, codex, copilot and grok ALL report not-ready on this machine
+          -- because only Claude's credential is copied into the confined
+          home. The green dots were hiding it. K-189 is the fix; this entry is
+          why it was invisible.
+          One test changed with it: ai_lists_what_this_machine_can_author_with
+          asserted the output always contains "krate create", which silently
+          required the machine running the suite to be signed in to an AI. It
+          now accepts either the next command or the fix, because what matters
+          is that the person is never left at a dead end.
+
+
 ### K-189 -- the confined agent home carries only Claude's sign-in, so every other AI runs signed out
 
 Status:   fix written, NOT verified end to end
