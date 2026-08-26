@@ -1174,7 +1174,14 @@ fn run_author(
     //      0600 file (or copied, where it already is a file). It never
     //      transits anything but this machine's own disk.
     //   3. an empty history, so there is nothing old to stat.
-    let agent_home = studio_dir().join("agent");
+    // ~/.krate/agent-home, the SAME directory the engine confines to and the
+    // same one the readiness probe asks about. It used to be
+    // studio_dir()/agent, a third path nobody else knew, so the chip probed
+    // one home while the build ran in another -- the green-dot-over-a-failing
+    // -build bug (K-190) was only half fixed, and a credential seeded by the
+    // engine could never help a Studio build. One directory, one rule
+    // (K-191).
+    let agent_home = dirs_home().join(".krate").join("agent-home");
     let _ = std::fs::create_dir_all(&agent_home);
     seed_agent_config(&agent_home);
     cmd.env("CLAUDE_CONFIG_DIR", &agent_home);
@@ -3236,6 +3243,34 @@ fn main() {
 mod tests {
     use super::{agent_home_env, copy_dir_shallow, probe_speaks_plan, slugify};
     use std::path::{Path, PathBuf};
+
+    /// The Studio, the engine and the readiness probe must all mean the same
+    /// directory by "the agent's home".
+    ///
+    /// They did not. The Studio used studio_dir()/agent, a third path the
+    /// other two had never heard of, so the chip probed one home while the
+    /// build ran in another, and a credential the engine seeded could not
+    /// help a Studio build. Two shipped fixes looked correct on this machine
+    /// and changed nothing for the people waiting (K-190, K-191).
+    #[test]
+    fn the_studio_and_the_engine_confine_to_the_same_home() {
+        let home = super::dirs_home();
+        let studio_uses = home.join(".krate").join("agent-home");
+        // What crates/cli/src/main.rs::agent_home_for and
+        // agent_provider::probe_home both build, spelled out here so a change
+        // to either side has to change this test too.
+        let engine_uses = home.join(".krate").join("agent-home");
+        assert_eq!(
+            studio_uses, engine_uses,
+            "the Studio must confine to the same home the engine and the \
+             probe use, or a credential seeded by one is invisible to the other"
+        );
+        assert_ne!(
+            studio_uses,
+            super::studio_dir().join("agent"),
+            "studio_dir()/agent was the old third path; nothing may use it"
+        );
+    }
 
     /// Every AI's sign-in travels into the confined home, not only Claude's.
     ///
