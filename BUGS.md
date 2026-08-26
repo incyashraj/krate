@@ -71,6 +71,47 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-193 -- macOS asks for Apple Music and the media library in Krate's name, mid-build
+
+Status:   unclaimed
+Owner:    unclaimed
+Severity: serious
+Class:    our-code
+Found:    2026-08-27, on v0.2.1, by Aanchala while an app was being built with
+          Grok. The dialog appeared over the live build view, at the "Testing
+          it" stage:
+            "Krate" would like to access Apple Music, your music and video
+            activity, and your media library.
+          The build itself worked -- she made her app -- so this is a trust
+          problem rather than a functional one, and that is what makes it
+          urgent: it is the same shape as K-179, which was reported as
+          bombardment by a stranger.
+Evidence: Krate does not ask for this. Verified two ways on the shipped
+          v0.2.1 bundle:
+            - no source in crates/*/src or studio/src references
+              AppleMusic, MPMediaLibrary or NSAppleMusicUsageDescription
+            - Info.plist declares exactly two usage strings, camera and
+              microphone, and no media entry at all
+          So the request comes from a CHILD process. macOS attributes a
+          child's access to the parent bundle's identity -- the mechanism
+          behind K-179 -- so whatever the agent or the app under test touched,
+          the prompt carries Krate's name.
+Likely:   The build was at the usability stage, which RUNS the app being
+          written. An app that declares audio.playback opens the system audio
+          path, and on macOS the media-library door sits close to it. Worth
+          confirming before fixing: reproduce by building an app that plays
+          sound, and watch whether the prompt appears at the run step.
+Why it    A person is told an app they are making wants their music library.
+matters:  Nothing in Krate's promise explains that, and the permission wall is
+          the product's central claim. A prompt nobody can account for costs
+          more trust than the feature that triggered it is worth.
+Next:     Reproduce first, deliberately, then decide. If it is the audio path,
+          the fix is to open only what the app actually declared rather than
+          the general media session. Do NOT guess at an entitlement change: an
+          Info.plist edit that silences a prompt without understanding it
+          would hide the evidence rather than fix the cause.
+
+
 ### K-192 -- cutting any non-rc tag silently repoints the website, overriding a deliberate rollback
 
 Status:   unclaimed
