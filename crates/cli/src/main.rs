@@ -4390,6 +4390,29 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
     // killer; "we could not pre-plan, so we are just building it" is not a
     // failure at all. Only a genuinely empty output is worth a soft note, and
     // even that still proceeds to build.
+    // An AI that REFUSED to answer is not an AI that said "ready to build".
+    //
+    // The fallback below is right for an answer we could not parse, and
+    // wrong for one that never came. When the provider's own stream carries
+    // an error -- an expired sign-in, a usage limit, a 401 -- falling
+    // through to an empty plan tells the Studio "the AI looked at this and
+    // it is ready", and it builds. A person typed "do not create any app"
+    // and got an app, because his Codex account had hit its usage limit and
+    // that arrived here as silence (K-182).
+    //
+    // Reuses agent_failure_reason, the same reader the authoring path uses,
+    // so a provider only has to be understood once.
+    if extract_plan_json(&text).is_none() {
+        if let Some(reason) = agent_failure_reason_in(&text) {
+            anyhow::bail!(
+                "{} could not look at your request:\n\n  {reason}\n\n\
+                 Nothing was built. This is a problem with the AI tool, not \
+                 with Krate or your request.",
+                provider.name()
+            );
+        }
+    }
+
     let json = extract_plan_json(&text).unwrap_or_else(|| {
         if text.trim().is_empty() {
             eprintln!("note: the planning AI returned nothing; building directly.");
@@ -6448,6 +6471,16 @@ fn auto_repair(
 /// the caller falls back to naming the transcript.
 fn agent_failure_reason(transcript: &Path) -> Option<String> {
     let text = fs::read_to_string(transcript).ok()?;
+    agent_failure_reason_in(&text)
+}
+
+/// The same reader, over text already in hand.
+///
+/// Split out because the plan step has the provider's output in memory and
+/// never writes a transcript, and it needs exactly this question answered:
+/// did the AI fail, or did it merely answer in a shape we cannot parse? The
+/// two were indistinguishable there, and a refusal became a build (K-182).
+fn agent_failure_reason_in(text: &str) -> Option<String> {
     let mut last = None;
     for line in text.lines() {
         let line = line.trim();
@@ -12936,6 +12969,67 @@ mod home_tests {
             "these read HOME with no USERPROFILE fallback, so they do nothing \
              on Windows -- use crate::home_dir(): {offenders:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod refusal_tests {
+    use super::{agent_failure_reason_in, extract_plan_json};
+
+    /// A provider that REFUSED must be told apart from one that answered in
+    /// a shape we cannot parse. Both leave extract_plan_json empty, and for
+    /// a while both fell through to "building directly" -- which is how a
+    /// person who typed "do not create any app" got an app (K-182).
+    #[test]
+    fn a_provider_that_refused_is_not_read_as_permission_to_build() {
+        // codex exec --json, account out of credit. Real shape, captured
+        // from `codex exec --json` on 2026-08-27.
+        let refused = concat!(
+            r#"{"type":"thread.started","thread_id":"01a03f30"}"#, "\n",
+            r#"{"type":"turn.started"}"#, "\n",
+            r#"{"type":"error","message":"You've hit your usage limit."}"#, "\n",
+            r#"{"type":"turn.failed","error":{"message":"You've hit your usage limit."}}"#,
+        );
+        assert!(
+            extract_plan_json(refused).is_none(),
+            "a refusal carries no plan, which is why it needs its own check"
+        );
+        let reason = agent_failure_reason_in(refused)
+            .expect("a refusal must surface the provider's own words");
+        assert!(
+            reason.contains("usage limit"),
+            "the person must be told what the AI actually said: {reason}"
+        );
+    }
+
+    /// The other half. An answer that is merely unparseable must NOT be
+    /// reported as a failure -- the soft fallback to a direct build is
+    /// deliberate and is what keeps a first request from dying on an output
+    /// shape nobody has seen yet.
+    #[test]
+    fn an_unparseable_answer_is_not_mistaken_for_a_refusal() {
+        for text in [
+            "I think a tip calculator would be lovely. Shall I start?",
+            "",
+            r#"{"type":"item.completed","item":{"text":"not json at all"}}"#,
+            r#"{"type":"turn.completed","usage":{"input_tokens":10}}"#,
+        ] {
+            assert!(
+                agent_failure_reason_in(text).is_none(),
+                "this is an unreadable answer, not a refusal: {text:?}"
+            );
+        }
+    }
+
+    /// A real plan still parses, so neither check can swallow a good answer.
+    #[test]
+    fn a_real_answer_is_still_read_as_one() {
+        let asked = r#"{"ask":["What should it do?"]}"#;
+        let planned = r#"{"plan":"A tip calculator.","needs":[]}"#;
+        assert!(extract_plan_json(asked).is_some());
+        assert!(extract_plan_json(planned).is_some());
+        assert!(agent_failure_reason_in(asked).is_none());
+        assert!(agent_failure_reason_in(planned).is_none());
     }
 }
 

@@ -71,10 +71,45 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-184 -- Krate's own advice is read back as the diagnosis, so a signed-in AI is told to sign in
+
+Status:   fixed
+Owner:    claude
+Severity: serious
+Class:    our-code
+Found:    2026-08-27, by Yashraj's brother, v0.2.0, on a Mac whose Codex chip
+          was GREEN and in use. The failure card said "Your AI needs signing
+          in. Click its name at the top for the fix." He was signed in.
+Evidence: The chain is entirely inside our own code:
+          1. crates/cli/src/main.rs:6500 -- when a provider error mentions
+             authentication, the engine APPENDS its own sentence:
+               "Sign in again, then try once more."
+          2. That whole string, Krate's prose included, becomes the error the
+             Studio receives.
+          3. studio/ui/app.js plainWords() classifies by matching words in
+             that text, and its rule
+               /sign ?in|\bauth(?!or)|logged/
+             matches OUR sentence, not the provider's error.
+          So any failure whose underlying error merely MENTIONED
+          authentication came back as "needs signing in", with total
+          confidence, under a green dot.
+          Second offence of the same kind: the (?!or) guard on that very line
+          is the scar from K-124, where "author command failed" -- also our
+          own words -- sent every user to sign in.
+Fix:      Strip Krate's own prose BEFORE classifying (KRATE_OWN_PROSE +
+          providerWords in app.js), so the guess is made on what the provider
+          said and nothing else. Then classify on the provider's real signal:
+          a usage limit is checked before auth (telling someone to sign in
+          when they are already signed in is the most confusing thing this
+          card can say), and a genuine auth failure is matched on HTTP 401/403
+          and "unauthorized" as well as the words.
+          Verified against his exact error text plus both K-124 regressions:
+          8 cases, 0 failures.
+
 ### K-182 -- an AI that refuses to answer is reported as "building directly", so a request is built after the person said not to
 
-Status:   unclaimed
-Owner:    unclaimed
+Status:   fixed
+Owner:    claude
 Severity: blocker
 Class:    our-code
 Found:    2026-08-27, by Yashraj's brother on a cold MacBook, v0.2.0. He typed
@@ -122,12 +157,23 @@ matters:  MALFORMED answer: "we could not pre-plan, so we are just building
           yes, and the two are currently indistinguishable to the Studio. The
           result is the worst thing an app-maker can do: build something after
           being told not to, then charge the person fifteen minutes for it.
-Fix:      Separate "could not parse the answer" from "the provider reported an
-          error". When a provider stream carries an error/turn.failed event,
-          plan must say so and NOT emit an empty plan -- the Studio should
-          surface the provider's own message ("you've hit your usage limit",
-          "sign in again") the way it already surfaces a missing agent, and
-          leave the person in control of whether to build.
+Fixed:    plan_command now asks, before falling back, whether the provider
+          REPORTED AN ERROR rather than merely answered unreadably. It reuses
+          the authoring path's own reader, split into agent_failure_reason_in
+          so both callers share one understanding of each provider's shape.
+          On a refusal it bails with the provider's own words and the line
+          that matters: "Nothing was built."
+          Verified end to end with the account that caused it:
+            $ krate plan "do not create any app" --agent codex
+            error: codex could not look at your request:
+              You've hit your usage limit. Visit ... or try again at Sep 1st.
+            Nothing was built. This is a problem with the AI tool, not with
+            Krate or your request.
+          and unchanged for a working agent, which still asks its question.
+          Three tests pin both directions: a refusal must not read as
+          permission, and an unparseable answer must NOT be reported as a
+          refusal -- the soft fallback is deliberate and still protects a
+          first request from dying on an output shape nobody has seen.
 
 ### K-183 -- the AI picker names five tools and installs none of them
 
@@ -157,17 +203,35 @@ Note:     The machinery is all there, which makes this a wiring bug rather
               FOUR of the five: claude @anthropic-ai/claude-code, codex
               @openai/codex, gemini @google/gemini-cli, copilot @github/copilot.
               Only grok is None (no npm package).
-          So his Claude row should have carried an Install button and did not;
-          it showed the install_hint prose instead. What is NOT yet known is
-          which branch his rows actually took -- the row renders a.detail as
-          text and only appends a button for state "working" (Use this),
-          "not-ready" (Sign in), or "missing" WITH a package (Install). A
-          state outside those three, or a missing install_package in the
-          response his engine gave, would produce exactly his screenshot.
-          Next step is to read `krate ai --json` on HIS machine rather than
-          reason further from mine; the states differ per machine and that is
-          the whole point.
-          The onboarding "choose your AI" screen has the same shape.
+Tested 2026-08-27, and this is where the guessing has to stop. Driving the
+          REAL openAiSheet() in a browser with HIS exact rows -- claude
+          missing, codex working, gemini/copilot/grok missing -- produces:
+            Claude  -> Install (82px, visible)
+            Codex   -> no button (in use, correct)
+            Gemini  -> Install (82px)
+            Copilot -> Install (82px)
+            Grok    -> no button   <- only row with no install_package
+          So four rows DO get a button, and the code that draws them shipped
+          in v0.2.0 (verified: `git show v0.2.0:studio/ui/app.js` contains
+          both the Install button and the install_agent call). A flex-shrink
+          theory was tested and DISPROVED -- the buttons are not squeezed.
+          What that leaves: his screenshot shows prose and no buttons, and
+          the reason is still not established. Do not fix this by guessing.
+          Get `krate ai --json` from HIS machine; if a row comes back with a
+          state outside working/not-ready/missing, or with install_package
+          null where mine has one, that is the answer and it is one line.
+Fixed     Two real defects found while testing this, both shipped:
+here:     - The onboarding picker labelled EVERY non-working agent "not
+            installed", including one that is installed and only needs a
+            sign-in. Telling someone to install what they already have is
+            how a picker becomes a dead end. Now says "needs signing in".
+          - .ai-row's button had no flex-shrink guard. Not the cause of his
+            screenshot, but a genuine hazard: the row's text is a full
+            sentence with a URL in it, and nothing stopped it taking the
+            button's width. Pinned with flex: none.
+Still     Grok has no npm package, so it can never show an Install button --
+open:     it is the one row that is honestly a dead end, and it needs its own
+          route (a link that opens docs.x.ai would beat prose).
 
 ### K-181 -- the notes.krate published on krate.tech exits 2 while working correctly
 

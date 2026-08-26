@@ -1624,9 +1624,42 @@ function signInWords(err) {
   return text.trim() ? `Sign-in failed: ${text.trim()}` : "Sign-in failed. Try again.";
 }
 
+/* Sentences Krate itself adds around a provider's error.
+ *
+ * They have to come out before anything is matched, because this function
+ * decides what the person is told by looking for words in the text -- and
+ * our own advice contains those words. "Sign in again, then try once more"
+ * is appended by the engine whenever a provider error mentions
+ * authentication; the classifier then read OUR sentence and told a person
+ * with a working, signed-in, green-dotted Codex that their AI needed
+ * signing in (K-184). "This is a problem with the AI tool, not with Krate
+ * or your request. Check that `codex` runs on its own" is the same shape:
+ * it contains "connect"-adjacent and tool-name words that steer the guess.
+ *
+ * This is the second time our own prose has been mistaken for evidence --
+ * K-124 was the first, and the (?!or) guard below is its scar. Stripping
+ * the whole family is the fix that does not need a new guard each time.
+ */
+const KRATE_OWN_PROSE = [
+  /\n?\s*Sign in again, then try once more\.?/gi,
+  /This is a problem with the AI tool, not with Krate or your request\.?/gi,
+  /Check that `[^`]+` runs on its own, then try again\.?/gi,
+  /The full transcript is at [^\s]+\.?/gi,
+  /see \/[^\s]+\.agent-transcript\.txt/gi,
+  /[a-z]+ could not write the app:/gi,
+];
+
+function providerWords(text) {
+  let out = String(text);
+  for (const pattern of KRATE_OWN_PROSE) out = out.replace(pattern, " ");
+  return out;
+}
+
 function plainWords(err) {
-  const text = String(err && err.message ? err.message : err);
-  if (text === "stopped") return "stopped";
+  const raw = String(err && err.message ? err.message : err);
+  if (raw === "stopped") return "stopped";
+  // Classify on what the PROVIDER said, never on what Krate said about it.
+  const text = providerWords(raw);
   // A broken install must say so. Falling through to the generic build
   // message told people to "try again" when nothing could ever work.
   if (/could not run the Krate engine|could not start the Krate engine|KRATE_STUDIO_ENGINE/i.test(text))
@@ -1647,10 +1680,19 @@ function plainWords(err) {
   // agent ran failed and the card blamed sign-in instead (K-124).
   if (/sandbox.*(helper|launch_failed)|orchestrator_helper/i.test(text))
     return "Your AI's own sandbox is broken on this machine. Reinstall that AI, or pick another one from its menu at the top.";
+  // Usage limits read as auth failures to a keyword match but are not one,
+  // and telling someone to sign in when they are already signed in is the
+  // most confusing thing this card can say. Check for the limit first.
+  if (/usage limit|out of credits|insufficient_quota|too many requests|\b429\b/i.test(text))
+    return "Your AI has hit its usage limit. It works again once the limit resets, or pick another AI from the menu at the top.";
+  // A real authentication failure, judged on the provider's OWN signal: an
+  // HTTP 401/403, or the words a provider uses for an expired session. Our
+  // own advice was stripped above, so nothing here can match Krate's prose.
   // \bauth catches authentication/unauthorized; the (?!or) guard keeps
   // "author command failed" -- our own generic failure line -- from telling
   // every user to go sign in (K-124: it did exactly that).
-  if (/sign ?in|\bauth(?!or)|logged/i.test(text)) return "Your AI needs signing in. Click its name at the top for the fix.";
+  if (/\b401\b|\b403\b|unauthorized|sign ?in|\bauth(?!or)|logged/i.test(text))
+    return "Your AI is not signed in, or its sign-in expired. Click its name at the top for the fix.";
   if (/network|offline|dns|connect/i.test(text)) return "The internet connection dropped mid-build.";
   return "Something in the build went wrong. Trying again usually works; your words are kept.";
 }
@@ -3687,10 +3729,19 @@ async function obLoadAgents() {
     box.innerHTML = agents
       .map((a) => {
         const ok = a.state === "working";
+        // "not installed" was said of every row that was not working,
+        // including one that IS installed and only needs a sign-in. Telling
+        // someone to install what they already have is how an AI picker
+        // becomes a dead end (K-183).
+        const label = ok
+          ? "ready"
+          : a.state === "not-ready"
+            ? "needs signing in"
+            : "not installed";
         return `<button class="ob-agent${ok ? "" : " off"}" data-agent="${a.name}" ${ok ? "" : "disabled"}>
           <span class="ob-agent-mark">${aiLogo(a.name)}</span>
           <span class="ob-agent-name">${a.label}</span>
-          <span class="ob-agent-state">${ok ? "ready" : "not installed"}</span>
+          <span class="ob-agent-state">${label}</span>
         </button>`;
       })
       .join("");
