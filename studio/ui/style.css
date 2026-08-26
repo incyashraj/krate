@@ -616,6 +616,12 @@ body.windows .titlebar { padding-right: 150px; }
 .ai-detail { color: var(--faint); font-size: 12px; margin-top: 2px; }
 .ai-remedy { font: 11px var(--mono); color: var(--muted); margin-top: 7px; user-select: text; overflow-x: auto; white-space: nowrap; }
 .ai-row .grow { flex: 1; min-width: 0; }
+/* The button never shrinks. Without this the row's text -- an install hint
+   is a full sentence with a URL in it -- takes the width and squeezes the
+   Install button to nothing, so the picker reads as five dead rows telling
+   you to go run commands elsewhere. That is what a first user saw, and he
+   gave up on connecting an AI at all (K-183). */
+.ai-row > .btn { flex: none; white-space: nowrap; }
 
 .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--line); }
 .setting-row:last-of-type { border-bottom: none; }

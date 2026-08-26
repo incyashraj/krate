@@ -71,6 +71,387 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-190 -- the readiness probe runs in a different home from the build, so the chip is green while every build fails
+
+Status:   fixed
+Owner:    claude
+Severity: blocker
+Class:    our-code
+Found:    2026-08-27, chasing why Aanchala's Grok said "Not signed in" while
+          her `grok` TUI worked and her Studio chip was GREEN.
+Evidence: Authoring confines HOME to ~/.krate/agent-home (K-179). The probe in
+          agent_provider::probe did not -- it inherited the real home. So the
+          two asked different machines the same question:
+            probe     (real HOME)     -> working, green dot
+            authoring (confined HOME) -> "Not signed in. Run: grok login ..."
+          Both measured here on one machine with one signed-in Grok. The chip
+          was not merely unhelpful, it was actively wrong: it reported the
+          state of a home the build never uses.
+          Not Grok-specific. Under the confined home, codex fails the same way
+          -- a real run produced 11 error events and 19 auth-failure lines.
+Fixed:    probe now runs under the same home authoring will use, when that
+          directory exists. It returns None rather than creating it, because a
+          probe must observe and never set the machine up; on a first run
+          there is nothing to confine to, authoring creates it, and from then
+          on the two agree.
+          Verified: with no seeded credential, grok now probes as
+          "not-ready -- is installed but not signed in" instead of "working".
+          Her chip would have been red, with the reason, before she typed a
+          word.
+Note:     This exposed how wide K-189 is. With the probe telling the truth,
+          claude, codex, copilot and grok ALL report not-ready on this machine
+          -- because only Claude's credential is copied into the confined
+          home. The green dots were hiding it. K-189 is the fix; this entry is
+          why it was invisible.
+          One test changed with it: ai_lists_what_this_machine_can_author_with
+          asserted the output always contains "krate create", which silently
+          required the machine running the suite to be signed in to an AI. It
+          now accepts either the next command or the fix, because what matters
+          is that the person is never left at a dead end.
+
+
+### K-189 -- the confined agent home carries only Claude's sign-in, so every other AI runs signed out
+
+Status:   fixed
+Owner:    claude
+Severity: blocker
+Class:    our-code
+Found:    2026-08-27. Aanchala's Grok builds failed with "Not signed in",
+          twice. Yashraj then had her run `grok` in a terminal: the TUI opened
+          and she could talk to it, so she WAS signed in and the transcript
+          was telling the truth about a state Krate had created.
+Evidence: Krate rebases the agent's HOME to ~/.krate/agent-home (K-179, so the
+          agent cannot ask for the person's Downloads folder in Krate's name),
+          and seed_agent_home copies exactly four paths across:
+            .claude.json, .claude, .claude/.credentials.json, .credentials.json
+          All Claude. Nothing for Grok, Codex, Gemini or Copilot, whose
+          credentials live in ~/.grok/auth.json and friends.
+          Measured on this machine, same signed-in Grok, one variable changed:
+            HOME=<real>               -> 0 "not signed in"
+            HOME=~/.krate/agent-home  -> 2 "not signed in", identical text
+          So the confinement that protects the person's files also signs them
+          out of every AI except Claude.
+Fix       seed_agent_home now shallow-copies ~/.grok, ~/.codex, ~/.gemini,
+written:  ~/.copilot and the ~/.config variants into the confined home, and
+          creates the directory first (the caller created it AFTER seeding, so
+          on a first run every copy landed nowhere -- Claude's survived only
+          because it makes its own subdirectory on the way).
+Real      The copies were unreachable. seed_agent_home ends with a macOS
+cause:    branch that reads Claude's credential out of the keychain and, on
+          success, did `return true` -- leaving the function before any other
+          provider was touched. On any machine with Claude signed in (which
+          is every machine we develop on) Grok, Codex, Gemini and Copilot
+          silently got nothing. Found by instrumenting the function and
+          watching one real run: the entry trace fired, the loop trace never
+          did.
+Verified: with the early return replaced by a flag,
+            ~/.krate/agent-home/.grok/auth.json   SEEDED
+            ~/.krate/agent-home/.codex/auth.json  SEEDED
+          the probe reports grok and codex "working" instead of "not signed
+          in", and a real `krate create --agent grok` gets past authentication
+          and into authoring -- reading Krate's API and writing code.
+
+
+### K-187 -- two writers tear the transcript in half, so a signed-out AI reports nothing
+
+Status:   fixed
+Owner:    claude
+Severity: blocker
+Class:    our-code
+Found:    2026-08-27. Aanchala, a first-time user on her own MacBook, tried to
+          make a photo editor and then a calendar with Grok. Both died in one
+          second and said only "the grok agent did not finish successfully;
+          see <file>". She sent the file, and it said, in plain English:
+            Error: Not signed in. To authenticate without a browser, run:
+              grok login --device-code
+          Krate had the answer on disk the whole time and showed her none of it.
+Evidence: Reproduced exactly: a signed-out grok exits 1 and writes the SAME
+          error twice -- once as a JSON event on stdout, once as prose on
+          stderr:
+            {"type":"error","message":"Not signed in. To authenticate ..."}
+            Error: Not signed in. To authenticate without a browser, run:
+          The JSON event parses correctly (type=error + message, both of which
+          agent_failure_reason_in already reads), so it should have been
+          quoted. It was not, and her file shows why. It ends with the orphan
+          fragment:
+            achine with a browser."}
+          which is the TAIL of that JSON event, cut in two. The transcript has
+          two independent writers and no lock between them: stderr is wired
+          straight to the file at spawn (main.rs:5882), while the reporter
+          thread opens its own append handle and writes every stdout line
+          (main.rs:5929). A stderr write landed in the middle of the JSON
+          line, so it no longer began with `{`, the parser skipped it, and
+          agent_failure_reason returned None.
+Fixed:    agent_failure_reason_in now also reads a plain-text "Error:" line
+          and the indented continuation under it, and prefers a surviving
+          JSON event when there is one. The reason is now independent of
+          whether the JSON won the race. Verified against her real transcript,
+          reconstructed with the tear in the same place:
+            REASON: "Not signed in. To authenticate without a browser, run:
+                     grok login --device-code"
+          The continuation matters: the first line names the problem and the
+          second carries the cure, and a reason without the cure sends the
+          person to a search engine.
+Still     The interleaving itself is NOT fixed -- stderr and the reporter
+open:     still share the file with no coordination, so any long JSON line can
+          still be torn. The parser no longer depends on it, so this is now a
+          cosmetic corruption rather than a silent failure, but the real fix
+          is to pipe stderr through the same thread that owns the file. Left
+          out of this change deliberately: it is a spawn-path change with a
+          real risk of losing stderr entirely, and it should not ride along
+          with a fix people are waiting on.
+
+### K-188 -- `krate` is not on PATH after installing Krate Studio
+
+Status:   unclaimed
+Owner:    unclaimed
+Severity: serious
+Class:    our-code
+Found:    2026-08-27, Nakshatra's MacBook, while trying to run a diagnostic:
+            $ krate ai --json
+            zsh: command not found: krate
+            $ krate --version
+            zsh: command not found: krate
+          He has Krate Studio installed and working -- he opened apps from the
+          cloud successfully in the same session -- so this is not a broken
+          install.
+Cause:    The .dmg installs Krate.app, and the engine lives inside the bundle
+          at Contents/Resources/bin/krate. engine() finds it there, which is
+          why the Studio works. Nothing ever puts it on the shell PATH; only
+          the CLI tarball from krate.tech does that.
+Why it    Every support instruction we give starts with a `krate` command, and
+matters:  for a Studio-only user none of them work. It also makes a Studio
+          user unable to answer the one question that would diagnose their own
+          problem, which is how K-183 stalled.
+Next:     Decide deliberately, do not guess: either the Studio offers to
+          symlink its engine into /usr/local/bin (asking first, because
+          writing there needs a password), or support instructions stop
+          assuming a `krate` on PATH and give the in-bundle path instead. The
+          second is free and works today:
+            /Applications/Krate.app/Contents/Resources/bin/krate ai --json
+
+
+### K-185 -- every support report sent from the Studio arrives without the evidence
+
+Status:   fixed
+Owner:    claude
+Severity: blocker
+Class:    our-code
+Found:    2026-08-27, trying to diagnose Aanchala's Grok failure from her
+          report and finding nothing in it to diagnose. Three reports had
+          already arrived this way without anyone noticing, because a report
+          that contains a transcript of the CHAT looks complete until you
+          need the transcript of the BUILD.
+Evidence: Her report (hub fb12c719bde2af0b) held exactly two files:
+            session.json   the on-screen conversation
+            about.txt      the machine
+          and neither can explain a build failure. The card on her screen
+          named the file that could -- .agent-transcript.txt -- and it stayed
+          on her disk.
+Cause:    report_command found the workspace only by searching the session
+          text for the phrase "the workspace is kept at ", which is printed
+          by WorkspaceKeeper's Drop when a TEMP workspace is kept after a
+          failure (main.rs:4750). The Studio never uses a temp workspace: it
+          passes --work-dir so a retry resumes from the code already written
+          (studio/src/main.rs:742, K-129). So the phrase is never printed,
+          the search always fails, and the collection loop never runs.
+          Verified on a real session, before and after:
+            before: 2 files (session.json, about.txt)
+            after:  7 files, including a 1.3 MB .agent-transcript.txt and
+                    trace.jsonl
+Fixed:    The Studio's workspace is derived rather than parsed -- it is
+          studio/builds/<session>, built from the same session id the command
+          already has -- and the old phrase search stays as the fallback for
+          CLI builds. Both levels are collected: trace.jsonl sits at the top
+          and the app's transcript and source one folder down, which was
+          checked against a real build directory rather than assumed, because
+          reading only the top would have collected the trace and missed the
+          transcript.
+          trace.jsonl is now collected too. Every Studio build already writes
+          one (KRATE_TRACE, studio/src/main.rs:751) and nothing had ever read
+          it; it carries the timing spine the authoring study needs.
+Lesson:   A support channel is not working because reports arrive. Send one
+          from a real machine and open it. Three did arrive, and all three
+          were hollow.
+
+### K-184 -- Krate's own advice is read back as the diagnosis, so a signed-in AI is told to sign in
+
+Status:   fixed
+Owner:    claude
+Severity: serious
+Class:    our-code
+Found:    2026-08-27, by Yashraj's brother, v0.2.0, on a Mac whose Codex chip
+          was GREEN and in use. The failure card said "Your AI needs signing
+          in. Click its name at the top for the fix." He was signed in.
+Evidence: The chain is entirely inside our own code:
+          1. crates/cli/src/main.rs:6500 -- when a provider error mentions
+             authentication, the engine APPENDS its own sentence:
+               "Sign in again, then try once more."
+          2. That whole string, Krate's prose included, becomes the error the
+             Studio receives.
+          3. studio/ui/app.js plainWords() classifies by matching words in
+             that text, and its rule
+               /sign ?in|\bauth(?!or)|logged/
+             matches OUR sentence, not the provider's error.
+          So any failure whose underlying error merely MENTIONED
+          authentication came back as "needs signing in", with total
+          confidence, under a green dot.
+          Second offence of the same kind: the (?!or) guard on that very line
+          is the scar from K-124, where "author command failed" -- also our
+          own words -- sent every user to sign in.
+Fix:      Strip Krate's own prose BEFORE classifying (KRATE_OWN_PROSE +
+          providerWords in app.js), so the guess is made on what the provider
+          said and nothing else. Then classify on the provider's real signal:
+          a usage limit is checked before auth (telling someone to sign in
+          when they are already signed in is the most confusing thing this
+          card can say), and a genuine auth failure is matched on HTTP 401/403
+          and "unauthorized" as well as the words.
+          Verified against his exact error text plus both K-124 regressions:
+          8 cases, 0 failures.
+
+### K-182 -- an AI that refuses to answer is reported as "building directly", so a request is built after the person said not to
+
+Status:   fixed
+Owner:    claude
+Severity: blocker
+Class:    our-code
+Found:    2026-08-27, by Yashraj's brother on a cold MacBook, v0.2.0. He typed
+          "do not create any app" and Krate built one anyway. He is the first
+          person to use Krate who did not build it, which is why this is the
+          most valuable report we have had.
+Evidence: The submitted report (hub id 4a1ab58e1cc1d747) carries the whole
+          proof. about.txt:
+            krate: v0.2.0        <- version stamping works
+            agent claude: missing
+            agent codex: installed
+          session.json, all four messages, with timestamps:
+            1787765607 YOU   do not create any app
+            1787765607 KRATE On it. I'll show you each step as it happens.
+            1787765607 KRATE While I work, I'll open your app a few times ...
+            1787765629 KRATE that build didn't come together
+          "Looking at your request..." is ABSENT and the first two lines share
+          a timestamp to the second. The plan step did not run slowly; it did
+          not visibly run at all.
+Cause:    Reproduced locally on 2026-08-27 with the same agent:
+            $ krate plan "do not create any app" --agent codex
+            note: could not read a plan from the AI; building directly.
+            {"needs":[],"plan":""}
+          versus the same request with a working agent, which is correct:
+            $ krate plan "do not create any app" --agent claude
+            {"ask":["You said not to create an app -- do you want me to stop
+             entirely, or did you mean something else by that?", ...]}
+          The chain: codex exec --json emits a line-per-event stream. When the
+          account cannot answer, the stream carries
+            {"type":"error","message":"You've hit your usage limit..."}
+            {"type":"turn.failed","error":{...}}
+          and no event carries an `ask` or `plan` key. extract_plan_json
+          (crates/cli/src/main.rs:4426) searches for exactly those keys, finds
+          none, and plan_command falls through to its deliberate soft
+          fallback at main.rs:4393, emitting {"plan":""}. The Studio reads an
+          empty plan as "the AI decided this is ready to build" -- identical
+          to a genuine go-ahead -- and builds.
+          Confirmed the same shape by hand:
+            codex exec --json --skip-git-repo-check --sandbox workspace-write '<prompt>'
+            => {"type":"error","message":"You've hit your usage limit..."}
+Why it    The fallback is deliberate and its reasoning is sound for a
+matters:  MALFORMED answer: "we could not pre-plan, so we are just building
+          it" is better than failing a first request. But it cannot be right
+          for a REFUSED one. An AI that never answered is not an AI that said
+          yes, and the two are currently indistinguishable to the Studio. The
+          result is the worst thing an app-maker can do: build something after
+          being told not to, then charge the person fifteen minutes for it.
+Fixed:    plan_command now asks, before falling back, whether the provider
+          REPORTED AN ERROR rather than merely answered unreadably. It reuses
+          the authoring path's own reader, split into agent_failure_reason_in
+          so both callers share one understanding of each provider's shape.
+          On a refusal it bails with the provider's own words and the line
+          that matters: "Nothing was built."
+          Verified end to end with the account that caused it:
+            $ krate plan "do not create any app" --agent codex
+            error: codex could not look at your request:
+              You've hit your usage limit. Visit ... or try again at Sep 1st.
+            Nothing was built. This is a problem with the AI tool, not with
+            Krate or your request.
+          and unchanged for a working agent, which still asks its question.
+          Three tests pin both directions: a refusal must not read as
+          permission, and an unparseable answer must NOT be reported as a
+          refusal -- the soft fallback is deliberate and still protects a
+          first request from dying on an output shape nobody has seen.
+
+### K-183 -- the AI picker names five tools and installs none of them
+
+Status:   unclaimed
+Owner:    unclaimed
+Severity: serious
+Class:    our-code
+Found:    2026-08-27, same session as K-182. He could not get an AI connected
+          and gave up on the Mac; on the Windows machine the build started
+          with no AI connected at all and only then said claude was missing.
+Evidence: His screenshot of "Your AI": five rows, four of them dead ends that
+          hand him a command to run somewhere else --
+            Claude   "Install Claude Code from https://claude.com/claude-code,
+                      then run `claude` once to sign in."
+            Gemini   "npm install -g @google/gemini-cli@latest, then run ..."
+            Copilot  "npm install -g @github/copilot@latest, then run ..."
+            Grok     "install the Grok CLI from xAI (docs.x.ai), then run ..."
+          Only codex showed "ready - in use", and codex was the one that then
+          failed (K-182).
+Note:     The machinery is all there, which makes this a wiring bug rather
+          than a missing feature -- verified 2026-08-27, not assumed:
+            - install_agent exists (studio/src/main.rs:1740) and streams
+              progress to the UI.
+            - The UI already builds an "Install" button for
+              state === "missing" && install_package (app.js:1801).
+            - `krate ai --json` on this machine returns install_package for
+              FOUR of the five: claude @anthropic-ai/claude-code, codex
+              @openai/codex, gemini @google/gemini-cli, copilot @github/copilot.
+              Only grok is None (no npm package).
+SETTLED 2026-08-27 by his own output. He ran the engine from inside the
+          bundle and `krate ai --json` returned, on HIS machine:
+            claude  state=missing  install_package=@anthropic-ai/claude-code
+            codex   state=working  install_package=@openai/codex
+            gemini  state=missing  install_package=@google/gemini-cli
+            copilot state=missing  install_package=@github/copilot
+            grok    state=missing  install_package=null
+          So the data was right: three rows (claude, gemini, copilot) were
+          "missing" WITH a package, which is exactly the branch that draws an
+          Install button, and only grok legitimately has none. The engine is
+          not at fault and neither is the row logic.
+          What remains unexplained is only the screenshot, and it is no longer
+          worth chasing from here: the picker he saw may predate the build he
+          now has, or the buttons may have been below his fold. Re-check on
+          the next release with a fresh screenshot before spending more on it.
+
+Earlier testing, kept because it rules things out: Driving the
+          REAL openAiSheet() in a browser with HIS exact rows -- claude
+          missing, codex working, gemini/copilot/grok missing -- produces:
+            Claude  -> Install (82px, visible)
+            Codex   -> no button (in use, correct)
+            Gemini  -> Install (82px)
+            Copilot -> Install (82px)
+            Grok    -> no button   <- only row with no install_package
+          So four rows DO get a button, and the code that draws them shipped
+          in v0.2.0 (verified: `git show v0.2.0:studio/ui/app.js` contains
+          both the Install button and the install_agent call). A flex-shrink
+          theory was tested and DISPROVED -- the buttons are not squeezed.
+          What that leaves: his screenshot shows prose and no buttons, and
+          the reason is still not established. Do not fix this by guessing.
+          Get `krate ai --json` from HIS machine; if a row comes back with a
+          state outside working/not-ready/missing, or with install_package
+          null where mine has one, that is the answer and it is one line.
+Fixed     Two real defects found while testing this, both shipped:
+here:     - The onboarding picker labelled EVERY non-working agent "not
+            installed", including one that is installed and only needs a
+            sign-in. Telling someone to install what they already have is
+            how a picker becomes a dead end. Now says "needs signing in".
+          - .ai-row's button had no flex-shrink guard. Not the cause of his
+            screenshot, but a genuine hazard: the row's text is a full
+            sentence with a URL in it, and nothing stopped it taking the
+            button's width. Pinned with flex: none.
+Still     Grok has no npm package, so it can never show an Install button --
+open:     it is the one row that is honestly a dead end, and it needs its own
+          route (a link that opens docs.x.ai would beat prose).
+
 ### K-181 -- the notes.krate published on krate.tech exits 2 while working correctly
 
 Status:   fixed in source, awaiting republish
@@ -841,9 +1222,16 @@ more. The two REAL gaps were camera and full-bleed, and both are now closed.
 Confirmed missing on Windows (each degrades honestly, so nothing "breaks" --
 apps just quietly do less):
 
-- **camera.capture** -- `platform_backend()` returns `None`. Every webcam app
-  reports `unsupported`. macOS got AVFoundation on 2026-08-20 (K-119); Windows
-  needs Media Foundation, Linux needs V4L2 or PipeWire.
+- ~~**camera.capture**~~ -- NO LONGER a gap in code. Corrected 2026-08-27:
+  `platform_backend()` returns `NokhwaCameraBackend` for BOTH Windows
+  (`input-msmf`, Media Foundation) and Linux (`input-v4l`, V4L2), shipped in
+  021f19e01 (K-148) after this line was written. The dependency is declared
+  per target in crates/runtime/Cargo.toml, so it compiles into both builds.
+  UNVERIFIED AGAINST REAL HARDWARE on either system: there is no evidence run,
+  and the code path has only ever been reasoned about, never pointed at a
+  physical webcam. Treat "implemented" and "works" as separate claims until a
+  device test exists. This entry read "returns None" for six days after it
+  stopped being true, which is why a stale gap list is worse than none.
 - ~~**ui.clipboard**~~ -- NOT a gap. Corrected 2026-08-20: the Windows adapter
   implements clipboard through `arboard`; the `Unsupported` arms are the
   `#[cfg(not(target_os = "windows"))]` fallbacks, which is the opposite of what

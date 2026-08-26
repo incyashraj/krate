@@ -281,6 +281,21 @@ fn read_all(pipe: Option<impl std::io::Read>) -> String {
     String::from_utf8_lossy(&buf).into_owned()
 }
 
+/// The home authoring runs under, when it exists.
+///
+/// Deliberately returns None when the directory is absent rather than
+/// creating it: a probe must observe, never set the machine up. On a first
+/// run there is nothing to confine to yet, authoring seeds and creates it,
+/// and from then on the two agree.
+fn probe_home() -> Option<std::path::PathBuf> {
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .filter(|h| !h.is_empty())
+        .map(std::path::PathBuf::from)?;
+    let agent_home = home.join(".krate").join("agent-home");
+    agent_home.is_dir().then_some(agent_home)
+}
+
 pub fn probe(provider: &dyn AgentProvider, timeout: Duration) -> Readiness {
     let Some(path) = which_on_path(provider.program()) else {
         return Readiness::Missing;
@@ -288,6 +303,21 @@ pub fn probe(provider: &dyn AgentProvider, timeout: Duration) -> Readiness {
 
     let mut command = ProcessCommand::new(&path);
     with_tool_path(&mut command);
+    // Probe under the SAME home authoring will use, or the answer is about a
+    // different machine than the one that does the work.
+    //
+    // Authoring confines HOME to ~/.krate/agent-home (K-179) so the agent
+    // cannot reach the person's files. The probe did not, so it read the
+    // real home, found the person's sign-in, and reported "working" with a
+    // green dot -- while every build under the confined home came back "Not
+    // signed in". Measured on one machine with one signed-in Grok:
+    //   probe (real HOME)        -> working
+    //   authoring (confined HOME)-> "Not signed in. Run: grok login ..."
+    // That is the green dot above a failing build the first outside user
+    // reported, and it made the chip actively misleading (K-190).
+    if let Some(home) = probe_home() {
+        command.env("HOME", home);
+    }
     for arg in provider.probe_args() {
         command.arg(arg);
     }

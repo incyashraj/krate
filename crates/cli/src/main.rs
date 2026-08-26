@@ -4011,13 +4011,49 @@ fn report_command(session: &str, output: Option<&Path>) -> Result<u8> {
         files.push(("session.json".to_string(), bytes));
     }
 
-    // The workspace the session's last build used, when it kept one: the
-    // agent transcript and the code it had written are the evidence that
-    // actually explains a stuck build.
+    // The workspace the session's last build used: the agent transcript and
+    // the code it had written are the evidence that actually explains a
+    // stuck build.
+    //
+    // Two ways to find it, and the second one is why this exists. The
+    // original only read a path out of the session text, printed by
+    // WorkspaceKeeper when a TEMP workspace is kept after a failure. The
+    // Studio never uses a temp workspace -- it passes --work-dir so a retry
+    // resumes from the code already written (K-129) -- so that line is never
+    // printed and EVERY report sent from the Studio arrived carrying only
+    // the chat, with the transcript that names the real failure left on the
+    // person's disk. Three reports came in that way before anyone noticed
+    // (K-185).
+    //
+    // The Studio's path is not a guess: studio/src/main.rs builds it as
+    // studio_dir()/builds/<session>, from the same session id this command
+    // was given.
     let session_text = String::from_utf8_lossy(&files[0].1).to_string();
-    if let Some(dir) = report_workspace_from(&session_text) {
+    let studio_workspace = studio.join("builds").join(session);
+    let workspace = report_workspace_from(&session_text)
+        .or_else(|| studio_workspace.is_dir().then_some(studio_workspace));
+    if let Some(dir) = workspace {
+        // Two levels, because the Studio's workspace holds trace.jsonl at the
+        // top and the app -- with its transcript and source -- in a folder
+        // named after the app. Checked on a real build directory rather than
+        // assumed: looking only at the top would have collected the trace and
+        // missed the transcript, which is the file that names the failure.
+        let top = dir.clone();
+        let mut roots = vec![dir.clone()];
+        if let Ok(entries) = fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                if entry.path().is_dir() {
+                    roots.push(entry.path());
+                }
+            }
+        }
+        for dir in roots {
+            let is_top = dir == top;
         for name in [
             ".agent-transcript.txt",
+            // Written by every Studio build (KRATE_TRACE), and it carries the
+            // timing spine: which phase, how long, what check-app said.
+            "trace.jsonl",
             "src/lib.rs",
             "Cargo.toml",
             "manifest.toml",
@@ -4030,8 +4066,17 @@ fn report_command(session: &str, output: Option<&Path>) -> Result<u8> {
                 } else {
                     bytes
                 };
-                files.push((format!("workspace/{name}"), bytes));
+                // Keep the subfolder in the name so two levels cannot
+                // collide, and so the reader can see where each file lived.
+                let label = match dir.file_name().and_then(|n| n.to_str()) {
+                    Some(sub) if !is_top => format!("workspace/{sub}/{name}"),
+                    _ => format!("workspace/{name}"),
+                };
+                if !files.iter().any(|(existing, _)| *existing == label) {
+                    files.push((label, bytes));
+                }
             }
+        }
         }
     }
 
@@ -4049,17 +4094,41 @@ fn report_command(session: &str, output: Option<&Path>) -> Result<u8> {
             .unwrap_or_else(|| "not on PATH".to_string());
         about.push_str(&format!("{tool}: {found}\n"));
     }
+    // The same three states the AI picker shows, not a yes/no.
+    //
+    // This said only "installed" or "missing", and "installed" covers both a
+    // tool that works and one that is signed out -- which is the difference
+    // between a build that runs and a build that dies in one second. Two
+    // outside reports in a row could not be told apart from their own report
+    // files, and both needed a round trip to the person to learn something
+    // their machine already knew (K-182, K-187).
     for provider in agent_provider::PROVIDERS {
-        about.push_str(&format!(
-            "agent {}: {}\n",
-            provider.name(),
-            if agent_provider::is_installed(*provider) {
-                "installed"
-            } else {
-                "missing"
+        let state = match probe_with_cache(*provider) {
+            agent_provider::Readiness::Working => "working".to_string(),
+            agent_provider::Readiness::NotReady { summary, .. } => {
+                let summary = summary.trim();
+                if summary.is_empty() {
+                    "installed but not ready".to_string()
+                } else {
+                    format!("installed but not ready -- {summary}")
+                }
             }
-        ));
+            agent_provider::Readiness::Missing => "missing".to_string(),
+        };
+        about.push_str(&format!("agent {}: {state}\n", provider.name()));
     }
+    // Where the engine is, which is the other thing a report could not say.
+    // A Studio user has no `krate` on PATH at all (K-188), so "which krate"
+    // is not a question they can answer.
+    if let Ok(exe) = std::env::current_exe() {
+        about.push_str(&format!("engine: {}\n", exe.display()));
+    }
+    about.push_str(&format!(
+        "engine on PATH: {}\n",
+        agent_provider::which_on_path("krate")
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "no".to_string())
+    ));
     files.push(("about.txt".to_string(), about.into_bytes()));
 
     let file = fs::File::create(&out).with_context(|| format!("write {}", out.display()))?;
@@ -4143,6 +4212,129 @@ fn report_workspace_from(session_json: &str) -> Option<PathBuf> {
 /// case: "Sadas" must become a question, never an app. Everything else goes
 /// to the person's own AI for one short text call that returns either
 /// questions or a plan.
+/// Something the runtime has no capability for at all, on any platform.
+///
+/// Membership is deliberately narrow. Every entry here is a door that does
+/// not exist in KRATE_CAPABILITY_SPECS -- not one that is merely unfinished
+/// on some platform.
+///
+/// The camera is the cautionary case and is NOT listed. `camera.capture` is
+/// declared, and a backend exists on all three desktop systems: AVFoundation
+/// on macOS (K-119), and nokhwa over Media Foundation and V4L2 on Windows and
+/// Linux (K-148). Saying "Krate cannot do cameras" would be false everywhere.
+///
+/// The reason it stays out is worth keeping even if that changes. This gate
+/// answers "does the door exist", which is a fact about the manifest and is
+/// the same on every machine. It must not try to answer "will it work here",
+/// which depends on hardware, drivers and permissions -- nobody has pointed
+/// the Windows or Linux camera path at a physical webcam yet. A request that
+/// might work has to be allowed to try; only a door that does not exist at
+/// all is safe to refuse from a keyword.
+///
+/// A wrong hit here refuses work Krate can really do, so the words that
+/// trigger each one have to be words that cannot plausibly mean anything
+/// else.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Wall {
+    ScreenCapture,
+    OtherApps,
+    Hardware,
+    Background,
+}
+
+impl Wall {
+    /// What the person is told. Says what cannot happen, then what can --
+    /// the plan step's existing contract is to describe the closest thing
+    /// that truly works rather than to refuse, and a person who came to
+    /// build something deserves a door, not a wall.
+    fn plan(self) -> &'static str {
+        match self {
+            Wall::ScreenCapture =>
+                "Krate cannot record or capture the screen: a sandboxed app is \
+                 given its own window and no view of anything else, and there \
+                 is no screen-capture permission to ask for. I can build the \
+                 app around a recording you already have, or an app that works \
+                 on images you drop into it.",
+            Wall::OtherApps =>
+                "Krate cannot type into, click, or read other programs. That is \
+                 the sandbox working rather than a missing feature: an app gets \
+                 its own window and nothing outside it. I can build something \
+                 that does the job inside its own window, and you copy the \
+                 result where you need it.",
+            Wall::Hardware =>
+                "Krate has no capability for MIDI, Bluetooth, USB or serial \
+                 devices, so an app cannot reach one. I can build the same idea \
+                 driven by the keyboard, the mouse, or a file you give it.",
+            Wall::Background =>
+                "A Krate app is one window and one run: it cannot keep working \
+                 after you close it, and there is no background permission to \
+                 ask for. I can build it to remember where you were and pick \
+                 up when you open it again.",
+        }
+    }
+}
+
+/// Read a request for a wall the runtime cannot cross.
+///
+/// Two-part matching, never a single keyword. "screen" alone appears in
+/// "full screen" and "screen saver", both buildable; only "record/capture
+/// the screen" is the wall. The cost of being wrong is refusing real work,
+/// so every rule needs an action word AND its object.
+fn wall_in_request(request: &str) -> Option<Wall> {
+    let text = request.to_lowercase();
+    let any = |needles: &[&str]| needles.iter().any(|n| text.contains(n));
+
+    // Screen capture: recording or grabbing the display itself.
+    if any(&["screen record", "screen-record", "record the screen",
+             "record my screen", "screen capture", "screen-capture",
+             "capture the screen", "screenshot of my screen",
+             "record the display"])
+    {
+        return Some(Wall::ScreenCapture);
+    }
+
+    // Driving other programs. The action has to name another program or the
+    // system; "type into a box" inside our own window is ordinary work.
+    if any(&["other apps", "other applications", "other programs",
+             "another app", "another application", "another program",
+             "whatever field", "whatever app", "whatever window",
+             "active window", "focused field", "focused window",
+             "any application", "control my computer", "control the os",
+             "automate my mac", "automate windows"])
+        && any(&["type", "click", "press", "send", "control", "read",
+                 "automate", "paste into", "fill"])
+    {
+        return Some(Wall::OtherApps);
+    }
+
+    // Physical devices with no capability of any kind.
+    if any(&["midi", "bluetooth", " usb", "usb ", "serial port", "gamepad",
+             "game controller", "arduino"])
+        && any(&["connect", "connected", "my ", "read", "listen", "play",
+                 "device", "controller", "keyboard", "piano"])
+    {
+        return Some(Wall::Hardware);
+    }
+
+    // Running when the window is not open.
+    //
+    // "background" alone is not the wall -- "an app with a dark background"
+    // is a buildable request, and an earlier cut of this rule refused it,
+    // because the word satisfied both halves of the match by itself. The
+    // wall is background *running*, so the word has to be next to a verb
+    // about continuing, or the phrase has to be explicit on its own.
+    if any(&["after i close", "after closing", "even when closed",
+             "even after i close", "keeps running", "keep running",
+             "runs in the tray", "system tray", "menu bar app",
+             "background process", "background task", "background timer",
+             "in the background", "runs in background"])
+    {
+        return Some(Wall::Background);
+    }
+
+    None
+}
+
 fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> Result<u8> {
     // Deterministic thin gate. name_from_request already knows which words
     // carry meaning; a request it cannot name and that has no sentence
@@ -4159,6 +4351,21 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
                     "What should this app do? Describe it in a sentence or two -- \
                      what you would use it for, and what it should show."
                 ]
+            })
+        );
+        return Ok(0);
+    }
+
+    // A wall the runtime genuinely cannot cross is worth naming in ten
+    // seconds rather than discovering forty minutes into a build. This step
+    // costs nothing -- no AI, no network -- and it runs before the provider
+    // is even resolved.
+    if let Some(wall) = wall_in_request(request) {
+        println!(
+            "{}",
+            serde_json::json!({
+                "plan": wall.plan(),
+                "needs": Vec::<String>::new(),
             })
         );
         return Ok(0);
@@ -4252,6 +4459,29 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
     // killer; "we could not pre-plan, so we are just building it" is not a
     // failure at all. Only a genuinely empty output is worth a soft note, and
     // even that still proceeds to build.
+    // An AI that REFUSED to answer is not an AI that said "ready to build".
+    //
+    // The fallback below is right for an answer we could not parse, and
+    // wrong for one that never came. When the provider's own stream carries
+    // an error -- an expired sign-in, a usage limit, a 401 -- falling
+    // through to an empty plan tells the Studio "the AI looked at this and
+    // it is ready", and it builds. A person typed "do not create any app"
+    // and got an app, because his Codex account had hit its usage limit and
+    // that arrived here as silence (K-182).
+    //
+    // Reuses agent_failure_reason, the same reader the authoring path uses,
+    // so a provider only has to be understood once.
+    if extract_plan_json(&text).is_none() {
+        if let Some(reason) = agent_failure_reason_in(&text) {
+            anyhow::bail!(
+                "{} could not look at your request:\n\n  {reason}\n\n\
+                 Nothing was built. This is a problem with the AI tool, not \
+                 with Krate or your request.",
+                provider.name()
+            );
+        }
+    }
+
     let json = extract_plan_json(&text).unwrap_or_else(|| {
         if text.trim().is_empty() {
             eprintln!("note: the planning AI returned nothing; building directly.");
@@ -5455,6 +5685,13 @@ fn agent_home_for(real_home: &Path) -> PathBuf {
 }
 
 fn seed_agent_home(real_home: &Path, agent_home: &Path) -> bool {
+    // The directory has to exist before anything is copied into it. The
+    // caller creates it too, but AFTER this runs, so on a first run every
+    // copy here landed in a directory that was not there yet and failed
+    // silently. Claude's seeding survived only because it makes its own
+    // subdirectory on the way; the per-provider copies below did not.
+    let _ = fs::create_dir_all(agent_home);
+
     // Settings, minus the history of places the person has worked.
     if let Ok(text) = fs::read_to_string(real_home.join(".claude.json")) {
         if let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&text) {
@@ -5471,6 +5708,8 @@ fn seed_agent_home(real_home: &Path, agent_home: &Path) -> bool {
     let config = agent_home.join(".claude");
     let _ = fs::create_dir_all(&config);
     let dest = config.join(".credentials.json");
+    #[allow(unused_mut, unused_assignments)]
+    let mut claude_ready = false;
     #[cfg(target_os = "macos")]
     {
         if let Ok(out) = ProcessCommand::new("/usr/bin/security")
@@ -5489,7 +5728,16 @@ fn seed_agent_home(real_home: &Path, agent_home: &Path) -> bool {
                         use std::os::unix::fs::PermissionsExt;
                         let _ = fs::set_permissions(&dest, fs::Permissions::from_mode(0o600));
                     }
-                    return true;
+                    // Deliberately NOT an early return.
+                    //
+                    // It was one, and that single `return true` is why every
+                    // other AI ran signed out: the moment Claude's keychain
+                    // credential was written, the function left, and the
+                    // per-provider copies below never executed. On a machine
+                    // with Claude signed in -- which is every machine we
+                    // develop on -- Grok, Codex, Gemini and Copilot silently
+                    // got nothing (K-189).
+                    claude_ready = true;
                 }
             }
         }
@@ -5497,7 +5745,59 @@ fn seed_agent_home(real_home: &Path, agent_home: &Path) -> bool {
     if !dest.exists() {
         let _ = fs::copy(real_home.join(".claude/.credentials.json"), &dest);
     }
-    dest.exists()
+
+    // Every OTHER tool's sign-in, for the same reason Claude's is here.
+    //
+    // Confining the agent's HOME (K-179) stops it asking for the person's
+    // Downloads folder in Krate's name. It also hides every credential that
+    // lives under the real home -- and only Claude's was ever copied across,
+    // so Grok, Codex, Gemini and Copilot were all signed OUT the moment they
+    // ran under Krate, on machines where the person had signed in perfectly
+    // well.
+    //
+    // The first outside user to try Grok hit exactly this. Her `grok` TUI
+    // worked; her Krate build said "Not signed in". Measured on this
+    // machine, same signed-in tool, one variable changed:
+    //   HOME=<real>                  -> 0 "not signed in"
+    //   HOME=~/.krate/agent-home     -> 2 "not signed in"   (K-189)
+    //
+    // Copied, never moved or symlinked: the confined copy is the agent's to
+    // read, and a symlink would put the real file back inside the sandbox
+    // this confinement exists to draw.
+    for dir in [".grok", ".codex", ".gemini", ".copilot"] {
+        let from = real_home.join(dir);
+        if from.is_dir() {
+            let _ = copy_dir_shallow(&from, &agent_home.join(dir));
+        }
+    }
+    // Gemini and Copilot also use ~/.config on some installs.
+    for dir in ["gemini", "github-copilot"] {
+        let from = real_home.join(".config").join(dir);
+        if from.is_dir() {
+            let to = agent_home.join(".config").join(dir);
+            let _ = fs::create_dir_all(agent_home.join(".config"));
+            let _ = copy_dir_shallow(&from, &to);
+        }
+    }
+
+    claude_ready || dest.exists()
+}
+
+/// Copy the files directly inside `from` into `to`, creating `to`.
+///
+/// Shallow on purpose. A credential is a small file at the top of a tool's
+/// config directory; the deep contents are caches, logs and session history
+/// -- the very material the confined home exists to keep out of reach, and
+/// copying it would be both slow and contrary to the point.
+fn copy_dir_shallow(from: &Path, to: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(to)?;
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        if entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+            let _ = fs::copy(entry.path(), to.join(entry.file_name()));
+        }
+    }
+    Ok(())
 }
 
 fn run_provider_author(
@@ -5997,11 +6297,50 @@ fn run_provider_author(
                 provider.program(),
                 transcript.display()
             ),
-            None => anyhow::bail!(
-                "the {} agent did not finish successfully; see {}",
-                provider.name(),
-                transcript.display()
-            ),
+            None => {
+                // No error event in the transcript, which is the hardest
+                // case to diagnose and was arriving with nothing attached:
+                // a person saw "did not finish successfully; see <file>",
+                // the file stayed on their disk, and a build that died in
+                // one second could not be told apart from one that ran for
+                // ten minutes (K-186).
+                //
+                // Everything known here goes into the message: how the tool
+                // exited, how long it lasted, and the last lines it wrote.
+                // A one-second exit with an empty transcript says "the tool
+                // never started"; a long one with output says something
+                // else entirely, and neither could be seen before.
+                let code = status
+                    .and_then(|s| s.code())
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "killed by a signal".to_string());
+                let text = fs::read_to_string(&transcript).unwrap_or_default();
+                let tail: String = text
+                    .lines()
+                    .rev()
+                    .take(12)
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let evidence = if tail.trim().is_empty() {
+                    format!(
+                        "It wrote nothing at all, which usually means the tool \
+                         failed to start rather than failed to work."
+                    )
+                } else {
+                    format!("The last thing it wrote:\n\n{tail}")
+                };
+                anyhow::bail!(
+                    "the {} agent stopped without saying why (exit {code}).\n\n{evidence}\n\n\
+                     Check that `{}` runs on its own, then try again. The full \
+                     transcript is at {}.",
+                    provider.name(),
+                    provider.program(),
+                    transcript.display()
+                )
+            }
         }
     }
     let lib_after = fs::read_to_string(Path::new(app_dir).join("src/lib.rs")).unwrap_or_default();
@@ -6310,10 +6649,63 @@ fn auto_repair(
 /// the caller falls back to naming the transcript.
 fn agent_failure_reason(transcript: &Path) -> Option<String> {
     let text = fs::read_to_string(transcript).ok()?;
+    agent_failure_reason_in(&text)
+}
+
+/// The same reader, over text already in hand.
+///
+/// Split out because the plan step has the provider's output in memory and
+/// never writes a transcript, and it needs exactly this question answered:
+/// did the AI fail, or did it merely answer in a shape we cannot parse? The
+/// two were indistinguishable there, and a refusal became a build (K-182).
+fn agent_failure_reason_in(text: &str) -> Option<String> {
     let mut last = None;
+    // A plain-text error, kept separately and used only if no JSON event is
+    // found. Tools write their fatal error to stderr as prose as well as
+    // emitting it as an event, and the prose is the copy that survives.
+    let mut plain: Option<String> = None;
+    let mut plain_wants_more = false;
     for line in text.lines() {
         let line = line.trim();
         if !line.starts_with('{') {
+            // Grok's "Error: Not signed in..." arrives here.
+            //
+            // The transcript has two writers with no lock between them --
+            // stderr is wired to the file at spawn, and the reporter thread
+            // appends every stdout line to the same file -- so a long JSON
+            // event can be torn in half by a stderr write landing mid-line.
+            // That is exactly what happened to the first outside user who
+            // tried Grok: her transcript ends with the orphan fragment
+            //   achine with a browser."}
+            // which is the tail of the error event, cut in two. The JSON was
+            // unparseable, this loop skipped every line, and she was told
+            // "the grok agent did not finish successfully; see <file>" when
+            // the file itself said "Not signed in" in plain English (K-187).
+            //
+            // Reading the prose too makes the answer independent of whether
+            // the JSON survived the race.
+            if let Some(rest) = line.strip_prefix("Error:").or_else(|| line.strip_prefix("error:"))
+            {
+                let rest = rest.trim();
+                if !rest.is_empty() && plain.is_none() {
+                    plain = Some(rest.to_string());
+                    // Keep collecting: the command that fixes it is on the
+                    // NEXT line ("  grok login --device-code"), and a reason
+                    // that names the problem without the cure sends the
+                    // person back to a search engine.
+                    plain_wants_more = true;
+                    continue;
+                }
+            }
+            // The indented continuation of an error we just started reading.
+            if plain_wants_more {
+                if line.is_empty() {
+                    plain_wants_more = false;
+                } else if let Some(existing) = plain.as_mut() {
+                    existing.push(' ');
+                    existing.push_str(line);
+                }
+            }
             continue;
         }
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
@@ -6352,7 +6744,9 @@ fn agent_failure_reason(transcript: &Path) -> Option<String> {
             last = Some(unwrapped.trim().to_string());
         }
     }
-    last.map(|reason| {
+    // A JSON event is preferred -- it is the structured, intended channel --
+    // but the prose stands in when the event did not survive.
+    last.or(plain).map(|reason| {
         // One sentence, not a wall. Long provider errors repeat themselves.
         let trimmed: String = reason.chars().take(300).collect();
         // An expired sign-in is the commonest failure of all and the message
@@ -12798,6 +13192,182 @@ mod home_tests {
             "these read HOME with no USERPROFILE fallback, so they do nothing \
              on Windows -- use crate::home_dir(): {offenders:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod refusal_tests {
+    use super::{agent_failure_reason_in, extract_plan_json};
+
+    /// A provider that REFUSED must be told apart from one that answered in
+    /// a shape we cannot parse. Both leave extract_plan_json empty, and for
+    /// a while both fell through to "building directly" -- which is how a
+    /// person who typed "do not create any app" got an app (K-182).
+    #[test]
+    fn a_provider_that_refused_is_not_read_as_permission_to_build() {
+        // codex exec --json, account out of credit. Real shape, captured
+        // from `codex exec --json` on 2026-08-27.
+        let refused = concat!(
+            r#"{"type":"thread.started","thread_id":"01a03f30"}"#, "\n",
+            r#"{"type":"turn.started"}"#, "\n",
+            r#"{"type":"error","message":"You've hit your usage limit."}"#, "\n",
+            r#"{"type":"turn.failed","error":{"message":"You've hit your usage limit."}}"#,
+        );
+        assert!(
+            extract_plan_json(refused).is_none(),
+            "a refusal carries no plan, which is why it needs its own check"
+        );
+        let reason = agent_failure_reason_in(refused)
+            .expect("a refusal must surface the provider's own words");
+        assert!(
+            reason.contains("usage limit"),
+            "the person must be told what the AI actually said: {reason}"
+        );
+    }
+
+    /// The other half. An answer that is merely unparseable must NOT be
+    /// reported as a failure -- the soft fallback to a direct build is
+    /// deliberate and is what keeps a first request from dying on an output
+    /// shape nobody has seen yet.
+    #[test]
+    fn an_unparseable_answer_is_not_mistaken_for_a_refusal() {
+        for text in [
+            "I think a tip calculator would be lovely. Shall I start?",
+            "",
+            r#"{"type":"item.completed","item":{"text":"not json at all"}}"#,
+            r#"{"type":"turn.completed","usage":{"input_tokens":10}}"#,
+        ] {
+            assert!(
+                agent_failure_reason_in(text).is_none(),
+                "this is an unreadable answer, not a refusal: {text:?}"
+            );
+        }
+    }
+
+    /// Her transcript, as it actually arrived: the JSON event torn in half by
+    /// a stderr write, leaving an orphan fragment, and the same error present
+    /// only as prose. Before this, every line was skipped and she was told
+    /// "the grok agent did not finish successfully; see <file>" while the
+    /// file said "Not signed in" in plain English (K-187).
+    #[test]
+    fn a_plain_text_error_is_read_when_the_json_event_was_torn_in_half() {
+        let hers = concat!(
+            "Error: Not signed in. To authenticate without a browser, run:\n",
+            "  grok login --device-code\n",
+            "\n",
+            "Alternatively, set the XAI_API_KEY environment variable or run ",
+            "`grok login` on a machine with a browser.\n",
+            // The tail of the JSON event, cut in two by the interleaving.
+            "achine with a browser.\"}\n",
+        );
+        let reason = agent_failure_reason_in(hers)
+            .expect("the prose must be read when the JSON did not survive");
+        assert!(
+            reason.contains("Not signed in"),
+            "she must be told what her tool actually said: {reason}"
+        );
+    }
+
+    /// The JSON event still wins when it survives, because it is the clean
+    /// single sentence rather than the first line of a wrapped paragraph.
+    #[test]
+    fn a_surviving_json_event_is_preferred_over_the_prose() {
+        let both = concat!(
+            r#"{"type":"error","message":"Not signed in. Run: grok login --device-code"}"#,
+            "\n",
+            "Error: Not signed in. To authenticate without a browser, run:\n",
+        );
+        let reason = agent_failure_reason_in(both).expect("an error is present");
+        assert!(
+            reason.contains("Run: grok login"),
+            "the structured event is the better copy: {reason}"
+        );
+    }
+
+    /// A real plan still parses, so neither check can swallow a good answer.
+    #[test]
+    fn a_real_answer_is_still_read_as_one() {
+        let asked = r#"{"ask":["What should it do?"]}"#;
+        let planned = r#"{"plan":"A tip calculator.","needs":[]}"#;
+        assert!(extract_plan_json(asked).is_some());
+        assert!(extract_plan_json(planned).is_some());
+        assert!(agent_failure_reason_in(asked).is_none());
+        assert!(agent_failure_reason_in(planned).is_none());
+    }
+}
+
+#[cfg(test)]
+mod wall_tests {
+    use super::{wall_in_request, Wall};
+
+    /// The walls the gate is allowed to name are the ones with no capability
+    /// at all. Naming them costs ten seconds instead of the forty minutes a
+    /// build takes to discover the same thing.
+    #[test]
+    fn a_request_for_something_krate_cannot_do_is_named_before_building() {
+        let cases: &[(&str, Wall)] = &[
+            ("a screen recorder that saves an mp4", Wall::ScreenCapture),
+            ("an app to record my screen while I talk", Wall::ScreenCapture),
+            ("an app that types my signature into whatever field is focused",
+             Wall::OtherApps),
+            ("something that clicks buttons in other apps for me", Wall::OtherApps),
+            ("a MIDI keyboard app that plays my connected piano", Wall::Hardware),
+            ("read my bluetooth heart rate device", Wall::Hardware),
+            ("a background timer that keeps running after I close the window",
+             Wall::Background),
+        ];
+        for (request, expected) in cases {
+            assert_eq!(
+                wall_in_request(request),
+                Some(*expected),
+                "should have been caught as a wall: {request}"
+            );
+        }
+    }
+
+    /// The half that matters more. A false hit refuses work Krate can really
+    /// do, which is a worse failure than the slow discovery this gate
+    /// replaces -- so ordinary requests, and every request that merely uses
+    /// a wall's vocabulary innocently, must pass straight through.
+    #[test]
+    fn ordinary_requests_are_never_mistaken_for_walls() {
+        let buildable = [
+            // Plain apps.
+            "a tip calculator with a bill field and buttons for 15 and 20 percent",
+            "a to-do list I can check off, that remembers my items",
+            "a snake game I play with arrow keys",
+            "a markdown note editor with live preview",
+            "a weather dashboard that fetches the current weather for a city",
+            // Words a wall rule uses, in innocent senses.
+            "a full screen clock app",
+            "a screen saver with bouncing shapes",
+            "a game that fills the whole screen",
+            "an app that types out my notes as I press keys",
+            "a drawing app I control with the mouse",
+            "a keyboard trainer that shows which key to press",
+            "a piano app I play with the computer keyboard",
+            "a timer that runs in its own window",
+            // The word "background" is not the wall; background RUNNING is.
+            // An earlier cut of the rule refused this, because "background"
+            // satisfied both halves of the match on its own.
+            "an app with a dark background and big buttons",
+            "a note app with a background image",
+            "a game with a scrolling background",
+            "a photo viewer for images I drop on it",
+            // The camera, deliberately. A backend exists on all three desktop
+            // systems (K-119 macOS, K-148 Windows and Linux), so refusing it
+            // would be false everywhere -- and even where hardware might let
+            // it down, "might not work here" is not this gate's question.
+            "an app that shows my webcam feed with a photo button",
+            "a camera app that takes a picture",
+        ];
+        for request in buildable {
+            assert_eq!(
+                wall_in_request(request),
+                None,
+                "a buildable request was refused as a wall: {request}"
+            );
+        }
     }
 }
 

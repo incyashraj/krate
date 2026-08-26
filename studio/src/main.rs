@@ -147,6 +147,48 @@ fn engine() -> Result<PathBuf, String> {
     Ok(PathBuf::from(name))
 }
 
+/// Does the engine beside this Studio still speak the commands this Studio
+/// depends on?
+///
+/// Not a version comparison, deliberately. The failure this exists to catch
+/// (K-180) was an engine ten days old that reported the SAME version number
+/// as the current one -- Cargo.toml has sat at 0.1.28 since long before
+/// v0.1.58 -- so comparing versions would have stayed silent through the
+/// exact bug it was meant to find. Worse, a released Studio is stamped
+/// `0.1.58` while a released engine reports `v0.1.58`, so the honest pair
+/// differs by a leading `v` and a string check would cry wolf on every
+/// correct install.
+///
+/// What actually differed was capability: the stale engine had no `plan`
+/// subcommand at all. So ask it that, the only question whose answer is not
+/// a guess. clap exits 2 on an unrecognised subcommand and 0 on
+/// `plan --help`, which makes this a real feature test.
+///
+/// Cached: this spawns a process, and the answer cannot change while the
+/// Studio runs.
+fn engine_speaks_plan() -> bool {
+    static SPEAKS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *SPEAKS.get_or_init(|| match engine() {
+        Ok(path) => probe_speaks_plan(&path),
+        Err(_) => false,
+    })
+}
+
+/// The probe itself, separated from the cache so a test can run it against a
+/// real binary. A missing or unrunnable engine answers `false`: this question
+/// is only ever asked to decide whether to warn, and something we cannot run
+/// certainly cannot plan.
+fn probe_speaks_plan(engine: &Path) -> bool {
+    silent_cmd(engine)
+        .arg("plan")
+        .arg("--help")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
 /// Seed the agent's isolated config dir from the person's real one.
 /// Remove every value that names a path inside the person's home.
 ///
@@ -1535,6 +1577,20 @@ async fn plan_request(
 ) -> Result<String, String> {
     let out = tauri::async_runtime::spawn_blocking(move || {
         let engine = engine()?;
+        // Say WHICH thing is wrong. An engine too old to plan used to fail
+        // here as an ordinary error, and the UI turned that into "I'll skip
+        // the questions this time and build right away" -- a sentence that
+        // describes a choice, for something that was a fault. The person
+        // sees a product that stopped asking questions, and there is nothing
+        // on screen to connect that to a stale binary (K-180).
+        if !engine_speaks_plan() {
+            return Err(format!(
+                "STALE_ENGINE: the Krate engine at {} is too old for this \
+                 Studio -- it has no `plan` step, so it cannot talk through \
+                 an app before building it.",
+                engine.display()
+            ));
+        }
         let mut cmd = silent_cmd(&engine);
         cmd.arg("plan").arg(&request);
         for file in &attachments {
@@ -3006,8 +3062,67 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{agent_home_env, slugify};
+    use super::{agent_home_env, probe_speaks_plan, slugify};
     use std::path::{Path, PathBuf};
+
+    /// Write a runnable stub engine and hand back its path.
+    #[cfg(unix)]
+    fn stub_engine(dir: &Path, name: &str, body: &str) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join(name);
+        std::fs::write(&path, body).expect("write stub");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+            .expect("chmod stub");
+        path
+    }
+
+    /// The stale-engine probe has to answer the question that actually
+    /// differed, not the one that was easy to ask.
+    ///
+    /// K-180 was an engine ten days old driving a current Studio. It
+    /// reported the SAME version string as the new one -- Cargo.toml has sat
+    /// at 0.1.28 since long before v0.1.58 -- so a version comparison would
+    /// have been silent through the very bug it was written for. What
+    /// differed was that it had no `plan` subcommand, and clap exits
+    /// non-zero for one it does not know.
+    #[cfg(unix)]
+    #[test]
+    fn the_probe_asks_what_the_engine_can_do_not_what_it_is_called() {
+        let dir = std::env::temp_dir().join(format!("krate-probe-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+
+        // Both stubs report the identical version, which is the whole point:
+        // only their capability differs.
+        let current = stub_engine(
+            &dir,
+            "current",
+            "#!/bin/sh\ncase \"$1\" in\n  plan) exit 0 ;;\n  --version) echo 'krate 0.1.28' ;;\n  *) exit 2 ;;\nesac\n",
+        );
+        let stale = stub_engine(
+            &dir,
+            "stale",
+            "#!/bin/sh\ncase \"$1\" in\n  --version) echo 'krate 0.1.28' ;;\n  *) echo \"error: unrecognized subcommand '$1'\" >&2; exit 2 ;;\nesac\n",
+        );
+
+        assert!(
+            probe_speaks_plan(&current),
+            "an engine that knows `plan` must be recognised as current"
+        );
+        assert!(
+            !probe_speaks_plan(&stale),
+            "an engine with no `plan` subcommand must be caught, even though \
+             it reports the same version as the current one"
+        );
+
+        // An engine that is not there at all cannot plan either, and must
+        // not panic on the way to saying so.
+        assert!(
+            !probe_speaks_plan(&dir.join("does-not-exist")),
+            "a missing engine must answer false rather than panic"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     /// The agent's `~` must never be the person's home. This is the line
     /// between "an AI wrote you an app" and "an app asked for your
