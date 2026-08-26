@@ -148,12 +148,69 @@ fn engine() -> Result<PathBuf, String> {
 }
 
 /// Seed the agent's isolated config dir from the person's real one.
+/// Remove every value that names a path inside the person's home.
+///
+/// Recursive and shape-agnostic: object keys, object values, and array
+/// entries are all checked, because the agent's config has used all three
+/// to hold paths. Anything under the home directory is dropped -- objects
+/// keyed by a path lose the whole entry, strings become empty.
+///
+/// Deliberately blunt. A path we keep by accident is a system permission
+/// dialog with Krate's name on it; a setting we drop by accident is a
+/// preference the agent re-derives. The asymmetry decides the design.
+fn strip_personal_paths(value: &mut serde_json::Value, home: &Path) {
+    let home_prefix = home.to_string_lossy().to_string();
+    let looks_personal = |s: &str| {
+        s.starts_with(&home_prefix) || s.starts_with("~/")
+    };
+    match value {
+        serde_json::Value::Object(map) => {
+            let doomed: Vec<String> = map
+                .keys()
+                .filter(|k| looks_personal(k))
+                .cloned()
+                .collect();
+            for key in doomed {
+                map.remove(&key);
+            }
+            for (_, v) in map.iter_mut() {
+                strip_personal_paths(v, home);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            items.retain(|v| !matches!(v, serde_json::Value::String(s) if looks_personal(s)));
+            for v in items.iter_mut() {
+                strip_personal_paths(v, home);
+            }
+        }
+        serde_json::Value::String(s) => {
+            if looks_personal(s) {
+                s.clear();
+            }
+        }
+        _ => {}
+    }
+}
+
 fn seed_agent_config(agent_home: &Path) {
     let home = dirs_home();
-    // Settings minus project history.
+    // Settings minus EVERY path that points into the person's own folders.
+    //
+    // Blanking `projects` alone was not enough, and the proof was a system
+    // dialog: a fresh bundle asked for Downloads AND for files managed by
+    // OneDrive. The surviving culprit was `githubRepoPaths`, which still
+    // listed `~/Downloads/Personal_web`; the agent stats the paths in its
+    // config at startup, inside our process, so macOS names Krate. Naming
+    // keys one at a time loses this game -- the agent's config format is
+    // not ours and gains keys we do not control.
+    //
+    // So the rule is structural, not a list: walk the whole document and
+    // drop any string that looks like a path into the person's home. What
+    // survives is settings and flags, which is all the agent needs.
     if let Ok(text) = std::fs::read_to_string(home.join(".claude.json")) {
         if let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&text) {
             value["projects"] = serde_json::json!({});
+            strip_personal_paths(&mut value, &home);
             let _ = std::fs::write(
                 agent_home.join(".claude.json"),
                 serde_json::to_string(&value).unwrap_or_default(),
@@ -2760,6 +2817,40 @@ mod tests {
     /// The agent's `~` must never be the person's home. This is the line
     /// between "an AI wrote you an app" and "an app asked for your
     /// Downloads folder" (K-179).
+    /// The seeded config must carry no path into the person's folders.
+    ///
+    /// Blanking `projects` was not enough and a system dialog proved it:
+    /// `githubRepoPaths` still listed a folder under ~/Downloads, the agent
+    /// stats config paths at startup, and macOS put Krate's name on the
+    /// request (K-179).
+    #[test]
+    fn the_seeded_config_carries_no_path_into_the_persons_folders() {
+        let home = Path::new("/Users/someone");
+        let mut config = serde_json::json!({
+            "hasCompletedOnboarding": true,
+            "theme": "dark",
+            "projects": { "/Users/someone/Downloads/thing": { "trust": true } },
+            "githubRepoPaths": {
+                "me/repo": ["/Users/someone/Downloads/Personal_web"],
+                "me/other": ["/Users/someone/Projects/fine"]
+            },
+            "recent": ["/Users/someone/Documents/x", "not-a-path"],
+            "nested": { "deep": { "p": "/Users/someone/Desktop/y" } }
+        });
+
+        super::strip_personal_paths(&mut config, home);
+        let text = serde_json::to_string(&config).expect("serialize");
+
+        assert!(
+            !text.contains("/Users/someone"),
+            "a path into the person's home survived: {text}"
+        );
+        // Settings must still be there, or the agent re-onboards every run.
+        assert_eq!(config["hasCompletedOnboarding"], serde_json::json!(true));
+        assert_eq!(config["theme"], serde_json::json!("dark"));
+        assert!(text.contains("not-a-path"), "non-path values must survive");
+    }
+
     #[test]
     fn the_agent_never_inherits_the_persons_home() {
         let agent = Path::new("/Users/someone/.krate/studio/agent");
