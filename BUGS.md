@@ -71,6 +71,104 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-182 -- an AI that refuses to answer is reported as "building directly", so a request is built after the person said not to
+
+Status:   unclaimed
+Owner:    unclaimed
+Severity: blocker
+Class:    our-code
+Found:    2026-08-27, by Yashraj's brother on a cold MacBook, v0.2.0. He typed
+          "do not create any app" and Krate built one anyway. He is the first
+          person to use Krate who did not build it, which is why this is the
+          most valuable report we have had.
+Evidence: The submitted report (hub id 4a1ab58e1cc1d747) carries the whole
+          proof. about.txt:
+            krate: v0.2.0        <- version stamping works
+            agent claude: missing
+            agent codex: installed
+          session.json, all four messages, with timestamps:
+            1787765607 YOU   do not create any app
+            1787765607 KRATE On it. I'll show you each step as it happens.
+            1787765607 KRATE While I work, I'll open your app a few times ...
+            1787765629 KRATE that build didn't come together
+          "Looking at your request..." is ABSENT and the first two lines share
+          a timestamp to the second. The plan step did not run slowly; it did
+          not visibly run at all.
+Cause:    Reproduced locally on 2026-08-27 with the same agent:
+            $ krate plan "do not create any app" --agent codex
+            note: could not read a plan from the AI; building directly.
+            {"needs":[],"plan":""}
+          versus the same request with a working agent, which is correct:
+            $ krate plan "do not create any app" --agent claude
+            {"ask":["You said not to create an app -- do you want me to stop
+             entirely, or did you mean something else by that?", ...]}
+          The chain: codex exec --json emits a line-per-event stream. When the
+          account cannot answer, the stream carries
+            {"type":"error","message":"You've hit your usage limit..."}
+            {"type":"turn.failed","error":{...}}
+          and no event carries an `ask` or `plan` key. extract_plan_json
+          (crates/cli/src/main.rs:4426) searches for exactly those keys, finds
+          none, and plan_command falls through to its deliberate soft
+          fallback at main.rs:4393, emitting {"plan":""}. The Studio reads an
+          empty plan as "the AI decided this is ready to build" -- identical
+          to a genuine go-ahead -- and builds.
+          Confirmed the same shape by hand:
+            codex exec --json --skip-git-repo-check --sandbox workspace-write '<prompt>'
+            => {"type":"error","message":"You've hit your usage limit..."}
+Why it    The fallback is deliberate and its reasoning is sound for a
+matters:  MALFORMED answer: "we could not pre-plan, so we are just building
+          it" is better than failing a first request. But it cannot be right
+          for a REFUSED one. An AI that never answered is not an AI that said
+          yes, and the two are currently indistinguishable to the Studio. The
+          result is the worst thing an app-maker can do: build something after
+          being told not to, then charge the person fifteen minutes for it.
+Fix:      Separate "could not parse the answer" from "the provider reported an
+          error". When a provider stream carries an error/turn.failed event,
+          plan must say so and NOT emit an empty plan -- the Studio should
+          surface the provider's own message ("you've hit your usage limit",
+          "sign in again") the way it already surfaces a missing agent, and
+          leave the person in control of whether to build.
+
+### K-183 -- the AI picker names five tools and installs none of them
+
+Status:   unclaimed
+Owner:    unclaimed
+Severity: serious
+Class:    our-code
+Found:    2026-08-27, same session as K-182. He could not get an AI connected
+          and gave up on the Mac; on the Windows machine the build started
+          with no AI connected at all and only then said claude was missing.
+Evidence: His screenshot of "Your AI": five rows, four of them dead ends that
+          hand him a command to run somewhere else --
+            Claude   "Install Claude Code from https://claude.com/claude-code,
+                      then run `claude` once to sign in."
+            Gemini   "npm install -g @google/gemini-cli@latest, then run ..."
+            Copilot  "npm install -g @github/copilot@latest, then run ..."
+            Grok     "install the Grok CLI from xAI (docs.x.ai), then run ..."
+          Only codex showed "ready - in use", and codex was the one that then
+          failed (K-182).
+Note:     The machinery is all there, which makes this a wiring bug rather
+          than a missing feature -- verified 2026-08-27, not assumed:
+            - install_agent exists (studio/src/main.rs:1740) and streams
+              progress to the UI.
+            - The UI already builds an "Install" button for
+              state === "missing" && install_package (app.js:1801).
+            - `krate ai --json` on this machine returns install_package for
+              FOUR of the five: claude @anthropic-ai/claude-code, codex
+              @openai/codex, gemini @google/gemini-cli, copilot @github/copilot.
+              Only grok is None (no npm package).
+          So his Claude row should have carried an Install button and did not;
+          it showed the install_hint prose instead. What is NOT yet known is
+          which branch his rows actually took -- the row renders a.detail as
+          text and only appends a button for state "working" (Use this),
+          "not-ready" (Sign in), or "missing" WITH a package (Install). A
+          state outside those three, or a missing install_package in the
+          response his engine gave, would produce exactly his screenshot.
+          Next step is to read `krate ai --json` on HIS machine rather than
+          reason further from mine; the states differ per machine and that is
+          the whole point.
+          The onboarding "choose your AI" screen has the same shape.
+
 ### K-181 -- the notes.krate published on krate.tech exits 2 while working correctly
 
 Status:   fixed in source, awaiting republish
