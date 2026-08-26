@@ -428,26 +428,63 @@
       <div class="spacer"></div>
     </header>
     <main class="detail">
-      <div class="detail-shot" id="detailShot"></div>
-      <div class="detail-side">
-        <div class="detail-head" id="detailHead">
-          <h1 id="detailName"></h1>
+      <div class="detail-inner">
+
+        <!-- The app leads. A store shows you the thing before it talks
+             about the thing, and a screenshot is the only honest preview
+             of a program you have not run yet. -->
+        <div class="appstage">
+          <div class="appstage-shot" id="detailShot"></div>
+          <div class="appstage-fade"></div>
+          <div class="ident">
+            <div class="ident-icon-slot" id="detailHead"></div>
+            <div class="ident-text">
+              <h1 id="detailName"></h1>
+              <div class="ident-by" id="detailBy"></div>
+            </div>
+          </div>
         </div>
-        <p class="detail-tag" id="detailTag"></p>
-        <p class="detail-desc" id="detailDesc"></p>
-        <p class="detail-by" id="detailBy"></p>
-        <div class="detail-actions">
-          <button class="btn btn-primary" id="detailRun">Open it</button>
-          <button class="btn" id="detailCopy">Copy link</button>
+
+        <div class="actionbar">
+          <button class="btn btn-primary" id="detailRun">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4.5 3l8 5-8 5V3z" fill="currentColor"/></svg>
+            Open it
+          </button>
+          <button class="btn" id="detailCopy">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6.5 9.5a2.5 2.5 0 003.6.1l2.2-2.2a2.5 2.5 0 10-3.5-3.5l-.9.9" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/><path d="M9.5 6.5a2.5 2.5 0 00-3.6-.1L3.7 8.6a2.5 2.5 0 103.5 3.5l.9-.9" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>
+            Copy link
+          </button>
+          <div class="quick" id="detailQuick"></div>
         </div>
         <p class="detail-note" id="detailNote"></p>
-        <dl class="info-rows" id="detailRows"></dl>
-        <div class="info-caps">
-          <p class="label">What it is allowed to do</p>
-          <ul id="detailCaps"><li class="dim">Checking…</li></ul>
-          <p class="info-note">Krate enforces this list. An app cannot do
-          anything that is not on it, whatever its code says.</p>
+
+        <div class="cols">
+          <div class="card">
+            <div class="permhead">
+              <p class="label">What it is allowed to do</p>
+              <span class="count" id="detailCount"></span>
+            </div>
+            <div id="detailCaps"><p class="cap-dim">Checking what it can do…</p></div>
+            <p class="wall">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 1.8l5 2v4.1c0 3-2.1 5.4-5 6.3-2.9-.9-5-3.3-5-6.3V3.8l5-2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+              <span>Krate enforces this list. The app cannot do anything that
+              is not on it, whatever its code says.</span>
+            </p>
+          </div>
+
+          <div>
+            <div class="card">
+              <p class="label">Details</p>
+              <p class="detail-desc hidden" id="detailDesc"></p>
+              <dl class="facts" id="detailRows"></dl>
+              <button class="code" id="detailCode" title="Copy this app's link">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.6" stroke="currentColor" stroke-width="1.3"/><path d="M10.5 5.5v-1a1.6 1.6 0 00-1.6-1.6H4a1.6 1.6 0 00-1.6 1.6v4.9A1.6 1.6 0 004 11h1" stroke="currentColor" stroke-width="1.3"/></svg>
+                <span id="detailCodeText"></span>
+              </button>
+            </div>
+          </div>
         </div>
+
       </div>
     </main>
   </div>

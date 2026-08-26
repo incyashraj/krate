@@ -71,6 +71,43 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-180 -- a dev Studio silently loses the planning conversation, because studio/bin/krate goes stale
+
+Status:   fixed
+Owner:    claude
+Severity: medium
+Class:    environment
+Found:    2026-08-26, by Yashraj: "the stable one goes to the app making and
+          asks me question before making an app, but the one you made just
+          starts making, and this thing makes me feel that something is
+          really wrong". Found comparing a dev build against installed
+          v0.1.58 -- the exact comparison that catches this class of fault.
+Evidence: The engine Studio runs is resolved by engine() in studio/src/main.rs,
+          which checks a sibling of the executable and then studio/bin/. On
+          this machine studio/bin/krate was built 2026-08-16 and predates the
+          `plan` subcommand entirely:
+            $ ./studio/bin/krate plan "can you make an app?"
+            error: unrecognized subcommand 'plan'
+            tip: a similar subcommand exists: 'launch'
+          plan_request in studio/src/main.rs turns a non-zero exit into Err,
+          runPlan's catch in studio/ui/app.js says "I'll skip the questions
+          this time and build right away" and calls finishPlanningAndBuild().
+          So a stale engine does not read as a broken engine -- it reads as
+          a product that stopped asking questions. With the current engine
+          the same request answers correctly:
+            {"ask":["What should the app do -- what's the one task it helps
+            you finish?", ...]}
+Fix:      cp target/release/krate studio/bin/krate. Not shipped-broken: the
+          release workflow rebuilds studio/bin/krate from the matrix target
+          on every platform (release.yml:227,272,294,322) and the path is
+          untracked, so only local dev builds can drift.
+Lesson:   The engine beside the Studio is a build artifact with no version
+          check. A dev Studio can be arbitrarily newer than the engine it
+          drives, and every failure surfaces as changed PRODUCT behaviour
+          rather than as a tooling error. Same family as "the binary on PATH
+          is not the one you built" -- when dev and stable behave differently,
+          suspect the pair of binaries before suspecting the diff.
+
 ### K-179 -- macOS asks for Downloads, Documents and Music in Krate's name, because the AI agent inherits our identity
 
 Status:   claimed

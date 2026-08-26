@@ -859,7 +859,6 @@ body.windows .titlebar { padding-right: 150px; }
 @media (prefers-reduced-motion: reduce) {
   .rot .word span { animation: none; }
 }
-}
 
 /* ---- the draggable divider -------------------------------------------- */
 
@@ -1025,31 +1024,189 @@ body.resizing .divider { background: var(--blue); }
 .info-note {
   margin-top: 14px; color: var(--faint); font-size: 12px; line-height: 1.55;
 }
+/* The button row the report and publish sheets share. */
+.detail-actions { display: flex; gap: 8px; margin: 20px 0 0; }
 
 /* ---- one published app ------------------------------------------------- */
 
-.detail {
-  flex: 1; overflow-y: auto;
-  display: grid; gap: 32px; align-content: start;
-  grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.9fr);
-  padding: 36px 32px 64px; max-width: 1000px; margin: 0 auto; width: 100%;
+/* The stagger the whole page arrives on. */
+@keyframes rise { to { opacity: 1; transform: none; } }
+
+/* The page is one scrolling column, not two side-by-side ones. The old
+   layout put the screenshot in a grid cell next to the text, so a tall
+   app image and a short fact list slid out of step and neither had a
+   natural bottom. Here the app is the hero and the facts sit under it. */
+.detail { flex: 1; overflow-y: auto; overflow-x: hidden; }
+.detail-inner {
+  max-width: 1060px; margin: 0 auto; width: 100%;
+  padding: 0 32px var(--dock-clear);
 }
-@media (max-width: 860px) { .detail { grid-template-columns: 1fr; } }
-.detail-shot {
-  border: 1px solid var(--line); border-radius: var(--radius-card);
-  background: var(--panel); overflow: hidden;
-  display: grid; place-items: center; min-height: 260px;
+
+/* The stage.
+ *
+ * No fixed aspect ratio. Published screenshots run from 0.56 (a tall
+ * phone-shaped window) to 1.57 (a wide one) -- measured across every app
+ * on the hub, and ten of twenty-three are taller than they are wide. Any
+ * single ratio with object-fit:cover would crop somebody's app to
+ * nothing. So the picture keeps its own shape inside a fixed-height
+ * stage, and the room left over is filled by a blurred copy of the same
+ * picture rather than a grey bar.
+ */
+.detail .appstage {
+  position: relative; margin-top: 4px; overflow: hidden;
+  border: 1px solid var(--line); border-radius: 18px;
+  /* Literal, not a token: the frame is dark in light mode too, so the
+     blurred backdrop and the white app name have ground to sit on. */
+  background: #0b0c0e;
+  opacity: 0; transform: translateY(14px); animation: rise 0.5s ease 0.04s forwards;
 }
-.detail-shot img { width: 100%; height: auto; display: block; }
-.shot-none { color: var(--ghost); font-size: 13px; padding: 60px 0; }
-.detail-side h1 { font-size: 26px; letter-spacing: -0.02em; }
-.detail-desc { margin-top: 8px; color: var(--muted); font-size: 14px; line-height: 1.6; }
-.detail-by { margin-top: 10px; color: var(--faint); font-size: 13px; }
-.detail-actions { display: flex; gap: 8px; margin: 20px 0 0; }
-.detail-note { margin-top: 10px; color: var(--faint); font-size: 12.5px; min-height: 1em; }
-.detail .info-rows { margin-top: 20px; }
-#detailCaps .dim { color: var(--ghost); }
-#detailCaps .dim::before { display: none; }
+.detail .appstage-shot {
+  position: relative; height: 44vh; min-height: 260px; max-height: 420px;
+  display: flex; align-items: center; justify-content: center; overflow: hidden;
+}
+/* Flex, not grid: a grid item takes its natural height and max-height:100%
+   does not bind against it, so a 1280px-tall screenshot overflowed a
+   378px stage and was clipped mid-picture. Flex sizes it to the line. */
+.detail .appstage-shot img.shot {
+  position: relative; z-index: 1;
+  max-width: 100%; max-height: 100%; width: auto; height: auto;
+  min-height: 0; display: block; object-fit: contain;
+}
+/* The backdrop: the same image, blown up and blurred, so a portrait
+   screenshot sits in colour that belongs to it instead of a void. */
+/* inset:0 with width/height auto -- as a flex item, width:100% resolved
+   against the wrong box and the backdrop covered only part of the stage.
+   The scale hides the soft edge the blur leaves at the border. */
+.detail .appstage-shot img.shot-bed {
+  position: absolute; inset: 0; z-index: 0;
+  width: auto; height: auto; max-width: none; max-height: none;
+  object-fit: cover;
+  filter: blur(44px) saturate(1.25); transform: scale(1.2); opacity: 0.5;
+}
+.shot-none {
+  display: grid; place-items: center; height: 100%; width: 100%;
+  color: var(--ghost); font-size: 13px;
+  background: radial-gradient(120% 120% at 50% 0%, rgba(98, 145, 255, 0.07), transparent 70%);
+}
+/* The name has to stay legible over whatever the app happens to draw, so
+   the bottom of the stage is dimmed rather than trusting the screenshot. */
+/* The fade and the name sit above the picture. Without an explicit stack
+   the screenshot -- which needs z-index of its own to clear its blurred
+   backdrop -- painted straight over the app's name. */
+.detail .appstage-fade {
+  position: absolute; inset: auto 0 0 0; height: 44%; z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(to top,
+    rgba(8, 8, 9, 0.96) 18%, rgba(8, 8, 9, 0.62) 58%, transparent 100%);
+}
+.detail .ident {
+  position: absolute; left: 24px; right: 24px; bottom: 20px; z-index: 3;
+  display: flex; align-items: flex-end; gap: 16px;
+}
+.detail .ident-icon-slot { flex: none; }
+.detail .ident-icon-slot .cloud-icon {
+  width: 66px; height: 66px; border-radius: 17px; font-size: 23px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+}
+.detail .ident-text { min-width: 0; flex: 1; }
+/* The stage stays a dark frame in both themes -- it shows an app's own
+   pixels, the way a video player does, and its text sits on that frame
+   rather than on the page. So these colours are literal, not tokens:
+   in light mode the tokens would turn this white-on-dark text black. */
+.detail .ident h1 {
+  font-size: 32px; font-weight: 500; letter-spacing: -0.03em; line-height: 1.1;
+  color: #fff; text-shadow: 0 2px 22px rgba(0, 0, 0, 0.85);
+}
+.detail .ident-by {
+  display: flex; align-items: center; gap: 7px; margin-top: 9px;
+  font-size: 13px; color: rgba(255, 255, 255, 0.62);
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.8);
+}
+.detail .ident-by img.ident-avatar {
+  width: 19px; height: 19px; border-radius: 50%; object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+/* Not ".cat" -- that is the cloud filter chip, and it would paint a
+   pill border around what is meant to be a plain trailing word. */
+.detail .ident-by .ident-cat { color: rgba(255, 255, 255, 0.4); }
+.detail .ident-by .ident-cat::before {
+  content: "·"; margin: 0 7px; color: rgba(255, 255, 255, 0.28);
+}
+
+.detail .actionbar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 18px;
+  opacity: 0; transform: translateY(14px); animation: rise 0.5s ease 0.1s forwards;
+}
+.detail .actionbar .btn { height: 40px; }
+/* Size and date are the two facts a person weighs before clicking Open,
+   so they sit on the same line as the button and not in a list below. */
+.detail .quick { margin-left: auto; display: flex; align-items: center; gap: 20px; }
+.detail .quick .k {
+  display: block; font-size: 10.5px; letter-spacing: 0.11em;
+  text-transform: uppercase; color: var(--faint);
+}
+.detail .quick .v { display: block; font-size: 13.5px; margin-top: 3px; text-align: right; }
+.detail-note { margin-top: 11px; color: var(--faint); font-size: 12.5px; min-height: 1em; }
+
+.detail .cols {
+  display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+  gap: 26px; margin-top: 26px; align-items: start;
+  opacity: 0; transform: translateY(14px); animation: rise 0.5s ease 0.16s forwards;
+}
+@media (max-width: 880px) { .cols { grid-template-columns: 1fr; } }
+.detail .card {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius-card); padding: 20px;
+}
+.detail .permhead { display: flex; align-items: baseline; gap: 10px; }
+.detail .permhead .count { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--faint); }
+
+/* Permissions as pills, grouped by whether they leave the sandbox. As a
+   stacked bullet list this ran to fourteen lines and the one that
+   mattered -- the microphone, the network -- hid among the boring ones. */
+.detail .pgroup { margin-top: 16px; }
+.detail .pgroup-t { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
+.detail .pgroup-t .pip { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.detail .pgroup.out .pip { background: var(--yellow); }
+.detail .pgroup.in .pip { background: var(--cyan); }
+.detail .plist { list-style: none; display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
+.detail .plist li {
+  font-size: 12.5px; padding: 6px 12px; border-radius: var(--radius-pill);
+  border: 1px solid var(--line); background: var(--panel-raised); color: var(--text);
+}
+.detail .pgroup.out .plist li {
+  border-color: rgba(244, 220, 116, 0.22); background: rgba(244, 220, 116, 0.06);
+}
+.detail .cap-dim { margin-top: 14px; color: var(--ghost); font-size: 13px; }
+.detail .wall {
+  margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line);
+  font-size: 12.5px; line-height: 1.6; color: var(--faint); display: flex; gap: 10px;
+}
+.detail .wall svg { flex: none; margin-top: 2px; color: var(--cyan); }
+
+.detail-desc { margin: 12px 0 4px; color: var(--muted); font-size: 13.5px; line-height: 1.65; }
+.detail .facts {
+  display: grid; grid-template-columns: auto 1fr; gap: 11px 18px;
+  margin-top: 14px; font-size: 13px;
+}
+.detail .facts dt { color: var(--faint); }
+.detail .facts dd { color: var(--text); text-align: right; }
+/* The share link is the thing people actually paste to each other, so it
+   is a control you can click, not a fact you have to retype. */
+.detail .code {
+  display: flex; align-items: center; gap: 8px; width: 100%; margin-top: 14px;
+  padding: 9px 12px; border-radius: 10px; cursor: copy; text-align: left;
+  border: 1px solid var(--line); background: var(--panel-raised);
+  font-family: inherit; color: inherit; transition: border-color 0.15s;
+}
+.detail .code:hover { border-color: var(--line-strong); }
+.detail .code span {
+  font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.detail .code svg { flex: none; color: var(--faint); }
+.detail .code.copied span { color: var(--cyan); }
 
 /* ---- cloud cards as a store -------------------------------------------- */
 
@@ -1075,11 +1232,6 @@ body.resizing .divider { background: var(--blue); }
   border-radius: 50%; background: var(--accent); margin-right: 6px;
   vertical-align: 1px;
 }
-
-/* The detail page's identity row: icon tile beside the name. */
-.detail-head { display: flex; align-items: center; gap: 14px; }
-.detail-head .cloud-icon { width: 52px; height: 52px; border-radius: 13px; font-size: 19px; }
-.detail-tag { margin-top: 8px; color: var(--ghost); font-size: 12.5px; }
 
 /* A real uploaded logo shares the monogram tile's geometry. */
 img.cloud-icon { object-fit: cover; }

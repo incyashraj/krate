@@ -1907,15 +1907,47 @@ const CAP_WORDS = {
   "locale.info": "Know your language and region",
   "locale.format": "Format numbers and dates the way you write them",
   "random.bytes": "Use random numbers",
-  "net.http": "Reach the internet",
   "store.kv": "Save its own settings",
   "store.sql": "Keep its own database",
+  "store.secret": "Keep its own sign-in keys, encrypted",
   "store.shared": "Share its data with anyone holding its invite code, via krate.tech",
-  "clipboard.read": "Read the clipboard",
-  "clipboard.write": "Put things on the clipboard",
   "audio.playback": "Play sound",
   "audio.capture": "Record from the microphone",
+  "camera.capture": "Use the camera",
+  // The engine's names, as printed by `krate run --dump-caps`. Three
+  // entries here read "net.http", "clipboard.read" and "clipboard.write",
+  // which no capability is called -- so an app that reached the internet
+  // or the clipboard showed a raw id like "net.connect:api.site.com:443"
+  // in a list whose whole job is plain English.
+  "net.connect": "Reach the internet",
+  "ui.clipboard:read": "Read the clipboard",
+  "ui.clipboard:write": "Put things on the clipboard",
+  "ui.open-url": "Open a link in your browser",
+  "ui.notify": "Send you desktop notifications",
+  "ui.menu:system": "Add items to the system menu",
+  "ui.dropzone": "Accept files you drag onto it",
+  "ui.dialog:*": "Use any of the file and message dialogs",
+  "gfx.gpu:compute": "Run calculations on the graphics card",
+  "fs.read": "Read files you allow",
+  "fs.write": "Write files you allow",
+  "fs.list": "List folders you allow",
+  "fs.remove": "Delete files you allow",
+  "fs.mkdir": "Create folders you allow",
 };
+
+/* A capability may carry a resource -- "net.connect:api.site.com:443",
+   "fs.read:./notes/*". The words are keyed on the bare module.action, so
+   the resource is stripped before the lookup and shown after the phrase,
+   which is the part a person most wants to see: WHICH host, WHICH folder. */
+function capWords(cap) {
+  if (CAP_WORDS[cap]) return CAP_WORDS[cap];
+  const i = cap.indexOf(":");
+  if (i === -1) return cap;
+  const bare = cap.slice(0, i);
+  const resource = cap.slice(i + 1);
+  const words = CAP_WORDS[bare];
+  return words ? `${words} (${resource})` : cap;
+}
 
 async function showInfo() {
   const app = currentApp();
@@ -1948,7 +1980,7 @@ async function showInfo() {
 
     for (const cap of info.capabilities || []) {
       const li = document.createElement("li");
-      li.textContent = CAP_WORDS[cap] || cap;
+      li.textContent = capWords(cap);
       li.title = cap;
       $("infoCaps").appendChild(li);
     }
@@ -2063,43 +2095,88 @@ function showCloudApp(app) {
   state.cloudApp = app;
   showView("appDetail");
   $("appCrumb").textContent = meta.name || "App";
+
+  // The icon sits on the stage, over the screenshot.
   const head = $("detailHead");
-  head.querySelector(".cloud-icon")?.remove();
+  head.innerHTML = "";
   if (app.icon) {
     const icon = document.createElement("img");
     icon.className = "cloud-icon";
     icon.src = app.icon;
     icon.alt = "";
     icon.onerror = () => icon.replaceWith(appTile(meta.name || "App"));
-    head.prepend(icon);
+    head.appendChild(icon);
   } else {
-    head.prepend(appTile(meta.name || "App"));
+    head.appendChild(appTile(meta.name || "App"));
   }
+
   $("detailName").textContent = meta.name || "Untitled app";
-  $("detailTag").textContent = catLabel((app.cats && app.cats[0]) || "apps");
-  $("detailDesc").textContent = meta.description || "";
-  $("detailDesc").classList.toggle("hidden", !meta.description);
-  $("detailBy").textContent = meta.author ? `Made by ${meta.author}` : "";
   $("detailNote").textContent = "";
+
+  // Who made it, with their real photo when the hub has one. An avatar and
+  // a name say "a person made this" in a way a line of grey text does not.
+  const by = $("detailBy");
+  by.innerHTML = "";
+  if (meta.avatar_url) {
+    const av = document.createElement("img");
+    av.className = "ident-avatar";
+    av.src = meta.avatar_url;
+    av.alt = "";
+    av.onerror = () => av.remove();
+    by.appendChild(av);
+  }
+  by.append(document.createTextNode(meta.author || "Someone on Krate"));
+  const cat = document.createElement("span");
+  cat.className = "ident-cat";
+  cat.textContent = catLabel((app.cats && app.cats[0]) || meta.category || "apps");
+  by.appendChild(cat);
 
   const shot = $("detailShot");
   shot.innerHTML = "";
   if (app.shot) {
+    // Two copies of one picture: a blurred backdrop that fills the stage,
+    // and the real thing at its own shape on top. App windows are anywhere
+    // from portrait to landscape, so nothing is cropped to make it fit.
+    const bed = document.createElement("img");
+    bed.className = "shot-bed";
+    bed.src = app.shot;
+    bed.alt = "";
+    bed.setAttribute("aria-hidden", "true");
+
     const img = document.createElement("img");
+    img.className = "shot";
     img.src = app.shot;
     img.alt = `${meta.name || "The app"}, as it renders`;
     // The hub has no screenshot for every app; a broken image frame looks
     // like a fault, so it removes itself and the placeholder shows instead.
     img.onerror = () => { shot.innerHTML = ""; shot.appendChild(shotPlaceholder()); };
-    shot.appendChild(img);
+
+    shot.append(bed, img);
   } else {
     shot.appendChild(shotPlaceholder());
   }
 
+  // The two facts weighed before clicking Open ride beside the button.
+  const size = meta.size ? `${Math.round(meta.size / 1024)} KB` : "unknown";
+  const when = meta.published ? timeAgo(meta.published) : "unknown";
+  $("detailQuick").innerHTML = "";
+  for (const [k, v] of [["Size", size], ["Published", when]]) {
+    const box = document.createElement("div");
+    box.innerHTML = `<span class="k"></span><span class="v"></span>`;
+    box.querySelector(".k").textContent = k;
+    box.querySelector(".v").textContent = v;
+    $("detailQuick").appendChild(box);
+  }
+
+  // Most published apps carry no description, so the card must read as
+  // finished without one rather than leaving a gap where prose would go.
+  $("detailDesc").textContent = meta.description || "";
+  $("detailDesc").classList.toggle("hidden", !meta.description);
+
   const rows = [
-    ["Size", `${Math.round((meta.size || 0) / 1024)} KB`],
-    ["Published", meta.published ? timeAgo(meta.published) : "unknown"],
-    ["Runs on", "Mac, Windows and Linux"],
+    ["Runs on", "Mac, Windows, Linux"],
+    ["Download", size],
+    ["Published", when],
   ];
   $("detailRows").innerHTML = "";
   for (const [k, v] of rows) {
@@ -2110,30 +2187,145 @@ function showCloudApp(app) {
     $("detailRows").append(dt, dd);
   }
 
+  const code = $("detailCode");
+  $("detailCodeText").textContent = (app.url || "").replace(/^https:\/\//, "");
+  code.classList.remove("copied");
+  code.classList.toggle("hidden", !app.url);
+
   // Permissions come from the engine reading the published bundle, without
   // running it -- the same wall that will apply if it is opened.
   const caps = $("detailCaps");
-  caps.innerHTML = '<li class="dim">Checking what it can do…</li>';
+  const count = $("detailCount");
+  caps.innerHTML = '<p class="cap-dim">Checking what it can do…</p>';
+  count.textContent = "";
   invoke("app_info", { path: app.url })
     .then((info) => {
-      caps.innerHTML = "";
       const list = info.capabilities || [];
-      if (!list.length) {
-        const li = document.createElement("li");
-        li.textContent = "Nothing beyond drawing its own window.";
-        caps.appendChild(li);
-        return;
-      }
-      for (const cap of list) {
-        const li = document.createElement("li");
-        li.textContent = CAP_WORDS[cap] || cap;
-        li.title = cap;
-        caps.appendChild(li);
-      }
+      count.textContent = list.length
+        ? `${list.length} permission${list.length === 1 ? "" : "s"}`
+        : "";
+      renderCapGroups(caps, list);
     })
     .catch(() => {
-      caps.innerHTML = '<li class="dim">Could not read this app right now.</li>';
+      caps.innerHTML = '<p class="cap-dim">Could not read this app right now.</p>';
     });
+}
+
+/* The permissions that cross the app's own wall: they read the person's
+   room, their files, their clipboard, or move data off the machine.
+   Everything else the app does to itself and its own window.
+ *
+ * The split is about DIRECTION, not about whether the engine asks. Some
+ * capabilities are an explicit ask purely so the list discloses them
+ * (store.kv, store.sql, random.bytes) while nothing leaves the app --
+ * those belong under "stays inside" even though they are not
+ * default-granted.
+ *
+ * Names are the engine's own, as printed by `krate run --dump-caps` and
+ * defined in KRATE_CAPABILITY_SPECS (crates/manifest/src/lib.rs). Listed
+ * one by one rather than matched by prefix: a capability added later
+ * should have to be classified deliberately, and an unrecognised one
+ * falls to the cautious side rather than being quietly called harmless. */
+const CAPS_REACH_OUT = new Set([
+  // The person's room, camera and files.
+  "audio.capture",
+  "camera.capture",
+  "ui.clipboard:read",
+  "ui.clipboard:write",
+  "ui.dialog:file-open",
+  "ui.dialog:file-save",
+  "ui.dialog:open-folder",
+  "ui.dialog:*",
+  "ui.dropzone",
+  // Off the machine.
+  "net.connect",
+  "store.shared",
+  // Acts on the desktop outside its own window.
+  "ui.open-url",
+  "ui.notify",
+  "ui.menu:system",
+  // The filesystem.
+  "fs.read", "fs.write", "fs.list", "fs.remove", "fs.mkdir",
+]);
+
+/* Capabilities that stay entirely within the app: drawing its own window,
+   its own storage, its own output, reading the clock.
+
+   audio.playback is here deliberately. The engine default-grants it with
+   the note "Output is not input" -- playing sound is the app doing its
+   obvious job, not reaching for anything of the person's. */
+const CAPS_STAY_IN = new Set([
+  "ui.window:create", "ui.dialog:confirm", "ui.dialog:message",
+  "gfx.gpu:basic", "gfx.gpu:compute",
+  "io.stdout", "io.stderr", "io.stdin", "io.args", "io.log",
+  "time.clock", "time.monotonic", "time.sleep",
+  "locale.info", "locale.format", "random.bytes",
+  "store.kv", "store.sql", "store.secret",
+  "audio.playback",
+]);
+
+function reachesOut(cap) {
+  if (CAPS_REACH_OUT.has(cap)) return true;
+  if (CAPS_STAY_IN.has(cap)) return false;
+
+  // Several capabilities arrive carrying a resource -- "fs.read:./notes/*",
+  // "net.connect:api.example.com:443" -- so an exact match alone would call
+  // every one of them unknown. Try the bare module.action too, and only
+  // then give up.
+  const bare = cap.slice(0, cap.indexOf(":") === -1 ? cap.length : cap.indexOf(":"));
+  if (CAPS_REACH_OUT.has(bare)) return true;
+  if (CAPS_STAY_IN.has(bare)) return false;
+
+  // Unknown to this build of Studio -- a capability newer than this
+  // release. Show it in the group that gets read rather than calling
+  // something we cannot name harmless.
+  return true;
+}
+
+/* Fourteen permissions as a stacked bullet list was fourteen lines of
+   equal weight, and the one worth noticing hid among the dull ones. As
+   pills in two groups it fits in a glance and the split carries meaning. */
+function renderCapGroups(host, list) {
+  host.innerHTML = "";
+  if (!list.length) {
+    const p = document.createElement("p");
+    p.className = "cap-dim";
+    p.textContent = "Nothing beyond drawing its own window.";
+    host.appendChild(p);
+    return;
+  }
+
+  const out = list.filter(reachesOut);
+  const inside = list.filter((c) => !reachesOut(c));
+  // With only one group the coloured pip and its heading say nothing, so
+  // the pills stand alone.
+  const solo = !out.length || !inside.length;
+
+  for (const [cls, title, items] of [
+    ["out", "Reaches outside the app", out],
+    ["in", "Stays inside the app", inside],
+  ]) {
+    if (!items.length) continue;
+    const group = document.createElement("div");
+    group.className = `pgroup ${cls}`;
+    if (!solo) {
+      const head = document.createElement("div");
+      head.className = "pgroup-t";
+      head.innerHTML = `<span class="pip"></span>`;
+      head.append(document.createTextNode(title));
+      group.appendChild(head);
+    }
+    const ul = document.createElement("ul");
+    ul.className = "plist";
+    for (const cap of items) {
+      const li = document.createElement("li");
+      li.textContent = capWords(cap);
+      li.title = cap;
+      ul.appendChild(li);
+    }
+    group.appendChild(ul);
+    host.appendChild(group);
+  }
 }
 
 function shotPlaceholder() {
@@ -2573,7 +2765,13 @@ function looksLikeAQuestion(text) {
   // A polite request names its thing -- "can you make me a tip calculator?"
   // Vague scope words mean they are asking about the tool, not ordering.
   const vague = /\b(any|anything|what kind|what sort|whatever|something)\b/.test(t);
-  const namesAThing = /\b(a|an|me|my)\s+[a-z]+/.test(t) && !vague;
+  // ...but "app", "program", "thing" name nothing on their own. "Can you
+  // make an app?" is a question about the product, and matching "an app"
+  // as a named subject sent exactly that phrase into a fifteen-minute
+  // build. Only generic when the sentence ENDS there: "can you make an app
+  // that tracks my water intake?" says what it wants and must still build.
+  const generic = /\b(a|an|the|any)\s+(app|application|program|thing|software|tool)s?\s*\?$/.test(t);
+  const namesAThing = /\b(a|an|me|my)\s+[a-z]+/.test(t) && !vague && !generic;
   return !namesAThing;
 }
 
@@ -2680,6 +2878,29 @@ $("detailCopy").addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(app.url);
     $("detailNote").textContent = "Link copied. Anyone with it can open this app.";
+  } catch {
+    $("detailNote").textContent = app.url;
+  }
+});
+
+/* The link field copies too. Someone who sees a link expects clicking it
+   to do something, and the confirmation belongs on the thing they clicked
+   rather than in a note further up the page. */
+$("detailCode").addEventListener("click", async () => {
+  const app = state.cloudApp;
+  if (!app || !app.url) return;
+  const code = $("detailCode");
+  const label = $("detailCodeText");
+  try {
+    await navigator.clipboard.writeText(app.url);
+    const was = label.textContent;
+    code.classList.add("copied");
+    label.textContent = "Copied";
+    setTimeout(() => {
+      code.classList.remove("copied");
+      // Only put the link back if the page is still showing the same app.
+      if (state.cloudApp === app) label.textContent = was;
+    }, 1400);
   } catch {
     $("detailNote").textContent = app.url;
   }
