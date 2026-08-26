@@ -284,8 +284,53 @@ fn seed_agent_config(agent_home: &Path) {
     if !dest.exists() {
         let _ = std::fs::copy(home.join(".claude/.credentials.json"), &dest);
     }
+
+    // Every OTHER AI's sign-in, for the same reason Claude's is here.
+    //
+    // The engine has its own copy of this, and it was fixed there first
+    // (K-189) -- but the Studio sets HOME to the confined directory BEFORE
+    // the engine runs, so the engine's seeding was already too late to
+    // matter for a Studio build. A first user updated to the release
+    // carrying that fix and still could not build: her report says
+    // "agent codex: working" and her transcript says
+    //   401 Unauthorized: Missing bearer or basic authentication in header
+    // which is a Codex that found no credential at all (K-191).
+    //
+    // Shallow on purpose. A credential is a small file at the top of the
+    // tool's config directory; the subdirectories are session history and
+    // caches -- exactly the material the confined home exists to keep out
+    // of the agent's reach.
+    for dir in [".grok", ".codex", ".gemini", ".copilot"] {
+        let from = home.join(dir);
+        if from.is_dir() {
+            let _ = copy_dir_shallow(&from, &agent_home.join(dir));
+        }
+    }
+    for dir in ["gemini", "github-copilot"] {
+        let from = home.join(".config").join(dir);
+        if from.is_dir() {
+            let _ = std::fs::create_dir_all(agent_home.join(".config"));
+            let _ = copy_dir_shallow(&from, &agent_home.join(".config").join(dir));
+        }
+    }
+
     // Empty history beats absent history: nothing to stat, nothing to miss.
     let _ = std::fs::write(agent_home.join("history.jsonl"), "");
+}
+
+/// Copy the files directly inside `from` into `to`, creating `to`.
+///
+/// Shallow deliberately -- see the note in seed_agent_config about why the
+/// subdirectories must not travel.
+fn copy_dir_shallow(from: &Path, to: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        if entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+            let _ = std::fs::copy(entry.path(), to.join(entry.file_name()));
+        }
+    }
+    Ok(())
 }
 
 /// Build a Command that never flashes a console. The engine is a
@@ -3189,8 +3234,46 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{agent_home_env, probe_speaks_plan, slugify};
+    use super::{agent_home_env, copy_dir_shallow, probe_speaks_plan, slugify};
     use std::path::{Path, PathBuf};
+
+    /// Every AI's sign-in travels into the confined home, not only Claude's.
+    ///
+    /// The Studio sets HOME to that directory before the engine runs, so its
+    /// seeding is the one that decides whether an agent can authenticate.
+    /// While it copied Claude alone, a person signed in to Codex or Grok got
+    /// a 401 with "Missing bearer or basic authentication in header" -- the
+    /// tool looked, found an empty home, and said so (K-191).
+    ///
+    /// Shallow: the credential at the top travels, the session history in
+    /// the subdirectories does not, because keeping that away from the agent
+    /// is the whole point of confining the home.
+    #[test]
+    fn a_credential_travels_but_the_history_under_it_does_not() {
+        let base = std::env::temp_dir().join(format!("krate-seed-{}", std::process::id()));
+        let from = base.join(".codex");
+        std::fs::create_dir_all(from.join("sessions")).expect("make source");
+        std::fs::write(from.join("auth.json"), "{\"token\":\"secret\"}").expect("auth");
+        std::fs::write(from.join("config.toml"), "x = 1").expect("config");
+        std::fs::write(from.join("sessions").join("yesterday.jsonl"), "private")
+            .expect("history");
+
+        let to = base.join("agent-home").join(".codex");
+        copy_dir_shallow(&from, &to).expect("copy");
+
+        assert!(
+            to.join("auth.json").is_file(),
+            "the credential must travel, or the agent cannot authenticate"
+        );
+        assert!(to.join("config.toml").is_file(), "settings travel too");
+        assert!(
+            !to.join("sessions").exists(),
+            "session history must NOT travel: the confined home exists to keep \
+             the person's past work away from the agent"
+        );
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
 
     /// Write a runnable stub engine and hand back its path.
     #[cfg(unix)]

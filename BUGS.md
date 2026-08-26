@@ -71,6 +71,47 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-191 -- the Studio has its OWN credential seeding, and it was Claude-only too
+
+Status:   fixed
+Owner:    claude
+Severity: blocker
+Class:    our-code
+Found:    2026-08-27. Aanchala updated to v0.2.1-rc.1 -- the release carrying
+          the K-189 fix -- and her build still failed. Diagnosed entirely from
+          her report, with no round trip, which is K-185 working as intended.
+Evidence: about.txt from the rc:
+            krate: v0.2.1-rc.1
+            agent codex: working
+            agent grok: working
+          and the transcript the report now carries:
+            401 Unauthorized: Missing bearer or basic authentication in
+            header, url: https://api.openai.com/v1/responses
+          "Missing bearer" is a Codex that found no credential at all, not one
+          that was refused -- so the confined home was still empty for it.
+Cause:    There are TWO seeding functions, and K-189 fixed only one.
+            crates/cli/src/main.rs::seed_agent_home   -- fixed in K-189
+            studio/src/main.rs::seed_agent_config     -- still Claude-only
+          The Studio sets HOME to the confined directory (agent_home_env,
+          line 1081) BEFORE it runs the engine, so by the time the engine's
+          own seeding runs the agent is already pointed at a home the Studio
+          prepared. For a Studio build, the Studio's copy is the one that
+          decides, and it copied .claude.json and .claude/.credentials.json
+          and nothing else.
+Fixed:    seed_agent_config now copies ~/.grok, ~/.codex, ~/.gemini,
+          ~/.copilot and the ~/.config variants, shallowly, exactly as the
+          engine does.
+Lesson:   Two implementations of one rule is the bug. The engine and the
+          Studio each confine the agent's home, and each seed it, and fixing
+          the rule in one place left the other wrong in a way that looked
+          identical from outside -- the user updated to the fix and saw no
+          change. Worth collapsing into one shared function; recorded rather
+          than done, because the release should not wait on a refactor.
+Test:     a_credential_travels_but_the_history_under_it_does_not pins both
+          halves: the credential at the top of the config dir travels, the
+          session history in its subdirectories does not.
+
+
 ### K-190 -- the readiness probe runs in a different home from the build, so the chip is green while every build fails
 
 Status:   fixed
