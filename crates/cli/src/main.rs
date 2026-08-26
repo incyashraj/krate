@@ -4011,13 +4011,49 @@ fn report_command(session: &str, output: Option<&Path>) -> Result<u8> {
         files.push(("session.json".to_string(), bytes));
     }
 
-    // The workspace the session's last build used, when it kept one: the
-    // agent transcript and the code it had written are the evidence that
-    // actually explains a stuck build.
+    // The workspace the session's last build used: the agent transcript and
+    // the code it had written are the evidence that actually explains a
+    // stuck build.
+    //
+    // Two ways to find it, and the second one is why this exists. The
+    // original only read a path out of the session text, printed by
+    // WorkspaceKeeper when a TEMP workspace is kept after a failure. The
+    // Studio never uses a temp workspace -- it passes --work-dir so a retry
+    // resumes from the code already written (K-129) -- so that line is never
+    // printed and EVERY report sent from the Studio arrived carrying only
+    // the chat, with the transcript that names the real failure left on the
+    // person's disk. Three reports came in that way before anyone noticed
+    // (K-185).
+    //
+    // The Studio's path is not a guess: studio/src/main.rs builds it as
+    // studio_dir()/builds/<session>, from the same session id this command
+    // was given.
     let session_text = String::from_utf8_lossy(&files[0].1).to_string();
-    if let Some(dir) = report_workspace_from(&session_text) {
+    let studio_workspace = studio.join("builds").join(session);
+    let workspace = report_workspace_from(&session_text)
+        .or_else(|| studio_workspace.is_dir().then_some(studio_workspace));
+    if let Some(dir) = workspace {
+        // Two levels, because the Studio's workspace holds trace.jsonl at the
+        // top and the app -- with its transcript and source -- in a folder
+        // named after the app. Checked on a real build directory rather than
+        // assumed: looking only at the top would have collected the trace and
+        // missed the transcript, which is the file that names the failure.
+        let top = dir.clone();
+        let mut roots = vec![dir.clone()];
+        if let Ok(entries) = fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                if entry.path().is_dir() {
+                    roots.push(entry.path());
+                }
+            }
+        }
+        for dir in roots {
+            let is_top = dir == top;
         for name in [
             ".agent-transcript.txt",
+            // Written by every Studio build (KRATE_TRACE), and it carries the
+            // timing spine: which phase, how long, what check-app said.
+            "trace.jsonl",
             "src/lib.rs",
             "Cargo.toml",
             "manifest.toml",
@@ -4030,8 +4066,17 @@ fn report_command(session: &str, output: Option<&Path>) -> Result<u8> {
                 } else {
                     bytes
                 };
-                files.push((format!("workspace/{name}"), bytes));
+                // Keep the subfolder in the name so two levels cannot
+                // collide, and so the reader can see where each file lived.
+                let label = match dir.file_name().and_then(|n| n.to_str()) {
+                    Some(sub) if !is_top => format!("workspace/{sub}/{name}"),
+                    _ => format!("workspace/{name}"),
+                };
+                if !files.iter().any(|(existing, _)| *existing == label) {
+                    files.push((label, bytes));
+                }
             }
+        }
         }
     }
 

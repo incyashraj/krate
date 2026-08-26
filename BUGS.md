@@ -71,6 +71,49 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-185 -- every support report sent from the Studio arrives without the evidence
+
+Status:   fixed
+Owner:    claude
+Severity: blocker
+Class:    our-code
+Found:    2026-08-27, trying to diagnose Aanchala's Grok failure from her
+          report and finding nothing in it to diagnose. Three reports had
+          already arrived this way without anyone noticing, because a report
+          that contains a transcript of the CHAT looks complete until you
+          need the transcript of the BUILD.
+Evidence: Her report (hub fb12c719bde2af0b) held exactly two files:
+            session.json   the on-screen conversation
+            about.txt      the machine
+          and neither can explain a build failure. The card on her screen
+          named the file that could -- .agent-transcript.txt -- and it stayed
+          on her disk.
+Cause:    report_command found the workspace only by searching the session
+          text for the phrase "the workspace is kept at ", which is printed
+          by WorkspaceKeeper's Drop when a TEMP workspace is kept after a
+          failure (main.rs:4750). The Studio never uses a temp workspace: it
+          passes --work-dir so a retry resumes from the code already written
+          (studio/src/main.rs:742, K-129). So the phrase is never printed,
+          the search always fails, and the collection loop never runs.
+          Verified on a real session, before and after:
+            before: 2 files (session.json, about.txt)
+            after:  7 files, including a 1.3 MB .agent-transcript.txt and
+                    trace.jsonl
+Fixed:    The Studio's workspace is derived rather than parsed -- it is
+          studio/builds/<session>, built from the same session id the command
+          already has -- and the old phrase search stays as the fallback for
+          CLI builds. Both levels are collected: trace.jsonl sits at the top
+          and the app's transcript and source one folder down, which was
+          checked against a real build directory rather than assumed, because
+          reading only the top would have collected the trace and missed the
+          transcript.
+          trace.jsonl is now collected too. Every Studio build already writes
+          one (KRATE_TRACE, studio/src/main.rs:751) and nothing had ever read
+          it; it carries the timing spine the authoring study needs.
+Lesson:   A support channel is not working because reports arrive. Send one
+          from a real machine and open it. Three did arrive, and all three
+          were hollow.
+
 ### K-184 -- Krate's own advice is read back as the diagnosis, so a signed-in AI is told to sign in
 
 Status:   fixed
