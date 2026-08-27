@@ -2256,7 +2256,18 @@ Evidence: `unzip -l ~/Desktop/a-news-app-giving.krate` lists only
 Fix:      Cut a release. Until then, say plainly which binary a test used.
 
 ### K-120 -- Any continuously animating GUI app burns ~100% of a core
-Status:   open
+Status:   partly fixed 2026-08-28 (46b84ef8f) -- measure before more work
+Progress: The wait loop's zero-park spin was one cause and is gone. Same
+          machine, release build, six seconds after launch:
+              Aurora   101.4% -> 51.6%
+              Glow      94.3% -> 77.6%
+              Bounce      21% ->    8%
+          Aurora halved, Glow moved seven points. That the two moved so
+          differently is the useful signal: Aurora falls behind its frame
+          budget constantly and was hitting the spin every frame, while Glow
+          mostly makes its budget and pays a different cost. Whatever is left
+          in Glow is NOT the zero-park path, so the K-112 GPU-presenter lead
+          still stands for the remainder.
 Owner:    lead (via K-112: the GPU presenter is the fix's home)
 Severity: serious
 Class:    runtime-hole
