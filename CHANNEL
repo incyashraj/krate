@@ -1,0 +1,16 @@
+# The release the website serves.
+#
+# Empty (or absent) means: whatever was built most recently is promoted to
+# stable, which is the normal case. Put a tag here to PIN the channel to it,
+# and the promote job will refuse to move latest away from it.
+#
+# This exists because pinning used to live only in a GitHub flag. On
+# 2026-08-27 the channel was deliberately rolled back to v0.1.57 while the
+# 0.2.x line was unstable; twenty minutes later a v0.2.1 build finished, its
+# promote job ran `gh release edit --latest`, and the website was serving
+# v0.2.1 again. Nobody decided that. A rollback is the thing you do when
+# users are hitting a bug, and the moment it must hold is exactly when a fix
+# is building -- which is exactly when the pipeline undid it (K-192).
+#
+# A pin here is visible in a diff, survives a restart, and a build cannot
+# quietly outvote it.

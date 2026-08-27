@@ -1119,6 +1119,22 @@ jobs:
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
+          # A pin in CHANNEL outranks this build.
+          #
+          # The channel used to live only in a GitHub flag, so a build could
+          # silently undo a deliberate rollback -- and did, twenty minutes
+          # after one, while the fix for the very bug was compiling (K-192).
+          # A rollback matters most exactly when a release is in flight, so
+          # the pipeline has to be able to see it.
+          pin=""
+          if [ -f CHANNEL ]; then
+            pin="$(grep -v '^[[:space:]]*#' CHANNEL | tr -d '[:space:]' | head -1)"
+          fi
+          if [ -n "$pin" ] && [ "$pin" != "$TAG" ]; then
+            echo "::warning::CHANNEL pins the website to $pin, so $TAG stays a pre-release."
+            echo "$TAG published but NOT promoted; the channel remains $pin"
+            exit 0
+          fi
           gh release edit "$TAG" -R "${{ github.repository }}" \
             --prerelease=false --latest
           echo "$TAG is now the stable channel"

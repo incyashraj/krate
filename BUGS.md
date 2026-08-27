@@ -226,8 +226,8 @@ Next:     Reproduce first, deliberately, then decide. If it is the audio path,
 
 ### K-192 -- cutting any non-rc tag silently repoints the website, overriding a deliberate rollback
 
-Status:   unclaimed
-Owner:    unclaimed
+Status:   fixed 2026-08-28
+Owner:    claude
 Severity: serious
 Class:    our-code
 Found:    2026-08-27. Yashraj decided to serve v0.1.57 from the website while
@@ -245,11 +245,14 @@ matters:  moment it must hold is exactly when a fix is being built -- and that
           is precisely when the pipeline undoes it. It is silent: the run is
           green, nothing warns, and the only way to notice is to check the
           flag by hand afterwards.
-Next:     Make the pin visible to the pipeline. A CHANNEL file in the repo
-          naming the tag the website should serve, with promote refusing to
-          move latest when the file names a different tag, keeps the decision
-          in version control where it can be reviewed -- rather than in a
-          GitHub flag that a later build silently wins.
+Fixed:    A CHANNEL file at the repo root names the tag the website should
+          serve. Empty or comments-only means normal promotion; a tag in it
+          pins the channel, and the promote job exits early with a warning
+          rather than moving latest away from it. The pin now lives in
+          version control, shows up in a diff, and a build cannot outvote it.
+          Tested all three cases before committing: unpinned promotes, a pin
+          naming a different tag refuses, a pin naming the tag being built
+          promotes.
 
 
 ### K-191 -- the Studio has its OWN credential seeding, and it was Claude-only too
