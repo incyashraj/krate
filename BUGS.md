@@ -130,9 +130,30 @@ lead:     surface every frame -- `surface.to_image()` -- and inserts it as an
           297, 363, 371, 363, 363, 363, 364 -- flat and linear, with no
           plateau. Churn against a reusing allocator would flatten; this does
           not, so something retains every frame's surface.
-Next:     Find what holds the Arc. Instrument the drop, or count strong_count
-          per frame, before changing any code. Three theories have already
-          been wrong -- do not fix from reading alone.
+Does not  2026-08-28, after a restart: the SAME Aurora 3 bundle that grew to
+reproduce 2554 MB now runs flat at 130 MB for six seconds, and drops to 110.
+now:      Repeated three times, release build and debug build, both flat. So
+          the leak is real -- it was measured twice, and it restarted the
+          machine -- but it is CONDITIONAL on something that was true earlier
+          and is not true now.
+          What differed, and none of it is yet ruled in or out:
+            - the machine had been up ~14 hours and was under load from a
+              build matrix; now it is 20 minutes from a cold boot
+            - other krate apps had been run and killed beforehand
+            - the earlier runs used hand-passed --grant flags, the later ones
+              derive the same set from --dump-caps (verified identical)
+          The instrumented run also showed the presenter line for the first
+          time: "canvas presents on Apple M4 (Metal, IntegratedGpu)". The
+          surface-copy path in publish_canvas is CPU-raster; if Metal was
+          active in the flat runs and not in the leaking ones, that is the
+          difference and the whole earlier analysis points at the right code
+          for the wrong reason.
+Next:     Do not fix anything yet. Reproduce first, deliberately: run the
+          matrix or several apps to put the machine in the earlier state,
+          then measure Aurora again with stderr captured so the presenter
+          line is on the record for BOTH a leaking and a flat run. Only then
+          is there something to fix. Four theories have now been wrong and
+          every one of them looked right on paper.
 Reach:    Eleven shipped apps use draw_pixels, including Ice Climber (the
           multiplayer demo), Super Mario Bros., Track Dash and Weather. At
           least one of them (Track Dash) leaks. The blast radius is unknown
