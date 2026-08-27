@@ -2705,6 +2705,22 @@ impl ui::events::Host for Phase3GuiHost {
                 None => slice,
             };
             if park.is_zero() {
+                // The deadline has arrived. Spinning back to the top without
+                // yielding is what pins a core: an app that falls behind its
+                // own frame budget asks for wait(1ms), the deadline is
+                // already past by the time we get here, and this loop then
+                // runs pump+poll flat out until the next check. Aurora does
+                // exactly that -- it paces to 60fps, misses, and the runtime
+                // burns 100% of a core while the animation visibly stutters
+                // (K-194).
+                //
+                // yield_now() is not enough and was measured: with a spare
+                // core the scheduler hands the thread straight back and the
+                // CPU stays pinned at 100%. A real sleep is what caps the
+                // spin. One millisecond is short enough that a late frame
+                // still catches up promptly and long enough that the loop
+                // stops being a busy-wait.
+                std::thread::sleep(std::time::Duration::from_millis(1));
                 continue;
             }
             if !self.dispatcher().park_for_events(park) {

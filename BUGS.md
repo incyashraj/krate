@@ -148,12 +148,32 @@ now:      Repeated three times, release build and debug build, both flat. So
           active in the flat runs and not in the leaking ones, that is the
           difference and the whole earlier analysis points at the right code
           for the wrong reason.
-Next:     Do not fix anything yet. Reproduce first, deliberately: run the
-          matrix or several apps to put the machine in the earlier state,
-          then measure Aurora again with stderr captured so the presenter
-          line is on the record for BOTH a leaking and a flat run. Only then
-          is there something to fix. Four theories have now been wrong and
-          every one of them looked right on paper.
+FIXED     Yashraj's observation is what found it: "the aurora design was not
+(the CPU  flowing smoothly". A visible stutter means dropped frames, and a
+half):    late frame is exactly the case the runtime handled worst.
+          phase3_gui_host.rs, the events::wait loop: when the guest's
+          timeout has already passed, `park` is zero and the code did
+              if park.is_zero() { continue; }
+          -- straight back to pump_native_windows + poll_one_event with no
+          yield at all. An app that paces itself to 60fps and misses asks
+          for wait(1ms), arrives after the deadline, and the runtime then
+          busy-spins a whole core. That is the heat and the stutter, and the
+          stutter feeds itself: the spin steals the CPU the late frame needed
+          to catch up.
+          Measured on Aurora 3, release build, same app and grants:
+              before   101.4 101.7 100.5 101.1 %CPU   134 MB
+              after     53.7  52.7  51.2  50.6 %CPU   110 MB
+          Halved, and 24 MB lower. No regression elsewhere: Bounce fell from
+          21% to 8%, Calculator 2 idles at 0.1%.
+          yield_now() was tried first and MEASURED not to work -- with a free
+          core the scheduler hands the thread straight back and CPU stays at
+          100%. A 1ms sleep is what caps it.
+Still     The unbounded memory growth (363 MB/s) has NOT reproduced since the
+open:     restart and is not addressed by this. It may well be downstream of
+          the spin -- a machine with a pinned core and a stuttering
+          compositor is a different machine -- but that is untested. Leave
+          this entry open until Aurora has been run for several minutes on a
+          loaded machine and either grows or does not.
 Reach:    Eleven shipped apps use draw_pixels, including Ice Climber (the
           multiplayer demo), Super Mario Bros., Track Dash and Weather. At
           least one of them (Track Dash) leaks. The blast radius is unknown
