@@ -104,14 +104,21 @@ Scale:    Aurora's two draw_pixels calls move 300,000 bytes per frame, or
           17 MB/s at 60fps. Memory grows at 363 MB/s -- 21x the payload. The
           data itself is not the leak; something retains roughly twenty
           copies of each frame and never frees them.
-Lead:     Every draw call goes through record_op (phase3_gui_host.rs:1799),
-          which pushes into canvas_lists. That list is drained by
-          std::mem::take in publish_canvas, but ONLY inside
-          `if self.lists_enabled()`. The inspection list beside it has an
-          explicit frame-boundary clear with a comment warning that without
-          it "ops from every frame pile up into one list" -- the render list
-          has no equivalent guard. Worth proving with an instrumented run
-          before changing anything.
+Lead      The canvas_lists theory is WRONG and is recorded here so nobody
+ruled     spends time on it again. supports_canvas_lists defaults to false
+out:      (adapter-common/src/ui.rs:1260) and only iOS overrides it, so on
+          macOS lists_enabled() is false, record_op returns before pushing,
+          and canvas_lists is never filled. It cannot be the leak.
+Found     phase3_gui_host.rs:3832 -- draw_pixels calls record_op FIRST, and
+instead:  builds `rgba.clone()` to do it, then checks lists_enabled() and
+          returns. On macOS that clone is a full copy of every frame's
+          pixels, constructed and immediately discarded: 300,000 bytes per
+          Aurora frame, 17 MB/s at 60fps. Real waste, and the argument order
+          is plainly wrong -- the clone should happen inside the branch that
+          uses it. But 17 MB/s is not 363 MB/s, so this is A leak, not THE
+          leak. Something else holds the other twenty copies.
+Next:     Instrument the macOS present path and count live allocations per
+          frame. Do not guess again: three theories have now been wrong.
 Reach:    Eleven shipped apps use draw_pixels, including Ice Climber (the
           multiplayer demo), Super Mario Bros., Track Dash and Weather. At
           least one of them (Track Dash) leaks. The blast radius is unknown
