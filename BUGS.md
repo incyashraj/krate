@@ -71,6 +71,56 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-194 -- some animating apps grow ~400 MB/sec until the machine dies; others are flat
+
+Status:   unclaimed
+Owner:    unclaimed
+Severity: blocker
+Class:    our-code
+Found:    2026-08-27, by Yashraj: Aurora makes his MacBook hot, laggy, then
+          crashes and restarts it. Reproduced and measured; the crash is real
+          and this entry cost him a restart to produce, so DO NOT reproduce it
+          without a hard memory ceiling and a guaranteed kill.
+Evidence: Sampled once a second, killed at a 2.5 GB ceiling:
+            Aurora        136 -> 2620 MB in 8s   100% CPU   +363 MB/s
+            Aurora 3      376 -> 2554 MB in 7s   100% CPU   +363 MB/s
+            Track Dash    156 -> 2704 MB in 6s   100% CPU   +510 MB/s
+          Against apps that do not:
+            Flow Field    182 -> 182 MB over 12s            flat
+            Bounce        107 -> 110 MB over 20s   21% CPU  flat
+            Calculator    123 -> 123 MB over 10s    1% CPU  flat
+          Unbounded and linear, not the K-151 sawtooth. Extrapolated, Aurora
+          reaches 16 GB in 45 seconds.
+Not the   Several plausible causes were tested and ruled OUT:
+cause:    - "animating apps leak" (K-151): Bounce animates and is flat.
+          - "draw_pixels leaks": Flow Field uses draw_pixels and is flat.
+          - "the guest allocates per frame": the leakers allocate LESS. Track
+            Dash has zero allocation calls in its source and leaks fastest;
+            Flow Field has eleven and is flat.
+          - "the app forgot to pace its frames": Aurora's own loop paces to
+            60fps and its comments show the author understood the
+            request_redraw pinning trap. It pins a core anyway.
+Scale:    Aurora's two draw_pixels calls move 300,000 bytes per frame, or
+          17 MB/s at 60fps. Memory grows at 363 MB/s -- 21x the payload. The
+          data itself is not the leak; something retains roughly twenty
+          copies of each frame and never frees them.
+Lead:     Every draw call goes through record_op (phase3_gui_host.rs:1799),
+          which pushes into canvas_lists. That list is drained by
+          std::mem::take in publish_canvas, but ONLY inside
+          `if self.lists_enabled()`. The inspection list beside it has an
+          explicit frame-boundary clear with a comment warning that without
+          it "ops from every frame pile up into one list" -- the render list
+          has no equivalent guard. Worth proving with an instrumented run
+          before changing anything.
+Reach:    Eleven shipped apps use draw_pixels, including Ice Climber (the
+          multiplayer demo), Super Mario Bros., Track Dash and Weather. At
+          least one of them (Track Dash) leaks. The blast radius is unknown
+          until each is measured.
+Safety:   /tmp/memtest/probe.sh measures one app under a hard time limit AND
+          a memory ceiling, and kills the process tree on both paths. Use it.
+          A bare `krate run` on one of these will take the machine down.
+
+
 ### K-193 -- macOS asks for Apple Music and the media library in Krate's name, mid-build
 
 Status:   unclaimed
