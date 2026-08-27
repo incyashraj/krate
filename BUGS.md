@@ -117,8 +117,22 @@ instead:  builds `rgba.clone()` to do it, then checks lists_enabled() and
           is plainly wrong -- the clone should happen inside the branch that
           uses it. But 17 MB/s is not 363 MB/s, so this is A leak, not THE
           leak. Something else holds the other twenty copies.
-Next:     Instrument the macOS present path and count live allocations per
-          frame. Do not guess again: three theories have now been wrong.
+Best      publish_canvas (phase3_gui_host.rs:1972) copies the WHOLE window
+lead:     surface every frame -- `surface.to_image()` -- and inserts it as an
+          Arc into self.images. Aurora's window is 900x600, which on a retina
+          display is 1800x1200 rgba = 8,640,000 bytes per frame, or 494 MB/s
+          at 60fps. Measured growth is 363 MB/s: the same order, consistent
+          with a real frame rate somewhat under 60. Nothing else in the path
+          is near that scale.
+          The insert REPLACES on the same (window, widget) key and the only
+          other holder takes an Arc clone, so by construction the old buffer
+          should drop. It evidently does not: the per-second deltas are
+          297, 363, 371, 363, 363, 363, 364 -- flat and linear, with no
+          plateau. Churn against a reusing allocator would flatten; this does
+          not, so something retains every frame's surface.
+Next:     Find what holds the Arc. Instrument the drop, or count strong_count
+          per frame, before changing any code. Three theories have already
+          been wrong -- do not fix from reading alone.
 Reach:    Eleven shipped apps use draw_pixels, including Ice Climber (the
           multiplayer demo), Super Mario Bros., Track Dash and Weather. At
           least one of them (Track Dash) leaks. The blast radius is unknown
