@@ -621,6 +621,30 @@ struct AgentInfo {
     remedy: Option<String>,
 }
 
+/// Forget what we last decided about each AI, then ask again.
+///
+/// A readiness answer is cached for fifteen minutes, keyed on the tool's path
+/// and mtime -- and signing in changes neither. So somebody who signed in to
+/// Claude in a terminal and came straight back was still told it was not
+/// ready, with no way to say "look again" short of waiting out the timer.
+/// This is that button.
+#[tauri::command]
+async fn refresh_agents() -> Result<Vec<AgentInfo>, String> {
+    {
+        let cache = dirs_home().join(".krate").join("cache");
+        if let Ok(entries) = std::fs::read_dir(&cache) {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                if name.starts_with("ai-probe-") && name.ends_with(".json") {
+                    let _ = std::fs::remove_file(entry.path());
+                }
+            }
+        }
+    }
+    agents().await
+}
+
 /// Which AIs this machine can author with, through `krate ai --json`.
 #[tauri::command]
 async fn agents() -> Result<Vec<AgentInfo>, String> {
@@ -3093,6 +3117,7 @@ fn main() {
             studio_version,
             open_external,
             sign_in_agent,
+            refresh_agents,
             terminal_status,
             #[cfg(target_os = "macos")]
             link_terminal_tool,

@@ -578,7 +578,14 @@
       <h2>Your AI</h2>
       <p class="sheet-sub">Krate works with the AI you already have. Pick one that's
       ready, or follow its one-line fix. Your AI's sign-in stays with that tool - Krate never holds its keys.</p>
+      <p class="ai-note">Every fix here you can also do yourself in a terminal --
+      the command is shown. The buttons run exactly that, so you never have to
+      leave this window. Just signed in somewhere else? Press Refresh.</p>
       <div id="aiList"></div>
+      <div class="ai-actions">
+        <button class="btn" id="aiRefresh">Refresh</button>
+        <span class="ai-refresh-note" id="aiRefreshNote"></span>
+      </div>
       <p class="sheet-foot">Using something else? Any tool that can edit files can
       author Krate apps - run <code>krate create --help</code> and see <code>--author-cmd</code>.</p>
       <button class="btn btn-ghost sheet-close" data-close="aiSheet">Close</button>

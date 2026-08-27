@@ -2375,3 +2375,14 @@ body.light .thumb-well { background: var(--panel-raised); }
 .divider:hover::after, .divider.dragging::after { background: var(--line-strong); }
 body.resizing .divider::after { background: var(--blue); }
 .divider:hover, .divider.dragging, body.resizing .divider { background: transparent; }
+
+/* The AI picker's note and Refresh row (K-194). */
+.ai-note {
+  color: var(--faint); font-size: 12px; line-height: 1.55;
+  margin: -6px 0 14px;
+}
+.ai-actions {
+  display: flex; align-items: center; gap: 12px;
+  margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line);
+}
+.ai-refresh-note { color: var(--faint); font-size: 12px; }

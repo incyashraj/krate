@@ -7010,6 +7010,21 @@ fn connect_app_present(target: &ClientTarget) -> bool {
 /// `working`, `not-ready` (installed but refused, with the reason and the
 /// likely fix), `missing`.
 fn ai_status_json() -> Result<u8> {
+    // Seed before probing, or the probe answers about a home the person's
+    // sign-in has not reached yet.
+    //
+    // The probe runs in the confined home (K-190) so its answer matches what
+    // a build will get. But the credential only arrives there when
+    // seed_agent_home runs, and that happened at BUILD time -- so someone who
+    // signed in to Claude and came straight back to the picker was told the
+    // tool was not ready, correctly, about a home nothing had seeded. The
+    // sign-in was real; the confined copy did not exist yet. Seeding here
+    // costs a few file copies and makes "ready" mean the same thing in the
+    // picker as it does in the build.
+    if let Some(home) = home_dir() {
+        let agent_home = agent_home_for(&home);
+        let _ = seed_agent_home(&home, &agent_home);
+    }
     let rows: Vec<serde_json::Value> = std::thread::scope(|scope| {
         let handles: Vec<_> = agent_provider::PROVIDERS
             .iter()

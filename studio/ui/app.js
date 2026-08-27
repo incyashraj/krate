@@ -3907,3 +3907,29 @@ $("setTermBtn")?.addEventListener("click", async () => {
     btn.disabled = false;
   }
 });
+
+/* ---- the AI picker's Refresh (K-194) -----------------------------------
+ *
+ * A readiness answer is cached for fifteen minutes, keyed on the tool's path
+ * and mtime -- and signing in changes neither. Somebody who signed in to
+ * Claude in a terminal and came straight back was told it still was not
+ * ready, with no way to say "look again". */
+$("aiRefresh")?.addEventListener("click", async () => {
+  const btn = $("aiRefresh");
+  const note = $("aiRefreshNote");
+  btn.disabled = true;
+  btn.textContent = "Checking…";
+  note.textContent = "";
+  try {
+    state.agents = await invoke("refresh_agents");
+    openAiSheet();
+    const ready = (state.agents || []).filter((a) => a.state === "working").length;
+    note.textContent = ready
+      ? `${ready} ready`
+      : "Still none ready -- follow a fix above, then press Refresh again.";
+  } catch (err) {
+    note.textContent = String(err && err.message ? err.message : err);
+  }
+  btn.disabled = false;
+  btn.textContent = "Refresh";
+});
