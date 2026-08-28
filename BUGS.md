@@ -71,6 +71,55 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-195 -- a .krate sent to someone without Krate is a dead file
+
+Status:   unclaimed
+Owner:    unclaimed
+Severity: blocker
+Class:    our-code
+Found:    2026-08-28, by Yashraj, thinking through what happens when a person
+          sends an app to a friend. This is the product's whole promise --
+          "make an app you can actually send someone" -- and it breaks at the
+          receiving end for anyone who has not already installed Krate.
+Evidence: The .krate type is claimed by the installed bundle
+          (Info.plist CFBundleDocumentTypes, and mimeType in tauri.conf.json).
+          Nothing claims it otherwise. Verified on macOS: an unclaimed
+          extension resolves only to public.data, so Finder offers "Choose
+          Application" or "Search App Store" -- and neither finds Krate. The
+          receiver gets a dead file with no path forward and no mention of
+          what would fix it.
+Why it    Every share is a first impression, and today the first impression
+matters:  for anyone without Krate is that the file does nothing. They will
+          not search for a runtime; they will assume the sender sent junk.
+          The 85 KB file is the whole size argument, and it only pays off if
+          the FIRST click works.
+Options,  1. SELF-BOOTSTRAPPING BUNDLE. A .krate is a plain zip (starts PK),
+measured:    and a zip stays valid with bytes prepended -- that is how
+             self-extracting archives work. VERIFIED here: a shell prefix
+             concatenated with a real bundle both executes as a script AND
+             still lists correctly with `unzip -l`. So one file can be a
+             runnable installer on Unix and a valid bundle everywhere. It
+             would install the runtime (scripts/install.sh already exists and
+             verifies checksums) and then open itself. Windows needs its own
+             prefix; a .bat/.cmd stub is the parallel.
+          2. PER-OS WRAPPER EXPORT. A "send for my friend's Mac" button that
+             produces a ~30 MB double-clickable which installs the runtime and
+             then opens the app. Must INSTALL, never be a sealed one-app exe,
+             so the next .krate they receive just works.
+          3. LINK SHARE. krate.tech/a/<id> already runs apps by URL. The page
+             can detect a missing runtime and offer one-time install. Works on
+             every OS with no format change and is the easiest to adopt.
+Design    Do NOT put the runtime inside the .krate by default. The model to
+note:     protect is "runtime once, apps forever": 30 MB shared plus ~85 KB
+          per app is the whole density argument, and it dies if every share
+          carries its own copy of the player. The wrapper is a courtesy for
+          one friend on one OS, not the default button.
+Next:     Decide which of the three ships first. The link share (3) is the
+          least code and covers every OS; the self-bootstrapping bundle (1)
+          is the most magical and is proven feasible; the wrapper (2) is the
+          most familiar to a non-technical receiver. They are not exclusive.
+
+
 ### K-194 -- some animating apps grow ~400 MB/sec until the machine dies; others are flat
 
 Status:   unclaimed
