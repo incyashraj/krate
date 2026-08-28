@@ -114,10 +114,29 @@ note:     protect is "runtime once, apps forever": 30 MB shared plus ~85 KB
           per app is the whole density argument, and it dies if every share
           carries its own copy of the player. The wrapper is a courtesy for
           one friend on one OS, not the default button.
-Next:     Decide which of the three ships first. The link share (3) is the
-          least code and covers every OS; the self-bootstrapping bundle (1)
-          is the most magical and is proven feasible; the wrapper (2) is the
-          most familiar to a non-technical receiver. They are not exclusive.
+Option 4, THE CARD. Proven end to end on 2026-08-28, not proposed:
+proven:   `cat shot.png app.krate > card.png` produces ONE file that is
+          simultaneously a valid PNG (opens in any viewer, 1520x1160) and a
+          valid bundle. Measured: 178 KB total, `file` reports PNG image
+          data, `unzip -l` lists all seven entries including source, and
+          `krate run card.krate` reads the app straight out of it and painted
+          a frame. No extraction step, no conversion, no format change.
+          Why this matters more than the other three: a picture travels
+          everywhere a 30 MB executable does not -- Discord's free tier caps
+          at ~10 MB, and every chat, mail client and AirDrop passes images
+          without argument. A receiver with no runtime still SEES the app: a
+          still of it running, the name, and the one line of trust. That is
+          the difference between "he sent me a broken file" and "he sent me a
+          calculator I have not opened yet".
+          Both halves already exist: `krate run --shoot` renders the still
+          headless on any machine, and CAP_WORDS turns the manifest into the
+          trust line ("can open a window, nothing else").
+Next:     Decide which ships first. The link share (3) is the least code and
+          covers every OS. The card (4) is the strongest product idea and its
+          mechanism is now proven; what it still needs is the receiving half
+          -- the tap that wakes it -- which is the same install problem as
+          (1) and (2), just with a far better first impression while it is
+          being solved.
 
 
 ### K-194 -- some animating apps grow ~400 MB/sec until the machine dies; others are flat
