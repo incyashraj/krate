@@ -2386,3 +2386,29 @@ body.resizing .divider::after { background: var(--blue); }
   margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line);
 }
 .ai-refresh-note { color: var(--faint); font-size: 12px; }
+
+/* ------------------------------------------------------------- send sheet */
+/* Three ways to send, the card first. Buttons read as choices, not a form. */
+.sheet-send .sheet-sub { font-size: 13px; color: var(--muted); margin-top: -6px; }
+.send-opts { display: flex; flex-direction: column; gap: 8px; }
+.send-opt {
+  display: flex; flex-direction: column; gap: 3px; text-align: left;
+  padding: 13px 15px; border-radius: 11px; cursor: pointer;
+  background: var(--panel-raised); border: 1px solid var(--line);
+  color: inherit; font: inherit;
+  transition: border-color 0.15s ease;
+}
+.send-opt:hover { border-color: var(--line-strong); }
+.send-opt:disabled { opacity: 0.55; cursor: default; }
+.send-opt b { font-size: 14px; font-weight: 500; }
+.send-opt span { font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+.send-opt-quiet { background: transparent; }
+.send-done { display: flex; flex-direction: column; gap: 8px; }
+.send-done img {
+  max-width: 100%; max-height: 260px; object-fit: contain;
+  border: 1px solid var(--line-strong); border-radius: 10px;
+  align-self: center;
+}
+.send-done p { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+body.light .send-opt { background: #f4f5f7; border-color: #e3e5ea; }
+body.light .send-opt span, body.light .send-done p { color: rgba(0,0,0,0.55); }

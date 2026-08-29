@@ -620,7 +620,7 @@ function settleChipOk(el, version, sizeLabel, minsLabel, app) {
   const share = document.createElement("button");
   share.className = "vact vg";
   share.textContent = "Share";
-  share.addEventListener("click", openPublishSheet);
+  share.addEventListener("click", openSendSheet);
   chip.appendChild(share);
 }
 
@@ -2571,6 +2571,37 @@ function showActionError(err) {
    path. */
 const pubState = { shotPath: null, iconPath: null };
 
+function openSendSheet() {
+  const app = currentApp();
+  if (!app) return;
+  $("sendCardDone").classList.add("hidden");
+  $("sendNote").textContent = "";
+  $("sendCardBtn").disabled = false;
+  $("sendSheet").classList.remove("hidden");
+}
+
+async function sendCard() {
+  const app = currentApp();
+  if (!app) return;
+  $("sendCardBtn").disabled = true;
+  $("sendNote").textContent = "Photographing your app\u2026 a few seconds.";
+  try {
+    const cardPath = await invoke("make_card", { path: app.path });
+    const data = await invoke("read_image", { path: cardPath });
+    $("sendCardImg").src = data;
+    $("sendCardDone").classList.remove("hidden");
+    const name = cardPath.split(/[\\/]/).pop();
+    $("sendCardNote").textContent = name +
+      " is in the folder that just opened. Drag it into mail, AirDrop, or a " +
+      "chat's paperclip -- send it as a file, not as a photo.";
+    $("sendNote").textContent = "";
+    try { await invoke("reveal", { path: cardPath }); } catch (e) {}
+  } catch (err) {
+    $("sendNote").textContent = plainWords(err);
+    $("sendCardBtn").disabled = false;
+  }
+}
+
 function openPublishSheet() {
   const app = currentApp();
   if (!app) return;
@@ -2993,7 +3024,17 @@ async function stopBuild() {
 
 $("stopBtn").addEventListener("click", stopBuild);
 $("openBtn").addEventListener("click", openApp);
-$("shareBtn").addEventListener("click", openPublishSheet);
+$("shareBtn").addEventListener("click", openSendSheet);
+$("sendCardBtn").addEventListener("click", sendCard);
+$("sendLinkBtn").addEventListener("click", () => {
+  $("sendSheet").classList.add("hidden");
+  openPublishSheet();
+});
+$("sendRawBtn").addEventListener("click", async () => {
+  const app = currentApp();
+  if (!app) return;
+  try { await invoke("reveal", { path: app.path }); } catch (e) {}
+});
 $("pubGo").addEventListener("click", publishFromSheet);
 $("pubShotPick").addEventListener("click", () => pickPublishImage("shot"));
 $("pubIconPick").addEventListener("click", () => pickPublishImage("icon"));
@@ -3504,7 +3545,7 @@ async function loadProfilePage() {
     // definition once somebody is signed in.
     $("connGhSub").textContent = account?.login
       ? `${account.login} · used for publishing`
-      : "Used for publishing to Krate Cloud";
+      : "Used when you publish a link";
     $("connGhAct").innerHTML = account?.login
       ? '<span class="linked"><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5.2l2 2L8 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Connected</span>'
       : '<button class="set-mini" data-connect="github">Connect</button>';

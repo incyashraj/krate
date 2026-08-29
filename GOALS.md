@@ -114,8 +114,8 @@ re-encoding away the zip tail.
 |---|---|---|
 | 1 | Words: homepage claims, README opener, /studio FAQ. Kill "no runtime" and "the cloud for AI-made software", curl to docs only | **landed 2026-08-29** |
 | 2 | Design and motion: one animated object (the card that wakes), real `--shoot` footage via the Promo pipeline, kill the typewriter mock, three verbs + honest first-click panel | next |
-| 3 | Send: Studio Share builds the card; K-195 first-click on all three OSes; send-as-file guidance; courtesy wrap that plants the player. Gate: K-194 retested on every public demo app | open |
-| 4 | Studio for non-tech users: no compiler words anywhere, Send-first share sheet, Cloud tab renamed Shared, Advanced collapsed | open |
+| 3 | Send: Studio Share builds the card; K-195 first-click on all three OSes; send-as-file guidance; courtesy wrap that plants the player. Gate: K-194 retested on every public demo app | `krate card` shipped and measured (see K-195); first-click and wrap open |
+| 4 | Studio for non-tech users: no compiler words anywhere, Send-first share sheet, Cloud tab renamed Shared, Advanced collapsed | Send sheet + Shared rename in repo, rides the next Studio release; a named "first-time setup" stage still open |
 | 5 | Subscriptions: hub-side entitlement, 3 makes/month free counted only on success, Stripe checkout after first-click works. CLI stays ungated (open-core line) | open |
 
 Demo apps of record: rate card (freelancer to client), trip splitter (friend to

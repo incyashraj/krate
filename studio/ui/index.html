@@ -104,7 +104,7 @@
       <div class="spacer"></div>
       <button class="link-btn update-chip hidden" id="updateChip" title="A newer Krate is ready">Update ready</button>
       <button class="icon-btn" id="themeBtn" title="Switch to light"></button>
-      <button class="icon-btn hidden" id="cloudBtn" title="Cloud"></button>
+      <button class="icon-btn hidden" id="cloudBtn" title="Shared"></button>
       <button class="agent-chip hidden" id="agentChip"><span class="dot" id="agentDot"></span><span id="agentName">checking…</span></button>
       <button class="icon-btn hidden" id="accountBtn"><img id="avatar" class="avatar hidden" alt="" /><span id="accountInitial">·</span></button>
     </header>
@@ -383,7 +383,7 @@
           </div>
           <div class="conn-row">
             <span class="lg"><svg width="17" height="17" viewBox="0 0 16 16" fill="#fff"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></span>
-            <div><div class="nm">GitHub</div><div class="sub" id="connGhSub">Used for publishing to Krate Cloud</div></div>
+            <div><div class="nm">GitHub</div><div class="sub" id="connGhSub">Used when you publish a link</div></div>
             <div class="act" id="connGhAct"></div>
           </div>
         </div>
@@ -402,7 +402,7 @@
   <div class="view hidden" id="viewCloud">
     <header class="titlebar">
       <button class="icon-btn" id="cloudBackBtn" title="Back"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M9.8 3.2L5 8l4.8 4.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-      <span class="crumb">Krate Cloud</span>
+      <span class="crumb">Shared</span>
       <div class="spacer"></div>
       <button class="link-btn" id="cloudRefresh">Refresh</button>
     </header>
@@ -422,7 +422,7 @@
       <p class="cloud-count" id="cloudCount"></p>
       <div class="cloud-state" id="cloudLoading">
         <div class="sweep"></div>
-        <p>Reading Krate Cloud…</p>
+        <p>Reading the shared gallery…</p>
       </div>
       <p class="cloud-error hidden" id="cloudError"></p>
       <div class="cloud-grid" id="cloudGrid"></div>
@@ -520,10 +520,43 @@
     </div>
   </div>
 
+  <!-- The Send sheet: the card is the default share, the link is for when
+       you cannot drop a file, and the raw bundle stays one click away. -->
+  <div class="sheet-wrap hidden" id="sendSheet">
+    <div class="sheet sheet-send">
+      <h2>Send it</h2>
+      <p class="sheet-sub">One small file. It opens on Mac, Windows and Linux.</p>
+      <div class="send-opts">
+        <button class="send-opt" id="sendCardBtn" type="button">
+          <b>Send the file</b>
+          <span>Makes a card: a picture of your app running that is also the
+          app. Drag it into mail, AirDrop, or a chat&rsquo;s paperclip.</span>
+        </button>
+        <button class="send-opt" id="sendLinkBtn" type="button">
+          <b>Send a link</b>
+          <span>Puts it in the shared gallery and gives you a URL anyone can
+          run. For when you cannot drop a file.</span>
+        </button>
+        <button class="send-opt send-opt-quiet" id="sendRawBtn" type="button">
+          <b>Show the plain file</b>
+          <span>The bare .krate, in its folder.</span>
+        </button>
+      </div>
+      <div class="send-done hidden" id="sendCardDone">
+        <img id="sendCardImg" alt="The card: your app's picture with the app inside" />
+        <p id="sendCardNote"></p>
+      </div>
+      <div class="detail-actions">
+        <button class="btn btn-ghost sheet-close" data-close="sendSheet">Close</button>
+      </div>
+      <p class="detail-note" id="sendNote"></p>
+    </div>
+  </div>
+
   <div class="sheet-wrap hidden" id="publishSheet">
     <div class="sheet sheet-publish">
-      <h2>Publish to Krate Cloud</h2>
-      <p class="pub-sub">This is how your app will look in the store.
+      <h2>Publish a link</h2>
+      <p class="pub-sub">This is how your app will look in the shared gallery.
       Publishing again later replaces this listing.</p>
       <label class="pub-label">Name
         <input id="pubName" type="text" maxlength="60" autocomplete="off" spellcheck="false" />
@@ -628,7 +661,7 @@
         Home
       </button>
       <button data-page="apps">Your apps</button>
-      <button data-page="cloud">Cloud</button>
+      <button data-page="cloud">Shared</button>
       <button data-page="settings">Settings<span class="badge" id="dockBadge"></span></button>
     </nav>
     <button class="dock-solo" id="dockProfile" aria-label="Profile"><span class="in" id="dockInitial">·</span></button>

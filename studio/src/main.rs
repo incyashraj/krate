@@ -2064,6 +2064,39 @@ async fn cloud_run(url: String) -> Result<(), String> {
     .map_err(|err| err.to_string())?
 }
 
+/// Turn the app into a card: one file that is a picture of the app AND the
+/// app itself, made by the engine's own `card` verb so Studio and the
+/// terminal produce byte-identical shares. Returns where the card landed.
+#[tauri::command]
+async fn make_card(path: String) -> Result<String, String> {
+    let bundle = existing(&path)?;
+    let engine = engine()?;
+    let output = tauri::async_runtime::spawn_blocking(move || {
+        Command::new(&engine).arg("card").arg(&bundle).output()
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(|err| err.to_string())?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let detail = stderr.trim();
+        return Err(if detail.is_empty() {
+            "the card could not be made".to_string()
+        } else {
+            detail.to_string()
+        });
+    }
+    // The engine prints `Card written: <path> (<n> KB)` and owns the naming
+    // rules; read the path back rather than re-deriving it here and having
+    // the two drift.
+    stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("Card written: "))
+        .and_then(|rest| rest.rsplit_once(" (").map(|(path, _)| path.to_string()))
+        .ok_or_else(|| "the engine did not say where the card landed".to_string())
+}
+
 /// Show the file itself, for people who want to drag it into a chat.
 #[tauri::command]
 fn reveal(path: String) -> Result<(), String> {
@@ -3091,6 +3124,7 @@ fn main() {
             report_collect,
             report_send,
             publish,
+            make_card,
             reveal,
             settings_get,
             dbg_log,
