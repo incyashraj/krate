@@ -2033,6 +2033,41 @@ fn hub_url() -> String {
     std::env::var("KRATE_HUB_URL").unwrap_or_else(|_| "https://hub.krate.tech".to_string())
 }
 
+/// "We'll make it for you": the human fallback when a build dies. Sends
+/// exactly what a person would need to build the app by hand -- the
+/// request, the answers they gave the AI, and an email to return the
+/// file to. Spawned blocking so a slow hub never freezes the card.
+#[tauri::command]
+async fn make_for_me(
+    email: String,
+    request: String,
+    answers: String,
+    agent: String,
+    why: String,
+) -> Result<(), String> {
+    let url = format!("{}/makeit", hub_url());
+    tauri::async_runtime::spawn_blocking(move || {
+        ureq::post(&url)
+            .timeout(std::time::Duration::from_secs(15))
+            .send_json(serde_json::json!({
+                "email": email,
+                "request": request,
+                "answers": answers,
+                "agent": agent,
+                "why": why,
+            }))
+            .map(|_| ())
+            .map_err(|err| match err {
+                ureq::Error::Status(_, resp) => resp
+                    .into_string()
+                    .unwrap_or_else(|_| "the hub said no".to_string()),
+                _ => "could not reach krate.tech - check your connection".to_string(),
+            })
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
 /// Everything published to Krate Cloud, newest first.
 ///
 /// Fetched here rather than from the webview so the page keeps its locked-down
@@ -3417,6 +3452,7 @@ fn main() {
             settings_set,
             plan_makes,
             plan_count_make,
+            make_for_me,
             sessions_list,
             session_save,
             session_shot,

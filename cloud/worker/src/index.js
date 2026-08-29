@@ -74,6 +74,13 @@ export default {
         // Studio leaves preview.
         return cors(await founding(request, env));
       }
+      if (request.method === "POST" && pathname === "/makeit") {
+        // "We'll make it for you": when a build dies on someone, Studio
+        // offers a human fallback. What lands here is what we need to
+        // build their app by hand: their request, their answers to the
+        // AI's questions, and an email to send the file back to.
+        return cors(await makeit(request, env));
+      }
       if (request.method === "POST" && pathname === "/usage") {
         return cors(await usage(request, env));
       }
@@ -700,6 +707,30 @@ async function founding(request, env) {
   if (!existing) {
     await env.APPS.put(key, JSON.stringify({ at: Math.floor(Date.now() / 1000) }));
   }
+  return json({ ok: true });
+}
+
+async function makeit(request, env) {
+  let body;
+  try {
+    body = await request.json();
+  } catch (_) {
+    return text("bad request", 400);
+  }
+  const email = String(body.email || "").trim().toLowerCase();
+  const req = String(body.request || "").trim().slice(0, 4000);
+  const answers = String(body.answers || "").trim().slice(0, 4000);
+  const agent = String(body.agent || "").slice(0, 40);
+  const why = String(body.why || "").slice(0, 400);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) || email.length > 254) {
+    return text("that does not look like an email address", 400);
+  }
+  if (!req) return text("say what the app should be", 400);
+  const at = Math.floor(Date.now() / 1000);
+  await env.APPS.put(
+    `makeit:${at}:${crypto.randomUUID().slice(0, 8)}`,
+    JSON.stringify({ at, email, request: req, answers, agent, why }),
+  );
   return json({ ok: true });
 }
 

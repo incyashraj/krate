@@ -216,7 +216,6 @@
                 <span class="g-chrome"><i></i><i></i><i></i></span>
                 <span class="g-block g-hero"></span>
                 <span class="g-row"><span class="g-block g-half"></span><span class="g-block g-half"></span></span>
-                <span class="g-block g-line"></span>
               </div>
               <img id="buildShot" class="hidden" alt="Your app so far" />
               <span class="forming-sweep" aria-hidden="true"></span>
@@ -225,7 +224,6 @@
             <div class="build-head">
               <p class="build-title" id="buildTitle">Making your app</p>
             </div>
-            <div class="build-track" aria-hidden="true"><i id="buildTrack"></i></div>
             <div class="bpeek" id="peekBox"><span id="nowLine">warming up…</span><span class="caret"></span></div>
             <p class="build-elapsed"><span id="elapsed">0:00</span> · <span id="buildExpect">a few minutes</span></p>
             <details class="build-log-wrap">
@@ -276,6 +274,11 @@
               <button class="btn btn-primary" id="retryBtn">Try again</button>
               <button class="btn" id="switchAiBtn">Use a different AI</button>
               <button class="btn btn-ghost" id="reportBtn">Report an issue</button>
+            </div>
+            <!-- The human door, open today: we build it and mail the file. -->
+            <div class="fail-krateai fail-offer">
+              <span><b>Or let us make it</b> &middot; a person at Krate builds it and emails you the file</span>
+              <button class="btn" id="makeitBtn">Ask Krate</button>
             </div>
             <!-- The door that is coming: a brain of our own, so a broken
                  sign-in stops being a dead end. Grey until it is real. -->
@@ -588,6 +591,24 @@
 
   <!-- The Send sheet: the card is the default share, the link is for when
        you cannot drop a file, and the raw bundle stays one click away. -->
+  <div class="sheet-wrap hidden" id="makeitSheet">
+    <div class="sheet">
+      <h2>We'll make it for you</h2>
+      <p class="sheet-sub">A person at Krate builds your app from what is
+      already in this session -- your words below, and any answers you
+      gave -- and emails you the finished file. Free while Studio is in
+      preview.</p>
+      <p class="makeit-recap" id="makeitRecap"></p>
+      <input class="makeit-email" id="makeitEmail" type="email"
+        placeholder="you@example.com" autocomplete="email" />
+      <div class="detail-actions">
+        <button class="btn btn-primary" id="makeitSend">Send it to Krate</button>
+        <button class="btn btn-ghost sheet-close" data-close="makeitSheet">Close</button>
+      </div>
+      <p class="detail-note" id="makeitNote"></p>
+    </div>
+  </div>
+
   <div class="sheet-wrap hidden" id="planSheet">
     <div class="sheet">
       <h2>Your plan</h2>

@@ -3527,6 +3527,57 @@ $("retryBtn").addEventListener("click", () => {
 // The failure card's second door: a different brain, one click away. The
 // sheet it opens is the same AI picker as everywhere else.
 $("switchAiBtn")?.addEventListener("click", openAiSheet);
+
+/* "We'll make it for you": the human fallback. Everything a person at
+ * Krate needs is already in the session -- the request and the answers
+ * given to the AI's questions -- so the sheet only has to ask for an
+ * email to send the finished file back to. */
+function openMakeitSheet() {
+  const s = state.session;
+  const msgs = (s && s.messages) || [];
+  const first = msgs.find((m) => m.who === "YOU");
+  const req = (s && s.failedRequest) || (first ? first.body : "");
+  if (!req) return;
+  // Their answers: every later message of theirs, in their own words.
+  const answers = msgs
+    .filter((m) => m.who === "YOU" && m !== first)
+    .map((m) => m.body)
+    .join("\n");
+  state.makeit = { request: req, answers, why: $("failWhy").textContent || "" };
+  $("makeitRecap").textContent =
+    "“" + req.slice(0, 160) + (req.length > 160 ? "…" : "") + "”";
+  $("makeitNote").textContent = "";
+  $("makeitSend").disabled = false;
+  $("makeitSend").textContent = "Send it to Krate";
+  $("makeitSheet").classList.remove("hidden");
+  $("makeitEmail").focus();
+}
+$("makeitBtn")?.addEventListener("click", openMakeitSheet);
+$("makeitSend")?.addEventListener("click", async () => {
+  const email = ($("makeitEmail").value || "").trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+    $("makeitNote").textContent = "That does not look like an email address.";
+    return;
+  }
+  $("makeitSend").disabled = true;
+  $("makeitSend").textContent = "Sending…";
+  try {
+    await invoke("make_for_me", {
+      email,
+      request: state.makeit.request,
+      answers: state.makeit.answers,
+      agent: state.agent || "",
+      why: state.makeit.why,
+    });
+    $("makeitSend").textContent = "Sent";
+    $("makeitNote").textContent =
+      "Done - the finished file lands in your inbox, usually within a day.";
+  } catch (err) {
+    $("makeitSend").disabled = false;
+    $("makeitSend").textContent = "Send it to Krate";
+    $("makeitNote").textContent = String(err);
+  }
+});
 ["agentChip", "agentChip2", "builtByChip"].forEach((id) => {
   const chip = $(id);
   if (chip) chip.addEventListener("click", openAiSheet);

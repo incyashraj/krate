@@ -483,8 +483,8 @@ body.windows .titlebar { padding-right: 150px; }
    part of the composition -- at 2px on 7% it disappeared and its margins
    read as a dead gap. */
 .build-track {
-  height: 3px; border-radius: 3px; margin: 12px 0 10px;
-  background: rgba(255, 255, 255, 0.1); overflow: hidden;
+  height: 4px; border-radius: 4px; margin: 12px 0 10px;
+  background: rgba(255, 255, 255, 0.12); overflow: hidden;
 }
 .build-track i {
   display: block; height: 100%; border-radius: 3px;
@@ -493,15 +493,10 @@ body.windows .titlebar { padding-right: 150px; }
   transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-/* The card's vertical rhythm: frame, title, track, live line, clock --
-   one composition with real air between the frame and the words. The
-   review screenshot's complaint was exactly this: the title glued to the
-   frame read as unfinished. */
-.brail { width: min(560px, 94%); padding: 26px 28px 24px; }
-.brail .build-shot { margin: 0 0 20px; }
-.brail .build-title { margin: 0; font-size: 19px; font-weight: 550; }
-.brail .bpeek { margin: 6px 0 8px; }
-.brail .build-elapsed { margin: 0 0 2px; }
+/* The card's vertical rhythm lives with the .build-card.brail flex rules
+   further down -- one block owns the layout, because two owners was how
+   the track got crushed to 0px and the live line rendered past the card
+   border on short windows. */
 .build-shot-tag {
   position: absolute; left: 8px; bottom: 8px;
   font-size: 10.5px; letter-spacing: 0.02em; color: #fff;
@@ -663,6 +658,21 @@ body.windows .titlebar { padding-right: 150px; }
   color: var(--faint); font-size: 12.5px; opacity: 0.75;
 }
 .fail-krateai b { color: var(--muted); font-weight: 550; }
+/* The offer row is a live door, not a preview: full presence, solid line. */
+.fail-offer { opacity: 1; border-style: solid; color: var(--muted); }
+.fail-offer b { color: var(--text); }
+.makeit-recap {
+  margin: 14px 0; padding: 11px 14px; text-align: left;
+  border-left: 2px solid var(--line-strong); color: var(--muted);
+  font-size: 13px; line-height: 1.55; background: rgba(255, 255, 255, 0.025);
+  border-radius: 0 8px 8px 0;
+}
+.makeit-email {
+  width: 100%; margin-bottom: 14px; padding: 10px 13px;
+  background: var(--panel-deep, rgba(255,255,255,0.04)); color: var(--text);
+  border: 1px solid var(--line); border-radius: 9px; font-size: 13.5px;
+}
+.makeit-email:focus { outline: none; border-color: var(--line-strong); }
 .fail-raw-wrap { margin-top: 16px; text-align: left; }
 .fail-raw-wrap summary {
   font-size: 11.5px; color: var(--quiet, rgba(255,255,255,0.35));
@@ -1602,7 +1612,8 @@ img.cloud-icon { object-fit: cover; }
 /* The rail-stage panel, exactly the agreed frame: full height, flat,
    steps as the content, footer pinned to the bottom. */
 .build-card.brail {
-  width: min(640px, 90%);
+  width: min(560px, 94%);
+  padding: 26px 28px 22px;
   /* Was `height: calc(100% - 56px)` + `overflow: hidden`. When the stages, the
      peek and an open "full log" grew past that fixed height, hidden clipped the
      bottom of the card -- which is the footer with the Stop button. A real
@@ -1613,11 +1624,26 @@ img.cloud-icon { object-fit: cover; }
   max-height: calc(100% - 56px);
   display: flex; flex-direction: column;
 }
-/* The log is the one part allowed to shrink-and-scroll when space is tight;
-   flex:1 1 0 + min-height:0 lets it actually give up height (min-content would
-   otherwise keep it tall and push the footer off). Everything else keeps its
-   natural size, and the footer never shrinks away, so Stop is always on screen. */
-.build-card.brail .build-log-wrap { flex: 1 1 0; min-height: 0; overflow-y: auto; }
+/* Who gives up height when the window is short: the FRAME, down to a
+   floor -- never the words, never the 3px track (a shrinkable track
+   rendered at literal zero height, and an unclipped card let the live
+   line spill past its own border; both shipped, both photographed). */
+.brail .build-shot { margin: 0 0 20px; flex: 0 1 auto; height: 220px; min-height: 120px; }
+.brail .build-shot img { width: 100%; height: 100%; max-height: none; object-fit: cover; object-position: top; }
+.brail .build-head,
+.brail .build-title,
+.brail .bpeek,
+.brail .build-elapsed { flex: none; }
+.brail .build-title { margin: 0; font-size: 19px; font-weight: 550; }
+.brail .bpeek { margin: 10px 0 0; }
+.brail .build-elapsed { margin: 8px 0 0; }
+/* The words sit as one block under the frame; the card ends where they
+   end, instead of the title floating high over leftover space. */
+.brail .bfoot { margin-top: 18px; }
+/* The log may take leftover room and scroll -- but only when open, so a
+   closed one-line summary does not stretch a quiet card apart. */
+.build-card.brail .build-log-wrap { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
+.build-card.brail .build-log-wrap[open] { flex: 1 1 0; }
 .build-card.brail .build-log-wrap[open] .build-log { max-height: none; }
 .build-card.brail .bfoot { flex: none; }
 .build-card.brail .stages { margin: 16px 0 0; }
@@ -1626,7 +1652,7 @@ img.cloud-icon { object-fit: cover; }
 .stages .bpeek { margin: 2px 0 8px 28px; }
 .build-card.brail .build-log-wrap { margin-top: 10px; }
 .build-card.brail .build-log-wrap summary { color: var(--ghost); font-size: 11.5px; }
-.build-card.brail .bfoot { margin-top: auto; padding-top: 14px; }
+.build-card.brail .bfoot { margin-top: 18px; }
 
 /* ---- the report-an-issue consent sheet -------------------------------- */
 
@@ -2560,12 +2586,11 @@ body.light .send-opt span, body.light .send-done p { color: rgba(0,0,0,0.55); }
 /* The heartbeat line is a quiet sentence, not a clipped terminal box: the
    old style assumed it nested under a stage row that no longer exists. */
 .brail .bpeek {
-  margin: 14px 0 4px; padding: 0; background: none; border: none;
+  margin: 10px 0 0; padding: 0; background: none; border: none;
   max-height: none; overflow: visible;
   font-family: var(--sans); font-size: 13px; color: var(--muted);
   line-height: 1.6;
 }
-.brail .build-shot { margin: 14px 0 4px; }
 
 /* The done card's caption sits along the bottom of the shot, like the
    card's own strip -- not as a flex column beside it. */
