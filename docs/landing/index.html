@@ -22,7 +22,7 @@
   }
   </script>
   <meta property="og:title" content="Krate: make an app you can send" />
-  <meta property="og:description" content="Make an app by asking. Share it as one file that opens on Mac, Windows, and Linux, and shows what it wants before it runs." />
+  <meta property="og:description" content="Make an app by asking. Send it as one file that opens on Mac, Windows, and Linux, and shows what it wants before it runs." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://krate.tech/" />
   <meta property="og:image" content="https://krate.tech/og-v2.png" />
@@ -31,14 +31,368 @@
   <meta property="og:image:alt" content="Krate turns an AI request into one app file for Mac, Windows, and Linux." />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Krate: make an app you can send" />
-  <meta name="twitter:description" content="Make an app by asking. Share it as one file that opens on Mac, Windows, and Linux, and shows what it wants before it runs." />
+  <meta name="twitter:description" content="Make an app by asking. Send it as one file that opens on Mac, Windows, and Linux, and shows what it wants before it runs." />
   <meta name="twitter:image" content="https://krate.tech/og-v2.png" />
   <title>Krate: make an app you can send | One file for Mac, Windows, Linux</title>
   <link rel="icon" href="./krate-favicon.png" />
   <link rel="apple-touch-icon" href="./krate-favicon.png" />
   <link rel="preload" href="./fonts/geist-400.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="./fonts/geist-500.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="stylesheet" href="./site.css" />
+
+  <!-- The homepage styles live in the page. site.css shipped against a
+       10-minute CSS cache, so a deploy that changed both HTML and CSS could
+       render one against the other's stale copy. Inlining removes that
+       whole class of failure for the one page where it matters most. -->
+  <style>
+  /* ------------------------------------------------------------- fonts */
+  @font-face {
+    font-family: "Geist";
+    src: url("./fonts/geist-400.woff2") format("woff2");
+    font-weight: 400; font-style: normal; font-display: swap;
+  }
+  @font-face {
+    font-family: "Geist";
+    src: url("./fonts/geist-500.woff2") format("woff2");
+    font-weight: 500; font-style: normal; font-display: swap;
+  }
+
+  /* ------------------------------------------------------------ tokens */
+  :root {
+    color-scheme: dark;
+    --bg: #0a0a0a;
+    --panel: #0f1012;
+    --panel-2: #141519;
+    --line: #1f2228;
+    --line-soft: #17191e;
+    --text: #ffffff;
+    --muted: rgba(255, 255, 255, 0.55);
+    --quiet: rgba(255, 255, 255, 0.35);
+    --accent: #6291ff;
+    --good: #4ade80;
+    --r-card: 16px;
+    --r-pill: 999px;
+    --max: 1120px;
+    --sans: "Geist", Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+    /* The motion system. One object wakes; everything else enters once.
+       Nothing loops, nothing bounces, nothing glows. */
+    --wake: 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    --enter: 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  a { color: inherit; text-decoration: none; }
+  img { max-width: 100%; display: block; }
+  .wrap { max-width: var(--max); margin: 0 auto; padding: 0 24px; }
+
+  h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
+
+  /* Sections drift in once: a small rise, a fade, and then they are
+     ordinary content. They never animate again. */
+  .reveal { opacity: 0; transform: translateY(12px); transition: opacity var(--enter), transform var(--enter); }
+  .reveal.in { opacity: 1; transform: none; }
+
+  /* ------------------------------------------------------------ header */
+  .site-head {
+    position: sticky; top: 0; z-index: 40;
+    background: color-mix(in srgb, var(--bg) 86%, transparent);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid transparent;
+    transition: border-color 200ms ease;
+  }
+  .site-head.scrolled { border-bottom-color: var(--line-soft); }
+  .head-inner { display: flex; align-items: center; gap: 28px; height: 64px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 500; letter-spacing: 0.14em; font-size: 14px; }
+  .head-nav { display: flex; gap: 4px; margin-left: auto; }
+  .head-nav a {
+    font-size: 14px; color: var(--muted); padding: 8px 12px; border-radius: var(--r-pill);
+    transition: color 150ms ease, background 150ms ease;
+  }
+  .head-nav a:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+  .pill {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 10px 20px; border-radius: var(--r-pill);
+    border: 1px solid var(--line); font-size: 15px; font-weight: 500;
+    transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+  }
+  .pill:hover { border-color: rgba(255,255,255,0.28); }
+  .pill-primary { background: var(--text); color: #0a0a0a; border-color: var(--text); }
+  .pill-primary:hover { background: rgba(255,255,255,0.86); border-color: rgba(255,255,255,0.86); }
+  .head-cta .pill { padding: 8px 16px; font-size: 14px; }
+  @media (max-width: 720px) { .head-nav { display: none; } }
+
+  /* -------------------------------------------------------------- hero */
+  .hero { padding: clamp(56px, 10vh, 110px) 0 40px; }
+  .hero-grid {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto;
+    gap: clamp(32px, 5vw, 72px); align-items: center;
+  }
+  @media (max-width: 920px) { .hero-grid { grid-template-columns: 1fr; justify-items: center; text-align: center; } }
+
+  .hero h1 {
+    font-size: clamp(42px, 6.4vw, 72px);
+    letter-spacing: -0.03em; line-height: 1.03;
+  }
+  .hero-sub {
+    margin-top: 20px; max-width: 30em;
+    font-size: clamp(16px, 1.6vw, 19px); color: var(--muted); line-height: 1.55;
+  }
+  .hero-cta { margin-top: 30px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  @media (max-width: 920px) { .hero-cta { justify-content: center; } .hero-sub { margin-inline: auto; } }
+  .free-note { margin-top: 14px; font-size: 13px; color: var(--quiet); }
+
+  /* ---------------------------------------------------------- the card */
+  /* The one animated object on the site. It arrives looking like a photo
+     of an app -- flat, dimmed, captioned like a file. Then it wakes: the
+     same 280ms curve every state change on this page uses, and from that
+     moment it is a working app the visitor can use. */
+  .card-seat { position: relative; width: min(400px, 92vw); }
+  .card {
+    border: 1px solid var(--line); border-radius: var(--r-card);
+    background: var(--panel); overflow: hidden; text-align: left;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+    transition: filter var(--wake), box-shadow var(--wake), transform var(--wake);
+  }
+  .card.asleep {
+    filter: grayscale(0.4) brightness(0.78) contrast(0.94);
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.4);
+    transform: translateY(4px);
+  }
+  .card.asleep .app { pointer-events: none; }
+
+  .card-bar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 14px; border-bottom: 1px solid var(--line-soft);
+    background: var(--panel-2);
+  }
+  .dots { display: flex; gap: 6px; }
+  .dots i { width: 10px; height: 10px; border-radius: 50%; background: #2a2d34; }
+  .card.awake .dots i:nth-child(1) { background: #ff5f57; }
+  .card.awake .dots i:nth-child(2) { background: #febc2e; }
+  .card.awake .dots i:nth-child(3) { background: #28c840; }
+  .dots i { transition: background var(--wake); }
+  .card-title { font-size: 12.5px; color: var(--muted); margin: 0 auto; letter-spacing: 0.02em; }
+  .live {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11px; color: var(--quiet); opacity: 0; transition: opacity var(--wake);
+  }
+  .live i { width: 6px; height: 6px; border-radius: 50%; background: var(--good); }
+  .card.awake .live { opacity: 1; }
+
+  /* The app inside: a real, working rate card. */
+  .app { padding: 18px 18px 20px; }
+  .app-h { font-size: 15px; font-weight: 500; letter-spacing: -0.01em; }
+  .app-rates { margin-top: 4px; font-size: 12.5px; color: var(--quiet); }
+  .app-row { display: flex; gap: 10px; margin-top: 14px; }
+  .field { flex: 1; }
+  .field label { display: block; font-size: 11.5px; color: var(--muted); margin-bottom: 6px; letter-spacing: 0.03em; }
+  .field input {
+    width: 100%; padding: 10px 12px; font: inherit; font-size: 15px;
+    color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 10px; outline: none;
+    transition: border-color 150ms ease;
+  }
+  .field input:focus { border-color: var(--accent); }
+  .rush { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; font-size: 13.5px; color: var(--muted); }
+  .switch {
+    position: relative; width: 40px; height: 24px; border-radius: 999px;
+    background: var(--line); border: none; cursor: pointer;
+    transition: background 150ms ease;
+  }
+  .switch::after {
+    content: ""; position: absolute; top: 3px; left: 3px;
+    width: 18px; height: 18px; border-radius: 50%; background: #fff;
+    transition: transform 150ms ease;
+  }
+  .switch[aria-pressed="true"] { background: var(--accent); }
+  .switch[aria-pressed="true"]::after { transform: translateX(16px); }
+  .app-total {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line-soft);
+  }
+  .app-total span { font-size: 12px; color: var(--muted); letter-spacing: 0.04em; }
+  .app-total b { font-size: 26px; font-weight: 500; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+
+  /* The caption strip: what a file browser would say about this object. */
+  .card-cap {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 14px; border-top: 1px solid var(--line-soft);
+    background: var(--panel-2); font-size: 12px; color: var(--muted);
+  }
+  .card-cap .fname { color: var(--text); font-weight: 500; }
+  .card-cap .sep { color: var(--quiet); }
+  .card-cap .trust { color: var(--quiet); margin-left: auto; text-align: right; }
+
+  /* One line under the card that changes when it wakes. */
+  .card-note { margin-top: 14px; text-align: center; font-size: 13px; color: var(--quiet); min-height: 1.5em; transition: opacity var(--wake); }
+  .card-note.swap { opacity: 0; }
+
+  /* -------------------------------------------------------- how it works */
+  .how { padding: clamp(70px, 12vh, 130px) 0 0; }
+  .kicker { font-size: 12px; letter-spacing: 0.14em; color: var(--quiet); }
+  .step {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: clamp(32px, 6vw, 90px); align-items: center;
+    padding: clamp(36px, 6vh, 64px) 0;
+  }
+  .step:nth-child(even) .step-visual { order: -1; }
+  @media (max-width: 860px) {
+    .step { grid-template-columns: 1fr; }
+    .step:nth-child(even) .step-visual { order: 0; }
+  }
+  .step h2 { font-size: clamp(26px, 3.4vw, 38px); letter-spacing: -0.025em; line-height: 1.12; margin-top: 10px; }
+  .step p { margin-top: 14px; color: var(--muted); max-width: 32em; }
+  .step-visual { display: flex; justify-content: center; }
+
+  /* 01: one input, one sentence, typed once. */
+  .say {
+    width: min(460px, 100%); border: 1px solid var(--line); border-radius: var(--r-card);
+    background: var(--panel); padding: 18px;
+  }
+  .say-label { font-size: 11.5px; color: var(--quiet); letter-spacing: 0.06em; }
+  .say-box {
+    margin-top: 10px; padding: 14px 16px; border: 1px solid var(--line);
+    border-radius: 12px; background: var(--bg); font-size: 15px; min-height: 3.2em;
+    color: var(--text);
+  }
+  .say-box .caret { display: inline-block; width: 1px; height: 1.05em; background: var(--text); vertical-align: -0.15em; animation: caret 1.1s steps(1) infinite; }
+  @keyframes caret { 50% { opacity: 0; } }
+  .say-ais { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+  .say-ais span { font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: var(--r-pill); padding: 4px 10px; }
+
+  /* 02: a chat. The app arrives the way a photo does. */
+  .chat { width: min(420px, 100%); display: flex; flex-direction: column; gap: 10px; }
+  .bubble {
+    max-width: 82%; padding: 10px 14px; border-radius: 18px; font-size: 14.5px;
+    opacity: 0; transform: translateY(12px);
+    transition: opacity var(--enter), transform var(--enter);
+  }
+  .chat.in .bubble { opacity: 1; transform: none; }
+  .chat.in .bubble:nth-child(2) { transition-delay: 180ms; }
+  .chat.in .bubble:nth-child(3) { transition-delay: 360ms; }
+  .b-them { align-self: flex-start; background: var(--panel-2); color: var(--muted); border-bottom-left-radius: 6px; }
+  .b-you { align-self: flex-end; background: #1c2b4d; color: var(--text); border-bottom-right-radius: 6px; }
+  .b-file {
+    align-self: flex-end; width: 82%; padding: 0; overflow: hidden;
+    border: 1px solid var(--line); background: var(--panel); border-radius: 14px;
+    border-bottom-right-radius: 6px;
+  }
+  .b-file .mini {
+    display: block; padding: 14px 14px 12px; border-bottom: 1px solid var(--line-soft);
+  }
+  .mini-h { font-size: 12.5px; font-weight: 500; }
+  .mini-bars { margin-top: 8px; display: grid; gap: 5px; }
+  .mini-bars i { display: block; height: 6px; border-radius: 3px; background: var(--line); }
+  .mini-bars i:nth-child(1) { width: 72%; }
+  .mini-bars i:nth-child(2) { width: 54%; }
+  .mini-bars i:nth-child(3) { width: 63%; background: #2c3a5e; }
+  .mini-total { margin-top: 10px; display: flex; justify-content: space-between; font-size: 11.5px; color: var(--quiet); }
+  .mini-total b { color: var(--text); font-weight: 500; }
+  .b-file .frow { display: flex; align-items: center; gap: 8px; padding: 9px 12px; font-size: 12px; color: var(--muted); }
+  .b-file .frow .fname { color: var(--text); font-weight: 500; }
+  .b-file .frow span:last-child { margin-left: auto; color: var(--quiet); }
+
+  /* 03: the consent sheet. Styled like a system dialog, because that is
+     what it is. It gets the quietest entrance on the page. */
+  .sheet {
+    width: min(400px, 100%); border: 1px solid var(--line); border-radius: var(--r-card);
+    background: var(--panel); padding: 26px 24px 22px; text-align: center;
+    opacity: 0; transition: opacity 180ms ease;
+  }
+  .sheet.in { opacity: 1; }
+  .sheet img { width: 34px; height: 34px; margin: 0 auto 12px; }
+  .sheet h3 { font-size: 17px; letter-spacing: -0.01em; }
+  .sheet .asks { margin: 14px auto 0; display: inline-block; text-align: left; }
+  .sheet .asks div { display: flex; gap: 10px; align-items: baseline; font-size: 14.5px; color: var(--muted); padding: 4px 0; }
+  .sheet .asks i { color: var(--good); font-style: normal; font-size: 13px; }
+  .sheet .none { margin-top: 12px; font-size: 12.5px; color: var(--quiet); max-width: 26em; margin-inline: auto; }
+  .sheet .btns { margin-top: 18px; display: flex; gap: 10px; justify-content: center; }
+  .sheet .btns .pill { font-size: 14px; padding: 9px 18px; }
+
+  /* ------------------------------------------------- the honest panel */
+  .first {
+    margin-top: clamp(56px, 9vh, 96px);
+    border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft);
+    background: var(--panel);
+  }
+  .first-inner { display: flex; gap: 20px; align-items: center; padding: 30px 24px; max-width: var(--max); margin: 0 auto; }
+  .first img { width: 30px; height: 30px; flex: none; }
+  .first b { font-weight: 500; display: block; font-size: 16px; }
+  .first p { font-size: 14px; color: var(--muted); margin-top: 3px; max-width: 52em; }
+
+  /* -------------------------------------------------- why not a webpage */
+  .why { padding: clamp(70px, 12vh, 120px) 0 0; }
+  .why h2 { font-size: clamp(26px, 3.4vw, 38px); letter-spacing: -0.025em; }
+  .why-sub { margin-top: 12px; color: var(--muted); max-width: 38em; }
+  .why-grid { margin-top: 40px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line-soft); border: 1px solid var(--line-soft); border-radius: var(--r-card); overflow: hidden; }
+  @media (max-width: 760px) { .why-grid { grid-template-columns: 1fr; } }
+  .why-cell { background: var(--bg); padding: 26px 24px; }
+  .why-cell b { font-weight: 500; font-size: 16px; }
+  .why-cell p { margin-top: 8px; font-size: 14px; color: var(--muted); }
+
+  /* -------------------------------------------------------------- proof */
+  .proof { padding: clamp(70px, 12vh, 120px) 0 0; }
+  .proof h2 { font-size: clamp(26px, 3.4vw, 38px); letter-spacing: -0.025em; }
+  .proof-sub { margin-top: 12px; color: var(--muted); max-width: 40em; }
+  .ptable { margin-top: 36px; border: 1px solid var(--line-soft); border-radius: var(--r-card); overflow: hidden; }
+  .ptable table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  .ptable th, .ptable td { padding: 14px 20px; text-align: right; border-bottom: 1px solid var(--line-soft); font-weight: 400; }
+  .ptable th:first-child, .ptable td:first-child { text-align: left; color: var(--muted); }
+  .ptable thead th { font-size: 12.5px; letter-spacing: 0.06em; color: var(--quiet); background: var(--panel); }
+  .ptable tr:last-child td { border-bottom: none; }
+  .ptable td.k { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .ptable td.e { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .proof-src { margin-top: 14px; font-size: 12.5px; color: var(--quiet); }
+  .proof-src a { color: var(--muted); border-bottom: 1px solid var(--line); }
+
+  /* -------------------------------------------------------------- close */
+  .close { padding: clamp(90px, 15vh, 160px) 0 clamp(70px, 10vh, 110px); text-align: center; }
+  .close h2 { font-size: clamp(34px, 5vw, 56px); letter-spacing: -0.03em; line-height: 1.06; }
+  .close p { margin-top: 16px; color: var(--muted); }
+  .close .actions { margin-top: 28px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .dl-grid { margin: 40px auto 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; max-width: 640px; }
+  @media (max-width: 640px) { .dl-grid { grid-template-columns: 1fr; } }
+  .dl {
+    display: block; padding: 16px; border: 1px solid var(--line); border-radius: 12px;
+    text-align: left; transition: border-color 150ms ease, background 150ms ease;
+  }
+  .dl:hover { border-color: rgba(255,255,255,0.28); background: var(--panel); }
+  .dl b { display: block; font-weight: 500; font-size: 15px; }
+  .dl span { font-size: 12.5px; color: var(--quiet); }
+  .dl.dl-soon { opacity: 0.5; pointer-events: none; }
+  .close-foot { margin-top: 18px; font-size: 12.5px; color: var(--quiet); }
+  .close-foot a { color: var(--muted); border-bottom: 1px solid var(--line); }
+
+  /* ------------------------------------------------------------- footer */
+  .site-foot { border-top: 1px solid var(--line-soft); padding: 36px 0 44px; }
+  .foot-inner { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+  .foot-brand { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+  .foot-links { margin-left: auto; display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; }
+  .foot-links a { color: var(--muted); }
+  .foot-links a:hover { color: var(--text); }
+  .foot-note { width: 100%; font-size: 12px; color: var(--quiet); }
+
+  /* --------------------------------------------------- reduced motion */
+  /* The card starts awake, the sentence is already typed, sections are
+     simply there. The page works standing still. */
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .reveal, .bubble, .sheet { opacity: 1 !important; transform: none !important; transition: none !important; }
+    .card, .dots i, .live, .card-note { transition: none !important; }
+    .say-box .caret { animation: none; }
+  }
+  </style>
 </head>
 <body>
 
@@ -49,66 +403,14 @@
       <img src="./krate-glyph-white.png" alt="" width="22" height="22" />
       KRATE
     </a>
-
     <nav class="head-nav" aria-label="Primary">
-      <div class="nav-item">
-        <button class="nav-link" type="button" aria-expanded="false">Product <span class="chev">▾</span></button>
-        <div class="nav-panel">
-          <div class="panel-links">
-            <a href="#get-krate">Start<span class="d">install once, open anything</span></a>
-            <a href="/cloud/">Gallery<span class="d">real published apps, run by URL</span></a>
-            <a href="/progress/">Platforms<span class="d">six builds, both chips, three systems</span></a>
-            <a href="/faq.html">FAQ<span class="d">the honest answers</span></a>
-          </div>
-          <div class="panel-mini" aria-hidden="true">
-            <div class="p">&gt; a habit tracker</div>
-            <div><span class="g">+</span> writing the code</div>
-            <div><span class="g">+</span> compiling it</div>
-            <div><span class="g">+</span> checking it runs</div>
-            <div class="p">done · 41 KB<span class="cursor"></span></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="nav-item">
-        <button class="nav-link" type="button" aria-expanded="false">Develop <span class="chev">▾</span></button>
-        <div class="nav-panel">
-          <div class="panel-links">
-            <a href="/docs/">Docs<span class="d">the book: build, check, pack</span></a>
-            <a href="/reports/">Reports<span class="d">what runs today, with proof</span></a>
-            <a href="/progress/">Progress<span class="d">release by release</span></a>
-            <a href="https://github.com/incyashraj/krate">GitHub<span class="d">all of it, open source</span></a>
-          </div>
-          <div class="panel-mini" aria-hidden="true">
-            <div class="p">$ krate check-app .</div>
-            <div><span class="g">✓</span> build passed</div>
-            <div><span class="g">✓</span> imports passed</div>
-            <div><span class="g">✓</span> run passed</div>
-            <div><span class="g">OK</span><span class="cursor"></span></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="nav-item">
-        <button class="nav-link" type="button" aria-expanded="false">Share <span class="chev">▾</span></button>
-        <div class="nav-panel">
-          <div class="panel-links">
-            <a href="/cloud/">Gallery<span class="d">browse what people published</span></a>
-            <a href="/publish/">Publish<span class="d">one command, a link anyone can run</span></a>
-            <a href="/contact/">Contact<span class="d">talk to the person building it</span></a>
-          </div>
-          <div class="panel-mini" aria-hidden="true">
-            <div class="p">$ krate publish app.krate</div>
-            <div><span class="g">✓</span> uploaded</div>
-            <div class="b">krate.tech/cloud</div>
-            <div class="p">send the link<span class="cursor"></span></div>
-          </div>
-        </div>
-      </div>
+      <a href="#how">How it works</a>
+      <a href="/cloud/">Gallery</a>
+      <a href="/docs/">Docs</a>
+      <a href="https://github.com/incyashraj/krate">GitHub</a>
     </nav>
-
     <div class="head-cta">
-      <a class="pill pill-primary" href="#get-krate">Install</a>
+      <a class="pill pill-primary" href="/studio/">Download Studio</a>
     </div>
   </div>
 </header>
@@ -116,493 +418,262 @@
 <main>
 
 <!-- ================================================================== hero -->
-<section class="home-hero wrap">
-  <h1 class="display">Make an app you can
-    <span class="rot"><span class="word" id="rotWord">send</span><span class="bar"></span></span>
-  </h1>
-
-  <p class="home-hero-sub">An AI writes it. Krate makes it real: one small file that
-  opens on Mac, Windows, and Linux, and cannot touch anything you did not
-  allow.</p>
-
-  <div class="hero-cta reveal">
-    <a class="pill pill-primary" id="heroStudio" data-dl="krate-studio|universal|dmg" href="/studio/">Download Krate Studio</a>
-    <a class="pill" href="/studio/">What it does</a>
-    <p class="free-note">Free · works with the AI you already have · Mac, Windows and Linux</p>
-  </div>
-  <script>
-    // The hero button downloads the build for THIS machine; the resolver
-    // below swaps in the exact asset once the latest release is known.
-    (function () {
-      var ua = navigator.userAgent;
-      var btn = document.getElementById("heroStudio");
-      if (ua.indexOf("Windows") !== -1) btn.dataset.dl = "krate-studio|windows-x64-setup|exe";
-      else if (ua.indexOf("Linux") !== -1 && ua.indexOf("Android") === -1) btn.dataset.dl = "krate-studio|linux-x86_64|AppImage";
-    })();
-  </script>
-
-  <div class="home-hero-links">
-    <a href="/docs/">Read docs <span class="arr">›</span></a>
-    <a href="/progress/">Progress <span class="arr">›</span></a>
-    <a href="https://github.com/incyashraj/krate">Open source <span class="arr">›</span></a>
-  </div>
-
-  <!-- The first thing Krate Studio actually shows: the making of an app,
-       played back small. Same markup idiom as the app itself, so what the
-       page promises is what the download does. -->
-  <div class="sframe home-hero-term reveal" id="heroMock">
-    <div class="sf-head">
-      <div class="term-dots"><i></i><i></i><i></i></div>
-      <div class="sf-brand"><img src="./krate-glyph-white.png" alt="" width="13" height="13" />KRATE</div>
-      <div class="sf-chip"><span class="sf-dot"></span>Claude</div>
+<section class="hero wrap">
+  <div class="hero-grid">
+    <div>
+      <h1>Make an app<br />you can send.</h1>
+      <p class="hero-sub">You describe it. An AI writes it. What you get is one
+      small file that opens on Mac, Windows, and Linux -- and cannot touch
+      anything you did not allow.</p>
+      <div class="hero-cta">
+        <a class="pill pill-primary" id="heroStudio" data-dl="krate-studio|universal|dmg" href="/studio/">Download Krate Studio</a>
+        <a class="pill" href="#how">How it works</a>
+      </div>
+      <p class="free-note">Free · works with the AI you already have · Mac, Windows and Linux</p>
     </div>
-    <div class="sf-body">
 
-      <div class="sf-home" id="sfHome">
-        <div class="sf-title">Make an app you can <em>keep</em></div>
-        <div class="sf-sub">Describe it in plain words. A few minutes later it's a real app.</div>
-        <div class="sf-composer">
-          <span class="sf-typed" id="sfTyped"></span><span class="cursor"></span>
-          <span class="sf-send" id="sfSend">&uarr;</span>
+    <!-- The card. It loads looking like a photo of an app, then wakes into
+         the app itself. Everything the visitor needs to understand Krate
+         happens in this one object. -->
+    <div class="card-seat">
+      <div class="card asleep" id="theCard">
+        <div class="card-bar">
+          <div class="dots"><i></i><i></i><i></i></div>
+          <div class="card-title">Rate Card</div>
+          <span class="live"><i></i>live</span>
         </div>
-      </div>
-
-      <div class="sf-session" id="sfSession" hidden>
-        <div class="sf-rail">
-          <div class="sf-msg"><span>YOU</span>a recipe box for family dinners</div>
-          <div class="sf-msg k"><span>KRATE</span>On it. I'll show you each step as it happens.</div>
-          <div class="sf-msg k" id="sfDoneMsg" hidden><span>KRATE</span>Done &mdash; recipe-box.krate, 24 KB. Open it, or tell me what to change.</div>
-        </div>
-        <div class="sf-stage">
-          <div class="sf-make" id="sfMake">
-            <div class="sf-make-head">Making your app <span class="sf-live"><i></i>Live</span></div>
-            <div class="sf-bar"><i id="sfFill"></i></div>
-            <ul class="sf-steps" id="sfSteps">
-              <li>Understanding what you asked for</li>
-              <li>Writing the code</li>
-              <li>Building it</li>
-              <li>Packing it into one file</li>
-              <li>Checking it only touches what it declared</li>
-            </ul>
-          </div>
-          <div class="sf-done" id="sfDone" hidden>
-            <div class="sf-shot">
-              <div class="sf-shot-title">Recipe Box</div>
-              <div class="sf-shot-row"><i></i>Sunday ragu <b>45 min</b></div>
-              <div class="sf-shot-row"><i></i>Dal for a crowd <b>30 min</b></div>
-              <div class="sf-shot-row"><i></i>Lemon roast chicken <b>1 h</b></div>
+        <div class="app" aria-label="A working rate card app">
+          <div class="app-h">Studio rate card</div>
+          <div class="app-rates">Day rate $800 · extra hour $120 · rush +25%</div>
+          <div class="app-row">
+            <div class="field">
+              <label for="rcDays">DAYS</label>
+              <input id="rcDays" type="number" min="0" max="99" value="3" inputmode="numeric" />
             </div>
-            <div class="sf-file"><b>recipe-box.krate</b><span>24 KB &middot; runs on Mac, Windows and Linux</span></div>
-            <div class="sf-asks"><em>asks</em> open a window &middot; save your data</div>
-            <div class="sf-btns"><span class="sf-b1">Open it</span><span class="sf-b2">Share</span></div>
+            <div class="field">
+              <label for="rcHours">EXTRA HOURS</label>
+              <input id="rcHours" type="number" min="0" max="99" value="2" inputmode="numeric" />
+            </div>
+          </div>
+          <div class="rush">
+            <span>Rush delivery</span>
+            <button class="switch" id="rcRush" type="button" role="switch" aria-pressed="false" aria-label="Rush delivery"></button>
+          </div>
+          <div class="app-total">
+            <span>TOTAL</span>
+            <b id="rcTotal">$2,640</b>
           </div>
         </div>
+        <div class="card-cap">
+          <span class="fname">RateCard.krate</span>
+          <span class="sep">·</span>
+          <span>41 KB</span>
+          <span class="trust">can open a window · nothing else</span>
+        </div>
       </div>
-
+      <p class="card-note" id="cardNote">A picture of an app someone sent.</p>
     </div>
   </div>
 </section>
 
-<!-- ============================================================== scroller -->
-<section class="scroller wrap">
-  <div class="scroller-inner">
-    <div class="feat-col">
+<!-- ============================================================ how it works -->
+<section class="how wrap" id="how">
 
-      <div class="feat" data-demo="0">
-        <div class="kicker">DESCRIBE IT</div>
-        <h2 class="section-h">Type a sentence. Get an app.</h2>
-        <p>No project setup, no templates, no code on your screen. You describe
-        the app; the AI you already have writes real native code; Krate
-        compiles, checks, and packs it into one file.</p>
-        <ul>
-          <li>Works with Claude, Codex, Gemini, Copilot, or Grok</li>
-          <li>Attach a screenshot or a design -- "make it look like this"</li>
-          <li>Your words are kept through every install and retry</li>
-        </ul>
-        <div class="demo-inline"></div>
-      </div>
-
-      <div class="feat" data-demo="1">
-        <div class="kicker">THE PERMISSION WALL</div>
-        <h2 class="section-h">Every app says what it wants. Before it runs.</h2>
-        <p>An app made by an AI -- or sent by a stranger -- opens inside a
-        sandbox. It reaches nothing by default: not your files, not your
-        network, not your microphone. What it wants is shown in plain words,
-        and you decide.</p>
-        <ul>
-          <li>Deny it and the app still opens, just without that power</li>
-          <li>No account, no telemetry decisions -- the wall is local</li>
-        </ul>
-        <blockquote class="reviewer-line">
-          "'The internet: blocked' answers the worry before it is asked."
-          <cite>Denis A. Joly, early reviewer</cite>
-        </blockquote>
-        <div class="demo-inline"></div>
-      </div>
-
-      <div class="feat" data-demo="2">
-        <div class="kicker">ONE FILE</div>
-        <h2 class="section-h">Send it like a photo.</h2>
-        <p>The whole app is one small file. Mail it, drop it in a chat, put it
-        on a USB stick. It opens by double-click on Mac, Windows, and Linux --
-        no per-app installer, no "works on my machine". First time, Krate
-        itself installs once, like a player for a movie. After that, every app
-        is just a file.</p>
-        <blockquote class="reviewer-line">
-          "It is the moment you send someone a script."
-          <cite>Denis A. Joly, early reviewer</cite>
-        </blockquote>
-        <ul>
-          <li>Typically 15-60 KB -- hundreds of apps fit in one photo's worth</li>
-          <li>Same file runs on Intel and ARM, all three systems</li>
-        </ul>
-        <div class="demo-inline"></div>
-      </div>
-
-      <div class="feat" data-demo="3">
-        <div class="kicker">PROOF, NOT PROMISES</div>
-        <h2 class="section-h">Check any app yourself.</h2>
-        <p>One command builds an app, verifies it imports only Krate's safe
-        APIs, runs it headless, and clicks it like a person would. Another
-        renders its window to a PNG without opening anything. Trust is
-        checkable.</p>
-        <ul>
-          <li>Six-stage verdict with the failing stage named</li>
-          <li>Pixel-level proof an app draws what it claims</li>
-        </ul>
-        <div class="demo-inline"></div>
-      </div>
-
-      <div class="feat" data-demo="4">
-        <div class="kicker">PUBLISH</div>
-        <h2 class="section-h">A link anyone can run.</h2>
-        <p>For when you cannot drop the file in a chat: one command publishes
-        your app and hands you a URL. Anyone with Krate runs it straight from
-        that link; anyone without gets a one-command install first.</p>
-        <ul>
-          <li>Sign in with GitHub, publish, send the link</li>
-          <li>The gallery shows real screenshots of real apps</li>
-        </ul>
-        <div class="demo-inline"></div>
-      </div>
-
+  <div class="step">
+    <div class="reveal">
+      <div class="kicker">01 · SAY IT</div>
+      <h2>Type a sentence.<br />Get an app.</h2>
+      <p>No project setup, no templates, no code on your screen. You describe
+      the app in Krate Studio; the AI you already pay for writes it; Krate
+      builds it, checks it, and packs it into one file.</p>
     </div>
-
-    <div class="stick-col">
-      <div class="stick" id="stick">
-
-        <div class="demo active">
-          <div class="sframe">
-            <div class="sf-head">
-              <div class="term-dots"><i></i><i></i><i></i></div>
-              <div class="sf-brand"><img src="./krate-glyph-white.png" alt="" width="13" height="13" />KRATE</div>
-              <div class="sf-chip"><span class="sf-dot"></span>Claude</div>
-            </div>
-            <div class="sf-body">
-              <div class="sf-session">
-                <div class="sf-rail">
-                  <div class="sf-msg"><span>YOU</span>a habit tracker with a weekly chart</div>
-                  <div class="sf-msg k"><span>KRATE</span>On it. I'll show you each step as it happens.</div>
-                  <div class="sf-msg k"><span>KRATE</span>The code is written. Building it now.</div>
-                </div>
-                <div class="sf-stage">
-                  <div class="sf-make">
-                    <div class="sf-make-head">Making your app <span class="sf-live"><i></i>Live</span></div>
-                    <div class="sf-bar"><i style="width:56%"></i></div>
-                    <ul class="sf-steps">
-                      <li class="done">Understanding what you asked for</li>
-                      <li class="done">Writing the code</li>
-                      <li class="now">Building it</li>
-                      <li>Packing it into one file</li>
-                      <li>Checking it only touches what it declared</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+    <div class="step-visual reveal">
+      <div class="say">
+        <div class="say-label">DESCRIBE YOUR APP</div>
+        <div class="say-box"><span id="sayText"></span><span class="caret" id="sayCaret"></span></div>
+        <div class="say-ais">
+          <span>Claude</span><span>Codex</span><span>Gemini</span><span>Copilot</span><span>Grok</span>
         </div>
-
-        <div class="demo">
-          <div class="sframe">
-            <div class="sf-head">
-              <div class="term-dots"><i></i><i></i><i></i></div>
-              <div class="sf-brand"><img src="./krate-glyph-white.png" alt="" width="13" height="13" />KRATE</div>
-              <div class="sf-chip"><span class="sf-dot"></span>Claude</div>
-            </div>
-            <div class="sf-body sf-center sf-dim">
-              <div class="sf-consent-card">
-                <img src="./krate-glyph-white.png" alt="" width="28" height="28" />
-                <b>Open &ldquo;Habit Tracker&rdquo;?</b>
-                <p>Habit Tracker wants permission to:</p>
-                <ul>
-                  <li>open a window</li>
-                  <li>save your data on this computer</li>
-                </ul>
-                <p class="sf-consent-note">It gets nothing else: no files, no network,
-                no camera. Krate enforces exactly this list.</p>
-                <div class="sf-consent-btns"><span>Cancel</span><b>Allow and open</b></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="demo">
-          <div class="sframe">
-            <div class="sf-head">
-              <div class="term-dots"><i></i><i></i><i></i></div>
-              <div class="sf-brand"><img src="./krate-glyph-white.png" alt="" width="13" height="13" />KRATE</div>
-              <div class="sf-chip"><span class="sf-dot"></span>Claude</div>
-            </div>
-            <div class="sf-body sf-center">
-              <div class="sf-filecard">
-                <div class="sf-fileicon"><img src="./krate-document-icon.png" alt="" width="52" height="52" /></div>
-                <b>habit-tracker.krate</b>
-                <span>41 KB &middot; one file, the whole app</span>
-                <div class="sf-oses">
-                  <em><i>&#10003;</i> macOS</em>
-                  <em><i>&#10003;</i> Windows</em>
-                  <em><i>&#10003;</i> Linux</em>
-                </div>
-                <div class="sf-btns sf-btns-center"><span class="sf-b1">Open it</span><span class="sf-b2">Share</span></div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="demo">
-          <div class="term">
-            <div class="term-head">
-              <div class="term-dots"><i></i><i></i><i></i></div>
-              <div class="term-title">krate check-app</div>
-              <div class="term-meta">the oracle</div>
-            </div>
-            <div class="term-body">
-              <div><span class="p">$</span> krate check-app habit-tracker/</div>
-              <br />
-              <div>&nbsp;&nbsp;<span class="g">✓</span> build passed</div>
-              <div>&nbsp;&nbsp;<span class="g">✓</span> imports passed <span class="p">-- only krate:* APIs, nothing hidden</span></div>
-              <div>&nbsp;&nbsp;<span class="g">✓</span> run passed</div>
-              <div>&nbsp;&nbsp;<span class="g">✓</span> usability passed <span class="p">-- clicked like a person would</span></div>
-              <br />
-              <div><span class="g">OK</span></div>
-              <br />
-              <div><span class="p">$</span> krate run --shoot frame.png habit-tracker.krate</div>
-              <div><span class="g">✓</span> frame.png written <span class="p">-- the window, as pixels, headless</span></div>
-            </div>
-            <div class="term-status"><span>six stages, one verdict</span><span>exit 0</span></div>
-          </div>
-        </div>
-
-        <div class="demo">
-          <div class="sframe">
-            <div class="sf-head">
-              <div class="term-dots"><i></i><i></i><i></i></div>
-              <div class="sf-brand"><img src="./krate-glyph-white.png" alt="" width="13" height="13" />KRATE</div>
-              <div class="sf-chip"><span class="sf-dot"></span>Claude</div>
-            </div>
-            <div class="sf-body sf-center">
-              <div class="sf-publish">
-                <div class="sf-pubrow"><i class="ok">&#10003;</i> Uploaded &mdash; link ready <span>41 KB</span></div>
-                <div class="sf-publink"><span>krate.tech/cloud/habit-tracker</span><em>Copy</em></div>
-                <div class="sf-pubnote">Anyone with the link can run it. Anyone without
-                Krate gets a one-line install first.</div>
-                <div class="sf-pubgallery">
-                  <div class="sf-pubapp"><i></i>Habit Tracker</div>
-                  <div class="sf-pubapp"><i></i>Track Dash</div>
-                  <div class="sf-pubapp"><i></i>Recipe Box</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
       </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="reveal">
+      <div class="kicker">02 · SEND IT</div>
+      <h2>Send it like a photo.</h2>
+      <p>Mail it, drop it in a chat, put it on a USB stick. The whole app is
+      typically 15-60 KB -- hundreds of them fit in one photo's worth of
+      space. The same file opens on Mac, Windows, and Linux.</p>
+    </div>
+    <div class="step-visual">
+      <div class="chat" id="chatDemo" aria-label="An app being sent in a chat">
+        <div class="bubble b-them">can you send the invoice thing?</div>
+        <div class="bubble b-file">
+          <span class="mini">
+            <span class="mini-h">Studio rate card</span>
+            <span class="mini-bars"><i></i><i></i><i></i></span>
+            <span class="mini-total"><span>TOTAL</span><b>$2,640</b></span>
+          </span>
+          <span class="frow">
+            <span class="fname">RateCard.krate</span>
+            <span>41 KB</span>
+          </span>
+        </div>
+        <div class="bubble b-you">double-click it, it just opens</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="reveal">
+      <div class="kicker">03 · THEY DECIDE</div>
+      <h2>It says what it wants.<br />Before it runs.</h2>
+      <p>An app made by an AI -- or sent by a stranger -- opens inside a
+      sandbox. It reaches nothing by default: not their files, not their
+      network, not their microphone. What it wants is shown in plain words,
+      and the person opening it decides. Deny it, and the app still opens,
+      just without that power.</p>
+    </div>
+    <div class="step-visual">
+      <div class="sheet" id="consentSheet" role="img" aria-label="Krate's permission dialog">
+        <img src="./krate-glyph-white.png" alt="" />
+        <h3>Open &ldquo;Rate Card&rdquo;?</h3>
+        <div class="asks">
+          <div><i>&#10003;</i> open a window</div>
+          <div><i>&#10003;</i> save your data on this computer</div>
+        </div>
+        <p class="none">It gets nothing else: no files, no network, no camera.
+        Krate enforces exactly this list.</p>
+        <div class="btns">
+          <span class="pill">Cancel</span>
+          <span class="pill pill-primary">Allow and open</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</section>
+
+<!-- ===================================================== the honest panel -->
+<section class="first reveal">
+  <div class="first-inner">
+    <img src="./krate-glyph-white.png" alt="" />
+    <div>
+      <b>The first one installs Krate.</b>
+      <p>Like a player for a movie: about 24 MB, once, free and open source.
+      The next file they ever receive just opens.</p>
     </div>
   </div>
 </section>
 
-<!-- ============================================================== receipts -->
-<section class="bento">
-  <div class="wrap">
-    <h2 class="section-h bento-h reveal">But why Krate?</h2>
-    <div class="bento-grid">
-
-      <div class="bento-card bento-tall reveal">
-        <b>24&times; lighter</b>
-        <p>95&nbsp;MB holding a 50,000-line document. The same app built on
-        Electron needs 2.3&nbsp;GB.</p>
-        <div class="bento-bars">
-          <div class="bb"><i style="height:100%"></i><span>2.3&nbsp;GB</span><em>Electron</em></div>
-          <div class="bb"><i style="height:6%"></i><span>95&nbsp;MB</span><em>Krate</em></div>
-        </div>
-      </div>
-
-      <div class="bento-card reveal">
-        <div class="bento-n">8&times;</div>
-        <b>faster to open</b>
-        <p>0.2&nbsp;s to a working window. Electron takes 1.8&nbsp;s on a good
-        day &mdash; 17&nbsp;s on its first.</p>
-      </div>
-
-      <div class="bento-card reveal">
-        <div class="bento-n">58&nbsp;fps</div>
-        <b>scrolling, no jitter</b>
-        <div class="bento-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-        <p>Frame pacing within 0.3&nbsp;ms of the display's clock, at 5,000
-        lines and at 50,000 alike.</p>
-      </div>
-
-      <div class="bento-card bento-wide reveal">
-        <div class="bento-n">26&times;</div>
-        <div>
-          <b>less idle CPU</b>
-          <p>0.8% with the document open; the Electron build burns 21% of a core
-          doing nothing. Measured against MarkText 0.17.1 on Apple silicon,
-          August 2026 &mdash; every number, the method, and the losses we fixed on
-          the way: <a href="https://github.com/incyashraj/krate/blob/main/evidence/benchmarks/2026-08-16-notes-battery-macos.md">the full benchmark log</a>.</p>
-        </div>
-      </div>
-
+<!-- ===================================================== why not a webpage -->
+<section class="why wrap">
+  <div class="reveal">
+    <h2>Why this is not a webpage.</h2>
+    <p class="why-sub">A link needs a server, an account, and your continued
+    existence. A file needs none of that.</p>
+  </div>
+  <div class="why-grid reveal">
+    <div class="why-cell">
+      <b>They keep it</b>
+      <p>The file is theirs, like a photo. No site to visit, nothing hosted,
+      no login. Send a new version and they keep that too.</p>
+    </div>
+    <div class="why-cell">
+      <b>It works next year</b>
+      <p>Offline, on a plane, after your hosting lapses, even if you
+      disappear. The app does not depend on anyone staying in business.</p>
+    </div>
+    <div class="why-cell">
+      <b>It cannot phone home</b>
+      <p>&ldquo;No network&rdquo; is not a promise in a privacy policy. It is
+      enforced by Krate on their machine, whatever the code says.</p>
     </div>
   </div>
 </section>
 
-<!-- ================================================================== grid -->
-<section class="gridsec">
-  <div class="wrap">
-    <h2 class="grid-h reveal">Everything the file needs to be trusted</h2>
-    <p class="lead reveal">One runtime for the whole path: make, check, open, send, publish.</p>
-    <div class="cap-grid">
-      <div class="cap reveal"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7l8-4z"/></svg><div><b>Sandboxed by default</b><span>Apps reach nothing until you grant it. Deny and they still open.</span></div></div>
-      <div class="cap reveal"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 7h16M4 12h16M4 17h10"/></svg><div><b>Plain-English permissions</b><span>"Save its own data", not an API name. You read it, you decide.</span></div></div>
-      <div class="cap reveal"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><div><b>Six platform builds</b><span>Mac, Windows, Linux -- Intel and ARM. Same file everywhere.</span></div></div>
-      <div class="cap reveal"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 3H6v18h12V8l-5-5z"/><path d="M13 3v5h5"/></svg><div><b>One small file</b><span>Typically 15-60 KB. Hundreds of apps fit in one photo's worth.</span></div></div>
-      <div class="cap reveal"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M4 12a8 8 0 0116 0M4 12h2m12 0h2"/></svg><div><b>Pixel proof</b><span>`--shoot` renders any app's window to a PNG, headless.</span></div></div>
-      <div class="cap reveal"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 6L9 17l-5-5"/></svg><div><b>check-app verdicts</b><span>Build, imports, run, usability -- one command, one honest answer.</span></div></div>
-      <div class="cap reveal"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 14a5 5 0 007 0l3-3a5 5 0 00-7-7l-1.5 1.5M14 10a5 5 0 00-7 0l-3 3a5 5 0 007 7L12.5 19"/></svg><div><b>Run by URL</b><span>`krate run https://...` -- no download step, wall still applies.</span></div></div>
-      <div class="cap reveal"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3v13m0 0l-4-4m4 4l4-4M5 21h14"/></svg><div><b>Publish a link</b><span>One command, a public link, a gallery of real screenshots.</span></div></div>
-      <div class="cap reveal"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V5M8 5h8M9 13h.01M15 13h.01"/></svg><div><b>Any AI CLI</b><span>Claude, Codex, Gemini, Copilot, Grok -- yours, not an included one.</span></div></div>
-      <div class="cap reveal"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 7H7a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-2M14 4h6v6M20 4l-9 9"/></svg><div><b>MCP for Claude &amp; Cursor</b><span>Build Krate apps from inside the tools you already use.</span></div></div>
-      <div class="cap reveal"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3a9 9 0 100 18 9 9 0 000-18zM3.6 9h16.8M3.6 15h16.8M12 3c2.5 2.5 3.8 5.6 3.8 9s-1.3 6.5-3.8 9c-2.5-2.5-3.8-5.6-3.8-9s1.3-6.5 3.8-9z"/></svg><div><b>Install once, open anything</b><span>Receiving an app needs Krate once -- about 24 MB, like a media player -- then every app is just a file.</span></div></div>
-      <div class="cap reveal"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg><div><b>Open source</b><span>The runtime, the checks, this site. Read it all on GitHub.</span></div></div>
-    </div>
+<!-- ================================================================= proof -->
+<section class="proof wrap">
+  <div class="reveal">
+    <h2>Measured, not promised.</h2>
+    <p class="proof-sub">The same 50,000-line notes workload, built in Krate
+    and measured against the same app built on Electron (MarkText 0.17.1),
+    on the same Apple silicon Mac.</p>
   </div>
+  <div class="ptable reveal">
+    <table>
+      <thead>
+        <tr><th></th><th>ELECTRON BUILD</th><th>KRATE BUILD</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>The file itself</td><td class="e">271 MB installed</td><td class="k">37 KB</td></tr>
+        <tr><td>Memory, 50,000 lines</td><td class="e">2.3 GB, five processes</td><td class="k">95 MB, one process</td></tr>
+        <tr><td>Opens in</td><td class="e">1.8 s</td><td class="k">0.2 s</td></tr>
+        <tr><td>Idle CPU</td><td class="e">21% of a core</td><td class="k">0.8%</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="proof-src reveal">Historical internal measurements, August 2026.
+  Method, raw samples, and the losses we found on the way:
+  <a href="https://github.com/incyashraj/krate/tree/main/evidence/benchmarks">the benchmark log</a>.</p>
 </section>
 
-<!-- ================================================================== band -->
-<section class="band" id="get-krate">
-  <div class="wrap">
-    <!-- Krate Studio, the app that makes apps -- and the way we recommend
-         people use Krate. The terminal tool ships inside it. -->
-    <a class="studio-card reveal" href="/studio/">
-      <div class="studio-card-text">
-        <p class="studio-eyebrow"><span class="studio-dot"></span>RECOMMENDED</p>
-        <h2 class="section-h">Krate Studio</h2>
-        <p>Describe an app in a window instead of a terminal. Watch it being
-        made, change it by asking, and send the file to anyone.</p>
-      </div>
-      <span class="studio-go">Get Krate Studio &rarr;</span>
+<!-- ================================================================= close -->
+<section class="close wrap" id="get-krate">
+  <div id="install"></div>
+  <h2 class="reveal">Make something useful.<br />Send it to someone.</h2>
+  <p class="reveal">Download Krate Studio and describe your first app to the AI you already have.</p>
+  <div class="actions reveal">
+    <a class="pill" href="/docs/">Read docs</a>
+    <a class="pill pill-primary" data-dl="krate-studio|universal|dmg" href="/studio/">Download Krate Studio</a>
+  </div>
+
+  <div class="dl-grid reveal" id="download">
+    <a class="dl" data-os="mac" data-dl="krate-studio|universal|dmg" href="https://github.com/incyashraj/krate/releases/latest">
+      <b>macOS</b><span>One file, every Mac · signed and notarised</span>
     </a>
-
-    <!-- Direct downloads. The one-line installer above is still the fastest
-         path for anyone comfortable in a terminal, but telling someone who
-         has never opened one to paste a curl command is how you lose them. -->
-    <div class="dl-card reveal" id="download">
-      <div class="dl-head">
-        <h2 class="section-h">Or download it</h2>
-      </div>
-      <p class="dl-sub">Krate Studio for your computer, with the terminal tool
-      inside. New releases ship often; the updater keeps you current.</p>
-
-      <div class="dl-grid">
-        <a class="dl" data-os="mac" data-dl="krate-studio|universal|dmg" href="https://github.com/incyashraj/krate/releases/latest">
-          <b>macOS</b><span>One file, every Mac</span>
-        </a>
-        <a class="dl" data-os="win" data-dl="krate-studio|windows-x64-setup|exe" href="https://github.com/incyashraj/krate/releases/latest">
-          <b>Windows</b><span>Installer, 64-bit</span>
-        </a>
-        <a class="dl" data-os="linux" data-dl="krate-studio|linux-x86_64|AppImage" href="https://github.com/incyashraj/krate/releases/latest">
-          <b>Linux</b><span>AppImage, x86_64</span>
-        </a>
-      </div>
-
-      <p class="dl-foot" id="dlFoot">
-        <a href="https://github.com/incyashraj/krate/releases/latest">All releases and checksums</a>
-        &middot; signed and notarised by Apple, so downloads open
-        without warnings.
-      </p>
-      <p class="dl-foot">
-        Prefer the terminal? The CLI installs in
-        <a href="/docs/quickstart.html">one line, in the docs</a>.
-      </p>
-    </div>
+    <a class="dl" data-os="win" data-dl="krate-studio|windows-x64-setup|exe" href="https://github.com/incyashraj/krate/releases/latest">
+      <b>Windows</b><span>Installer, 64-bit</span>
+    </a>
+    <a class="dl" data-os="linux" data-dl="krate-studio|linux-x86_64|AppImage" href="https://github.com/incyashraj/krate/releases/latest">
+      <b>Linux</b><span>AppImage, x86_64</span>
+    </a>
   </div>
-</section>
-
-<!-- ================================================================= final -->
-<section class="final">
-  <div class="wrap">
-    <h2 class="cta-h reveal">Make something useful.<br />Send it to someone.</h2>
-    <p class="reveal">Download Krate Studio and describe your first app to the AI you already have.</p>
-    <div class="actions reveal">
-      <a class="pill" href="/docs/">Read docs</a>
-      <a class="pill pill-primary" href="/studio/">Download Krate Studio</a>
-    </div>
-  </div>
+  <p class="close-foot reveal" id="dlFoot">
+    <a href="https://github.com/incyashraj/krate/releases/latest">All releases and checksums</a>
+    &middot; prefer the terminal? The CLI installs in
+    <a href="/docs/quickstart.html">one line, in the docs</a>.
+  </p>
 </section>
 
 </main>
 
 <!-- ================================================================ footer -->
 <footer class="site-foot">
-  <div class="wrap">
-    <div class="foot-grid">
-      <div class="foot-brand">
-        <img src="./krate-glyph-white.png" alt="Krate" />
-        <div>Krate</div>
-        <div class="c">© 2026 Krate Labs · MIT or Apache-2.0</div>
-      </div>
-      <div class="foot-col">
-        <b>Product</b>
-        <a href="#get-krate">Start</a>
-        <a href="/cloud/">Gallery</a>
-        <a href="/progress/">Platforms</a>
-        <a href="/faq.html">FAQ</a>
-      </div>
-      <div class="foot-col">
-        <b>Develop</b>
-        <a href="/docs/">Docs</a>
-        <a href="/reports/">Reports</a>
-        <a href="/progress/">Progress</a>
-        <a href="https://github.com/incyashraj/krate">GitHub</a>
-      </div>
-      <div class="foot-col">
-        <b>Cloud</b>
-        <a href="/cloud/">Browse apps</a>
-        <a href="/publish/">Publish</a>
-        <a href="/contact/">Contact</a>
-      </div>
-      <div class="foot-col">
-        <b>Learn</b>
-        <a href="/run-ai-generated-code-safely.html">Run AI code safely</a>
-        <a href="/share-an-app-made-with-ai.html">Share an AI-made app</a>
-        <a href="/portable-desktop-app-format.html">The .krate format</a>
-      </div>
+  <div class="wrap foot-inner">
+    <div class="foot-brand">
+      <img src="./krate-glyph-white.png" alt="" width="18" height="18" />
+      <span>Krate</span>
     </div>
-    <div class="foot-note">
-      <span>Built by <a href="https://github.com/incyashraj"><u>Yashraj Pardeshi</u></a>. Previously named Layer36.</span>
-      <span>This site is hand-written HTML -- view source, it's all there.</span>
-    </div>
+    <nav class="foot-links" aria-label="Footer">
+      <a href="/studio/">Studio</a>
+      <a href="/cloud/">Gallery</a>
+      <a href="/open/">Received an app?</a>
+      <a href="/docs/">Docs</a>
+      <a href="/faq.html">FAQ</a>
+      <a href="/contact/">Contact</a>
+      <a href="/privacy/">Privacy</a>
+      <a href="https://github.com/incyashraj/krate">GitHub</a>
+    </nav>
+    <p class="foot-note">The player is open source, MIT or Apache-2.0. © 2026 Krate Labs.</p>
   </div>
 </footer>
 
 <script>
-/* All of the page's behaviour, in order: header shadow, copy buttons, the
-   OS toggle, the rotating hero word, the pinned-terminal scroller, reveals,
-   and touch support for the nav panels. Vanilla, no dependencies. */
 (function () {
   "use strict";
+  var reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   /* Header underline once the page moves. */
   var head = document.getElementById("siteHead");
@@ -610,243 +681,131 @@
     head.classList.toggle("scrolled", scrollY > 8);
   }, { passive: true });
 
-  /* Copy buttons: copy whichever command is visible in that box. */
-  document.querySelectorAll(".cmd").forEach(function (box) {
-    var btn = box.querySelector(".copy");
-    if (!btn) return;
-    btn.addEventListener("click", function () {
-      var code = box.querySelector("code:not([hidden])");
-      navigator.clipboard.writeText(code.textContent).then(function () {
-        btn.classList.add("done");
-        btn.textContent = "✓";
-        setTimeout(function () {
-          btn.classList.remove("done");
-          btn.textContent = "⧉";
-        }, 1400);
-      });
-    });
-  });
-
-  /* OS toggle: every command box on the page follows it. */
-  document.querySelectorAll(".os-toggle button").forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      var os = btn.dataset.os;
-      document.querySelectorAll(".os-toggle button").forEach(function (b) {
-        b.setAttribute("aria-pressed", String(b.dataset.os === os));
-      });
-      document.querySelectorAll(".cmd code").forEach(function (c) {
-        c.hidden = c.dataset.cmd !== os;
-      });
-      // The cmd.exe hint belongs to the Windows tab only. `irm` is a
-      // PowerShell alias, and a first-time visitor in Command Prompt gets
-      // "'irm' is not recognized" -- which is where somebody's friend
-      // actually stopped.
-      document.querySelectorAll(".win-note").forEach(function (n) {
-        n.hidden = os !== "win";
-      });
-    });
-  });
-
-  /* On Windows, default the command to the Windows one. */
-  if (/Windows/.test(navigator.userAgent)) {
-    var winBtn = document.querySelector('.os-toggle button[data-os="win"]');
-    if (winBtn) winBtn.click();
-  }
-
-  /* The rotating word: letters leave upward and arrive from below with a
-     blur, inside the clipped span. Skipped entirely under reduced motion. */
-  var words = ["send", "run", "trust", "keep"];
-  var rotEl = document.getElementById("rotWord");
-  var reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (rotEl && !reduced) {
-    var wi = 0;
-    var setWord = function (word, entering) {
-      rotEl.innerHTML = "";
-      word.split("").forEach(function (ch, i) {
-        var s = document.createElement("span");
-        s.textContent = ch;
-        s.style.transition = "opacity .3s ease, transform .3s ease, filter .3s ease";
-        s.style.transitionDelay = (i * 40) + "ms";
-        if (entering) {
-          s.style.opacity = "0";
-          s.style.transform = "translateY(14px)";
-          s.style.filter = "blur(4px)";
-          requestAnimationFrame(function () {
-            requestAnimationFrame(function () {
-              s.style.opacity = "1";
-              s.style.transform = "none";
-              s.style.filter = "none";
-            });
-          });
-        }
-        rotEl.appendChild(s);
-      });
-    };
-    setWord(words[0], false);
-    setInterval(function () {
-      /* leave */
-      Array.prototype.forEach.call(rotEl.children, function (s, i) {
-        s.style.transitionDelay = (i * 30) + "ms";
-        s.style.opacity = "0";
-        s.style.transform = "translateY(-14px)";
-        s.style.filter = "blur(4px)";
-      });
-      setTimeout(function () {
-        wi = (wi + 1) % words.length;
-        setWord(words[wi], true);
-      }, 350);
-    }, 2600);
-  }
-
-  /* Hero terminal: a request being typed, looping. */
-  /* The hero Studio window: type, build, done -- the whole product in
-     eighteen quiet seconds, looping. Reduced motion gets the finished
-     state, standing still. */
-  var sfHome = document.getElementById("sfHome");
-  if (sfHome) {
-    var sfSession = document.getElementById("sfSession");
-    var sfTyped = document.getElementById("sfTyped");
-    var sfSend = document.getElementById("sfSend");
-    var sfMake = document.getElementById("sfMake");
-    var sfDone = document.getElementById("sfDone");
-    var sfDoneMsg = document.getElementById("sfDoneMsg");
-    var sfFill = document.getElementById("sfFill");
-    var sfSteps = document.getElementById("sfSteps").children;
-    var PROMPT = "a recipe box for family dinners";
-
-    function sfShowDone() {
-      sfHome.hidden = true;
-      sfSession.hidden = false;
-      sfMake.hidden = true;
-      sfDone.hidden = false;
-      sfDoneMsg.hidden = false;
-      for (var i = 0; i < sfSteps.length; i++) sfSteps[i].className = "done";
-    }
-
-    if (reduced) {
-      sfShowDone();
-    } else {
-      var timers = [];
-      function at(ms, fn) { timers.push(setTimeout(fn, ms)); }
-      function cycle() {
-        timers.forEach(clearTimeout);
-        timers = [];
-        // Reset to the home screen.
-        sfHome.hidden = false;
-        sfSession.hidden = true;
-        sfMake.hidden = false;
-        sfDone.hidden = true;
-        sfDoneMsg.hidden = true;
-        sfTyped.textContent = "";
-        sfSend.classList.remove("go");
-        sfFill.style.width = "6%";
-        for (var i = 0; i < sfSteps.length; i++) sfSteps[i].className = "";
-        // Type the request.
-        for (var c = 1; c <= PROMPT.length; c++) {
-          (function (n) { at(700 + n * 46, function () { sfTyped.textContent = PROMPT.slice(0, n); }); })(c);
-        }
-        var sent = 700 + PROMPT.length * 46 + 500;
-        at(sent - 320, function () { sfSend.classList.add("go"); });
-        at(sent, function () { sfHome.hidden = true; sfSession.hidden = false; });
-        // Stages tick, the bar breathes forward.
-        var stepAt = [400, 1500, 4300, 5400, 6200];
-        for (var k = 0; k < stepAt.length; k++) {
-          (function (idx) {
-            at(sent + stepAt[idx], function () {
-              for (var j = 0; j < sfSteps.length; j++) {
-                sfSteps[j].className = j < idx ? "done" : j === idx ? "now" : "";
-              }
-              sfFill.style.width = (8 + idx * 20) + "%";
-            });
-          })(k);
-        }
-        // Done: the card arrives the way the real one does.
-        at(sent + 7400, function () {
-          for (var j = 0; j < sfSteps.length; j++) sfSteps[j].className = "done";
-          sfFill.style.width = "100%";
-        });
-        at(sent + 7900, function () {
-          sfMake.hidden = true;
-          sfDone.hidden = false;
-          sfDoneMsg.hidden = false;
-        });
-        at(sent + 19000, cycle);
-      }
-      cycle();
-    }
-  }
-
-  /* The pinned scroller: whichever feature section crosses the middle of
-     the viewport owns the terminal. */
-  var demos = document.querySelectorAll("#stick .demo");
-  var feats = document.querySelectorAll(".feat[data-demo]");
-  if (demos.length && "IntersectionObserver" in window) {
+  /* Sections enter once, then stay. A fallback timer makes sure nothing
+     is ever stuck invisible. */
+  var reveals = document.querySelectorAll(".reveal");
+  if (reduced || !("IntersectionObserver" in window)) {
+    reveals.forEach(function (el) { el.classList.add("in"); });
+  } else {
     var io = new IntersectionObserver(function (entries) {
       entries.forEach(function (e) {
         if (!e.isIntersecting) return;
-        var i = Number(e.target.dataset.demo);
-        demos.forEach(function (d, j) { d.classList.toggle("active", i === j); });
+        e.target.classList.add("in");
+        io.unobserve(e.target);
       });
-    }, { rootMargin: "-45% 0px -45% 0px" });
-    feats.forEach(function (f) { io.observe(f); });
+    }, { rootMargin: "0px 0px -8% 0px" });
+    reveals.forEach(function (el) { io.observe(el); });
+    setTimeout(function () {
+      reveals.forEach(function (el) { el.classList.add("in"); });
+    }, 2500);
   }
 
-  /* Inline demos for small screens: each section gets a copy of its
-     terminal, so nothing depends on the sticky column existing. */
-  feats.forEach(function (f) {
-    var slot = f.querySelector(".demo-inline");
-    var demo = demos[Number(f.dataset.demo)];
-    if (slot && demo) slot.appendChild(demo.firstElementChild.cloneNode(true));
-  });
-
-  /* Reveals. */
-  if ("IntersectionObserver" in window) {
-    var rio = new IntersectionObserver(function (entries) {
-      entries.forEach(function (e) {
-        if (e.isIntersecting) { e.target.classList.add("in"); rio.unobserve(e.target); }
-      });
-    }, { threshold: 0.12 });
-    document.querySelectorAll(".reveal").forEach(function (el) { rio.observe(el); });
+  /* ------------------------------------------------------- the card wakes */
+  var card = document.getElementById("theCard");
+  var note = document.getElementById("cardNote");
+  function wake() {
+    if (!card.classList.contains("asleep")) return;
+    card.classList.remove("asleep");
+    card.classList.add("awake");
+    note.classList.add("swap");
+    setTimeout(function () {
+      note.textContent = "No -- the app itself. Try it.";
+      note.classList.remove("swap");
+    }, 280);
+  }
+  if (reduced) {
+    card.classList.remove("asleep");
+    card.classList.add("awake");
+    note.textContent = "A real Krate app. Try it.";
   } else {
-    document.querySelectorAll(".reveal").forEach(function (el) { el.classList.add("in"); });
+    setTimeout(wake, 1100);
+    card.addEventListener("click", wake, { once: true });
   }
 
-  /* Nav panels on touch: first tap opens, tap elsewhere closes. */
-  document.querySelectorAll(".nav-item > .nav-link").forEach(function (btn) {
-    btn.addEventListener("click", function (e) {
-      var item = btn.parentElement;
-      var was = item.classList.contains("open");
-      document.querySelectorAll(".nav-item.open").forEach(function (i) {
-        i.classList.remove("open");
+  /* The rate card is a working app, because the page's one demo should be
+     the product, not a film of it. */
+  var days = document.getElementById("rcDays");
+  var hours = document.getElementById("rcHours");
+  var rush = document.getElementById("rcRush");
+  var total = document.getElementById("rcTotal");
+  function calc() {
+    var d = Math.max(0, parseInt(days.value, 10) || 0);
+    var h = Math.max(0, parseInt(hours.value, 10) || 0);
+    var t = d * 800 + h * 120;
+    if (rush.getAttribute("aria-pressed") === "true") t = Math.round(t * 1.25);
+    total.textContent = "$" + t.toLocaleString("en-US");
+  }
+  days.addEventListener("input", calc);
+  hours.addEventListener("input", calc);
+  rush.addEventListener("click", function () {
+    rush.setAttribute("aria-pressed",
+      rush.getAttribute("aria-pressed") === "true" ? "false" : "true");
+    calc();
+  });
+
+  /* --------------------------------------- 01: the sentence, typed once */
+  var sayText = document.getElementById("sayText");
+  var sayCaret = document.getElementById("sayCaret");
+  var SENTENCE = "a rate card for my studio -- day rate 800, extra hour 120, rush +25%";
+  if (reduced || !("IntersectionObserver" in window)) {
+    sayText.textContent = SENTENCE;
+    if (sayCaret) sayCaret.remove();
+  } else {
+    var typed = false;
+    var typeIt = function () {
+      if (typed) return;
+      typed = true;
+      var i = 0;
+      var t = setInterval(function () {
+        i += 1;
+        sayText.textContent = SENTENCE.slice(0, i);
+        if (i >= SENTENCE.length) {
+          clearInterval(t);
+          setTimeout(function () { sayCaret.style.opacity = "0"; }, 2400);
+        }
+      }, 34);
+    };
+    var sayIo = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        sayIo.disconnect();
+        typeIt();
       });
-      if (!was) item.classList.add("open");
-      btn.setAttribute("aria-expanded", String(!was));
-      e.stopPropagation();
-    });
-  });
-  document.addEventListener("click", function () {
-    document.querySelectorAll(".nav-item.open").forEach(function (i) {
-      i.classList.remove("open");
-    });
-  });
+    }, { threshold: 0.5 });
+    sayIo.observe(sayText.parentElement);
+    /* If the observer never fires, the sentence still appears. */
+    setTimeout(function () {
+      if (!typed) { typed = true; sayText.textContent = SENTENCE; sayCaret.style.opacity = "0"; }
+    }, 10000);
+  }
 
-  /* Download links, resolved to whatever the current release is.
+  /* 02 and 03 enter when scrolled to. A late fallback guarantees they can
+     never be stuck invisible if the observer misbehaves. */
+  var chat = document.getElementById("chatDemo");
+  var sheet = document.getElementById("consentSheet");
+  if ("IntersectionObserver" in window) {
+    var seenIo = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        e.target.classList.add("in");
+        seenIo.unobserve(e.target);
+      });
+    }, { threshold: 0.4 });
+    seenIo.observe(chat);
+    seenIo.observe(sheet);
+  }
+  setTimeout(function () {
+    chat.classList.add("in");
+    sheet.classList.add("in");
+  }, 8000);
 
-     The filenames carry a version, so hard-coding them means every link
-     silently 404s the day after a release. Each link starts pointing at the
-     releases page -- correct, if less direct -- and is upgraded to the exact
-     file once the tag is known. A failed lookup leaves the safe link alone. */
-  /* The visitor's own system first, said plainly. */
-  (function () {
-    var ua = navigator.userAgent;
-    var os = /Mac/i.test(ua) ? "mac" : /Win/i.test(ua) ? "win" : /Linux|X11/i.test(ua) ? "linux" : null;
-    var mine = os && document.querySelector('.dl-grid [data-os="' + os + '"]');
-    if (mine) {
-      mine.parentNode.prepend(mine);
-      var b = mine.querySelector("b");
-      b.textContent = "Download for " + b.textContent;
-    }
-  })();
+  /* ------------------------------------- downloads: resolve real assets */
+  /* Same resolver the old page shipped: point every [data-dl] at the
+     latest release's exact asset, or mark it coming. */
+  var btn = document.getElementById("heroStudio");
+  var ua = navigator.userAgent;
+  if (ua.indexOf("Windows") !== -1) btn.dataset.dl = "krate-studio|windows-x64-setup|exe";
+  else if (ua.indexOf("Linux") !== -1 && ua.indexOf("Android") === -1) btn.dataset.dl = "krate-studio|linux-x86_64|AppImage";
 
   var dls = document.querySelectorAll("[data-dl]");
   if (dls.length) {
@@ -864,15 +823,13 @@
           if (names.indexOf(file) !== -1) {
             a.href = "https://github.com/incyashraj/krate/releases/download/" +
               rel.tag_name + "/" + file;
-          } else {
+          } else if (a.classList.contains("dl")) {
             a.classList.add("dl-soon");
             a.querySelector("span").textContent += " (coming)";
           }
         });
         var foot = document.getElementById("dlFoot");
         if (foot) foot.dataset.version = version;
-        var hv = document.getElementById("heroVer");
-        if (hv) hv.textContent = rel.tag_name;
       })
       .catch(function () {});
   }
@@ -883,10 +840,8 @@
 // Count the visit, and nothing about the visitor.
 //
 // No cookie, no stored id, no query string, no referrer -- the page path and
-// the day, sent to our own hub. Before this there was no way to answer "how
-// many people came to krate.tech", which is the first question anyone asks
-// about a launch. Deliberately not Google Analytics or Plausible: this sends
-// strictly less, to a server we run.
+// the day, sent to our own hub. Deliberately not Google Analytics or
+// Plausible: this sends strictly less, to a server we run.
 (function () {
   try {
     fetch("https://hub.krate.tech/view", {
