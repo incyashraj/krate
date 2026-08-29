@@ -255,6 +255,17 @@ A run-and-gun game therefore reads: \
 `key_held(\"ArrowLeft\")`, `key_held(\"Space\")` to jump, \
 `key_held(\"z\")` to shoot. `apps/krate-nova` and `apps/krate-bounce` \
 are shipped examples doing exactly this.\n\n\
+## The clock is real: dates, daily resets, elapsed time\n\n\
+`time.clock` gives wall-clock time (milliseconds since the Unix epoch) and \
+it IS granted -- do not talk yourself out of it. \"Show today's date\", \
+\"reset the ticks each morning\", \"how long since X\" are all one pattern: \
+derive a day number `epoch_ms / 86_400_000`, store it with the data \
+(`store.kv`), and on load compare -- a new day means reset before drawing. \
+No timers, no midnight callback, no background work: the reset happens \
+whenever the app next opens, which is exactly what a person expects. (A \
+generated app once argued this was impossible mid-build, then used the \
+clock correctly anyway; the doubt cost twenty minutes. It is possible. \
+K-198.)\n\n\
 ## Motion that reads as polish\n\n\
 The SDK ships `krate::motion` (no_std, no capability): `ease_out`, \
 `ease_in_out`, `smoothstep`, and a critically-damped `Spring`. Measure dt \

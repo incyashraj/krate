@@ -715,12 +715,11 @@
   (function () {
     var id = new URLSearchParams(location.search).get("a");
     if (!id || !/^[0-9a-f]{8,64}$/.test(id)) return;
-    fetch("https://hub.krate.tech/apps")
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        var app = ((data && data.apps) || []).find(function (a) {
-          return a.id === id || a.id.indexOf(id) === 0;
-        });
+    // /meta answers for ANY app the link names -- listed or unlisted.
+    // Holding the link is the access, same as the bytes.
+    fetch("https://hub.krate.tech/meta/" + id)
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (app) {
         if (!app) return;
         var name = (app.meta && app.meta.name) || "The app";
         var kb = Math.max(1, Math.ceil(((app.meta && app.meta.size) || 0) / 1024));

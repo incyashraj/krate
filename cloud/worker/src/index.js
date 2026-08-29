@@ -127,6 +127,13 @@ export default {
       if (request.method === "GET" && pathname === "/apps") {
         return cors(await list(env));
       }
+      if (request.method === "GET" && pathname.startsWith("/meta/")) {
+        // One app's public face, by hash or short alias -- name, size,
+        // shot. This is what the receive page personalizes from, and it
+        // must work for UNLISTED apps too: possession of the link is the
+        // access, exactly like the bytes themselves.
+        return cors(await meta(pathname.slice(6), env));
+      }
       if (request.method === "POST" && pathname.startsWith("/shot/")) {
         return cors(await putShot(request, pathname.slice(6), env));
       }
@@ -205,6 +212,7 @@ async function publish(request, env) {
   }
 
   const meta = {
+    unlisted: header(request, "x-krate-unlisted") === "1",
     name: header(request, "x-krate-name") || "Untitled app",
     description: header(request, "x-krate-description") || "",
     // A small fixed shelf list: free-text categories fragment a gallery.
@@ -670,12 +678,43 @@ async function mobileLanding(hash, env) {
   });
 }
 
+async function meta(hash, env) {
+  if (/^[0-9a-f]{8,32}$/.test(hash)) {
+    const full = await env.APPS.get(`alias:${hash}`);
+    if (!full) return text("not found", 404);
+    hash = full;
+  }
+  if (!/^[0-9a-f]{64}$/.test(hash)) return text("not found", 404);
+  const raw = await env.APPS.get(`app:${hash}`);
+  if (!raw) return text("not found", 404);
+  let m = {};
+  try {
+    m = JSON.parse(raw);
+  } catch (_) {
+    return text("not found", 404);
+  }
+  const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
+  const shot = await env.BUNDLES.head(`shot:${hash}`);
+  return json({
+    id: hash,
+    url: `${base}/a/${hash}`,
+    shot: shot ? `${base}/shot/${hash}` : null,
+    meta: { name: m.name, description: m.description, author: m.author, size: m.size },
+  });
+}
+
 async function list(env) {
   const listing = await env.APPS.list({ prefix: "app:", limit: 200 });
   const apps = [];
   for (const key of listing.keys) {
     const raw = await env.APPS.get(key.name);
     if (!raw) continue;
+    // Unlisted apps have working links and no gallery row.
+    try {
+      if (JSON.parse(raw).unlisted) continue;
+    } catch (_) {
+      // An unreadable record should still not hide a listed app.
+    }
     const hash = key.name.slice("app:".length);
     const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
     const shot = await env.BUNDLES.head(`shot:${hash}`);
@@ -1385,7 +1424,7 @@ function cors(response) {
   headers.set("access-control-allow-methods", "GET, POST, DELETE, OPTIONS");
   headers.set(
     "access-control-allow-headers",
-    "authorization, content-type, x-krate-name, x-krate-description, x-krate-category, x-krate-session, x-krate-version, x-krate-os, x-krate-note",
+    "authorization, content-type, x-krate-name, x-krate-description, x-krate-category, x-krate-session, x-krate-version, x-krate-os, x-krate-note, x-krate-unlisted",
   );
   return new Response(response.body, { status: response.status, headers });
 }

@@ -2521,3 +2521,7 @@ body.light .send-opt span, body.light .send-done p { color: rgba(0,0,0,0.55); }
 
 /* The dock floats over the page bottom; the scroll area owes it room. */
 .page-inner { padding-bottom: 110px !important; }
+.send-wrap-os { display: flex; gap: 8px; padding: 2px 4px 0; }
+.pub-list-row { display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; cursor: pointer; }
+.pub-list-row input { margin-top: 3px; accent-color: var(--accent, #6291ff); }
+.pub-list-row small { display: block; color: var(--muted); font-size: 12px; }

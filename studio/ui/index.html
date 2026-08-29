@@ -549,6 +549,17 @@
           <span>A URL anyone with it can open. For when you cannot drop a
           file. Needs a sign-in.</span>
         </button>
+        <button class="send-opt send-opt-quiet" id="sendWrapBtn" type="button">
+          <b>For a friend without Krate</b>
+          <span>A double-clickable for their system that installs Krate once
+          (a small download), then opens this app. Their next .krate just
+          opens.</span>
+        </button>
+        <div class="send-wrap-os hidden" id="sendWrapOs">
+          <button class="btn" data-wrap="mac" type="button">Mac</button>
+          <button class="btn" data-wrap="windows" type="button">Windows</button>
+          <button class="btn" data-wrap="linux" type="button">Linux</button>
+        </div>
       </div>
       <div class="send-done hidden" id="sendCardDone">
         <img id="sendCardImg" alt="The card: your app's picture with the app inside" />
@@ -564,9 +575,12 @@
 
   <div class="sheet-wrap hidden" id="publishSheet">
     <div class="sheet sheet-publish">
-      <h2>Publish a link</h2>
-      <p class="pub-sub">This is how your app will look in the shared gallery.
-      Publishing again later replaces this listing.</p>
+      <h2>Send a link</h2>
+      <p class="pub-sub">Anyone with the link can open it. Publishing again
+      later replaces it.</p>
+      <label class="pub-list-row"><input type="checkbox" id="pubListed" />
+        <span>Also list it in the public gallery<small>Off, and the app is
+        only reachable by its link.</small></span></label>
       <label class="pub-label">Name
         <input id="pubName" type="text" maxlength="60" autocomplete="off" spellcheck="false" />
       </label>

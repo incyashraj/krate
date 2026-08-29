@@ -1269,6 +1269,7 @@ function failBuild(why, request) {
   clearInterval(state.timer);
   state.lastFailed = request;
   const built = state.buildingSession || state.session;
+  if (built) built.failedRequest = request;
   sayTo(built, "KRATE", why === "stopped" ? "stopped" : "that build didn't come together");
   persistSession(built);
   if (!(state.session && built && state.session.id === built.id)) return;
@@ -1277,7 +1278,11 @@ function failBuild(why, request) {
   if (why === "stopped") {
     $("failTitle").textContent = "Stopped.";
     $("failWhy").textContent = "Nothing was lost -- your words are kept, ready to send again.";
+    $("retryBtn").textContent = "Resume build";
+    unlockComposer("Changed your mind? Say it - or hit Resume build");
   } else {
+    $("retryBtn").textContent = "Try again";
+    unlockComposer("Say it another way, or hit Try again");
     $("failTitle").textContent = "That one didn't come together.";
     $("failWhy").textContent = why;
     // The raw engine tail rides under the plain-words line. Two screenshots
@@ -1325,7 +1330,7 @@ function friendlyAsk(cap) {
 
 /* ---- driving the engine ----------------------------------------------- */
 
-async function make(request) {
+async function make(request, opts) {
   // Two builds at once would leave the first unstoppable; the backend
   // refuses it too, but stopping here keeps the UI honest. Keyed on the
   // building session, not the visible phase -- browsing away changes the
@@ -1340,7 +1345,9 @@ async function make(request) {
   const files = state.attachments.slice();
   state.attachments = [];
   renderAttachments();
-  say("YOU", request, files);
+  // A resume or an amend already spoke in the person's own words; echoing
+  // the stitched request would print machinery at them.
+  if (!(opts && opts.silent)) say("YOU", request, files);
   persist();
   $("prompt").value = "";
 
@@ -2820,6 +2827,7 @@ async function publishFromSheet() {
       name: $("pubName").value.trim(),
       shot: pubState.shotPath,
       icon: pubState.iconPath,
+      unlisted: !$("pubListed").checked,
     });
     state.session.result.share_url = url;
     $("publishSheet").classList.add("hidden");
@@ -3043,6 +3051,18 @@ function submitInSession() {
     }
     return;
   }
+  const s = state.session;
+  if (s && !s.result && s.failedRequest && !state.planning) {
+    $("prompt").value = "";
+    if (/^\s*(resume|continue|keep going|go on|try again|retry|finish( it)?|build( it)?)\s*[.!]*\s*$/i.test(text)) {
+      say("YOU", text);
+      say("KRATE", "Resuming the same build.");
+      return make(s.failedRequest, { silent: true });
+    }
+    say("YOU", text);
+    say("KRATE", "Folding that in and building again.");
+    return make(`${s.failedRequest}\n\n(After the stopped build, they added: ${text})`, { silent: true });
+  }
   make(text);
 }
 
@@ -3196,6 +3216,30 @@ $("sendCardBtn").addEventListener("click", sendCard);
 $("sendLinkBtn").addEventListener("click", () => {
   $("sendSheet").classList.add("hidden");
   openPublishSheet();
+});
+$("sendWrapBtn").addEventListener("click", () => {
+  $("sendWrapOs").classList.toggle("hidden");
+});
+document.querySelectorAll("#sendWrapOs [data-wrap]").forEach((b) => {
+  b.addEventListener("click", async () => {
+    const app = currentApp();
+    if (!app) return;
+    const os = b.dataset.wrap;
+    b.disabled = true;
+    $("sendNote").textContent = "Making the wrap…";
+    try {
+      const wrapPath = await invoke("make_wrap", { path: app.path, target: os });
+      $("sendNote").textContent =
+        wrapPath.split(/[\\/]/).pop() +
+        " is in the folder that just opened. It installs Krate once on their " +
+        (os === "mac" ? "Mac" : os === "windows" ? "Windows PC" : "Linux machine") +
+        ", then opens this app -- the player is downloaded, never bundled.";
+      try { await invoke("reveal", { path: wrapPath }); } catch (e) {}
+    } catch (err) {
+      $("sendNote").textContent = plainWords(err);
+    }
+    b.disabled = false;
+  });
 });
 $("sendRawBtn").addEventListener("click", async () => {
   const app = currentApp();

@@ -1707,6 +1707,7 @@ async fn publish(
     name: Option<String>,
     shot: Option<String>,
     icon: Option<String>,
+    unlisted: Option<bool>,
 ) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let path = existing(&path)?;
@@ -1724,6 +1725,9 @@ async fn publish(
         flag(&mut cmd, "--name", &name);
         flag(&mut cmd, "--shot", &shot);
         flag(&mut cmd, "--icon", &icon);
+        if unlisted.unwrap_or(false) {
+            cmd.arg("--unlisted");
+        }
         let out = cmd.output()
             .map_err(|err| err.to_string())?;
         let text = format!(

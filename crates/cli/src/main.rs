@@ -543,6 +543,12 @@ enum Command {
         /// Path to the .krate bundle to upload.
         bundle: PathBuf,
 
+        /// Publish without a gallery listing: the link works for anyone who
+        /// has it, and the app never appears in the public gallery. For the
+        /// rate card that is a client's, not the world's.
+        #[arg(long)]
+        unlisted: bool,
+
         /// Hub to upload to. Overrides the KRATE_HUB_URL environment variable.
         #[arg(long)]
         hub: Option<String>,
@@ -1278,6 +1284,7 @@ fn run() -> Result<u8> {
         } => report_send_command(&report, &session, &note, hub.as_deref()),
         Command::Publish {
             bundle,
+            unlisted,
             hub,
             description,
             name,
@@ -1290,6 +1297,7 @@ fn run() -> Result<u8> {
             name.as_deref(),
             shot.as_deref(),
             icon.as_deref(),
+            unlisted,
         ),
         Command::Create {
             request,
@@ -4222,7 +4230,7 @@ fn card_bundle(
 }
 
 pub(crate) fn publish_bundle_for_tui(bundle: &Path, description: Option<&str>) -> Result<()> {
-    let code = publish_bundle(bundle, None, description, None, None, None)?;
+    let code = publish_bundle(bundle, None, description, None, None, None, false)?;
     if code == 0 {
         Ok(())
     } else {
@@ -4237,6 +4245,7 @@ fn publish_bundle(
     name_override: Option<&str>,
     shot_override: Option<&Path>,
     icon: Option<&Path>,
+    unlisted: bool,
 ) -> Result<u8> {
     // Only upload something that is actually a bundle. Catching it here means a
     // wrong path fails locally with a clear message instead of round-tripping
@@ -4288,6 +4297,10 @@ fn publish_bundle(
         }
     };
     let mut request = ureq::post(&endpoint).set("Content-Type", "application/octet-stream");
+    if unlisted {
+        // The link works; the gallery never lists it.
+        request = request.set("X-Krate-Unlisted", "1");
+    }
     if !app_name.is_empty() {
         request = request.set("X-Krate-Name", &app_name);
     }
