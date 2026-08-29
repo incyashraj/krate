@@ -2455,10 +2455,10 @@ fn write_port_failure_report(
     text.push_str(&format!("- What kind: {}\n", failure.kind.label()));
     text.push_str(&format!("- Source: {}\n", source.display()));
     // KRATE_VERSION_NUMBER, not CARGO_PKG_VERSION: a released binary is
-    // stamped with its tag and Cargo.toml has sat at 0.1.28 since long
-    // before v0.1.58, so this line told support the version of a build
-    // nobody is running. A failure report that misstates its own version
-    // is worse than one that omits it.
+    // stamped with its tag, and Cargo.toml sat at 0.1.28 through v0.1.58,
+    // so this line told support the version of a build nobody is running.
+    // A failure report that misstates its own version is worse than one
+    // that omits it.
     text.push_str(&format!("- Krate: {KRATE_VERSION_NUMBER}\n"));
     text.push_str(&format!("- Platform: {}\n\n", std::env::consts::OS));
 
@@ -3788,7 +3788,7 @@ set "KRATE_BIN=krate"
 where krate >nul 2>nul
 if %ERRORLEVEL%==0 goto run
 echo This app runs on Krate, a small free player. Installing it once...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://krate.tech/install.ps1 | iex"
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -Command "irm https://krate.tech/install.ps1 | iex"
 where krate >nul 2>nul
 if %ERRORLEVEL%==0 goto run
 if exist "%LOCALAPPDATA%\Krate\bin\krate.exe" (

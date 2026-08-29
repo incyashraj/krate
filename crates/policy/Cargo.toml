@@ -8,6 +8,6 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
-krate-adapter-common = { path = "../adapter-common", version = "0.1.0-dev" }
-krate-manifest = { path = "../manifest", version = "0.1.0-dev" }
+krate-adapter-common = { path = "../adapter-common" }
+krate-manifest = { path = "../manifest" }
 thiserror.workspace = true

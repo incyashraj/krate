@@ -153,8 +153,8 @@ the State column as stages land, never start a second list.
 
 | # | Stage | State |
 |---|---|---|
-| 17 | Windows wrap proven on a real PC | open |
-| 18 | Full Studio click-through ladder; cut the release carrying C + D | open -- this is what makes 12-14 and 16 reach users |
+| 17 | Windows wrap proven on a real PC | **done 2026-08-29** -- Split-for-Windows.cmd on the friend's PC: install branch, LOCALAPPDATA fallback, temp-copy dance, app window opened; powershell path hardened to the absolute System32 one |
+| 18 | Full Studio click-through ladder; cut the release carrying C + D | open, ladder walked 2026-08-30 -- workspace tests green, 28-app occlusion gate zero growing, wrap proven on the PC, Studio send/info/change/settings clicked through on the dev build; the cut is what remains |
 
 **F. Business rails**
 
@@ -172,7 +172,7 @@ items the conversations specify that no stage carried:
 | 22 | Founding waitlist: $79/yr for the first 200, honest early-days copy, email capture through the hub. No public checkout yet | **live 2026-08-29** -- hub /founding + /studio#founding block |
 | 23 | The 20-second film: type, file appears, other desktop opens it through the first-click path. Promo pipeline; no voiceover. Only ships because first-click now works | **live 2026-08-29** -- four beats, 946 KB, real rate-card footage; Watch link + modal on the homepage |
 | 24 | The public rename finishes in code: Go/TS SDKs still carry l36* names | **done 2026-08-29** -- zero l36 references; wasip1 build + shape check green |
-| 25 | Version alignment at the cut: workspace says 0.1.28, tags say v0.2.1, dist app says older still. A founding customer reads these | folds into stage 18 |
+| 25 | Version alignment at the cut: workspace says 0.1.28, tags say v0.2.1, dist app says older still. A founding customer reads these | **in repo 2026-08-30** -- workspace, studio crate and tauri.conf all say 0.2.2, the next tag; internal path deps no longer pin a version, so a bump is one line again |
 | 26 | Unlisted links: publish without a gallery listing, so a client rate card is a URL, not a public exhibit | **live 2026-08-29** -- worker flag + /meta route + CLI --unlisted + Studio opt-in checkbox (listing off by default) |
 | 27 | Send the file opens the OS share sheet (AirDrop, Mail, Messages) with the card, not just a Finder reveal | **in repo 2026-08-29** -- NSSharingServicePicker on macOS, reveal fallback elsewhere; rides the release |
 

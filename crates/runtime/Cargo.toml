@@ -35,10 +35,10 @@ png = "0.18.1"
 # vector-text so a headless screenshot renders with the same antialiased vello
 # text the Windows and Linux windows use -- a screenshot has to look like the
 # real thing to be worth taking.
-krate-adapter-common = { path = "../adapter-common", version = "0.1.0-dev", features = ["vector-text"] }
-krate-layout = { path = "../layout", version = "0.1.0-dev" }
-krate-manifest = { path = "../manifest", version = "0.1.0-dev" }
-krate-policy = { path = "../policy", version = "0.1.0-dev" }
+krate-adapter-common = { path = "../adapter-common", features = ["vector-text"] }
+krate-layout = { path = "../layout" }
+krate-manifest = { path = "../manifest" }
+krate-policy = { path = "../policy" }
 libc.workspace = true
 # The usability report check-app reads back after a driven run.
 serde.workspace = true
@@ -53,19 +53,19 @@ whisper-rs = { version = "0.16.0", optional = true }
 gilrs = "0.11.0"
 
 [target.'cfg(target_os = "android")'.dependencies]
-krate-adapter-android = { path = "../adapter-android", version = "0.1.0-dev" }
+krate-adapter-android = { path = "../adapter-android" }
 
 [target.'cfg(target_os = "ios")'.dependencies]
-krate-adapter-ios = { path = "../adapter-ios", version = "0.1.0-dev" }
+krate-adapter-ios = { path = "../adapter-ios" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-krate-adapter-linux = { path = "../adapter-linux", version = "0.1.0-dev" }
+krate-adapter-linux = { path = "../adapter-linux" }
 # Camera capture through V4L2. Needs the kernel headers (libv4l-dev) at build
 # time, which is why this cannot be cross-checked from a Mac.
 nokhwa = { version = "0.10", default-features = false, features = ["input-v4l"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-krate-adapter-macos = { path = "../adapter-macos", version = "0.1.0-dev" }
+krate-adapter-macos = { path = "../adapter-macos" }
 # Camera capture. Same objc2 family the macOS window adapter already uses, so
 # there is one Objective-C runtime in the tree rather than two. Only the
 # classes the camera path touches are enabled.
@@ -79,7 +79,7 @@ dispatch2 = { version = "0.3.0", default-features = false, features = ["std", "o
 block2 = "0.6.2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-krate-adapter-windows = { path = "../adapter-windows", version = "0.1.0-dev" }
+krate-adapter-windows = { path = "../adapter-windows" }
 # Camera capture through Media Foundation. macOS has its own AVFoundation
 # backend because it needs the platform permission dance; Windows and Linux do
 # not, and nokhwa wraps both their native APIs behind one interface, so one

@@ -8,7 +8,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
-krate-adapter-common = { path = "../adapter-common", version = "0.1.0-dev", features = [
+krate-adapter-common = { path = "../adapter-common", features = [
     "vector-text",
 ] }
 
@@ -23,7 +23,7 @@ softbuffer = { version = "0.4", default-features = false }
 # The GPU presenter (Plan/GPU-Presenter.md S2): vello scenes on a wgpu
 # surface when a usable adapter initializes; softbuffer stays as the
 # fallback that never blocks an app.
-krate-presenter-gpu = { path = "../presenter-gpu", version = "0.1.0-dev" }
+krate-presenter-gpu = { path = "../presenter-gpu" }
 pollster = "0.4"
 # OS clipboard for the drawn path's Cut/Copy/Paste. Text-only (no image-data),
 # so it pulls only the Win32 clipboard backend.

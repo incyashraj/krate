@@ -8,7 +8,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
-krate-manifest = { path = "../manifest", version = "0.1.0-dev" }
+krate-manifest = { path = "../manifest" }
 sha2 = "0.10.9"
 tempfile.workspace = true
 thiserror.workspace = true

@@ -9,10 +9,10 @@ publish = false
 
 [dependencies]
 anyhow.workspace = true
-krate-bundle = { path = "../bundle", version = "0.1.0-dev" }
-krate-manifest = { path = "../manifest", version = "0.1.0-dev" }
-krate-policy = { path = "../policy", version = "0.1.0-dev" }
-krate-runtime = { path = "../runtime", version = "0.1.0-dev" }
+krate-bundle = { path = "../bundle" }
+krate-manifest = { path = "../manifest" }
+krate-policy = { path = "../policy" }
+krate-runtime = { path = "../runtime" }
 serde.workspace = true
 serde_json.workspace = true
 sha2 = "0.10.9"

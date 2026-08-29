@@ -12,17 +12,17 @@ name = "krate-player-ios"
 path = "src/main.rs"
 
 [dependencies]
-krate-manifest = { path = "../manifest", version = "0.1.0-dev" }
-krate-policy = { path = "../policy", version = "0.1.0-dev" }
-krate-bundle = { path = "../bundle", version = "0.1.0-dev" }
+krate-manifest = { path = "../manifest" }
+krate-policy = { path = "../policy" }
+krate-bundle = { path = "../bundle" }
 
 [target.'cfg(target_os = "ios")'.dependencies]
 # Speech stays off, same as Android: whisper.cpp on phones is its own
 # project and the capability degrades honestly.
-krate-runtime = { path = "../runtime", version = "0.1.0-dev", default-features = false, features = [
+krate-runtime = { path = "../runtime", default-features = false, features = [
     "phase2-bindings",
 ] }
-krate-adapter-ios = { path = "../adapter-ios", version = "0.1.0-dev" }
+krate-adapter-ios = { path = "../adapter-ios" }
 objc2 = "0.6.4"
 libc = "0.2"
 objc2-foundation = { version = "0.3.2", default-features = false, features = [

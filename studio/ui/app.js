@@ -1939,6 +1939,14 @@ async function refreshAgents() {
   setChips(dot, text, chosen.detail || "");
 }
 
+/// The one name for the current AI, everywhere it is painted. The chips,
+/// the home bar and the settings row must never disagree about who writes
+/// the apps; they all read this.
+function agentLabel() {
+  const chosen = state.agents.find((a) => a.name === state.agent);
+  return chosen ? chosen.label : state.agent;
+}
+
 function setChips(dot, text, title) {
   for (const suffix of ["", "2"]) {
     const d = $(`agentDot${suffix}`);
@@ -1951,11 +1959,10 @@ function setChips(dot, text, title) {
   // The home bar's "Built by" chip carries the same truth.
   const bbn = $("builtByName");
   const bbd = $("builtByDot");
-  if (bbn) {
-    const chosen = state.agents.find((a) => a.name === state.agent);
-    bbn.textContent = chosen ? chosen.label : state.agent;
-  }
+  if (bbn) bbn.textContent = agentLabel();
   if (bbd) bbd.className = `dot ${dot}`;
+  const sv = $("setAgent");
+  if (sv) sv.textContent = agentLabel();
 }
 
 function openAiSheet() {
@@ -3374,6 +3381,13 @@ document.querySelectorAll(".sheet-close").forEach((b) =>
 document.querySelectorAll(".sheet-wrap").forEach((w) =>
   w.addEventListener("click", (e) => { if (e.target === w) w.classList.add("hidden"); }),
 );
+// Escape closes an open sheet, same as clicking outside it. A panel the
+// keyboard cannot back out of reads as a trap.
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  const open = document.querySelector(".sheet-wrap:not(.hidden)");
+  if (open) { open.classList.add("hidden"); e.preventDefault(); }
+});
 
 /* Dragging the window by its title bar.
  *
@@ -3635,7 +3649,7 @@ async function loadSettingsPage() {
     const dir = $("setOutDir");
     if (dir) dir.textContent = (settings.out_dir || "").replace(/^\/Users\/[^/]+/, "~");
     const agent = $("setAgent");
-    if (agent) agent.textContent = settings.agent || "claude";
+    if (agent) agent.textContent = agentLabel();
   } catch (e) { /* the page still renders without them */ }
   paintTerminalSetting();
   checkForUpdate();

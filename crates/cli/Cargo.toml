@@ -41,16 +41,16 @@ speech = ["krate-runtime/speech"]
 rfd.workspace = true
 anyhow.workspace = true
 clap.workspace = true
-krate-manifest = { path = "../manifest", version = "0.1.0-dev" }
-krate-policy = { path = "../policy", version = "0.1.0-dev" }
-krate-bundle = { path = "../bundle", version = "0.1.0-dev" }
-krate-runtime = { path = "../runtime", version = "0.1.0-dev", default-features = false, features = ["phase2-bindings"] }
-krate-author = { path = "../author", version = "0.1.0-dev" }
-krate-mcp = { path = "../mcp", version = "0.1.0-dev" }
-krate-port = { path = "../port", version = "0.1.0-dev" }
+krate-manifest = { path = "../manifest" }
+krate-policy = { path = "../policy" }
+krate-bundle = { path = "../bundle" }
+krate-runtime = { path = "../runtime", default-features = false, features = ["phase2-bindings"] }
+krate-author = { path = "../author" }
+krate-mcp = { path = "../mcp" }
+krate-port = { path = "../port" }
 # For the widget list in the generated agent reference, so a widget cannot be
 # added to the system and stay missing from the page the agent reads.
-krate-adapter-common = { path = "../adapter-common", version = "0.1.0-dev" }
+krate-adapter-common = { path = "../adapter-common" }
 tempfile = "3.27.0"
 serde.workspace = true
 serde_json.workspace = true
@@ -68,13 +68,13 @@ png = "0.18.1"
 # so the AppKit crate never enters Linux or Windows CLI builds; those platforms
 # fall back to the terminal consent prompt.
 [target.'cfg(target_os = "macos")'.dependencies]
-krate-adapter-macos = { path = "../adapter-macos", version = "0.1.0-dev" }
+krate-adapter-macos = { path = "../adapter-macos" }
 
 # Doctor's graphics probe: name the GPU adapter apps will draw on, or say
 # plainly that they will draw on the CPU. Same crate the window presenters
 # use, so doctor's answer and the real path cannot disagree.
 [target.'cfg(any(target_os = "windows", target_os = "linux"))'.dependencies]
-krate-presenter-gpu = { path = "../presenter-gpu", version = "0.1.0-dev" }
+krate-presenter-gpu = { path = "../presenter-gpu" }
 
 [dev-dependencies]
 tempfile = "3.27.0"

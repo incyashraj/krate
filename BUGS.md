@@ -296,6 +296,8 @@ the gate: reproduced when watched, and why it "did not reproduce after the
           ~/krate-bench/leak/gate194-results.tsv -- 23 flat, 4 CLI
           no-window, 1 leaker (clip, the app on screen when the display
           slept). Gate harness: ~/krate-bench/leak/gate194.sh.
+          Re-run on the fixed binary 2026-08-29: 23 flat, 5 quick-exit
+          NO-SAMPLES, zero growing. The fix holds across the whole ladder.
 Found:    2026-08-27, by Yashraj: Aurora makes his MacBook hot, laggy, then
           crashes and restarts it. Reproduced and measured; the crash is real
           and this entry cost him a restart to produce, so DO NOT reproduce it

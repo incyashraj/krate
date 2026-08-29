@@ -8,7 +8,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
-krate-manifest = { path = "../manifest", version = "0.1.0-dev" }
+krate-manifest = { path = "../manifest" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

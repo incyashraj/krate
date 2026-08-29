@@ -14,17 +14,17 @@ name = "krate_player"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-krate-manifest = { path = "../manifest", version = "0.1.0-dev" }
-krate-policy = { path = "../policy", version = "0.1.0-dev" }
-krate-bundle = { path = "../bundle", version = "0.1.0-dev" }
+krate-manifest = { path = "../manifest" }
+krate-policy = { path = "../policy" }
+krate-bundle = { path = "../bundle" }
 
 [target.'cfg(target_os = "android")'.dependencies]
 # Speech stays off: whisper.cpp on Android is its own project, and the
 # player degrades the capability honestly, the same as arm64 Linux did.
-krate-runtime = { path = "../runtime", version = "0.1.0-dev", default-features = false, features = [
+krate-runtime = { path = "../runtime", default-features = false, features = [
     "phase2-bindings",
 ] }
-krate-adapter-android = { path = "../adapter-android", version = "0.1.0-dev" }
+krate-adapter-android = { path = "../adapter-android" }
 log = "0.4"
 android_logger = "0.15"
 # Reading the launch intent and content:// streams from the Java side.

@@ -152,8 +152,8 @@ fn engine() -> Result<PathBuf, String> {
 ///
 /// Not a version comparison, deliberately. The failure this exists to catch
 /// (K-180) was an engine ten days old that reported the SAME version number
-/// as the current one -- Cargo.toml has sat at 0.1.28 since long before
-/// v0.1.58 -- so comparing versions would have stayed silent through the
+/// as the current one -- Cargo.toml sat at 0.1.28 through v0.1.58 -- so
+/// comparing versions would have stayed silent through the
 /// exact bug it was meant to find. Worse, a released Studio is stamped
 /// `0.1.58` while a released engine reports `v0.1.58`, so the honest pair
 /// differs by a leading `v` and a string check would cry wolf on every
@@ -3524,8 +3524,8 @@ mod tests {
     /// differed, not the one that was easy to ask.
     ///
     /// K-180 was an engine ten days old driving a current Studio. It
-    /// reported the SAME version string as the new one -- Cargo.toml has sat
-    /// at 0.1.28 since long before v0.1.58 -- so a version comparison would
+    /// reported the SAME version string as the new one -- Cargo.toml sat
+    /// at 0.1.28 through v0.1.58 -- so a version comparison would
     /// have been silent through the very bug it was written for. What
     /// differed was that it had no `plan` subcommand, and clap exits
     /// non-zero for one it does not know.
