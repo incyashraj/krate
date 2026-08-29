@@ -78,6 +78,7 @@
 
   .reveal { opacity: 0; transform: translateY(12px); transition: opacity var(--enter), transform var(--enter); }
   .reveal.in { opacity: 1; transform: none; }
+  .hidden { display: none !important; }
 
   /* ------------------------------------------------------------ header */
   .site-head { position: sticky; top: 0; z-index: 40;
@@ -349,14 +350,14 @@
 
     <!-- State 1: the file, as it would sit on a desktop. -->
     <div class="demo-state on" id="dFile">
-      <div class="fcard" id="dCard" role="button" tabindex="0" aria-label="Try opening the example file">
+      <div class="fcard" id="dCard" role="button" tabindex="0" aria-label="Try opening the file">
         <div class="face">
-          <b>Groceries</b>
-          <div class="bars"><i></i><i></i><i></i></div>
+          <b id="fcardName">Groceries</b>
+          <div class="bars" id="fcardBars"><i></i><i></i><i></i></div>
         </div>
         <div class="frow">
-          <span class="fname">groceries.krate</span>
-          <span>12 KB</span>
+          <span class="fname" id="fcardFile">groceries.krate</span>
+          <span id="fcardSize">12 KB</span>
         </div>
       </div>
       <p class="demo-hint" id="dHint"><b>Try it:</b> double-click the file.</p>
@@ -366,12 +367,12 @@
     <div class="demo-state" id="dSheet">
       <div class="dsheet">
         <img src="/krate-glyph-white.png" alt="" />
-        <h3>Open &ldquo;Groceries&rdquo;?</h3>
-        <div class="asks">
+        <h3 id="dsheetTitle">Open &ldquo;Groceries&rdquo;?</h3>
+        <div class="asks" id="dsheetAsks">
           <div><i>&#10003;</i> open a window</div>
           <div><i>&#10003;</i> save your list on this computer</div>
         </div>
-        <p class="none">It gets nothing else: no files, no internet, no camera.</p>
+        <p class="none" id="dsheetNone">It gets nothing else: no files, no internet, no camera.</p>
         <div class="btns">
           <button class="dbtn" id="dCancel" type="button">Cancel</button>
           <button class="dbtn dbtn-primary" id="dAllow" type="button">Allow and open</button>
@@ -379,9 +380,18 @@
       </div>
     </div>
 
-    <!-- State 3: the app, awake and usable. -->
+    <!-- State 3: the app, awake and usable -- or, from a hub link, the
+         honest version: the real app opens on their computer, not in a
+         page, so this state hands them the download instead. -->
     <div class="demo-state" id="dApp">
-      <div class="gwin" aria-label="The groceries app, working">
+      <div class="dsheet hidden" id="dReal">
+        <img src="/krate-glyph-white.png" alt="" />
+        <h3 id="dRealTitle">It opens on your computer.</h3>
+        <p class="none">Not in a web page -- that is the point. Get Krate
+        below (step 1), then download the app and double-click it.</p>
+        <div class="btns"><a class="dbtn dbtn-primary" id="dRealDl" href="#">Download the app</a></div>
+      </div>
+      <div class="gwin" id="gDemo" aria-label="The groceries app, working">
         <div class="gbar">
           <div class="dots"><i></i><i></i><i></i></div>
           <span class="gtitle">GROCERIES</span>
@@ -398,7 +408,7 @@
           </div>
         </div>
       </div>
-      <p class="demo-hint">That was the whole thing. Tap the items -- it works.
+      <p class="demo-hint" id="gDemoHint">That was the whole thing. Tap the items -- it works.
       Now do it for real, below.</p>
     </div>
 
@@ -463,9 +473,10 @@
 
     <li class="reveal">
       <span class="tnum">2</span>
-      <h2>Double-click the file</h2>
+      <h2 id="step2Title">Double-click the file</h2>
       <p>The same as a document or a photo. Nothing to unzip, nothing to
       install per app, no developer tools.</p>
+      <p class="hidden" id="dlRow" style="margin-top:4px"><a class="get-btn" id="dlApp" href="#">Download the app</a></p>
     </li>
 
     <li class="reveal">
@@ -695,6 +706,71 @@
     boxes.forEach(function (b) { b.addEventListener("change", update); });
     update();
   }
+
+  // ------------------------------------------------ a specific app's page
+  // Arriving from a hub link (?a=<hash>), the page is about THEIR app, not
+  // a generic one: its real face and name on the card, a download button in
+  // step 2, and the after-Allow state hands them the file instead of
+  // pretending their app can run in a web page.
+  (function () {
+    var id = new URLSearchParams(location.search).get("a");
+    if (!id || !/^[0-9a-f]{8,64}$/.test(id)) return;
+    fetch("https://hub.krate.tech/apps")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var app = ((data && data.apps) || []).find(function (a) {
+          return a.id === id || a.id.indexOf(id) === 0;
+        });
+        if (!app) return;
+        var name = (app.meta && app.meta.name) || "The app";
+        var kb = Math.max(1, Math.ceil(((app.meta && app.meta.size) || 0) / 1024));
+        var slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "app";
+        var dlUrl = app.url + "?dl=1";
+
+        document.getElementById("fcardName").textContent = name;
+        document.getElementById("fcardFile").textContent = slug + ".krate";
+        document.getElementById("fcardSize").textContent = kb + " KB";
+        if (app.shot) {
+          var img = document.createElement("img");
+          img.src = app.shot;
+          img.alt = "";
+          img.style.cssText =
+            "display:block;width:100%;max-height:180px;object-fit:cover;object-position:top;border-radius:8px;margin-top:9px;";
+          var bars = document.getElementById("fcardBars");
+          bars.replaceChildren(img);
+          bars.style.display = "block";
+        }
+
+        // The consent sheet cannot know this app's real list from here, and
+        // it must not invent one -- the honest line is that Krate shows it.
+        document.getElementById("dsheetTitle").textContent =
+          "Open “" + name + "”?";
+        document.getElementById("dsheetAsks").innerHTML = "";
+        document.getElementById("dsheetNone").textContent =
+          "Before it runs, Krate shows you exactly what it is allowed to " +
+          "touch -- and enforces that list, whatever the app's code says.";
+
+        // After Allow: the download, not a pretend run.
+        document.getElementById("gDemo").classList.add("hidden");
+        document.getElementById("gDemoHint").classList.add("hidden");
+        var real = document.getElementById("dReal");
+        real.classList.remove("hidden");
+        var realDl = document.getElementById("dRealDl");
+        realDl.textContent = "Download " + name;
+        realDl.href = dlUrl;
+
+        // And step 2 hands over the file too, for people who skip the demo.
+        document.getElementById("step2Title").textContent =
+          "Download it, then double-click";
+        var dl = document.getElementById("dlApp");
+        dl.textContent = "Download " + name + " (" + kb + " KB)";
+        dl.href = dlUrl;
+        document.getElementById("dlRow").classList.remove("hidden");
+      })
+      .catch(function () {
+        // The generic page is a fine landing; a hub hiccup must not break it.
+      });
+  })();
 })();
 </script>
 

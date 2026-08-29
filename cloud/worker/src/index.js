@@ -524,10 +524,28 @@ async function fetchBundle(request, url, hash, env) {
   // Count the hit before deciding what to serve, one Analytics Engine point
   // in the same dataset the CLI feeds: action "link", the client class in
   // the os slot, the app's hash as the index. No KV -- the K-082 rule.
+  // The fifth blob says which door they got: "direct" is the bytes,
+  // "landing" is a person being walked to the receive page first -- the
+  // number that tells us whether first-click is working.
   const client = classifyClient(request);
+  const wantsBytes = url.searchParams.has("dl");
+  const landing = wantsBytes
+    ? null
+    : client.startsWith("mobile-")
+      ? "mobile"
+      : client === "desktop-browser"
+        ? "desktop"
+        : null;
   if (env.USAGE) {
     env.USAGE.writeDataPoint({
-      blobs: ["link", "-", client, "ok", "direct", new Date().toISOString().slice(0, 10)],
+      blobs: [
+        "link",
+        "-",
+        client,
+        "ok",
+        landing ? "landing" : "direct",
+        new Date().toISOString().slice(0, 10),
+      ],
       doubles: [1],
       indexes: [hash],
     });
@@ -536,8 +554,21 @@ async function fetchBundle(request, url, hash, env) {
   // A phone browser gets a small page instead of a file the phone cannot
   // open -- the soft landing from the mobile plan. `?dl=1` still hands the
   // raw bytes to anyone who insists.
-  if (client.startsWith("mobile-") && !url.searchParams.has("dl")) {
+  if (landing === "mobile") {
     return await mobileLanding(hash, env);
+  }
+
+  // A desktop browser holding this link is a person, not a runtime -- the
+  // receiver K-195 is about. Send them to the receive page with the app's
+  // full address carried along, so the page shows THEIR app: its shot, its
+  // name, and the install-once-then-it-opens walk. The page's own download
+  // button comes back here with `?dl=1`, so the two can never loop, and
+  // `krate run <url>` never sees this branch (it does not ask for HTML).
+  if (landing === "desktop") {
+    return new Response(null, {
+      status: 302,
+      headers: { location: `https://krate.tech/open/?a=${hash}` },
+    });
   }
 
   // Name the download after the app, not its hash. "84380a400d91.krate" tells
