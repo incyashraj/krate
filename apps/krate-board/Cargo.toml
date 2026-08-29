@@ -1,0 +1,53 @@
+[package]
+name = "krate-board"
+version = "0.1.0-dev"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/incyashraj/krate"
+rust-version = "1.91"
+
+[dependencies]
+# The Krate SDK, linked for its no_std runtime lang items (global allocator,
+# panic handler, memory intrinsics) so this canvas app stays krate:*-only.
+krate = { path = "../../crates/bindings-rust" }
+wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }
+
+# Standalone: excluded from the repo workspace, builds on its own, so it carries
+# an empty workspace table to stop cargo walking up to the repo root manifest.
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+# Gate the generated `impl std::error::Error` behind a feature nobody turns
+# on, so a GUI app that needs a real dependency can be `#![no_std]`.
+[package.metadata.component.bindings]
+std_feature = true
+
+[package.metadata.component]
+package = "krate:board"
+
+[package.metadata.component.target]
+path = "../../wit/krate/phase3"
+world = "gui"
+
+[package.metadata.component.target.dependencies]
+"krate:io" = { path = "../../wit/krate/phase3/deps/io" }
+"krate:fs" = { path = "../../wit/krate/phase3/deps/fs" }
+"krate:net" = { path = "../../wit/krate/phase3/deps/net" }
+"krate:time" = { path = "../../wit/krate/phase3/deps/time" }
+"krate:locale" = { path = "../../wit/krate/phase3/deps/locale" }
+"krate:resources" = { path = "../../wit/krate/phase3/deps/resources" }
+"krate:store" = { path = "../../wit/krate/phase3/deps/store" }
+"krate:random" = { path = "../../wit/krate/phase3/deps/random" }
+"krate:ui" = { path = "../../wit/krate/phase3/deps/ui" }
+"krate:gfx" = { path = "../../wit/krate/phase3/deps/gfx" }
+"krate:audio" = { path = "../../wit/krate/phase3/deps/audio" }
+"krate:camera" = { path = "../../wit/krate/phase3/deps/camera" }
+"krate:speech" = { path = "../../wit/krate/phase3/deps/speech" }
+
+[profile.release]
+panic = "abort"
+lto = true
+codegen-units = 1
+opt-level = "s"
