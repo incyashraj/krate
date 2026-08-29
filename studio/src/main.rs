@@ -2033,6 +2033,41 @@ fn hub_url() -> String {
     std::env::var("KRATE_HUB_URL").unwrap_or_else(|_| "https://hub.krate.tech".to_string())
 }
 
+/// The agent-session tag the engine stored for a finished bundle, so the
+/// UI can chain the NEXT build onto the same warm conversation instead of
+/// a cold start. The engine writes `<provider>:<id>` beside the app's
+/// store entry; reading (never taking) leaves it for revise.
+#[tauri::command]
+fn agent_session_tag(path: String) -> Result<String, String> {
+    use std::io::Read;
+    let file = std::fs::File::open(&path).map_err(|err| err.to_string())?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|err| err.to_string())?;
+    let mut manifest = String::new();
+    archive
+        .by_name("manifest.toml")
+        .map_err(|err| err.to_string())?
+        .read_to_string(&mut manifest)
+        .map_err(|err| err.to_string())?;
+    let id = manifest
+        .lines()
+        .find_map(|line| {
+            line.trim()
+                .strip_prefix("id")
+                .and_then(|rest| rest.trim().strip_prefix('='))
+                .map(|v| v.trim().trim_matches('"').to_string())
+        })
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| "no app id in the bundle".to_string())?;
+    let tag = std::fs::read_to_string(
+        dirs_home()
+            .join(".krate")
+            .join("store")
+            .join(format!("{id}.agent-session")),
+    )
+    .map_err(|err| err.to_string())?;
+    Ok(tag.trim().to_string())
+}
+
 /// "We'll make it for you": the human fallback when a build dies. Sends
 /// exactly what a person would need to build the app by hand -- the
 /// request, the answers they gave the AI, and an email to return the
@@ -3453,6 +3488,7 @@ fn main() {
             plan_makes,
             plan_count_make,
             make_for_me,
+            agent_session_tag,
             sessions_list,
             session_save,
             session_shot,

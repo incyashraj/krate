@@ -1305,6 +1305,15 @@ function finishBuild(result) {
   // the AI works. Attaching to state.session put finished apps on the
   // wrong session's card.
   const built = state.buildingSession || state.session;
+  // The warm sitting: remember which conversation just built, so the next
+  // NEW app this sitting resumes it instead of cold-reading the pack.
+  // Measured (2026-08-30): cold 16.7 min / 18 steps, warm resume 14.6 min
+  // for a fresh app -- the pack read is the fixed cost the resume deletes.
+  if (result && result.path) {
+    invoke("agent_session_tag", { path: result.path })
+      .then((tag) => { state.sitting = { agent: state.agent, tag }; })
+      .catch(() => {});
+  }
   built.result = result;
   const mins = Math.round((Date.now() - state.startedAt) / 60000);
   const version = state.buildVersion || (built.builds || 0) + 1;
@@ -1901,7 +1910,15 @@ async function buildNow(request, files, revising, planSession) {
           attachments: files,
           outDir: state.outDir,
           session: state.session.id,
-          planSession: planSession || "",
+          // Warm chain: the planning conversation for THIS app wins;
+          // otherwise resume the sitting's last successful build, so the
+          // second app of a sitting never cold-reads the pack. Same-agent
+          // only -- a codex session means nothing to claude.
+          planSession:
+            planSession
+            || (state.sitting && state.sitting.agent === state.agent
+              ? state.sitting.tag
+              : ""),
         });
     finishBuild(result);
   } catch (err) {

@@ -13015,7 +13015,24 @@ Studio Build Tools are not needed",
                        `brew install rust`) and cannot build the WebAssembly \
                        target; rustup provides one that can",
             }),
-            None => {}
+            // The probe could not answer but a rustup toolchain exists --
+            // usually a freshly installed rustup whose pinned toolchain has
+            // not synced yet, so `target list` stalls into a download and
+            // fails. This arm used to shrug (`None => {}`), preflight said
+            // ready, and the very first build on a brand-new machine died
+            // mid-compile on the missing wasm target (K-204). `rustup
+            // target add` is idempotent and syncs the toolchain first, so
+            // the honest answer to "cannot tell" is: run the add.
+            None => missing.push(MissingTool {
+                what: CREATE_WASM_TARGET,
+                install_cmd: vec![
+                    "rustup".into(),
+                    "target".into(),
+                    "add".into(),
+                    CREATE_WASM_TARGET.into(),
+                ],
+                note: "the WebAssembly target Krate apps compile to",
+            }),
         }
     }
 
@@ -13030,7 +13047,39 @@ Studio Build Tools are not needed",
 /// installs or prompts: it prints the commands and returns an error, so an
 /// agent or CI pipeline gets a clear, actionable failure instead of a cargo
 /// stack trace part-way through the build.
+/// Put `~/.cargo/bin` FIRST on this process's PATH when it exists, so the
+/// rustup-managed toolchain wins over a Homebrew rustc for every check and
+/// every child build command. The shadow is not hypothetical: a machine
+/// with `brew install rust` passed the toolchain check on rustup's
+/// presence and then compiled with Homebrew's rustc, which has no
+/// wasm32-wasip1 target -- the build died mid-compile with the very
+/// message that warns about this trap (K-204, measured on a fresh HOME).
+fn prefer_cargo_bin() {
+    #[cfg(windows)]
+    let home_var = "USERPROFILE";
+    #[cfg(not(windows))]
+    let home_var = "HOME";
+    let Ok(home) = std::env::var(home_var) else {
+        return;
+    };
+    let cargo_bin = Path::new(&home).join(".cargo").join("bin");
+    if !cargo_bin.is_dir() {
+        return;
+    }
+    let old = std::env::var_os("PATH").unwrap_or_default();
+    let mut paths: Vec<PathBuf> = std::env::split_paths(&old).collect();
+    if paths.first() == Some(&cargo_bin) {
+        return;
+    }
+    paths.retain(|p| p != &cargo_bin);
+    paths.insert(0, cargo_bin);
+    if let Ok(joined) = std::env::join_paths(paths) {
+        std::env::set_var("PATH", joined);
+    }
+}
+
 fn preflight_toolchain(assume_yes: bool, no_install: bool) -> Result<()> {
+    prefer_cargo_bin();
     let missing = missing_create_tools();
     if missing.is_empty() {
         return Ok(());
@@ -13113,9 +13162,17 @@ fn preflight_toolchain(assume_yes: bool, no_install: bool) -> Result<()> {
         installed?;
     }
 
-    // Re-check: installing rustup does not put cargo on the current PATH, and a
-    // fresh target may still be needed, so verify and guide rather than fail
-    // opaquely later.
+    // Installing rustup does not put cargo on THIS process's PATH
+    // (--no-modify-path, deliberately). Extending our own PATH is enough:
+    // every build command is our child and inherits it. Without this, a
+    // brand-new machine's very first `create --yes` installed everything
+    // perfectly and then told the person to open a new terminal and start
+    // over -- measured on a fresh HOME (K-204), and exactly what a Studio
+    // first-make would die on.
+    prefer_cargo_bin();
+
+    // Re-check: a fresh target may still be needed, so verify and guide
+    // rather than fail opaquely later.
     let still_missing = missing_create_tools();
     if !still_missing.is_empty() {
         eprintln!();
