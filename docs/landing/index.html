@@ -144,6 +144,27 @@
     font-size: clamp(42px, 6.4vw, 72px);
     letter-spacing: -0.03em; line-height: 1.03;
   }
+
+  /* The rotating last word -- send, keep, trust -- with the live gradient
+     line beneath it: the one signature the old page kept and this one
+     keeps too. */
+  .rot { position: relative; display: inline-block; white-space: nowrap; }
+  .rot .word { display: inline-block; }
+  .rot .word span { display: inline-block; will-change: transform, opacity, filter; }
+  .rot .bar {
+    position: absolute; left: 0; right: 0; bottom: -6px; height: 3px;
+    border-radius: var(--r-pill);
+    background-image: linear-gradient(90deg,
+      rgba(255, 255, 255, 0.25) 0%, rgba(255, 255, 255, 0.25) 35%,
+      #6366f1 40%, #a855f7 45%, #ec4899 50%, #f97316 55%, #eab308 60%,
+      rgba(255, 255, 255, 0.25) 65%, rgba(255, 255, 255, 0.25) 100%);
+    background-size: 300% 100%;
+    animation: sweep 3.2s linear infinite;
+  }
+  @keyframes sweep {
+    0% { background-position: 120% 0; }
+    100% { background-position: -120% 0; }
+  }
   .hero-sub {
     margin-top: 20px; max-width: 30em;
     font-size: clamp(16px, 1.6vw, 19px); color: var(--muted); line-height: 1.55;
@@ -505,6 +526,8 @@
      simply there. The page works standing still. */
   @media (prefers-reduced-motion: reduce) {
     html { scroll-behavior: auto; }
+    .rot .bar { animation: none; background-size: 100% 100%; }
+    .rot .word span { transition: none !important; }
     .reveal, .bubble, .sheet { opacity: 1 !important; transform: none !important; transition: none !important; }
     .card, .dots i, .live, .card-note { transition: none !important; }
     .chat-state, .say-file, .say-step i, .m-step i { transition: none !important; }
@@ -539,7 +562,9 @@
 <section class="hero wrap">
   <div class="hero-grid">
     <div>
-      <h1>Make an app<br />you can send.</h1>
+      <h1>Make an app you can
+        <span class="rot"><span class="word" id="rotWord">send</span><span class="bar"></span></span>
+      </h1>
       <p class="hero-sub">You describe it. An AI writes it. What you get is one
       small file that opens on Mac, Windows, and Linux -- and cannot touch
       anything you did not allow.</p>
@@ -899,6 +924,50 @@
     setTimeout(function () {
       reveals.forEach(function (el) { el.classList.add("in"); });
     }, 2500);
+  }
+
+  /* The rotating word: letters leave upward and arrive from below with a
+     blur, inside the clipped span. Skipped entirely under reduced motion. */
+  var words = ["send", "keep", "trust"];
+  var rotEl = document.getElementById("rotWord");
+  if (rotEl && !reduced) {
+    var wi = 0;
+    var setWord = function (word, entering) {
+      rotEl.innerHTML = "";
+      word.split("").forEach(function (ch, i) {
+        var s = document.createElement("span");
+        s.textContent = ch;
+        s.style.transition = "opacity .3s ease, transform .3s ease, filter .3s ease";
+        s.style.transitionDelay = (i * 40) + "ms";
+        if (entering) {
+          s.style.opacity = "0";
+          s.style.transform = "translateY(14px)";
+          s.style.filter = "blur(4px)";
+          requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+              s.style.opacity = "1";
+              s.style.transform = "none";
+              s.style.filter = "none";
+            });
+          });
+        }
+        rotEl.appendChild(s);
+      });
+    };
+    setWord(words[0], false);
+    setInterval(function () {
+      /* leave */
+      Array.prototype.forEach.call(rotEl.children, function (s, i) {
+        s.style.transitionDelay = (i * 30) + "ms";
+        s.style.opacity = "0";
+        s.style.transform = "translateY(-14px)";
+        s.style.filter = "blur(4px)";
+      });
+      setTimeout(function () {
+        wi = (wi + 1) % words.length;
+        setWord(words[wi], true);
+      }, 350);
+    }, 2600);
   }
 
   /* ------------------------------------------------------- the card wakes */
