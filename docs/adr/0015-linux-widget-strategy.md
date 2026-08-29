@@ -82,7 +82,7 @@ host backend can support it.
 
 - The Phase 3 exit criterion "feels native on each host" is measured on Linux
   against a drawn-widget rubric: correct scroll physics, focus behavior,
-  keyboard shortcuts, dark mode, and DPI handling — not GTK widget identity.
+  keyboard shortcuts, dark mode, and DPI handling -- not GTK widget identity.
 
 ---
 

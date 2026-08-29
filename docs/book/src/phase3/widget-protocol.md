@@ -53,7 +53,7 @@ lowers every widget natively. For v0.1 (ADR-0015):
 | Linux | winit | Drawn fallback for every widget, styled with theme tokens |
 
 Linux uses the drawn path everywhere in v0.1 because GTK4 widgets cannot be
-embedded inside winit-owned windows — GTK4 removed foreign-window embedding, so
+embedded inside winit-owned windows -- GTK4 removed foreign-window embedding, so
 its widgets only live in GTK-owned windows with GTK's own event loop. Rather
 than fork the window model for one host, Linux v0.1 exercises the drawn
 fallback that every host needs anyway. Native GTK lowering can return later as

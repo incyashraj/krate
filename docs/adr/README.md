@@ -6,7 +6,7 @@ This directory contains all Architecture Decision Records for Krate.
 
 An ADR is a short document that captures an important architectural decision:
 what was decided, why, and what the consequences are. It is written once,
-merged into `main`, and then **never modified** — only superseded by a new ADR.
+merged into `main`, and then **never modified** -- only superseded by a new ADR.
 
 ## Why write ADRs?
 

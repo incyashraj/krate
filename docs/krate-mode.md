@@ -780,7 +780,7 @@ without `format!`.
 `src/lib.rs`:
 
 ```rust
-//! Krate Checklist — a modern dark checklist drawn entirely on a canvas.
+//! Krate Checklist -- a modern dark checklist drawn entirely on a canvas.
 //!
 //! The whole UI is painted by the app into one `gfx.canvas2d`: a bold title, a
 //! "N of M done" progress line with a filled bar, item rows as rounded cards

@@ -1,7 +1,7 @@
 # Contributing to Krate
 
 First off: thank you. Krate is a long project built on first principles, and
-every contribution — code, docs, design, or ideas — compounds.
+every contribution -- code, docs, design, or ideas -- compounds.
 
 ---
 
@@ -10,7 +10,7 @@ every contribution — code, docs, design, or ideas — compounds.
 1. Read the [Code of Conduct](CODE_OF_CONDUCT.md). We enforce it.
 2. Read the [Roadmap](Plan/Build-Plan.md) and the [current phase plan](Plan/Phase-2-Plan.md)
    so you know where we are.
-3. Check [open issues](https://github.com/incyashraj/krate/issues) — especially
+3. Check [open issues](https://github.com/incyashraj/krate/issues) -- especially
    those labelled `good first issue`.
 4. For anything bigger than a typo fix, open an issue or start a
    [GitHub Discussion](https://github.com/incyashraj/krate/discussions) first
@@ -43,7 +43,7 @@ cargo fmt --all -- --check
 ```
 
 Everything should work in under 10 minutes on a modern machine.
-If it doesn't, [open a bug report](https://github.com/incyashraj/krate/issues/new?template=bug_report.md) — that's a real bug.
+If it doesn't, [open a bug report](https://github.com/incyashraj/krate/issues/new?template=bug_report.md) -- that's a real bug.
 
 ---
 
@@ -125,8 +125,8 @@ any new source files.
 
 ## Where to ask for help
 
-- **GitHub Discussions** — best place for design questions and early feedback.
-- **Discord** `#help` channel — coming once the community server is live.
-- **Issue comments** — on the specific issue you're working on.
+- **GitHub Discussions** -- best place for design questions and early feedback.
+- **Discord** `#help` channel -- coming once the community server is live.
+- **Issue comments** -- on the specific issue you're working on.
 
-Please don't open issues just to ask questions — use Discussions.
+Please don't open issues just to ask questions -- use Discussions.

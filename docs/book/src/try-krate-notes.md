@@ -10,7 +10,7 @@ This page is written for someone who has never used Krate before.
 The shortest path, no terminal involved:
 
 1. Download `Krate.app` from the [latest release](https://github.com/incyashraj/krate/releases/latest)
-   (the `krate-app-…-apple-darwin.zip` asset for your Mac — `aarch64` for
+   (the `krate-app-…-apple-darwin.zip` asset for your Mac -- `aarch64` for
    Apple silicon, `x86_64` for Intel) and unzip it.
 2. The first time only: **right-click Krate.app and choose Open.** The app is
    not yet code-signed, so macOS warns about an unidentified developer;
@@ -20,7 +20,7 @@ The shortest path, no terminal involved:
    and double-click it.
 
 A permission window appears before anything runs: the app's identity, each
-capability it wants, and the author's reason for each — with a checkbox per
+capability it wants, and the author's reason for each -- with a checkbox per
 capability. Nothing executes until you press Open, and the app gets exactly
 what you left checked, for that session only. Its notes are saved in a
 `notes/` folder next to the file, and it can touch nothing else on your Mac.
@@ -165,11 +165,11 @@ complete experience today.
 
 ## If something goes wrong
 
-**`permission denied: missing required capabilities`** — the app asked for
+**`permission denied: missing required capabilities`** -- the app asked for
 something you did not grant. The message names the exact flag to add.
 
-**`refusing to fetch over plain HTTP`** — use an `https` URL, or add
+**`refusing to fetch over plain HTTP`** -- use an `https` URL, or add
 `--insecure-http` if you are serving it locally on purpose.
 
-**The window opens and closes immediately** — you probably passed `quick`,
+**The window opens and closes immediately** -- you probably passed `quick`,
 which is the flag automated tests use to exit straight away. Leave it off.

@@ -146,7 +146,7 @@ def render(page):
 PAGES = [
     {
         "slug": "share-an-app-made-with-ai.html",
-        "title": "How to share an app you made with AI — Krate",
+        "title": "How to share an app you made with AI -- Krate",
         "description": "You asked AI to build something and it works on your machine. Here is how to send it to someone else so it opens on their Mac, Windows, or Linux computer without a build step.",
         "h1": "How to share an app you made with AI",
         "lead": "It works on your machine. Getting it onto someone else's is the part nobody solved &mdash; until the app becomes one file.",
@@ -197,7 +197,7 @@ Grant [A]ll / [N]one / numbers (for example 1,2):</pre>
     },
     {
         "slug": "run-ai-generated-code-safely.html",
-        "title": "How to run AI-generated code safely — Krate",
+        "title": "How to run AI-generated code safely -- Krate",
         "description": "AI wrote it and you have not read all of it. Krate runs the app with no access to your files or network until you allow each thing, and refuses to package an app that reaches outside what it declared.",
         "h1": "How to run AI-generated code safely",
         "lead": "You did not read every line, and honestly you were not going to. The question is what the app can reach if it turns out to be wrong.",
@@ -261,7 +261,7 @@ It needs to:
     },
     {
         "slug": "portable-desktop-app-format.html",
-        "title": "A portable desktop app format: one file for Mac, Windows, and Linux — Krate",
+        "title": "A portable desktop app format: one file for Mac, Windows, and Linux -- Krate",
         "description": "One file that opens on all three desktop operating systems, without a separate build, an installer, or a bundled browser engine. How the .krate format works and where it does not fit.",
         "h1": "One app file for Mac, Windows, and Linux",
         "lead": "Not three installers behind one download button. One file, and the same file, on every desktop.",

@@ -4,11 +4,11 @@
 # A request goes in; a working, permission-gated `.krate` comes out, and the
 # whole run is recorded as evidence. The steps are:
 #
-#   1. author  — generate a complete Krate guest crate from the request
-#   2. build   — compile it to a wasm component (cargo-component)
-#   3. pack    — bundle code + manifest into one `.krate`
-#   4. verify  — run it WITH the fs.read grant (works, exit 0) and WITHOUT it
-#                (refuses before running, exit 5) — the permission wall
+#   1. author  -- generate a complete Krate guest crate from the request
+#   2. build   -- compile it to a wasm component (cargo-component)
+#   3. pack    -- bundle code + manifest into one `.krate`
+#   4. verify  -- run it WITH the fs.read grant (works, exit 0) and WITHOUT it
+#                (refuses before running, exit 5) -- the permission wall
 #
 # It writes a `krate.author.v1` transcript (the request, every step's command
 # and result, the generated files, the code.wasm sha256, and a verdict) plus a
@@ -16,7 +16,7 @@
 #
 # The "author" step is the seam an AI plugs into. By default it runs the
 # deterministic in-tree generator (`krate-author`). Pass `--author-cmd "<cmd>"`
-# and that command is run instead to produce the app source — that is where a
+# and that command is run instead to produce the app source -- that is where a
 # real LLM (or Claude Code) writes the code, with the build/pack/verify steps
 # downstream unchanged. The generator path is what CI gates on; the LLM path is
 # a demo hook and is never required to be green in CI.
@@ -183,7 +183,7 @@ fi
 record_step "verify-allow" "krate run --auto-grant" "0" \
   "printed $(printf '%s\n' "$ALLOW_OUT" | wc -l | tr -d ' ') lines"
 
-# 4b: WITHOUT fs.read, the app must refuse before running — exit 5.
+# 4b: WITHOUT fs.read, the app must refuse before running -- exit 5.
 set +e
 ( cd "$RUN_DIR" && "$KRATE_BIN" run "$NAME.krate" \
     --grant io.args --grant io.stdout --grant io.stderr -- input/sample.txt ) \

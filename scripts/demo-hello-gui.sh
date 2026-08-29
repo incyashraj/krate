@@ -62,7 +62,7 @@ case "$CODE" in
   0) echo "RESULT: native button clicked, and the click was received and recorded inside the portable component (exit 0)." ;;
   1) echo "RESULT: clean run, no click observed (timed out, or headless host)." ;;
   2) echo "RESULT: you closed the window before clicking." ;;
-  *) echo "RESULT: unexpected exit code $CODE — something is wrong." ; exit 1 ;;
+  *) echo "RESULT: unexpected exit code $CODE -- something is wrong." ; exit 1 ;;
 esac
 echo ""
 echo "What just ran: one portable WebAssembly component (same bytes on every"

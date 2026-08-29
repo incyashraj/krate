@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate Krate.icns — the macOS app icon.
+"""Generate Krate.icns -- the macOS app icon.
 
 A macOS-style rounded square in neutral grey carrying a white isometric crate.
 Deterministic output so the icon can be regenerated from source rather than

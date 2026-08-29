@@ -3,8 +3,8 @@
 **Status:** Accepted  
 **Date:** 2026-05-02  
 **Authors:** @incyashraj, Codex  
-**Supersedes:** —  
-**Superseded by:** —
+**Supersedes:** --  
+**Superseded by:** --
 
 ---
 

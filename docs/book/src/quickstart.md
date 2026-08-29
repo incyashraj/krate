@@ -230,7 +230,7 @@ For new app work, use the Phase 2 UAPI path instead:
 
 The GUI vertical slice has a one-command demo. On macOS it opens a real
 native window (click the button within 30 seconds and watch the text field
-change); on Linux and Windows the same portable file runs headless — and the
+change); on Linux and Windows the same portable file runs headless -- and the
 full CI matrix proves the identical bytes open real windows there too.
 
 ```bash
@@ -244,7 +244,7 @@ manual, including manual commands and troubleshooting, is on the
 
 ## Machine-Readable Runs
 
-Add `--json` to any run to get one `krate.run.v1` object describing it —
+Add `--json` to any run to get one `krate.run.v1` object describing it --
 app identity, granted capabilities with boundaries, denials, exit class,
 duration, and captured output. This is the same report AI agents receive
 through `krate mcp`; see

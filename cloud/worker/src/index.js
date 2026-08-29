@@ -646,7 +646,7 @@ async function mobileLanding(hash, env) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(name)} — a Krate app</title>
+<title>${esc(name)} -- a Krate app</title>
 <style>
   body { margin: 0; background: #0a0a0a; color: #fff; font-family: -apple-system, system-ui, sans-serif;
          min-height: 100vh; display: flex; align-items: center; justify-content: center;

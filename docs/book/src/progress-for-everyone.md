@@ -50,7 +50,7 @@ flowchart LR
 5. The first windowed app works: one portable file opens a real native window
    with a real button and text field on macOS (a human click travels into the
    app and back out to the native control), and the exact same file runs
-   without a window on Linux and Windows — the automated test matrix proves
+   without a window on Linux and Windows -- the automated test matrix proves
    the identical bytes execute on all three systems.
 6. AI agents can run apps safely: a library API, a `--json` run report, and
    an MCP server let any agent framework execute an app inside the sandbox

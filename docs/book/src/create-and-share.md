@@ -3,12 +3,12 @@
 This guide takes you from a plain-English request to a `.krate` file you can
 send to someone, who opens it by double-clicking and reviews exactly what it
 can access before it runs. You do not need to know the Krate internals, and you
-do not need to have written the app yourself — an AI agent can write it for you.
+do not need to have written the app yourself -- an AI agent can write it for you.
 
 The example builds a checklist app that saves its items to a local file.
 
 > Want the plain-English, no-jargon version first? See
-> [Make an app by asking](pages/make-an-app-with-ai.html) — the same flow
+> [Make an app by asking](pages/make-an-app-with-ai.html) -- the same flow
 > written for anyone, with big step-by-step pictures of what happens.
 
 ## What you need
@@ -27,7 +27,7 @@ The example builds a checklist app that saves its items to a local file.
   git clone https://github.com/incyashraj/krate
   cd krate
   cargo build --release -p krate-cli
-  # the binary is target/release/krate — copy it anywhere on your PATH
+  # the binary is target/release/krate -- copy it anywhere on your PATH
   ```
 
   The binary carries the Krate SDK inside it, so once you have `krate` you do
@@ -66,7 +66,7 @@ One file is written: **`checklist.krate`**, the whole app. This is what you
 share.
 
 The app is named from your request, and it gets a folder of that name to save
-into — ask for a reading list and it asks to read and write `./reading-list/**`,
+into -- ask for a reading list and it asks to read and write `./reading-list/**`,
 so the folder the person is approving says what the app is.
 
 If you want the evidence behind that summary, ask for a transcript:
@@ -97,7 +97,7 @@ Krate hands the request to the agent, which writes the app; then Krate builds
 it, checks that it imports only Krate's capabilities, packages it, and runs the
 same allow/deny verification. If the agent reaches for anything outside those
 capabilities, `krate create` stops before packaging and tells you what it tried
-to import — a broken app is caught, not shipped.
+to import -- a broken app is caught, not shipped.
 
 #### Wiring a different agent
 
@@ -122,7 +122,7 @@ path.
 
 ## Share it
 
-`checklist.krate` is a single file. Send it however you send any file — a
+`checklist.krate` is a single file. Send it however you send any file -- a
 message, an email attachment, a shared drive. The person receiving it does not
 need to trust you or read any code.
 
@@ -145,20 +145,20 @@ double-clicked `.krate` opens through the same permission review as
 Then, step by step:
 
 1. **Double-click `checklist.krate`.** Before anything runs, Krate shows a
-   window listing exactly what the app is asking for — a window, and read/write
+   window listing exactly what the app is asking for -- a window, and read/write
    access to its own `checklist` folder. Nothing else on the machine is
    reachable.
 2. **Review and allow.** The requested access is right there to read. Allow it,
    and the checklist window opens.
 3. **Use it.** Type a new item into the field and click **Add item** (or press
-   Enter) — it appears in the list. Click a checkbox to mark an item done.
+   Enter) -- it appears in the list. Click a checkbox to mark an item done.
 4. **Close the window.** Every change was saved to the app's folder as you made
    it.
 5. **Reopen it** (double-click the file again, allow again). Your items are
-   still there, exactly as you left them — checked ones checked, added ones
+   still there, exactly as you left them -- checked ones checked, added ones
    present.
 6. **Try denying.** Open it once more and decline the folder-write access. The
-   app does not start at all — it never opens half-working, because the wall
+   app does not start at all -- it never opens half-working, because the wall
    comes before the app's code runs.
 
 From a terminal the same file runs with:
@@ -168,14 +168,14 @@ krate run checklist.krate
 ```
 
 Add `--consent` to get the permission review even without a double-click, or
-`--auto-grant` to grant everything for a quick local try. The whole round trip —
+`--auto-grant` to grant everything for a quick local try. The whole round trip --
 create, open, edit, persist across a reopen, and refuse without its write
-grant — is also checked headlessly by `scripts/checklist-roundtrip.sh`.
+grant -- is also checked headlessly by `scripts/checklist-roundtrip.sh`.
 
 ## What just happened
 
 - You described an app in one sentence.
-- It was written, built, checked, and packaged into one `.krate` — and its
+- It was written, built, checked, and packaged into one `.krate` -- and its
   permission wall was verified before the file existed.
 - You sent that one file to someone.
 - They opened it, saw exactly what it could touch, allowed it, and used it.

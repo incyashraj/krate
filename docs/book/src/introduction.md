@@ -43,7 +43,7 @@ macOS, and Windows from byte-identical artifacts, routes app calls through
 UAPI modules, and enforces manifest-declared capabilities before any host
 access. The first GUI component opens a real native window on macOS (native
 button and text field, human-verified click round trip) and real winit
-windows on Linux and Windows — proven in CI — with the first drawn-widget
+windows on Linux and Windows -- proven in CI -- with the first drawn-widget
 pass painting the UI in those windows. AI agents can execute components in
 the sandbox through an embedding API, `krate run --json`, and an MCP
 server, receiving permission decisions as data. Mobile hosts, bundles, and
@@ -68,7 +68,7 @@ distribution are still later work.
   component and the permissions it asks for; `krate run` takes that file or
   an https URL to one. Fetching grants nothing.
 - The agent surface: `krate_runtime::embed`, `krate run --json`
-  (schema `krate.run.v1`), and `krate mcp` with two tools —
+  (schema `krate.run.v1`), and `krate mcp` with two tools --
   `inspect_bundle` to see what an app wants before running it, and
   `run_component` to run it, whose denials carry the exact retry that
   would succeed.
@@ -92,7 +92,7 @@ distribution are still later work.
 - External developer validation.
 
 So the honest status is: **the runtime proof is real on all three desktop
-OSes — windows included — but the platform is not done**.
+OSes -- windows included -- but the platform is not done**.
 
 ## Why WebAssembly?
 

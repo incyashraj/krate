@@ -4148,7 +4148,7 @@ async function obLoadAgents() {
       // Honest, and actionable: name the tool and how to get it.
       const help = (agents || [])[0];
       box.innerHTML += `<p class="ob-none">No AI tool found yet. ${
-        help && help.detail ? help.detail : "Install one, then come back — Krate will notice it."
+        help && help.detail ? help.detail : "Install one, then come back -- Krate will notice it."
       }</p>`;
       if (next) next.disabled = false;
     }

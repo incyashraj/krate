@@ -5,7 +5,7 @@
 # into the text field (KRATE_EXPECT_TYPED), scrolls the list, selects a row
 # (asserted via KRATE_EXPECT_SELECTED), captures a screenshot
 # (KRATE_XVFB_SCREENSHOT), clicks the button (center 96,32), and expects the
-# component to observe the press and exit 0 — and, when typing or a row
+# component to observe the press and exit 0 -- and, when typing or a row
 # selection was requested, to report `typed:<text>` / `selected:<label>` on
 # stdout.
 set -u
@@ -100,7 +100,7 @@ xdotool mousemove 166 264 click 1 || true
 sleep 1
 
 # Optional visual evidence: capture the Xvfb root window as a PNG before the
-# click ends the app — after typing, so the typed text is in the picture.
+# click ends the app -- after typing, so the typed text is in the picture.
 # Never fails the proof; screenshots are best-effort.
 if [ -n "${KRATE_XVFB_SCREENSHOT:-}" ]; then
   xwd -root -silent | convert xwd:- "$KRATE_XVFB_SCREENSHOT" || true

@@ -1,7 +1,7 @@
 # Embedding and Machine-Readable Runs
 
-Krate's wedge is safe execution of software that programs — including AI
-agents — produce and run on a user's behalf. That needs two surfaces beyond
+Krate's wedge is safe execution of software that programs -- including AI
+agents -- produce and run on a user's behalf. That needs two surfaces beyond
 the interactive CLI: a library API other programs can embed, and a
 machine-readable form of `krate run`.
 
@@ -34,12 +34,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 (`success`, `permission-denied`, `app-error`, `limit-exceeded`), the captured
 stdout bytes, and the run duration. Runtime-level failures (invalid
 component, trap) surface as errors; a capability denial inside the app is a
-classified outcome, not an error — policy-aware callers decide what to do
+classified outcome, not an error -- policy-aware callers decide what to do
 with it.
 
 Grants never come from prompts here. `SessionPolicy::from_cli_grants` parses
 explicit capability strings, and `SessionPolicy::allow_all_declared` grants
-everything a manifest declares — the embedding caller owns that decision the
+everything a manifest declares -- the embedding caller owns that decision the
 way a human owns the terminal prompt.
 
 ## `krate run --json` (schema `krate.run.v1`)

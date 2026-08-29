@@ -31,7 +31,7 @@ unfamiliar Rust is an hour of careful work to save five minutes of typing.
 **Run it in a container or a VM.** This is what most AI sandboxes do, and it
 works, but it is coarse: the code gets a whole simulated computer with a whole
 filesystem and usually a whole network stack. You have moved the blast radius,
-not removed it. It is also heavy — a VM per script is not something you do on a
+not removed it. It is also heavy -- a VM per script is not something you do on a
 laptop for a tip calculator.
 
 **Give it only what it needs.** Capability-based security: the code starts with

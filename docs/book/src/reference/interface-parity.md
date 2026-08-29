@@ -30,6 +30,6 @@ not be drawn into. That pair reads `works` on both tables now.
 | `ui.launcher` | 1 | **works** |
 | `ui.menu` | 1 | **not implemented** |
 | `ui.notify` | 1 | **works** |
-| `ui.tree` | 5 | partly — 1 of 5 refuse |
-| `ui.window` | 8 | partly — 1 of 8 refuse |
+| `ui.tree` | 5 | partly -- 1 of 5 refuse |
+| `ui.window` | 8 | partly -- 1 of 8 refuse |
 

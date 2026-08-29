@@ -5,7 +5,7 @@
 # It installs a per-user MIME type for `.krate`, a desktop launcher that opens a
 # double-clicked bundle behind the consent flow (`krate run <file> --consent`),
 # and the document icon. After this, double-clicking a `.krate` in a file
-# manager reviews the app's permissions and runs it — the same enforcement as
+# manager reviews the app's permissions and runs it -- the same enforcement as
 # `krate run`, only the entry gesture is new.
 #
 # Usage: scripts/install-krate-desktop.sh [--uninstall]

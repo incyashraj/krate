@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # The self-service round-trip, headless: create a checklist .krate from scratch
 # with a standalone binary, open it, add and toggle items, and reopen it with
-# the data persisted — then confirm the permission wall.
+# the data persisted -- then confirm the permission wall.
 #
 # This is the machine-checkable version of the external-user flow. The human
 # version (double-click, click checkboxes, type into the field, close the window

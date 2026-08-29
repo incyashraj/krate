@@ -35,7 +35,7 @@ offsets.
 
 **WASI is not free.** WASI gives a guest a POSIX-shaped world: files, clocks,
 environment variables, sockets. That is exactly what you do not want if the
-point is a capability sandbox — it hands over a filesystem and asks the host to
+point is a capability sandbox -- it hands over a filesystem and asks the host to
 police it afterwards.
 
 Avoiding it is harder than it sounds, because the Rust standard library pulls
@@ -57,7 +57,7 @@ That is a real cost and worth being clear-eyed about: choosing this means
 choosing someone's UI world, not a standard.
 
 **Crates assume std.** A large fraction of the ecosystem will not build
-`no_std`. Image decoding, randomness, HTTP, JSON parsing — for each one you
+`no_std`. Image decoding, randomness, HTTP, JSON parsing -- for each one you
 either find the rare `no_std`-compatible crate, or you bridge it. `getrandom`
 needs a custom backend. Image decoding wants `zune-*` rather than `image`. None
 of this is hard; all of it is unglamorous work nobody mentions in a blog post

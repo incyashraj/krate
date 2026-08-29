@@ -24,7 +24,7 @@ questions, and passing the first tells you almost nothing about the second.
 
 The dead buttons were a missing mouse-event path on macOS. The app hit-tested
 correctly and never received an event to test. Every automated check
-passed — because none of them clicked anything.
+passed -- because none of them clicked anything.
 
 ## The problem with testing your own product
 
@@ -48,7 +48,7 @@ you know what it does.
 ## What we changed
 
 **A stranger runs the tests.** We keep an isolated directory with only the
-publicly installed release and the public website — no repository, no source,
+publicly installed release and the public website -- no repository, no source,
 no internal knowledge. Apps get built there by an AI that has never seen our
 code, and then actually used: every control clicked, the window resized, items
 added past the bottom of the list, left idle for thirty seconds.

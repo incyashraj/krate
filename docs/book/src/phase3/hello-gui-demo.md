@@ -25,7 +25,7 @@ The app reports what it observed, so scripts and CI can assert behavior:
 | Exit | Meaning |
 |---|---|
 | `0` | A click on the native button reached the component (the full round trip) |
-| `1` | Clean bounded run with no click — the normal headless outcome |
+| `1` | Clean bounded run with no click -- the normal headless outcome |
 | `2` | The user closed the window before clicking |
 | `30`–`32` | Window creation, show, or widget-tree calls failed |
 
@@ -77,7 +77,7 @@ Honestly, in two layers:
    native button (exit `0`), because macOS (AppKit) is the only native
    window backend so far. The Linux and Windows winit backends are the next
    Phase 3 milestone; when they land, layer 1's runs graduate into visible
-   windows there too — the component itself will not change at all.
+   windows there too -- the component itself will not change at all.
 
 That last sentence is the point of the whole design: the app is already
 finished for all three OSes. Only host adapters remain.
@@ -85,11 +85,11 @@ finished for all three OSes. Only host adapters remain.
 ## What to look for when it misbehaves
 
 - **No window appears on macOS**: the process must promote itself to a
-  regular app and pump the NSApplication event queue — both were real bugs
+  regular app and pump the NSApplication event queue -- both were real bugs
   caught by a human eye and fixed in the adapter; if a regression appears,
   check `show_window` (activation policy + activate) and
   `pump_app_events` in `crates/adapter-macos/src/appkit.rs`.
 - **Window appears but clicks do nothing**: the event-queue pump is not
-  running — same place.
+  running -- same place.
 - **Exit `32` headless**: a widget-tree call failed; run with `--json` to
   see the classified error.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate docs/landing/reports.html — the claims, with charts drawn from data.
+"""Generate docs/landing/reports.html -- the claims, with charts drawn from data.
 
 Two rules this file exists to enforce:
 
@@ -205,7 +205,7 @@ def bars(rows, unit, color="#5c93f8", width=640, row_h=34):
 
 
 def paired(rows, width=640, row_h=52):
-    """Native above, Krate below, same scale — equal length means equal time."""
+    """Native above, Krate below, same scale -- equal length means equal time."""
     largest = max(max(a, b) for _, a, b in rows) or 1
     label_w, track = 150, width - 150 - 120
     out = []
@@ -274,7 +274,7 @@ def main():
     rows = []
     for name, size in sizes:
         kind, note = APPS.get(name, ("", ""))
-        mark = "Nightly" if name in tested else "—"
+        mark = "Nightly" if name in tested else "--"
         rows.append(
             f'        <tr><td><code>{name}</code></td><td>{kind}</td>'
             f'<td class="num">{size:,}</td>'

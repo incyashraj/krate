@@ -5,7 +5,7 @@
 # double-clicked .krate here. Launch Services starts the shim executable,
 # which execs `krate open-app`; that waits for the open-document Apple event,
 # then runs the bundle behind the native consent wall. Same binary, same
-# enforcement — only the entry gesture is new.
+# enforcement -- only the entry gesture is new.
 #
 # Usage: scripts/make-macos-app.sh [output-dir] [--release]
 #   output-dir defaults to dist/. Pass --release to package the release build.
@@ -29,7 +29,7 @@ done
 # target/<triple>/release/krate); default is the local cargo profile dir.
 BINARY="${KRATE_BINARY:-target/$PROFILE/krate}"
 if [ ! -x "$BINARY" ]; then
-  echo "missing $BINARY — build it first (cargo build -p krate-cli${PROFILE:+ --$PROFILE})" >&2
+  echo "missing $BINARY -- build it first (cargo build -p krate-cli${PROFILE:+ --$PROFILE})" >&2
   exit 1
 fi
 
@@ -173,5 +173,5 @@ if [ -x "$LSREGISTER" ]; then
 fi
 
 echo "assembled $APP (profile: $PROFILE, version: $VERSION)"
-echo "test: open a .krate with it — e.g."
+echo "test: open a .krate with it -- e.g."
 echo "  open -a \"\$PWD/$APP\" path/to/app.krate"

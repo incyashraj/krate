@@ -27,11 +27,11 @@ What exactly are we deciding?
 
 ## Alternatives considered
 
-### Option A — name
+### Option A -- name
 
 What it is. Why rejected.
 
-### Option B — name
+### Option B -- name
 
 What it is. Why rejected.
 

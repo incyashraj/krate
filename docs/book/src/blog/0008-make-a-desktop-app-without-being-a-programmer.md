@@ -14,7 +14,7 @@ Two things:
 - **Krate installed.** One command:
   `curl -fsSL https://krate.tech/install.sh | sh`
 - **An AI coding tool you already have.** Claude Code, Codex, Gemini, Copilot,
-  or Grok — any one of them. If you already use one for anything, you are done.
+  or Grok -- any one of them. If you already use one for anything, you are done.
 
 You do not need to know Rust. You do not need to install build tools by hand;
 Krate checks what is missing the first time and offers to set it up.
@@ -34,9 +34,9 @@ words:
 a habit tracker with a weekly grid
 ```
 
-Krate checks which of your AI tools actually work right now — one that is
+Krate checks which of your AI tools actually work right now -- one that is
 installed but not signed in is listed with the command that fixes it, so you
-cannot pick one that will fail — and asks which should write it.
+cannot pick one that will fail -- and asks which should write it.
 
 Then it builds, showing each stage:
 
@@ -61,7 +61,7 @@ make the grid monthly instead of weekly
 
 The app carries its own source inside the file, so the AI edits what exists
 rather than starting over. That also means anyone you send the file to can
-change it — not just you, and not just on the machine that made it.
+change it -- not just you, and not just on the machine that made it.
 
 ## Sending it to someone
 
@@ -96,7 +96,7 @@ Being straight about the edges:
 - **It is early.** Krate is pre-alpha. Things break, and the
   [list of what does not work yet](https://krate.tech/progress) is public.
 - **The AI sometimes gets it wrong.** Krate checks the app builds, runs, and
-  responds before handing it to you, so what reaches you usually works — but
+  responds before handing it to you, so what reaches you usually works -- but
   "usually" is the honest word.
 
 ## Try it
@@ -107,5 +107,5 @@ krate
 ```
 
 If something is confusing or broken, [tell
-us](https://krate.tech/contact) — the confusing parts are the ones we most need
+us](https://krate.tech/contact) -- the confusing parts are the ones we most need
 to hear about.

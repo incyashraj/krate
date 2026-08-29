@@ -3,8 +3,8 @@
 **Status:** Accepted  
 **Date:** 2026-05-01  
 **Authors:** @incyashraj  
-**Supersedes:** —  
-**Superseded by:** —
+**Supersedes:** --  
+**Superseded by:** --
 
 ---
 
@@ -20,7 +20,7 @@ The language we write it in is one of the most consequential early decisions:
 - It will never be rewritten at scale. We choose once.
 - It shapes the contributor pool for the life of the project.
 - It determines which WebAssembly runtime we can embed naturally.
-- It affects binary size, startup time, and memory footprint — all of which
+- It affects binary size, startup time, and memory footprint -- all of which
   matter for Phase 4 (mobile) and Phase 7 (v1.0).
 
 ---
@@ -31,9 +31,9 @@ We write the Krate runtime in **Rust**.
 
 Specifically:
 
-- `crates/runtime/` — the core runtime library.
-- `crates/cli/` — the `krate` command-line binary.
-- `crates/host-adapter/*` — per-OS adapter crates.
+- `crates/runtime/` -- the core runtime library.
+- `crates/cli/` -- the `krate` command-line binary.
+- `crates/host-adapter/*` -- per-OS adapter crates.
 - `crates/bundle/`, `crates/policy/`, and future crates.
 
 Apps themselves are compiled from any language to WebAssembly. Rust is the
@@ -58,7 +58,7 @@ contributor friction is higher than Cargo.
 
 Compelling language: small, fast, simple. But: pre-1.0, stdlib churn is heavy,
 ecosystem for WebAssembly runtimes is immature. Revisit only if Rust becomes
-a limiting factor — no plausible path to that today.
+a limiting factor -- no plausible path to that today.
 
 ### Go
 
@@ -83,7 +83,7 @@ anything but the respective first-party toolchain is fragile.
 
 ### Positive
 
-- Memory safety without GC — a rare combination that exactly fits runtime
+- Memory safety without GC -- a rare combination that exactly fits runtime
   requirements.
 - Wasmtime, our chosen WebAssembly engine (see ADR-0002), is itself Rust.
   Embedding is native.

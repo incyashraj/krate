@@ -3,19 +3,19 @@
 Last updated: 2026-07-28
 
 Post-submission audit (2026-07-28, `de45c91`): the public path was walked end to
-end the way a reviewer would — install from the one-line installer, inspect an
-app, refuse it, allow it, reopen it — and six defects were found and fixed, all
+end the way a reviewer would -- install from the one-line installer, inspect an
+app, refuse it, allow it, reopen it -- and six defects were found and fixed, all
 in what already existed rather than in anything new.
 
 The worst was a GUI app run without a native window waiting on events that
 nothing could deliver, burning a budget of over eight hours; `krate run
 app.krate --auto-grant` looked like a hang. A quiet headless run now ends in
 about twelve seconds. The first attempt at that fix reported a window close on
-every idle wait, which told apps a person had acted when nobody had — CI caught
+every idle wait, which told apps a person had acted when nobody had -- CI caught
 it on all three lanes, and the close is now reserved for an unbounded wait,
 where there is no other honest way out. `--dump-caps` ran behind the permission
-wall, so inspecting an app before granting it anything — the one thing that flag
-is for — refused with exit 5. `krate version` reported the crate's `-dev`
+wall, so inspecting an app before granting it anything -- the one thing that flag
+is for -- refused with exit 5. `krate version` reported the crate's `-dev`
 version, contradicting `krate --version` on the same released binary. Every
 generated app was named `checklist` regardless of the request, so a reading list
 asked to "save files in checklist"; an app is now named from its request and
@@ -24,7 +24,7 @@ promised a transcript sidecar that was made opt-in and never written, and the
 README still pointed at rc3.
 
 The published `notes.krate` the README front-pages was stale and failed to
-instantiate on the current runtime — the front-page demo, broken, after 31
+instantiate on the current runtime -- the front-page demo, broken, after 31
 downloads. It carried the same eight-hour idle ceiling too, so it was rebuilt
 from fixed source and republished to `notes-v0.1.0` (15027 bytes, sha256
 `1581c96c…`). Verified from the live URL afterwards: inspect, refuse, allow,
@@ -38,7 +38,7 @@ the name an app derives from its request.
 Release `v0.1.0-rc4` (2026-07-28): main `97517db` shipped to the one-line
 installer. This release makes AI authoring reliable and hardens `krate create`
 for real machines. The guest SDK is now `#![no_std]`, so an AI-authored app
-cannot leak std's latent `wasi:*` imports by construction — arbitrary-app
+cannot leak std's latent `wasi:*` imports by construction -- arbitrary-app
 authoring is dependable rather than a coin flip. `krate create --agent claude`
 drives Claude Code to author an app from a plain request (proven on varied
 requests: grocery/reading/packing/habits lists, each correctly customized and
@@ -54,7 +54,7 @@ the full 3-OS matrix at `f2bb345` (run `30286024116`).
 
 Last updated (prior): 2026-07-26
 Naming: the project is Krate (company name: Krate Labs). The A9 rename is
-fully executed — CLI `krate`, WIT `krate:*`, schema `krate.run.v1`, env
+fully executed -- CLI `krate`, WIT `krate:*`, schema `krate.run.v1`, env
 `KRATE_*`, repo `incyashraj/krate`, runner `krate-local`, future bundle
 format `.krate`. No legacy `layer36` identifiers remain in code or contracts.
 Repo: `incyashraj/krate`
@@ -74,7 +74,7 @@ spec as P3-SHARE-01 in `Plan/Phase-3-Plan.md` §19. Short version: Adam
 Wiggins (Heroku co-founder) gave brutal feedback that general-purpose
 runtimes are very hard to sell and that a specific wedge is needed, and
 YC's current RFS asks for a way to deploy and share small software with
-permissions named as the hard part. Both point at the same thing — the
+permissions named as the hard part. Both point at the same thing -- the
 durable problem is that generated software is shared constantly and read
 by nobody, so the unit that moves has to carry its own permissions.
 Nothing architectural changes; portability stops being the headline and
@@ -82,11 +82,11 @@ becomes how the property is achieved. The Adobe/Flash analogy is retired.
 Next implementation work is P3-SHARE-01, not further widget slices.
 
 Certification checkpoint 2026-07-26 (friction hardening, latest): no new
-milestone — this hardens the shipped `krate create` and double-click surface
+milestone -- this hardens the shipped `krate create` and double-click surface
 for the first users and agents, on top of the self-service path certified
 below. Branch `slice/friction-batch-a`, commit `57ad43b`, full matrix run
 `30203375871` green on all three OS lanes. Four batches, each its own commit:
-(A) `krate create` runs a toolchain preflight before authoring — if Rust,
+(A) `krate create` runs a toolchain preflight before authoring -- if Rust,
 `cargo-component`, or the `wasm32-wasip1` target is missing it says so plainly
 and, in a terminal, offers to install what is missing (honoring `--yes` /
 `--no-install`); non-interactive and `--json` report the gap as data instead of
@@ -129,7 +129,7 @@ via `--author-cmd`), builds it with cargo-component, checks it imports only
 exit 5 without the gating capability), writing a `krate.author.v1` transcript.
 The binary embeds the SDK (WIT + the Rust bindings crate) and materializes it
 to `~/.cache/krate/sdk/<sha>` on first use, so no repo checkout and no
-`KRATE_SDK_ROOT` are needed — proven by running the binary copied outside the
+`KRATE_SDK_ROOT` are needed -- proven by running the binary copied outside the
 repo with a cleared cache. A Windows path bug (a `\\?\` verbatim path breaking
 the generated Cargo.toml) is fixed by normalizing SDK paths. There are two app
 kinds: the word-frequency CLI and a checklist GUI (`apps/krate-checklist`) with
@@ -150,10 +150,10 @@ once this branch is merged and a new release is cut for the one-line installer
 to pull.
 
 Certification checkpoint 2026-07-25: an agent can create the
-shareable artifact directly, not just run one — the biggest gap in the story
+shareable artifact directly, not just run one -- the biggest gap in the story
 is closed. Branch `slice/ai-authoring-loop`, commit `90e7d71`, full matrix
-run `30147362391` green on all three OS lanes. The loop — request → author →
-build → pack → verify — lives in `crates/author` (the deterministic
+run `30147362391` green on all three OS lanes. The loop -- request → author →
+build → pack → verify -- lives in `crates/author` (the deterministic
 generator, 7 unit tests) and `scripts/author-krate.sh` (the end-to-end
 driver). Given a plain request it generates a complete Krate guest crate
 (`Cargo.toml`, `src/lib.rs`, `manifest.toml`) for a word-frequency reporter
@@ -167,12 +167,12 @@ Stronger than required: all three lanes produced the byte-identical authored
 `code.wasm` (sha256 `4a5928ac…`), so the loop is deterministic across
 platforms, not merely reproducible. The AI seam is the author step:
 `--author-cmd` lets a real LLM (or Claude Code) write the app source instead
-of the built-in generator, with build/pack/verify unchanged — verified
+of the built-in generator, with build/pack/verify unchanged -- verified
 locally; it is a documented demo hook and does not gate CI. The load-bearing
 knowledge the generator encodes is that a Krate component may import only
 `krate:*`: a growable `Vec`'s realloc, `HashMap`'s hasher, `format!`, and the
 `args::first`/`read_to_string` SDK helpers each drag the `wasi:*` import set
-in, and LTO cannot strip it — so the generated app uses the same
+in, and LTO cannot strip it -- so the generated app uses the same
 fixed-capacity, panic-free discipline as the in-tree samples (fixed `[u8; N]`
 buffers, a fixed word table, `.get()`/`.get_mut()` only, output formatted by
 hand). Evidence note: this is machine-proven end to end on all three OSes;
@@ -188,7 +188,7 @@ pieces were Undo/Redo menu items (Cmd+Z / Cmd+Shift+Z now route through the
 field editor). The drawn path (Linux, Windows) paints its own text and has
 no native control, so the whole editor was built in the guest: `NoteBuffer`
 became a fixed-capacity, allocation-free, panic-free editor with a cursor, a
-selection anchor, and a 32-deep snapshot undo/redo stack — insert at caret
+selection anchor, and a 32-deep snapshot undo/redo stack -- insert at caret
 (replacing any selection), backspace, forward delete, left/right/home/end
 movement (Shift extends), select-all, and delete-selection. A pure
 `classify_key()` maps key + modifiers to an action, so shortcut translation
@@ -197,8 +197,8 @@ Meta (macOS), so the byte-identical guest honors each platform's native
 modifier. Cut/Copy/Paste round-trip through the real OS clipboard: the
 `krate:ui/clipboard` interface already existed end to end but the drawn
 adapters returned Unsupported; both now implement it via arboard (text-only,
-no image-data — clipboard-win's BSL-1.0 license was added to `deny.toml`).
-Clipboard is an optional capability — deny it and the app still opens,
+no image-data -- clipboard-win's BSL-1.0 license was added to `deny.toml`).
+Clipboard is an optional capability -- deny it and the app still opens,
 types, and saves; only Cut/Copy/Paste go quiet. A visible caret and
 selection required the one deliberate UAPI addition this change makes: a
 `krate:ui` `text-cursor` record on the widget node (a caret cannot ride an
@@ -207,7 +207,7 @@ bitmap painter uses its monospace cell grid, the vello painter measures
 prefix widths); a caret on a non-text widget is rejected at lowering. Tests:
 guest unit tests for shortcut translation, selection, editing, and
 undo/redo; painter tests for the caret and selection wash; runtime tests for
-the caret-lowering contract. The permission-denial behavior is unchanged —
+the caret-lowering contract. The permission-denial behavior is unchanged --
 withholding `fs.write` still stops the app with exit 5 before any code runs,
 verified locally and on the Linux lane. Byte-identical bytecode everywhere
 is proven structurally: the notes `code.wasm` is built once in the
@@ -218,7 +218,7 @@ note: the macOS editing (native control + Undo/Redo menu, Cmd shortcuts) is
 founder-verifiable interactively; the drawn-path editing, clipboard, and
 caret rendering are proven by the unit/painter/runtime tests plus the
 byte-identical `.krate` running headless on the Linux and Windows lanes. The
-rich drawn-path caret is not yet screenshot-verified in CI — that is the one
+rich drawn-path caret is not yet screenshot-verified in CI -- that is the one
 thing a founder or a follow-up visual proof would still want to eyeball.
 
 Certification checkpoint 2026-07-23: a `.krate` opens like a
@@ -232,7 +232,7 @@ yields the same exit-5 denial a withheld `--grant` produces. The rich
 window is macOS-only for now (founder decision); Linux/Windows fall back to
 the terminal prompt through the same `SessionPolicy` fold, and the Linux
 lane proves those semantics headlessly. P3-OPEN-03 (first slice): double-
-clicking a `.krate` in Finder opens it — `scripts/make-macos-app.sh`
+clicking a `.krate` in Finder opens it -- `scripts/make-macos-app.sh`
 assembles `Krate.app` (shim execs `krate open-app`, which receives the
 open-document Apple event and runs the consent flow), the bundle declares
 the `.krate` document type via an exported UTI, and launching the app with
@@ -242,7 +242,7 @@ role-driven (heading/status/list typography, a borderless focused editor
 with a placeholder). One real runtime bug was found and fixed by running as
 a stranger would (fresh folder, no `notes/` dir): a granted write now
 materializes its own directory tree, so saving works from any folder a
-`.krate` is dropped in — locked in by a unit test. The published site root
+`.krate` is dropped in -- locked in by a unit test. The published site root
 is now a landing page (docs nested under `/docs/`). CI gained a
 `timeout-minutes: 75` on the full-test job after a stuck-runner incident;
 the Windows lane legitimately runs ~53 minutes. Verified interactively on
@@ -269,13 +269,13 @@ existed only on the real macOS surface, not the Linux/Windows stub (broke
 the Ubuntu test lane and clippy); and a pre-existing macOS-only test built
 `WidgetPlacement` without the new `clickable` field (only clippy
 `--all-targets` on CI saw it, since `cargo build` skips test targets). Both
-are now covered by running the exact CI checks locally — `cargo clippy
+are now covered by running the exact CI checks locally -- `cargo clippy
 --all-targets --all-features -- -D warnings` and `cargo test --workspace`
-— before pushing.
+-- before pushing.
 Certification: landed as `c7afb25` + `00fa9f0` + `0baf9be`, merged to main
 as `c21d88e` (PR #8), dispatched full matrix run `29985193087` green on all
 three OS lanes. Evidence note: the accent glow is a macOS-native AppKit
-tint, so the Linux CI screenshot path does not exercise it — the glow and
+tint, so the Linux CI screenshot path does not exercise it -- the glow and
 "+ New note" were verified by the founder interactively on macOS (screenshot
 reviewed in-session, not saved as a repo artifact). The Linux selection wash
 that CI does prove is already evidenced by
@@ -324,7 +324,7 @@ One real bug the runtime caught: `String::push_str` references std's OOM
 handler, which drags the whole `wasi:cli` import set into an otherwise pure
 component and makes it unloadable. Notes uses the raw-allocation path
 hello-gui already had.
-Certification: certified and merged to main — see the checkpoint blocks at
+Certification: certified and merged to main -- see the checkpoint blocks at
 the top of this section (shareability arc run `29964096927`, then the
 clickable-rows slice run `29985193087`).
 
@@ -366,7 +366,7 @@ gained `selected: option<u32>` (rejected on kinds that cannot carry a
 selection, in both the builder and the WIT boundary), the gui host resolves
 that index to the child's rect at lowering time and ships it as
 `WidgetPlacement::selection`, and both painters fill that rect with a
-tinted accent wash behind the row labels — honoring the Scroll clip in the
+tinted accent wash behind the row labels -- honoring the Scroll clip in the
 fully-visible and partially-clipped paths alike. No new event: pointer
 routing already hit-tests to the row's own node and delivers its widget id,
 so the component maps id to index, re-lowers with a new `selected`, and
@@ -375,7 +375,7 @@ also deleted in favor of the shared `drawn_kind` list, closing the drift
 that CI caught during the widget-state slice. hello-gui grew a three-row
 pick list below the scroll area (row ids 20..22, so certified scroll
 coordinates are untouched), and the Xvfb proof clicks row two at (166,264)
-— coordinates taken from the layout engine, not guessed — before the
+-- coordinates taken from the layout engine, not guessed -- before the
 screenshot, then asserts `selected:pick beta`. The component artifact grew
 from 24,062 to 26,378 bytes (CI-built artifact byte-identical to the local
 build), so external "24KB" claims were refreshed to 26KB alongside this.
@@ -393,18 +393,18 @@ A `Scroll` container now behaves like a real one: children overflow it
 clip rectangle both painters honor (fills intersect the clip; labels
 render when fully visible), the winit hosts capture mouse-wheel input
 into a raw-sample drain channel, and the gui host keeps per-container
-scroll offsets — wheel input hit-tests the topmost Scroll under the
+scroll offsets -- wheel input hit-tests the topmost Scroll under the
 cursor, clamps the offset to the content extent, and re-lowers. Zero
 WIT changes: the guest declares a Scroll node with children and never
 sees a wheel event, matching native platform feel. hello-gui grew a
 120px scroll area with eight text rows, and the Xvfb proof wheels it
 to a mid-list position before the screenshot. The nightly fuzz lane was
 also hardened the same day: runs were dying because the cron fired
-while this laptop slept on battery — the fuzz step now runs under
+while this laptop slept on battery -- the fuzz step now runs under
 caffeinate and the cron moved to 13:00Z (21:00 SGT).
 Certification: landed as `8355970`, full matrix run `29727004728` green
 on all three OS lanes. The screenshot artifact verified by eye: the
-scroll area shows lines four through eight — the robot's three wheel
+scroll area shows lines four through eight -- the robot's three wheel
 notches (60 logical px) scrolled the first three lines out of view,
 clipped exactly at the container edge. Copy in `Invest/evidence/`.
 Previous slice, certified: widget state entered the contract.
@@ -420,15 +420,15 @@ the existing widgets so certified CI coordinates are untouched. The
 component stays import-pure. Pixel tests pin checked/unchecked fills,
 switch knob positions, and progress fractions.
 Certification: landed as `b8454a4` + `4abbc8b` (CI screenshot caught the
-winit hosts' private kind filter silently dropping the new widgets —
+winit hosts' private kind filter silently dropping the new widgets --
 filtering now shares one `drawn_kind` list with the painter). Full
 matrix run `28772540656` green on all three OS lanes; the screenshot
 artifact verified by eye: checkbox labeled "robot was here" and a
 progress bar filled to exactly 8/16 = 50% after the robot typed
 "hi krate". Copies in `Invest/evidence/`.
 Previous slice, certified: keyboard input wired end to end
-(host side). The winit hosts capture real key presses — normalized key
-names, modifier state, and layout-processed text — into a raw-sample
+(host side). The winit hosts capture real key presses -- normalized key
+names, modifier state, and layout-processed text -- into a raw-sample
 drain channel mirroring the pointer path (samples never enter the event
 queue directly). The gui host attaches keyboard focus and queues
 portable key and text-input events, and a pointer press on a text field
@@ -437,22 +437,22 @@ focus-changed event). Zero WIT changes: `key`, `text-input`, and
 `focus-changed` were already in the frozen-shape contract. Round-trip
 covered by new dispatcher tests. The visible typing demo landed right
 behind it: hello-gui now buffers text-input events (fixed-capacity,
-panic-free — indexed slice ops pull WASI panic machinery, so all access
+panic-free -- indexed slice ops pull WASI panic machinery, so all access
 is via non-panicking accessors), renders the text into the field live,
 handles Backspace, and reports `typed:<text>` on stdout at exit. The
 Xvfb proof script gained the full loop: click the field to focus, type
 "hi krate" with xdotool, screenshot with the text visible, click the
 button, and assert both exit 0 and the typed marker in the app's own
-output — the first machine-verified keyboard round trip through the
+output -- the first machine-verified keyboard round trip through the
 whole stack (X11 key event → winit → drain → focus routing → portable
 text-input → guest → widget update → drawn pixels → stdout).
 Certification: landed as `97363e6` + `4d67598` + one CI-caught fix
-(`8df3870` — bare Xvfb runs no window manager, so X input focus must be
+(`8df3870` -- bare Xvfb runs no window manager, so X input focus must be
 set explicitly with `xdotool windowfocus` before typing). Full matrix
 run `28746399711` green on all three OS lanes; the log shows the guest
 echoing `typed:hi krate` and the screenshot artifact shows the words
 sitting in the field. Copies in `Invest/evidence/`.
-Previous slice: widget styling — Buttons and
+Previous slice: widget styling -- Buttons and
 fields render with rounded corners in the vector painter, and buttons
 give hover and pressed feedback: the winit hosts (Linux and Windows)
 hit-test the cursor against placements on every move, track the pressed
@@ -461,35 +461,35 @@ value both painters accept. The hit-test helper is shared and
 unit-tested (paint order and widget kind honored); pixel tests cover the
 rounded corner (exact corner keeps the background), the hover fill
 change, and the pressed color in the bitmap fallback.
-Previous slice, certified: the renderer's first pass —
+Previous slice, certified: the renderer's first pass --
 The duplicated softbuffer painting moved into one shared CPU painter
 (`adapter-common/src/painter.rs`) with deterministic pixel tests, and on
 top of it vector text landed: with the new `vector-text` feature (enabled
 by the Linux and Windows adapters) the whole frame renders through
 `vello_cpu` with antialiased labels laid out by `parley` from real system
-fonts — verified by a unit test that counts blended shades. The 5x7
+fonts -- verified by a unit test that counts blended shades. The 5x7
 bitmap painter remains the zero-dependency fallback (no usable fonts,
 oversized surfaces, or `KRATE_BITMAP_TEXT=1`). A scratch spike proved the
 released crates (`vello_cpu` 0.0.9 + `parley` 0.11) interoperate before
 any dependency was added. The GPU vello renderer later swaps this same
 painter; the placement contract did not change.
 Certification: landed as `cbea87e` + `b0e41fd` + two CI-caught fixes
-(`797dc98`, `8b1c9ec` — fontconfig must be dlopen'd through fontique's
+(`797dc98`, `8b1c9ec` -- fontconfig must be dlopen'd through fontique's
 own `fontconfig-dlopen` feature, keeping the no-build-time-system-libs
 rule). Full matrix run `28741064867` green on all three OS lanes; the
-screenshot artifact verified by eye — antialiased system-font labels in
+screenshot artifact verified by eye -- antialiased system-font labels in
 the Linux window. Copies in `Invest/evidence/`.
-Previous slice, certified: pointer input routing —
+Previous slice, certified: pointer input routing --
 on the Linux lane a synthetic `xdotool` click presses the drawn button
 inside a real winit window under Xvfb and the portable component observes
 it and exits 0, completing the same click round trip macOS proved with a
 human hand. On top of that, drawn text v0 landed: a 5x7 bitmap font module
 in `adapter-common` (`drawtext.rs`) renders real labels in the winit
-windows on Linux and Windows — the button caption centered in the button,
+windows on Linux and Windows -- the button caption centered in the button,
 the field text inside the field, and `Text` widgets as actual glyphs
 instead of gray blocks. The Xvfb click proof now also captures a PNG
 screenshot of the drawn window, uploaded as a CI artifact
-(`hello-gui-linux-screenshot`) — visual evidence of the Linux UI from
+(`hello-gui-linux-screenshot`) -- visual evidence of the Linux UI from
 hosted CI, no Linux machine required. The bitmap font is an explicit
 placeholder until the vello renderer brings real typography behind the
 same placement contract.
@@ -497,7 +497,7 @@ Certification: this slice landed as `c61b661` + `c63e7d8` and the full
 matrix run `28710233712` is green on all three OS lanes. The first
 screenshot artifact was downloaded and verified by eye: the blue button
 reads "Click me" centered, and the field shows the component's own
-string "waiting for click" — guest text rendered onto Linux pixels by
+string "waiting for click" -- guest text rendered onto Linux pixels by
 hosted CI. A copy lives in `Invest/evidence/` (gitignored) for demo
 material. Older detail below: P3-VS-01 through the WASM path.
 `krate run` now executes Phase 3 `gui` world components: the hello-gui
@@ -510,7 +510,7 @@ component imports only `krate:*` interfaces (the events contract moved to
 single-event `option<event>` polling to keep guest bindings free of
 list-of-variant lifting, which current guest toolchains cannot compile
 without dragging WASI panic machinery into the component). Sub-slice 1
-(native AppKit lowering) was verified earlier the same slice — the first real native AppKit widget lowering. A Krate
+(native AppKit lowering) was verified earlier the same slice -- the first real native AppKit widget lowering. A Krate
 widget tree now lowers to a real `NSButton` and `NSTextField` positioned by
 the Taffy layout, a native click flows back through the delegate queue and
 event-loop pump into the shared stream as a routed pointer event with the
@@ -560,15 +560,15 @@ Krate already runs real Phase 2 CLI components through the runtime:
 It also runs the first Phase 3 GUI component, `krate-hello-gui`: headless
 on every OS (proven byte-identical across Linux, macOS, and Windows in the
 full CI matrix), with a real native window on macOS
-(`sh scripts/demo-hello-gui.sh`), and — as of 2026-07-04 — with real winit
+(`sh scripts/demo-hello-gui.sh`), and -- as of 2026-07-04 -- with real winit
 windows on Linux (proven in CI under Xvfb) and Windows (proven on the
 windows-latest lane). ALL THREE desktop OSes open real windows from the
 same portable file, machine-certified in one green full-matrix run. The
 drawn widgets are interactive and properly rendered on Linux and Windows:
 every full CI run synthetically clicks the drawn Linux button (xdotool
 under Xvfb) and the component observes it, and the frame renders as a
-vector scene — antialiased system-font labels via parley + vello_cpu,
-bitmap-font fallback kept — with a screenshot of the window published as
+vector scene -- antialiased system-font labels via parley + vello_cpu,
+bitmap-font fallback kept -- with a screenshot of the window published as
 a CI artifact. Next per the renderer map: theme-token styling (rounded
 corners, hover/pressed states), richer widgets, then text input.
 
@@ -622,7 +622,7 @@ Current Phase 3 slice:
   shared adapter trait, and clipboard checks fail at the permission boundary
   before unsupported host code is reached
 - `adapter-macos`, `adapter-linux`, and `adapter-windows` now expose Phase 3 UI
-  adapter entry points. (Historical note — superseded: all three hosts now
+  adapter entry points. (Historical note -- superseded: all three hosts now
   own real native windows; see the newest bullets above.)
 - `adapter-linux` and `adapter-windows` now expose guarded Winit prototype
   adapter boundaries, native-handle handoff helpers, and discovery entry
@@ -767,14 +767,14 @@ Current Phase 3 slice:
   `crates/tools` exposing one `run_component` tool over stdio JSON-RPC. An
   MCP client executing `krate-cat` without grants observes
   `permission-denied` with the exact missing capability; the same call with
-  `auto_grant` succeeds with captured stdout — verified end to end over the
+  `auto_grant` succeeds with captured stdout -- verified end to end over the
   real stdio transport. Scope stays bounded per the task spec: no
   orchestration, no model calls, no tool registry.
 - P3-EMB-01 and P3-EMB-02 landed: the agent-embedding surface.
   `krate_runtime::embed::run_component` executes a component with
   programmatic grants (no terminal, no prompts), captured stdout, a
   classified exit (`success`/`permission-denied`/`app-error`/
-  `limit-exceeded`), and run duration — doc-tested at under 30 lines for an
+  `limit-exceeded`), and run duration -- doc-tested at under 30 lines for an
   external caller. `krate run --json` emits one `krate.run.v1` object
   per run (app identity, granted capabilities with boundaries, denied
   required capabilities on refusal, exit class, duration, captured stdout)
@@ -794,7 +794,7 @@ Current Phase 3 slice:
   `apps/krate-hello-gui` is the first GUI component: import-pure
   (`krate:*` only), runs headless everywhere (clean bounded exit 1), and
   opens a real native window on macOS. The `krate:ui` events interface
-  changed from `list<event>` to `option<event>` polling — it matches the
+  changed from `list<event>` to `option<event>` polling -- it matches the
   dispatcher's FIFO `poll_event` design and keeps guest components pure; the
   guest-side lesson (std string constructors and list-of-variant lifting pull
   WASI panic machinery; use lifting-style raw allocation) is recorded in the
@@ -840,7 +840,7 @@ risk Critical). Update this section with every status refresh.
   lanes (winit windowing, Win32 widget lowering, the Linux drawn-widget
   backend), freeing the founder for macOS, the runtime boundary, and the
   app-facing contract.
-- Pipeline: not started — no candidates contacted yet.
+- Pipeline: not started -- no candidates contacted yet.
 - Outside-ready answer: "The first hire owns the Windows/Linux adapter lanes;
   the profile is defined and the search runs alongside Phase 3's vertical
   slice."
@@ -861,7 +861,7 @@ Top pending items:
 Timebox rule (2026-07-02, per `Plan/Plan-Amendments-2026-07.md` A4): closeout
 gets one focused week; whatever is not closed stays tracked in the exit ledger
 without blocking Phase 3. No new evidence recorder/comparator/checker scripts
-until a second engineer joins — reuse existing harnesses. The long fuzz soak
+until a second engineer joins -- reuse existing harnesses. The long fuzz soak
 additionally waits on the `krate-local` runner returning (nightly schedule
 paused 2026-07-02 while it is offline).
 

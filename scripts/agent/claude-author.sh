@@ -10,7 +10,7 @@
 # The model is told the one hard constraint (a Krate component may import only
 # krate:*), pointed at the in-repo samples to copy the discipline from, and
 # asked to write exactly the three files. krate create then builds, import-
-# checks, packs, and verifies — so a broken app is caught, not shipped.
+# checks, packs, and verifies -- so a broken app is caught, not shipped.
 set -eu
 
 SDK_ROOT="${KRATE_SDK_ROOT:?set KRATE_SDK_ROOT to a Krate checkout for the agent to reference}"
@@ -26,7 +26,7 @@ Write exactly three files into the directory ${KRATE_APP_DIR}:
   - manifest.toml
 
 HARD CONSTRAINT: a Krate component may import only krate:* interfaces. Ordinary
-std facilities pull wasi:* imports that make the component fail to load — a
+std facilities pull wasi:* imports that make the component fail to load -- a
 growable Vec's realloc, HashMap, format!, and the args::first / read_to_string
 SDK helpers all do this, and LTO cannot strip it. So use fixed-capacity [u8; N]
 buffers, .get()/.get_mut() only, args::raw() with manual splitting, and build

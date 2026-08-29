@@ -5,7 +5,7 @@ when five secrets are present, and skips with a warning when they are not. This
 is what to create, once.
 
 Until this is done, a downloaded build is ad-hoc signed with no team identity.
-Gatekeeper only misses it because `curl` sets no quarantine flag — which means
+Gatekeeper only misses it because `curl` sets no quarantine flag -- which means
 the install path avoids the guarantee Krate exists to make. A reviewer noticed
 in about a minute.
 
@@ -97,7 +97,7 @@ xcrun notarytool log <submission-id> --apple-id <email> \
 ```
 
 The one that caught us: `Krate.app/Contents/MacOS/` holds **two**
-executables — the `Krate` launcher script and the `krate-cli` binary it
+executables -- the `Krate` launcher script and the `krate-cli` binary it
 execs. Signing only the second left the first ad-hoc, and the notary service
 checks every executable in that folder, not just the one named in the plist.
 It reports this as "The binary is not signed with a valid Developer ID
@@ -117,7 +117,7 @@ This is the confusing one, and it is usually not the credentials.
 
 After you create a Developer ID certificate, Apple frequently posts an updated
 Developer Program License Agreement. Until it is accepted, the **notary service
-answers 401 "Invalid credentials"** — even though the Apple ID, team id and
+answers 401 "Invalid credentials"** -- even though the Apple ID, team id and
 app-specific password are all correct, and even though `codesign` works fine
 with the same certificate.
 
