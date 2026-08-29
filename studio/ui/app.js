@@ -991,7 +991,10 @@ function beginBuild(title, expect) {
   if (_stagesEl) _stagesEl.innerHTML = STAGES.map(
     (s) => `<li data-key="${s.key}"><span class="tick"></span>${s.label}</li>`,
   ).join("");
-  $("buildLog").textContent = "";
+  {
+    const log = $("buildLog");
+    if (log) log.textContent = "";
+  }
   // The forming frame starts as the shimmering skeleton; the first real
   // test frame replaces it in place.
   const shotImg = $("buildShot");
