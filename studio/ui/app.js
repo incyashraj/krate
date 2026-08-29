@@ -1353,12 +1353,26 @@ function countMake() {
   } catch (e) {}
   renderFreeCount();
 }
+/// One painter for every place the plan shows: the title-bar chip, the
+/// plan sheet's Free row, and the settings row. They must never disagree
+/// about how many are left.
 function renderFreeCount() {
-  const el = $("freeCount");
-  if (!el) return;
   const n = makesThisMonth();
-  el.classList.toggle("hidden", n < 1);
-  el.textContent = n <= 3 ? `${n} of 3 free apps this month` : `${n} apps this month`;
+  const left = Math.max(0, 3 - n);
+  const chip = $("freeCount");
+  if (chip) {
+    chip.textContent =
+      n === 0 ? "3 free this month"
+      : n <= 3 ? `${left} of 3 free left`
+      : "Free preview";
+  }
+  const used = n === 0 ? "none used yet"
+    : n <= 3 ? `${n} of 3 used this month`
+    : `${n} made this month`;
+  const sheetTag = $("planUsed");
+  if (sheetTag) sheetTag.textContent = used;
+  const setVal = $("setPlanUsed");
+  if (setVal) setVal.textContent = used;
 }
 function limitAcked() {
   try { return localStorage.getItem("krateLimitAck") === monthKey(); } catch (e) { return false; }
@@ -3321,6 +3335,17 @@ $("limitGo").addEventListener("click", () => {
   if (p) make(p.request, { ...(p.opts || {}), pastLimit: true });
 });
 $("limitFounding").addEventListener("click", () => {
+  invoke("open_external", { url: "https://krate.tech/studio/#founding" }).catch(() => {});
+});
+// The plan sheet: the title-bar chip and the settings row both open it,
+// and the founding row goes to the same list the limit sheet names.
+function openPlanSheet() {
+  renderFreeCount();
+  $("planSheet").classList.remove("hidden");
+}
+$("freeCount")?.addEventListener("click", openPlanSheet);
+$("setPlanBtn")?.addEventListener("click", openPlanSheet);
+$("planFounding")?.addEventListener("click", () => {
   invoke("open_external", { url: "https://krate.tech/studio/#founding" }).catch(() => {});
 });
 renderFreeCount();

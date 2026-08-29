@@ -103,6 +103,7 @@
       <div class="brand"><img src="krate-glyph-white.png" alt="" /><span>KRATE</span></div>
       <div class="spacer"></div>
       <button class="link-btn update-chip hidden" id="updateChip" title="A newer Krate is ready">Update ready</button>
+      <button class="plan-chip" id="freeCount" title="Your plan"></button>
       <button class="icon-btn" id="themeBtn" title="Switch to light"></button>
       <button class="icon-btn hidden" id="cloudBtn" title="Shared"></button>
       <button class="agent-chip hidden" id="agentChip"><span class="dot" id="agentDot"></span><span id="agentName">checking…</span></button>
@@ -134,7 +135,6 @@
           </div>
           <div class="airow">
             <button class="aichip" id="builtByChip"><span class="dot" id="builtByDot"></span>Built by <b id="builtByName">…</b><span class="chev">· change ▾</span></button>
-            <span class="free-count hidden" id="freeCount"></span>
           </div>
         </div>
       </div>
@@ -281,6 +281,14 @@
           <div>
             <h1>Settings</h1>
             <p>How Krate builds, and where it puts what it makes.</p>
+          </div>
+        </div>
+
+        <div class="set-group">
+          <h2>Your plan</h2>
+          <div class="set-row">
+            <div><div class="lab">Free</div><div class="hint">Three apps a month. Changes to an app and failed builds never count.</div></div>
+            <div class="ctl"><span class="set-val" id="setPlanUsed">…</span><button class="set-mini" id="setPlanBtn">See plans</button></div>
           </div>
         </div>
 
@@ -535,6 +543,35 @@
 
   <!-- The Send sheet: the card is the default share, the link is for when
        you cannot drop a file, and the raw bundle stays one click away. -->
+  <div class="sheet-wrap hidden" id="planSheet">
+    <div class="sheet">
+      <h2>Your plan</h2>
+      <p class="sheet-sub">Studio is in preview: making is free and nothing
+      is charged. Every app you make is a file that is yours forever,
+      whatever happens to your plan.</p>
+      <div class="plan-list">
+        <div class="plan-row current">
+          <div><b>Free</b><span>Three apps a month. Changes to an app and
+          failed builds never count.</span></div>
+          <span class="plan-tag" id="planUsed"></span>
+        </div>
+        <div class="plan-row">
+          <div><b>Studio</b><span>Unlimited apps -- $12 a month, or $96 a
+          year, when Studio leaves preview.</span></div>
+          <span class="plan-tag">at launch</span>
+        </div>
+        <div class="plan-row founding">
+          <div><b>Founding 200</b><span>$79 a year, locked in for as long as
+          you stay -- for the first 200 people on the list.</span></div>
+          <button class="btn btn-primary" id="planFounding">Join</button>
+        </div>
+      </div>
+      <div class="detail-actions">
+        <button class="btn btn-ghost sheet-close" data-close="planSheet">Close</button>
+      </div>
+    </div>
+  </div>
+
   <div class="sheet-wrap hidden" id="limitSheet">
     <div class="sheet">
       <h2>That's three this month</h2>

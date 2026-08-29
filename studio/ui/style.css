@@ -2525,4 +2525,30 @@ body.light .send-opt span, body.light .send-done p { color: rgba(0,0,0,0.55); }
 .pub-list-row { display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; cursor: pointer; }
 .pub-list-row input { margin-top: 3px; accent-color: var(--accent, #6291ff); }
 .pub-list-row small { display: block; color: var(--muted); font-size: 12px; }
-.free-count { font-size: 12px; color: var(--quiet, rgba(255,255,255,0.35)); align-self: center; }
+/* The plan chip lives in the title bar beside the theme toggle: quiet
+   until hovered, and a door to the plan sheet rather than a label. */
+.plan-chip {
+  padding: 5px 12px; border-radius: var(--radius-pill);
+  border: 1px solid var(--line); background: none; color: var(--faint);
+  font-size: 12px; cursor: pointer; white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+  -webkit-app-region: no-drag;
+}
+.plan-chip:hover { color: var(--text); border-color: var(--line-strong); }
+
+.plan-list { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.plan-row {
+  display: flex; align-items: center; gap: 14px;
+  border: 1px solid var(--line); border-radius: 12px; padding: 13px 16px;
+}
+.plan-row > div { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.plan-row b { font-size: 13.5px; color: var(--text); }
+.plan-row span:not(.plan-tag) { font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+.plan-row.current { border-color: var(--line-strong); }
+.plan-tag {
+  font-size: 11.5px; color: var(--faint); white-space: nowrap;
+  border: 1px solid var(--line); border-radius: var(--radius-pill);
+  padding: 3px 10px;
+}
+.plan-row.current .plan-tag { color: var(--text); }
+#setPlanUsed, #setPlanBtn { white-space: nowrap; }
