@@ -105,3 +105,8 @@ ehthumbs.db
 /output/
 *.bak
 /evidence/adoption/history.tsv
+
+# The boards: direction and defects live on this machine, not in the
+# public tree. The workflow in CLAUDE.md still uses them locally.
+/BUGS.md
+/GOALS.md
