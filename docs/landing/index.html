@@ -271,6 +271,100 @@
   .say-ais { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
   .say-ais span { font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: var(--r-pill); padding: 4px 10px; }
 
+  /* After the sentence, the payoff: three stages check in and the file
+     lands. The sentence was not decoration -- it made something. */
+  .say-steps { margin-top: 12px; display: none; flex-direction: column; gap: 2px; }
+  .say-steps.on { display: flex; }
+  .say-step { display: flex; align-items: center; gap: 9px; padding: 5px 0; font-size: 13px; color: var(--quiet); transition: color var(--enter); }
+  .say-step i {
+    width: 14px; height: 14px; flex: none; border-radius: 50%;
+    border: 1px solid var(--line); position: relative;
+    transition: border-color var(--wake), background var(--wake);
+  }
+  .say-step.doing { color: var(--muted); }
+  .say-step.doing i { border-color: var(--accent); }
+  .say-step.done { color: var(--muted); }
+  .say-step.done i { border-color: transparent; background: var(--good); }
+  .say-step.done i::after {
+    content: ""; position: absolute; left: 4.5px; top: 2px;
+    width: 3.5px; height: 6.5px; border: solid #0a0a0a; border-width: 0 1.5px 1.5px 0;
+    transform: rotate(45deg);
+  }
+  .say-file {
+    margin-top: 12px; display: flex; align-items: center; gap: 12px;
+    padding: 12px 14px; border: 1px solid var(--line); border-radius: 11px; background: var(--bg);
+    opacity: 0; transform: translateY(8px) scale(0.98);
+    transition: opacity var(--wake), transform var(--wake);
+  }
+  .say-file.on { opacity: 1; transform: none; }
+  .say-file b { font-weight: 500; font-size: 14px; display: block; }
+  .say-file span { font-size: 12px; color: var(--quiet); }
+
+  /* The receive journey, playable: tap the file in the chat, meet the
+     consent sheet, allow it, use the app. Cancel, and nothing runs. */
+  .chat-seat { position: relative; width: min(420px, 100%); min-height: 400px; }
+  .chat-state {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: flex-start;
+    opacity: 0; transform: translateY(8px); pointer-events: none;
+    transition: opacity var(--wake), transform var(--wake);
+  }
+  .chat-state.on { opacity: 1; transform: none; pointer-events: auto; }
+  .chat-state .chat { width: 100%; }
+  .chat-hint { margin-top: 14px; font-size: 13px; color: var(--quiet); text-align: center; }
+  .chat-hint b { color: var(--muted); font-weight: 500; }
+  .b-file { cursor: pointer; transition: border-color 150ms ease, transform 150ms ease; }
+  .b-file:hover { border-color: rgba(255,255,255,0.3); transform: translateY(-1px); }
+
+  .dsheet {
+    width: min(340px, 100%); text-align: center;
+    border: 1px solid var(--line); border-radius: var(--r-card);
+    background: var(--panel); padding: 24px 22px 20px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  }
+  .dsheet img { width: 30px; height: 30px; margin: 0 auto 10px; }
+  .dsheet h3 { font-size: 16.5px; letter-spacing: -0.01em; }
+  .dsheet .asks { margin: 12px auto 0; display: inline-block; text-align: left; }
+  .dsheet .asks div { display: flex; gap: 10px; align-items: baseline; font-size: 14px; color: var(--muted); padding: 3px 0; }
+  .dsheet .asks i { color: var(--good); font-style: normal; font-size: 13px; }
+  .dsheet .none { margin-top: 10px; font-size: 12.5px; color: var(--quiet); }
+  .dsheet .btns { margin-top: 16px; display: flex; gap: 10px; justify-content: center; }
+  .dbtn {
+    padding: 8px 17px; border-radius: var(--r-pill); font: inherit; font-size: 13.5px;
+    font-weight: 500; cursor: pointer; border: 1px solid var(--line);
+    background: none; color: var(--text);
+    transition: border-color 150ms ease, background 150ms ease;
+  }
+  .dbtn:hover { border-color: rgba(255,255,255,0.28); }
+  .dbtn-primary { background: var(--text); color: #0a0a0a; border-color: var(--text); }
+  .dbtn-primary:hover { background: rgba(255,255,255,0.86); }
+
+  .mini-app {
+    width: min(300px, 100%); text-align: left;
+    border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+    background: var(--panel); box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+  }
+  .mini-app .card-bar { padding: 9px 13px; }
+  .mini-app .app { padding: 14px 14px 16px; }
+  .mini-app .app-total b { font-size: 22px; }
+
+  /* The permission sheet, live: untick a power and read what actually
+     happens. The wall, demonstrated instead of described. */
+  .ask-live { text-align: left; }
+  .ask-live .asks { display: block; }
+  .ask-row {
+    display: flex; gap: 11px; align-items: flex-start; padding: 8px 0;
+    font-size: 14px; cursor: pointer; color: var(--muted);
+  }
+  .ask-row input { margin-top: 4px; accent-color: var(--accent); }
+  .ask-row small { display: block; margin-top: 1px; color: var(--quiet); font-size: 12.5px; }
+  .verdict {
+    margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line-soft);
+    font-size: 13px; line-height: 1.55; text-align: left;
+  }
+  .verdict.is-ok { color: var(--good); }
+  .verdict.is-refused { color: var(--warn, #f4dc74); }
+
   /* 02: a chat. The app arrives the way a photo does. */
   .chat { width: min(420px, 100%); display: flex; flex-direction: column; gap: 10px; }
   .bubble {
@@ -331,6 +425,29 @@
   .first b { font-weight: 500; display: block; font-size: 16px; }
   .first p { font-size: 14px; color: var(--muted); margin-top: 3px; max-width: 52em; }
 
+  /* ------------------------------------------------- what people made */
+  .made { padding: clamp(70px, 12vh, 120px) 0 0; }
+  .made-head { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  .made-head h2 { font-size: clamp(26px, 3.4vw, 38px); letter-spacing: -0.025em; }
+  .made-head a { margin-left: auto; font-size: 14px; color: var(--muted); border-bottom: 1px solid var(--line); }
+  .made-head a:hover { color: var(--text); }
+  .made-sub { margin-top: 10px; color: var(--muted); font-size: 15px; max-width: 40em; }
+  .shots {
+    margin-top: 28px; display: grid; grid-auto-flow: column;
+    grid-auto-columns: clamp(180px, 24vw, 230px); gap: 12px;
+    overflow-x: auto; padding-bottom: 10px;
+    scroll-snap-type: x proximity; scrollbar-width: thin;
+  }
+  .shot {
+    border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+    background: var(--panel); scroll-snap-align: start;
+    transition: border-color 150ms ease;
+  }
+  .shot:hover { border-color: rgba(255,255,255,0.28); }
+  .shot img { width: 100%; height: 150px; object-fit: cover; object-position: top; }
+  .shot b { display: block; padding: 10px 13px 1px; font-size: 13.5px; font-weight: 500; }
+  .shot span { display: block; padding: 0 13px 11px; font-size: 12px; color: var(--quiet); }
+
   /* -------------------------------------------------- why not a webpage */
   .why { padding: clamp(70px, 12vh, 120px) 0 0; }
   .why h2 { font-size: clamp(26px, 3.4vw, 38px); letter-spacing: -0.025em; }
@@ -390,6 +507,7 @@
     html { scroll-behavior: auto; }
     .reveal, .bubble, .sheet { opacity: 1 !important; transform: none !important; transition: none !important; }
     .card, .dots i, .live, .card-note { transition: none !important; }
+    .chat-state, .say-file, .say-step i, .m-step i { transition: none !important; }
     .say-box .caret { animation: none; }
   }
   </style>
@@ -491,6 +609,17 @@
       <div class="say">
         <div class="say-label">DESCRIBE YOUR APP</div>
         <div class="say-box"><span id="sayText"></span><span class="caret" id="sayCaret"></span></div>
+        <div class="say-steps" id="saySteps">
+          <div class="say-step"><i></i>Writing the app</div>
+          <div class="say-step"><i></i>Checking it only touches what it declared</div>
+          <div class="say-step"><i></i>Packing one small file</div>
+        </div>
+        <div class="say-file" id="sayFile">
+          <div>
+            <b>RateCard.krate</b>
+            <span>41 KB &middot; Mac, Windows and Linux</span>
+          </div>
+        </div>
         <div class="say-ais">
           <span>Claude</span><span>Codex</span><span>Gemini</span><span>Copilot</span><span>Grok</span>
         </div>
@@ -507,20 +636,75 @@
       space. The same file opens on Mac, Windows, and Linux.</p>
     </div>
     <div class="step-visual">
-      <div class="chat" id="chatDemo" aria-label="An app being sent in a chat">
-        <div class="bubble b-them">can you send the invoice thing?</div>
-        <div class="bubble b-file">
-          <span class="mini">
-            <span class="mini-h">Studio rate card</span>
-            <span class="mini-bars"><i></i><i></i><i></i></span>
-            <span class="mini-total"><span>TOTAL</span><b>$2,640</b></span>
-          </span>
-          <span class="frow">
-            <span class="fname">RateCard.krate</span>
-            <span>41 KB</span>
-          </span>
+      <div class="chat-seat">
+
+        <!-- State 1: the chat, with the app sitting in it like a photo. -->
+        <div class="chat-state on" id="csChat">
+          <div class="chat" id="chatDemo" aria-label="An app being sent in a chat">
+            <div class="bubble b-them">can you send the invoice thing?</div>
+            <div class="bubble b-file" id="csFile" role="button" tabindex="0" aria-label="Open the file that was sent">
+              <span class="mini">
+                <span class="mini-h">Studio rate card</span>
+                <span class="mini-bars"><i></i><i></i><i></i></span>
+                <span class="mini-total"><span>TOTAL</span><b>$2,640</b></span>
+              </span>
+              <span class="frow">
+                <span class="fname">RateCard.krate</span>
+                <span>41 KB</span>
+              </span>
+            </div>
+            <div class="bubble b-you">double-click it, it just opens</div>
+          </div>
+          <p class="chat-hint" id="csHint"><b>Be the person who got it:</b> tap the file.</p>
         </div>
-        <div class="bubble b-you">double-click it, it just opens</div>
+
+        <!-- State 2: the consent sheet, exactly as Krate draws it. -->
+        <div class="chat-state" id="csSheet">
+          <div class="dsheet">
+            <img src="./krate-glyph-white.png" alt="" />
+            <h3>Open &ldquo;Rate Card&rdquo;?</h3>
+            <div class="asks">
+              <div><i>&#10003;</i> open a window</div>
+              <div><i>&#10003;</i> save its numbers on this computer</div>
+            </div>
+            <p class="none">It gets nothing else: no files, no internet, no camera.</p>
+            <div class="btns">
+              <button class="dbtn" id="csCancel" type="button">Cancel</button>
+              <button class="dbtn dbtn-primary" id="csAllow" type="button">Allow and open</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- State 3: the app, theirs now, working. -->
+        <div class="chat-state" id="csApp">
+          <div class="mini-app" aria-label="The rate card, opened by its receiver, working">
+            <div class="card-bar">
+              <div class="dots"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></div>
+              <div class="card-title">Rate Card</div>
+              <span class="live" style="opacity:1"><i></i>live</span>
+            </div>
+            <div class="app">
+              <div class="app-rates">Day rate $800 &middot; extra hour $120</div>
+              <div class="app-row">
+                <div class="field">
+                  <label for="m2Days">DAYS</label>
+                  <input id="m2Days" type="number" min="0" max="99" value="3" inputmode="numeric" />
+                </div>
+                <div class="field">
+                  <label for="m2Hours">EXTRA HOURS</label>
+                  <input id="m2Hours" type="number" min="0" max="99" value="2" inputmode="numeric" />
+                </div>
+              </div>
+              <div class="app-total">
+                <span>TOTAL</span>
+                <b id="m2Total">$2,640</b>
+              </div>
+            </div>
+          </div>
+          <p class="chat-hint">Now it is theirs, like a photo you sent.
+          No account, no install per app.</p>
+        </div>
+
       </div>
     </div>
   </div>
@@ -536,19 +720,16 @@
       just without that power.</p>
     </div>
     <div class="step-visual">
-      <div class="sheet" id="consentSheet" role="img" aria-label="Krate's permission dialog">
-        <img src="./krate-glyph-white.png" alt="" />
-        <h3>Open &ldquo;Rate Card&rdquo;?</h3>
-        <div class="asks">
-          <div><i>&#10003;</i> open a window</div>
-          <div><i>&#10003;</i> save your data on this computer</div>
+      <div class="sheet ask-live" id="consentSheet" aria-label="Krate's permission dialog, live">
+        <h3>Krate Notes wants to:</h3>
+        <p class="none" style="text-align:left; margin-top:4px;">Untick anything -- this one is live.</p>
+        <div class="asks" style="margin-top:10px;">
+          <label class="ask-row"><input type="checkbox" data-ask="required" checked /> <span>save notes in its own folder<small>To keep what you write</small></span></label>
+          <label class="ask-row"><input type="checkbox" data-ask="required" checked /> <span>open a window<small>To be an app at all</small></span></label>
+          <label class="ask-row"><input type="checkbox" data-ask="optional" checked /> <span>use your clipboard<small>To copy and paste inside the app</small></span></label>
         </div>
-        <p class="none">It gets nothing else: no files, no network, no camera.
-        Krate enforces exactly this list.</p>
-        <div class="btns">
-          <span class="pill">Cancel</span>
-          <span class="pill pill-primary">Allow and open</span>
-        </div>
+        <p class="verdict is-ok" id="wallVerdict">The app opens with exactly this.
+        It cannot reach the internet, or any other folder on your computer.</p>
       </div>
     </div>
   </div>
@@ -564,6 +745,27 @@
       <p>Like a player for a movie: about 24 MB, once, free and open source.
       The next file they ever receive just opens.</p>
     </div>
+  </div>
+</section>
+
+<!-- ======================================================= what people made -->
+<section class="made wrap">
+  <div class="reveal">
+    <div class="made-head">
+      <h2>What people made.</h2>
+      <a href="/cloud/">Browse the gallery &rarr;</a>
+    </div>
+    <p class="made-sub">Real screenshots of real published apps -- games,
+    tools, little private things. Every one is a single small file someone
+    could drop in a chat.</p>
+  </div>
+  <div class="shots reveal">
+    <a class="shot" href="/cloud/"><img src="/cloud/shots/nova.png" alt="Nova, a space shooter made with Krate" loading="lazy" /><b>Nova</b><span>a space shooter</span></a>
+    <a class="shot" href="/cloud/"><img src="/cloud/shots/weather.png" alt="A five-day weather app made with Krate" loading="lazy" /><b>Weather</b><span>five-day forecast</span></a>
+    <a class="shot" href="/cloud/"><img src="/cloud/shots/savings.png" alt="Budget Splitter, a monthly budget app made with Krate" loading="lazy" /><b>Budget Splitter</b><span>where the money goes</span></a>
+    <a class="shot" href="/cloud/"><img src="/cloud/shots/notes.png" alt="A notes app made with Krate" loading="lazy" /><b>Notes</b><span>37 KB, the benchmark app</span></a>
+    <a class="shot" href="/cloud/"><img src="/cloud/shots/journal.png" alt="A private journal app made with Krate" loading="lazy" /><b>My Journal</b><span>stays on this device</span></a>
+    <a class="shot" href="/cloud/"><img src="/cloud/shots/cubes.png" alt="A 3D scene rendered by a Krate app" loading="lazy" /><b>Cubes</b><span>3D, no GPU needed</span></a>
   </div>
 </section>
 
@@ -747,9 +949,29 @@
   var sayText = document.getElementById("sayText");
   var sayCaret = document.getElementById("sayCaret");
   var SENTENCE = "a rate card for my studio -- day rate 800, extra hour 120, rush +25%";
-  if (reduced || !("IntersectionObserver" in window)) {
+  var saySteps = document.getElementById("saySteps");
+  var sayStepEls = saySteps.querySelectorAll(".say-step");
+  var sayFile = document.getElementById("sayFile");
+
+  /* The payoff after the sentence: three stages check in, the file lands. */
+  function sayFinish() {
     sayText.textContent = SENTENCE;
-    if (sayCaret) sayCaret.remove();
+    if (sayCaret) sayCaret.style.display = "none";
+    saySteps.classList.add("on");
+    sayStepEls.forEach(function (s) { s.classList.add("done"); });
+    sayFile.classList.add("on");
+  }
+  function sayBuild() {
+    saySteps.classList.add("on");
+    sayStepEls.forEach(function (s, n) {
+      setTimeout(function () { s.classList.add("doing"); }, n * 650);
+      setTimeout(function () { s.classList.remove("doing"); s.classList.add("done"); }, n * 650 + 560);
+    });
+    setTimeout(function () { sayFile.classList.add("on"); }, sayStepEls.length * 650 + 250);
+  }
+
+  if (reduced || !("IntersectionObserver" in window)) {
+    sayFinish();
   } else {
     var typed = false;
     var typeIt = function () {
@@ -761,7 +983,8 @@
         sayText.textContent = SENTENCE.slice(0, i);
         if (i >= SENTENCE.length) {
           clearInterval(t);
-          setTimeout(function () { sayCaret.style.opacity = "0"; }, 2400);
+          sayCaret.style.opacity = "0";
+          setTimeout(sayBuild, 500);
         }
       }, 34);
     };
@@ -773,9 +996,9 @@
       });
     }, { threshold: 0.5 });
     sayIo.observe(sayText.parentElement);
-    /* If the observer never fires, the sentence still appears. */
+    /* If the observer never fires, the finished state still appears. */
     setTimeout(function () {
-      if (!typed) { typed = true; sayText.textContent = SENTENCE; sayCaret.style.opacity = "0"; }
+      if (!typed) { typed = true; sayFinish(); }
     }, 10000);
   }
 
@@ -798,6 +1021,68 @@
     chat.classList.add("in");
     sheet.classList.add("in");
   }, 8000);
+
+  /* -------------- the receive journey: file, sheet, then the app is theirs */
+  var csChat = document.getElementById("csChat");
+  var csSheet = document.getElementById("csSheet");
+  var csApp = document.getElementById("csApp");
+  var csHint = document.getElementById("csHint");
+  var csFile = document.getElementById("csFile");
+  function csSwap(from, to) {
+    from.classList.remove("on");
+    setTimeout(function () { to.classList.add("on"); }, reduced ? 0 : 160);
+  }
+  function csOpen() { csSwap(csChat, csSheet); }
+  csFile.addEventListener("click", csOpen);
+  csFile.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); csOpen(); }
+  });
+  document.getElementById("csAllow").addEventListener("click", function () {
+    csSwap(csSheet, csApp);
+  });
+  document.getElementById("csCancel").addEventListener("click", function () {
+    csSwap(csSheet, csChat);
+    csHint.innerHTML = "Nothing ran. An app cannot start without their yes. <b>Tap it again?</b>";
+  });
+
+  /* The receiver's copy of the rate card works too -- that is the point. */
+  var m2Days = document.getElementById("m2Days");
+  var m2Hours = document.getElementById("m2Hours");
+  var m2Total = document.getElementById("m2Total");
+  function m2Calc() {
+    var d = Math.max(0, parseInt(m2Days.value, 10) || 0);
+    var h = Math.max(0, parseInt(m2Hours.value, 10) || 0);
+    m2Total.textContent = "$" + (d * 800 + h * 120).toLocaleString("en-US");
+  }
+  m2Days.addEventListener("input", m2Calc);
+  m2Hours.addEventListener("input", m2Calc);
+
+  /* ------------------ the wall, live: untick and read what happens */
+  var wallBoxes = Array.prototype.slice.call(document.querySelectorAll("[data-ask]"));
+  var wallVerdict = document.getElementById("wallVerdict");
+  if (wallBoxes.length && wallVerdict) {
+    var wallUpdate = function () {
+      var missingRequired = wallBoxes.some(function (b) {
+        return b.dataset.ask === "required" && !b.checked;
+      });
+      var allOn = wallBoxes.every(function (b) { return b.checked; });
+      if (missingRequired) {
+        wallVerdict.className = "verdict is-refused";
+        wallVerdict.textContent =
+          "The app will not start. It needs this one to do its job, and Krate does not let it run on less than it asked for.";
+      } else if (!allOn) {
+        wallVerdict.className = "verdict is-ok";
+        wallVerdict.textContent =
+          "The app opens without that. It simply cannot do that one thing, and nothing else changes.";
+      } else {
+        wallVerdict.className = "verdict is-ok";
+        wallVerdict.textContent =
+          "The app opens with exactly this. It cannot reach the internet, or any other folder on your computer.";
+      }
+    };
+    wallBoxes.forEach(function (b) { b.addEventListener("change", wallUpdate); });
+    wallUpdate();
+  }
 
   /* ------------------------------------- downloads: resolve real assets */
   /* Same resolver the old page shipped: point every [data-dl] at the
