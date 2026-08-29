@@ -96,34 +96,6 @@ Evidence: run 33262808589, Build (x86_64-unknown-linux-gnu): failure --
           -- and no studio step ever had the flag, so the pre-beta GUI
           did exactly that to a whole platform.
 
-### K-198 -- the pack does not make the clock believable; grok argued itself out of time.clock and burned 25 minutes re-reading
-
-Status:   taught (46ec5d917): the pack gained "The clock is real" -- the
-          grant stated plainly, the daily-reset recipe, and the K-198 story.
-          Stays open until a fresh clock-using build goes through WITHOUT
-          the doubt; the re-reading-loop half (why the loop re-reads the
-          full API between check cycles) is also unexamined.
-Owner:    main repo, Claude (repositioning session, 2026-08-29)
-Severity: medium (teaching, and real minutes: two demo builds hit the
-          15- and 25-minute caps in check/re-read loops)
-Class:    teaching-hole
-Found:    2026-08-29, building the care-schedule demo app with grok.
-Evidence: The create loop's own note: the AI wrote that "Krate apps cannot
-          access the system clock or time of day", then built the app anyway
-          -- and the app it built USES time.clock correctly (its header
-          shows today's real date; check-app passes all six stages). The
-          same run looped ~54 steps of "reading Krate's API reference /
-          checking it builds" before my cap killed it during packing; the
-          app was finished and only needed `krate pack` by hand.
-Why it    An agent that half-believes a capability exists writes hedged
-matters:  code slowly, re-reads instead of committing, and a daily-reset
-          app -- bread and butter -- costs 25 minutes instead of 10. The
-          capability is fine; the teaching is not loud enough.
-Fix       Pack: state time.clock plainly with a one-line daily-reset recipe
-sketch:   (read the date, compare to the stored date, reset). Also worth a
-          look: why the loop re-reads the full API reference between
-          check cycles instead of keeping it.
-
 ### K-197 -- "Keychain Not Found" dialogs during every build, over work the person did not start
 
 Status:   FIXED in repo -- ships with the next release
@@ -2603,6 +2575,28 @@ Update:   2026-08-16, e63ef189: shipped on macOS (set-full-bleed in
           currently return honest unsupported and keep standard chrome.
 
 ## Fixed
+
+### K-198 -- the pack did not make the clock believable; grok argued itself out of time.clock and burned 25 minutes re-reading
+
+Class: teaching-hole
+Owner: main repo, Claude (repositioning session)
+Status: fixed (46ec5d917), verified 2026-08-30
+
+The pack gained "The clock is real" -- the grant stated plainly, the
+daily-reset recipe (epoch_ms / 86_400_000), and the K-198 story.
+Verified by a fresh authored app: `krate create "A countdown to New
+Year..." --agent codex` wrote and shipped a working countdown in one
+pass, 24 loop steps, zero clock-doubt in the transcript. The shot shows
+"SUNDAY, 30 AUGUST 2026" -- the real date AND the right weekday -- and
+"124 DAYS REMAIN", which is the exact count to 1 January 2027. Before
+the teaching, the care-schedule build wrote "Krate apps cannot access
+the system clock", then used the clock correctly anyway, and looped ~54
+re-read steps into a 25-minute cap.
+
+The second half of the original entry -- why the loop re-reads the full
+API reference between check cycles -- did not recur here (24 steps, no
+re-read spiral), but it has not been examined at the root; if a build
+loops on re-reads again, file it fresh rather than reopening this.
 
 ### K-159 -- Studio on Windows flashed console windows through every build
 
