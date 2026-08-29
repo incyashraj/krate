@@ -378,7 +378,50 @@ def main():
   <title>Krate: the measurements</title>
   <link rel="icon" href="/krate-favicon.png" />
   <link rel="apple-touch-icon" href="/krate-favicon.png" />
-  <link rel="stylesheet" href="/site.css" />
+  <style>
+  @font-face {{ font-family: "Geist"; src: url("/fonts/geist-400.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }}
+  @font-face {{ font-family: "Geist"; src: url("/fonts/geist-500.woff2") format("woff2"); font-weight: 500; font-style: normal; font-display: swap; }}
+  :root {{
+    color-scheme: dark;
+    --bg: #0a0a0a; --panel: #0f1012; --panel-raised: #16171b;
+    --line: #1f2228; --line-strong: #2e323a; --line-soft: #17191e;
+    --text: #ffffff; --muted: rgba(255,255,255,0.55); --quiet: rgba(255,255,255,0.35);
+    --accent: #6291ff; --r-pill: 999px;
+    --sans: "Geist", Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
+  }}
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{ background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased; }}
+  a {{ color: inherit; text-decoration: none; }}
+  img {{ max-width: 100%; display: block; }}
+  h1, h2, h3 {{ font-weight: 500; letter-spacing: -0.02em; }}
+  .wrap {{ max-width: 1120px; margin: 0 auto; padding: 0 24px; }}
+  .site-head {{ position: sticky; top: 0; z-index: 40; background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-bottom: 1px solid var(--line-soft); }}
+  .head-inner {{ display: flex; align-items: center; gap: 24px; height: 64px; max-width: 1120px; margin: 0 auto; padding: 0 24px; }}
+  .brand {{ display: flex; align-items: center; gap: 10px; font-weight: 500; letter-spacing: 0.14em; font-size: 14px; }}
+  .head-nav {{ display: flex; gap: 4px; margin-left: auto; }}
+  .head-nav a {{ font-size: 14px; color: var(--muted); padding: 8px 12px; border-radius: var(--r-pill); }}
+  .head-nav a:hover {{ color: var(--text); background: rgba(255,255,255,0.05); }}
+  @media (max-width: 640px) {{ .head-nav {{ display: none; }} }}
+  .pill {{ display: inline-flex; align-items: center; padding: 9px 18px; border-radius: var(--r-pill); border: 1px solid var(--line); font-size: 14.5px; font-weight: 500; }}
+  .pill-primary {{ background: var(--text); color: #0a0a0a; border-color: var(--text); }}
+  .pill-primary:hover {{ background: rgba(255,255,255,0.86); }}
+  .page-wide {{ max-width: 900px; margin: 0 auto; padding: clamp(48px, 8vh, 84px) 24px clamp(64px, 10vh, 100px); }}
+  .page-kicker {{ font-size: 12px; letter-spacing: 0.14em; color: var(--quiet); }}
+  .page-wide h1 {{ margin-top: 10px; font-size: clamp(30px, 4.6vw, 46px); letter-spacing: -0.028em; line-height: 1.08; }}
+  .page-wide h2 {{ margin-top: 44px; font-size: 21px; }}
+  .page-wide > main p, .page-wide p {{ color: var(--muted); }}
+  .page-wide h1 + p {{ margin-top: 14px; max-width: 44em; font-size: 16.5px; }}
+  .page-wide table {{ border-collapse: collapse; width: 100%; margin: 18px 0 10px; font-size: 14.5px; }}
+  .page-wide th, .page-wide td {{ padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--line-soft); }}
+  .page-wide th {{ font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--quiet); font-weight: 500; }}
+  .page-wide td {{ color: var(--muted); }}
+  .page-wide td:first-child {{ color: var(--text); }}
+  .num {{ text-align: right; font-variant-numeric: tabular-nums; }}
+  code {{ font-family: var(--mono); font-size: 0.86em; }}
+  ul, ol {{ padding-left: 1.3em; color: var(--muted); }}
+  li {{ margin: 4px 0; }}
+  </style>
   <style>
     .report {{ max-width: 48rem; margin: 0 auto; padding: 4rem 1.5rem 6rem; }}
     .report section {{ margin: 0 0 4.5rem; }}
@@ -414,18 +457,21 @@ def main():
 <body>
   <!-- This is the page a doubter is sent to, which is the worst one to look
        unhosted. Links are absolute because it is served from /reports/. -->
-  <header class="subnav">
-    <div class="wrap subnav-inner">
-      <a class="brand" href="/"><img src="/krate-glyph-white.png" alt="" width="22" height="22" /> KRATE</a>
-      <nav>
-        <a href="/#install">Start</a>
-        <a href="/docs/">Docs</a>
-        <a href="/cloud/">Cloud</a>
-        <a href="/progress/">Progress</a>
-      </nav>
-      <a class="pill pill-primary" href="/#install">Install</a>
-    </div>
-  </header>
+  <header class="site-head">
+  <div class="head-inner">
+    <a class="brand" href="/">
+      <img src="/krate-glyph-white.png" alt="" width="22" height="22" />
+      KRATE
+    </a>
+    <nav class="head-nav" aria-label="Primary">
+      <a href="/#how">How it works</a>
+      <a href="/cloud/">Gallery</a>
+      <a href="/docs/">Docs</a>
+      <a href="https://github.com/incyashraj/krate">GitHub</a>
+    </nav>
+    <a class="pill pill-primary" href="/studio/">Download Studio</a>
+  </div>
+</header>
 
   <main class="report">
     <p class="eyebrow">Reports</p>

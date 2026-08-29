@@ -15,7 +15,50 @@
   <title>Krate: the measurements</title>
   <link rel="icon" href="/krate-favicon.png" />
   <link rel="apple-touch-icon" href="/krate-favicon.png" />
-  <link rel="stylesheet" href="/site.css" />
+  <style>
+  @font-face { font-family: "Geist"; src: url("/fonts/geist-400.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+  @font-face { font-family: "Geist"; src: url("/fonts/geist-500.woff2") format("woff2"); font-weight: 500; font-style: normal; font-display: swap; }
+  :root {
+    color-scheme: dark;
+    --bg: #0a0a0a; --panel: #0f1012; --panel-raised: #16171b;
+    --line: #1f2228; --line-strong: #2e323a; --line-soft: #17191e;
+    --text: #ffffff; --muted: rgba(255,255,255,0.55); --quiet: rgba(255,255,255,0.35);
+    --accent: #6291ff; --r-pill: 999px;
+    --sans: "Geist", Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  a { color: inherit; text-decoration: none; }
+  img { max-width: 100%; display: block; }
+  h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+  .site-head { position: sticky; top: 0; z-index: 40; background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-bottom: 1px solid var(--line-soft); }
+  .head-inner { display: flex; align-items: center; gap: 24px; height: 64px; max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 500; letter-spacing: 0.14em; font-size: 14px; }
+  .head-nav { display: flex; gap: 4px; margin-left: auto; }
+  .head-nav a { font-size: 14px; color: var(--muted); padding: 8px 12px; border-radius: var(--r-pill); }
+  .head-nav a:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+  @media (max-width: 640px) { .head-nav { display: none; } }
+  .pill { display: inline-flex; align-items: center; padding: 9px 18px; border-radius: var(--r-pill); border: 1px solid var(--line); font-size: 14.5px; font-weight: 500; }
+  .pill-primary { background: var(--text); color: #0a0a0a; border-color: var(--text); }
+  .pill-primary:hover { background: rgba(255,255,255,0.86); }
+  .page-wide { max-width: 900px; margin: 0 auto; padding: clamp(48px, 8vh, 84px) 24px clamp(64px, 10vh, 100px); }
+  .page-kicker { font-size: 12px; letter-spacing: 0.14em; color: var(--quiet); }
+  .page-wide h1 { margin-top: 10px; font-size: clamp(30px, 4.6vw, 46px); letter-spacing: -0.028em; line-height: 1.08; }
+  .page-wide h2 { margin-top: 44px; font-size: 21px; }
+  .page-wide > main p, .page-wide p { color: var(--muted); }
+  .page-wide h1 + p { margin-top: 14px; max-width: 44em; font-size: 16.5px; }
+  .page-wide table { border-collapse: collapse; width: 100%; margin: 18px 0 10px; font-size: 14.5px; }
+  .page-wide th, .page-wide td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--line-soft); }
+  .page-wide th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--quiet); font-weight: 500; }
+  .page-wide td { color: var(--muted); }
+  .page-wide td:first-child { color: var(--text); }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  code { font-family: var(--mono); font-size: 0.86em; }
+  ul, ol { padding-left: 1.3em; color: var(--muted); }
+  li { margin: 4px 0; }
+  </style>
   <style>
     .report { max-width: 48rem; margin: 0 auto; padding: 4rem 1.5rem 6rem; }
     .report section { margin: 0 0 4.5rem; }
@@ -51,18 +94,21 @@
 <body>
   <!-- This is the page a doubter is sent to, which is the worst one to look
        unhosted. Links are absolute because it is served from /reports/. -->
-  <header class="subnav">
-    <div class="wrap subnav-inner">
-      <a class="brand" href="/"><img src="/krate-glyph-white.png" alt="" width="22" height="22" /> KRATE</a>
-      <nav>
-        <a href="/#install">Start</a>
-        <a href="/docs/">Docs</a>
-        <a href="/cloud/">Cloud</a>
-        <a href="/progress/">Progress</a>
-      </nav>
-      <a class="pill pill-primary" href="/#install">Install</a>
-    </div>
-  </header>
+  <header class="site-head">
+  <div class="head-inner">
+    <a class="brand" href="/">
+      <img src="/krate-glyph-white.png" alt="" width="22" height="22" />
+      KRATE
+    </a>
+    <nav class="head-nav" aria-label="Primary">
+      <a href="/#how">How it works</a>
+      <a href="/cloud/">Gallery</a>
+      <a href="/docs/">Docs</a>
+      <a href="https://github.com/incyashraj/krate">GitHub</a>
+    </nav>
+    <a class="pill pill-primary" href="/studio/">Download Studio</a>
+  </div>
+</header>
 
   <main class="report">
     <p class="eyebrow">Reports</p>
@@ -74,7 +120,7 @@
       not contain. Where a number cannot be re-measured automatically, the method
       is written underneath it.
     </p>
-    <p class="method">Generated 2026-08-07. Anyone can reproduce it: <code>python3 scripts/build-reports-page.py</code>.</p>
+    <p class="method">Generated 2026-08-29. Anyone can reproduce it: <code>python3 scripts/build-reports-page.py</code>.</p>
 
     <section>
       <p class="eyebrow">Size</p>
@@ -87,35 +133,34 @@
         bundled inside it that your computer already has: no browser, no
         framework, no runtime copy.
       </p>
-      <svg viewBox="0 0 640 850" role="img" class="chart" aria-label="Bar chart, longest bar is 52.8 KB">
+      <svg viewBox="0 0 640 816" role="img" class="chart" aria-label="Bar chart, longest bar is 52.8 KB">
   <text x="0" y="17" class="bl">grex</text><rect x="132" y="5" width="412.0" height="18" rx="4" fill="#5c93f8"/><text x="554.0" y="19" class="bv">52.8 KB</text>
   <text x="0" y="51" class="bl">envelope</text><rect x="132" y="39" width="148.3" height="18" rx="4" fill="#5c93f8"/><text x="290.3" y="53" class="bv">19 KB</text>
   <text x="0" y="85" class="bl">mdview</text><rect x="132" y="73" width="144.4" height="18" rx="4" fill="#5c93f8"/><text x="286.4" y="87" class="bv">18.5 KB</text>
-  <text x="0" y="119" class="bl">rssfwd</text><rect x="132" y="107" width="138.1" height="18" rx="4" fill="#5c93f8"/><text x="280.1" y="121" class="bv">17.7 KB</text>
-  <text x="0" y="153" class="bl">eo2</text><rect x="132" y="141" width="137.3" height="18" rx="4" fill="#5c93f8"/><text x="279.3" y="155" class="bv">17.6 KB</text>
-  <text x="0" y="187" class="bl">ddh</text><rect x="132" y="175" width="135.8" height="18" rx="4" fill="#5c93f8"/><text x="277.8" y="189" class="bv">17.4 KB</text>
-  <text x="0" y="221" class="bl">journal</text><rect x="132" y="209" width="133.4" height="18" rx="4" fill="#5c93f8"/><text x="275.4" y="223" class="bv">17.1 KB</text>
-  <text x="0" y="255" class="bl">nova</text><rect x="132" y="243" width="124.1" height="18" rx="4" fill="#5c93f8"/><text x="266.1" y="257" class="bv">15.9 KB</text>
-  <text x="0" y="289" class="bl">notes</text><rect x="132" y="277" width="116.3" height="18" rx="4" fill="#5c93f8"/><text x="258.3" y="291" class="bv">14.9 KB</text>
+  <text x="0" y="119" class="bl">journal</text><rect x="132" y="107" width="138.1" height="18" rx="4" fill="#5c93f8"/><text x="280.1" y="121" class="bv">17.7 KB</text>
+  <text x="0" y="153" class="bl">rssfwd</text><rect x="132" y="141" width="138.1" height="18" rx="4" fill="#5c93f8"/><text x="280.1" y="155" class="bv">17.7 KB</text>
+  <text x="0" y="187" class="bl">eo2</text><rect x="132" y="175" width="137.3" height="18" rx="4" fill="#5c93f8"/><text x="279.3" y="189" class="bv">17.6 KB</text>
+  <text x="0" y="221" class="bl">ddh</text><rect x="132" y="209" width="135.8" height="18" rx="4" fill="#5c93f8"/><text x="277.8" y="223" class="bv">17.4 KB</text>
+  <text x="0" y="255" class="bl">nova</text><rect x="132" y="243" width="128.8" height="18" rx="4" fill="#5c93f8"/><text x="270.8" y="257" class="bv">16.5 KB</text>
+  <text x="0" y="289" class="bl">notes</text><rect x="132" y="277" width="118.6" height="18" rx="4" fill="#5c93f8"/><text x="260.6" y="291" class="bv">15.2 KB</text>
   <text x="0" y="323" class="bl">savings</text><rect x="132" y="311" width="116.3" height="18" rx="4" fill="#5c93f8"/><text x="258.3" y="325" class="bv">14.9 KB</text>
-  <text x="0" y="357" class="bl">fetch</text><rect x="132" y="345" width="113.1" height="18" rx="4" fill="#5c93f8"/><text x="255.1" y="359" class="bv">14.5 KB</text>
+  <text x="0" y="357" class="bl">fetch</text><rect x="132" y="345" width="115.5" height="18" rx="4" fill="#5c93f8"/><text x="257.5" y="359" class="bv">14.8 KB</text>
   <text x="0" y="391" class="bl">hexyl</text><rect x="132" y="379" width="113.1" height="18" rx="4" fill="#5c93f8"/><text x="255.1" y="393" class="bv">14.5 KB</text>
-  <text x="0" y="425" class="bl">contacts</text><rect x="132" y="413" width="109.2" height="18" rx="4" fill="#5c93f8"/><text x="251.2" y="427" class="bv">14 KB</text>
-  <text x="0" y="459" class="bl">clip</text><rect x="132" y="447" width="106.9" height="18" rx="4" fill="#5c93f8"/><text x="248.9" y="461" class="bv">13.7 KB</text>
-  <text x="0" y="493" class="bl">pulse</text><rect x="132" y="481" width="105.3" height="18" rx="4" fill="#5c93f8"/><text x="247.3" y="495" class="bv">13.5 KB</text>
+  <text x="0" y="425" class="bl">contacts</text><rect x="132" y="413" width="110.8" height="18" rx="4" fill="#5c93f8"/><text x="252.8" y="427" class="bv">14.2 KB</text>
+  <text x="0" y="459" class="bl">clip</text><rect x="132" y="447" width="110.0" height="18" rx="4" fill="#5c93f8"/><text x="252.0" y="461" class="bv">14.1 KB</text>
+  <text x="0" y="493" class="bl">pulse</text><rect x="132" y="481" width="107.7" height="18" rx="4" fill="#5c93f8"/><text x="249.7" y="495" class="bv">13.8 KB</text>
   <text x="0" y="527" class="bl">checklist</text><rect x="132" y="515" width="104.6" height="18" rx="4" fill="#5c93f8"/><text x="246.6" y="529" class="bv">13.4 KB</text>
-  <text x="0" y="561" class="bl">bounce</text><rect x="132" y="549" width="99.1" height="18" rx="4" fill="#5c93f8"/><text x="241.1" y="563" class="bv">12.7 KB</text>
-  <text x="0" y="595" class="bl">clocks</text><rect x="132" y="583" width="99.1" height="18" rx="4" fill="#5c93f8"/><text x="241.1" y="597" class="bv">12.7 KB</text>
+  <text x="0" y="561" class="bl">clocks</text><rect x="132" y="549" width="100.7" height="18" rx="4" fill="#5c93f8"/><text x="242.7" y="563" class="bv">12.9 KB</text>
+  <text x="0" y="595" class="bl">bounce</text><rect x="132" y="583" width="99.1" height="18" rx="4" fill="#5c93f8"/><text x="241.1" y="597" class="bv">12.7 KB</text>
   <text x="0" y="629" class="bl">cubes</text><rect x="132" y="617" width="98.3" height="18" rx="4" fill="#5c93f8"/><text x="240.3" y="631" class="bv">12.6 KB</text>
-  <text x="0" y="663" class="bl">focus</text><rect x="132" y="651" width="93.6" height="18" rx="4" fill="#5c93f8"/><text x="235.6" y="665" class="bv">12 KB</text>
-  <text x="0" y="697" class="bl">weather</text><rect x="132" y="685" width="91.3" height="18" rx="4" fill="#5c93f8"/><text x="233.3" y="699" class="bv">11.7 KB</text>
+  <text x="0" y="663" class="bl">focus</text><rect x="132" y="651" width="97.5" height="18" rx="4" fill="#5c93f8"/><text x="239.5" y="665" class="bv">12.5 KB</text>
+  <text x="0" y="697" class="bl">weather</text><rect x="132" y="685" width="92.1" height="18" rx="4" fill="#5c93f8"/><text x="234.1" y="699" class="bv">11.8 KB</text>
   <text x="0" y="731" class="bl">chart</text><rect x="132" y="719" width="87.4" height="18" rx="4" fill="#5c93f8"/><text x="229.4" y="733" class="bv">11.2 KB</text>
-  <text x="0" y="765" class="bl">keyvault</text><rect x="132" y="753" width="84.3" height="18" rx="4" fill="#5c93f8"/><text x="226.3" y="767" class="bv">10.8 KB</text>
-  <text x="0" y="799" class="bl">paint</text><rect x="132" y="787" width="82.7" height="18" rx="4" fill="#5c93f8"/><text x="224.7" y="801" class="bv">10.6 KB</text>
-  <text x="0" y="833" class="bl">fractal</text><rect x="132" y="821" width="66.3" height="18" rx="4" fill="#5c93f8"/><text x="208.3" y="835" class="bv">8.5 KB</text>
+  <text x="0" y="765" class="bl">keyvault</text><rect x="132" y="753" width="85.8" height="18" rx="4" fill="#5c93f8"/><text x="227.8" y="767" class="bv">11 KB</text>
+  <text x="0" y="799" class="bl">paint</text><rect x="132" y="787" width="85.1" height="18" rx="4" fill="#5c93f8"/><text x="227.1" y="801" class="bv">10.9 KB</text>
 </svg>
       <p>
-        All 25 apps together come to <strong>392&nbsp;KB</strong>.
+        All 24 apps together come to <strong>388&nbsp;KB</strong>.
       </p>
       <p class="method">
         Sizes read from the packaged <code>.krate</code> files in the public
@@ -126,7 +171,7 @@
 
     <section>
       <p class="eyebrow">The same job, done differently</p>
-      <p class="headline-number">119,880&times;</p>
+      <p class="headline-number">119,864&times;</p>
       <h2>Smaller than the way it is done today.</h2>
       <p>
         Every app below solves the problem Krate solves: one codebase, shipped
@@ -139,7 +184,7 @@
               <th class="num">vs a Krate game</th></tr>
         </thead>
         <tbody>
-        <tr><td>Visual Studio Code</td><td>Electron</td><td class="num">1,492 MB</td><td class="num">119,880&times;</td></tr>        <tr><td>Discord</td><td>Electron</td><td class="num">431 MB</td><td class="num">34,608&times;</td></tr>        <tr><td>Spotify</td><td>Electron</td><td class="num">351 MB</td><td class="num">28,195&times;</td></tr>
+        <tr><td>Visual Studio Code</td><td>Electron</td><td class="num">1,491 MB</td><td class="num">119,864&times;</td></tr>        <tr><td>Discord</td><td>Electron</td><td class="num">431 MB</td><td class="num">34,608&times;</td></tr>        <tr><td>Spotify</td><td>Electron</td><td class="num">351 MB</td><td class="num">28,195&times;</td></tr>
         </tbody>
       </table>
       <p class="method">
@@ -156,23 +201,36 @@
 
     <section>
       <p class="eyebrow">Speed</p>
-      <h2>An app opens in 631&ndash;12,562 milliseconds.</h2>
+      <h2>An app opens in 16&ndash;11,363 milliseconds.</h2>
       <p>
         One frame of 60&nbsp;fps video lasts 16.7&nbsp;ms. Most Krate apps have
         finished opening before a screen finishes drawing a single frame. The
         slowest here are the two ported desktop applications, which do real
         work on startup.
       </p>
-      <svg viewBox="0 0 640 306" role="img" class="chart" aria-label="Bar chart, longest bar is 12,561.7 ms">
-  <text x="0" y="17" class="bl">cubes</text><rect x="132" y="5" width="20.7" height="18" rx="4" fill="#7cc4a4"/><text x="162.7" y="19" class="bv">630.9 ms</text>
-  <text x="0" y="51" class="bl">envelope</text><rect x="132" y="39" width="20.9" height="18" rx="4" fill="#7cc4a4"/><text x="162.9" y="53" class="bv">635.8 ms</text>
-  <text x="0" y="85" class="bl">rssfwd</text><rect x="132" y="73" width="20.9" height="18" rx="4" fill="#7cc4a4"/><text x="162.9" y="87" class="bv">638.5 ms</text>
-  <text x="0" y="119" class="bl">grex</text><rect x="132" y="107" width="21.8" height="18" rx="4" fill="#7cc4a4"/><text x="163.8" y="121" class="bv">663.6 ms</text>
-  <text x="0" y="153" class="bl">savings</text><rect x="132" y="141" width="22.0" height="18" rx="4" fill="#7cc4a4"/><text x="164.0" y="155" class="bv">670.8 ms</text>
-  <text x="0" y="187" class="bl">chart</text><rect x="132" y="175" width="22.1" height="18" rx="4" fill="#7cc4a4"/><text x="164.1" y="189" class="bv">673.8 ms</text>
-  <text x="0" y="221" class="bl">mdview</text><rect x="132" y="209" width="22.2" height="18" rx="4" fill="#7cc4a4"/><text x="164.2" y="223" class="bv">676.6 ms</text>
-  <text x="0" y="255" class="bl">eo2</text><rect x="132" y="243" width="22.5" height="18" rx="4" fill="#7cc4a4"/><text x="164.5" y="257" class="bv">685 ms</text>
-  <text x="0" y="289" class="bl">bounce</text><rect x="132" y="277" width="412.0" height="18" rx="4" fill="#7cc4a4"/><text x="554.0" y="291" class="bv">12,561.7 ms</text>
+      <svg viewBox="0 0 640 748" role="img" class="chart" aria-label="Bar chart, longest bar is 11,362.6 ms">
+  <text x="0" y="17" class="bl">envelope</text><rect x="132" y="5" width="2.0" height="18" rx="4" fill="#7cc4a4"/><text x="144.0" y="19" class="bv">15.8 ms</text>
+  <text x="0" y="51" class="bl">rssfwd</text><rect x="132" y="39" width="2.0" height="18" rx="4" fill="#7cc4a4"/><text x="144.0" y="53" class="bv">18.8 ms</text>
+  <text x="0" y="85" class="bl">grex</text><rect x="132" y="73" width="2.0" height="18" rx="4" fill="#7cc4a4"/><text x="144.0" y="87" class="bv">28.5 ms</text>
+  <text x="0" y="119" class="bl">cubes</text><rect x="132" y="107" width="2.6" height="18" rx="4" fill="#7cc4a4"/><text x="144.6" y="121" class="bv">71.8 ms</text>
+  <text x="0" y="153" class="bl">chart</text><rect x="132" y="141" width="3.4" height="18" rx="4" fill="#7cc4a4"/><text x="145.4" y="155" class="bv">93.3 ms</text>
+  <text x="0" y="187" class="bl">clocks</text><rect x="132" y="175" width="3.4" height="18" rx="4" fill="#7cc4a4"/><text x="145.4" y="189" class="bv">93.8 ms</text>
+  <text x="0" y="221" class="bl">checklist</text><rect x="132" y="209" width="3.5" height="18" rx="4" fill="#7cc4a4"/><text x="145.5" y="223" class="bv">95.5 ms</text>
+  <text x="0" y="255" class="bl">focus</text><rect x="132" y="243" width="3.5" height="18" rx="4" fill="#7cc4a4"/><text x="145.5" y="257" class="bv">96.3 ms</text>
+  <text x="0" y="289" class="bl">savings</text><rect x="132" y="277" width="3.5" height="18" rx="4" fill="#7cc4a4"/><text x="145.5" y="291" class="bv">96.6 ms</text>
+  <text x="0" y="323" class="bl">journal</text><rect x="132" y="311" width="3.6" height="18" rx="4" fill="#7cc4a4"/><text x="145.6" y="325" class="bv">98.4 ms</text>
+  <text x="0" y="357" class="bl">pulse</text><rect x="132" y="345" width="3.6" height="18" rx="4" fill="#7cc4a4"/><text x="145.6" y="359" class="bv">99.3 ms</text>
+  <text x="0" y="391" class="bl">mdview</text><rect x="132" y="379" width="3.6" height="18" rx="4" fill="#7cc4a4"/><text x="145.6" y="393" class="bv">99.5 ms</text>
+  <text x="0" y="425" class="bl">eo2</text><rect x="132" y="413" width="3.6" height="18" rx="4" fill="#7cc4a4"/><text x="145.6" y="427" class="bv">99.6 ms</text>
+  <text x="0" y="459" class="bl">keyvault</text><rect x="132" y="447" width="5.4" height="18" rx="4" fill="#7cc4a4"/><text x="147.4" y="461" class="bv">148.8 ms</text>
+  <text x="0" y="493" class="bl">fetch</text><rect x="132" y="481" width="11.9" height="18" rx="4" fill="#7cc4a4"/><text x="153.9" y="495" class="bv">326.9 ms</text>
+  <text x="0" y="527" class="bl">contacts</text><rect x="132" y="515" width="11.9" height="18" rx="4" fill="#7cc4a4"/><text x="153.9" y="529" class="bv">328.9 ms</text>
+  <text x="0" y="561" class="bl">clip</text><rect x="132" y="549" width="12.1" height="18" rx="4" fill="#7cc4a4"/><text x="154.1" y="563" class="bv">333.4 ms</text>
+  <text x="0" y="595" class="bl">weather</text><rect x="132" y="583" width="41.0" height="18" rx="4" fill="#7cc4a4"/><text x="183.0" y="597" class="bv">1,131.2 ms</text>
+  <text x="0" y="629" class="bl">notes</text><rect x="132" y="617" width="59.6" height="18" rx="4" fill="#7cc4a4"/><text x="201.6" y="631" class="bv">1,643.6 ms</text>
+  <text x="0" y="663" class="bl">paint</text><rect x="132" y="651" width="64.2" height="18" rx="4" fill="#7cc4a4"/><text x="206.2" y="665" class="bv">1,770.4 ms</text>
+  <text x="0" y="697" class="bl">nova</text><rect x="132" y="685" width="164.6" height="18" rx="4" fill="#7cc4a4"/><text x="306.6" y="699" class="bv">4,539.8 ms</text>
+  <text x="0" y="731" class="bl">bounce</text><rect x="132" y="719" width="412.0" height="18" rx="4" fill="#7cc4a4"/><text x="554.0" y="733" class="bv">11,362.6 ms</text>
 </svg>
       <p class="method">
         Measured while this page was generated: five runs of each app on this
@@ -332,28 +390,27 @@
         <tr><td><code>grex</code></td><td>Ported</td><td class="num">54,084</td><td>Regex builder, from 5,396 lines</td><td class="mid">Nightly</td></tr>
         <tr><td><code>envelope</code></td><td>Database</td><td class="num">19,495</td><td>Budgeting, with real SQL and secure storage</td><td class="mid">Nightly</td></tr>
         <tr><td><code>mdview</code></td><td>Ported</td><td class="num">18,965</td><td>Markdown viewer, from 4,863 lines</td><td class="mid">Nightly</td></tr>
-        <tr><td><code>rssfwd</code></td><td>Internet</td><td class="num">18,084</td><td>Feed forwarder over scoped HTTPS</td><td class="mid"> - </td></tr>
+        <tr><td><code>journal</code></td><td></td><td class="num">18,128</td><td></td><td class="mid">—</td></tr>
+        <tr><td><code>rssfwd</code></td><td>Internet</td><td class="num">18,084</td><td>Feed forwarder over scoped HTTPS</td><td class="mid">—</td></tr>
         <tr><td><code>eo2</code></td><td>Ported</td><td class="num">18,021</td><td>Image viewer, from 2,677 lines of desktop source</td><td class="mid">Nightly</td></tr>
         <tr><td><code>ddh</code></td><td>Filesystem</td><td class="num">17,778</td><td>Duplicate-file finder</td><td class="mid">Nightly</td></tr>
-        <tr><td><code>journal</code></td><td></td><td class="num">17,494</td><td></td><td class="mid"> - </td></tr>
-        <tr><td><code>nova</code></td><td></td><td class="num">16,260</td><td></td><td class="mid"> - </td></tr>
-        <tr><td><code>notes</code></td><td></td><td class="num">15,269</td><td></td><td class="mid"> - </td></tr>
+        <tr><td><code>nova</code></td><td></td><td class="num">16,881</td><td></td><td class="mid">—</td></tr>
+        <tr><td><code>notes</code></td><td></td><td class="num">15,576</td><td></td><td class="mid">—</td></tr>
         <tr><td><code>savings</code></td><td>Everyday app</td><td class="num">15,227</td><td>A window, a form, state that survives a restart</td><td class="mid">Nightly</td></tr>
-        <tr><td><code>fetch</code></td><td></td><td class="num">14,878</td><td></td><td class="mid"> - </td></tr>
+        <tr><td><code>fetch</code></td><td></td><td class="num">15,135</td><td></td><td class="mid">—</td></tr>
         <tr><td><code>hexyl</code></td><td>Command line</td><td class="num">14,872</td><td>Hex viewer with byte-identical output to the original</td><td class="mid">Nightly</td></tr>
-        <tr><td><code>contacts</code></td><td></td><td class="num">14,350</td><td></td><td class="mid"> - </td></tr>
-        <tr><td><code>clip</code></td><td></td><td class="num">14,015</td><td></td><td class="mid"> - </td></tr>
-        <tr><td><code>pulse</code></td><td></td><td class="num">13,780</td><td></td><td class="mid"> - </td></tr>
-        <tr><td><code>checklist</code></td><td></td><td class="num">13,717</td><td></td><td class="mid"> - </td></tr>
+        <tr><td><code>contacts</code></td><td></td><td class="num">14,507</td><td></td><td class="mid">—</td></tr>
+        <tr><td><code>clip</code></td><td></td><td class="num">14,467</td><td></td><td class="mid">—</td></tr>
+        <tr><td><code>pulse</code></td><td></td><td class="num">14,090</td><td></td><td class="mid">—</td></tr>
+        <tr><td><code>checklist</code></td><td></td><td class="num">13,739</td><td></td><td class="mid">—</td></tr>
+        <tr><td><code>clocks</code></td><td></td><td class="num">13,200</td><td></td><td class="mid">—</td></tr>
         <tr><td><code>bounce</code></td><td>2D game</td><td class="num">13,047</td><td>A playable Breakout: paddle, bricks, lives, a win</td><td class="mid">Nightly</td></tr>
-        <tr><td><code>clocks</code></td><td></td><td class="num">13,012</td><td></td><td class="mid"> - </td></tr>
         <tr><td><code>cubes</code></td><td></td><td class="num">12,880</td><td></td><td class="mid">Nightly</td></tr>
-        <tr><td><code>focus</code></td><td></td><td class="num">12,308</td><td></td><td class="mid"> - </td></tr>
-        <tr><td><code>weather</code></td><td></td><td class="num">12,007</td><td></td><td class="mid"> - </td></tr>
+        <tr><td><code>focus</code></td><td></td><td class="num">12,803</td><td></td><td class="mid">—</td></tr>
+        <tr><td><code>weather</code></td><td></td><td class="num">12,114</td><td></td><td class="mid">—</td></tr>
         <tr><td><code>chart</code></td><td>Drawing</td><td class="num">11,455</td><td>Draws its own bar chart, with no image files</td><td class="mid">Nightly</td></tr>
-        <tr><td><code>keyvault</code></td><td></td><td class="num">11,057</td><td></td><td class="mid"> - </td></tr>
-        <tr><td><code>paint</code></td><td></td><td class="num">10,901</td><td></td><td class="mid"> - </td></tr>
-        <tr><td><code>fractal</code></td><td></td><td class="num">8,689</td><td></td><td class="mid"> - </td></tr>
+        <tr><td><code>keyvault</code></td><td></td><td class="num">11,260</td><td></td><td class="mid">—</td></tr>
+        <tr><td><code>paint</code></td><td></td><td class="num">11,194</td><td></td><td class="mid">—</td></tr>
         </tbody>
       </table>
       </div>
@@ -371,7 +428,7 @@
       <p class="eyebrow">Coverage</p>
       <h2>How much of the system is real.</h2>
       <ul>
-      <li>11 of 14 declared interfaces are fully implemented. 1 are declared and do nothing yet.</li>
+      <li>12 of 15 declared interfaces are fully implemented. 1 are declared and do nothing yet.</li>
       <li>17 of 17 declared widgets work on all three systems.</li>
       </ul>
       <p>
@@ -454,20 +511,5 @@
       </span>
     </div>
   </footer>
-<script>
-// One anonymous page view -- the page name and the day, to our own hub.
-// No cookie, no id, no referrer; strictly less than any analytics vendor.
-(function () {
-  try {
-    fetch("https://hub.krate.tech/view", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ page: location.pathname }),
-      keepalive: true,
-      mode: "cors",
-    }).catch(function () {});
-  } catch (e) {}
-})();
-</script>
 </body>
 </html>

@@ -634,24 +634,27 @@ async function mobileLanding(hash, env) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(name)} — a Krate app</title>
 <style>
-  body { margin: 0; background: #0b0d12; color: #fff; font-family: -apple-system, system-ui, sans-serif;
-         min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+  body { margin: 0; background: #0a0a0a; color: #fff; font-family: -apple-system, system-ui, sans-serif;
+         min-height: 100vh; display: flex; align-items: center; justify-content: center;
+         -webkit-font-smoothing: antialiased; }
   main { max-width: 340px; padding: 32px 24px; text-align: center; }
-  img { width: 100%; border-radius: 16px; border: 1px solid rgba(255,255,255,0.12); margin-bottom: 20px; }
-  h1 { font-size: 22px; margin: 0 0 4px; }
-  .by { color: rgba(255,255,255,0.5); font-size: 14px; margin: 0 0 20px; }
-  p { color: rgba(255,255,255,0.7); font-size: 15px; line-height: 1.5; margin: 0 0 24px; }
-  button { width: 100%; padding: 14px; border: 0; border-radius: 24px; background: #6b8cff;
-           color: #fff; font-size: 16px; font-weight: 600; margin-bottom: 12px; }
-  a { color: rgba(255,255,255,0.55); font-size: 13px; }
+  .card { border: 1px solid #1f2228; border-radius: 16px; background: #0f1012; overflow: hidden;
+          margin-bottom: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+  .card img { width: 100%; display: block; }
+  h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 4px; }
+  .by { color: rgba(255,255,255,0.45); font-size: 14px; margin: 0 0 18px; }
+  p { color: rgba(255,255,255,0.6); font-size: 15px; line-height: 1.55; margin: 0 0 24px; }
+  button { width: 100%; padding: 14px; border: 0; border-radius: 999px; background: #fff;
+           color: #0a0a0a; font-size: 15.5px; font-weight: 600; margin-bottom: 14px; }
+  a { color: rgba(255,255,255,0.5); font-size: 13px; }
 </style>
 </head>
 <body>
 <main>
-  ${shot ? `<img src="${shot}" alt="">` : ""}
+  ${shot ? `<div class="card"><img src="${shot}" alt=""></div>` : ""}
   <h1>${esc(name)}</h1>
   ${author ? `<p class="by">by ${esc(author)}</p>` : ""}
-  <p>This is a Krate app. Krate runs on computers today -- open this link on your Mac, Windows, or Linux machine and it runs there.</p>
+  <p>Someone made this and shared it. It runs on computers today: open this link on your Mac, Windows, or Linux machine, install Krate once (small and free), and it opens -- after showing you what it may touch.</p>
   <button onclick="navigator.clipboard.writeText('${link}').then(()=>this.textContent='Copied')">Copy the link</button>
   <a href="https://krate.tech">What is Krate?</a> · <a href="${link}?dl=1">Download the file anyway</a>
 </main>

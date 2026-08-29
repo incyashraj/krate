@@ -3,70 +3,183 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="What Krate collects, what it never collects, and how to turn all of it off." />
+  <meta name="theme-color" content="#0a0a0a" />
+  <meta name="description" content="What Krate collects, in plain words -- written from the public source code, so every claim can be checked against it." />
   <link rel="canonical" href="https://krate.tech/privacy/" />
-  <title>Krate privacy</title>
+  <meta property="og:title" content="Krate: privacy" />
+  <meta property="og:description" content="What Krate collects, in plain words -- written from the public source code, so every claim can be checked against it." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://krate.tech/privacy/" />
+  <meta property="og:image" content="https://krate.tech/og-v2.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <title>Krate: privacy</title>
   <link rel="icon" href="/krate-favicon.png" />
-  <link rel="stylesheet" href="/site.css" />
+  <link rel="apple-touch-icon" href="/krate-favicon.png" />
+  <style>
+  @font-face {
+    font-family: "Geist";
+    src: url("/fonts/geist-400.woff2") format("woff2");
+    font-weight: 400; font-style: normal; font-display: swap;
+  }
+  @font-face {
+    font-family: "Geist";
+    src: url("/fonts/geist-500.woff2") format("woff2");
+    font-weight: 500; font-style: normal; font-display: swap;
+  }
+  :root {
+    color-scheme: dark;
+    --bg: #0a0a0a; --panel: #0f1012; --panel-2: #141519;
+    --line: #1f2228; --line-soft: #17191e;
+    --text: #ffffff;
+    --muted: rgba(255, 255, 255, 0.55);
+    --quiet: rgba(255, 255, 255, 0.35);
+    --accent: #6291ff; --good: #4ade80; --warn: #f4dc74;
+    --r-card: 16px; --r-pill: 999px; --max: 760px;
+    --sans: "Geist", Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
+    --enter: 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text); font-family: var(--sans);
+    font-size: 16px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  }
+  a { color: inherit; text-decoration: none; }
+  img { max-width: 100%; display: block; }
+  h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
+  .hidden { display: none !important; }
+  .wrap { max-width: var(--max); margin: 0 auto; padding: 0 24px; }
+  .site-head {
+    position: sticky; top: 0; z-index: 40;
+    background: color-mix(in srgb, var(--bg) 86%, transparent);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .head-inner { display: flex; align-items: center; gap: 24px; height: 64px; max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 500; letter-spacing: 0.14em; font-size: 14px; }
+  .head-nav { display: flex; gap: 4px; margin-left: auto; }
+  .head-nav a { font-size: 14px; color: var(--muted); padding: 8px 12px; border-radius: var(--r-pill); transition: color 150ms ease, background 150ms ease; }
+  .head-nav a:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+  @media (max-width: 640px) { .head-nav { display: none; } }
+  .pill {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 9px 18px; border-radius: var(--r-pill);
+    border: 1px solid var(--line); font-size: 14.5px; font-weight: 500;
+    transition: border-color 150ms ease, background 150ms ease; cursor: pointer;
+    background: none; color: var(--text); font-family: inherit;
+  }
+  .pill:hover { border-color: rgba(255,255,255,0.28); }
+  .pill-primary { background: var(--text); color: #0a0a0a; border-color: var(--text); }
+  .pill-primary:hover { background: rgba(255,255,255,0.86); border-color: rgba(255,255,255,0.86); }
+  .page { padding-top: clamp(48px, 8vh, 84px); padding-bottom: clamp(64px, 10vh, 100px); }
+  .kicker { font-size: 12px; letter-spacing: 0.14em; color: var(--quiet); }
+  .page h1 { margin-top: 10px; font-size: clamp(30px, 4.6vw, 46px); letter-spacing: -0.028em; line-height: 1.08; }
+  .lede { margin-top: 14px; color: var(--muted); max-width: 38em; font-size: 16.5px; }
+  .site-foot { border-top: 1px solid var(--line-soft); padding: 32px 0 40px; }
+  .foot-inner { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; max-width: 1120px; margin: 0 auto; padding: 0 24px; font-size: 13px; color: var(--muted); }
+  .foot-inner nav { margin-left: auto; display: flex; gap: 18px; flex-wrap: wrap; }
+  .foot-inner a:hover { color: var(--text); }
+  code { font-family: var(--mono); font-size: 0.86em; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.1em 0.4em; }
+
+  .page h2 { margin-top: 34px; font-size: 19px; letter-spacing: -0.015em; }
+  .page h2 + p, .page h2 ~ p { margin-top: 10px; color: var(--muted); font-size: 15px; max-width: 46em; }
+  .page p a { color: var(--text); border-bottom: 1px solid var(--line); }
+  .back { display: inline-block; margin-top: 40px; color: var(--muted); font-size: 14.5px; }
+  .back:hover { color: var(--text); }
+
+  </style>
 </head>
 <body>
-  <header class="subnav">
-    <div class="wrap subnav-inner">
-      <a class="brand" href="/"><img src="/krate-glyph-white.png" alt="" width="22" height="22" /> KRATE</a>
-      <nav>
-        <a href="/#install">Start</a>
-        <a href="/docs/">Docs</a>
-        <a href="/cloud/">Cloud</a>
-      </nav>
-    </div>
-  </header>
-  <main class="page-wide">
-    <p class="page-kicker">PRIVACY</p>
-    <h1>What Krate collects, in plain words.</h1>
-    <p>Last updated 2026-08-25. This page is written from the source code, which
-    is public; every claim here can be checked against it.</p>
 
-    <h2>Apps you run</h2>
-    <p>Krate apps run in a permission sandbox. An app can only touch what you
-    granted on its consent screen, and the list you approve is the whole list.
-    App data stays on your computer unless the app declares a network or shared
-    capability and you approve it.</p>
+<header class="site-head">
+  <div class="head-inner">
+    <a class="brand" href="/">
+      <img src="/krate-glyph-white.png" alt="" width="22" height="22" />
+      KRATE
+    </a>
+    <nav class="head-nav" aria-label="Primary">
+      <a href="/#how">How it works</a>
+      <a href="/cloud/">Gallery</a>
+      <a href="/docs/">Docs</a>
+      <a href="https://github.com/incyashraj/krate">GitHub</a>
+    </nav>
+    <a class="pill pill-primary" href="/studio/">Download Studio</a>
+  </div>
+</header>
 
-    <h2>Anonymous usage counting</h2>
-    <p>The Krate tool counts how many people use it, without learning who they
-    are. What is sent: a random id generated on your machine, the Krate
-    version, the operating system name, and which of a fixed set of actions
-    happened (make, open, publish). What is never sent: app names, prompts,
-    file paths, usernames, email, location, or any hardware identifier. The id
-    is random bytes in a file; deleting the file makes your install a new
-    anonymous one. The first run prints one line explaining this. Turn it off
-    permanently with <code>KRATE_NO_USAGE=1</code>.</p>
+<main class="page wrap">
+  <p class="kicker">PRIVACY</p>
+  <h1>What Krate collects, in plain words.</h1>
+  <p class="lede">Last updated 2026-08-29. This page is written from the
+  source code, which is public; every claim here can be checked against it.</p>
 
-    <h2>The website</h2>
-    <p>krate.tech pages send one anonymous view event: the page path and the
-    day. No cookies, no identifiers, no referrer, and no third-party
-    analytics.</p>
+  <h2>Apps you run</h2>
+  <p>Krate apps run in a permission sandbox. An app can only touch what you
+  granted on its consent screen, and the list you approve is the whole list.
+  App data stays on your computer unless the app declares a network or shared
+  capability and you approve it.</p>
 
-    <h2>Krate Cloud, if you sign in</h2>
-    <p>Publishing to Krate Cloud uses GitHub sign-in. We store your GitHub
-    login and the apps you publish, because published apps are credited to
-    their publisher. Nothing else about your account is read or stored.
-    Shared-store data (an app feature you opt into per app) is synced through
-    krate.tech and readable by anyone holding that store's invite code, which
-    the consent screen says before you approve it.</p>
+  <h2>Anonymous usage counting</h2>
+  <p>The Krate tool counts how many people use it, without learning who they
+  are. What is sent: a random id generated on your machine, the Krate
+  version, the operating system name, and which of a fixed set of actions
+  happened (make, open, publish). What is never sent: app names, prompts,
+  file paths, usernames, email, location, or any hardware identifier. The id
+  is random bytes in a file; deleting the file makes your install a new
+  anonymous one. The first run prints one line explaining this. Turn it off
+  permanently with <code>KRATE_NO_USAGE=1</code>.</p>
 
-    <h2>Questions</h2>
-    <p>Open an issue at
-    <a href="https://github.com/incyashraj/krate">github.com/incyashraj/krate</a>
-    -- the same place the code that this page describes lives.</p>
+  <h2>The website</h2>
+  <p>krate.tech pages send one anonymous view event: the page path and the
+  day. No cookies, no identifiers, no referrer, and no third-party
+  analytics.</p>
 
-    <p style="margin-top:3rem"><a href="/">&larr; Back to krate.tech</a></p>
-  </main>
-  <footer class="subfoot">
-    <div class="wrap subfoot-inner">
-      <span>© 2026 Krate Labs</span>
-      <span><a href="/docs/">Docs</a> <a href="https://github.com/incyashraj/krate">GitHub</a></span>
-    </div>
-  </footer>
+  <h2>Publishing a link, if you sign in</h2>
+  <p>Publishing an app to the shared gallery uses GitHub sign-in. We store
+  your GitHub login and the apps you publish, because published apps are
+  credited to their publisher. Nothing else about your account is read or
+  stored. Shared-store data (an app feature you opt into per app) is synced
+  through krate.tech and readable by anyone holding that store's invite
+  code, which the consent screen says before you approve it.</p>
+
+  <h2>Questions</h2>
+  <p>Open an issue at
+  <a href="https://github.com/incyashraj/krate">github.com/incyashraj/krate</a>
+  -- the same place the code that this page describes lives.</p>
+
+  <a class="back" href="/">&larr; Back to krate.tech</a>
+</main>
+
+<footer class="site-foot">
+  <div class="foot-inner">
+    <span>© 2026 Krate Labs</span>
+    <nav aria-label="Footer">
+      <a href="/">Home</a>
+      <a href="/studio/">Studio</a>
+      <a href="/open/">Received an app?</a>
+      <a href="/faq.html">FAQ</a>
+      <a href="/contact/">Contact</a>
+      <a href="/privacy/">Privacy</a>
+      <a href="https://github.com/incyashraj/krate">GitHub</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+// One anonymous page view -- the page name and the day, to our own hub.
+// No cookie, no id, no referrer; strictly less than any analytics vendor.
+(function () {
+  try {
+    fetch("https://hub.krate.tech/view", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ page: location.pathname }),
+      keepalive: true,
+      mode: "cors",
+    }).catch(function () {});
+  } catch (e) {}
+})();
+</script>
 </body>
 </html>
