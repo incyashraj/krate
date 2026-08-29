@@ -122,9 +122,9 @@ the State column as stages land, never start a second list.
 | 3 | /open receiver page: download-first, tap-to-open rehearsal | **live 2026-08-29** |
 | 4 | Hub links land people on /open, personalized to their app | **live 2026-08-29** |
 | 5 | Words purge on the main three pages (no "cloud" identity, no "no runtime") | **live 2026-08-29** |
-| 6 | GitHub README: Use it / Work on it split; Mode, MCP, build-from-source below the rule | in progress |
-| 7 | Second-ring pages reframed: /cloud gallery + app pages, faq, /progress, /reports, /publish, /contact, /login, /privacy, worker mobile landing | in progress |
-| 8 | og-v2.png regenerated to match the new title | open |
+| 6 | GitHub README: Use it / Work on it split; Mode, MCP, build-from-source below the rule | **done 2026-08-29** |
+| 7 | Second-ring pages reframed: /cloud gallery + app pages, faq, /progress, /reports, /publish, /contact, /login, /privacy, worker mobile landing | **live 2026-08-29** |
+| 8 | og-v2.png regenerated to match the new title | **live 2026-08-29** -- the real checklist card beside the sentence |
 
 **B. Send** -- the product's broken step
 
@@ -141,7 +141,7 @@ the State column as stages land, never start a second list.
 | 12 | Send sheet: card first, link second, raw file third | in repo, rides the release |
 | 13 | Cloud renamed Shared everywhere a user reads | in repo, rides the release |
 | 14 | "First-time setup (once)" named stage | in repo, rides the release |
-| 15 | Real example apps: rate card, trip splitter, care schedule as .krate files | open |
+| 15 | Real example apps: rate card, trip splitter, care schedule as .krate files | **done 2026-08-29** -- built by grok through the real loop, full ladder passed (shoot, occlusion gate, card), committed in evidence/demo/ |
 
 **D. Runtime gates**
 
@@ -160,8 +160,28 @@ the State column as stages land, never start a second list.
 
 | # | Stage | State |
 |---|---|---|
-| 19 | Free-tier counter: 3 makes/month, hub entitlement, only successes count | open |
-| 20 | Stripe checkout | after a stranger receives an app with nobody on the call |
+| 19 | Free-tier counter: 3 makes/month, hub entitlement, only successes count. Failed builds and revisions never count | open |
+| 20 | Stripe checkout ($12/mo, $96/yr; Team $16 later) | after a stranger receives an app with nobody on the call |
+
+**G. Found by re-auditing the source conversations (2026-08-29)** --
+items the conversations specify that no stage carried:
+
+| # | Stage | State |
+|---|---|---|
+| 21 | Studio Send sheet gains "For a friend without Krate" -- the wrap, with a Mac/Windows/Linux choice, calling `krate wrap` | backend command in repo; sheet UI next |
+| 22 | Founding waitlist: $79/yr for the first 200, honest early-days copy, email capture through the hub. No public checkout yet | open |
+| 23 | The 20-second film: type, file appears, other desktop opens it through the first-click path. Promo pipeline; no voiceover. Only ships because first-click now works | open |
+| 24 | The public rename finishes in code: Go/TS SDKs still carry l36* names | open |
+| 25 | Version alignment at the cut: workspace says 0.1.28, tags say v0.2.1, dist app says older still. A founding customer reads these | folds into stage 18 |
+| 26 | Unlisted links: publish without a gallery listing, so a client rate card is a URL, not a public exhibit | open |
+| 27 | Send the file opens the OS share sheet (AirDrop, Mail, Messages) with the card, not just a Finder reveal | open |
+
+Audited as already covered: the three share buttons (9, 10, 11 + 21),
+Use/Keep/Change verbs (Studio's Open/Send/Change), the receiver's one
+screen (/open), hiding the compiler (14), the demo-app rule (15), the
+say/never-say vocabulary (1-7), the landing/direct funnel split (hub
+analytics). Deliberately still parked: spark/engine split (measure
+first), license split, web Studio, Krate AI, phones, QR.
 
 Demo apps of record: rate card (freelancer to client), trip splitter (friend to
 group chat), care schedule (family). Calculator is a size footnote, not a demo.

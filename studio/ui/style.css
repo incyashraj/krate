@@ -2450,3 +2450,22 @@ body.light .send-opt span, body.light .send-done p { color: rgba(0,0,0,0.55); }
 .sheet-foot-fold summary::-webkit-details-marker { display: none; }
 .sheet-foot-fold summary::after { content: " ›"; }
 .sheet-foot-fold[open] summary::after { content: " ⌄"; }
+.send-quiet-link {
+  align-self: flex-start; background: none; border: none; padding: 0;
+  color: var(--quiet, rgba(255,255,255,0.35)); font: inherit; font-size: 12px;
+  cursor: pointer; border-bottom: 1px solid var(--line);
+}
+.send-quiet-link:hover { color: var(--muted); }
+
+/* -------------------------------------------------- the info sheet face */
+.info-trust { font-size: 15px; color: var(--text); font-weight: 500; margin-top: 2px; }
+.sheet-info .sheet-sub { margin-top: 2px; }
+.info-fold { border-top: 1px solid var(--line); padding: 12px 0; }
+.info-fold summary { cursor: pointer; list-style: none; font-size: 13px; color: var(--muted); font-weight: 500; }
+.info-fold summary::-webkit-details-marker { display: none; }
+.info-fold summary::after { content: " ›"; color: var(--quiet, rgba(255,255,255,0.35)); }
+.info-fold[open] summary::after { content: " ⌄"; }
+.info-fold ul { margin: 10px 0 0; padding-left: 1.1em; font-size: 13.5px; color: var(--muted); }
+.info-fold li { margin: 3px 0; }
+.info-fold .info-rows { margin-top: 10px; }
+.info-fold .btn { margin-top: 10px; }

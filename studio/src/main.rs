@@ -1773,18 +1773,41 @@ async fn app_info(path: String) -> Result<serde_json::Value, String> {
         // the engine, because the shape is small and stable.
         let mut identity = String::new();
         let mut caps: Vec<String> = Vec::new();
-        let mut in_caps = false;
+        // What the FILE asked for, in the engine's own plain words -- the
+        // list a person should read first. Everything else is player API
+        // surface, which belongs behind a fold, not on the face.
+        let mut asks: Vec<serde_json::Value> = Vec::new();
+        let mut section = 0u8; // 0 identity, 1 effective, 2 asked-for
         for line in text.lines() {
             let trimmed = line.trim();
             if trimmed.starts_with("Effective capabilities") {
-                in_caps = true;
+                section = 1;
+                continue;
+            }
+            if trimmed.starts_with("This app will ask for") {
+                section = 2;
                 continue;
             }
             if let Some(value) = trimmed.strip_prefix("- ") {
-                if in_caps {
-                    caps.push(value.to_string());
-                } else if identity.is_empty() {
-                    identity = value.to_string();
+                match section {
+                    1 => caps.push(value.to_string()),
+                    2 => {
+                        // "save its own settings and data (store.kv)":
+                        // words first, the raw capability in the tail parens.
+                        let (words, cap) = match value.rfind(" (") {
+                            Some(i) if value.ends_with(')') => (
+                                value[..i].to_string(),
+                                value[i + 2..value.len() - 1].to_string(),
+                            ),
+                            _ => (value.to_string(), String::new()),
+                        };
+                        asks.push(serde_json::json!({ "words": words, "cap": cap }));
+                    }
+                    _ => {
+                        if identity.is_empty() {
+                            identity = value.to_string();
+                        }
+                    }
                 }
             }
         }
@@ -1794,6 +1817,7 @@ async fn app_info(path: String) -> Result<serde_json::Value, String> {
         Ok(serde_json::json!({
             "path": target,
             "identity": identity,
+            "asks": asks,
             "capabilities": caps,
             "size": size,
         }))
@@ -2095,6 +2119,44 @@ async fn make_card(path: String) -> Result<String, String> {
         .find_map(|line| line.strip_prefix("Card written: "))
         .and_then(|rest| rest.rsplit_once(" (").map(|(path, _)| path.to_string()))
         .ok_or_else(|| "the engine did not say where the card landed".to_string())
+}
+
+/// Wrap the app for one friend on one system: a double-clickable that
+/// installs Krate once (a small verified download -- the player is planted,
+/// never bundled) and then opens the app. The engine's own `wrap` verb does
+/// the work; Studio reads the landing path back from its output line.
+#[tauri::command]
+async fn make_wrap(path: String, target: String) -> Result<String, String> {
+    if !matches!(target.as_str(), "mac" | "windows" | "linux") {
+        return Err("unknown system".to_string());
+    }
+    let bundle = existing(&path)?;
+    let engine = engine()?;
+    let output = tauri::async_runtime::spawn_blocking(move || {
+        Command::new(&engine)
+            .arg("wrap")
+            .arg(&bundle)
+            .arg("--for")
+            .arg(&target)
+            .output()
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .map_err(|err| err.to_string())?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let detail = stderr.trim();
+        return Err(if detail.is_empty() {
+            "the wrap could not be made".to_string()
+        } else {
+            detail.to_string()
+        });
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .find_map(|line| line.strip_prefix("Wrap written: "))
+        .and_then(|rest| rest.rsplit_once(" (").map(|(path, _)| path.to_string()))
+        .ok_or_else(|| "the engine did not say where the wrap landed".to_string())
 }
 
 /// Show the file itself, for people who want to drag it into a chat.
@@ -3125,6 +3187,7 @@ fn main() {
             report_send,
             publish,
             make_card,
+            make_wrap,
             reveal,
             settings_get,
             dbg_log,

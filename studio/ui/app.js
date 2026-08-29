@@ -510,9 +510,38 @@ function openSession(s) {
   state.attachments = [];
   $("railTitle").textContent = state.session.title;
   $("thread").innerHTML = "";
-  for (const m of state.session.messages) {
-    appendMessage(m.who, m.body, m.files);
+  const msgs = state.session.messages;
+  // The last recorded question in a session that never built gets its
+  // Build button back on replay. Without this, reopening showed the
+  // questions wordlessly and the only affordance left was typing.
+  const lastAsk = !building && !s.result
+    ? msgs.map((m, i) => (m.kind === "ask" ? i : -1)).filter((i) => i >= 0).pop()
+    : undefined;
+  // After a restart the in-memory planning state is gone; rebuild enough of
+  // it from the transcript that Build it still means "build what I asked
+  // for". The request is the person's first message.
+  if (lastAsk !== undefined && !state.planning) {
+    const first = msgs.find((m) => m.who === "YOU");
+    if (first) {
+      state.planning = {
+        request: first.body,
+        files: [],
+        qa: [],
+        rounds: 1,
+        lastQuestions: [],
+      };
+    }
   }
+  msgs.forEach((m, i) => {
+    if (i === lastAsk && state.planning) {
+      appendMessage(m.who, m.body, m.files, {
+        variant: "ask",
+        actions: [{ label: "Build it", primary: true, run: finishPlanningAndBuild }],
+      });
+    } else {
+      appendMessage(m.who, m.body, m.files);
+    }
+  });
   if (building) {
     show("building");
     // Put the live progress back: stages, log, current line and clock. Without
@@ -1145,7 +1174,7 @@ function finishBuild(result) {
   const mins = Math.round((Date.now() - state.startedAt) / 60000);
   const version = state.buildVersion || (built.builds || 0) + 1;
   built.builds = version;
-  settleChipOk(state.buildChip, version, result.size, mins ? ` · ${mins} min` : "", built);
+  settleChipOk(state.buildChip, version, result.size, "", built);
   state.buildChip = null;
   // The transcript keeps the receipt, not the live chip.
   built.messages.push({
@@ -1441,10 +1470,17 @@ async function runPlan() {
       const questions = answer.ask.map((q, i) => `${i + 1}. ${q}`).join("\n");
       say("KRATE", questions, null, {
         variant: "ask",
-        actions: [{ label: "Skip and build", run: finishPlanningAndBuild }],
+        actions: [{ label: "Build it", primary: true, run: finishPlanningAndBuild }],
       });
-      setIdleNote("Answer on the left and I'll start building.");
-      $("prompt").placeholder = "Answer here…";
+      // The recorded message remembers it was a question, so reopening the
+      // session can put the Build button back (see openSession) -- a
+      // transcript that keeps the questions but loses the button leaves
+      // typing as the only path, and a stray word becomes an app (K-196's
+      // sibling trap, seen live as a calculator session).
+      const rec = state.session.messages[state.session.messages.length - 1];
+      if (rec) rec.kind = "ask";
+      setIdleNote("Answer on the left, or just hit Build it.");
+      $("prompt").placeholder = "Answer here… or hit Build it";
     } else if (answer.plan) {
       state.planning.plan = answer.plan;
       state.planning.planShown = true;
@@ -1457,6 +1493,10 @@ async function runPlan() {
           { label: "Build it", primary: true, run: finishPlanningAndBuild },
         ],
       });
+      {
+        const rec = state.session.messages[state.session.messages.length - 1];
+        if (rec) rec.kind = "ask";
+      }
       $("prompt").placeholder = "Anything to change? Your next message starts the build";
       setIdleNote("The plan is on the left. Say build it and I'll start.");
     } else {
@@ -2044,20 +2084,46 @@ async function showInfo() {
   if (!app) return;
   const sheet = $("infoSheet");
   $("infoName").textContent = app.name || "Your app";
-  $("infoWhere").textContent = "Reading the app…";
+  $("infoTrust").textContent = "Reading the app…";
+  $("infoMeta").textContent = "";
   $("infoRows").innerHTML = "";
   $("infoCaps").innerHTML = "";
+  $("infoAsks").innerHTML = "";
   sheet.classList.remove("hidden");
 
   try {
     const info = await invoke("app_info", { path: app.path });
-    $("infoWhere").textContent = info.path;
 
+    // The face: one human line and the quiet meta. If someone reads only
+    // two lines of this sheet, they read the ones that make it sendable.
+    const asks = info.asks || [];
+    $("infoTrust").textContent = trustLine(asks.map((a) => a.cap || a.words));
+    $("infoMeta").textContent =
+      `${Math.round((info.size || 0) / 1024)} KB · Mac, Windows and Linux`;
+
+    for (const a of asks) {
+      const li = document.createElement("li");
+      li.textContent = a.words;
+      li.title = a.cap;
+      $("infoAsks").appendChild(li);
+    }
+    if (!asks.length) {
+      const li = document.createElement("li");
+      li.textContent = "Nothing beyond drawing its own window.";
+      $("infoAsks").appendChild(li);
+    }
+
+    for (const cap of info.capabilities || []) {
+      const li = document.createElement("li");
+      li.textContent = capWords(cap);
+      li.title = cap;
+      $("infoCaps").appendChild(li);
+    }
+
+    // The path and the full fingerprint are for the maker, behind the fold
+    // -- on the face they read as machinery and scare the send away.
     const rows = [
-      ["Size", `${Math.round((info.size || 0) / 1024)} KB`],
-      ["Runs on", "Mac, Windows and Linux"],
-      // The content hash IS the app's identity: the same bytes anywhere are
-      // the same app, which is what makes a share link trustworthy.
+      ["Where", info.path],
       ["Fingerprint", (info.identity || "").slice(0, 16) || "unknown"],
     ];
     for (const [k, v] of rows) {
@@ -2067,20 +2133,15 @@ async function showInfo() {
       dd.textContent = v;
       $("infoRows").append(dt, dd);
     }
-
-    for (const cap of info.capabilities || []) {
-      const li = document.createElement("li");
-      li.textContent = capWords(cap);
-      li.title = cap;
-      $("infoCaps").appendChild(li);
-    }
-    if (!(info.capabilities || []).length) {
-      const li = document.createElement("li");
-      li.textContent = "Nothing beyond drawing its own window.";
-      $("infoCaps").appendChild(li);
+    const copy = $("infoCopyPath");
+    if (copy) {
+      copy.onclick = async () => {
+        try { await navigator.clipboard.writeText(info.path); copy.textContent = "Copied"; } catch (e) {}
+        setTimeout(() => { copy.textContent = "Copy the path"; }, 1400);
+      };
     }
   } catch (err) {
-    $("infoWhere").textContent = String(err);
+    $("infoTrust").textContent = String(err);
   }
 }
 

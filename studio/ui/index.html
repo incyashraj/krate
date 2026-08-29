@@ -545,17 +545,14 @@
         </button>
         <button class="send-opt" id="sendLinkBtn" type="button">
           <b>Send a link</b>
-          <span>Puts it in the shared gallery and gives you a URL anyone can
-          run. For when you cannot drop a file.</span>
-        </button>
-        <button class="send-opt send-opt-quiet" id="sendRawBtn" type="button">
-          <b>Reveal in Finder</b>
-          <span>The bare .krate, in its folder.</span>
+          <span>A URL anyone with it can open. For when you cannot drop a
+          file. Needs a sign-in.</span>
         </button>
       </div>
       <div class="send-done hidden" id="sendCardDone">
         <img id="sendCardImg" alt="The card: your app's picture with the app inside" />
         <p id="sendCardNote"></p>
+        <button class="send-quiet-link" id="sendRawBtn" type="button">Reveal the plain .krate instead</button>
       </div>
       <div class="detail-actions">
         <button class="btn btn-ghost sheet-close" data-close="sendSheet">Close</button>
@@ -605,14 +602,26 @@
   <div class="sheet-wrap hidden" id="infoSheet">
     <div class="sheet sheet-info">
       <h2 id="infoName">App</h2>
-      <p class="sheet-sub" id="infoWhere"></p>
-      <dl class="info-rows" id="infoRows"></dl>
-      <div class="info-caps">
-        <p class="label">What it is allowed to do</p>
-        <ul id="infoCaps"></ul>
-        <p class="info-note">Krate enforces this list. An app cannot do
+      <p class="info-trust" id="infoTrust"></p>
+      <p class="sheet-sub" id="infoMeta"></p>
+      <details class="info-fold" open>
+        <summary>This file asked for</summary>
+        <ul id="infoAsks"></ul>
+        <p class="info-note">Krate enforces this list. The app cannot do
         anything that is not on it, whatever its code says.</p>
-      </div>
+      </details>
+      <details class="info-fold">
+        <summary>Player APIs it may touch</summary>
+        <ul id="infoCaps"></ul>
+        <p class="info-note">The player's standard surface -- drawing,
+        sound, time, text. Every Krate app sees these; none of them reach
+        your files or the network.</p>
+      </details>
+      <details class="info-fold">
+        <summary>File details</summary>
+        <dl class="info-rows" id="infoRows"></dl>
+        <button class="btn btn-ghost" id="infoCopyPath">Copy the path</button>
+      </details>
       <button class="btn btn-ghost sheet-close" data-close="infoSheet">Close</button>
     </div>
   </div>

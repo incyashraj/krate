@@ -71,6 +71,30 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-198 -- the pack does not make the clock believable; grok argued itself out of time.clock and burned 25 minutes re-reading
+
+Status:   open
+Owner:    unclaimed
+Severity: medium (teaching, and real minutes: two demo builds hit the
+          15- and 25-minute caps in check/re-read loops)
+Class:    teaching-hole
+Found:    2026-08-29, building the care-schedule demo app with grok.
+Evidence: The create loop's own note: the AI wrote that "Krate apps cannot
+          access the system clock or time of day", then built the app anyway
+          -- and the app it built USES time.clock correctly (its header
+          shows today's real date; check-app passes all six stages). The
+          same run looped ~54 steps of "reading Krate's API reference /
+          checking it builds" before my cap killed it during packing; the
+          app was finished and only needed `krate pack` by hand.
+Why it    An agent that half-believes a capability exists writes hedged
+matters:  code slowly, re-reads instead of committing, and a daily-reset
+          app -- bread and butter -- costs 25 minutes instead of 10. The
+          capability is fine; the teaching is not loud enough.
+Fix       Pack: state time.clock plainly with a one-line daily-reset recipe
+sketch:   (read the date, compare to the stored date, reset). Also worth a
+          look: why the loop re-reads the full API reference between
+          check cycles instead of keeping it.
+
 ### K-197 -- "Keychain Not Found" dialogs during every build, over work the person did not start
 
 Status:   FIXED in repo -- ships with the next release

@@ -4981,10 +4981,15 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
         "A person asked for a desktop app in these words:\n\n{request}\n\n{attached_line}\n\n\
          You are deciding whether this is ready to build. Reply with EXACTLY ONE json object \
          and nothing else -- no prose, no code fences.\n\n\
-         If answering a question would change what gets built (the request is ambiguous, \
-         thin, or mentions data or files that are not attached), reply:\n\
+         Ask a question ONLY about something that cannot be changed after v1 or that \
+         decides what the app may touch: does it need the network, a folder, the camera, \
+         or the microphone; whose data it holds; who it is for, if that is unclear. \
+         If so, reply:\n\
          {{\"ask\": [\"question\", ...]}} -- at most three short questions, each one \
          something only this person can answer.\n\n\
+         NEVER ask about preferences a v2 can change: options, modes, extra features, \
+         history, tax rules, layouts. The person refines by asking for changes after v1; \
+         a preference quiz before the first build reads as not listening.\n\n\
          Otherwise reply:\n\
          {{\"plan\": \"AT MOST three sentences, plain words: what will be built, what \
          it shows, and what data it works on. Never restate their answers back at \
@@ -6308,12 +6313,27 @@ fn seed_agent_home(real_home: &Path, agent_home: &Path) -> bool {
                     .arg(&login)
                     .env("HOME", agent_home)
                     .output();
-                let _ = ProcessCommand::new("/usr/bin/security")
-                    .args(["unlock-keychain", "-p", ""])
-                    .arg(&login)
-                    .env("HOME", agent_home)
-                    .output();
             }
+        }
+        if login.exists() {
+            // Every seed, not just creation: keychains auto-lock, and a
+            // LOCKED confined keychain trades the "Not Found" dialog for a
+            // password prompt -- the same interruption wearing a different
+            // face (seen live during the first demo builds after the
+            // keychain landed). Unlock FIRST: set-keychain-settings itself
+            // needs an unlocked keychain, so the other order raises the
+            // very dialog it exists to prevent (also seen live). Then no
+            // timeout and no lock-on-sleep, so it stays open.
+            let _ = ProcessCommand::new("/usr/bin/security")
+                .args(["unlock-keychain", "-p", ""])
+                .arg(&login)
+                .env("HOME", agent_home)
+                .output();
+            let _ = ProcessCommand::new("/usr/bin/security")
+                .args(["set-keychain-settings"])
+                .arg(&login)
+                .env("HOME", agent_home)
+                .output();
         }
     }
 
