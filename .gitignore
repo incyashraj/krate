@@ -88,3 +88,20 @@ ehthumbs.db
 # studio/bin/krate`, never edited, and version-controlled nowhere.
 /studio/bin/
 .last-full-check
+
+# Internal working material: strategy docs, the internal guide, promo
+# tooling, design sketches, agent briefs, and local hub data. They live on
+# this machine, not in the public tree. Two Plan files stay tracked because
+# CI re-measures one and the public reports page cites the other.
+/Plan/*
+!/Plan/Claims-We-Can-Make.md
+!/Plan/Native-Comparison-2026-07-31.md
+/Doc/
+/Promo/
+/hub-data/
+/.claude/
+/studio/design/
+/logs/
+/output/
+*.bak
+/evidence/adoption/history.tsv

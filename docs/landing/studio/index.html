@@ -503,39 +503,102 @@
 </section>
 
 <!-- ============================================================== pricing -->
-<section class="feats wrap" id="pricing">
-  <div class="reveal" style="margin-bottom: 18px;">
-    <h2 style="font-size: 24px; letter-spacing: -0.02em;">What it costs</h2>
-    <p style="color: var(--muted); margin-top: 6px;">Studio is in preview:
-    making is free and nothing is charged. Every app you make is a file that
-    is yours forever, whatever happens to your plan.</p>
+<section class="wrap" id="pricing">
+  <div class="price-head reveal">
+    <h2>What it costs</h2>
+    <p>Studio is in preview: making is free and nothing is charged yet.
+    Whatever plan you are on, every app you make is a file that is yours
+    forever -- a plan can lapse, the file cannot.</p>
   </div>
-  <div class="feat-grid price-grid reveal">
-    <div class="feat-cell">
-      <h2>Free</h2>
-      <p class="price-line">$0</p>
-      <p>Open any .krate, forever. Make three apps a month -- changes to an
-      app and failed builds never count.</p>
+  <div class="price-row reveal">
+
+    <div class="price-card">
+      <div class="price-top">
+        <h3>Free</h3>
+        <span class="price-badge">today and always</span>
+      </div>
+      <p class="price-num">$0</p>
+      <p class="price-for">For opening what people send you, and making a
+      few things of your own.</p>
+      <ul class="price-list">
+        <li>Open any .krate, forever</li>
+        <li>Make three apps a month</li>
+        <li>Send as a card, a link, or a wrap for a friend without Krate</li>
+        <li>Every file carries its own source</li>
+        <li>Your own AI writes the code; Krate never holds its keys</li>
+      </ul>
+      <a class="pill price-cta" href="#get">Download Studio</a>
     </div>
-    <div class="feat-cell">
-      <h2>Studio</h2>
-      <p class="price-line">$12 / month <span>or $96 a year</span></p>
-      <p>Unlimited making, when Studio leaves preview. Uses the coding AI
-      you already pay for -- Krate never holds its keys.</p>
+
+    <div class="price-card">
+      <div class="price-top">
+        <h3>Studio</h3>
+        <span class="price-badge">at launch</span>
+      </div>
+      <p class="price-num">$12<span> / month, or $96 a year</span></p>
+      <p class="price-for">For people who make something every week.</p>
+      <ul class="price-list">
+        <li>Everything in Free</li>
+        <li>No monthly cap -- make as many apps as you want</li>
+        <li>That is the whole difference, priced like it. Nothing you
+        already have moves behind this price.</li>
+      </ul>
+      <p class="price-note">Billing opens when Studio leaves preview.
+      Until then, this column is free too.</p>
+      <a class="pill price-cta" href="#founding">Lock it at $79 a year &darr;</a>
     </div>
-    <div class="feat-cell">
-      <h2>Founding 200</h2>
-      <p class="price-line">$79 / year <span>locked in</span></p>
-      <p>For the first 200 people on the list: the Studio price locked for
-      as long as you stay. <a href="#founding">Join below</a>.</p>
+
+    <div class="price-card price-hot">
+      <div class="price-top">
+        <h3>Founding 200</h3>
+        <span class="price-badge badge-hot">200 seats</span>
+      </div>
+      <p class="price-num">$79<span> / year, locked</span></p>
+      <p class="price-for">For the first 200 people who want in before it
+      is polished.</p>
+      <ul class="price-list">
+        <li>Everything Studio will be, at $79 a year for as long as you stay</li>
+        <li>The price is locked before checkout even exists</li>
+        <li>A direct line while we build -- founding members get listened to</li>
+        <li>No payment now; an email holds your seat</li>
+      </ul>
+      <a class="pill pill-primary price-cta" href="#founding">Join the founding 200</a>
     </div>
+
   </div>
 </section>
 <style>
-  .price-grid { grid-template-columns: repeat(3, 1fr); }
-  @media (max-width: 720px) { .price-grid { grid-template-columns: 1fr; } }
-  .price-line { font-size: 22px; letter-spacing: -0.02em; color: var(--ink); margin: 6px 0 10px; }
-  .price-line span { font-size: 13px; color: var(--quiet); letter-spacing: 0; }
+  #pricing { padding: 72px 0 8px; }
+  .price-head { max-width: 560px; margin-bottom: 30px; }
+  .price-head h2 { font-size: 28px; letter-spacing: -0.02em; }
+  .price-head p { color: var(--muted); margin-top: 8px; line-height: 1.55; }
+  .price-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; align-items: stretch; }
+  @media (max-width: 860px) { .price-row { grid-template-columns: 1fr; } }
+  .price-card {
+    display: flex; flex-direction: column;
+    border: 1px solid var(--line-soft); border-radius: var(--r-card);
+    padding: 26px 24px 22px; background: var(--bg);
+  }
+  .price-hot { border-color: rgba(98, 145, 255, 0.55); box-shadow: 0 0 0 1px rgba(98, 145, 255, 0.25), 0 18px 50px -30px rgba(98, 145, 255, 0.35); }
+  .price-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .price-top h3 { font-size: 17px; letter-spacing: -0.01em; }
+  .price-badge { font-size: 11.5px; color: var(--quiet); border: 1px solid var(--line-soft); border-radius: 99px; padding: 3px 10px; white-space: nowrap; }
+  .badge-hot { color: var(--accent); border-color: rgba(98, 145, 255, 0.5); }
+  .price-num { font-size: 34px; letter-spacing: -0.03em; color: var(--ink); margin: 14px 0 4px; }
+  .price-num span { font-size: 13.5px; color: var(--quiet); letter-spacing: 0; margin-left: 2px; }
+  .price-for { font-size: 13.5px; color: var(--muted); line-height: 1.5; min-height: 40px; }
+  .price-list { list-style: none; margin: 16px 0 18px; padding: 0; display: flex; flex-direction: column; gap: 10px; flex: 1; }
+  .price-list li { position: relative; padding-left: 24px; font-size: 13.5px; color: var(--muted); line-height: 1.5; }
+  .price-list li::before {
+    content: ""; position: absolute; left: 0; top: 4px; width: 14px; height: 14px;
+    border-radius: 50%; background: rgba(98, 145, 255, 0.14);
+    background-image: url('data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 14"%3E%3Cpath d="M3.6 7.2l2.2 2.2 4.6-4.8" fill="none" stroke="%236291ff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/%3E%3C/svg%3E');
+    background-size: 14px 14px;
+  }
+  .price-note { font-size: 12px; color: var(--quiet); line-height: 1.5; margin-bottom: 14px; }
+  .price-cta { justify-content: center; text-align: center; }
+  .price-card .pill:not(.pill-primary) { border: 1px solid var(--line); color: var(--ink); }
+  .price-card .pill:not(.pill-primary):hover { border-color: var(--muted); }
 </style>
 
 <!-- ============================================================== founding -->
