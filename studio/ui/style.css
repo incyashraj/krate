@@ -2469,3 +2469,33 @@ body.light .send-opt span, body.light .send-done p { color: rgba(0,0,0,0.55); }
 .info-fold li { margin: 3px 0; }
 .info-fold .info-rows { margin-top: 10px; }
 .info-fold .btn { margin-top: 10px; }
+
+/* ------------------------------------------- build card, after the diary */
+/* The heartbeat line is a quiet sentence, not a clipped terminal box: the
+   old style assumed it nested under a stage row that no longer exists. */
+.brail .bpeek {
+  margin: 14px 0 4px; padding: 0; background: none; border: none;
+  max-height: none; overflow: visible;
+  font-family: var(--sans); font-size: 13px; color: var(--muted);
+  line-height: 1.6;
+}
+.brail .build-shot { margin: 14px 0 4px; }
+
+/* The done card's caption sits along the bottom of the shot, like the
+   card's own strip -- not as a flex column beside it. */
+.shot-stage .shot-cap {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  border-top: 1px solid var(--line);
+  background: rgba(10, 10, 11, 0.88);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.shot-stage.no-shot .shot-cap { display: none; }
+
+/* Change must be seen to do something: the composer answers with one
+   breath of light when the button sends you to it. */
+@keyframes composerGlow {
+  0% { box-shadow: 0 0 0 0 rgba(98, 145, 255, 0.0); }
+  30% { box-shadow: 0 0 0 3px rgba(98, 145, 255, 0.45); }
+  100% { box-shadow: 0 0 0 0 rgba(98, 145, 255, 0.0); }
+}
+.composer-box.glow { animation: composerGlow 1.1s ease; }

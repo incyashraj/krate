@@ -817,14 +817,6 @@ function restoreBuild(sessionId) {
     document.querySelectorAll("#stages li").forEach((li, i) => {
       li.className = i < idx ? "done" : i === idx ? "now" : "";
     });
-    if (idx >= 0 && STAGES[idx]) {
-      const current = document.querySelector("#stages li.now");
-      if (peek && current) current.insertAdjacentElement("afterend", peek);
-      const nowStage = $("nowStage");
-      if (nowStage) nowStage.textContent = STAGES[idx].label;
-      const step = $("stepCount");
-      if (step) step.textContent = `step ${idx + 1} of ${STAGES.length}`;
-    }
 
     const log = $("buildLog");
     if (log) {
@@ -866,6 +858,14 @@ function restoreBuild(sessionId) {
 function beginBuild(title, expect) {
   $("buildTitle").textContent = title;
   $("buildExpect").textContent = expect;
+  // The composer waits until v1 is a file. Typing mid-build either got
+  // ignored or read as a new request; a locked box with honest words is
+  // kinder than either.
+  const box = $("prompt");
+  if (box) {
+    box.disabled = true;
+    box.placeholder = "Wait - v1 is becoming a file…";
+  }
   // Rescue the peek box before wiping the stage list.
   //
   // THE SECOND-BUILD FREEZE (K-136). advanceStage MOVES #peekBox inside
@@ -1043,8 +1043,8 @@ function onEngineLineInner(line) {
       "First-time setup: getting the build tools ready. About five " +
       "minutes, and only this once -- every app you make after this " +
       "starts fast.");
-    const nowStage = $("nowStage");
-    if (nowStage) nowStage.textContent = "First-time setup (once)";
+    const expect = $("buildExpect");
+    if (expect) expect.textContent = "first-time setup -- about five minutes, only once";
     if (state.buildChip) {
       const phase = state.buildChip.querySelector("[data-phase]");
       if (phase) phase.textContent = "first-time setup (once)";
@@ -1109,7 +1109,17 @@ function thinkingLine(index) {
   return lines[index % lines.length];
 }
 
+function unlockComposer(placeholder) {
+  const box = $("prompt");
+  if (box) {
+    box.disabled = false;
+    box.placeholder = placeholder;
+  }
+}
+
 function fillDone(result, opts) {
+  unlockComposer("Want it different? Say what to change…");
+  try { localStorage.setItem("krateMadeOnce", "1"); } catch (e) {}
   $("doneName").textContent = result.name;
   $("doneSize").textContent = result.size;
   $("asks").innerHTML = (result.asks || []).map((a) => `<li>${friendlyAsk(a)}</li>`).join("");
@@ -1610,7 +1620,11 @@ async function buildNow(request, files, revising, planSession) {
       // Honest numbers: measured across real builds (traces in
       // ~/.krate/studio/builds), a fresh app is 5-15 minutes and the
       // median is ~13. "A few minutes" read as a promise and then as a lie.
-      revising ? "changes are quicker - the AI reads your app first" : "usually 5-15 minutes",
+      revising
+        ? "changes are quicker - the AI reads your app first"
+        : localStorage.getItem("krateMadeOnce")
+          ? "a minute or two, sometimes more"
+          : "first time on this Mac - a few minutes",
     );
   } catch (err) {
     console.warn("beginBuild failed, building anyway:", err);
@@ -3121,10 +3135,21 @@ $("stopBtn").addEventListener("click", stopBuild);
 $("openBtn").addEventListener("click", openApp);
 $("shareBtn").addEventListener("click", openSendSheet);
 $("changeBtn").addEventListener("click", () => {
-  // Change is the composer, not a fourth mystery: put the cursor where
-  // the next sentence goes.
+  // Change is the composer, not a fourth mystery: put the cursor where the
+  // next sentence goes, and let the box answer visibly -- a focus alone
+  // read as "the button does nothing" (seen live).
   const box = $("prompt");
-  if (box) { box.focus(); box.scrollIntoView({ block: "end", behavior: "smooth" }); }
+  if (!box) return;
+  box.disabled = false;
+  box.placeholder = "Say what to change - it becomes v2…";
+  box.focus();
+  box.scrollIntoView({ block: "end", behavior: "smooth" });
+  const shell = box.closest(".composer-box") || box.parentElement;
+  if (shell) {
+    shell.classList.remove("glow");
+    void shell.offsetWidth;
+    shell.classList.add("glow");
+  }
 });
 $("sendCardBtn").addEventListener("click", sendCard);
 $("sendLinkBtn").addEventListener("click", () => {
