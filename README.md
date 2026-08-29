@@ -55,45 +55,37 @@ Someone sent YOU a file? The friendly version lives at
 
 ## 271 MB became 37 KB
 
-We built the same 50,000-line notes workload in Krate and measured it against
-MarkText 0.17.1 on the same M4 Mac. These are historical internal measurements;
-an architecture-matched public reproduction is in progress.
+The same 50,000-line notes workload, same Apple silicon Mac, head to head
+against MarkText 0.17.1 (Electron). Historical internal measurements; an
+architecture-matched public reproduction is in progress.
 
 | | MarkText | Krate |
 |---|---:|---:|
-| App footprint | 271 MB installed | **37 KB app file** |
-| Memory | 2.3 GB across five processes | **95 MB, one process** |
-| Open time | 1.8 s | **0.2 s** |
-| Idle CPU | 21% of a core | **0.8%** |
+| The file itself | 271 MB installed | **37 KB** |
+| Memory, 50,000 lines | 2.3 GB across five processes | **95 MB, one process** |
+| Opens in | 1.8 s (17 s on its first run) | **0.2 s** |
+| Idle CPU, document open | 21% of a core | **0.8%** |
+| Scrolling | -- | **58 fps, jitter under 0.3 ms** |
 
-Krate does not put another browser inside every app. Install the shared runtime
-once, then every app is one file. Read the [historical lab
-note](evidence/benchmarks/2026-08-16-notes-battery-macos.md) and the new
-[reproducible benchmark kit](evidence/benchmarks/marktext-vs-krate/README.md),
-which retains raw samples and refuses architecture-mismatched runs.
+Krate does not put another browser inside every app. Install the shared
+player once, then every app is one file. Method and raw numbers: the
+[lab note](evidence/benchmarks/2026-08-16-notes-battery-macos.md) and the
+[reproducible benchmark kit](evidence/benchmarks/marktext-vs-krate/README.md).
 
 ## The software file for the AI era
 
-AI can write a useful little app in a minute. Sharing it is still the hard part.
-A web link cannot always reach the local machine. A normal desktop app can, but
-it has to be packaged per operating system, and it can quietly reach far more of
-your computer than you expected.
-
-Krate turns that app into something a person can actually receive:
+AI can write a useful little app in a minute. Sharing it is still the hard
+part: a web link needs hosting and can phone home, and a normal desktop app
+has to be packaged per operating system.
 
 1. The app and the access it asks for go into one `.krate` file.
 2. That same file opens on Mac, Windows, and Linux. The bytes do not change.
-3. Krate shows you what it wants before it runs.
-4. The app gets only what you allow, and nothing else.
+3. Krate shows the person what it wants before it runs.
+4. The app gets only what they allow, and nothing else.
 
-A Krate app is a WebAssembly component compiled from ordinary Rust. It carries
-no browser and no per-app runtime. A playable game is **13 KB** and the notes
-editor used in the benchmark is **37 KB**. You install Krate once; every app
-after that opens like a file.
-
-Krate Studio makes the app. The Krate player opens and controls it. When you
-cannot hand someone the file, a published link does the same job. The whole
-path works today.
+A Krate app is a WebAssembly component compiled from ordinary Rust. It
+carries no browser and no per-app runtime: a playable game is **13 KB** and
+the notes editor in the benchmark is **37 KB**.
 
 ## Krate Studio
 
@@ -101,123 +93,49 @@ path works today.
   <img src="docs/landing/app-shots/studio-home.png" width="900" alt="Krate Studio: describe an app in plain words and watch it being made">
 </p>
 
-Krate Studio detects which AI tools are installed, so you choose one with a
-click, describe what you want, and watch the app being built and checked. No
-terminal and no project setup. Change an app by asking. The file
-carries its own source, so "make the button blue" edits the app you have
-instead of rebuilding it. Your apps, your sessions, and everything people have
-shared all live in the same window.
+Studio detects which AI tools are installed, so you pick one with a click,
+describe what you want, and watch the app being made and checked. No
+terminal, no project setup. The file carries its own source, so "make the
+button blue" edits the app you have. Download from
+[krate.tech/studio](https://krate.tech/studio/) -- signed `.dmg` on macOS,
+installer on Windows (unsigned for now, so SmartScreen asks once), AppImage
+on Linux.
 
-Download from [krate.tech/studio](https://krate.tech/studio/) -- the page
-detects your system and hands you the right file:
+## What it costs
 
-- **macOS**: one universal `.dmg`, signed and notarised by Apple. Drag to
-  Applications; opening a `.krate` and making apps both just work.
-- **Windows**: an installer `.exe` (unsigned for now, so SmartScreen asks
-  once). Apps render through the GPU with vsync pacing.
-- **Linux**: an AppImage. First run registers the `.krate` file type and the
-  launcher entry; apps get native permission dialogs and their own window
-  identity.
+- **Free** -- open any `.krate`, forever. Make three apps a month; changes
+  to an app and failed builds never count.
+- **Studio** -- unlimited making at **$12 a month or $96 a year** when
+  Studio leaves preview. Free while it is in preview, and nothing is
+  charged today.
+- **Founding 200** -- the first 200 people on
+  [the list](https://krate.tech/studio/#founding) lock Studio at
+  **$79 a year** for as long as they stay.
 
-Krate Studio is the recommended way to use Krate: download it, describe an
-app, and everything below -- the engine, the checks, the sandbox -- ships
-inside it. The terminal tool remains for anyone who prefers a shell.
+Making uses the coding AI you already pay for -- Claude, Codex, Gemini,
+Copilot, Grok -- and Krate never holds its keys.
 
-## Measured, not promised
+## The permission wall
 
-The same 50,000-line notes workload, same Apple silicon Mac, head to head in
-August 2026 against MarkText 0.17.1. These figures are historical internal
-measurements pending a clean run through the public reproduction kit.
-
-| | Electron build | Krate build |
-|---|---|---|
-| Opens in | 1.8 s (17 s on its first run) | **0.2 s** |
-| Memory, 50,000 lines | 2.3 GB across five processes | **95 MB, one process** |
-| Idle CPU, document open | 21% of a core | **0.8%** |
-| Scrolling | -- | **58 fps, frame jitter under 0.3 ms** |
-| The file itself | 271 MB installed | **37 KB** |
-
-The method and the losses we found and fixed on the way are in the [historical
-benchmark log](evidence/benchmarks/2026-08-16-notes-battery-macos.md). The
-[reproduction kit](evidence/benchmarks/marktext-vs-krate/README.md) adds exact
-fixtures, hashes, ARM64 enforcement, raw samples, median/p95 analysis, and a
-fail-closed publication audit.
-
-## Open an app someone sent you
-
-### Double-click it
-
-The simplest way, and no terminal involved: install
-[Krate Studio](https://krate.tech/studio/) and double-click any `.krate`
-file. The app opens under its own name and icon, with a native permission
-window first -- on all three systems. The Studio registers the file type
-itself: the macOS installer, the Windows installer, and the Linux
-AppImage's first run all set it up.
-
-Prefer the runtime alone? The `krate-app` zip on the
-[latest release](https://github.com/incyashraj/krate/releases/latest) is the
-signed, notarised macOS opener, and
-[`scripts/install-krate-desktop.ps1`](scripts/install-krate-desktop.ps1) /
-[`scripts/install-krate-desktop.sh`](scripts/install-krate-desktop.sh)
-register the type for the bare CLI on Windows and Linux.
-
-### Or from a terminal
-
-Install the runtime. macOS and Linux:
-
-```bash
-curl -fsSL https://krate.tech/install.sh | sh
-```
-
-Windows PowerShell, no administrator rights needed:
-
-```powershell
-irm https://krate.tech/install.ps1 | iex
-```
-
-`irm` is a PowerShell alias, so that line does not work in Command Prompt.
-From `cmd.exe`, type `powershell` first and then paste it.
-
-Then run an app, from a file or straight from a URL:
-
-```bash
-krate run notes.krate --prompt
-```
-
-`--prompt` shows you each thing the app asks for and waits for your answer.
-
-## What the permission wall actually does
-
-A `.krate` file holds a WebAssembly component, the app's name and version, the
-access it requests, and a reason for each request. Opening the file grants
-nothing on its own. Krate builds a session from your answer and connects only
-the operations you approved.
-
-Look inside an app without running it:
+A `.krate` holds a WebAssembly component, the app's name, the access it
+requests, and a reason for each request. Opening the file grants nothing on
+its own; Krate connects only the operations the person approved. Look
+inside any app without running it:
 
 ```bash
 krate run app.krate --dump-caps
 ```
 
-Some of what the capabilities mean:
-
 - `fs.read:notes/**` reads only inside the `notes` folder;
-- `store.kv` gives the app its own storage addressed by name, so an app that
-  remembers things needs no access to your folders at all;
-- `store.sql` gives it a private SQLite database that cannot attach another
-  database or reach a file through SQL;
-- `store.secret` keeps tokens encrypted at rest, per app and per machine, so a
-  copied file carries nothing usable to another computer;
-- `ui.open-url` hands a link to your browser, limited to web and mail addresses,
-  so a link cannot start a program or open a file;
-- no network call works unless network access was declared and granted, and a
-  redirect to a host you did not allow is not followed;
+- `store.kv` / `store.sql` give an app private storage, so remembering
+  things needs no access to your folders at all;
+- no network call works unless network access was declared and granted, and
+  a redirect to a host you did not allow is not followed;
 - an app downloaded from a URL gets no extra access for having come from one.
 
-The strong version of this claim is mechanical rather than a promise: these apps
-import **zero** `wasi:*` interfaces. A `wasi:*` import would be a door to the raw
-operating system. There is no ambient access to leak because the door was never
-built into the app. You can check any app yourself with
+The strong version of the claim is mechanical, not a promise: these apps
+import **zero** `wasi:*` interfaces. There is no ambient access to leak
+because the door was never built into the app. Check any app yourself with
 `wasm-tools component wit`.
 
 ---
@@ -230,131 +148,37 @@ repository; Krate Studio and the hub are the product layer (`studio/`
 and `cloud/`). If you came here to send an app to someone, you already
 have everything you need -- download Studio and go.
 
-## Make an app from a terminal or your own AI tools
+## A terminal or your own AI tools
 
-Krate Studio (above) is the recommended way to make an app -- no terminal
-at all. Everything below is for people who live in a shell or want their
-own AI tools driving Krate directly. All paths end at the same place: one
-`.krate` file you can send to someone.
+Studio is the recommended way to make an app. For people who live in a
+shell or want their own AI driving Krate, all paths end at the same
+`.krate` file:
 
-### 1. Connect Krate to your AI and just talk
+- **MCP**: `krate mcp` is a server Claude Desktop or Cursor can call; add
+  `{"mcpServers": {"krate": {"command": "krate", "args": ["mcp"]}}}` to the
+  app's MCP config and ask for the app in chat. Full setup:
+  [docs/mcp-setup.md](docs/mcp-setup.md).
+- **Krate Mode**: one paste-in prompt that teaches any AI chat to write
+  correct Krate code, generated from the real interface definitions.
+  `krate krate-mode` prints it;
+  [read it online](https://krate.tech/docs/pages/krate-mode.html).
+- **One word**: `krate` asks what you want and builds it. In one line:
+  `krate create "a habit tracker" --output habit.krate --agent claude`.
+  Five agents are supported (`claude`, `codex`, `gemini`, `copilot`,
+  `grok`); `krate ai` says which are ready, and `--author-cmd` is the seam
+  for anything else.
 
-Krate ships an MCP server. Connect it once and you describe an app in chat and
-get the finished file back. No commands at all.
+Ask for something a sandboxed app cannot be -- "download my email" -- and
+`krate create` refuses in about a second with the reason and a suggestion,
+instead of spending five minutes building something convincing that could
+never work.
 
-Add this to Claude Desktop (Settings -> Developer -> Edit Config) or to
-Cursor's `.cursor/mcp.json`:
+## `krate check-app`: the oracle behind AI authoring
 
-```json
-{
-  "mcpServers": {
-    "krate": {
-      "command": "krate",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-Restart the app, then ask for what you want:
-
-> Build me a habit tracker that shows a weekly grid and remembers my streaks.
-> Package it as a .krate.
-
-The model reads Krate's real API, writes the app, builds it, checks it, and
-hands you the file. A build takes two to five minutes, and it can tell you what
-stage it is at while you wait. Full setup, including where the config file lives
-on each system: [docs/mcp-setup.md](docs/mcp-setup.md).
-
-### 2. Paste Krate Mode into any AI chat
-
-No install, no connection, works in any chat window. Krate Mode is one prompt
-that teaches a model to write correct Krate code. It is generated from the real
-interface definitions, so it cannot drift out of date.
-
-Read it at [krate.tech/docs/pages/krate-mode.html](https://krate.tech/docs/pages/krate-mode.html),
-or print your own copy:
-
-```bash
-krate krate-mode
-```
-
-Paste it into the chat, ask for your app, then build the code it gives you with
-`krate check-app`.
-
-### 3. Type one word
-
-```bash
-krate
-```
-
-It asks what you want to make, shows which AI tools on your machine are ready
-to write it, and builds the file. Nothing to remember and nothing to configure.
-
-For a script, or if you would rather not be asked, the same thing in one line:
-
-```bash
-krate create "a habit tracker that remembers my streaks" \
-  --output habit.krate \
-  --agent claude
-```
-
-`--output` is required: it is where the finished file lands.
-
-`--agent` picks who writes the code. Krate is not tied to one AI. Five are
-supported today, and `krate ai` tells you which are already on your machine:
-
-| `--agent` | Tool |
-| --- | --- |
-| `claude` | Claude Code |
-| `codex` | OpenAI Codex CLI |
-| `gemini` | Google Gemini CLI |
-| `copilot` | GitHub Copilot CLI |
-| `grok` | xAI Grok CLI |
-
-For anything else, `--author-cmd "<your command>"` is the lower-level seam. It
-receives `KRATE_REQUEST`, `KRATE_APP_NAME`, and `KRATE_APP_DIR`, and everything
-after authoring stays the same.
-
-Leave `--agent` off and Krate uses its own built-in generator, which needs no AI
-tool at all.
-
-### If Krate cannot build what you asked for, it says so
-
-Ask for something outside what a sandboxed app can do and you find out in about
-a second, not after a five-minute build:
-
-```console
-$ krate create "download my email" --output mail.krate --agent claude
-error: Krate cannot build that: a Krate app runs in a sandbox and cannot read
-the apps or libraries already on your computer, so it cannot get at your real
-mail, photos, contacts, or messages.
-
-Try instead: an app that works on files you pick yourself, or on data you type in.
-
-Stopped before writing any code, so nothing was spent on an app that could not
-have worked. If you think this is wrong, re-run with --force and Krate will
-build what it can.
-```
-
-This is on purpose. Krate would rather refuse immediately than spend minutes
-building something convincing that cannot do what you asked. The same check runs
-in the MCP server, so it protects the chat path too.
-
-
-## `krate check-app`: the thing that makes AI authoring work
-
-An AI writing code needs a truthful, fast answer to "is this actually correct?"
-That is `check-app`. It is the oracle behind all three authoring paths, and you
-can run it yourself on any app directory:
-
-```bash
-krate check-app .
-```
-
-It runs six stages and prints one verdict. `OK` and exit 0 only when every stage
-passes; otherwise it names the stage that failed, gives the fix, and exits with a
-code an agent can branch on:
+An AI writing code needs a truthful, fast answer to "is this actually
+correct?" `check-app` runs six stages and prints one verdict; because the
+failure text names the fix, an agent can loop on it without a human in the
+middle.
 
 | Stage | Exit | What it proves |
 | --- | --- | --- |
@@ -365,32 +189,18 @@ code an agent can branch on:
 | run | 14 | It actually runs, headless |
 | shoot | 15 | A GUI app paints a real frame |
 
-`--json` gives an agent the same verdict as a machine-readable object. `--shoot
-frame.png` writes the app's first frame to a PNG, so a GUI app's output can be
-looked at rather than guessed about.
-
-Because the failure text names the fix and not just the error, an agent can loop
-on it without a human in the middle. That loop is why the paths above work.
+`--json` gives the same verdict as a machine-readable object; `--shoot
+frame.png` writes the app's first frame to a PNG so output can be looked at
+rather than guessed about.
 
 ## Where things stand
 
-Working today: one `.krate` file that runs on Mac, Windows, and Linux; desktop
-windows on all three, GPU-rendered with vsync pacing on Windows and Linux
-(with an automatic CPU fallback); files, network, storage, and clipboard
-behind the permission wall; running an app straight from an HTTPS URL;
-Krate Studio with browser sign-in; authoring through MCP, Krate Mode, or the
-command line with five AI providers; `check-app`; and JSON output for agents
-and scripts.
-
-Publishing a link is live at [krate.tech/cloud](https://krate.tech/cloud) --
-for when you cannot hand someone the file. Publish
-with `krate publish yourapp.krate` or from
-[krate.tech/publish](https://krate.tech/publish); either way it signs you in
-with GitHub so the app carries your name, and anyone with the link can run it.
-
-Not here yet: auto-updates, and discovery beyond a single listing.
-Automatic conversion of an existing app or an opaque native binary is not
-something Krate claims to do.
+One `.krate` runs on Mac, Windows, and Linux, GPU-rendered with a CPU
+fallback; files, network, storage, and clipboard sit behind the permission
+wall; apps run from a file or straight from an HTTPS URL; publishing a
+link works from Studio, `krate publish`, or
+[krate.tech/publish](https://krate.tech/publish). Exact evidence:
+[STATUS.md](STATUS.md).
 
 Known limits, stated plainly:
 
@@ -399,95 +209,21 @@ Known limits, stated plainly:
 - An AI has to write against the current Krate APIs, which are still changing.
 - Permission review and desktop polish differ between operating systems.
 - File formats and interfaces will change before 1.0.
-- This is a first release, not a frozen API. Use it for your own apps and the
-  published examples, not as
-  a shield against hostile third-party code.
-
-The runtime ships for six targets: macOS, Windows, and Linux, on both Intel and
-ARM. CI runs on all three systems. See [STATUS.md](STATUS.md) for exact evidence
-and [SECURITY.md](SECURITY.md) to report a security problem privately.
+- This is a young product, not a frozen API. Use it for your own apps and
+  the published examples, not as a shield against hostile third-party code.
 
 ## Build from source
 
 ```bash
 git clone https://github.com/incyashraj/krate
 cd krate
-
-cargo build --workspace
-cargo test --workspace
-cargo clippy --all-targets --all-features -- -D warnings
-cargo fmt --all -- --check
+cargo build --workspace && cargo test --workspace
 ```
 
-The workspace has 1,220 Rust tests.
-
-You need the Rust toolchain named in `rust-toolchain.toml`, Git, your platform's
-build tools, and `cargo-component` for building apps. Check your machine with
-`krate doctor`.
-
-### Linux
-
-Five development packages, found one at a time on a machine with nothing
-installed. Each is a separate failed build, and none of the errors names the
-package you actually need:
-
-```bash
-sudo apt-get install build-essential pkg-config libssl-dev cmake \
-  libasound2-dev libwayland-dev libxkbcommon-dev libudev-dev
-```
-
-```bash
-sudo dnf install gcc-c++ pkgconf openssl-devel cmake \
-  alsa-lib-devel wayland-devel libxkbcommon-devel systemd-devel
-```
-
-What each is for, and what it looks like when it is missing:
-
-- **libasound2-dev**: the microphone capability. Stops in `alsa-sys` with a
-  `pkg-config` error that does not explain itself.
-- **libwayland-dev**: windowing. The worst failure of the five: a *panic
-  inside `wayland-sys`'s build script*, which reads as a broken crate rather
-  than a missing package.
-- **libxkbcommon-dev**: the keyboard.
-- **libudev-dev**: gamepads.
-- **cmake**: builds whisper.cpp for speech-to-text. Skip the whole thing with
-  `--no-default-features` if you do not need it.
-
-#### Running an app on Linux, without building anything
-
-The list above is for building Krate. Someone who only opens a `.krate` needs
-one package, and only on an X11 desktop:
-
-```bash
-sudo apt install libxkbcommon-x11-0
-```
-
-Ubuntu splits the keyboard library in two. `libxkbcommon0` ships with Ubuntu
-Desktop; the X11 bridge in `libxkbcommon-x11-0` does not, and X11 windows need
-it. Fedora calls it `libxkbcommon-x11`, and on Arch it is part of
-`libxkbcommon`. A Wayland-only session never loads it.
-
-Without it, Krate says so in a sentence and names the package. It used to be a
-Rust panic quoting a crate path (K-036).
-
-### Windows
-
-Visual Studio Build Tools with the "Desktop development with C++" workload.
-Two things beyond that, both of which cost real time to discover:
-
-- **libclang**, for the default feature set: whisper's bindgen needs it.
-  Without it, build with `--no-default-features`.
-- **A pagefile.** With 16 GB of RAM and no pagefile, the release link runs out
-  of memory and Windows kills the process **with no message and an empty
-  log**. Three builds died silently before that was the answer. An automatic
-  pagefile fixes it.
-
-Build just the CLI:
-
-```bash
-cargo build --release -p krate-cli
-target/release/krate --version
-```
+The workspace has 1,220 Rust tests. You need the Rust toolchain named in
+`rust-toolchain.toml` and `cargo-component`; check your machine with
+`krate doctor`. Platform packages, the two Windows traps, and the
+one-package Linux receiver note live in [docs/build.md](docs/build.md).
 
 ## Repository map
 
@@ -508,10 +244,8 @@ wit/        Krate interface definitions
 | Connect Krate to Claude Desktop or Cursor | [docs/mcp-setup.md](docs/mcp-setup.md) |
 | The paste-in prompt for any AI chat | [Krate Mode](https://krate.tech/docs/pages/krate-mode.html) |
 | Plain guide for making an app | [Make an app with AI](https://krate.tech/docs/pages/make-an-app-with-ai.html) |
-| First app walkthrough | [Try Krate Notes](https://krate.tech/docs/try-krate-notes.html) |
 | Developer quickstart | [Quickstart](https://krate.tech/docs/quickstart.html) |
-| Product direction | [Vision](https://krate.tech/docs/vision.html) |
-| Planned work | [Roadmap](https://krate.tech/docs/roadmap.html) |
+| Build from source | [docs/build.md](docs/build.md) |
 | Exact current evidence | [Status](STATUS.md) |
 
 ## Contributing
@@ -519,40 +253,22 @@ wit/        Krate interface definitions
 Contributions are welcome across code, documentation, design, examples, and
 testing. Start with [CONTRIBUTING.md](CONTRIBUTING.md), then
 [good first issues](https://github.com/incyashraj/krate/labels/good%20first%20issue)
-and [Discussions](https://github.com/incyashraj/krate/discussions). For a larger
-change, open an issue before writing the full implementation. Everyone is held
-to the [Code of Conduct](CODE_OF_CONDUCT.md).
+and [Discussions](https://github.com/incyashraj/krate/discussions). For a
+larger change, open an issue before writing the full implementation.
+Everyone is held to the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## What Krate counts
 
-Krate counts how many people use it, and nothing about them.
-
-**Sent:** a random id made on your machine, the Krate version, the operating
-system name, one of `install` / `make` / `open` / `publish`, whether an AI
-wrote the app, and whether it worked.
-
-**Never sent:** app names, prompts, file paths, your name, your email, your
-hostname, or anything from inside an app. The id is random bytes written to
-`~/.krate/install-id` -- not derived from your hardware, MAC address, or
-hostname -- so it cannot be traced back to a person. Delete that file and this
-becomes a new anonymous install.
-
-It says so on first run rather than hiding in this file, and turning it off
-changes nothing else:
-
-```bash
-krate telemetry off
-```
-
-`KRATE_NO_USAGE=1` does the same, and `DO_NOT_TRACK=1` is honoured too. The
-request is fire-and-forget with a short timeout: a hub that is down or slow
-costs about 16 milliseconds and can never change a command's result.
+A random id made on your machine, the Krate version, the OS name, one of
+`install` / `make` / `open` / `publish`, whether an AI wrote the app, and
+whether it worked. Never: app names, prompts, paths, or anything about you.
+`krate telemetry off` turns it off (`DO_NOT_TRACK=1` is honoured too), and
+it says so on first run rather than hiding here.
 
 ## Project status
 
 - Stage: public beta, works end to end, API not yet frozen
-- Current release:
-  [`v0.1.50`](https://github.com/incyashraj/krate/releases/tag/v0.1.50)
+- Current release: [the latest on the releases page](https://github.com/incyashraj/krate/releases/latest)
 - Company: Krate Labs
 - Maintainer: [Yashraj Pardeshi](https://github.com/incyashraj)
 - License: MIT OR Apache-2.0
@@ -561,12 +277,12 @@ Krate was previously named Layer36. The rename is complete.
 
 ## License
 
-Choose either [MIT](LICENSE-MIT) or [Apache 2.0](LICENSE-APACHE). Contributions
-use the same dual license.
+Choose either [MIT](LICENSE-MIT) or [Apache 2.0](LICENSE-APACHE).
+Contributions use the same dual license.
 
 ## Acknowledgements
 
 Krate builds on work from the
 [Bytecode Alliance](https://bytecodealliance.org/),
-[Wasmtime](https://wasmtime.dev/), the Rust community, and the wider WebAssembly
-community.
+[Wasmtime](https://wasmtime.dev/), the Rust community, and the wider
+WebAssembly community.

@@ -176,17 +176,32 @@ items the conversations specify that no stage carried:
 | 26 | Unlisted links: publish without a gallery listing, so a client rate card is a URL, not a public exhibit | **live 2026-08-29** -- worker flag + /meta route + CLI --unlisted + Studio opt-in checkbox (listing off by default) |
 | 27 | Send the file opens the OS share sheet (AirDrop, Mail, Messages) with the card, not just a Finder reveal | **in repo 2026-08-29** -- NSSharingServicePicker on macOS, reveal fallback elsewhere; rides the release |
 
+**H. Second full re-audit (2026-08-30)** -- everything the source
+conversations still specified that no stage carried, found by walking
+them start to end once more:
+
+| # | Stage | State |
+|---|---|---|
+| 28 | Subscriptions get a face in Studio: plan chip top-right by the theme toggle, Your-plan sheet (Free / Studio / Founding 200), settings row -- one painter so they never disagree | **in repo 2026-08-30**, verified live on the dev build; rides the release |
+| 29 | Pricing on the public site: /studio gets "What it costs" (Free 3/mo, Studio $12/mo or $96/yr at launch, Founding $79/yr) matching the Studio sheet word for word | **in repo 2026-08-30** |
+| 30 | README user-focused: duplicate benchmark tables merged, terminal/MCP collapsed to a list, platform troubleshooting moved to docs/build.md, pricing section added, stale v0.1.50 removed -- 572 lines down to ~280 | **in repo 2026-08-30** |
+| 31 | License split: player stays MIT/Apache; studio/ and cloud/worker get their own license (BSL 1.1 recommended: use allowed, no competing hosted Studio, converts to Apache in 4 years); README license row says so | open -- needs Yashraj's pick of BSL vs proprietary; mechanics are one afternoon |
+| 32 | Founder film: Yashraj records the real video; it replaces /krate-20s.mp4 behind the same Watch link and modal | waiting on the recording |
+| 33 | The stranger-receive test (gates stage 20 / Stripe): a real card sent to ~20 people as a document with nobody on the call; count players installed vs files opened by Friday | open -- the single gate between preview and money |
+| 34 | Engine-copy audit: `krate install` falls back to copying the engine into the .app when hardlink fails; confirm no share path ever does this, or the 100-apps-in-100-MB story dies | open, small |
+
 Audited as already covered: the three share buttons (9, 10, 11 + 21),
 Use/Keep/Change verbs (Studio's Open/Send/Change), the receiver's one
 screen (/open), hiding the compiler (14), the demo-app rule (15), the
 say/never-say vocabulary (1-7), the landing/direct funnel split (hub
-analytics). Deliberately still parked: spark/engine split (measure
-first), license split, web Studio, Krate AI, phones, QR.
+analytics), ask-then-build gate, the trust line vs syscall drawer, the
+free counter, Your-apps-as-camera-roll, agent-name single source.
+Deliberately parked, in writing: spark/engine split (measure first),
+web Studio, hosted Krate AI, phones, QR, Team plan, repo privacy
+(rejected outright -- split licenses instead, stage 31).
 
 Demo apps of record: rate card (freelancer to client), trip splitter (friend to
 group chat), care schedule (family). Calculator is a size footnote, not a demo.
-Not in this pass: license split, repo privacy, web Studio, hosted Krate AI,
-phones, pricing on the site.
 
 ---
 
