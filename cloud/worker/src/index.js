@@ -68,6 +68,12 @@ export default {
       if (request.method === "POST" && pathname === "/auth/poll") {
         return cors(await authPoll(request, env));
       }
+      if (request.method === "POST" && pathname === "/founding") {
+        // The founding 200: an email and a timestamp, nothing else. No
+        // checkout here -- this is the list that gets the $79/yr lock when
+        // Studio leaves preview.
+        return cors(await founding(request, env));
+      }
       if (request.method === "POST" && pathname === "/usage") {
         return cors(await usage(request, env));
       }
@@ -676,6 +682,25 @@ async function mobileLanding(hash, env) {
       vary: "accept, user-agent",
     },
   });
+}
+
+async function founding(request, env) {
+  let email = "";
+  try {
+    const body = await request.json();
+    email = String(body.email || "").trim().toLowerCase();
+  } catch (_) {
+    return text("bad request", 400);
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) || email.length > 254) {
+    return text("that does not look like an email address", 400);
+  }
+  const key = `founding:${email}`;
+  const existing = await env.APPS.get(key);
+  if (!existing) {
+    await env.APPS.put(key, JSON.stringify({ at: Math.floor(Date.now() / 1000) }));
+  }
+  return json({ ok: true });
 }
 
 async function meta(hash, env) {

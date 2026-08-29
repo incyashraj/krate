@@ -160,7 +160,7 @@ the State column as stages land, never start a second list.
 
 | # | Stage | State |
 |---|---|---|
-| 19 | Free-tier counter: 3 makes/month, hub entitlement, only successes count. Failed builds and revisions never count | open |
+| 19 | Free-tier counter: 3 makes/month, only first successful builds count | **in repo 2026-08-29** -- local counter, quiet home line, soft sheet in preview, founding link; hub entitlement joins with checkout |
 | 20 | Stripe checkout ($12/mo, $96/yr; Team $16 later) | after a stranger receives an app with nobody on the call |
 
 **G. Found by re-auditing the source conversations (2026-08-29)** --
@@ -168,12 +168,12 @@ items the conversations specify that no stage carried:
 
 | # | Stage | State |
 |---|---|---|
-| 21 | Studio Send sheet gains "For a friend without Krate" -- the wrap, with a Mac/Windows/Linux choice, calling `krate wrap` | backend command in repo; sheet UI next |
-| 22 | Founding waitlist: $79/yr for the first 200, honest early-days copy, email capture through the hub. No public checkout yet | open |
+| 21 | Studio Send sheet gains "For a friend without Krate" -- the wrap, with a Mac/Windows/Linux choice, calling `krate wrap` | **in repo 2026-08-29**, rides the release |
+| 22 | Founding waitlist: $79/yr for the first 200, honest early-days copy, email capture through the hub. No public checkout yet | **live 2026-08-29** -- hub /founding + /studio#founding block |
 | 23 | The 20-second film: type, file appears, other desktop opens it through the first-click path. Promo pipeline; no voiceover. Only ships because first-click now works | open |
 | 24 | The public rename finishes in code: Go/TS SDKs still carry l36* names | open |
 | 25 | Version alignment at the cut: workspace says 0.1.28, tags say v0.2.1, dist app says older still. A founding customer reads these | folds into stage 18 |
-| 26 | Unlisted links: publish without a gallery listing, so a client rate card is a URL, not a public exhibit | open |
+| 26 | Unlisted links: publish without a gallery listing, so a client rate card is a URL, not a public exhibit | **live 2026-08-29** -- worker flag + /meta route + CLI --unlisted + Studio opt-in checkbox (listing off by default) |
 | 27 | Send the file opens the OS share sheet (AirDrop, Mail, Messages) with the card, not just a Finder reveal | open |
 
 Audited as already covered: the three share buttons (9, 10, 11 + 21),

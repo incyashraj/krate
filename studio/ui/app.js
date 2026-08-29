@@ -1227,6 +1227,7 @@ function finishBuild(result) {
   const mins = Math.round((Date.now() - state.startedAt) / 60000);
   const version = state.buildVersion || (built.builds || 0) + 1;
   built.builds = version;
+  if (version === 1) countMake();
   settleChipOk(state.buildChip, version, result.size, "", built);
   state.buildChip = null;
   // The transcript keeps the receipt, not the live chip.
@@ -1330,7 +1331,52 @@ function friendlyAsk(cap) {
 
 /* ---- driving the engine ----------------------------------------------- */
 
+/* ---- the free-tier counter (stage 19) --------------------------------
+ * Local, honest, soft: three NEW apps a month on the free plan. Only a
+ * session's FIRST successful build counts -- failed builds and revisions
+ * never do. In preview the sheet informs and lets them continue; the same
+ * rail is where checkout attaches when Studio leaves preview. */
+function monthKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+function makesThisMonth() {
+  try {
+    const rec = JSON.parse(localStorage.getItem("krateMakes") || "{}");
+    return rec.month === monthKey() ? rec.n || 0 : 0;
+  } catch (e) { return 0; }
+}
+function countMake() {
+  try {
+    localStorage.setItem("krateMakes",
+      JSON.stringify({ month: monthKey(), n: makesThisMonth() + 1 }));
+  } catch (e) {}
+  renderFreeCount();
+}
+function renderFreeCount() {
+  const el = $("freeCount");
+  if (!el) return;
+  const n = makesThisMonth();
+  el.classList.toggle("hidden", n < 1);
+  el.textContent = n <= 3 ? `${n} of 3 free apps this month` : `${n} apps this month`;
+}
+function limitAcked() {
+  try { return localStorage.getItem("krateLimitAck") === monthKey(); } catch (e) { return false; }
+}
+
 async function make(request, opts) {
+  // The gate: at three, the sheet says what the deal is, once a month.
+  // It never fires for revisions (the session already has a result).
+  if (
+    makesThisMonth() >= 3 &&
+    !limitAcked() &&
+    !(state.session && state.session.result) &&
+    !(opts && opts.pastLimit)
+  ) {
+    state.pendingMake = { request, opts };
+    $("limitSheet").classList.remove("hidden");
+    return;
+  }
   // Two builds at once would leave the first unstoppable; the backend
   // refuses it too, but stopping here keeps the UI honest. Keyed on the
   // building session, not the visible phase -- browsing away changes the
@@ -3250,6 +3296,17 @@ $("pubGo").addEventListener("click", publishFromSheet);
 $("pubShotPick").addEventListener("click", () => pickPublishImage("shot"));
 $("pubIconPick").addEventListener("click", () => pickPublishImage("icon"));
 $("infoBtn").addEventListener("click", showInfo);
+$("limitGo").addEventListener("click", () => {
+  try { localStorage.setItem("krateLimitAck", monthKey()); } catch (e) {}
+  $("limitSheet").classList.add("hidden");
+  const p = state.pendingMake;
+  state.pendingMake = null;
+  if (p) make(p.request, { ...(p.opts || {}), pastLimit: true });
+});
+$("limitFounding").addEventListener("click", () => {
+  invoke("open_external", { url: "https://krate.tech/studio/#founding" }).catch(() => {});
+});
+renderFreeCount();
 {
   const g = $("galleryBtn");
   if (g) g.addEventListener("click", () => show("cloud"));

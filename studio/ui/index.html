@@ -134,6 +134,7 @@
           </div>
           <div class="airow">
             <button class="aichip" id="builtByChip"><span class="dot" id="builtByDot"></span>Built by <b id="builtByName">…</b><span class="chev">· change ▾</span></button>
+            <span class="free-count hidden" id="freeCount"></span>
           </div>
         </div>
       </div>
@@ -534,6 +535,22 @@
 
   <!-- The Send sheet: the card is the default share, the link is for when
        you cannot drop a file, and the raw bundle stays one click away. -->
+  <div class="sheet-wrap hidden" id="limitSheet">
+    <div class="sheet">
+      <h2>That's three this month</h2>
+      <p class="sheet-sub">The free plan is three apps a month -- failed
+      builds and changes to an app never count. While Studio is in preview,
+      making stays free past three; when it leaves preview, unlimited making
+      will be $12 a month.</p>
+      <p class="sheet-sub" style="margin-top:8px">The first 200 people on
+      the founding list lock it at $79 a year instead.</p>
+      <div class="detail-actions">
+        <button class="btn btn-primary" id="limitGo">Keep making -- free in preview</button>
+        <button class="btn" id="limitFounding">Join the founding 200</button>
+      </div>
+    </div>
+  </div>
+
   <div class="sheet-wrap hidden" id="sendSheet">
     <div class="sheet sheet-send">
       <h2>Send it</h2>

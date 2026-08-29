@@ -279,6 +279,17 @@
   .dl .arr { margin-left: auto; color: var(--quiet); }
   .dl.dl-primary { border-color: rgba(255,255,255,0.35); background: var(--panel); }
 
+  /* ----------------------------------------------------------- founding */
+  .found-form { display: flex; gap: 10px; }
+  .found-form input {
+    flex: 1; min-width: 0; padding: 12px 16px; border-radius: 12px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text);
+    font: inherit; font-size: 14.5px; outline: none;
+    transition: border-color 150ms ease;
+  }
+  .found-form input:focus { border-color: var(--accent); }
+  .found-note { margin-top: 12px; font-size: 13px; color: var(--muted); }
+
   /* --------------------------------------------------------------- faq */
   .faq { padding: clamp(70px, 11vh, 110px) 0 clamp(70px, 11vh, 110px); }
   .faq-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: clamp(28px, 5vw, 64px); }
@@ -491,6 +502,29 @@
   </div>
 </section>
 
+<!-- ============================================================== founding -->
+<section class="get wrap" id="founding">
+  <div class="get-grid">
+    <div class="reveal">
+      <h2>The founding 200</h2>
+      <p>Studio is free while it is in preview, and rough in places we will
+      be honest about. When it leaves preview it will cost $12 a month. The
+      first 200 people who join here lock it at <b>$79 a year</b> -- and get
+      listened to while we build.</p>
+      <p style="margin-top:10px; font-size:13px; color:var(--quiet);">No
+      payment now. An email, so we can offer you the lock before anyone
+      else.</p>
+    </div>
+    <div class="reveal">
+      <form class="found-form" id="foundForm">
+        <input type="email" id="foundEmail" placeholder="you@example.com" required />
+        <button class="pill pill-primary" type="submit" id="foundGo">Join</button>
+      </form>
+      <p class="found-note hidden" id="foundNote"></p>
+    </div>
+  </div>
+</section>
+
 <!-- =================================================================== faq -->
 <section class="faq wrap">
   <div class="faq-grid">
@@ -692,6 +726,34 @@
       tsCalc();
     });
   });
+
+  /* ---------------------------------------------- the founding list */
+  var foundForm = document.getElementById("foundForm");
+  if (foundForm) {
+    foundForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var go = document.getElementById("foundGo");
+      var note = document.getElementById("foundNote");
+      go.disabled = true;
+      fetch("https://hub.krate.tech/founding", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: document.getElementById("foundEmail").value.trim() }),
+      })
+        .then(function (r) { return r.text().then(function (t) { return { ok: r.ok, t: t }; }); })
+        .then(function (res) {
+          note.textContent = res.ok
+            ? "You're on the list. We'll write to you before anyone pays anything."
+            : res.t;
+          note.classList.remove("hidden");
+        })
+        .catch(function () {
+          note.textContent = "Could not reach the hub. Check your connection.";
+          note.classList.remove("hidden");
+        })
+        .finally(function () { go.disabled = false; });
+    });
+  }
 
   /* ------------------- put the visitor's own system first, and say so */
   (function () {
