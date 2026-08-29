@@ -6396,6 +6396,35 @@ fn seed_agent_home(real_home: &Path, agent_home: &Path) -> bool {
                     // develop on -- Grok, Codex, Gemini and Copilot silently
                     // got nothing (K-189).
                     claude_ready = true;
+                    // The same fresh token goes into the CONFINED keychain
+                    // too, every seed. On macOS Claude reads its credential
+                    // from the keychain first, and with HOME rebased that is
+                    // the sandbox keychain (K-197) -- which kept whatever
+                    // token it was first seeded with. A re-sign-in refreshed
+                    // the person's real keychain and this file, and the
+                    // agent still ran on the revoked token from its own
+                    // keychain: builds 401'd an hour after the person had
+                    // signed back in (K-202). -U updates in place.
+                    let login = agent_home.join("Library/Keychains/login.keychain-db");
+                    if login.exists() {
+                        let account =
+                            std::env::var("USER").unwrap_or_else(|_| "krate".to_string());
+                        let token = String::from_utf8_lossy(out.stdout.trim_ascii()).to_string();
+                        let _ = ProcessCommand::new("/usr/bin/security")
+                            .args([
+                                "add-generic-password",
+                                "-U",
+                                "-s",
+                                "Claude Code-credentials",
+                                "-a",
+                                &account,
+                                "-w",
+                                &token,
+                            ])
+                            .arg(&login)
+                            .env("HOME", agent_home)
+                            .output();
+                    }
                 }
             }
         }

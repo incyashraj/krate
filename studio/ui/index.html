@@ -184,6 +184,27 @@
           </div>
         </div>
 
+        <!-- The seconds between the person's sentence and the first answer.
+             Silence here read as broken (and as cheap); the same forming
+             frame the build uses appears at once, in listening dress. -->
+        <div class="stage-state hidden" id="statePlanning">
+          <div class="build-card bloom brail">
+            <div class="build-shot">
+              <div class="forming-ghost" aria-hidden="true">
+                <span class="g-chrome"><i></i><i></i><i></i></span>
+                <span class="g-block g-hero"></span>
+                <span class="g-row"><span class="g-block g-half"></span><span class="g-block g-half"></span></span>
+              </div>
+              <span class="forming-sweep" aria-hidden="true"></span>
+              <span class="build-shot-tag" id="planTag">listening…</span>
+            </div>
+            <div class="build-head">
+              <p class="build-title" id="planTitle">Reading your request</p>
+            </div>
+            <div class="bpeek"><span id="planLine">a few seconds…</span><span class="caret"></span></div>
+          </div>
+        </div>
+
         <div class="stage-state hidden" id="stateBuilding">
           <div class="build-card bloom brail">
             <!-- The one object on this screen: the app, forming. A skeleton
@@ -196,7 +217,6 @@
                 <span class="g-block g-hero"></span>
                 <span class="g-row"><span class="g-block g-half"></span><span class="g-block g-half"></span></span>
                 <span class="g-block g-line"></span>
-                <span class="g-block g-line short"></span>
               </div>
               <img id="buildShot" class="hidden" alt="Your app so far" />
               <span class="forming-sweep" aria-hidden="true"></span>

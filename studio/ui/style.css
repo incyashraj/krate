@@ -450,8 +450,10 @@ body.windows .titlebar { padding-right: 150px; }
    first real test frame replaces it. One object, one idea -- the app,
    arriving -- instead of a dead text card. */
 .forming-ghost {
-  position: absolute; inset: 0; padding: 14px 16px;
-  display: flex; flex-direction: column; gap: 10px;
+  /* Bottom padding clears the "taking shape…" tag; without it the last
+     ghost line ran straight under the label (seen in review). */
+  position: absolute; inset: 0; padding: 14px 16px 42px;
+  display: flex; flex-direction: column; gap: 12px;
 }
 .g-chrome { display: flex; gap: 5px; margin-bottom: 2px; }
 .g-chrome i { width: 8px; height: 8px; border-radius: 50%; background: rgba(255, 255, 255, 0.1); }
@@ -477,17 +479,26 @@ body.windows .titlebar { padding-right: 150px; }
   .g-block, .forming-sweep { animation: none; }
 }
 
-/* The thin honest track: moves on real stages only. */
+/* The thin honest track: moves on real stages only. Bright enough to be
+   part of the composition -- at 2px on 7% it disappeared and its margins
+   read as a dead gap. */
 .build-track {
-  height: 2px; border-radius: 2px; margin: 10px 0 12px;
-  background: rgba(255, 255, 255, 0.07); overflow: hidden;
+  height: 3px; border-radius: 3px; margin: 12px 0 10px;
+  background: rgba(255, 255, 255, 0.1); overflow: hidden;
 }
 .build-track i {
-  display: block; height: 100%; border-radius: 2px;
+  display: block; height: 100%; border-radius: 3px;
   background: linear-gradient(90deg, var(--accent, #6291ff), rgba(98, 145, 255, 0.55));
   transform: scaleX(0.04); transform-origin: left center;
   transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
+
+/* The card's vertical rhythm: frame, title, track, live line, clock --
+   close-set, one composition, no dead air between them. */
+.brail .build-shot { margin: 0 0 16px; }
+.brail .build-title { margin: 0; }
+.brail .bpeek { margin: 2px 0 6px; }
+.brail .build-elapsed { margin: 0 0 2px; }
 .build-shot-tag {
   position: absolute; left: 8px; bottom: 8px;
   font-size: 10.5px; letter-spacing: 0.02em; color: #fff;

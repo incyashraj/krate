@@ -513,6 +513,11 @@ function timeAgo(secs) {
 /* ---- sessions --------------------------------------------------------- */
 
 function newSession(firstRequest) {
+  // A new session starts with no inherited conversation state: a planning
+  // round left over from the LAST session once swallowed the first message
+  // of the next one as its "answer" (seen live -- a fresh request greeted
+  // with "folding your answer in").
+  state.planning = null;
   const now = Math.floor(Date.now() / 1000);
   state.session = {
     id: `s-${Date.now()}`,
@@ -544,6 +549,9 @@ function openSession(s) {
   // and timer are all still wired to it; use the building session's own
   // object so its transcript keeps growing in one place.
   const building = state.buildingSession && state.buildingSession.id === s.id;
+  // Planning state belongs to one session; crossing into another must not
+  // carry it (the ask-replay below rebuilds it when this session has one).
+  state.planning = null;
   state.session = building ? state.buildingSession : s;
   state.attachments = [];
   $("railTitle").textContent = state.session.title;
@@ -605,6 +613,12 @@ function openSession(s) {
     }
     show("done");
     setRevisePlaceholders();
+  } else if (lastAsk !== undefined) {
+    // Waiting on the person, honestly resumable: the question or plan
+    // (with its Build button) is back in the rail, and the right pane
+    // says so -- generic words, because the replayed ask can be either.
+    showPlanning("Waiting on you", "it's on the left - answer, or just hit Build it", "paused");
+    $("prompt").placeholder = "Answer here… or hit Build it";
   } else if (s.failedRequest || msgs.some((m) => m.who === "YOU")) {
     // Unfinished and not live: the build stopped, failed, or was cut off
     // by a restart. Never the idle "your app will appear here" ghost --
@@ -759,11 +773,24 @@ function show(phase) {
   // next visit to idle starts neutral again unless a caller sets it.
   if (phase !== "idle") setIdleNote("Your app will appear here.");
   state.phase = phase;
-  for (const id of ["stateIdle", "stateBuilding", "stateDone", "stateFailed"]) {
+  for (const id of ["stateIdle", "statePlanning", "stateBuilding", "stateDone", "stateFailed"]) {
     $(id).classList.add("hidden");
   }
-  $({ idle: "stateIdle", building: "stateBuilding", done: "stateDone", failed: "stateFailed" }[phase])
+  $({ idle: "stateIdle", planning: "statePlanning", building: "stateBuilding", done: "stateDone", failed: "stateFailed" }[phase])
     .classList.remove("hidden");
+}
+
+/// The right pane during the conversation gate: the forming frame in
+/// listening dress. The seconds between the person's sentence and the
+/// first questions used to be an empty pane, and empty read as broken.
+function showPlanning(title, line, tag) {
+  const t = $("planTitle");
+  if (t) t.textContent = title;
+  const l = $("planLine");
+  if (l) l.textContent = line;
+  const g = $("planTag");
+  if (g) g.textContent = tag || "listening…";
+  show("planning");
 }
 
 /* Never let a spinner outlive its build.
@@ -1614,7 +1641,7 @@ async function startPlanning(request, files) {
   // Speak IMMEDIATELY. The plan call can take ten seconds, and ten silent
   // seconds after a person's very first message reads as broken.
   say("KRATE", "Looking at your request…");
-  setIdleNote("Reading your request…");
+  showPlanning("Reading your request", "checking what it needs - a few seconds…");
   await runPlan();
 }
 
@@ -1638,6 +1665,7 @@ async function continuePlanning(text, files) {
   if (state.planning.planShown) {
     return finishPlanningAndBuild();
   }
+  showPlanning("Thinking it through", "folding your answer in…");
   await runPlan();
 }
 
@@ -1689,7 +1717,7 @@ async function runPlan() {
       // sibling trap, seen live as a calculator session).
       const rec = state.session.messages[state.session.messages.length - 1];
       if (rec) rec.kind = "ask";
-      setIdleNote("Answer on the left, or just hit Build it.");
+      showPlanning("One question first", "answer on the left - or just hit Build it", "waiting on you");
       $("prompt").placeholder = "Answer here… or hit Build it";
     } else if (answer.plan) {
       state.planning.plan = answer.plan;
@@ -1708,7 +1736,7 @@ async function runPlan() {
         if (rec) rec.kind = "ask";
       }
       $("prompt").placeholder = "Anything to change? Your next message starts the build";
-      setIdleNote("The plan is on the left. Say build it and I'll start.");
+      showPlanning("The plan is ready", "read it on the left - Build it starts the work", "waiting on you");
     } else {
       return finishPlanningAndBuild();
     }
@@ -1742,6 +1770,7 @@ async function runPlan() {
         + "One sentence is enough to start.");
       $("prompt").placeholder = "Describe the app you want\u2026";
       setIdleNote("Tell me what to make and I'll start.");
+      show("idle");
       $("send").disabled = false;
       return;
     }
