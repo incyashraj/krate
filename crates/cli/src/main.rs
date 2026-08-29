@@ -13171,8 +13171,22 @@ fn preflight_toolchain(assume_yes: bool, no_install: bool) -> Result<()> {
     // first-make would die on.
     prefer_cargo_bin();
 
-    // Re-check: a fresh target may still be needed, so verify and guide
-    // rather than fail opaquely later.
+    // Second pass: installing rustup UNLOCKS installs the first pass could
+    // not see or run (the wasm target, cargo-component -- both need cargo
+    // on PATH, which prefer_cargo_bin just provided). Bailing here with
+    // "open a new terminal and re-run" left a brand-new machine's very
+    // first make dead after a flawless install (K-204); the tools are one
+    // command away, so run the command.
+    let second = missing_create_tools();
+    for tool in &second {
+        eprintln!("==> installing {}", tool.what);
+        eprintln!("    {}", install_command_line(&tool.install_cmd));
+        run_install_command(&tool.install_cmd)
+            .with_context(|| format!("install {}", tool.what))?;
+    }
+
+    // Re-check: only after two passes is "still missing" a real wall, and
+    // by then the guidance is honest.
     let still_missing = missing_create_tools();
     if !still_missing.is_empty() {
         eprintln!();
