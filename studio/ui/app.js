@@ -3936,15 +3936,18 @@ function showCloudSkeleton() {
  * category, and together they cover the three reasons somebody opens
  * this -- keep something, do a small job, play. "A habit tracker" was
  * one of three that all sounded like homework. */
+/* Every example has a someone else -- these train the muscle the product
+ * sells. Apps-for-me (habit trackers, countdowns, voice memos) train the
+ * wrong one and fill the library with things nobody sends. */
 const EXAMPLES = [
-  "a habit tracker that shows my streak going",
-  "a tip splitter for dinners with friends",
-  "a snake game I can play offline",
-  "a countdown to a date that matters",
-  "a photo booth that uses my webcam",
-  "a shared grocery list my partner can edit too",
-  "a voice memo recorder with playback",
-  "a flashcard app for spanish words",
+  { label: "A rate card my client can keep", sugg: "a rate card for my studio -- day rate 800, extra hour 120, rush adds 25 percent; the client types days and extra hours and sees the total. It cannot use the network" },
+  { label: "A tip-out for tonight's staff", sugg: "a tip-out for tonight -- staff type the night total; bar gets 40 percent, floor 35, kitchen 25. It cannot use the network" },
+  { label: "A tip splitter for dinners with friends", sugg: "a tip splitter for dinners with friends" },
+  { label: "A lab my students just open", sugg: "a week 3 heat-loss lab for my class -- three checks and a score at the bottom; students open the file, no account. It cannot use the network" },
+  { label: "A trip splitter for the group chat", sugg: "a trip splitter -- add people by name, add expenses with who paid, and it shows who owes whom to settle up. It cannot use the network" },
+  { label: "A care schedule for my parent", sugg: "a care schedule for my parent's medicines -- big readable text, tick each dose as given today, ticks reset each morning. It cannot use the network" },
+  { label: "A grocery list my partner can edit too", sugg: "a shared grocery list my partner can edit too" },
+  { label: "A quote calculator customers fill in", sugg: "a quote calculator my customers fill in themselves. It cannot use the network" },
 ];
 
 function pickExamples(n) {
@@ -3963,9 +3966,9 @@ function paintExamples() {
   if (!list) return;
   const trend = '<span class="trend"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.8 11.2L6 7l3 3 5.2-5.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><path d="M10.6 4.4h3.8v3.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></span>';
   list.innerHTML = pickExamples(3)
-    .map((text) => {
-      const shown = text.charAt(0).toUpperCase() + text.slice(1);
-      return `<button type="button" data-sugg="${text.replace(/"/g, "&quot;")}">
+    .map((ex) => {
+      const shown = ex.label;
+      return `<button type="button" data-sugg="${ex.sugg.replace(/"/g, "&quot;")}">
         <span class="trend"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.8 11.2L6 7l3 3 5.2-5.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.6 4.4h3.8v3.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
         ${shown}
         <svg class="go" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8 6 12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -4005,7 +4008,7 @@ function paintGreeting() {
         }</span>`
       : "";
   }
-  if (title) title.textContent = "Make an app you can actually send someone";
+  if (title) title.textContent = "Make an app you can send";
 }
 
 /* ---- onboarding -------------------------------------------------------- */
