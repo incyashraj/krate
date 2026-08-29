@@ -3384,7 +3384,7 @@ document.querySelectorAll(".sheet-wrap").forEach((w) =>
 // Escape closes an open sheet, same as clicking outside it. A panel the
 // keyboard cannot back out of reads as a trap.
 document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape") return;
+  if (e.key !== "Escape" && e.key !== "Esc" && e.keyCode !== 27) return;
   const open = document.querySelector(".sheet-wrap:not(.hidden)");
   if (open) { open.classList.add("hidden"); e.preventDefault(); }
 });
