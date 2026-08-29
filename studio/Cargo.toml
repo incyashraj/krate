@@ -15,6 +15,9 @@ name = "krate-studio"
 version = "0.2.2"
 edition = "2021"
 description = "Describe an app, watch it become real, open it, share it."
+# The open-core boundary: the player and format stay MIT/Apache, the
+# product layer is BSL 1.1 (converts to Apache-2.0 on the Change Date).
+license-file = "LICENSE"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

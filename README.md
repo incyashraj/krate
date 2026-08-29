@@ -277,8 +277,16 @@ Krate was previously named Layer36. The rename is complete.
 
 ## License
 
-Choose either [MIT](LICENSE-MIT) or [Apache 2.0](LICENSE-APACHE).
-Contributions use the same dual license.
+Open core, split by what each piece is for:
+
+| Piece | License |
+| --- | --- |
+| Player, `.krate` format, CLI, runtime -- everything a receiver trusts | [MIT](LICENSE-MIT) OR [Apache 2.0](LICENSE-APACHE) |
+| Krate Studio (`studio/`) and the hub worker (`cloud/worker/`) | [Business Source License 1.1](studio/LICENSE), converts to Apache 2.0 in 2030 |
+
+The BSL lets you read, build, and use Studio; it stops a competing hosted
+Studio. Versions published before the split remain under their original
+MIT OR Apache terms. Contributions to the player use the dual license.
 
 ## Acknowledgements
 
