@@ -71,6 +71,54 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-197 -- "Keychain Not Found" dialogs during every build, over work the person did not start
+
+Status:   FIXED in repo -- ships with the next release
+Owner:    main repo, Claude (repositioning session, 2026-08-29)
+Severity: high (a scary system dialog naming the person's own username,
+          repeatedly, mid-build)
+Class:    our-code
+Found:    2026-08-29, by Yashraj: macOS "Keychain Not Found -- a keychain
+          cannot be found to store 'yashrajpardeshi'" with Cancel / Reset To
+          Defaults, appearing again and again while demo apps built.
+Evidence: The K-179 wall rebases the agent's HOME into ~/.krate/agent-home.
+          The Security framework resolves the login keychain from $HOME, and
+          the confined home had no Library/Keychains at all -- verified: the
+          directory did not exist. Any tool the agent runs that touches the
+          keychain (git's osxkeychain helper, a CLI storing a token) asks
+          for a keychain that is not there, and macOS raises the dialog at
+          the person, over a process they never started. "Reset To Defaults"
+          would have created one -- possibly confusing the real account's
+          keychain state, and nobody should ever click a security dialog to
+          make our tool quiet.
+Fix:      seed_agent_home now creates an empty-password login keychain
+          inside the confined home and registers it as that home's default,
+          idempotently. Proven: after seeding, `security default-keychain`
+          under the confined HOME names the confined keychain; a
+          generic-password add/find/delete round-trips silently; the real
+          home's default keychain is unchanged. What agent tools store now
+          stays inside the wall, which is what the wall is for.
+
+### K-196 -- after a stopped build, "resume" becomes a resume/CV app
+
+Status:   open
+Owner:    unclaimed
+Severity: medium (a person talking to the session is misread as describing
+          a product, at exactly the moment they need control)
+Class:    our-code
+Found:    2026-08-29, by Yashraj: stopped a voice-memo build, typed
+          "resume", and the planner asked "Did you mean a resume/CV app?"
+Evidence: Screenshot in session. After "stopped", the composer's contract
+          is still "describe an app": the single word went to the plan step
+          as a fresh request with no session context, and the AI did the
+          only sensible thing with a one-word app called "resume".
+Fix       1. The stopped message carries a Resume button that re-runs the
+sketch:      same request (plan/create session merge already exists, v0.1.55).
+          2. The composer under a stopped or questioning session sends the
+             whole session context to the planner, so typed "resume" /
+             "continue" resolves as the verb.
+          3. A stopped session's placeholder says what typing does.
+
 ### K-195 -- a .krate sent to someone without Krate is a dead file
 
 Status:   in progress -- `krate card` (option 4's making half) is implemented

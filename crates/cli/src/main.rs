@@ -6277,6 +6277,46 @@ fn seed_agent_home(real_home: &Path, agent_home: &Path) -> bool {
     // subdirectory on the way; the per-provider copies below did not.
     let _ = fs::create_dir_all(agent_home);
 
+    // A login keychain INSIDE the confined home. The Security framework
+    // resolves the keychain from $HOME, so with HOME rebased here, any tool
+    // the agent runs that touches the keychain -- git's osxkeychain helper,
+    // a CLI storing a token -- finds no keychain at all, and macOS throws a
+    // "Keychain Not Found ... Reset To Defaults" dialog at the person, on
+    // every build, over work they did not start. An empty-password keychain
+    // in the confined home gives those tools somewhere to write; what they
+    // store stays inside the wall, and the person's real keychain is never
+    // in the search path.
+    #[cfg(target_os = "macos")]
+    {
+        let keychains = agent_home.join("Library/Keychains");
+        let login = keychains.join("login.keychain-db");
+        if !login.exists() {
+            let _ = fs::create_dir_all(&keychains);
+            let created = ProcessCommand::new("/usr/bin/security")
+                .args(["create-keychain", "-p", ""])
+                .arg(&login)
+                .env("HOME", agent_home)
+                .output()
+                .map(|out| out.status.success())
+                .unwrap_or(false);
+            if created {
+                // Registered as the default within THIS home's preferences,
+                // so lookups resolve without asking. The real home's
+                // keychain settings are untouched.
+                let _ = ProcessCommand::new("/usr/bin/security")
+                    .args(["default-keychain", "-s"])
+                    .arg(&login)
+                    .env("HOME", agent_home)
+                    .output();
+                let _ = ProcessCommand::new("/usr/bin/security")
+                    .args(["unlock-keychain", "-p", ""])
+                    .arg(&login)
+                    .env("HOME", agent_home)
+                    .output();
+            }
+        }
+    }
+
     // Settings, minus the history of places the person has worked.
     if let Ok(text) = fs::read_to_string(real_home.join(".claude.json")) {
         if let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&text) {
