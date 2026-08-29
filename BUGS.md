@@ -73,8 +73,12 @@ Fix:      what needs to happen, or the commit that did it.
 
 ### K-198 -- the pack does not make the clock believable; grok argued itself out of time.clock and burned 25 minutes re-reading
 
-Status:   open
-Owner:    unclaimed
+Status:   taught (46ec5d917): the pack gained "The clock is real" -- the
+          grant stated plainly, the daily-reset recipe, and the K-198 story.
+          Stays open until a fresh clock-using build goes through WITHOUT
+          the doubt; the re-reading-loop half (why the loop re-reads the
+          full API between check cycles) is also unexamined.
+Owner:    main repo, Claude (repositioning session, 2026-08-29)
 Severity: medium (teaching, and real minutes: two demo builds hit the
           15- and 25-minute caps in check/re-read loops)
 Class:    teaching-hole
@@ -125,8 +129,11 @@ Fix:      seed_agent_home now creates an empty-password login keychain
 
 ### K-196 -- after a stopped build, "resume" becomes a resume/CV app
 
-Status:   open
-Owner:    unclaimed
+Status:   FIXED in repo (46ec5d917) -- ships with the next release. The
+          session remembers its request; resume/continue/try again run it,
+          other words fold in and rebuild; the stopped screen's button says
+          Resume build; ask-messages keep their Build button on replay.
+Owner:    main repo, Claude (repositioning session, 2026-08-29)
 Severity: medium (a person talking to the session is misread as describing
           a product, at exactly the moment they need control)
 Class:    our-code
