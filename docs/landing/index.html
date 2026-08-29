@@ -101,6 +101,7 @@
      ordinary content. They never animate again. */
   .reveal { opacity: 0; transform: translateY(12px); transition: opacity var(--enter), transform var(--enter); }
   .reveal.in { opacity: 1; transform: none; }
+  .hidden { display: none !important; }
 
   /* ------------------------------------------------------------ header */
   .site-head {
@@ -258,6 +259,30 @@
   /* One line under the card that changes when it wakes. */
   .card-note { margin-top: 14px; text-align: center; font-size: 13px; color: var(--quiet); min-height: 1.5em; transition: opacity var(--wake); }
   .card-note.swap { opacity: 0; }
+
+  /* ---------------------------------------------------------- the film */
+  .film-link {
+    margin-top: 10px; background: none; border: none; padding: 0;
+    color: var(--muted); font: inherit; font-size: 13.5px; cursor: pointer;
+    border-bottom: 1px solid var(--line);
+  }
+  .film-link:hover { color: var(--text); }
+  .film-modal {
+    position: fixed; inset: 0; z-index: 60;
+    background: rgba(5, 5, 6, 0.88);
+    display: flex; align-items: center; justify-content: center;
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  }
+  .film-frame { position: relative; width: min(1100px, 92vw); }
+  .film-frame video {
+    display: block; width: 100%; border-radius: 14px;
+    border: 1px solid var(--line); box-shadow: 0 40px 120px rgba(0,0,0,0.6);
+  }
+  .film-close {
+    position: absolute; top: -14px; right: -14px; width: 36px; height: 36px;
+    border-radius: 50%; border: 1px solid var(--line);
+    background: var(--panel); color: var(--text); font-size: 20px; cursor: pointer;
+  }
 
   /* -------------------------------------------------------- how it works */
   .how { padding: clamp(70px, 12vh, 130px) 0 0; }
@@ -573,6 +598,7 @@
         <a class="pill" href="#how">How it works</a>
       </div>
       <p class="free-note">Free · works with the AI you already have · Mac, Windows and Linux</p>
+      <button class="film-link" id="filmLink" type="button">Watch the 20-second film &#9656;</button>
     </div>
 
     <!-- The card. It loads looking like a photo of an app, then wakes into
@@ -875,6 +901,15 @@
 
 </main>
 
+<!-- The 20-second film: type, the file, they double-click, it opens.
+     Four verbs, no voiceover, real rate-card footage. -->
+<div class="film-modal hidden" id="filmModal">
+  <div class="film-frame">
+    <video id="filmVideo" src="/krate-20s.mp4" playsinline muted controls preload="none"></video>
+    <button class="film-close" id="filmClose" type="button" aria-label="Close">&times;</button>
+  </div>
+</div>
+
 <!-- ================================================================ footer -->
 <footer class="site-foot">
   <div class="wrap foot-inner">
@@ -969,6 +1004,21 @@
       }, 350);
     }, 2600);
   }
+
+  /* The film opens over the page and starts; closing stops it. */
+  const filmModal = document.getElementById("filmModal");
+  const filmVideo = document.getElementById("filmVideo");
+  document.getElementById("filmLink").addEventListener("click", function () {
+    filmModal.classList.remove("hidden");
+    filmVideo.currentTime = 0;
+    filmVideo.play().catch(function () {});
+  });
+  function filmStop() {
+    filmModal.classList.add("hidden");
+    filmVideo.pause();
+  }
+  document.getElementById("filmClose").addEventListener("click", filmStop);
+  filmModal.addEventListener("click", function (e) { if (e.target === filmModal) filmStop(); });
 
   /* ------------------------------------------------------- the card wakes */
   var card = document.getElementById("theCard");

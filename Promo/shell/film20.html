@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Krate — the 20 second film</title>
+<style>
+  /* The site's own tokens; the film is the product wearing its own clothes. */
+  @font-face { font-family: Geist; src: url(assets/geist-400.woff2) format("woff2"); font-weight: 400; }
+  @font-face { font-family: Geist; src: url(assets/geist-500.woff2) format("woff2"); font-weight: 500; }
+  :root {
+    --bg: #0a0a0a; --panel: #0f1012; --panel-2: #141519;
+    --line: #1f2228; --line-soft: #17191e;
+    --text: #fff; --muted: rgba(255,255,255,0.55); --quiet: rgba(255,255,255,0.35);
+    --accent: #6291ff; --good: #4ade80;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--bg);
+    font-family: Geist, sans-serif; color: var(--text);
+    -webkit-font-smoothing: antialiased; }
+  .stage { position: absolute; inset: 0; }
+  .scene { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; opacity: 0; }
+
+  /* The one verb per beat, small and burnt in. */
+  .verb {
+    position: absolute; left: 84px; bottom: 72px;
+    font-size: 30px; font-weight: 500; letter-spacing: -0.01em; color: var(--text);
+    opacity: 0;
+  }
+  .verb small { display: block; font-size: 17px; font-weight: 400; color: var(--quiet); margin-top: 6px; letter-spacing: 0; }
+
+  /* ---- P1: Studio, the sentence ---- */
+  .studio { width: 1100px; text-align: center; }
+  .studio h1 { font-size: 62px; font-weight: 500; letter-spacing: -0.03em; }
+  .studio .sub { margin-top: 16px; color: var(--muted); font-size: 24px; }
+  .bigbar {
+    margin: 46px auto 0; width: 900px; text-align: left;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 20px;
+    padding: 26px 28px 20px;
+  }
+  .bigbar .words { font-size: 25px; line-height: 1.5; min-height: 76px; color: var(--text); }
+  .bigbar .words .ph { color: var(--quiet); }
+  .caret { display: inline-block; width: 2px; height: 1.05em; background: var(--text); vertical-align: -0.15em; }
+  .bigbar .row { display: flex; align-items: center; margin-top: 14px; }
+  .bigbar .tool { color: var(--quiet); font-size: 16px; }
+  .bigbar .go {
+    margin-left: auto; width: 44px; height: 44px; border-radius: 12px;
+    background: var(--accent); display: flex; align-items: center; justify-content: center;
+    font-size: 20px; color: #fff;
+  }
+  .aichip { margin-top: 18px; display: inline-flex; align-items: center; gap: 9px;
+    font-size: 16px; color: var(--muted);
+    border: 1px solid var(--line); border-radius: 999px; padding: 8px 18px; }
+  .aichip i { width: 8px; height: 8px; border-radius: 50%; background: var(--good); }
+
+  /* ---- P2: the done card ---- */
+  .done {
+    width: 560px; border: 1px solid var(--line); border-radius: 22px; overflow: hidden;
+    background: var(--panel); box-shadow: 0 50px 140px rgba(0,0,0,0.6);
+  }
+  .done .shot { position: relative; background: var(--panel-2); max-height: 600px; overflow: hidden; }
+  .done .shot img { display: block; width: 100%; object-fit: cover; object-position: top; }
+  .done .cap {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    display: flex; gap: 12px; align-items: baseline;
+    padding: 13px 18px; border-top: 1px solid var(--line);
+    background: rgba(10,10,11,0.88); font-size: 16px; color: var(--muted);
+  }
+  .done .cap b { color: var(--text); font-weight: 500; }
+  .done .cap .trust { margin-left: auto; color: var(--muted); }
+  .done .meta { padding: 20px 22px 22px; }
+  .done .meta .nm { font-size: 22px; font-weight: 500; }
+  .done .meta .sz { margin-top: 4px; color: var(--muted); font-size: 16px; }
+  .done .verbs { display: flex; gap: 10px; margin-top: 16px; }
+  .done .verbs span {
+    padding: 10px 22px; border-radius: 999px; font-size: 16.5px; font-weight: 500;
+    border: 1px solid var(--line);
+  }
+  .done .verbs .pri { background: var(--text); color: #0a0a0a; border-color: var(--text); }
+
+  /* ---- P3: the other desktop ---- */
+  .desk { position: absolute; inset: 0; background:
+    radial-gradient(1200px 700px at 65% 30%, #101318 0%, #0a0a0a 70%); }
+  .file { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center; }
+  .file .icon {
+    width: 120px; height: 140px; margin: 0 auto; border-radius: 14px;
+    background: var(--panel); border: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .file .icon img { width: 54px; opacity: 0.9; }
+  .file .nm { margin-top: 14px; font-size: 19px; color: var(--muted); }
+  .ripple {
+    position: absolute; left: 50%; top: 46%; width: 40px; height: 40px;
+    border: 2px solid rgba(255,255,255,0.6); border-radius: 50%;
+    transform: translate(-50%, -50%); opacity: 0;
+  }
+  .cursor { position: absolute; width: 26px; opacity: 0.95; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.6)); }
+
+  .sheet {
+    position: absolute; left: 50%; top: 50%; width: 520px;
+    transform: translate(-50%, -50%);
+    background: var(--panel); border: 1px solid var(--line); border-radius: 22px;
+    padding: 40px 38px 34px; text-align: center;
+    box-shadow: 0 50px 140px rgba(0,0,0,0.65); opacity: 0;
+  }
+  .sheet img { width: 52px; margin: 0 auto 18px; display: block; }
+  .sheet h3 { font-size: 27px; font-weight: 500; letter-spacing: -0.015em; }
+  .sheet p { margin-top: 12px; color: var(--muted); font-size: 18.5px; line-height: 1.55; }
+  .sheet .btn {
+    margin-top: 26px; display: inline-block; padding: 14px 34px; border-radius: 999px;
+    background: var(--text); color: #0a0a0a; font-size: 19px; font-weight: 500;
+  }
+  .sheet .bar { margin: 26px auto 0; width: 78%; height: 4px; border-radius: 999px; background: var(--line); overflow: hidden; display: none; }
+  .sheet .bar i { display: block; height: 100%; width: 0%; background: var(--text); border-radius: 999px; }
+
+  /* ---- P4: it opens ---- */
+  .openwin {
+    position: absolute; left: 50%; top: 50%; width: 520px;
+    transform: translate(-50%, -50%);
+    border: 1px solid var(--line); border-radius: 20px; overflow: hidden;
+    background: var(--panel); box-shadow: 0 50px 140px rgba(0,0,0,0.65); opacity: 0;
+  }
+  .openwin .bar2 { display: flex; align-items: center; gap: 8px; padding: 13px 16px;
+    background: var(--panel-2); border-bottom: 1px solid var(--line-soft); }
+  .openwin .dots { display: flex; gap: 7px; }
+  .openwin .dots i { width: 12px; height: 12px; border-radius: 50%; }
+  .openwin .dots i:nth-child(1) { background: #ff5f57; }
+  .openwin .dots i:nth-child(2) { background: #febc2e; }
+  .openwin .dots i:nth-child(3) { background: #28c840; }
+  .openwin .t { margin: 0 auto; font-size: 15px; color: var(--muted); }
+  .openwin img { display: block; width: 100%; }
+  .openwin .trust {
+    padding: 12px 18px; border-top: 1px solid var(--line-soft);
+    background: var(--panel-2); font-size: 15.5px; color: var(--muted);
+  }
+
+  .lockup { position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; background: var(--bg); opacity: 0; }
+  .lockup img { width: 84px; }
+  .lockup h2 { margin-top: 30px; font-size: 56px; font-weight: 500; letter-spacing: -0.03em; }
+  .lockup p { margin-top: 16px; color: var(--quiet); font-size: 24px; }
+</style>
+</head>
+<body>
+<div class="stage">
+
+  <section class="scene" id="s1">
+    <div class="studio">
+      <h1>Make an app you can send</h1>
+      <p class="sub">One sentence is enough.</p>
+      <div class="bigbar">
+        <div class="words"><span id="typed"></span><span class="caret" id="caret"></span></div>
+        <div class="row">
+          <span class="tool">&#128206;&ensp;Add a picture or file</span>
+          <span class="go" id="goBtn">&uarr;</span>
+        </div>
+      </div>
+      <div class="aichip"><i></i>Built by your own AI</div>
+    </div>
+    <p class="verb" id="v1">Type a sentence.</p>
+  </section>
+
+  <section class="scene" id="s2">
+    <div class="done" id="doneCard">
+      <div class="shot">
+        <img src="assets/ratecard.png" alt="" />
+        <div class="cap"><b>RateCard.krate</b><span>33 KB</span>
+          <span class="trust">can open a window &middot; cannot use the network</span></div>
+      </div>
+      <div class="meta">
+        <p class="sz">33 KB &middot; runs on Mac, Windows and Linux &middot; asks: open a window</p>
+        <div class="verbs"><span class="pri">Open it</span><span>Send</span><span>Change</span></div>
+      </div>
+    </div>
+    <p class="verb" id="v2">A file appears.<small>Yours, like a photo. No store.</small></p>
+  </section>
+
+  <section class="scene" id="s3">
+    <div class="desk"></div>
+    <div class="file" id="fileIcon">
+      <div class="icon"><img src="assets/krate-glyph-white.png" alt="" /></div>
+      <p class="nm">RateCard.krate</p>
+    </div>
+    <div class="ripple" id="rip1"></div>
+    <div class="ripple" id="rip2"></div>
+    <svg class="cursor" id="cursor" viewBox="0 0 24 24" fill="#fff" stroke="#000" stroke-width="1">
+      <path d="M4 2l16 12-7 1 4 7-3.5 1.6-4-7L4 21z"/></svg>
+    <div class="sheet" id="sheet">
+      <img src="assets/krate-glyph-white.png" alt="" />
+      <h3>Install Krate to open this?</h3>
+      <p>A small free player, once. After it, every app anyone
+      sends just opens.</p>
+      <span class="btn" id="sheetBtn">Install and open</span>
+      <div class="bar" id="sheetBar"><i id="sheetFill"></i></div>
+    </div>
+    <p class="verb" id="v3">They double-click it.<small>No account. Krate installs once.</small></p>
+  </section>
+
+  <section class="scene" id="s4">
+    <div class="desk"></div>
+    <div class="openwin" id="openwin">
+      <div class="bar2"><div class="dots"><i></i><i></i><i></i></div><span class="t">Rate Card</span></div>
+      <img src="assets/ratecard.png" alt="" />
+      <div class="trust">can open a window &middot; cannot use the network</div>
+    </div>
+    <p class="verb" id="v4">It opens.<small>Theirs to keep.</small></p>
+    <div class="lockup" id="lockup">
+      <img src="assets/krate-glyph-white.png" alt="" />
+      <h2>Make an app you can send.</h2>
+      <p>krate.tech</p>
+    </div>
+  </section>
+
+</div>
+
+<script>
+/* Deterministic timeline: SEEK(ms) renders the exact frame for that time.
+ * Same contract every Promo shell uses, so capture12's runner pattern
+ * works unchanged. */
+const TOTAL = 20000;
+const PARTS = [
+  { name: "type", start: 0, end: 5000 },
+  { name: "file", start: 5000, end: 9600 },
+  { name: "click", start: 9600, end: 15600 },
+  { name: "open", start: 15600, end: 20000 },
+];
+window.TOTAL = TOTAL;
+window.PARTS = PARTS;
+
+const SENTENCE = "A rate card for my studio -- the client types days and sees the total. It cannot use the network.";
+
+const $ = (id) => document.getElementById(id);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+/* 0..1 progress of t through [a, b], eased with the site's own curve. */
+const seg = (t, a, b) => clamp((t - a) / (b - a), 0, 1);
+const ease = (x) => 1 - Math.pow(1 - x, 3);
+
+function show(el, on, rise) {
+  el.style.opacity = on;
+  if (rise !== undefined) el.style.transform = `translateY(${rise}px)`;
+}
+
+window.SEEK = function (t) {
+  const scenes = { s1: [0, 5000], s2: [5000, 9600], s3: [9600, 15600], s4: [15600, 20000] };
+  for (const [id, [a, b]] of Object.entries(scenes)) {
+    const el = $(id);
+    /* Scene cuts are 240ms crossfades. */
+    const fin = seg(t, a, a + 240), fout = 1 - seg(t, b - 240, b);
+    el.style.opacity = (t >= a - 240 && t < b + 240) ? Math.min(fin, fout) : 0;
+    el.style.zIndex = t >= a && t < b ? 2 : 1;
+  }
+
+  /* P1: the sentence types from 600ms, ~34ms a character; the send button
+     fills when it is done. */
+  const chars = Math.floor(clamp((t - 600) / 34, 0, SENTENCE.length));
+  $("typed").textContent = SENTENCE.slice(0, chars);
+  $("caret").style.opacity = t < 4500 ? (Math.floor(t / 530) % 2 ? 0 : 1) : 0;
+  $("goBtn").style.transform = chars >= SENTENCE.length && t > 4400 ? "scale(0.9)" : "scale(1)";
+  show($("v1"), seg(t, 900, 1300));
+
+  /* P2: the card blooms. */
+  const p2 = ease(seg(t, 5100, 5750));
+  $("doneCard").style.transform = `translateY(${28 * (1 - p2)}px) scale(${0.96 + 0.04 * p2})`;
+  $("doneCard").style.opacity = p2;
+  show($("v2"), seg(t, 6000, 6400));
+
+  /* P3: cursor glides to the file, double-clicks, the sheet rises, the
+     button presses itself, the thin bar fills. */
+  const cx = 1350 - 340 * ease(seg(t, 9800, 10900));
+  const cy = 780 - 210 * ease(seg(t, 9800, 10900));
+  $("cursor").style.left = cx + "px";
+  $("cursor").style.top = cy + "px";
+  $("cursor").style.opacity = t > 9700 && t < 12100 ? 1 : 0;
+  for (const [id, at] of [["rip1", 11050], ["rip2", 11230]]) {
+    const r = seg(t, at, at + 620);
+    const el = $(id);
+    el.style.opacity = r > 0 && r < 1 ? 0.7 * (1 - r) : 0;
+    el.style.transform = `translate(-50%,-50%) scale(${1 + 2.6 * r})`;
+  }
+  const fdim = seg(t, 11250, 11700);
+  $("fileIcon").style.opacity = 1 - 0.75 * fdim;
+  $("fileIcon").style.filter = `blur(${4 * fdim}px)`;
+  const sh = ease(seg(t, 11500, 12050));
+  $("sheet").style.opacity = sh;
+  $("sheet").style.transform = `translate(-50%,-50%) translateY(${24 * (1 - sh)}px)`;
+  const pressed = t >= 13100;
+  $("sheetBtn").style.transform = t >= 13000 && t < 13220 ? "scale(0.94)" : "scale(1)";
+  $("sheetBtn").style.display = pressed ? "none" : "inline-block";
+  $("sheetBar").style.display = pressed ? "block" : "none";
+  $("sheetFill").style.width = 100 * seg(t, 13150, 15150) + "%";
+  show($("v3"), seg(t, 10300, 10700));
+
+  /* P4: the window unfolds where the sheet stood; then the lockup. */
+  const ow = ease(seg(t, 15700, 16350));
+  $("openwin").style.opacity = ow;
+  $("openwin").style.transform = `translate(-50%,-50%) translateY(${18 * (1 - ow)}px) scale(${0.97 + 0.03 * ow})`;
+  show($("v4"), seg(t, 16500, 16900));
+  const lk = seg(t, 18300, 18800);
+  $("lockup").style.opacity = lk;
+};
+window.SEEK(0);
+</script>
+</body>
+</html>
