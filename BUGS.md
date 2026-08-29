@@ -71,6 +71,31 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-199 -- a mid-list target table made half the studio's deps macOS-only, and no studio step had the continue-on-error its comments promise
+
+Status:   FIXED in repo: the objc2 table moved below [dependencies] with a
+          comment naming the trap, and all three Build Krate Studio steps
+          now carry the continue-on-error: true their comments claimed for
+          three releases. Verified by cargo metadata + a clean mac check;
+          the Linux proof is the v0.2.2 retag build.
+Owner:    main repo, Claude (repositioning session, 2026-08-30)
+Severity: high (sank the x86_64 Linux job of the v0.2.2 release run)
+Class:    our-code
+Found:    2026-08-30, by the v0.2.2 release run.
+Evidence: run 33262808589, Build (x86_64-unknown-linux-gnu): failure --
+          "Permission notification:default not found" from krate-studio's
+          build script, listing only core:* permissions. The share-sheet
+          commit added [target.'cfg(target_os = "macos")'.dependencies]
+          in the MIDDLE of [dependencies]; TOML tables run until the next
+          header, so serde, serde_json, base64, rfd, libc, url, ureq,
+          sha2, tauri-plugin-notification and zip all silently became
+          macOS-only. Every Mac build (CI and this workstation) stayed
+          green, which is why it shipped. Second half: the workflow's
+          studio steps say "continue-on-error: the studio is pre-beta and
+          the runtime release must not fail because a pre-beta GUI did"
+          -- and no studio step ever had the flag, so the pre-beta GUI
+          did exactly that to a whole platform.
+
 ### K-198 -- the pack does not make the clock believable; grok argued itself out of time.clock and burned 25 minutes re-reading
 
 Status:   taught (46ec5d917): the pack gained "The clock is real" -- the

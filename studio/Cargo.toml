@@ -21,14 +21,6 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
-
-# The macOS share sheet: Send the file must put the card in AirDrop, Mail
-# and Messages, not just a Finder window. Same objc2 versions the macOS
-# adapter pins, so the two never fight over a symbol.
-[target.'cfg(target_os = "macos")'.dependencies]
-objc2 = "0.6.4"
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSApplication", "NSResponder", "NSSharingService", "NSView", "NSWindow", "NSGraphics", "objc2-core-foundation"] }
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSArray", "NSGeometry", "NSObject", "NSString", "NSURL", "objc2-core-foundation"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"
@@ -47,6 +39,18 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 
 # Detached from the repository workspace on purpose; see the header comment.
 [workspace]
+
+# The macOS share sheet: Send the file must put the card in AirDrop, Mail
+# and Messages, not just a Finder window. Same objc2 versions the macOS
+# adapter pins, so the two never fight over a symbol. This table sits BELOW
+# [dependencies] on purpose: a target table opened mid-list once swallowed
+# every dependency written after it -- serde through the notification
+# plugin quietly became macOS-only, and the Linux studio died in CI on a
+# missing notification permission while every Mac build stayed green.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.4"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSApplication", "NSResponder", "NSSharingService", "NSView", "NSWindow", "NSGraphics", "objc2-core-foundation"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSArray", "NSGeometry", "NSObject", "NSString", "NSURL", "objc2-core-foundation"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading"] }
