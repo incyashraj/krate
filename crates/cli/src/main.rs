@@ -482,6 +482,41 @@ enum Command {
         agent: Option<String>,
     },
 
+    /// Turn an app into a card: one file that is a picture of the app AND
+    /// the app itself.
+    ///
+    /// The output is a valid PNG -- the app's window with a caption strip
+    /// naming the file, its size, and what it is allowed to touch -- with
+    /// the full bundle riding behind the picture. Image viewers see the
+    /// picture; Krate reads the app straight out of the same bytes. Send it
+    /// as a file (mail, AirDrop, a chat's paperclip): sent as a "photo",
+    /// chat apps re-encode the image and strip the app half.
+    Card {
+        /// Path to the .krate bundle to turn into a card.
+        bundle: PathBuf,
+
+        /// Where to write the card. Defaults to the app's name next to the
+        /// input, e.g. RateCard.krate.
+        #[arg(long, short = 'o')]
+        output: Option<PathBuf>,
+
+        /// Also write the same bytes under a .png name, for places that
+        /// only take pictures. That copy still runs: `krate run Card.png`
+        /// works, but chat apps treat a .png as a photo and re-encode it.
+        #[arg(long)]
+        png_copy: bool,
+
+        /// Milliseconds the app runs before its window is photographed, so
+        /// the still shows a settled first frame rather than a blank one.
+        #[arg(long, default_value_t = 900)]
+        settle_ms: u64,
+
+        /// Use this PNG as the card's face instead of photographing the
+        /// app.
+        #[arg(long)]
+        shot: Option<PathBuf>,
+    },
+
     Publish {
         /// Path to the .krate bundle to upload.
         bundle: PathBuf,
@@ -1190,6 +1225,13 @@ fn run() -> Result<u8> {
             manifest,
             output,
         } => pack_bundle(&file, &manifest, &output),
+        Command::Card {
+            bundle,
+            output,
+            png_copy,
+            settle_ms,
+            shot,
+        } => card_bundle(&bundle, output.as_deref(), png_copy, settle_ms, shot.as_deref()),
         Command::UsageFlush => {
             usage::flush_spool_now();
             Ok(0)
@@ -3636,6 +3678,354 @@ const DEFAULT_HUB_URL: &str = "https://hub.krate.tech";
 /// The menu could build an app and open it but never offered to share it,
 /// which is the one thing a `.krate` exists for. This is the same code path as
 /// `krate publish`, so there is one publisher rather than two that can drift.
+/// One sentence of trust for the card's caption: what the app may touch, in
+/// the same plain words the consent prompt uses, ending with the guarantee
+/// that makes the sentence worth printing.
+fn card_trust_line(manifest: &krate_manifest::Manifest) -> String {
+    let caps = match manifest.declared_capabilities() {
+        Ok(caps) => caps,
+        Err(_) => return "shows what it may touch before it runs".to_string(),
+    };
+    let mut labels: Vec<String> = Vec::new();
+    for cap in &caps {
+        // Default-granted plumbing (io.args, io.stdout and friends) is never
+        // asked about in the consent prompt, so it does not belong on the
+        // one line a stranger reads before daring to tap. The window stays
+        // even though it is default-granted: "can open a window · nothing
+        // else" is the whole sentence, and a card that hides the window
+        // would claim the app does nothing visible at all.
+        if cap.is_default_granted() && !(cap.module() == "ui" && cap.action() == "window") {
+            continue;
+        }
+        let label = human_label(cap);
+        if !labels.contains(&label) {
+            labels.push(label);
+        }
+    }
+    if labels.is_empty() {
+        return "asks for nothing beyond the basics".to_string();
+    }
+    format!("can {} · nothing else", labels.join(" · "))
+}
+
+/// The card's default file stem: the app's name with the spaces closed up
+/// and anything a filesystem would object to dropped. "Rate card" becomes
+/// RateCard, which is the name a person forwards without thinking about it.
+fn card_file_stem(name: &str) -> String {
+    let mut stem = String::new();
+    for word in name.split_whitespace() {
+        let mut chars = word.chars().filter(|c| c.is_alphanumeric());
+        if let Some(first) = chars.next() {
+            stem.extend(first.to_uppercase());
+            stem.extend(chars);
+        }
+    }
+    if stem.is_empty() {
+        stem.push_str("App");
+    }
+    stem
+}
+
+/// Read a PNG into host pixels. Only the shapes our own `--shoot` writer and
+/// ordinary screenshots produce -- 8-bit RGB and RGBA -- because the input
+/// is a picture Krate itself just took, not the open web.
+fn read_png_rgba(path: &Path) -> Result<krate_adapter_common::ui::ImagePixels> {
+    let file = fs::File::open(path)
+        .with_context(|| format!("could not open the still at {}", path.display()))?;
+    let decoder = png::Decoder::new(std::io::BufReader::new(file));
+    let mut reader = decoder
+        .read_info()
+        .with_context(|| format!("{} is not a readable PNG", path.display()))?;
+    let mut buf = vec![0u8; reader.output_buffer_size().unwrap_or_default()];
+    let info = reader
+        .next_frame(&mut buf)
+        .with_context(|| format!("could not decode the still at {}", path.display()))?;
+    let pixels = &buf[..info.buffer_size()];
+    let rgba = match info.color_type {
+        png::ColorType::Rgba => pixels.to_vec(),
+        png::ColorType::Rgb => {
+            let mut out = Vec::with_capacity(pixels.len() / 3 * 4);
+            for px in pixels.chunks_exact(3) {
+                out.extend_from_slice(px);
+                out.push(0xFF);
+            }
+            out
+        }
+        other => anyhow::bail!(
+            "the still at {} is {other:?}; the card face needs 8-bit RGB or RGBA",
+            path.display()
+        ),
+    };
+    krate_adapter_common::ui::ImagePixels::new(info.width, info.height, rgba)
+        .map_err(|err| anyhow::anyhow!("the still could not become pixels: {err}"))
+}
+
+/// Compose the card's face: the app's still with a caption strip under it --
+/// filename and size on the first line, krate.tech/open on its right, and
+/// the trust line beneath. Returns encoded PNG bytes ready to carry the
+/// bundle behind them.
+fn compose_card_face(
+    shot: &krate_adapter_common::ui::ImagePixels,
+    name_label: &str,
+    size_label: &str,
+    trust: &str,
+) -> Result<Vec<u8>> {
+    use krate_adapter_common::vector_text::{
+        draw_canvas_text_styled, measure_canvas_text_styled, CanvasTarget, CanvasTextStyle,
+    };
+
+    let width = shot.width;
+    // The strip scales with the shot so a 2x HiDPI still gets a 2x caption,
+    // clamped so a tiny test image still has room for two readable lines.
+    let bar = ((shot.height as f32) * 0.11).round().clamp(76.0, 152.0) as u32;
+    let height = shot.height + bar;
+
+    // Ground everything in the site's panel color, then lay the shot on top.
+    const BAR_BG: u32 = 0xFF0F1012;
+    const HAIRLINE: u32 = 0xFF1F2228;
+    const INK: u32 = 0xFFFFFFFF;
+    const MUTED: u32 = 0xFF8B8E94;
+    const QUIET: u32 = 0xFF5C5F66;
+    let mut buffer = vec![BAR_BG; (width as usize) * (height as usize)];
+    for row in 0..shot.height as usize {
+        for col in 0..width as usize {
+            let src = (row * width as usize + col) * 4;
+            let px = 0xFF000000
+                | (u32::from(shot.rgba[src]) << 16)
+                | (u32::from(shot.rgba[src + 1]) << 8)
+                | u32::from(shot.rgba[src + 2]);
+            buffer[row * width as usize + col] = px;
+        }
+    }
+    let k = bar as f32 / 88.0;
+    let hairline_px = (k.round() as usize).max(1);
+    for row in 0..hairline_px {
+        let y = shot.height as usize + row;
+        let start = y * width as usize;
+        buffer[start..start + width as usize].fill(HAIRLINE);
+    }
+
+    let pad = (bar as f32 * 0.18).round();
+    let name_size = bar as f32 * 0.22;
+    let meta_size = bar as f32 * 0.19;
+    let line1 = shot.height as f32 + bar as f32 * 0.42;
+    let line2 = shot.height as f32 + bar as f32 * 0.78;
+    let bold = CanvasTextStyle {
+        weight: 500,
+        ..CanvasTextStyle::default()
+    };
+    let plain = CanvasTextStyle::default();
+
+    let measure = |text: &str, size: f32, style: CanvasTextStyle| -> f32 {
+        measure_canvas_text_styled(text, size, style)
+            .map(|m| m.width)
+            .unwrap_or(0.0)
+    };
+    // A caption that does not fit is cut with an ellipsis rather than drawn
+    // off the edge; the full words are one `--dump-caps` away.
+    let elide = |text: &str, size: f32, style: CanvasTextStyle, avail: f32| -> String {
+        if measure(text, size, style) <= avail {
+            return text.to_string();
+        }
+        let mut out: String = text.to_string();
+        while !out.is_empty() {
+            out.pop();
+            let candidate = format!("{}…", out.trim_end());
+            if measure(&candidate, size, style) <= avail {
+                return candidate;
+            }
+        }
+        String::new()
+    };
+
+    // On a host with no usable fonts these draws report false and the strip
+    // stays a colored band; the card still works, it just says less. The
+    // caller mentions it rather than failing the whole card over a caption.
+    let mut drew = true;
+    macro_rules! target {
+        () => {
+            CanvasTarget {
+                buffer: &mut buffer,
+                width,
+                height,
+            }
+        };
+    }
+    drew &= draw_canvas_text_styled(target!(), name_label, pad, line1, name_size, INK, bold);
+    let name_w = measure(name_label, name_size, bold);
+    drew &= draw_canvas_text_styled(
+        target!(),
+        size_label,
+        pad + name_w + name_size * 0.6,
+        line1,
+        meta_size,
+        MUTED,
+        plain,
+    );
+    const OPEN_URL: &str = "krate.tech/open";
+    let url_w = measure(OPEN_URL, meta_size, plain);
+    drew &= draw_canvas_text_styled(
+        target!(),
+        OPEN_URL,
+        (width as f32 - pad - url_w).max(pad),
+        line1,
+        meta_size,
+        QUIET,
+        plain,
+    );
+    // When the trust line must shrink, the capability list shrinks and the
+    // guarantee survives: "· nothing else" is the reason the line exists,
+    // so it is the last thing allowed to disappear.
+    let avail = width as f32 - pad * 2.0;
+    const TAIL: &str = " · nothing else";
+    let trust_fit = if measure(trust, meta_size, plain) <= avail {
+        trust.to_string()
+    } else if let Some(body) = trust.strip_suffix(TAIL) {
+        let tail_w = measure(TAIL, meta_size, plain);
+        format!("{}{TAIL}", elide(body, meta_size, plain, (avail - tail_w).max(0.0)))
+    } else {
+        elide(trust, meta_size, plain, avail)
+    };
+    drew &= draw_canvas_text_styled(target!(), &trust_fit, pad, line2, meta_size, MUTED, plain);
+    if !drew {
+        eprintln!(
+            "note: no usable system fonts, so the caption strip is blank; the card still works"
+        );
+    }
+
+    let mut rgba = vec![0u8; buffer.len() * 4];
+    for (chunk, word) in rgba.chunks_exact_mut(4).zip(buffer.iter()) {
+        chunk[0] = (word >> 16) as u8;
+        chunk[1] = (word >> 8) as u8;
+        chunk[2] = *word as u8;
+        chunk[3] = (word >> 24) as u8;
+    }
+    let mut out = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut out, width, height);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder
+            .write_header()
+            .context("could not start the card's PNG")?;
+        writer
+            .write_image_data(&rgba)
+            .context("could not encode the card's PNG")?;
+    }
+    Ok(out)
+}
+
+fn card_bundle(
+    bundle: &Path,
+    output: Option<&Path>,
+    png_copy: bool,
+    settle_ms: u64,
+    shot: Option<&Path>,
+) -> Result<u8> {
+    if !krate_bundle::is_bundle_path(bundle) {
+        anyhow::bail!(
+            "not a .krate bundle: {}\nPack one first with `krate pack` (or `krate create`).",
+            bundle.display()
+        );
+    }
+    let opened = krate_bundle::open(bundle)
+        .with_context(|| format!("could not open {}", bundle.display()))?;
+    let app_name = opened.manifest().app.name.clone();
+    let trust = card_trust_line(opened.manifest());
+    drop(opened);
+
+    // The face: an existing still, or the app photographed by the same
+    // `run --shoot` a person would use by hand. A separate process rather
+    // than an in-process run, so a misbehaving app cannot take the card
+    // command down with it.
+    let temp = tempfile::TempDir::new().context("could not make a working folder")?;
+    let shot_path: PathBuf = match shot {
+        Some(path) => path.to_path_buf(),
+        None => {
+            let dest = temp.path().join("face.png");
+            let me = std::env::current_exe().context("could not find the krate binary")?;
+            let status = std::process::Command::new(&me)
+                .arg("run")
+                .arg(bundle)
+                .arg("--shoot")
+                .arg(&dest)
+                .arg("--auto-grant")
+                .env("KRATE_SHOOT_AFTER_MS", settle_ms.to_string())
+                // The app's own prints belong to the app, not to the card
+                // summary. Errors still come through on stderr.
+                .stdout(std::process::Stdio::null())
+                .status()
+                .context("could not run the app to photograph it")?;
+            if !status.success() || !dest.exists() {
+                anyhow::bail!(
+                    "the app did not paint a frame to photograph.\n\
+                     If it needs longer to settle, try --settle-ms 3000; or pass \
+                     an existing picture with --shot."
+                );
+            }
+            dest
+        }
+    };
+    let face_pixels = read_png_rgba(&shot_path)?;
+
+    let bundle_bytes =
+        fs::read(bundle).with_context(|| format!("could not read {}", bundle.display()))?;
+    let stem = card_file_stem(&app_name);
+    let size_label = format!("{} KB", (bundle_bytes.len() as f64 / 1024.0).ceil() as u64);
+    let out_path = match output {
+        Some(path) => path.to_path_buf(),
+        None => {
+            let parent = bundle.parent().unwrap_or_else(|| Path::new("."));
+            let candidate = parent.join(format!("{stem}.krate"));
+            // Carding RateCard.krate in place must not overwrite the input.
+            if candidate == bundle || fs::canonicalize(&candidate).ok() == fs::canonicalize(bundle).ok()
+            {
+                parent.join(format!("{stem}-card.krate"))
+            } else {
+                candidate
+            }
+        }
+    };
+    // The caption names the file the person will actually forward, so a
+    // custom --output shows its own name, not a guessed one.
+    let name_label = out_path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| format!("{stem}.krate"));
+    let face = compose_card_face(&face_pixels, &name_label, &size_label, &trust)?;
+    let mut card_bytes = face;
+    card_bytes.extend_from_slice(&bundle_bytes);
+    fs::write(&out_path, &card_bytes)
+        .with_context(|| format!("could not write {}", out_path.display()))?;
+
+    // Verify the two readings of the one file before claiming success: the
+    // bundle half by opening it, the picture half by decoding it. A card
+    // that only one kind of program can read is not a card.
+    let reopened = krate_bundle::open(&out_path)
+        .with_context(|| "the card did not open as a bundle afterwards")?;
+    anyhow::ensure!(
+        reopened.manifest().app.name == app_name,
+        "the card opened as a different app"
+    );
+    drop(reopened);
+    let face_check = read_png_rgba(&out_path)
+        .context("the card did not decode as a picture afterwards")?;
+
+    if png_copy {
+        let png_path = out_path.with_extension("png");
+        fs::write(&png_path, &card_bytes)
+            .with_context(|| format!("could not write {}", png_path.display()))?;
+        println!("Also wrote {} -- the same bytes, for places that only take pictures.", png_path.display());
+    }
+
+    println!("Card written: {} ({} KB)", out_path.display(), (card_bytes.len() as f64 / 1024.0).ceil() as u64);
+    println!("  the picture: {}x{} PNG -- opens in any image viewer", face_check.width, face_check.height);
+    println!("  the app:     {app_name}, {size_label} -- opens in Krate by double-click");
+    println!("  it says:     {trust}");
+    println!("Send it as a file (mail, AirDrop, a chat's paperclip). Sent as a \"photo\", chats re-encode the image and the app half is lost.");
+    Ok(0)
+}
+
 pub(crate) fn publish_bundle_for_tui(bundle: &Path, description: Option<&str>) -> Result<()> {
     let code = publish_bundle(bundle, None, description, None, None, None)?;
     if code == 0 {
@@ -13091,6 +13481,91 @@ fn run() -> i32 {
     fn an_unbounded_loop_is_correct() {
         let lib = "fn run() -> i32 { loop { match events::wait(None) { _ => {} } } }";
         assert!(bounded_interactive_loop(lib).is_none());
+    }
+}
+
+#[cfg(test)]
+mod card_tests {
+    use super::{card_file_stem, card_trust_line, compose_card_face};
+    use std::io::{Cursor, Write};
+
+    fn manifest_with(caps: &[&str]) -> krate_manifest::Manifest {
+        let mut toml = String::from(
+            "[app]\nid = \"dev.krate.card\"\nname = \"Rate card\"\nversion = \"0.1.0\"\n\
+             entry = \"code.wasm\"\nworld = \"krate:app/gui@0.2.0\"\n",
+        );
+        for cap in caps {
+            toml.push_str(&format!(
+                "\n[[capabilities]]\ncap = \"{cap}\"\nrationale = \"t\"\nrequired = true\n"
+            ));
+        }
+        krate_manifest::Manifest::parse(&toml).expect("manifest parses")
+    }
+
+    /// The caption uses the same words the consent prompt uses, ending with
+    /// the guarantee. This is the line a stranger reads before daring to tap.
+    #[test]
+    fn trust_line_reads_like_the_consent_prompt() {
+        let line = card_trust_line(&manifest_with(&["ui.window:create", "store.kv"]));
+        assert!(
+            line.starts_with("can "),
+            "the line states ability, got {line:?}"
+        );
+        assert!(line.ends_with("· nothing else"), "got {line:?}");
+        assert!(line.contains("window"), "got {line:?}");
+    }
+
+    #[test]
+    fn file_stem_closes_spaces_and_survives_odd_names() {
+        assert_eq!(card_file_stem("Rate card"), "RateCard");
+        assert_eq!(card_file_stem("tip / splitter!"), "TipSplitter");
+        assert_eq!(card_file_stem("   "), "App");
+    }
+
+    /// The one-file-two-programs property, end to end: a composed face with
+    /// a real zip bundle behind it decodes as a PNG from the front AND opens
+    /// as a bundle from the back. This is K-195's card mechanism as a test,
+    /// so nobody can break either half without hearing about it.
+    #[test]
+    fn a_card_reads_as_both_picture_and_bundle() {
+        // A minimal but real bundle: manifest first (as pack writes it), then
+        // the component entry.
+        let manifest_toml = "[app]\nid = \"dev.krate.card\"\nname = \"Rate card\"\n\
+             version = \"0.1.0\"\nentry = \"code.wasm\"\nworld = \"krate:app/gui@0.2.0\"\n";
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        zip.start_file("manifest.toml", stored).expect("start manifest");
+        zip.write_all(manifest_toml.as_bytes()).expect("write manifest");
+        zip.start_file("code.wasm", stored).expect("start component");
+        zip.write_all(b"\0asm\x01\0\0\0").expect("write component");
+        let bundle_bytes = zip.finish().expect("finish zip").into_inner();
+
+        // A real face over it, composed exactly as `krate card` composes one.
+        let shot = krate_adapter_common::ui::ImagePixels::new(
+            8,
+            8,
+            vec![0x80u8; 8 * 8 * 4],
+        )
+        .expect("shot pixels");
+        let face =
+            compose_card_face(&shot, "RateCard.krate", "1 KB", "can open a window · nothing else")
+                .expect("face composes");
+
+        let mut card = face.clone();
+        card.extend_from_slice(&bundle_bytes);
+
+        // Reading from the front: a picture, shot plus caption strip.
+        let decoder = png::Decoder::new(Cursor::new(card.as_slice()));
+        let mut reader = decoder.read_info().expect("the card fronts as a PNG");
+        let info = reader.info();
+        assert_eq!(info.width, 8);
+        assert!(info.height > 8, "the caption strip is part of the face");
+
+        // Reading from the back: the app, by the same open the runtime uses.
+        let opened =
+            krate_bundle::open_reader(Cursor::new(card)).expect("the card backs as a bundle");
+        assert_eq!(opened.manifest().app.name, "Rate card");
     }
 }
 

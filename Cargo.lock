@@ -2289,6 +2289,7 @@ dependencies = [
  "krate-presenter-gpu",
  "krate-runtime",
  "libc",
+ "png 0.18.1",
  "rfd",
  "serde",
  "serde_json",

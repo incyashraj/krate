@@ -73,8 +73,9 @@ Fix:      what needs to happen, or the commit that did it.
 
 ### K-195 -- a .krate sent to someone without Krate is a dead file
 
-Status:   unclaimed
-Owner:    unclaimed
+Status:   in progress -- `krate card` (option 4's making half) is implemented
+          with tests; the receiving half (first-click install) remains
+Owner:    main repo, Claude (repositioning session, 2026-08-29)
 Severity: blocker
 Class:    our-code
 Found:    2026-08-28, by Yashraj, thinking through what happens when a person
@@ -137,6 +138,22 @@ Next:     Decide which ships first. The link share (3) is the least code and
           -- the tap that wakes it -- which is the same install problem as
           (1) and (2), just with a far better first impression while it is
           being solved.
+Shipped   `krate card` is a real verb (2026-08-29). It photographs the app
+2026-08-29: with the same `run --shoot` a person would use, draws a caption
+          strip -- filename, size, krate.tech/open, and the consent prompt's
+          own words ending in "nothing else" -- and writes face+bundle as one
+          file. Measured on evidence/store/krate-checklist.krate:
+            krate card krate-checklist.krate -> Checklist.krate, 77 KB
+            file  -> PNG image data, 880x1376, RGBA
+            unzip -l -> manifest.toml + code.wasm
+            krate run Checklist.krate --shoot -> painted a frame
+          The verb self-verifies both readings before claiming success, and
+          card_tests::a_card_reads_as_both_picture_and_bundle locks the
+          mechanism in CI. Default-granted plumbing is filtered from the
+          trust line (io.args leaked as raw syntax on the first cut); the
+          window stays because "can open a window · nothing else" is the
+          sentence. Still open: the receiving half, and the Studio Send
+          button that calls this verb.
 
 
 ### K-194 -- some animating apps grow ~400 MB/sec until the machine dies; others are flat

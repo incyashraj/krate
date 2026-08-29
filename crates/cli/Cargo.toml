@@ -59,6 +59,10 @@ ureq.workspace = true
 tracing-subscriber.workspace = true
 calamine = "0.36"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+# The card face: decode the app's --shoot still, draw the caption strip,
+# encode the composed picture that the bundle bytes ride behind. Same
+# version as the runtime's encoder so the lockfile stays single.
+png = "0.18.1"
 
 # The native consent window is macOS-only today (P3-OPEN-01). Gated by target
 # so the AppKit crate never enters Linux or Windows CLI builds; those platforms
