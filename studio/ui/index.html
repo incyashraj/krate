@@ -113,28 +113,24 @@
 
       <div class="home-hero">
         <p class="home-greet reveal" id="homeGreet"></p>
-        <h1 class="display home-title reveal" id="homeTitle">Make an app you can actually send someone</h1>
+        <h1 class="display home-title reveal" id="homeTitle">Make an app you can send</h1>
         <p class="home-sub reveal">One sentence is enough. It becomes a real app you can send to anyone.</p>
         <div class="composer-shell reveal">
           <div class="bigbar">
             <div class="attach-row hidden" id="homeAttachRow"></div>
-            <textarea id="homePrompt" rows="1" placeholder="A habit tracker that saves my streaks…" autocomplete="off" spellcheck="false"></textarea>
+            <textarea id="homePrompt" rows="1" placeholder="A rate card for my studio -- the client types days and sees the total…" autocomplete="off" spellcheck="false"></textarea>
             <div class="bigbar-row">
               <button class="tool" id="homeAttachBtn">
                 <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M13 7.5l-4.9 4.9a3.2 3.2 0 01-4.5-4.5l5.3-5.3a2.1 2.1 0 013 3l-5.3 5.3a1 1 0 01-1.5-1.5L9.8 4.7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
                 Add a picture or file
               </button>
-              <button class="tool" id="openKrateBtn" title="Open a .krate you already have">
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 5.5A1.5 1.5 0 013.5 4h2.6l1.2 1.5h5.2A1.5 1.5 0 0114 7v4.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 11.5v-6z" stroke="currentColor" stroke-width="1.3"/></svg>
-                Open a .krate
-              </button>
               <button id="homeSend" class="send" title="Make it (Enter)"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 13V3.5M8 3.5L3.8 7.7M8 3.5l4.2 4.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
             </div>
           </div>
           <div class="sugg-list reveal" id="suggList">
-            <button type="button" data-sugg="a habit tracker that saves my streaks"><span class="trend"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.8 11.2L6 7l3 3 5.2-5.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.6 4.4h3.8v3.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>A habit tracker that saves my streaks<svg class="go" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8 6 12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-            <button type="button" data-sugg="a tip splitter for dinners with friends"><span class="trend"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.8 11.2L6 7l3 3 5.2-5.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.6 4.4h3.8v3.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>A tip splitter for dinners with friends<svg class="go" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8 6 12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-            <button type="button" data-sugg="a snake game I can play offline"><span class="trend"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.8 11.2L6 7l3 3 5.2-5.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.6 4.4h3.8v3.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>A snake game I can play offline<svg class="go" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8 6 12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button type="button" data-sugg="a rate card for my studio -- day rate 800, extra hour 120, rush adds 25 percent; the client types days and extra hours and sees the total. It cannot use the network"><span class="trend"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.8 11.2L6 7l3 3 5.2-5.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.6 4.4h3.8v3.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>A rate card my client can keep<svg class="go" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8 6 12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button type="button" data-sugg="a tip-out for tonight -- staff type the night total; bar gets 40 percent, floor 35, kitchen 25. It cannot use the network"><span class="trend"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.8 11.2L6 7l3 3 5.2-5.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.6 4.4h3.8v3.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>A tip-out for tonight’s staff<svg class="go" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8 6 12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button type="button" data-sugg="a week 3 heat-loss lab for my class -- three checks and a score at the bottom; students open the file, no account. It cannot use the network"><span class="trend"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.8 11.2L6 7l3 3 5.2-5.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.6 4.4h3.8v3.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>A lab my students just open<svg class="go" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8 6 12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
           </div>
           <div class="airow">
             <button class="aichip" id="builtByChip"><span class="dot" id="builtByDot"></span>Built by <b id="builtByName">…</b><span class="chev">· change ▾</span></button>
@@ -200,14 +196,13 @@
               <img id="buildShot" alt="Your app so far" />
               <span class="build-shot-tag">your app so far</span>
             </div>
-            <ol class="stages" id="stages"></ol>
+            <p class="now-stage" id="nowStage">Making it · a few minutes</p>
             <div class="bpeek" id="peekBox"><span id="nowLine">warming up…</span><span class="caret"></span></div>
-            <p class="now-stage hidden" id="nowStage"></p>
             <details class="build-log-wrap">
               <summary>the full log</summary>
               <pre class="build-log" id="buildLog"></pre>
             </details>
-            <div class="bfoot"><button id="stopBtn">Stop</button><span id="stepCount"></span></div>
+            <div class="bfoot"><button id="stopBtn">Stop</button></div>
           </div>
         </div>
 
@@ -216,6 +211,11 @@
             <div class="shot-stage">
               <img id="shot" alt="Your app, as it renders" />
               <span class="sheen" aria-hidden="true"></span>
+              <div class="shot-cap">
+                <span class="shot-cap-name" id="capName"></span>
+                <span class="shot-cap-size" id="capSize"></span>
+                <span class="shot-cap-trust" id="capTrust"></span>
+              </div>
             </div>
             <div class="done-meta">
               <p class="done-name" id="doneName"></p>
@@ -223,9 +223,9 @@
               <ul class="asks" id="asks"></ul>
               <div class="done-actions">
                 <button class="btn btn-primary" id="openBtn">Open it</button>
-                <button class="btn" id="shareBtn">Share</button>
+                <button class="btn" id="shareBtn">Send</button>
+                <button class="btn" id="changeBtn">Change</button>
                 <button class="btn btn-ghost" id="infoBtn">More info</button>
-                <button class="btn btn-ghost" id="revealBtn">Show the file</button>
               </div>
               <div class="share-result hidden" id="shareResult">
                 <span class="link" id="shareLink"></span>
@@ -260,7 +260,10 @@
             <h1>Your apps</h1>
             <p>Everything you have made on this computer. Open one to change it or send it on.</p>
           </div>
-          <div class="side"><span class="set-val" id="appsCount"></span></div>
+          <div class="side">
+            <button class="btn btn-ghost" id="openKrateBtn" title="Open a .krate you already have">Open a file</button>
+            <span class="set-val" id="appsCount"></span>
+          </div>
         </div>
         <div class="apps-grid" id="appsGrid"></div>
       </div>
@@ -278,6 +281,14 @@
           <div>
             <h1>Settings</h1>
             <p>How Krate builds, and where it puts what it makes.</p>
+          </div>
+        </div>
+
+        <div class="set-group">
+          <h2>Made by others</h2>
+          <div class="set-row">
+            <div><div class="nm">The shared gallery</div><div class="sub">Apps people have published, each one a file you can run.</div></div>
+            <button class="btn btn-ghost" id="galleryBtn">See what others made</button>
           </div>
         </div>
 
@@ -538,7 +549,7 @@
           run. For when you cannot drop a file.</span>
         </button>
         <button class="send-opt send-opt-quiet" id="sendRawBtn" type="button">
-          <b>Show the plain file</b>
+          <b>Reveal in Finder</b>
           <span>The bare .krate, in its folder.</span>
         </button>
       </div>
@@ -611,16 +622,17 @@
       <h2>Your AI</h2>
       <p class="sheet-sub">Krate works with the AI you already have. Pick one that's
       ready, or follow its one-line fix. Your AI's sign-in stays with that tool - Krate never holds its keys.</p>
-      <p class="ai-note">Every fix here you can also do yourself in a terminal --
-      the command is shown. The buttons run exactly that, so you never have to
-      leave this window. Just signed in somewhere else? Press Refresh.</p>
+      <p class="ai-note">The buttons here do the work. Prefer a terminal?
+      Each fix's exact command is under its Terminal fold. Just signed in
+      somewhere else? Press Refresh.</p>
       <div id="aiList"></div>
       <div class="ai-actions">
         <button class="btn" id="aiRefresh">Refresh</button>
         <span class="ai-refresh-note" id="aiRefreshNote"></span>
       </div>
-      <p class="sheet-foot">Using something else? Any tool that can edit files can
-      author Krate apps - run <code>krate create --help</code> and see <code>--author-cmd</code>.</p>
+      <details class="sheet-foot-fold"><summary>Using something else?</summary>
+      <p class="sheet-foot">Any tool that can edit files can author Krate apps -
+      run <code>krate create --help</code> and see <code>--author-cmd</code>.</p></details>
       <button class="btn btn-ghost sheet-close" data-close="aiSheet">Close</button>
     </div>
   </div>
@@ -661,7 +673,6 @@
         Home
       </button>
       <button data-page="apps">Your apps</button>
-      <button data-page="cloud">Shared</button>
       <button data-page="settings">Settings<span class="badge" id="dockBadge"></span></button>
     </nav>
     <button class="dock-solo" id="dockProfile" aria-label="Profile"><span class="in" id="dockInitial">·</span></button>

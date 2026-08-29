@@ -769,6 +769,7 @@ function restoreBuild(sessionId) {
       peek.id = "peekBox";
       peek.innerHTML = '<span id="nowLine"></span><span class="caret"></span>';
       const stagesEl = $("stages");
+    if (!stagesEl) { /* the step list is gone on purpose */ } else
       // Back where the markup puts it; advanceStage moves it under the live
       // row again below.
       if (stagesEl && stagesEl.parentElement === peekHome) {
@@ -779,7 +780,8 @@ function restoreBuild(sessionId) {
     } else if (peek && peekHome && peek.parentElement !== peekHome) {
       peekHome.appendChild(peek);
     }
-    $("stages").innerHTML = STAGES.map(
+    const _stagesEl = $("stages");
+  if (_stagesEl) _stagesEl.innerHTML = STAGES.map(
       (s) => `<li data-key="${s.key}"><span class="tick"></span>${s.label}</li>`,
     ).join("");
     const idx = rec.stageIndex;
@@ -851,7 +853,8 @@ function beginBuild(title, expect) {
   if (peek && peekHome && peek.parentElement !== peekHome) {
     peekHome.appendChild(peek);
   }
-  $("stages").innerHTML = STAGES.map(
+  const _stagesEl = $("stages");
+  if (_stagesEl) _stagesEl.innerHTML = STAGES.map(
     (s) => `<li data-key="${s.key}"><span class="tick"></span>${s.label}</li>`,
   ).join("");
   $("buildLog").textContent = "";
@@ -900,10 +903,7 @@ function beginBuild(title, expect) {
 /* One rail line when the work genuinely shifts -- not for every stage, or the
  * conversation fills with narration. Reading -> writing is the moment the
  * person has been waiting for, and finishing is the moment it is nearly done. */
-const STAGE_SAID = {
-  write: "Done reading. Writing your app's code now.",
-  done: "Code is written and tested. Packing it into one file.",
-};
+const STAGE_SAID = {};
 
 /* Lines that mean "a window is about to appear on your screen". When one of
    these is the live step, the build card says so plainly, because the flash
@@ -919,23 +919,7 @@ function advanceStage(key) {
   if (rec) rec.stageIndex = idx;
   // Two milestones worth saying out loud. Not five -- a chat that narrates
   // every step is noise, and the stage list already shows all of them.
-  if (STAGE_SAID[key]) sayTo(state.buildingSession || state.session, "KRATE", STAGE_SAID[key]);
-  document.querySelectorAll("#stages li").forEach((li, i) => {
-    li.className = i < idx ? "done" : i === idx ? "now" : "";
-  });
-  // The live detail belongs visually to the step doing the work.
-  const peek = $("peekBox");
-  const current = document.querySelector("#stages li.now");
-  if (peek && current) current.insertAdjacentElement("afterend", peek);
-  // One line at eye level says where we are; the full list stays one click
-  // away for anyone who wants it.
-  const nowStage = $("nowStage");
-  if (nowStage) nowStage.textContent = STAGES[idx].label;
-  const stepCount = $("stepCount");
-  if (stepCount) stepCount.textContent = `step ${idx + 1} of ${STAGES.length}`;
   if (state.buildChip) {
-    const phase = state.buildChip.querySelector("[data-phase]");
-    if (phase) phase.textContent = STAGES[idx].label.toLowerCase();
     const bar = state.buildChip.querySelector(".vbar i");
     if (bar) bar.style.transform = `scaleX(${(idx + 0.5) / STAGES.length})`;
   }
@@ -1100,6 +1084,12 @@ function fillDone(result, opts) {
   $("doneName").textContent = result.name;
   $("doneSize").textContent = result.size;
   $("asks").innerHTML = (result.asks || []).map((a) => `<li>${friendlyAsk(a)}</li>`).join("");
+  // The preview is the share object: the still with the card's own caption
+  // strip -- filename, size, and ONE human trust line. If someone
+  // screenshots this screen, they are screenshotting the card.
+  $("capName").textContent = result.name || "";
+  $("capSize").textContent = result.size || "";
+  $("capTrust").textContent = trustLine(result.asks || []);
   const shot = $("shot");
   const stage = $("shot").parentElement;
   if (result.shot) {
@@ -1215,6 +1205,24 @@ function failBuild(why, request) {
     $("failRaw").textContent = String(state.lastError || "").slice(-400);
   }
   show("failed");
+}
+
+/* The card's one-line trust sentence: the abilities in plain words, ending
+ * with the guarantee. Network absence is stated, because that is the line
+ * that makes a stranger dare to open it. */
+function trustLine(asks) {
+  const PLUMBING = /^(io\.|time\.|locale\.|gfx\.gpu)/;
+  const words = [];
+  for (const cap of asks) {
+    if (PLUMBING.test(String(cap))) continue;
+    const w = friendlyAsk(cap);
+    if (w && !words.includes(w)) words.push(w);
+    if (words.length === 2) break;
+  }
+  const net = asks.some((c) => String(c).startsWith("net."));
+  let line = words.length ? "can " + words.join(" · ") : "asks for nothing beyond a window";
+  if (!net) line += " · cannot use the network";
+  return line;
 }
 
 function friendlyAsk(cap) {
@@ -1815,19 +1823,27 @@ function openAiSheet() {
     const row = document.createElement("div");
     row.className = "ai-row";
     const dot = a.state === "working" ? "ok" : a.state === "not-ready" ? "warn" : "bad";
-    const detail =
+    // Human words on the row; the raw command and any long engine output
+    // live under a Terminal fold. A first-timer sees a state and a button,
+    // never an npm line or a stack trace.
+    const rawDetail =
       a.state === "working" ? (a.name === state.agent ? "ready · in use" : "ready")
       : a.detail || (a.state === "missing" ? "not installed" : "not ready");
+    const tooTechnical = a.state !== "working" && rawDetail.length > 80;
+    const detail = tooTechnical
+      ? (a.state === "missing" ? "needs a one-time install" : "not ready · details under Terminal")
+      : rawDetail;
+    const foldText = [tooTechnical ? rawDetail : "", a.remedy || ""].filter(Boolean).join("\n");
     row.innerHTML = `
       <span class="ai-mark">${aiLogo(a.name)}<i class="dot ${dot}"></i></span>
       <div class="grow">
         <p class="ai-name"></p>
         <p class="ai-detail"></p>
-        ${a.remedy ? `<p class="ai-remedy"></p>` : ""}
+        ${foldText ? `<details class="ai-terminal"><summary>Terminal</summary><pre class="ai-remedy"></pre></details>` : ""}
       </div>`;
     row.querySelector(".ai-name").textContent = a.label;
     row.querySelector(".ai-detail").textContent = detail;
-    if (a.remedy) row.querySelector(".ai-remedy").textContent = a.remedy;
+    if (foldText) row.querySelector(".ai-remedy").textContent = foldText;
     if (a.state === "working" && a.name !== state.agent) {
       const use = document.createElement("button");
       use.className = "btn";
@@ -3043,6 +3059,12 @@ async function stopBuild() {
 $("stopBtn").addEventListener("click", stopBuild);
 $("openBtn").addEventListener("click", openApp);
 $("shareBtn").addEventListener("click", openSendSheet);
+$("changeBtn").addEventListener("click", () => {
+  // Change is the composer, not a fourth mystery: put the cursor where
+  // the next sentence goes.
+  const box = $("prompt");
+  if (box) { box.focus(); box.scrollIntoView({ block: "end", behavior: "smooth" }); }
+});
 $("sendCardBtn").addEventListener("click", sendCard);
 $("sendLinkBtn").addEventListener("click", () => {
   $("sendSheet").classList.add("hidden");
@@ -3057,15 +3079,10 @@ $("pubGo").addEventListener("click", publishFromSheet);
 $("pubShotPick").addEventListener("click", () => pickPublishImage("shot"));
 $("pubIconPick").addEventListener("click", () => pickPublishImage("icon"));
 $("infoBtn").addEventListener("click", showInfo);
-$("revealBtn").addEventListener("click", async () => {
-  const app = currentApp();
-  if (!app) return;
-  try {
-    await invoke("reveal", { path: app.path });
-  } catch (err) {
-    showActionError(err);
-  }
-});
+{
+  const g = $("galleryBtn");
+  if (g) g.addEventListener("click", () => show("cloud"));
+}
 $("reportBtn")?.addEventListener("click", openReportSheet);
 $("repSend")?.addEventListener("click", sendReport);
 $("repReveal")?.addEventListener("click", () => {

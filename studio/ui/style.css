@@ -2412,3 +2412,41 @@ body.resizing .divider::after { background: var(--blue); }
 .send-done p { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
 body.light .send-opt { background: #f4f5f7; border-color: #e3e5ea; }
 body.light .send-opt span, body.light .send-done p { color: rgba(0,0,0,0.55); }
+
+/* --------------------------------------------- the done card is the card */
+/* The preview carries the card's own caption strip, so screenshotting the
+   done screen is screenshotting the share object. */
+.shot-stage { position: relative; }
+.shot-cap {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  padding: 9px 13px; border-top: 1px solid var(--line);
+  background: var(--panel-raised); font-size: 11.5px; color: var(--muted);
+}
+.shot-cap-name { color: var(--text); font-weight: 500; }
+.shot-cap-trust { margin-left: auto; color: var(--muted); text-align: right; }
+.shot-stage.no-shot .shot-cap { border-top: none; }
+/* The one human line is the loudest thing after the name; size and minutes
+   stay quiet. */
+.asks { font-size: 13.5px; }
+.asks li:first-child { color: var(--text); }
+.now-stage { font-size: 14px; color: var(--muted); }
+
+/* ------------------------------------------------ the AI sheet's fold */
+.ai-terminal { margin-top: 4px; }
+.ai-terminal summary {
+  cursor: pointer; list-style: none; font-size: 11.5px; color: var(--muted);
+  letter-spacing: 0.04em;
+}
+.ai-terminal summary::-webkit-details-marker { display: none; }
+.ai-terminal summary::after { content: " ›"; }
+.ai-terminal[open] summary::after { content: " ⌄"; }
+.ai-terminal .ai-remedy {
+  margin-top: 6px; padding: 8px 10px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--panel);
+  font-family: var(--mono, ui-monospace, monospace); font-size: 11px;
+  color: var(--muted); white-space: pre-wrap; word-break: break-all;
+}
+.sheet-foot-fold summary { cursor: pointer; font-size: 12.5px; color: var(--muted); list-style: none; }
+.sheet-foot-fold summary::-webkit-details-marker { display: none; }
+.sheet-foot-fold summary::after { content: " ›"; }
+.sheet-foot-fold[open] summary::after { content: " ⌄"; }
