@@ -1612,7 +1612,7 @@ img.cloud-icon { object-fit: cover; }
 /* The rail-stage panel, exactly the agreed frame: full height, flat,
    steps as the content, footer pinned to the bottom. */
 .build-card.brail {
-  width: min(560px, 94%);
+  width: min(620px, 94%);
   padding: 26px 28px 22px;
   /* Was `height: calc(100% - 56px)` + `overflow: hidden`. When the stages, the
      peek and an open "full log" grew past that fixed height, hidden clipped the
@@ -1628,7 +1628,7 @@ img.cloud-icon { object-fit: cover; }
    floor -- never the words, never the 3px track (a shrinkable track
    rendered at literal zero height, and an unclipped card let the live
    line spill past its own border; both shipped, both photographed). */
-.brail .build-shot { margin: 0 0 20px; flex: 0 1 auto; height: 220px; min-height: 120px; }
+.brail .build-shot { margin: 0 0 20px; flex: 0 1 auto; height: 300px; min-height: 140px; }
 .brail .build-shot img { width: 100%; height: 100%; max-height: none; object-fit: cover; object-position: top; }
 .brail .build-head,
 .brail .build-title,

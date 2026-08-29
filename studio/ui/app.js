@@ -3547,6 +3547,12 @@ function openMakeitSheet() {
   $("makeitRecap").textContent =
     "“" + req.slice(0, 160) + (req.length > 160 ? "…" : "") + "”";
   $("makeitNote").textContent = "";
+  // Ask for the email once, ever: the GitHub sign-in deliberately never
+  // gives us one (minimum scope), so the first send remembers it.
+  try {
+    const known = localStorage.getItem("krateMakeitEmail") || "";
+    if (known && !$("makeitEmail").value) $("makeitEmail").value = known;
+  } catch (e) {}
   $("makeitSend").disabled = false;
   $("makeitSend").textContent = "Send it to Krate";
   $("makeitSheet").classList.remove("hidden");
@@ -3569,6 +3575,7 @@ $("makeitSend")?.addEventListener("click", async () => {
       agent: state.agent || "",
       why: state.makeit.why,
     });
+    try { localStorage.setItem("krateMakeitEmail", email); } catch (e) {}
     $("makeitSend").textContent = "Sent";
     $("makeitNote").textContent =
       "Done - the finished file lands in your inbox, usually within a day.";
@@ -3876,7 +3883,14 @@ async function loadAppsPage() {
   try {
     const sessions = await invoke("sessions_list");
     renderSessions(sessions || []);
-    const made = (sessions || []).filter((s) => s.result && s.result.path).length;
+    // Count what the grid shows: files, deduped by path -- not sessions.
+    // Three edits to one app are one app, and the chip saying 21 over a
+    // grid of 12 read as a bug (it was one).
+    const made = new Set(
+      (sessions || [])
+        .filter((s) => s.result && s.result.path)
+        .map((s) => s.result.path),
+    ).size;
     const count = $("appsCount");
     if (count) count.textContent = made === 1 ? "1 app" : `${made} apps`;
   } catch (e) { /* the page still renders its empty state */ }
