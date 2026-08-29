@@ -42,6 +42,17 @@
   </a>
 </p>
 
+## Use it
+
+[Download Krate Studio](https://krate.tech/studio/), describe an app in
+plain words, and send the file it gives you. The person you send it to
+double-clicks it; the first time, Krate installs once (~24 MB, free,
+this repository), and every later app just opens -- after showing them
+exactly what it is allowed to touch.
+
+Someone sent YOU a file? The friendly version lives at
+[krate.tech/open](https://krate.tech/open/).
+
 ## 271 MB became 37 KB
 
 We built the same 50,000-line notes workload in Krate and measured it against
@@ -132,10 +143,99 @@ benchmark log](evidence/benchmarks/2026-08-16-notes-battery-macos.md). The
 fixtures, hashes, ARM64 enforcement, raw samples, median/p95 analysis, and a
 fail-closed publication audit.
 
-## Make an app
+## Open an app someone sent you
 
-Three ways, easiest first. All three run the build on your own machine, and all
-three end at the same place: one `.krate` file you can send to someone.
+### Double-click it
+
+The simplest way, and no terminal involved: install
+[Krate Studio](https://krate.tech/studio/) and double-click any `.krate`
+file. The app opens under its own name and icon, with a native permission
+window first -- on all three systems. The Studio registers the file type
+itself: the macOS installer, the Windows installer, and the Linux
+AppImage's first run all set it up.
+
+Prefer the runtime alone? The `krate-app` zip on the
+[latest release](https://github.com/incyashraj/krate/releases/latest) is the
+signed, notarised macOS opener, and
+[`scripts/install-krate-desktop.ps1`](scripts/install-krate-desktop.ps1) /
+[`scripts/install-krate-desktop.sh`](scripts/install-krate-desktop.sh)
+register the type for the bare CLI on Windows and Linux.
+
+### Or from a terminal
+
+Install the runtime. macOS and Linux:
+
+```bash
+curl -fsSL https://krate.tech/install.sh | sh
+```
+
+Windows PowerShell, no administrator rights needed:
+
+```powershell
+irm https://krate.tech/install.ps1 | iex
+```
+
+`irm` is a PowerShell alias, so that line does not work in Command Prompt.
+From `cmd.exe`, type `powershell` first and then paste it.
+
+Then run an app, from a file or straight from a URL:
+
+```bash
+krate run notes.krate --prompt
+```
+
+`--prompt` shows you each thing the app asks for and waits for your answer.
+
+## What the permission wall actually does
+
+A `.krate` file holds a WebAssembly component, the app's name and version, the
+access it requests, and a reason for each request. Opening the file grants
+nothing on its own. Krate builds a session from your answer and connects only
+the operations you approved.
+
+Look inside an app without running it:
+
+```bash
+krate run app.krate --dump-caps
+```
+
+Some of what the capabilities mean:
+
+- `fs.read:notes/**` reads only inside the `notes` folder;
+- `store.kv` gives the app its own storage addressed by name, so an app that
+  remembers things needs no access to your folders at all;
+- `store.sql` gives it a private SQLite database that cannot attach another
+  database or reach a file through SQL;
+- `store.secret` keeps tokens encrypted at rest, per app and per machine, so a
+  copied file carries nothing usable to another computer;
+- `ui.open-url` hands a link to your browser, limited to web and mail addresses,
+  so a link cannot start a program or open a file;
+- no network call works unless network access was declared and granted, and a
+  redirect to a host you did not allow is not followed;
+- an app downloaded from a URL gets no extra access for having come from one.
+
+The strong version of this claim is mechanical rather than a promise: these apps
+import **zero** `wasi:*` interfaces. A `wasi:*` import would be a door to the raw
+operating system. There is no ambient access to leak because the door was never
+built into the app. You can check any app yourself with
+`wasm-tools component wit`.
+
+---
+
+## Work on it
+
+Everything above is for using Krate. Everything below is the machinery:
+the player, the `.krate` format, and `krate check-app` live in this
+repository; Krate Studio and the hub are the product layer (`studio/`
+and `cloud/`). If you came here to send an app to someone, you already
+have everything you need -- download Studio and go.
+
+## Make an app from a terminal or your own AI tools
+
+Krate Studio (above) is the recommended way to make an app -- no terminal
+at all. Everything below is for people who live in a shell or want their
+own AI tools driving Krate directly. All paths end at the same place: one
+`.krate` file you can send to someone.
 
 ### 1. Connect Krate to your AI and just talk
 
@@ -241,82 +341,6 @@ This is on purpose. Krate would rather refuse immediately than spend minutes
 building something convincing that cannot do what you asked. The same check runs
 in the MCP server, so it protects the chat path too.
 
-## Open an app someone sent you
-
-### Double-click it
-
-The simplest way, and no terminal involved: install
-[Krate Studio](https://krate.tech/studio/) and double-click any `.krate`
-file. The app opens under its own name and icon, with a native permission
-window first -- on all three systems. The Studio registers the file type
-itself: the macOS installer, the Windows installer, and the Linux
-AppImage's first run all set it up.
-
-Prefer the runtime alone? The `krate-app` zip on the
-[latest release](https://github.com/incyashraj/krate/releases/latest) is the
-signed, notarised macOS opener, and
-[`scripts/install-krate-desktop.ps1`](scripts/install-krate-desktop.ps1) /
-[`scripts/install-krate-desktop.sh`](scripts/install-krate-desktop.sh)
-register the type for the bare CLI on Windows and Linux.
-
-### Or from a terminal
-
-Install the runtime. macOS and Linux:
-
-```bash
-curl -fsSL https://krate.tech/install.sh | sh
-```
-
-Windows PowerShell, no administrator rights needed:
-
-```powershell
-irm https://krate.tech/install.ps1 | iex
-```
-
-`irm` is a PowerShell alias, so that line does not work in Command Prompt.
-From `cmd.exe`, type `powershell` first and then paste it.
-
-Then run an app, from a file or straight from a URL:
-
-```bash
-krate run notes.krate --prompt
-```
-
-`--prompt` shows you each thing the app asks for and waits for your answer.
-
-## What the permission wall actually does
-
-A `.krate` file holds a WebAssembly component, the app's name and version, the
-access it requests, and a reason for each request. Opening the file grants
-nothing on its own. Krate builds a session from your answer and connects only
-the operations you approved.
-
-Look inside an app without running it:
-
-```bash
-krate run app.krate --dump-caps
-```
-
-Some of what the capabilities mean:
-
-- `fs.read:notes/**` reads only inside the `notes` folder;
-- `store.kv` gives the app its own storage addressed by name, so an app that
-  remembers things needs no access to your folders at all;
-- `store.sql` gives it a private SQLite database that cannot attach another
-  database or reach a file through SQL;
-- `store.secret` keeps tokens encrypted at rest, per app and per machine, so a
-  copied file carries nothing usable to another computer;
-- `ui.open-url` hands a link to your browser, limited to web and mail addresses,
-  so a link cannot start a program or open a file;
-- no network call works unless network access was declared and granted, and a
-  redirect to a host you did not allow is not followed;
-- an app downloaded from a URL gets no extra access for having come from one.
-
-The strong version of this claim is mechanical rather than a promise: these apps
-import **zero** `wasi:*` interfaces. A `wasi:*` import would be a door to the raw
-operating system. There is no ambient access to leak because the door was never
-built into the app. You can check any app yourself with
-`wasm-tools component wit`.
 
 ## `krate check-app`: the thing that makes AI authoring work
 

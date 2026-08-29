@@ -110,13 +110,58 @@ once). The engine is never copied into gifts; spark never rides in the file.
 The extension stays `.krate` so chat clients send it as a document instead of
 re-encoding away the zip tail.
 
-| Phase | What | State |
+Twenty stages across six streams. The tracking table of record -- update
+the State column as stages land, never start a second list.
+
+**A. The public web** -- what a stranger sees first
+
+| # | Stage | State |
 |---|---|---|
-| 1 | Words: homepage claims, README opener, /studio FAQ. Kill "no runtime" and "the cloud for AI-made software", curl to docs only | **landed 2026-08-29** |
-| 2 | Design and motion: one animated object (the card that wakes), real `--shoot` footage via the Promo pipeline, kill the typewriter mock, three verbs + honest first-click panel | next |
-| 3 | Send: Studio Share builds the card; K-195 first-click on all three OSes; send-as-file guidance; courtesy wrap that plants the player. Gate: K-194 retested on every public demo app | `krate card` shipped and measured (see K-195); first-click and wrap open |
-| 4 | Studio for non-tech users: no compiler words anywhere, Send-first share sheet, Cloud tab renamed Shared, Advanced collapsed | Send sheet + Shared rename in repo, rides the next Studio release; a named "first-time setup" stage still open |
-| 5 | Subscriptions: hub-side entitlement, 3 makes/month free counted only on success, Stripe checkout after first-click works. CLI stays ungated (open-core line) | open |
+| 1 | Homepage: one sentence, interactive demos, no terminals, rotating send/keep/trust | **live 2026-08-29** |
+| 2 | /studio page: one-shot making scene, openable tip splitter, real gallery shots | **live 2026-08-29** |
+| 3 | /open receiver page: download-first, tap-to-open rehearsal | **live 2026-08-29** |
+| 4 | Hub links land people on /open, personalized to their app | **live 2026-08-29** |
+| 5 | Words purge on the main three pages (no "cloud" identity, no "no runtime") | **live 2026-08-29** |
+| 6 | GitHub README: Use it / Work on it split; Mode, MCP, build-from-source below the rule | in progress |
+| 7 | Second-ring pages reframed: /cloud gallery + app pages, faq, /progress, /reports, /publish, /contact, /login, /privacy, worker mobile landing | in progress |
+| 8 | og-v2.png regenerated to match the new title | open |
+
+**B. Send** -- the product's broken step
+
+| # | Stage | State |
+|---|---|---|
+| 9 | `krate card` -- the share object as a verb | **shipped 2026-08-29** |
+| 10 | `krate wrap` -- install-then-open courtesy; player planted, never bundled | **shipped 2026-08-29** (Mac proven; Windows on the ladder) |
+| 11 | Link share receiving path end to end | **live 2026-08-29** |
+
+**C. Studio** -- the maker's surface
+
+| # | Stage | State |
+|---|---|---|
+| 12 | Send sheet: card first, link second, raw file third | in repo, rides the release |
+| 13 | Cloud renamed Shared everywhere a user reads | in repo, rides the release |
+| 14 | "First-time setup (once)" named stage | in repo, rides the release |
+| 15 | Real example apps: rate card, trip splitter, care schedule as .krate files | open |
+
+**D. Runtime gates**
+
+| # | Stage | State |
+|---|---|---|
+| 16 | K-194 gated, root-caused (occlusion staging leak), fixed | **fixed 2026-08-29**, ships with the release |
+
+**E. The release**
+
+| # | Stage | State |
+|---|---|---|
+| 17 | Windows wrap proven on a real PC | open |
+| 18 | Full Studio click-through ladder; cut the release carrying C + D | open -- this is what makes 12-14 and 16 reach users |
+
+**F. Business rails**
+
+| # | Stage | State |
+|---|---|---|
+| 19 | Free-tier counter: 3 makes/month, hub entitlement, only successes count | open |
+| 20 | Stripe checkout | after a stranger receives an app with nobody on the call |
 
 Demo apps of record: rate card (freelancer to client), trip splitter (friend to
 group chat), care schedule (family). Calculator is a size footnote, not a demo.
