@@ -414,17 +414,49 @@ function renderSessions(sessions) {
   grid.innerHTML = "";
   // Cards are added below with .reveal; stagger them once the grid is built.
   setTimeout(() => revealIn(grid), 0);
-  if (!sessions.length) {
+
+  // The library's rules: only things that can be Opened or Sent. A packed
+  // file gets a tile; a failed, cancelled, or still-making attempt does
+  // not -- three retries of one sentence used to render as three blank
+  // graves, and a first-time user read that as a messy product, not as
+  // having typed twice. One tile per FILE (newest session per path wins),
+  // and the newest unfinished attempt becomes one banner, not a card.
+  const files = [];
+  const seenPaths = new Set();
+  const unfinished = [];
+  for (const s of [...sessions].sort((a, b) => (b.updated || 0) - (a.updated || 0))) {
+    if (s.result && s.result.path) {
+      if (!seenPaths.has(s.result.path)) {
+        seenPaths.add(s.result.path);
+        files.push(s);
+      }
+    } else if (s.messages && s.messages.some((m) => m.who === "YOU")) {
+      unfinished.push(s);
+    }
+  }
+
+  const buildingId = state.buildingSession && state.buildingSession.id;
+  const resume = unfinished.find((s) => s.id !== buildingId);
+  if (resume) {
+    const banner = document.createElement("button");
+    banner.className = "apps-finish reveal";
+    banner.innerHTML = `<span>Finish <b></b></span><span class="go">&rarr;</span>`;
+    banner.querySelector("b").textContent = resume.title || "your last app";
+    banner.addEventListener("click", () => openSession(resume));
+    grid.appendChild(banner);
+  }
+
+  if (!files.length && !resume) {
     grid.innerHTML = `<p class="apps-empty">Nothing yet. Your first app is one sentence away.</p>`;
     return;
   }
-  for (const s of sessions) {
+  for (const s of files) {
     const card = document.createElement("button");
     card.className = "app-card";
     const size = s.result && s.result.size ? ` · ${s.result.size}` : "";
     const hasShot = s.result && s.result.shot;
     card.innerHTML = `<div class="thumb-well${hasShot ? "" : " blank"}"></div>
-      <div class="card-body"><p class="name"></p><p class="meta">${timeAgo(s.updated)}${size}</p></div>`;
+      <div class="card-body"><p class="name"></p><p class="meta"></p></div>`;
     const well = card.querySelector(".thumb-well");
     if (hasShot) {
       const img = document.createElement("img");
@@ -444,7 +476,13 @@ function renderSessions(sessions) {
     } else {
       well.textContent = "open to pick up where you left off";
     }
-    card.querySelector(".name").textContent = s.title;
+    const fileName = ((s.result && s.result.name) || s.title || "")
+      .replace(/\.krate$/, "")
+      .replace(/[-_]+/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+    card.querySelector(".name").textContent = fileName || s.title;
+    card.querySelector(".meta").textContent =
+      `${(s.title || "").slice(0, 60)} · ${timeAgo(s.updated)}${size}`;
     card.addEventListener("click", () => openSession(s));
 
     const x = document.createElement("button");
@@ -1024,9 +1062,14 @@ function onEngineLineInner(line) {
   }
   const clean = line.replace(/^=+>\s*/, "").trim();
   if (clean) {
-    if (rec) rec.nowLine = clean;
+    // Only lines written for a person reach the visible peek. Raw engine
+    // steps ("reading bindings.rs", crate names, file paths) stay in the
+    // full log where they belong; on the face they re-smell of compiler.
+    const HUMAN = /^(reading |writing |checking |opening your app|looking at how|packing |building it|running your app|testing )/i;
+    const human = HUMAN.test(clean) && !/\.(rs|toml|wasm|lock)\b/i.test(clean);
+    if (human && rec) rec.nowLine = clean;
     const now = $("nowLine");
-    if (now) now.textContent = clean;
+    if (human && now) now.textContent = clean;
     state.lastLineAt = Date.now();
     // A window is about to appear (or just did). Mark the card so the flash
     // and the sound have a visible explanation at the moment they happen.
@@ -1590,9 +1633,7 @@ async function buildNow(request, files, revising, planSession) {
   // side showed one line and then nothing for six minutes while the right
   // side did all the talking.
   const version = (state.session.builds || 0) + 1;
-  say("KRATE", revising
-    ? "Reading your app, then making that change."
-    : "On it. I'll show you each step as it happens.");
+  if (revising) say("KRATE", "Reading your app, then making that change.");
   // Warn BEFORE the first flash, not after. While it works, the AI opens
   // the app to look at it and fix what it sees -- windows appear for a
   // second and sounds play. Unexplained, that reads as the machine
@@ -3699,7 +3740,7 @@ async function loadProfilePage() {
     const mine = (data.apps || []).filter(
       (a) => login && a.meta && a.meta.author_login === login
     );
-    $("profPub").textContent = String(mine.length);
+    { const el = $("profPub"); if (el) el.textContent = String(mine.length); }
   } catch (e) {}
 }
 
