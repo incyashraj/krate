@@ -3,490 +3,508 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#0b0d12" />
-  <meta name="description" content="Someone sent you a .krate file. Here is how to open it on a Mac, Windows, or Linux computer, and what you will see before it runs." />
+  <meta name="theme-color" content="#0a0a0a" />
+  <meta name="description" content="Someone sent you a .krate file. Install Krate once -- about 24 MB, free -- and every app anyone sends you just opens, after telling you what it wants." />
   <!-- The github.io project page redirects here, so name the canonical home
        once. Without it the same page is reachable at two hosts and search
        engines have to guess which one is real. -->
   <link rel="canonical" href="https://krate.tech/open/" />
-  <meta property="og:title" content="Krate — The cloud for AI-made software" />
-  <meta property="og:description" content="Make an app by asking. Share it as one file that opens on Mac, Windows, and Linux, and shows what it wants before it runs." />
+  <meta property="og:title" content="Someone sent you an app" />
+  <meta property="og:description" content="One small file. Install Krate once, and it opens -- after telling you exactly what it is allowed to touch." />
   <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://krate.tech/" />
+  <meta property="og:url" content="https://krate.tech/open/" />
   <meta property="og:image" content="https://krate.tech/og-v2.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="Krate turns an AI request into one app file for Mac, Windows, and Linux." />
+  <meta property="og:image:alt" content="Krate opens one app file on Mac, Windows, and Linux." />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Krate — The cloud for AI-made software" />
-  <meta name="twitter:description" content="Make an app by asking. Share it as one file that opens on Mac, Windows, and Linux, and shows what it wants before it runs." />
+  <meta name="twitter:title" content="Someone sent you an app" />
+  <meta name="twitter:description" content="One small file. Install Krate once, and it opens -- after telling you exactly what it is allowed to touch." />
   <meta name="twitter:image" content="https://krate.tech/og-v2.png" />
   <title>Someone sent you an app — Krate</title>
   <link rel="icon" href="/krate-favicon.png" />
   <link rel="apple-touch-icon" href="/krate-favicon.png" />
-  <link rel="stylesheet" href="/krate.css" />
+  <link rel="preload" href="/fonts/geist-400.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="/fonts/geist-500.woff2" as="font" type="font/woff2" crossorigin />
 
+  <!-- This page's styles live in the page, same rule as the homepage: a
+       deploy can never render new HTML against a stale cached stylesheet.
+       The person holding a file they were sent gets one job per screen and
+       nothing that smells like a developer tool. -->
   <style>
-    /* The page someone lands on holding a file they were sent. Every choice
-       here is about removing a decision: their system is detected, only their
-       instructions are shown, and the one thing they must copy copies itself. */
-    .open-hero {
-      padding-bottom: 0;
-      text-align: center;
-    }
+  @font-face {
+    font-family: "Geist";
+    src: url("/fonts/geist-400.woff2") format("woff2");
+    font-weight: 400; font-style: normal; font-display: swap;
+  }
+  @font-face {
+    font-family: "Geist";
+    src: url("/fonts/geist-500.woff2") format("woff2");
+    font-weight: 500; font-style: normal; font-display: swap;
+  }
 
-    /* No rule between the hero and step 1. The shared .section border assumes
-       two blocks that need separating; here the numbered track already does
-       that, and the line landed hard against the file card and the first step.
-       The steps also start closer, so the page reads as one movement from
-       "you were sent a file" into "here is what to do with it". */
-    .open-steps-section {
-      padding-top: 52px;
-      border-top: 0;
-    }
+  :root {
+    color-scheme: dark;
+    --bg: #0a0a0a;
+    --panel: #0f1012;
+    --panel-2: #141519;
+    --line: #1f2228;
+    --line-soft: #17191e;
+    --text: #ffffff;
+    --muted: rgba(255, 255, 255, 0.55);
+    --quiet: rgba(255, 255, 255, 0.35);
+    --accent: #6291ff;
+    --good: #4ade80;
+    --warn: #f4dc74;
+    --r-card: 16px;
+    --r-pill: 999px;
+    --max: 680px;
+    --sans: "Geist", Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
+    --wake: 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    --enter: 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
 
-    .open-title {
-      max-width: 17ch;
-      margin-inline: auto;
-      font-size: clamp(32px, 5.6vw, 58px);
-      letter-spacing: -.04em;
-      line-height: 1.06;
-    }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text); font-family: var(--sans);
+    font-size: 16px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+  }
+  a { color: inherit; text-decoration: none; }
+  img { max-width: 100%; display: block; }
+  .wrap { max-width: var(--max); margin: 0 auto; padding: 0 24px; }
+  h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
 
-    .open-lead {
-      max-width: 44ch;
-      margin: 16px auto 0;
-      color: var(--muted);
-      font-family: var(--sans);
-      font-size: clamp(16px, 2vw, 19px);
-      line-height: 1.6;
-    }
+  .reveal { opacity: 0; transform: translateY(12px); transition: opacity var(--enter), transform var(--enter); }
+  .reveal.in { opacity: 1; transform: none; }
 
-    /* A file card, so the abstract ".krate file" has a shape before the
-       instructions start talking about it. */
-    .open-file-card {
-      display: inline-flex;
-      align-items: center;
-      gap: 13px;
-      margin-top: 30px;
-      padding: 14px 20px 14px 16px;
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      text-align: left;
-    }
+  /* ------------------------------------------------------------ header */
+  .site-head { position: sticky; top: 0; z-index: 40;
+    background: color-mix(in srgb, var(--bg) 86%, transparent);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid transparent; transition: border-color 200ms ease; }
+  .site-head.scrolled { border-bottom-color: var(--line-soft); }
+  .head-inner { display: flex; align-items: center; gap: 20px; height: 64px; max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 500; letter-spacing: 0.14em; font-size: 14px; }
+  .head-note { margin-left: auto; font-size: 13.5px; color: var(--muted); }
+  .head-note a { color: var(--text); border-bottom: 1px solid var(--line); }
 
-    .open-file-glyph {
-      width: 30px;
-      height: 30px;
-      flex: none;
-      background:
-        linear-gradient(var(--cyan), var(--cyan)) 0 0 / 100% 7px no-repeat,
-        linear-gradient(rgba(108, 244, 215, .6), rgba(108, 244, 215, .6)) 0 11px / 100% 7px no-repeat,
-        linear-gradient(rgba(108, 244, 215, .3), rgba(108, 244, 215, .3)) 0 22px / 100% 7px no-repeat;
-    }
+  /* -------------------------------------------------------------- hero */
+  .hero { padding: clamp(56px, 10vh, 100px) 0 0; text-align: center; }
+  .hero h1 { font-size: clamp(34px, 6vw, 56px); letter-spacing: -0.03em; line-height: 1.06; }
+  .hero-sub { margin: 16px auto 0; max-width: 30em; font-size: clamp(15.5px, 1.6vw, 18px); color: var(--muted); }
 
-    .open-file-card strong { display: block; font-size: 14.5px; }
-    .open-file-card small { color: var(--quiet); font-size: 12px; }
+  /* The file they are holding, given a shape before the page talks about
+     it. A miniature of the card: an app's face over a filename row. */
+  .fcard {
+    display: inline-block; margin-top: 32px; width: min(280px, 88vw);
+    border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+    background: var(--panel); text-align: left;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  }
+  .fcard .face { padding: 16px 16px 14px; border-bottom: 1px solid var(--line-soft); }
+  .fcard .face b { font-size: 13px; font-weight: 500; }
+  .fcard .bars { margin-top: 9px; display: grid; gap: 5px; }
+  .fcard .bars i { display: block; height: 6px; border-radius: 3px; background: var(--line); }
+  .fcard .bars i:nth-child(1) { width: 74%; }
+  .fcard .bars i:nth-child(2) { width: 52%; }
+  .fcard .bars i:nth-child(3) { width: 64%; background: #2c3a5e; }
+  .fcard .frow { display: flex; align-items: center; gap: 8px; padding: 10px 14px; font-size: 12px; color: var(--muted); }
+  .fcard .frow .fname { color: var(--text); font-weight: 500; }
+  .fcard .frow span:last-child { margin-left: auto; color: var(--quiet); }
 
-    /* The three steps, as a track rather than a list: a line runs through
-       them so the page reads as a sequence you are moving along. */
-    .open-track {
-      max-width: 620px;
-      margin: 0 auto;
-      padding: 0;
-      list-style: none;
-    }
+  /* --------------------------------------------------------- the track */
+  .track-sec { padding: clamp(56px, 9vh, 90px) 0 0; }
+  .track { list-style: none; }
+  .track > li { position: relative; padding: 0 0 44px 56px; }
+  .track > li:last-child { padding-bottom: 0; }
+  .track > li::before {
+    content: ""; position: absolute; left: 17px; top: 40px; bottom: 8px;
+    width: 1px; background: var(--line);
+  }
+  .track > li:last-child::before { display: none; }
+  .tnum {
+    position: absolute; left: 0; top: 0; width: 35px; height: 35px;
+    display: grid; place-items: center; border-radius: 50%;
+    background: var(--text); color: #0a0a0a; font-weight: 500; font-size: 14px;
+  }
+  .track h2 { font-size: clamp(19px, 2.4vw, 24px); margin: 4px 0 8px; }
+  .track > li > p, .os-panel > p { color: var(--muted); font-size: 15px; margin-bottom: 12px; max-width: 40em; }
 
-    .open-track > li {
-      position: relative;
-      padding: 0 0 40px 54px;
-    }
+  .get-btn {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 13px 24px; border-radius: var(--r-pill);
+    background: var(--text); color: #0a0a0a; font-weight: 500; font-size: 15.5px;
+    transition: background 150ms ease;
+  }
+  .get-btn:hover { background: rgba(255,255,255,0.86); }
+  .get-sub { margin-top: 10px; font-size: 12.5px; color: var(--quiet); }
 
-    .open-track > li:last-child { padding-bottom: 0; }
+  .os-switch { margin-top: 16px; color: var(--quiet); font-size: 13px; }
+  .os-switch button {
+    padding: 0; color: var(--muted); background: none; border: 0;
+    border-bottom: 1px solid var(--line); cursor: pointer; font: inherit;
+  }
+  .os-switch button:hover { color: var(--text); }
+  .os-panel { display: none; }
+  .os-panel.is-active { display: block; }
 
-    .open-track > li::before {
-      content: "";
-      position: absolute;
-      left: 17px;
-      top: 34px;
-      bottom: 6px;
-      width: 1px;
-      background: var(--line-strong);
-    }
+  /* The terminal is a footnote on this page, not a step. */
+  .alt-note {
+    margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line-soft);
+    font-size: 13px; color: var(--quiet); max-width: 42em;
+  }
+  .alt-note summary { cursor: pointer; color: var(--muted); list-style: none; }
+  .alt-note summary::-webkit-details-marker { display: none; }
+  .alt-note summary::after { content: " ›"; }
+  .alt-note[open] summary::after { content: " ⌄"; }
+  .copy-row {
+    display: flex; margin-top: 10px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  }
+  .copy-row code {
+    flex: 1; min-width: 0; padding: 11px 14px; overflow-x: auto;
+    font-family: var(--mono); font-size: 12.5px; color: var(--muted); white-space: nowrap;
+  }
+  .copy-btn {
+    flex: none; padding: 0 16px; color: var(--text); background: var(--panel-2);
+    border: 0; border-left: 1px solid var(--line); cursor: pointer;
+    font: inherit; font-size: 12.5px;
+  }
+  .copy-btn:hover { background: var(--line); }
+  .copy-btn.is-done { color: var(--good); }
 
-    .open-track > li:last-child::before { display: none; }
+  /* The permission window, live: untick something and the page tells you
+     what actually happens, because that is the question people have. */
+  .sheet {
+    margin-top: 6px; max-width: 420px;
+    border: 1px solid var(--line); border-radius: var(--r-card);
+    background: var(--panel); padding: 22px 22px 18px;
+  }
+  .sheet-title { font-size: 15px; font-weight: 500; }
+  .sheet-sub { margin: 2px 0 10px; color: var(--quiet); font-size: 12.5px; }
+  .ask-row {
+    display: flex; gap: 11px; align-items: flex-start; padding: 9px 0;
+    font-size: 14px; cursor: pointer;
+  }
+  .ask-row input { margin-top: 4px; accent-color: var(--accent); }
+  .ask-row small { display: block; margin-top: 1px; color: var(--quiet); font-size: 12.5px; }
+  .ask-row code { font-family: var(--mono); font-size: 12.5px; }
+  .verdict {
+    margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line-soft);
+    font-size: 13px; line-height: 1.55;
+  }
+  .verdict.is-ok { color: var(--good); }
+  .verdict.is-refused { color: var(--warn); }
 
-    .open-num {
-      position: absolute;
-      left: 0;
-      top: 0;
-      display: grid;
-      place-items: center;
-      width: 35px;
-      height: 35px;
-      color: var(--bg);
-      background: var(--cyan);
-      border-radius: 99px;
-      font-weight: 700;
-      font-size: 14px;
-    }
+  /* ----------------------------------------------------- nothing yet */
+  .nothing { padding: clamp(64px, 10vh, 100px) 0 0; text-align: center; }
+  .nothing h2 { font-size: clamp(24px, 3vw, 32px); letter-spacing: -0.02em; }
+  .nothing p { margin: 10px auto 0; color: var(--muted); max-width: 34em; }
+  .pill {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 11px 22px; border-radius: var(--r-pill);
+    border: 1px solid var(--line); font-size: 15px; font-weight: 500;
+    transition: border-color 150ms ease, background 150ms ease;
+  }
+  .pill:hover { border-color: rgba(255,255,255,0.28); background: var(--panel); }
+  .nothing .pill { margin-top: 20px; }
 
-    .open-track h2 {
-      margin: 5px 0 8px;
-      font-size: clamp(19px, 2.3vw, 24px);
-    }
+  /* ------------------------------------------------------- the worries */
+  .worries { padding: clamp(64px, 10vh, 100px) 0 clamp(64px, 10vh, 100px); }
+  .worries h2 { font-size: clamp(24px, 3vw, 32px); letter-spacing: -0.02em; }
+  .worry { list-style: none; margin-top: 18px; }
+  .worry li { padding: 16px 0; border-top: 1px solid var(--line-soft); }
+  .worry strong { display: block; margin-bottom: 4px; font-size: 15px; font-weight: 500; }
+  .worry span { color: var(--muted); font-size: 14.5px; }
 
-    .open-track p {
-      margin: 0 0 14px;
-      color: var(--muted);
-      font-family: var(--sans);
-      font-size: 15.5px;
-      line-height: 1.62;
-    }
+  /* ------------------------------------------------------------ footer */
+  .site-foot { border-top: 1px solid var(--line-soft); padding: 32px 0 40px; }
+  .foot-inner { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; max-width: 1120px; margin: 0 auto; padding: 0 24px; font-size: 13px; color: var(--muted); }
+  .foot-inner nav { margin-left: auto; display: flex; gap: 18px; flex-wrap: wrap; }
+  .foot-inner a:hover { color: var(--text); }
 
-    /* Only the visitor's own system is shown. The others are one click away
-       for the person on a borrowed laptop, but nobody reads three sets of
-       instructions to find their own. */
-    .os-panel { display: none; }
-    .os-panel.is-active { display: block; }
-
-    .os-switch {
-      margin-top: 16px;
-      color: var(--quiet);
-      font-size: 13px;
-    }
-
-    .os-switch button {
-      padding: 0;
-      color: var(--blue-soft);
-      background: none;
-      border: 0;
-      border-bottom: 1px solid transparent;
-      cursor: pointer;
-      font: inherit;
-    }
-
-    .os-switch button:hover { border-bottom-color: var(--blue-soft); }
-
-    /* The command copies itself. On a page for people who do not live in a
-       terminal, "select this exactly" is the step most likely to go wrong. */
-    .copy-row {
-      display: flex;
-      align-items: stretch;
-      gap: 0;
-      margin-bottom: 14px;
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      overflow: hidden;
-    }
-
-    .copy-row code {
-      flex: 1;
-      min-width: 0;
-      padding: 13px 15px;
-      overflow-x: auto;
-      color: var(--blue-soft);
-      font-size: 13px;
-      white-space: nowrap;
-    }
-
-    .copy-btn {
-      flex: none;
-      padding: 0 16px;
-      color: var(--text);
-      background: var(--panel-raised);
-      border: 0;
-      border-left: 1px solid var(--line);
-      cursor: pointer;
-      font: inherit;
-      font-size: 12.5px;
-    }
-
-    .copy-btn:hover { background: var(--line); }
-    .copy-btn.is-done { color: var(--cyan); }
-
-    /* The permission window, but real: untick something and the page tells you
-       what actually happens, because that is the question people have. */
-    .ask-demo {
-      margin-top: 6px;
-      padding: 18px;
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 10px;
-    }
-
-    .ask-title { margin-bottom: 4px; font-size: 14px; }
-
-    .ask-sub {
-      margin: 0 0 12px !important;
-      color: var(--quiet);
-      font-size: 12.5px;
-    }
-
-    .ask-row {
-      display: flex;
-      gap: 11px;
-      align-items: flex-start;
-      padding: 9px 0;
-      font-size: 14px;
-      cursor: pointer;
-    }
-
-    .ask-row input { margin-top: 3px; accent-color: var(--cyan); }
-    .ask-row small { display: block; margin-top: 2px; color: var(--quiet); font-size: 12.5px; }
-
-    .ask-verdict {
-      margin-top: 12px;
-      padding-top: 12px;
-      border-top: 1px solid var(--line);
-      font-size: 13px;
-      line-height: 1.55;
-    }
-
-    .ask-verdict.is-ok { color: var(--cyan); }
-    .ask-verdict.is-refused { color: var(--yellow); }
-
-    .worry {
-      max-width: 620px;
-      margin: 0 auto;
-      padding: 0;
-      list-style: none;
-    }
-
-    .worry li {
-      padding: 16px 0;
-      border-top: 1px solid var(--line);
-    }
-
-    .worry strong { display: block; margin-bottom: 4px; font-size: 15px; }
-
-    .worry span {
-      color: var(--muted);
-      font-family: var(--sans);
-      font-size: 14.5px;
-      line-height: 1.6;
-    }
-    .alt-note {
-      color: var(--quiet); font-size: .88rem; line-height: 1.65;
-      margin-top: .7rem; padding-top: .7rem; border-top: 1px solid var(--line);
-    }
-    .alt-note code {
-      font-family: var(--mono); font-size: .82rem; color: var(--blue-soft);
-      background: var(--bg); border: 1px solid var(--line);
-      border-radius: 5px; padding: .1rem .4rem;
-    }
+  @media (prefers-reduced-motion: reduce) {
+    .reveal { opacity: 1 !important; transform: none !important; transition: none !important; }
+  }
   </style>
 </head>
 <body>
-<nav class="site-nav" aria-label="Primary navigation">
-    <div class="wrap nav-inner">
-      <a class="brand" href="/#" aria-label="Krate home">
-        <img src="/krate-glyph-blue.png" alt="" />
-        <span>Krate</span>
-      </a>
 
-      <button class="menu-button" id="menuButton" type="button" aria-expanded="false" aria-controls="navLinks" aria-label="Open navigation">☰</button>
+<header class="site-head" id="siteHead">
+  <div class="head-inner">
+    <a class="brand" href="/">
+      <img src="/krate-glyph-white.png" alt="" width="22" height="22" />
+      KRATE
+    </a>
+    <p class="head-note">Want to make one? <a href="/studio/">Krate Studio</a></p>
+  </div>
+</header>
 
-      <div class="nav-links" id="navLinks">
-        <!-- Four links. Eight made a first-time visitor choose before they
-             knew what any of them meant. -->
-        <a class="nav-link" href="/#start">Start</a>
-        <a class="nav-link" href="/cloud/">Cloud</a>
-        <a class="nav-link" href="/faq.html">FAQ</a>
-        <a class="nav-link" href="/docs/">Docs</a>
-        <a class="nav-link" href="/docs/blog/0002-every-sandbox-is-cloud.html">Blog</a>
-        <a class="nav-link" href="https://github.com/incyashraj/krate">GitHub</a>
-        <a class="nav-cta" href="/docs/pages/make-an-app-with-ai.html">Make an app</a>
-      </div>
+<main>
+
+<!-- ================================================================== hero -->
+<section class="hero wrap">
+  <h1 class="reveal">Someone sent you an app.</h1>
+  <p class="hero-sub reveal">It is one small file, like a photo. To open it you
+  need Krate, once -- like a player for a movie. After that, every app anyone
+  sends you just opens, and each one tells you what it wants first.</p>
+  <div class="fcard reveal" aria-hidden="true">
+    <div class="face">
+      <b>Groceries</b>
+      <div class="bars"><i></i><i></i><i></i></div>
     </div>
-  </nav>
-    <main id="main">
-    <section class="section open-hero">
-      <div class="wrap">
-        <h1 class="open-title">Someone sent you an app.</h1>
-        <p class="open-lead">Double-click it and it opens. The only thing you need is Krate, installed once &mdash; after that every app anyone sends you just opens, and each one tells you what it wants before it does anything.</p>
-        <div class="open-file-card">
-          <span class="open-file-glyph" aria-hidden="true"></span>
-          <span>
-            <strong>groceries.krate</strong>
-            <small>one file &middot; about 12 KB</small>
-          </span>
-        </div>
-      </div>
-    </section>
-
-    <section class="section open-steps-section">
-      <div class="wrap">
-        <ol class="open-track">
-          <li>
-            <span class="open-num">1</span>
-            <h2>Install Krate, once</h2>
-            <p>This is the only setup there is. Do it once and every Krate app anyone sends you from then on is just a double-click.</p>
-
-            <div class="os-panel" data-os="mac">
-              <p>On your Mac, open <strong>Terminal</strong> &mdash; press <kbd>&#8984;</kbd> and <kbd>Space</kbd>, type <em>terminal</em>, press Enter &mdash; then paste this and press Enter.</p>
-              <div class="copy-row">
-                <code>curl -fsSL https://krate.tech/install.sh | sh</code>
-                <button class="copy-btn" type="button">Copy</button>
-              </div>
-              <p>Prefer not to use Terminal? <a href="https://github.com/incyashraj/krate/releases/latest">Download Krate.app</a>, unzip it, then right-click it once and choose Open.</p>
-            </div>
-
-            <div class="os-panel" data-os="windows">
-              <p>Open <strong>PowerShell</strong> &mdash; press Start, type <em>powershell</em>, press Enter &mdash; then paste this and press Enter.</p>
-              <div class="copy-row">
-                <code>irm https://krate.tech/install.ps1 | iex</code>
-                <button class="copy-btn" type="button">Copy</button>
-              </div>
-              <p>That is the whole thing. It does not ask for an administrator password.</p>
-            </div>
-
-            <div class="os-panel" data-os="linux">
-              <p>Open a terminal, paste this, and press Enter.</p>
-              <div class="copy-row">
-                <code>curl -fsSL https://krate.tech/install.sh | sh</code>
-                <button class="copy-btn" type="button">Copy</button>
-              </div>
-              <p>Nothing else to install, and no administrator password needed.</p>
-            </div>
-
-            <p class="os-switch">Showing instructions for <span id="osName">your computer</span>. Using a different one? <button type="button" data-pick="mac">Mac</button> &middot; <button type="button" data-pick="windows">Windows</button> &middot; <button type="button" data-pick="linux">Linux</button></p>
-          </li>
-
-          <li>
-            <span class="open-num">2</span>
-            <h2>Double-click the file</h2>
-            <p>Double-click the file you were sent, the same as a document or a photo. There is nothing to unzip, nothing to install per app, and no developer tools.</p>
-            <p class="alt-note">Prefer a terminal? <code>krate</code> opens a menu with <strong>Open an app</strong>, or run <code>krate run theapp.krate</code> directly. Both do exactly the same thing.</p>
-          </li>
-
-          <li>
-            <span class="open-num">3</span>
-            <h2>Decide what it may do</h2>
-            <p>Before any of the app runs, this window appears. Untick anything and see what happens &mdash; this one is live.</p>
-
-            <div class="ask-demo">
-              <div class="ask-title">Krate Notes wants to:</div>
-              <p class="ask-sub">You can change your mind on any of these.</p>
-              <label class="ask-row"><input type="checkbox" data-ask="required" checked /> <span>read files in its <code>notes</code> folder<small>To load the notes you saved before</small></span></label>
-              <label class="ask-row"><input type="checkbox" data-ask="required" checked /> <span>save files in its <code>notes</code> folder<small>To keep the note you are writing</small></span></label>
-              <label class="ask-row"><input type="checkbox" data-ask="optional" checked /> <span>use your clipboard<small>To copy and paste inside the app</small></span></label>
-              <p class="ask-verdict is-ok" id="verdict">The app opens with exactly this. It cannot reach the internet, or any other folder on your computer.</p>
-            </div>
-          </li>
-        </ol>
-      </div>
-    </section>
-
-    <section class="section">
-      <div class="wrap plain-block">
-        <h2>Nothing to open yet?</h2>
-        <p>Take a real one. It is a small notes app, about 15 kilobytes, and it works exactly as described above.</p>
-        <div class="actions">
-          <a class="button primary" href="/cloud/">Get an app from the store</a>
-        </div>
-      </div>
-    </section>
-
-    <section class="section">
-      <div class="wrap">
-        <div class="section-heading"><h2>The things people ask</h2></div>
-        <ul class="worry">
-          <li><strong>Is it safe to open?</strong><span>Krate shows you what the app wants and gives it nothing else. An app that asks to save a list cannot read anything else on your computer, even if it tried.</span></li>
-          <li><strong>Do I need an account?</strong><span>No. There is nothing to sign up for and nothing to pay.</span></li>
-          <li><strong>Where does my information go?</strong><span>Nowhere. The app runs on your own computer, and whatever it saves stays there.</span></li>
-          <li><strong>What if I say no?</strong><span>The app does not start. It cannot run halfway on less than it asked for and quietly fail later.</span></li>
-          <li><strong>Can I change my mind later?</strong><span>Yes. You are asked each time it opens, so nothing you allow once is allowed forever.</span></li>
-        </ul>
-      </div>
-    </section>
-    </main>
-
-    <script>
-      // Show the visitor's own system and nothing else. Two thirds of the
-      // install instructions are noise to any given person, and they are the
-      // most intimidating part of the page.
-      (function () {
-        const pick = () => {
-          const p = (navigator.userAgentData?.platform || navigator.platform || "").toLowerCase();
-          const ua = navigator.userAgent.toLowerCase();
-          if (p.includes("mac") || ua.includes("mac os")) return "mac";
-          if (p.includes("win") || ua.includes("windows")) return "windows";
-          return "linux";
-        };
-        const names = { mac: "your Mac", windows: "Windows", linux: "Linux" };
-
-        const show = (os) => {
-          document.querySelectorAll(".os-panel").forEach((el) => {
-            el.classList.toggle("is-active", el.dataset.os === os);
-          });
-          const label = document.getElementById("osName");
-          if (label) label.textContent = names[os];
-        };
-
-        show(pick());
-        document.querySelectorAll("[data-pick]").forEach((b) => {
-          b.addEventListener("click", () => show(b.dataset.pick));
-        });
-
-        // Copy the command rather than asking someone to select it exactly.
-        document.querySelectorAll(".copy-btn").forEach((btn) => {
-          btn.addEventListener("click", () => {
-            const text = btn.previousElementSibling.textContent.trim();
-            navigator.clipboard.writeText(text).then(() => {
-              btn.textContent = "Copied";
-              btn.classList.add("is-done");
-              setTimeout(() => {
-                btn.textContent = "Copy";
-                btn.classList.remove("is-done");
-              }, 1800);
-            });
-          });
-        });
-
-        // The permission window, live. Someone can untick a box and find out
-        // what actually happens, which is the question the whole page is about.
-        const boxes = Array.from(document.querySelectorAll("[data-ask]"));
-        const verdict = document.getElementById("verdict");
-        if (boxes.length && verdict) {
-          const update = () => {
-            const missingRequired = boxes.some(
-              (b) => b.dataset.ask === "required" && !b.checked
-            );
-            const allOn = boxes.every((b) => b.checked);
-            if (missingRequired) {
-              verdict.className = "ask-verdict is-refused";
-              verdict.textContent =
-                "The app will not start. It needs this one to do its job, and Krate does not let it run on less than it asked for.";
-            } else if (!allOn) {
-              verdict.className = "ask-verdict is-ok";
-              verdict.textContent =
-                "The app opens without that. It simply cannot do the part it was for, and nothing else changes.";
-            } else {
-              verdict.className = "ask-verdict is-ok";
-              verdict.textContent =
-                "The app opens with exactly this. It cannot reach the internet, or any other folder on your computer.";
-            }
-          };
-          boxes.forEach((b) => b.addEventListener("change", update));
-          update();
-        }
-      })();
-    </script>
-<footer>
-    <div class="wrap footer-inner">
-      <span>© 2026 Krate Labs</span>
-      <div class="footer-links">
-        <a href="/docs/">Docs</a>
-        <a href="/docs/blog/0002-every-sandbox-is-cloud.html">Blog</a>
-        <a href="https://github.com/incyashraj/krate">GitHub</a>
-        <a href="https://github.com/incyashraj/krate/discussions">Ask a question</a>
-        <a href="https://github.com/incyashraj/krate/releases">Releases</a>
-      </div>
+    <div class="frow">
+      <span class="fname">groceries.krate</span>
+      <span>12 KB</span>
     </div>
-  </footer>
+  </div>
+</section>
+
+<!-- ============================================================= the track -->
+<section class="track-sec wrap">
+  <ol class="track">
+
+    <li class="reveal">
+      <span class="tnum">1</span>
+      <h2>Get Krate, once</h2>
+      <p>About 24 MB, free and open source. This is the only setup there is:
+      after it, every app anyone ever sends you is just a double-click.</p>
+
+      <a class="get-btn" id="getBtn" data-dl="krate-studio|universal|dmg" href="https://github.com/incyashraj/krate/releases/latest">Download Krate</a>
+      <p class="get-sub" id="getSub">For your computer &middot; free</p>
+
+      <div class="os-panel" data-os="mac">
+        <p class="get-sub">Open the download and drag Krate to Applications.
+        It is signed and notarised by Apple, so it opens without warnings.</p>
+      </div>
+      <div class="os-panel" data-os="windows">
+        <p class="get-sub">Run the installer. Windows may show a one-time
+        SmartScreen prompt -- choose &ldquo;More info&rdquo;, then
+        &ldquo;Run anyway&rdquo;.</p>
+      </div>
+      <div class="os-panel" data-os="linux">
+        <p class="get-sub">Make the AppImage executable and run it once; it
+        registers the .krate file type for you.</p>
+      </div>
+
+      <p class="os-switch">Showing <span id="osName">your computer</span>.
+      Using a different one?
+      <button type="button" data-pick="mac">Mac</button> &middot;
+      <button type="button" data-pick="windows">Windows</button> &middot;
+      <button type="button" data-pick="linux">Linux</button></p>
+
+      <details class="alt-note">
+        <summary>Comfortable in a terminal instead?</summary>
+        <div class="os-panel" data-os="mac">
+          <div class="copy-row">
+            <code>curl -fsSL https://krate.tech/install.sh | sh</code>
+            <button class="copy-btn" type="button">Copy</button>
+          </div>
+        </div>
+        <div class="os-panel" data-os="windows">
+          <div class="copy-row">
+            <code>irm https://krate.tech/install.ps1 | iex</code>
+            <button class="copy-btn" type="button">Copy</button>
+          </div>
+        </div>
+        <div class="os-panel" data-os="linux">
+          <div class="copy-row">
+            <code>curl -fsSL https://krate.tech/install.sh | sh</code>
+            <button class="copy-btn" type="button">Copy</button>
+          </div>
+        </div>
+      </details>
+    </li>
+
+    <li class="reveal">
+      <span class="tnum">2</span>
+      <h2>Double-click the file</h2>
+      <p>The same as a document or a photo. Nothing to unzip, nothing to
+      install per app, no developer tools.</p>
+    </li>
+
+    <li class="reveal">
+      <span class="tnum">3</span>
+      <h2>Decide what it may do</h2>
+      <p>Before any of the app runs, this window appears. Untick anything and
+      see what happens -- this one is live.</p>
+
+      <div class="sheet">
+        <div class="sheet-title">Krate Notes wants to:</div>
+        <p class="sheet-sub">You can change your mind on any of these.</p>
+        <label class="ask-row"><input type="checkbox" data-ask="required" checked /> <span>read files in its <code>notes</code> folder<small>To load the notes you saved before</small></span></label>
+        <label class="ask-row"><input type="checkbox" data-ask="required" checked /> <span>save files in its <code>notes</code> folder<small>To keep the note you are writing</small></span></label>
+        <label class="ask-row"><input type="checkbox" data-ask="optional" checked /> <span>use your clipboard<small>To copy and paste inside the app</small></span></label>
+        <p class="verdict is-ok" id="verdict">The app opens with exactly this. It cannot reach the internet, or any other folder on your computer.</p>
+      </div>
+    </li>
+
+  </ol>
+</section>
+
+<!-- =========================================================== nothing yet -->
+<section class="nothing wrap reveal">
+  <h2>Nothing to open yet?</h2>
+  <p>Take a real one. The gallery has small, working apps people have made
+  and shared -- each one opens exactly as described above.</p>
+  <a class="pill" href="/cloud/">Get an app from the gallery</a>
+</section>
+
+<!-- =========================================================== the worries -->
+<section class="worries wrap">
+  <h2 class="reveal">The things people ask</h2>
+  <ul class="worry reveal">
+    <li><strong>Is it safe to open?</strong><span>Krate shows you what the app wants and gives it nothing else. An app that asks to save a list cannot read anything else on your computer, even if it tried.</span></li>
+    <li><strong>Do I need an account?</strong><span>No. There is nothing to sign up for and nothing to pay.</span></li>
+    <li><strong>Where does my information go?</strong><span>Nowhere. The app runs on your own computer, and whatever it saves stays there.</span></li>
+    <li><strong>What if I say no?</strong><span>The app does not start. It cannot run halfway on less than it asked for and quietly fail later.</span></li>
+    <li><strong>Can I change my mind later?</strong><span>Yes. You are asked each time it opens, so nothing you allow once is allowed forever.</span></li>
+  </ul>
+</section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="foot-inner">
+    <span>© 2026 Krate Labs</span>
+    <nav aria-label="Footer">
+      <a href="/">What is Krate?</a>
+      <a href="/studio/">Make an app</a>
+      <a href="/faq.html">FAQ</a>
+      <a href="https://github.com/incyashraj/krate">GitHub</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  var head = document.getElementById("siteHead");
+  addEventListener("scroll", function () {
+    head.classList.toggle("scrolled", scrollY > 8);
+  }, { passive: true });
+
+  var reveals = document.querySelectorAll(".reveal");
+  if (reduced || !("IntersectionObserver" in window)) {
+    reveals.forEach(function (el) { el.classList.add("in"); });
+  } else {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        e.target.classList.add("in");
+        io.unobserve(e.target);
+      });
+    }, { rootMargin: "0px 0px -8% 0px" });
+    reveals.forEach(function (el) { io.observe(el); });
+    setTimeout(function () {
+      reveals.forEach(function (el) { el.classList.add("in"); });
+    }, 2500);
+  }
+
+  // Show the visitor's own system and nothing else. Two thirds of the
+  // install instructions are noise to any given person.
+  var pick = function () {
+    var p = ((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "").toLowerCase();
+    var ua = navigator.userAgent.toLowerCase();
+    if (p.indexOf("mac") !== -1 || ua.indexOf("mac os") !== -1) return "mac";
+    if (p.indexOf("win") !== -1 || ua.indexOf("windows") !== -1) return "windows";
+    return "linux";
+  };
+  var names = { mac: "your Mac", windows: "Windows", linux: "Linux" };
+  var dlFor = {
+    mac: { dl: "krate-studio|universal|dmg", label: "Download Krate for Mac" },
+    windows: { dl: "krate-studio|windows-x64-setup|exe", label: "Download Krate for Windows" },
+    linux: { dl: "krate-studio|linux-x86_64|AppImage", label: "Download Krate for Linux" }
+  };
+  var getBtn = document.getElementById("getBtn");
+  var current = pick();
+
+  var show = function (os) {
+    current = os;
+    document.querySelectorAll(".os-panel").forEach(function (el) {
+      el.classList.toggle("is-active", el.dataset.os === os);
+    });
+    var label = document.getElementById("osName");
+    if (label) label.textContent = names[os];
+    getBtn.textContent = dlFor[os].label;
+    getBtn.dataset.dl = dlFor[os].dl;
+    resolve();
+  };
+
+  // Point the button at the exact latest release asset for that system.
+  var release = null;
+  var resolve = function () {
+    if (!release || !release.assets) return;
+    var names_ = release.assets.map(function (a) { return a.name; });
+    var version = release.tag_name.replace(/^v/, "");
+    var p = getBtn.dataset.dl.split("|");
+    var file = p[1] === "universal"
+      ? p[0] + "-" + version + "-universal." + p[2]
+      : p[0] + "-" + version + "-" + p[1] + "." + p[2];
+    if (names_.indexOf(file) !== -1) {
+      getBtn.href = "https://github.com/incyashraj/krate/releases/download/" +
+        release.tag_name + "/" + file;
+    }
+  };
+  fetch("https://api.github.com/repos/incyashraj/krate/releases/latest")
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (rel) { release = rel; resolve(); })
+    .catch(function () {});
+
+  show(current);
+  document.querySelectorAll("[data-pick]").forEach(function (b) {
+    b.addEventListener("click", function () { show(b.dataset.pick); });
+  });
+
+  // Copy the command rather than asking someone to select it exactly.
+  document.querySelectorAll(".copy-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var text = btn.previousElementSibling.textContent.trim();
+      navigator.clipboard.writeText(text).then(function () {
+        btn.textContent = "Copied";
+        btn.classList.add("is-done");
+        setTimeout(function () {
+          btn.textContent = "Copy";
+          btn.classList.remove("is-done");
+        }, 1800);
+      });
+    });
+  });
+
+  // The permission window, live. Someone can untick a box and find out
+  // what actually happens, which is the question the whole page is about.
+  var boxes = Array.prototype.slice.call(document.querySelectorAll("[data-ask]"));
+  var verdict = document.getElementById("verdict");
+  if (boxes.length && verdict) {
+    var update = function () {
+      var missingRequired = boxes.some(function (b) {
+        return b.dataset.ask === "required" && !b.checked;
+      });
+      var allOn = boxes.every(function (b) { return b.checked; });
+      if (missingRequired) {
+        verdict.className = "verdict is-refused";
+        verdict.textContent =
+          "The app will not start. It needs this one to do its job, and Krate does not let it run on less than it asked for.";
+      } else if (!allOn) {
+        verdict.className = "verdict is-ok";
+        verdict.textContent =
+          "The app opens without that. It simply cannot do the part it was for, and nothing else changes.";
+      } else {
+        verdict.className = "verdict is-ok";
+        verdict.textContent =
+          "The app opens with exactly this. It cannot reach the internet, or any other folder on your computer.";
+      }
+    };
+    boxes.forEach(function (b) { b.addEventListener("change", update); });
+    update();
+  }
+})();
+</script>
+
 <script>
 // One anonymous page view -- the page name and the day, to our own hub.
 // No cookie, no id, no referrer; strictly less than any analytics vendor.
