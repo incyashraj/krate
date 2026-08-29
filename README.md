@@ -5,12 +5,13 @@
 <h1 align="center">Krate</h1>
 
 <p align="center">
-  <strong>AI can make the app. Krate makes it shippable.</strong>
+  <strong>Make an app. Send the file. It opens on Mac, Windows, and Linux.</strong>
 </p>
 
 <p align="center">
-  One tiny file. No per-app installer. Mac, Windows, Linux.<br>
-  Before it runs, the person opening it chooses what it can touch.
+  Before it runs, the person opening it sees what it is allowed to touch.<br>
+  The <strong>player</strong> is open source and installs once (~24 MB).
+  <strong>Studio</strong> is how you make and send.
 </p>
 
 <p align="center">
@@ -29,10 +30,6 @@
   <a href="https://krate.tech/">Website</a>
   ·
   <a href="https://krate.tech/studio/">Krate Studio</a>
-  ·
-  <a href="https://krate.tech/docs/pages/krate-mode.html">Krate Mode</a>
-  ·
-  <a href="docs/mcp-setup.md">Connect to Claude or Cursor</a>
   ·
   <a href="https://krate.tech/docs/quickstart.html">Docs</a>
   ·
@@ -83,8 +80,9 @@ no browser and no per-app runtime. A playable game is **13 KB** and the notes
 editor used in the benchmark is **37 KB**. You install Krate once; every app
 after that opens like a file.
 
-Krate Studio creates the app, Krate Runtime opens and controls it, and Krate
-Cloud publishes it. The whole path works today.
+Krate Studio makes the app. The Krate player opens and controls it. When you
+cannot hand someone the file, a published link does the same job. The whole
+path works today.
 
 ## Krate Studio
 
@@ -96,8 +94,8 @@ Krate Studio detects which AI tools are installed, so you choose one with a
 click, describe what you want, and watch the app being built and checked. No
 terminal and no project setup. Change an app by asking. The file
 carries its own source, so "make the button blue" edits the app you have
-instead of rebuilding it. Your apps, your sessions, and Krate Cloud all live
-in the same window, and you sign in from the browser with GitHub.
+instead of rebuilding it. Your apps, your sessions, and everything people have
+shared all live in the same window.
 
 Download from [krate.tech/studio](https://krate.tech/studio/) -- the page
 detects your system and hands you the right file:
@@ -360,7 +358,8 @@ Krate Studio with browser sign-in; authoring through MCP, Krate Mode, or the
 command line with five AI providers; `check-app`; and JSON output for agents
 and scripts.
 
-Krate Cloud is live at [krate.tech/cloud](https://krate.tech/cloud). Publish
+Publishing a link is live at [krate.tech/cloud](https://krate.tech/cloud) --
+for when you cannot hand someone the file. Publish
 with `krate publish yourapp.krate` or from
 [krate.tech/publish](https://krate.tech/publish); either way it signs you in
 with GitHub so the app carries your name, and anyone with the link can run it.

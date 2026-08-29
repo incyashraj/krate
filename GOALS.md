@@ -96,6 +96,35 @@ defect.
 
 ---
 
+## The repositioning: plan of record (2026-08-29)
+
+One sentence everywhere: **Make an app. Send the file. First time installs
+Krate once (~24 MB). After that it is just a file.** Two public products:
+the player (free, open) and Studio (the company). "Cloud" stops being the
+identity; the link is the share option for when you cannot drop a file.
+
+The share object is the card: `still + .krate` concatenated, one file that is
+a valid PNG, a valid zip, and a runnable guest (proven at 11fd53a1d). Two layers,
+never mixed: **See it** (the PNG, any machine) and **Run it** (the player,
+once). The engine is never copied into gifts; spark never rides in the file.
+The extension stays `.krate` so chat clients send it as a document instead of
+re-encoding away the zip tail.
+
+| Phase | What | State |
+|---|---|---|
+| 1 | Words: homepage claims, README opener, /studio FAQ. Kill "no runtime" and "the cloud for AI-made software", curl to docs only | **landed 2026-08-29** |
+| 2 | Design and motion: one animated object (the card that wakes), real `--shoot` footage via the Promo pipeline, kill the typewriter mock, three verbs + honest first-click panel | next |
+| 3 | Send: Studio Share builds the card; K-195 first-click on all three OSes; send-as-file guidance; courtesy wrap that plants the player. Gate: K-194 retested on every public demo app | open |
+| 4 | Studio for non-tech users: no compiler words anywhere, Send-first share sheet, Cloud tab renamed Shared, Advanced collapsed | open |
+| 5 | Subscriptions: hub-side entitlement, 3 makes/month free counted only on success, Stripe checkout after first-click works. CLI stays ungated (open-core line) | open |
+
+Demo apps of record: rate card (freelancer to client), trip splitter (friend to
+group chat), care schedule (family). Calculator is a size footnote, not a demo.
+Not in this pass: license split, repo privacy, web Studio, hosted Krate AI,
+phones, pricing on the site.
+
+---
+
 ## How this is run
 
 **Top down.** Long-term goal → mid-term gate → one workstation → one agent. No

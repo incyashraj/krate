@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0a0a0a" />
-  <meta name="description" content="Make an app by asking AI, then share it as one file that opens on Mac, Windows, and Linux. Every app shows exactly what it wants to access before it runs. Publish to the Krate store." />
+  <meta name="description" content="Make an app by asking AI, then send it as one small file that opens on Mac, Windows, and Linux. Before it runs, the person opening it sees exactly what it wants to touch." />
   <link rel="canonical" href="https://krate.tech/" />
   <script type="application/ld+json">
   {
@@ -15,13 +15,13 @@
     "applicationCategory": "DeveloperApplication",
     "description": "Make an app by describing it. An AI writes it, and you get one small file that opens on Mac, Windows and Linux, and shows exactly what it wants to access before it runs.",
     "url": "https://krate.tech/",
-    "downloadUrl": "https://krate.tech/#install",
+    "downloadUrl": "https://krate.tech/studio/",
     "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
     "author": { "@type": "Person", "name": "Yashraj Pardeshi", "url": "https://github.com/incyashraj" },
     "sameAs": ["https://github.com/incyashraj/krate"]
   }
   </script>
-  <meta property="og:title" content="Krate: the cloud for AI-made software" />
+  <meta property="og:title" content="Krate: make an app you can send" />
   <meta property="og:description" content="Make an app by asking. Share it as one file that opens on Mac, Windows, and Linux, and shows what it wants before it runs." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://krate.tech/" />
@@ -30,10 +30,10 @@
   <meta property="og:image:height" content="630" />
   <meta property="og:image:alt" content="Krate turns an AI request into one app file for Mac, Windows, and Linux." />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Krate: the cloud for AI-made software" />
+  <meta name="twitter:title" content="Krate: make an app you can send" />
   <meta name="twitter:description" content="Make an app by asking. Share it as one file that opens on Mac, Windows, and Linux, and shows what it wants before it runs." />
   <meta name="twitter:image" content="https://krate.tech/og-v2.png" />
-  <title>Krate: the cloud for AI-made software | One app file for Mac, Windows, Linux</title>
+  <title>Krate: make an app you can send | One file for Mac, Windows, Linux</title>
   <link rel="icon" href="./krate-favicon.png" />
   <link rel="apple-touch-icon" href="./krate-favicon.png" />
   <link rel="preload" href="./fonts/geist-400.woff2" as="font" type="font/woff2" crossorigin />
@@ -55,7 +55,7 @@
         <button class="nav-link" type="button" aria-expanded="false">Product <span class="chev">▾</span></button>
         <div class="nav-panel">
           <div class="panel-links">
-            <a href="#install">Start<span class="d">install once, open anything</span></a>
+            <a href="#get-krate">Start<span class="d">install once, open anything</span></a>
             <a href="/cloud/">Gallery<span class="d">real published apps, run by URL</span></a>
             <a href="/progress/">Platforms<span class="d">six builds, both chips, three systems</span></a>
             <a href="/faq.html">FAQ<span class="d">the honest answers</span></a>
@@ -90,7 +90,7 @@
       </div>
 
       <div class="nav-item">
-        <button class="nav-link" type="button" aria-expanded="false">Cloud <span class="chev">▾</span></button>
+        <button class="nav-link" type="button" aria-expanded="false">Share <span class="chev">▾</span></button>
         <div class="nav-panel">
           <div class="panel-links">
             <a href="/cloud/">Gallery<span class="d">browse what people published</span></a>
@@ -117,10 +117,6 @@
 
 <!-- ================================================================== hero -->
 <section class="home-hero wrap">
-  <a class="home-hero-badge" href="https://github.com/incyashraj/krate/releases/latest">
-    <span class="new">NEW</span> <b id="heroVer">v0.1.32</b>&nbsp;· Krate Studio is the recommended way to use Krate
-  </a>
-
   <h1 class="display">Make an app you can
     <span class="rot"><span class="word" id="rotWord">send</span><span class="bar"></span></span>
   </h1>
@@ -132,7 +128,7 @@
   <div class="hero-cta reveal">
     <a class="pill pill-primary" id="heroStudio" data-dl="krate-studio|universal|dmg" href="/studio/">Download Krate Studio</a>
     <a class="pill" href="/studio/">What it does</a>
-    <p class="free-note">Free · Mac, Windows and Linux</p>
+    <p class="free-note">Free · works with the AI you already have · Mac, Windows and Linux</p>
   </div>
   <script>
     // The hero button downloads the build for THIS machine; the resolver
@@ -144,23 +140,6 @@
       else if (ua.indexOf("Linux") !== -1 && ua.indexOf("Android") === -1) btn.dataset.dl = "krate-studio|linux-x86_64|AppImage";
     })();
   </script>
-
-  <div id="install">
-    <p class="free-note">Prefer the terminal? The CLI installs in one line:</p>
-    <div class="os-toggle" role="tablist" aria-label="Operating system">
-      <button aria-pressed="true" data-os="unix" type="button">macOS / Linux</button>
-      <button aria-pressed="false" data-os="win" type="button">Windows (PowerShell)</button>
-    </div>
-    <br />
-    <span class="cmd">
-      <span class="dollar">$</span>
-      <code data-cmd="unix">curl -fsSL https://krate.tech/install.sh | sh</code>
-      <code data-cmd="win" hidden>irm https://krate.tech/install.ps1 | iex</code>
-      <button class="copy" type="button" aria-label="Copy install command">⧉</button>
-    </span>
-    <p class="free-note win-note" hidden>In Command Prompt instead? Run <code>powershell</code> first, then paste the line above.</p>
-    <p class="free-note">Free and open source · works with the AI you already have</p>
-  </div>
 
   <div class="home-hero-links">
     <a href="/docs/">Read docs <span class="arr">›</span></a>
@@ -266,7 +245,9 @@
         <h2 class="section-h">Send it like a photo.</h2>
         <p>The whole app is one small file. Mail it, drop it in a chat, put it
         on a USB stick. It opens by double-click on Mac, Windows, and Linux --
-        no installer, no runtime, no "works on my machine".</p>
+        no per-app installer, no "works on my machine". First time, Krate
+        itself installs once, like a player for a movie. After that, every app
+        is just a file.</p>
         <blockquote class="reviewer-line">
           "It is the moment you send someone a script."
           <cite>Denis A. Joly, early reviewer</cite>
@@ -295,9 +276,9 @@
       <div class="feat" data-demo="4">
         <div class="kicker">PUBLISH</div>
         <h2 class="section-h">A link anyone can run.</h2>
-        <p>One command puts your app on Krate Cloud and hands you a URL.
-        Anyone with Krate runs it straight from that link; anyone without gets
-        a one-command install first.</p>
+        <p>For when you cannot drop the file in a chat: one command publishes
+        your app and hands you a URL. Anyone with Krate runs it straight from
+        that link; anyone without gets a one-command install first.</p>
         <ul>
           <li>Sign in with GitHub, publish, send the link</li>
           <li>The gallery shows real screenshots of real apps</li>
@@ -422,7 +403,7 @@
             </div>
             <div class="sf-body sf-center">
               <div class="sf-publish">
-                <div class="sf-pubrow"><i class="ok">&#10003;</i> Uploaded to Krate Cloud <span>41 KB</span></div>
+                <div class="sf-pubrow"><i class="ok">&#10003;</i> Uploaded &mdash; link ready <span>41 KB</span></div>
                 <div class="sf-publink"><span>krate.tech/cloud/habit-tracker</span><em>Copy</em></div>
                 <div class="sf-pubnote">Anyone with the link can run it. Anyone without
                 Krate gets a one-line install first.</div>
@@ -500,10 +481,10 @@
       <div class="cap reveal"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M4 12a8 8 0 0116 0M4 12h2m12 0h2"/></svg><div><b>Pixel proof</b><span>`--shoot` renders any app's window to a PNG, headless.</span></div></div>
       <div class="cap reveal"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 6L9 17l-5-5"/></svg><div><b>check-app verdicts</b><span>Build, imports, run, usability -- one command, one honest answer.</span></div></div>
       <div class="cap reveal"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 14a5 5 0 007 0l3-3a5 5 0 00-7-7l-1.5 1.5M14 10a5 5 0 00-7 0l-3 3a5 5 0 007 7L12.5 19"/></svg><div><b>Run by URL</b><span>`krate run https://...` -- no download step, wall still applies.</span></div></div>
-      <div class="cap reveal"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3v13m0 0l-4-4m4 4l4-4M5 21h14"/></svg><div><b>Publish to Cloud</b><span>One command, a public link, a gallery of real screenshots.</span></div></div>
+      <div class="cap reveal"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3v13m0 0l-4-4m4 4l4-4M5 21h14"/></svg><div><b>Publish a link</b><span>One command, a public link, a gallery of real screenshots.</span></div></div>
       <div class="cap reveal"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V5M8 5h8M9 13h.01M15 13h.01"/></svg><div><b>Any AI CLI</b><span>Claude, Codex, Gemini, Copilot, Grok -- yours, not an included one.</span></div></div>
       <div class="cap reveal"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 7H7a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-2M14 4h6v6M20 4l-9 9"/></svg><div><b>MCP for Claude &amp; Cursor</b><span>Build Krate apps from inside the tools you already use.</span></div></div>
-      <div class="cap reveal"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3a9 9 0 100 18 9 9 0 000-18zM3.6 9h16.8M3.6 15h16.8M12 3c2.5 2.5 3.8 5.6 3.8 9s-1.3 6.5-3.8 9c-2.5-2.5-3.8-5.6-3.8-9s1.3-6.5 3.8-9z"/></svg><div><b>No runtime to install</b><span>Receiving an app needs Krate once -- a few megabytes -- then nothing.</span></div></div>
+      <div class="cap reveal"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3a9 9 0 100 18 9 9 0 000-18zM3.6 9h16.8M3.6 15h16.8M12 3c2.5 2.5 3.8 5.6 3.8 9s-1.3 6.5-3.8 9c-2.5-2.5-3.8-5.6-3.8-9s1.3-6.5 3.8-9z"/></svg><div><b>Install once, open anything</b><span>Receiving an app needs Krate once -- about 24 MB, like a media player -- then every app is just a file.</span></div></div>
       <div class="cap reveal"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg><div><b>Open source</b><span>The runtime, the checks, this site. Read it all on GitHub.</span></div></div>
     </div>
   </div>
@@ -512,19 +493,6 @@
 <!-- ================================================================== band -->
 <section class="band" id="get-krate">
   <div class="wrap">
-    <div class="band-card reveal">
-      <div>
-        <h2 class="section-h">Try it in your terminal</h2>
-        <p>One command to install. Your first app is one sentence away.</p>
-      </div>
-      <span class="cmd">
-        <span class="dollar">$</span>
-        <code data-cmd="unix">curl -fsSL https://krate.tech/install.sh | sh</code>
-        <code data-cmd="win" hidden>irm https://krate.tech/install.ps1 | iex</code>
-        <button class="copy" type="button" aria-label="Copy install command">⧉</button>
-      </span>
-    </div>
-
     <!-- Krate Studio, the app that makes apps -- and the way we recommend
          people use Krate. The terminal tool ships inside it. -->
     <a class="studio-card reveal" href="/studio/">
@@ -564,6 +532,10 @@
         &middot; signed and notarised by Apple, so downloads open
         without warnings.
       </p>
+      <p class="dl-foot">
+        Prefer the terminal? The CLI installs in
+        <a href="/docs/quickstart.html">one line, in the docs</a>.
+      </p>
     </div>
   </div>
 </section>
@@ -572,16 +544,10 @@
 <section class="final">
   <div class="wrap">
     <h2 class="cta-h reveal">Make something useful.<br />Send it to someone.</h2>
-    <p class="reveal">Install now and describe your first app to the AI you already have.</p>
-    <span class="cmd reveal">
-      <span class="dollar">$</span>
-      <code data-cmd="unix">curl -fsSL https://krate.tech/install.sh | sh</code>
-      <code data-cmd="win" hidden>irm https://krate.tech/install.ps1 | iex</code>
-      <button class="copy" type="button" aria-label="Copy install command">⧉</button>
-    </span>
+    <p class="reveal">Download Krate Studio and describe your first app to the AI you already have.</p>
     <div class="actions reveal">
       <a class="pill" href="/docs/">Read docs</a>
-      <a class="pill pill-primary" href="/cloud/">Browse the gallery</a>
+      <a class="pill pill-primary" href="/studio/">Download Krate Studio</a>
     </div>
   </div>
 </section>
@@ -599,7 +565,7 @@
       </div>
       <div class="foot-col">
         <b>Product</b>
-        <a href="#install">Start</a>
+        <a href="#get-krate">Start</a>
         <a href="/cloud/">Gallery</a>
         <a href="/progress/">Platforms</a>
         <a href="/faq.html">FAQ</a>
