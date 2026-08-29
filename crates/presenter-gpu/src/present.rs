@@ -245,6 +245,31 @@ impl WindowPresenter {
             });
             self.pixel_upload = Some((texture, width, height));
         }
+        use wgpu::CurrentSurfaceTexture;
+        // A failure recorded DURING configure (an invalid surface, a lost
+        // device) must stop us HERE: with panic=abort, one more surface call
+        // panics inside wgpu and kills the whole app -- seen live as a
+        // finance dashboard that flashed a terminal and died while the log
+        // said "retiring to CPU painter" (K-125). Err retires cleanly.
+        if self.device_failed.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("GPU device reported an error".to_string());
+        }
+        // Acquire BEFORE staging: write_texture parks frame bytes in wgpu's
+        // staging belt, and only queue.submit() recycles that belt. The
+        // occluded arm returns without submitting, so staging first banked a
+        // full frame of memory per present while the window was covered --
+        // K-194's ~67 MB/s, invisible exactly because coming back to look
+        // made the next submit flush it all. See present_pixels below.
+        let frame = match self.surface.get_current_texture() {
+            CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => {
+                frame
+            }
+            CurrentSurfaceTexture::Timeout | CurrentSurfaceTexture::Occluded => return Ok(()),
+            _ => {
+                self.configured = (0, 0);
+                return Ok(());
+            }
+        };
         let (texture, ..) = self.pixel_upload.as_ref().expect("upload texture ensured");
         self.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
@@ -311,25 +336,6 @@ impl WindowPresenter {
                 );
             }
         }
-        use wgpu::CurrentSurfaceTexture;
-        // A failure recorded DURING configure (an invalid surface, a lost
-        // device) must stop us HERE: with panic=abort, one more surface call
-        // panics inside wgpu and kills the whole app -- seen live as a
-        // finance dashboard that flashed a terminal and died while the log
-        // said "retiring to CPU painter" (K-125). Err retires cleanly.
-        if self.device_failed.load(std::sync::atomic::Ordering::SeqCst) {
-            return Err("GPU device reported an error".to_string());
-        }
-        let frame = match self.surface.get_current_texture() {
-            CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => {
-                frame
-            }
-            CurrentSurfaceTexture::Timeout | CurrentSurfaceTexture::Occluded => return Ok(()),
-            _ => {
-                self.configured = (0, 0);
-                return Ok(());
-            }
-        };
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -659,6 +665,39 @@ impl PixelPresenter {
             });
             self.upload = Some((texture, width, height));
         }
+        use wgpu::CurrentSurfaceTexture;
+        // A failure recorded DURING configure (an invalid surface, a lost
+        // device) must stop us HERE: with panic=abort, one more surface call
+        // panics inside wgpu and kills the whole app -- seen live as a
+        // finance dashboard that flashed a terminal and died while the log
+        // said "retiring to CPU painter" (K-125). Err retires cleanly.
+        if self.device_failed.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("GPU device reported an error".to_string());
+        }
+        // Acquire the frame BEFORE staging the upload. write_texture parks
+        // the frame's bytes in wgpu's staging belt, and that belt is only
+        // recycled by queue.submit() -- which the occluded arm below never
+        // reaches. Staging first meant an occluded window banked one full
+        // frame of staging memory per present, ~67 MB/s for a fullscreen
+        // canvas, until the machine died. That was K-194: it only happened
+        // while nobody was looking, because coming back to the window made
+        // the next submit flush the whole belt (evidence: gate194, clip
+        // flat for 25s then +67 MB/s the moment the display slept; every
+        // watched rerun flat).
+        let frame = match self.surface.get_current_texture() {
+            CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => {
+                frame
+            }
+            // Occluded/minimized: skip quietly -- and cheaply, staging
+            // nothing. The path is fine.
+            CurrentSurfaceTexture::Timeout | CurrentSurfaceTexture::Occluded => return Ok(()),
+            // Outdated/lost: force a reconfigure next frame; a truly dead
+            // surface errors there and THAT retires the path.
+            _ => {
+                self.configured = (0, 0);
+                return Ok(());
+            }
+        };
         let (texture, ..) = self.upload.as_ref().expect("upload texture just ensured");
         self.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
@@ -679,28 +718,6 @@ impl PixelPresenter {
                 depth_or_array_layers: 1,
             },
         );
-        use wgpu::CurrentSurfaceTexture;
-        // A failure recorded DURING configure (an invalid surface, a lost
-        // device) must stop us HERE: with panic=abort, one more surface call
-        // panics inside wgpu and kills the whole app -- seen live as a
-        // finance dashboard that flashed a terminal and died while the log
-        // said "retiring to CPU painter" (K-125). Err retires cleanly.
-        if self.device_failed.load(std::sync::atomic::Ordering::SeqCst) {
-            return Err("GPU device reported an error".to_string());
-        }
-        let frame = match self.surface.get_current_texture() {
-            CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => {
-                frame
-            }
-            // Occluded/minimized: skip quietly, the path is fine.
-            CurrentSurfaceTexture::Timeout | CurrentSurfaceTexture::Occluded => return Ok(()),
-            // Outdated/lost: force a reconfigure next frame; a truly dead
-            // surface errors there and THAT retires the path.
-            _ => {
-                self.configured = (0, 0);
-                return Ok(());
-            }
-        };
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {

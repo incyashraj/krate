@@ -180,10 +180,43 @@ shipped    browser on hub.krate.tech/a/<id> now 302s to krate.tech/open/?a=,
 
 ### K-194 -- some animating apps grow ~400 MB/sec until the machine dies; others are flat
 
-Status:   unclaimed
-Owner:    unclaimed
+Status:   FIXED in repo (see Root cause below) -- needs a release tag to
+          reach users, like every runtime fix (the rc18 lesson)
+Owner:    main repo, Claude (repositioning session, 2026-08-29)
 Severity: blocker
 Class:    our-code
+Root      Found 2026-08-29 by the pre-release gate. The leak needs a
+cause,    TRIGGER: the window being occluded -- covered by another window,
+found by  minimized, or the display sleeping. That is why it never
+the gate: reproduced when watched, and why it "did not reproduce after the
+          restart": every retest LOOKED at the window, and looking is the
+          cure. The gate caught it by accident -- the machine's display
+          slept 90s into the 25-minute run, mid-way through krate-clip's
+          window: flat for 25 samples, then a knee into ruler-straight
+          +67 MB/s (leak/gate-krate-clip.mem). Reproduced on demand by
+          covering any canvas app with a second window:
+            clip     113 -> 1348 MB    +67 MB/s   the moment it is covered
+            nova     628 -> 1469 MB    +70 MB/s
+            Aurora 3 357 -> 1119 MB    +63 MB/s   the original, at last
+            bounce    99 ->  312 MB    +18 MB/s   (smaller window)
+            checklist flat under the same cover: widget apps stage no frames
+          The bug: presenter-gpu's present_pixels (and present_pixels_into)
+          called queue.write_texture BEFORE surface.get_current_texture().
+          write_texture parks the frame in wgpu's staging belt, and only
+          queue.submit() recycles the belt -- but the Occluded arm returns
+          without submitting. One full frame of staging memory banked per
+          present, exactly frame-size x frame-rate, exactly linear. Coming
+          back to the window made the next submit flush the whole belt,
+          which is why the evidence always evaporated under observation.
+          Fix: acquire the frame first; stage only when there is somewhere
+          to present. After: all four leakers flat over 15s covered, and
+          the visible path still presents on Metal. Bonus: nova's baseline
+          fell 628 -> 117 MB -- launch-time window churn was banking
+          staging even in "healthy" runs.
+          Full gate table (28 public apps, 45s windowed each, guarded):
+          ~/krate-bench/leak/gate194-results.tsv -- 23 flat, 4 CLI
+          no-window, 1 leaker (clip, the app on screen when the display
+          slept). Gate harness: ~/krate-bench/leak/gate194.sh.
 Found:    2026-08-27, by Yashraj: Aurora makes his MacBook hot, laggy, then
           crashes and restarts it. Reproduced and measured; the crash is real
           and this entry cost him a restart to produce, so DO NOT reproduce it
