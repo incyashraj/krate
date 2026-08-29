@@ -77,7 +77,8 @@ Status:   FIXED in repo: the objc2 table moved below [dependencies] with a
           comment naming the trap, and all three Build Krate Studio steps
           now carry the continue-on-error: true their comments claimed for
           three releases. Verified by cargo metadata + a clean mac check;
-          the Linux proof is the v0.2.2 retag build.
+          proven 2026-08-30 by the v0.2.2 retag: the Linux job went
+          green and the AppImage is on the release.
 Owner:    main repo, Claude (repositioning session, 2026-08-30)
 Severity: high (sank the x86_64 Linux job of the v0.2.2 release run)
 Class:    our-code
@@ -256,8 +257,7 @@ shipped    browser on hub.krate.tech/a/<id> now 302s to krate.tech/open/?a=,
 
 ### K-194 -- some animating apps grow ~400 MB/sec until the machine dies; others are flat
 
-Status:   FIXED in repo (see Root cause below) -- needs a release tag to
-          reach users, like every runtime fix (the rc18 lesson)
+Status:   FIXED, shipped in v0.2.2 (2026-08-30)
 Owner:    main repo, Claude (repositioning session, 2026-08-29)
 Severity: blocker
 Class:    our-code

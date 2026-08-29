@@ -5,7 +5,7 @@ piece of work exists without a line back to why. Updated whenever a workstation
 lands or a goal changes. `BUGS.md` holds defects; this holds direction and
 progress.
 
-Last updated: 2026-08-05.
+Last updated: 2026-08-30.
 
 ---
 
@@ -138,23 +138,23 @@ the State column as stages land, never start a second list.
 
 | # | Stage | State |
 |---|---|---|
-| 12 | Send sheet: card first, link second, raw file third | in repo, rides the release |
-| 13 | Cloud renamed Shared everywhere a user reads | in repo, rides the release |
-| 14 | "First-time setup (once)" named stage | in repo, rides the release |
+| 12 | Send sheet: card first, link second, raw file third | **live 2026-08-30**, shipped in v0.2.2 |
+| 13 | Cloud renamed Shared everywhere a user reads | **live 2026-08-30**, shipped in v0.2.2 |
+| 14 | "First-time setup (once)" named stage | **live 2026-08-30**, shipped in v0.2.2 |
 | 15 | Real example apps: rate card, trip splitter, care schedule as .krate files | **done 2026-08-29** -- built by grok through the real loop, full ladder passed (shoot, occlusion gate, card), committed in evidence/demo/ |
 
 **D. Runtime gates**
 
 | # | Stage | State |
 |---|---|---|
-| 16 | K-194 gated, root-caused (occlusion staging leak), fixed | **fixed 2026-08-29**, ships with the release |
+| 16 | K-194 gated, root-caused (occlusion staging leak), fixed | **fixed 2026-08-29**, shipped in v0.2.2 |
 
 **E. The release**
 
 | # | Stage | State |
 |---|---|---|
 | 17 | Windows wrap proven on a real PC | **done 2026-08-29** -- Split-for-Windows.cmd on the friend's PC: install branch, LOCALAPPDATA fallback, temp-copy dance, app window opened; powershell path hardened to the absolute System32 one |
-| 18 | Full Studio click-through ladder; cut the release carrying C + D | open, ladder walked 2026-08-30 -- workspace tests green, 28-app occlusion gate zero growing, wrap proven on the PC, Studio send/info/change/settings clicked through on the dev build; the cut is what remains |
+| 18 | Full Studio click-through ladder; cut the release carrying C + D | **done 2026-08-30** -- ladder walked (tests green, 28-app gate zero growing, wrap on the real PC, full Studio click-through), then v0.2.2 cut, all six platforms + all three Studio bundles built, verify passed, self-promoted to stable. First cut sank on K-199 and was retagged on the fix |
 
 **F. Business rails**
 
@@ -168,13 +168,13 @@ items the conversations specify that no stage carried:
 
 | # | Stage | State |
 |---|---|---|
-| 21 | Studio Send sheet gains "For a friend without Krate" -- the wrap, with a Mac/Windows/Linux choice, calling `krate wrap` | **in repo 2026-08-29**, rides the release |
+| 21 | Studio Send sheet gains "For a friend without Krate" -- the wrap, with a Mac/Windows/Linux choice, calling `krate wrap` | **live 2026-08-30**, shipped in v0.2.2 |
 | 22 | Founding waitlist: $79/yr for the first 200, honest early-days copy, email capture through the hub. No public checkout yet | **live 2026-08-29** -- hub /founding + /studio#founding block |
 | 23 | The 20-second film: type, file appears, other desktop opens it through the first-click path. Promo pipeline; no voiceover. Only ships because first-click now works | **live 2026-08-29** -- four beats, 946 KB, real rate-card footage; Watch link + modal on the homepage |
 | 24 | The public rename finishes in code: Go/TS SDKs still carry l36* names | **done 2026-08-29** -- zero l36 references; wasip1 build + shape check green |
 | 25 | Version alignment at the cut: workspace says 0.1.28, tags say v0.2.1, dist app says older still. A founding customer reads these | **in repo 2026-08-30** -- workspace, studio crate and tauri.conf all say 0.2.2, the next tag; internal path deps no longer pin a version, so a bump is one line again |
 | 26 | Unlisted links: publish without a gallery listing, so a client rate card is a URL, not a public exhibit | **live 2026-08-29** -- worker flag + /meta route + CLI --unlisted + Studio opt-in checkbox (listing off by default) |
-| 27 | Send the file opens the OS share sheet (AirDrop, Mail, Messages) with the card, not just a Finder reveal | **in repo 2026-08-29** -- NSSharingServicePicker on macOS, reveal fallback elsewhere; rides the release |
+| 27 | Send the file opens the OS share sheet (AirDrop, Mail, Messages) with the card, not just a Finder reveal | **live 2026-08-30**, shipped in v0.2.2; clicked through live before the cut |
 
 **H. Second full re-audit (2026-08-30)** -- everything the source
 conversations still specified that no stage carried, found by walking
@@ -182,7 +182,7 @@ them start to end once more:
 
 | # | Stage | State |
 |---|---|---|
-| 28 | Subscriptions get a face in Studio: plan chip top-right by the theme toggle, Your-plan sheet (Free / Studio / Founding 200), settings row -- one painter so they never disagree | **in repo 2026-08-30**, verified live on the dev build; rides the release |
+| 28 | Subscriptions get a face in Studio: plan chip top-right by the theme toggle, Your-plan sheet (Free / Studio / Founding 200), settings row -- one painter so they never disagree | **live 2026-08-30**, shipped in v0.2.2 |
 | 29 | Pricing on the public site: /studio gets "What it costs" (Free 3/mo, Studio $12/mo or $96/yr at launch, Founding $79/yr) matching the Studio sheet word for word | **in repo 2026-08-30** |
 | 30 | README user-focused: duplicate benchmark tables merged, terminal/MCP collapsed to a list, platform troubleshooting moved to docs/build.md, pricing section added, stale v0.1.50 removed -- 572 lines down to ~280 | **in repo 2026-08-30** |
 | 31 | License split: player stays MIT/Apache; studio/ and cloud/worker get their own license (BSL 1.1: use allowed, no competing hosted Studio, converts to Apache in 4 years); README license row says so | **done 2026-08-30** -- Yashraj picked BSL 1.1; studio/LICENSE + cloud/worker/LICENSE + Cargo license-file + README open-core table; pre-split versions stay MIT/Apache, stated in the license itself |
