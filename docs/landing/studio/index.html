@@ -178,7 +178,80 @@
   .m-file .go {
     margin-left: auto; font-size: 12.5px; font-weight: 500; color: #0a0a0a;
     background: var(--text); border-radius: var(--r-pill); padding: 6px 14px;
+    border: none; cursor: pointer; font-family: inherit;
+    transition: background 150ms ease;
   }
+  .m-file .go:hover { background: rgba(255,255,255,0.86); }
+
+  /* The app the scene just made, opened for real. Clicking "Open it" is the
+     whole product in one gesture: the file becomes a working thing. */
+  .ts-seat { display: flex; justify-content: center; }
+  .ts-window {
+    width: min(340px, 100%); margin-top: 18px; text-align: left;
+    border: 1px solid var(--line); border-radius: var(--r-card);
+    background: var(--panel); overflow: hidden;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+    opacity: 0; transform: translateY(10px) scale(0.98);
+    transition: opacity var(--wake), transform var(--wake);
+  }
+  .ts-window.on { opacity: 1; transform: none; }
+  .ts-body { padding: 18px; }
+  .ts-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; }
+  .ts-row label { font-size: 12px; color: var(--muted); letter-spacing: 0.04em; }
+  .ts-bill {
+    width: 110px; padding: 8px 10px; font: inherit; font-size: 15px; text-align: right;
+    color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 9px; outline: none;
+    transition: border-color 150ms ease;
+  }
+  .ts-bill:focus { border-color: var(--accent); }
+  .ts-step { display: flex; align-items: center; gap: 10px; }
+  .ts-step button {
+    width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line);
+    background: none; color: var(--text); font-size: 15px; cursor: pointer;
+    transition: border-color 150ms ease;
+  }
+  .ts-step button:hover { border-color: rgba(255,255,255,0.3); }
+  .ts-step b { font-weight: 500; min-width: 1.4em; text-align: center; }
+  .ts-tips { display: flex; gap: 6px; }
+  .ts-tips button {
+    padding: 5px 12px; border-radius: var(--r-pill); border: 1px solid var(--line);
+    background: none; color: var(--muted); font: inherit; font-size: 12.5px; cursor: pointer;
+    transition: all 150ms ease;
+  }
+  .ts-tips button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .ts-total {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-top: 10px; padding-top: 12px; border-top: 1px solid var(--line-soft);
+  }
+  .ts-total span { font-size: 12px; color: var(--muted); letter-spacing: 0.04em; }
+  .ts-total b { font-size: 24px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .ts-note { margin-top: 12px; text-align: center; font-size: 13px; color: var(--quiet); }
+
+  /* ------------------------------------------------- what people made */
+  /* Real screenshots of real published apps, straight from the gallery.
+     Nothing here is a mock. */
+  .made { padding: clamp(70px, 11vh, 110px) 0 0; }
+  .made-head { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  .made-head h2 { font-size: clamp(26px, 3.4vw, 38px); letter-spacing: -0.025em; }
+  .made-head a { margin-left: auto; font-size: 14px; color: var(--muted); border-bottom: 1px solid var(--line); }
+  .made-head a:hover { color: var(--text); }
+  .made-sub { margin-top: 10px; color: var(--muted); font-size: 15px; max-width: 40em; }
+  .shots {
+    margin-top: 28px; display: grid; grid-auto-flow: column;
+    grid-auto-columns: clamp(180px, 24vw, 230px); gap: 12px;
+    overflow-x: auto; padding-bottom: 10px;
+    scroll-snap-type: x proximity; scrollbar-width: thin;
+  }
+  .shot {
+    border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+    background: var(--panel); scroll-snap-align: start;
+    transition: border-color 150ms ease;
+  }
+  .shot:hover { border-color: rgba(255,255,255,0.28); }
+  .shot img { width: 100%; height: 150px; object-fit: cover; object-position: top; }
+  .shot b { display: block; padding: 10px 13px 1px; font-size: 13.5px; font-weight: 500; }
+  .shot span { display: block; padding: 0 13px 11px; font-size: 12px; color: var(--quiet); }
 
   /* ---------------------------------------------------------- features */
   .feats { padding: clamp(70px, 11vh, 110px) 0 0; }
@@ -297,11 +370,71 @@
               <b>TipSplitter.krate</b>
               <span>31 KB &middot; Mac, Windows and Linux</span>
             </div>
-            <span class="go">Open it</span>
+            <button class="go" id="mkOpen" type="button">Open it</button>
           </div>
         </div>
       </div>
     </div>
+
+    <!-- The made thing, openable for real. Hidden until "Open it". -->
+    <div class="ts-seat">
+      <div class="ts-window" id="tsWin" hidden aria-label="The tip splitter the demo made, working">
+        <div class="m-bar">
+          <div class="dots"><i></i><i></i><i></i></div>
+          <div class="m-title">TIP SPLITTER</div>
+          <span class="m-chip"><i></i>live</span>
+        </div>
+        <div class="ts-body">
+          <div class="ts-row">
+            <label for="tsBill">THE BILL</label>
+            <input class="ts-bill" id="tsBill" type="number" min="0" value="96" inputmode="decimal" />
+          </div>
+          <div class="ts-row">
+            <label>PEOPLE</label>
+            <div class="ts-step">
+              <button type="button" id="tsMinus" aria-label="Fewer people">&minus;</button>
+              <b id="tsPeople">4</b>
+              <button type="button" id="tsPlus" aria-label="More people">+</button>
+            </div>
+          </div>
+          <div class="ts-row">
+            <label>TIP</label>
+            <div class="ts-tips" id="tsTips">
+              <button type="button" data-tip="10" aria-pressed="false">10%</button>
+              <button type="button" data-tip="15" aria-pressed="true">15%</button>
+              <button type="button" data-tip="20" aria-pressed="false">20%</button>
+            </div>
+          </div>
+          <div class="ts-total">
+            <span>EACH PAYS</span>
+            <b id="tsEach">$27.60</b>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="ts-note" id="tsNote" hidden>That is the app it made. Working, in the page,
+    because the real one is too -- on any Mac, Windows or Linux machine.</p>
+  </div>
+</section>
+
+<!-- ======================================================= what people made -->
+<section class="made wrap">
+  <div class="reveal">
+    <div class="made-head">
+      <h2>What people made.</h2>
+      <a href="/cloud/">Browse the gallery &rarr;</a>
+    </div>
+    <p class="made-sub">Real screenshots of real published apps -- games,
+    tools, little private things. Every one is a single small file someone
+    could drop in a chat.</p>
+  </div>
+  <div class="shots reveal">
+    <a class="shot" href="/cloud/"><img src="/cloud/shots/nova.png" alt="Nova, a space shooter made with Krate" loading="lazy" /><b>Nova</b><span>a space shooter</span></a>
+    <a class="shot" href="/cloud/"><img src="/cloud/shots/weather.png" alt="A five-day weather app made with Krate" loading="lazy" /><b>Weather</b><span>five-day forecast</span></a>
+    <a class="shot" href="/cloud/"><img src="/cloud/shots/savings.png" alt="Budget Splitter, a monthly budget app made with Krate" loading="lazy" /><b>Budget Splitter</b><span>where the money goes</span></a>
+    <a class="shot" href="/cloud/"><img src="/cloud/shots/notes.png" alt="A notes app made with Krate" loading="lazy" /><b>Notes</b><span>37 KB, the benchmark app</span></a>
+    <a class="shot" href="/cloud/"><img src="/cloud/shots/journal.png" alt="A private journal app made with Krate" loading="lazy" /><b>My Journal</b><span>stays on this device</span></a>
+    <a class="shot" href="/cloud/"><img src="/cloud/shots/cubes.png" alt="A 3D scene rendered by a Krate app" loading="lazy" /><b>Cubes</b><span>3D, no GPU needed</span></a>
   </div>
 </section>
 
@@ -519,6 +652,47 @@
     /* If the observer never fires, the finished scene still appears. */
     setTimeout(function () { if (!played) { played = true; finish(); } }, 10000);
   }
+
+  /* --------------------------- "Open it" opens the thing it just made */
+  var tsWin = document.getElementById("tsWin");
+  var tsNote = document.getElementById("tsNote");
+  document.getElementById("mkOpen").addEventListener("click", function () {
+    if (!tsWin.hidden) return;
+    tsWin.hidden = false;
+    tsNote.hidden = false;
+    /* Not requestAnimationFrame: rAF never fires in a backgrounded tab,
+       and the window would stay invisible. A timer always runs. */
+    setTimeout(function () { tsWin.classList.add("on"); }, 30);
+    tsWin.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "nearest" });
+  });
+
+  var tsBill = document.getElementById("tsBill");
+  var tsPeopleEl = document.getElementById("tsPeople");
+  var tsEach = document.getElementById("tsEach");
+  var tsPeople = 4;
+  var tsTip = 15;
+  function tsCalc() {
+    var bill = Math.max(0, parseFloat(tsBill.value) || 0);
+    var each = (bill * (1 + tsTip / 100)) / Math.max(1, tsPeople);
+    tsEach.textContent = "$" + each.toFixed(2);
+  }
+  tsBill.addEventListener("input", tsCalc);
+  document.getElementById("tsMinus").addEventListener("click", function () {
+    tsPeople = Math.max(1, tsPeople - 1); tsPeopleEl.textContent = tsPeople; tsCalc();
+  });
+  document.getElementById("tsPlus").addEventListener("click", function () {
+    tsPeople = Math.min(20, tsPeople + 1); tsPeopleEl.textContent = tsPeople; tsCalc();
+  });
+  document.querySelectorAll("#tsTips button").forEach(function (b) {
+    b.addEventListener("click", function () {
+      document.querySelectorAll("#tsTips button").forEach(function (o) {
+        o.setAttribute("aria-pressed", "false");
+      });
+      b.setAttribute("aria-pressed", "true");
+      tsTip = parseInt(b.dataset.tip, 10);
+      tsCalc();
+    });
+  });
 
   /* ------------------- put the visitor's own system first, and say so */
   (function () {

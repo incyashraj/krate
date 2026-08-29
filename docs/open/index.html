@@ -96,13 +96,29 @@
   .hero-sub { margin: 16px auto 0; max-width: 30em; font-size: clamp(15.5px, 1.6vw, 18px); color: var(--muted); }
 
   /* The file they are holding, given a shape before the page talks about
-     it. A miniature of the card: an app's face over a filename row. */
-  .fcard {
-    display: inline-block; margin-top: 32px; width: min(280px, 88vw);
-    border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
-    background: var(--panel); text-align: left;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+     it -- and then given the whole journey. Double-click it: the consent
+     sheet appears. Allow it: it becomes a working app, right here. Cancel:
+     nothing runs, which is the entire point. */
+  .demo-seat { position: relative; margin-top: 32px; min-height: 380px; }
+  .demo-state {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: flex-start;
+    opacity: 0; transform: translateY(8px); pointer-events: none;
+    transition: opacity var(--wake), transform var(--wake);
   }
+  .demo-state.on { opacity: 1; transform: none; pointer-events: auto; }
+  .demo-hint { margin-top: 16px; font-size: 13px; color: var(--quiet); }
+  .demo-hint b { color: var(--muted); font-weight: 500; }
+
+  .fcard {
+    display: inline-block; width: min(280px, 88vw);
+    border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+    background: var(--panel); text-align: left; cursor: pointer;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    transition: border-color 150ms ease, transform 150ms ease;
+    -webkit-user-select: none; user-select: none;
+  }
+  .fcard:hover { border-color: rgba(255,255,255,0.28); transform: translateY(-2px); }
   .fcard .face { padding: 16px 16px 14px; border-bottom: 1px solid var(--line-soft); }
   .fcard .face b { font-size: 13px; font-weight: 500; }
   .fcard .bars { margin-top: 9px; display: grid; gap: 5px; }
@@ -113,6 +129,83 @@
   .fcard .frow { display: flex; align-items: center; gap: 8px; padding: 10px 14px; font-size: 12px; color: var(--muted); }
   .fcard .frow .fname { color: var(--text); font-weight: 500; }
   .fcard .frow span:last-child { margin-left: auto; color: var(--quiet); }
+
+  /* The consent dialog, exactly as Krate draws it. */
+  .dsheet {
+    width: min(360px, 92vw); text-align: center;
+    border: 1px solid var(--line); border-radius: var(--r-card);
+    background: var(--panel); padding: 26px 24px 22px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  }
+  .dsheet img { width: 32px; height: 32px; margin: 0 auto 12px; }
+  .dsheet h3 { font-size: 17px; letter-spacing: -0.01em; font-weight: 500; }
+  .dsheet .asks { margin: 14px auto 0; display: inline-block; text-align: left; }
+  .dsheet .asks div { display: flex; gap: 10px; align-items: baseline; font-size: 14.5px; color: var(--muted); padding: 4px 0; }
+  .dsheet .asks i { color: var(--good); font-style: normal; font-size: 13px; }
+  .dsheet .none { margin-top: 12px; font-size: 12.5px; color: var(--quiet); }
+  .dsheet .btns { margin-top: 18px; display: flex; gap: 10px; justify-content: center; }
+  .dbtn {
+    padding: 9px 18px; border-radius: var(--r-pill); font: inherit; font-size: 14px;
+    font-weight: 500; cursor: pointer; border: 1px solid var(--line);
+    background: none; color: var(--text);
+    transition: border-color 150ms ease, background 150ms ease;
+  }
+  .dbtn:hover { border-color: rgba(255,255,255,0.28); }
+  .dbtn-primary { background: var(--text); color: #0a0a0a; border-color: var(--text); }
+  .dbtn-primary:hover { background: rgba(255,255,255,0.86); }
+
+  /* The groceries app, awake and usable. */
+  .gwin {
+    width: min(300px, 92vw); text-align: left;
+    border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+    background: var(--panel);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+  }
+  .gbar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 13px; border-bottom: 1px solid var(--line-soft); background: var(--panel-2);
+  }
+  .gbar .dots { display: flex; gap: 6px; }
+  .gbar .dots i { width: 9px; height: 9px; border-radius: 50%; }
+  .gbar .dots i:nth-child(1) { background: #ff5f57; }
+  .gbar .dots i:nth-child(2) { background: #febc2e; }
+  .gbar .dots i:nth-child(3) { background: #28c840; }
+  .gtitle { font-size: 12px; color: var(--muted); margin: 0 auto; letter-spacing: 0.06em; }
+  .glive { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--quiet); }
+  .glive i { width: 6px; height: 6px; border-radius: 50%; background: var(--good); }
+  .gbody { padding: 8px 6px 12px; }
+  .gitem {
+    display: flex; align-items: center; gap: 11px; padding: 9px 12px;
+    font-size: 14.5px; cursor: pointer; border-radius: 9px;
+    transition: background 150ms ease;
+  }
+  .gitem:hover { background: rgba(255,255,255,0.04); }
+  .gitem i {
+    width: 17px; height: 17px; flex: none; border-radius: 50%;
+    border: 1.5px solid var(--line); position: relative;
+    transition: background var(--wake), border-color var(--wake);
+  }
+  .gitem.done { color: var(--quiet); text-decoration: line-through; }
+  .gitem.done i { background: var(--good); border-color: var(--good); }
+  .gitem.done i::after {
+    content: ""; position: absolute; left: 5px; top: 2.5px;
+    width: 4px; height: 8px; border: solid #0a0a0a; border-width: 0 1.5px 1.5px 0;
+    transform: rotate(45deg);
+  }
+  .gadd { display: flex; gap: 8px; margin: 6px 8px 0; }
+  .gadd input {
+    flex: 1; min-width: 0; padding: 8px 12px; font: inherit; font-size: 13.5px;
+    color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 9px; outline: none;
+    transition: border-color 150ms ease;
+  }
+  .gadd input:focus { border-color: var(--accent); }
+  .gadd button {
+    padding: 0 14px; border-radius: 9px; border: 1px solid var(--line);
+    background: none; color: var(--text); font: inherit; font-size: 13px; cursor: pointer;
+    transition: border-color 150ms ease;
+  }
+  .gadd button:hover { border-color: rgba(255,255,255,0.3); }
 
   /* --------------------------------------------------------- the track */
   .track-sec { padding: clamp(56px, 9vh, 90px) 0 0; }
@@ -227,6 +320,8 @@
 
   @media (prefers-reduced-motion: reduce) {
     .reveal { opacity: 1 !important; transform: none !important; transition: none !important; }
+    .demo-state { transition: none !important; transform: none !important; }
+    .gitem i { transition: none !important; }
   }
   </style>
 </head>
@@ -250,15 +345,63 @@
   <p class="hero-sub reveal">It is one small file, like a photo. To open it you
   need Krate, once -- like a player for a movie. After that, every app anyone
   sends you just opens, and each one tells you what it wants first.</p>
-  <div class="fcard reveal" aria-hidden="true">
-    <div class="face">
-      <b>Groceries</b>
-      <div class="bars"><i></i><i></i><i></i></div>
+  <div class="demo-seat reveal">
+
+    <!-- State 1: the file, as it would sit on a desktop. -->
+    <div class="demo-state on" id="dFile">
+      <div class="fcard" id="dCard" role="button" tabindex="0" aria-label="Try opening the example file">
+        <div class="face">
+          <b>Groceries</b>
+          <div class="bars"><i></i><i></i><i></i></div>
+        </div>
+        <div class="frow">
+          <span class="fname">groceries.krate</span>
+          <span>12 KB</span>
+        </div>
+      </div>
+      <p class="demo-hint" id="dHint"><b>Try it:</b> double-click the file.</p>
     </div>
-    <div class="frow">
-      <span class="fname">groceries.krate</span>
-      <span>12 KB</span>
+
+    <!-- State 2: the consent sheet, exactly as Krate draws it. -->
+    <div class="demo-state" id="dSheet">
+      <div class="dsheet">
+        <img src="/krate-glyph-white.png" alt="" />
+        <h3>Open &ldquo;Groceries&rdquo;?</h3>
+        <div class="asks">
+          <div><i>&#10003;</i> open a window</div>
+          <div><i>&#10003;</i> save your list on this computer</div>
+        </div>
+        <p class="none">It gets nothing else: no files, no internet, no camera.</p>
+        <div class="btns">
+          <button class="dbtn" id="dCancel" type="button">Cancel</button>
+          <button class="dbtn dbtn-primary" id="dAllow" type="button">Allow and open</button>
+        </div>
+      </div>
     </div>
+
+    <!-- State 3: the app, awake and usable. -->
+    <div class="demo-state" id="dApp">
+      <div class="gwin" aria-label="The groceries app, working">
+        <div class="gbar">
+          <div class="dots"><i></i><i></i><i></i></div>
+          <span class="gtitle">GROCERIES</span>
+          <span class="glive"><i></i>live</span>
+        </div>
+        <div class="gbody" id="gList">
+          <div class="gitem"><i></i>Oat milk</div>
+          <div class="gitem"><i></i>Espresso beans</div>
+          <div class="gitem done"><i></i>Lemons</div>
+          <div class="gitem"><i></i>Pasta</div>
+          <div class="gadd">
+            <input id="gInput" type="text" placeholder="Add something&hellip;" maxlength="40" />
+            <button id="gAdd" type="button">Add</button>
+          </div>
+        </div>
+      </div>
+      <p class="demo-hint">That was the whole thing. Tap the items -- it works.
+      Now do it for real, below.</p>
+    </div>
+
   </div>
 </section>
 
@@ -404,6 +547,56 @@
       reveals.forEach(function (el) { el.classList.add("in"); });
     }, 2500);
   }
+
+  /* ----------------------- the rehearsal: file, sheet, app, or nothing */
+  /* One click stands in for the double-click too: on a phone there is no
+     double-click, and a hesitating mouse should not be punished. */
+  var dFile = document.getElementById("dFile");
+  var dSheet = document.getElementById("dSheet");
+  var dApp = document.getElementById("dApp");
+  var dHint = document.getElementById("dHint");
+  var dCard = document.getElementById("dCard");
+  function swap(from, to) {
+    from.classList.remove("on");
+    setTimeout(function () { to.classList.add("on"); }, reduced ? 0 : 160);
+  }
+  function openFile() { swap(dFile, dSheet); }
+  dCard.addEventListener("click", openFile);
+  dCard.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openFile(); }
+  });
+  document.getElementById("dAllow").addEventListener("click", function () {
+    swap(dSheet, dApp);
+  });
+  document.getElementById("dCancel").addEventListener("click", function () {
+    swap(dSheet, dFile);
+    dHint.innerHTML = "Nothing ran. An app cannot start without your yes. <b>Try again?</b>";
+  });
+
+  /* The groceries list works, because the point of the page is that the
+     thing they were sent is real. */
+  var gList = document.getElementById("gList");
+  gList.addEventListener("click", function (e) {
+    var item = e.target.closest(".gitem");
+    if (item) item.classList.toggle("done");
+  });
+  var gAdd = function () {
+    var input = document.getElementById("gInput");
+    var text = input.value.trim();
+    if (!text) return;
+    var div = document.createElement("div");
+    div.className = "gitem";
+    var dot = document.createElement("i");
+    div.appendChild(dot);
+    div.appendChild(document.createTextNode(text));
+    gList.insertBefore(div, gList.querySelector(".gadd"));
+    input.value = "";
+    input.focus();
+  };
+  document.getElementById("gAdd").addEventListener("click", gAdd);
+  document.getElementById("gInput").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") gAdd();
+  });
 
   // Show the visitor's own system and nothing else. Two thirds of the
   // install instructions are noise to any given person.
