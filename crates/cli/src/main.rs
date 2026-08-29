@@ -517,6 +517,28 @@ enum Command {
         shot: Option<PathBuf>,
     },
 
+    /// Wrap an app for one friend on one system: a double-clickable file
+    /// that installs Krate once (a small download, checksums verified) and
+    /// then opens the app.
+    ///
+    /// The wrap does NOT carry the 24 MB player -- it plants it, so the
+    /// next .krate that friend receives just opens. The file stays roughly
+    /// the app's own size, and it is still a valid bundle: `krate run`
+    /// reads the app straight out of it.
+    Wrap {
+        /// Path to the .krate bundle to wrap.
+        bundle: PathBuf,
+
+        /// Which system the friend is on.
+        #[arg(long = "for", value_enum)]
+        target: WrapTarget,
+
+        /// Where to write the wrap. Defaults to the app's name next to the
+        /// input, e.g. RateCard-for-Mac.command.
+        #[arg(long, short = 'o')]
+        output: Option<PathBuf>,
+    },
+
     Publish {
         /// Path to the .krate bundle to upload.
         bundle: PathBuf,
@@ -1232,6 +1254,11 @@ fn run() -> Result<u8> {
             settle_ms,
             shot,
         } => card_bundle(&bundle, output.as_deref(), png_copy, settle_ms, shot.as_deref()),
+        Command::Wrap {
+            bundle,
+            target,
+            output,
+        } => wrap_bundle(&bundle, target, output.as_deref()),
         Command::UsageFlush => {
             usage::flush_spool_now();
             Ok(0)
@@ -3678,6 +3705,174 @@ const DEFAULT_HUB_URL: &str = "https://hub.krate.tech";
 /// The menu could build an app and open it but never offered to share it,
 /// which is the one thing a `.krate` exists for. This is the same code path as
 /// `krate publish`, so there is one publisher rather than two that can drift.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum WrapTarget {
+    Mac,
+    Windows,
+    Linux,
+}
+
+/// The Unix half of a wrap: a shell prefix that installs Krate if it is
+/// missing, then opens the bundle riding behind it. The script copies
+/// itself to a temporary .krate name before running, because a `.command`
+/// extension is not one `krate run` recognizes by name and the content
+/// sniff reads the script bytes, not the zip behind them.
+///
+/// Everything below the final `exit` is the app's own bytes; the shell
+/// reads a script line by line as it executes, so it never parses them.
+fn wrap_prefix_unix(app_name: &str, stem: &str) -> String {
+    format!(
+        r#"#!/bin/sh
+# {app_name} -- a Krate app, wrapped for a friend.
+#
+# Double-click me (macOS) or run me (Linux). If Krate is not installed,
+# I install it once -- a small free player from krate.tech, checksums
+# verified -- and then the app opens. Every later .krate file anyone
+# sends you just opens.
+#
+# macOS note for the sender: a downloaded script may need one
+# right-click -> Open the first time. That is Apple checking the
+# messenger, not the app; Krate itself still asks before the app runs.
+set -u
+find_krate() {{
+  command -v krate 2>/dev/null && return 0
+  for c in /usr/local/bin/krate "$HOME/.local/bin/krate"; do
+    if [ -x "$c" ]; then printf '%s\n' "$c"; return 0; fi
+  done
+  return 1
+}}
+krate_bin="$(find_krate || true)"
+if [ -z "$krate_bin" ]; then
+  echo "This app runs on Krate, a small free player. Installing it once..."
+  curl -fsSL https://krate.tech/install.sh | sh || {{
+    echo "Krate did not install. The friendly instructions live at krate.tech/open"
+    exit 1
+  }}
+  krate_bin="$(find_krate || true)"
+  if [ -z "$krate_bin" ]; then
+    echo "Krate installed somewhere this script cannot see; open krate.tech/open"
+    exit 1
+  fi
+fi
+tmp="${{TMPDIR:-/tmp}}/{stem}-$$.krate"
+cp "$0" "$tmp"
+"$krate_bin" run "$tmp" --consent
+status=$?
+rm -f "$tmp"
+exit $status
+# ---- the app itself follows; nothing below this line is a script ----
+"#
+    )
+}
+
+/// The Windows half: a .cmd prefix with CRLF line endings (cmd.exe is
+/// unreliable with bare LF around labels), ending in `exit /b` so the
+/// interpreter never reads the bundle bytes behind it. After a fresh
+/// install the new PATH entry is invisible to the already-running cmd, so
+/// the installer's default landing spot is checked explicitly.
+fn wrap_prefix_windows(app_name: &str, stem: &str) -> String {
+    let script = format!(
+        r#"@echo off
+rem {app_name} -- a Krate app, wrapped for a friend. Double-click me.
+rem If Krate is missing I install it once (a small free player), then open.
+setlocal
+set "KRATE_BIN=krate"
+where krate >nul 2>nul
+if %ERRORLEVEL%==0 goto run
+echo This app runs on Krate, a small free player. Installing it once...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://krate.tech/install.ps1 | iex"
+where krate >nul 2>nul
+if %ERRORLEVEL%==0 goto run
+if exist "%LOCALAPPDATA%\Krate\bin\krate.exe" (
+  set "KRATE_BIN=%LOCALAPPDATA%\Krate\bin\krate.exe"
+  goto run
+)
+echo Krate did not install. The friendly instructions live at krate.tech/open
+pause
+exit /b 1
+:run
+copy /b "%~f0" "%TEMP%\{stem}.krate" >nul
+"%KRATE_BIN%" run "%TEMP%\{stem}.krate" --consent
+set "STATUS=%ERRORLEVEL%"
+del "%TEMP%\{stem}.krate" >nul 2>nul
+exit /b %STATUS%
+"#
+    );
+    script.replace('\n', "\r\n")
+}
+
+fn wrap_bundle(bundle: &Path, target: WrapTarget, output: Option<&Path>) -> Result<u8> {
+    if !krate_bundle::is_bundle_path(bundle) {
+        anyhow::bail!(
+            "not a .krate bundle: {}\nPack one first with `krate pack` (or `krate create`).",
+            bundle.display()
+        );
+    }
+    let opened = krate_bundle::open(bundle)
+        .with_context(|| format!("could not open {}", bundle.display()))?;
+    let app_name = opened.manifest().app.name.clone();
+    drop(opened);
+    let stem = card_file_stem(&app_name);
+
+    let (prefix, suffix, friend) = match target {
+        WrapTarget::Mac => (wrap_prefix_unix(&app_name, &stem), "command", "Mac"),
+        WrapTarget::Linux => (wrap_prefix_unix(&app_name, &stem), "sh", "Linux"),
+        WrapTarget::Windows => (wrap_prefix_windows(&app_name, &stem), "cmd", "Windows"),
+    };
+
+    let out_path = match output {
+        Some(path) => path.to_path_buf(),
+        None => bundle
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join(format!("{stem}-for-{friend}.{suffix}")),
+    };
+
+    let bundle_bytes =
+        fs::read(bundle).with_context(|| format!("could not read {}", bundle.display()))?;
+    let mut wrap_bytes = prefix.into_bytes();
+    wrap_bytes.extend_from_slice(&bundle_bytes);
+    fs::write(&out_path, &wrap_bytes)
+        .with_context(|| format!("could not write {}", out_path.display()))?;
+    // Executable where the bit can survive the trip (USB, a zip, AirDrop
+    // between Macs). Channels that strip it leave a file that needs one
+    // `sh <file>` or a chmod -- a real limit of any script wrap, and part
+    // of why the wrap is the courtesy option, not the default share.
+    #[cfg(unix)]
+    if target != WrapTarget::Windows {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&out_path)?.permissions();
+        perms.set_mode(perms.mode() | 0o755);
+        fs::set_permissions(&out_path, perms)?;
+    }
+
+    // The wrap is still a bundle: verify the reading `krate run` will do
+    // before claiming success.
+    let reopened = krate_bundle::open(&out_path)
+        .with_context(|| "the wrap did not open as a bundle afterwards")?;
+    anyhow::ensure!(
+        reopened.manifest().app.name == app_name,
+        "the wrap opened as a different app"
+    );
+    drop(reopened);
+
+    let kb = (wrap_bytes.len() as f64 / 1024.0).ceil() as u64;
+    println!("Wrap written: {} ({kb} KB)", out_path.display());
+    println!("  for a friend on {friend} who does not have Krate yet.");
+    println!("  First open installs Krate once (a small verified download), then {app_name} opens.");
+    println!("  The player is planted, never bundled: their next .krate just opens too.");
+    match target {
+        WrapTarget::Mac => println!(
+            "  Heads up: macOS may want one right-click -> Open on a downloaded script."
+        ),
+        WrapTarget::Windows => println!(
+            "  Heads up: SmartScreen may ask once -- More info, then Run anyway."
+        ),
+        WrapTarget::Linux => {}
+    }
+    Ok(0)
+}
+
 /// One sentence of trust for the card's caption: what the app may touch, in
 /// the same plain words the consent prompt uses, ending with the guarantee
 /// that makes the sentence worth printing.
@@ -13557,7 +13752,7 @@ mod card_tests {
 
         // Reading from the front: a picture, shot plus caption strip.
         let decoder = png::Decoder::new(Cursor::new(card.as_slice()));
-        let mut reader = decoder.read_info().expect("the card fronts as a PNG");
+        let reader = decoder.read_info().expect("the card fronts as a PNG");
         let info = reader.info();
         assert_eq!(info.width, 8);
         assert!(info.height > 8, "the caption strip is part of the face");
@@ -13565,6 +13760,71 @@ mod card_tests {
         // Reading from the back: the app, by the same open the runtime uses.
         let opened =
             krate_bundle::open_reader(Cursor::new(card)).expect("the card backs as a bundle");
+        assert_eq!(opened.manifest().app.name, "Rate card");
+    }
+}
+
+#[cfg(test)]
+mod wrap_tests {
+    use super::{wrap_prefix_unix, wrap_prefix_windows};
+    use std::io::{Cursor, Write};
+
+    fn tiny_bundle() -> Vec<u8> {
+        let manifest_toml = "[app]\nid = \"dev.krate.wrap\"\nname = \"Rate card\"\n\
+             version = \"0.1.0\"\nentry = \"code.wasm\"\nworld = \"krate:app/gui@0.2.0\"\n";
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        zip.start_file("manifest.toml", stored).expect("start manifest");
+        zip.write_all(manifest_toml.as_bytes()).expect("write manifest");
+        zip.start_file("code.wasm", stored).expect("start component");
+        zip.write_all(b"\0asm\x01\0\0\0").expect("write component");
+        zip.finish().expect("finish zip").into_inner()
+    }
+
+    /// The one-file-two-programs property for the wrap: the shell reads a
+    /// script from the front, `krate run` reads the app from the back.
+    #[test]
+    fn a_unix_wrap_reads_as_script_and_bundle() {
+        let mut wrap = wrap_prefix_unix("Rate card", "RateCard").into_bytes();
+        wrap.extend_from_slice(&tiny_bundle());
+        assert!(wrap.starts_with(b"#!/bin/sh\n"), "the front is a shell script");
+        let opened =
+            krate_bundle::open_reader(Cursor::new(wrap)).expect("the back is a bundle");
+        assert_eq!(opened.manifest().app.name, "Rate card");
+    }
+
+    /// The prefix alone must be a valid shell program: `sh -n` parses it
+    /// without executing anything, which is exactly the reading a receiver's
+    /// shell will do before the exit line stops it.
+    #[test]
+    #[cfg(unix)]
+    fn the_unix_prefix_parses_as_shell() {
+        let prefix = wrap_prefix_unix("Rate card", "RateCard");
+        let dir = tempfile::TempDir::new().expect("tempdir");
+        let path = dir.path().join("prefix.sh");
+        std::fs::write(&path, prefix).expect("write prefix");
+        let status = std::process::Command::new("sh")
+            .arg("-n")
+            .arg(&path)
+            .status()
+            .expect("run sh -n");
+        assert!(status.success(), "sh -n rejected the wrap prefix");
+    }
+
+    /// cmd.exe wants CRLF, must never fall through into the bundle bytes,
+    /// and must not carry the player -- it plants it by download.
+    #[test]
+    fn the_windows_prefix_is_crlf_and_exits_before_the_bundle() {
+        let prefix = wrap_prefix_windows("Rate card", "RateCard");
+        assert!(prefix.starts_with("@echo off\r\n"));
+        assert!(prefix.contains("exit /b %STATUS%\r\n"), "execution ends before the blob");
+        assert!(prefix.contains("install.ps1"), "it plants the player, never bundles it");
+        assert!(!prefix.contains('\u{0}'), "text only; the app rides behind");
+        let mut wrap = prefix.into_bytes();
+        wrap.extend_from_slice(&tiny_bundle());
+        let opened =
+            krate_bundle::open_reader(Cursor::new(wrap)).expect("the back is a bundle");
         assert_eq!(opened.manifest().app.name, "Rate card");
     }
 }

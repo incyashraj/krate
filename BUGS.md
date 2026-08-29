@@ -154,6 +154,28 @@ Shipped   `krate card` is a real verb (2026-08-29). It photographs the app
           window stays because "can open a window · nothing else" is the
           sentence. Still open: the receiving half, and the Studio Send
           button that calls this verb.
+Also       Two more halves landed the same day. The LINK path: a desktop
+shipped    browser on hub.krate.tech/a/<id> now 302s to krate.tech/open/?a=,
+2026-08-29: which shows THEIR app (real shot, name, size, download button);
+          tools and ?dl=1 still get bytes; verified live on the deployed
+          worker and page. The WRAP (option 2, as option 1's mechanism):
+          `krate wrap app.krate --for mac|windows|linux` writes a script
+          prefix + the bundle -- 15 KB total for the checklist app, because
+          it PLANTS the player via install.sh/install.ps1 (checksums
+          verified) instead of carrying it. The wrap is still a valid
+          bundle from the tail. Mac path proven end to end with a shim:
+          the script finds krate, copies itself to a temp .krate (a
+          .command extension fails the content sniff, so running $0
+          directly would not work), runs it --consent, cleans up; the
+          intercepted temp painted a real frame. Windows .cmd is locked
+          structurally by tests (CRLF, exit /b before the blob,
+          LOCALAPPDATA fallback because a fresh install's PATH is
+          invisible to the running cmd) but has NOT run on a real PC yet
+          -- that belongs on the pre-release ladder. Known limit, stated
+          in the verb's own output: channels that strip the exec bit
+          (mail, most chats) leave the Unix wrap needing `sh <file>` or a
+          right-click -- part of why the wrap is the courtesy, not the
+          default share.
 
 
 ### K-194 -- some animating apps grow ~400 MB/sec until the machine dies; others are flat
