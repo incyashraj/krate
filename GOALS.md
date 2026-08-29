@@ -171,10 +171,10 @@ items the conversations specify that no stage carried:
 | 21 | Studio Send sheet gains "For a friend without Krate" -- the wrap, with a Mac/Windows/Linux choice, calling `krate wrap` | **in repo 2026-08-29**, rides the release |
 | 22 | Founding waitlist: $79/yr for the first 200, honest early-days copy, email capture through the hub. No public checkout yet | **live 2026-08-29** -- hub /founding + /studio#founding block |
 | 23 | The 20-second film: type, file appears, other desktop opens it through the first-click path. Promo pipeline; no voiceover. Only ships because first-click now works | **live 2026-08-29** -- four beats, 946 KB, real rate-card footage; Watch link + modal on the homepage |
-| 24 | The public rename finishes in code: Go/TS SDKs still carry l36* names | open |
+| 24 | The public rename finishes in code: Go/TS SDKs still carry l36* names | **done 2026-08-29** -- zero l36 references; wasip1 build + shape check green |
 | 25 | Version alignment at the cut: workspace says 0.1.28, tags say v0.2.1, dist app says older still. A founding customer reads these | folds into stage 18 |
 | 26 | Unlisted links: publish without a gallery listing, so a client rate card is a URL, not a public exhibit | **live 2026-08-29** -- worker flag + /meta route + CLI --unlisted + Studio opt-in checkbox (listing off by default) |
-| 27 | Send the file opens the OS share sheet (AirDrop, Mail, Messages) with the card, not just a Finder reveal | open |
+| 27 | Send the file opens the OS share sheet (AirDrop, Mail, Messages) with the card, not just a Finder reveal | **in repo 2026-08-29** -- NSSharingServicePicker on macOS, reveal fallback elsewhere; rides the release |
 
 Audited as already covered: the three share buttons (9, 10, 11 + 21),
 Use/Keep/Change verbs (Studio's Open/Send/Change), the receiver's one

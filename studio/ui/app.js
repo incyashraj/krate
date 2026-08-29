@@ -2794,11 +2794,21 @@ async function sendCard() {
     $("sendCardImg").src = data;
     $("sendCardDone").classList.remove("hidden");
     const name = cardPath.split(/[\\/]/).pop();
-    $("sendCardNote").textContent = name +
-      " is in the folder that just opened. Drag it into mail, AirDrop, or a " +
-      "chat's paperclip -- send it as a file, not as a photo.";
     $("sendNote").textContent = "";
-    try { await invoke("reveal", { path: cardPath }); } catch (e) {}
+    // The file in their hand: the OS share sheet with the card, so AirDrop,
+    // Mail and Messages are one tap away. Where the sheet is not available,
+    // the Finder reveal is the honest fallback -- and the note says which
+    // world they are in.
+    try {
+      await invoke("share_file", { path: cardPath });
+      $("sendCardNote").textContent = name +
+        " -- pick where it goes. Send it as a file, not as a photo.";
+    } catch (e) {
+      $("sendCardNote").textContent = name +
+        " is in the folder that just opened. Drag it into mail, AirDrop, or a " +
+        "chat's paperclip -- send it as a file, not as a photo.";
+      try { await invoke("reveal", { path: cardPath }); } catch (e2) {}
+    }
   } catch (err) {
     $("sendNote").textContent = plainWords(err);
     $("sendCardBtn").disabled = false;

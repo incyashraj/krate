@@ -4,8 +4,8 @@ import (
 	"os"
 	"strings"
 
-	l36io "github.com/incyashraj/krate/packages/sdk-go/krate/io"
-	l36net "github.com/incyashraj/krate/packages/sdk-go/krate/net"
+	krateio "github.com/incyashraj/krate/packages/sdk-go/krate/io"
+	kratenet "github.com/incyashraj/krate/packages/sdk-go/krate/net"
 )
 
 func main() {
@@ -13,20 +13,20 @@ func main() {
 }
 
 func run() int {
-	args := l36io.Args()
+	args := krateio.Args()
 	if len(args) == 0 {
-		_ = l36io.Eprintln("usage: krate-go-curl <url>")
+		_ = krateio.Eprintln("usage: krate-go-curl <url>")
 		return 2
 	}
 
-	body, err := l36net.GetText(args[0])
+	body, err := kratenet.GetText(args[0])
 	if err != nil {
 		message, code := classifyNetError(err)
-		_ = l36io.Eprintln(message)
+		_ = krateio.Eprintln(message)
 		return code
 	}
 
-	_ = l36io.Print(body)
+	_ = krateio.Print(body)
 	return 0
 }
 

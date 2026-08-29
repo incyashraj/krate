@@ -68,8 +68,8 @@ if (process.exitCode) {
 for (const [relativePath, tokens] of Object.entries({
   "examples/krate-cat/main.go": [
     "usage: krate-go-cat <path> [path...]",
-    "l36fs.ReadText(file)",
-    "l36io.Print(body)",
+    "kratefs.ReadText(file)",
+    "krateio.Print(body)",
   ],
   "examples/krate-clock/main.go": [
     "app=krate-go-clock",
@@ -79,8 +79,8 @@ for (const [relativePath, tokens] of Object.entries({
   ],
   "examples/krate-curl/main.go": [
     "usage: krate-go-curl <url>",
-    "l36net.GetText(args[0])",
-    "l36io.Print(body)",
+    "kratenet.GetText(args[0])",
+    "krateio.Print(body)",
   ],
 })) {
   const source = await readText(relativePath);

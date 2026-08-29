@@ -11,24 +11,24 @@ TinyGo component build still needs the Go toolchain and generated WIT bindings.
 package main
 
 import (
-    l36io "github.com/incyashraj/krate/packages/sdk-go/krate/io"
-    l36net "github.com/incyashraj/krate/packages/sdk-go/krate/net"
+    krateio "github.com/incyashraj/krate/packages/sdk-go/krate/io"
+    kratenet "github.com/incyashraj/krate/packages/sdk-go/krate/net"
 )
 
 func main() {
-    args := l36io.Args()
+    args := krateio.Args()
     if len(args) == 0 {
-        l36io.Eprintln("usage: krate-go-curl <url>")
+        krateio.Eprintln("usage: krate-go-curl <url>")
         return
     }
 
-    body, err := l36net.GetText(args[0])
+    body, err := kratenet.GetText(args[0])
     if err != nil {
-        l36io.Eprintln(err.Error())
+        krateio.Eprintln(err.Error())
         return
     }
 
-    l36io.Print(body)
+    krateio.Print(body)
 }
 ```
 

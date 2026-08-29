@@ -2163,6 +2163,78 @@ async fn make_wrap(path: String, target: String) -> Result<String, String> {
         .ok_or_else(|| "the engine did not say where the wrap landed".to_string())
 }
 
+/// The OS share sheet, with the file in hand: AirDrop, Mail, Messages --
+/// the places "send it like a photo" actually happens. macOS only today;
+/// other systems fall back to reveal, and the UI knows to.
+#[tauri::command]
+fn share_file(window: tauri::WebviewWindow, path: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let path = existing(&path)?.display().to_string();
+        let ns_window = window.ns_window().map_err(|err| err.to_string())? as usize;
+        window
+            .run_on_main_thread(move || {
+                use objc2::rc::Retained;
+                use objc2::runtime::AnyObject;
+                use objc2::AllocAnyThread;
+                use objc2_app_kit::{NSSharingServicePicker, NSWindow};
+                use objc2_foundation::{NSArray, NSRect, NSRectEdge, NSString, NSURL};
+                use std::cell::RefCell;
+
+                // The picker dismisses itself the moment it is released, so
+                // it must outlive this closure. One slot, replaced per
+                // share, is exactly as long as it needs to live.
+                thread_local! {
+                    static HELD: RefCell<Option<Retained<NSSharingServicePicker>>> =
+                        const { RefCell::new(None) };
+                }
+
+                // SAFETY: the pointer came from this window's ns_window()
+                // moments ago, and this closure runs on the main thread,
+                // which is where AppKit objects live.
+                let ns_window: &NSWindow = unsafe { &*(ns_window as *const NSWindow) };
+                let Some(content) = ns_window.contentView() else {
+                    return;
+                };
+                let url = unsafe { NSURL::fileURLWithPath(&NSString::from_str(&path)) };
+                let item: Retained<AnyObject> =
+                    Retained::into_super(Retained::into_super(url));
+                let items: Retained<NSArray<AnyObject>> =
+                    NSArray::from_retained_slice(&[item]);
+                let picker = unsafe {
+                    NSSharingServicePicker::initWithItems(
+                        NSSharingServicePicker::alloc(),
+                        &items,
+                    )
+                };
+                // Anchored to a small rect at the window's center-bottom:
+                // the sheet needs somewhere to point, and the Send sheet
+                // the person just clicked lives mid-window.
+                let bounds = content.bounds();
+                let rect = NSRect::new(
+                    objc2_foundation::NSPoint::new(bounds.size.width / 2.0 - 2.0, 80.0),
+                    objc2_foundation::NSSize::new(4.0, 4.0),
+                );
+                unsafe {
+                    picker.showRelativeToRect_ofView_preferredEdge(
+                        rect,
+                        &content,
+                        NSRectEdge::MaxY,
+                    );
+                }
+                HELD.with(|slot| *slot.borrow_mut() = Some(picker));
+            })
+            .map_err(|err| err.to_string())?;
+        return Ok(());
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = window;
+        let _ = path;
+        Err("the share sheet is macOS-only today".to_string())
+    }
+}
+
 /// Show the file itself, for people who want to drag it into a chat.
 #[tauri::command]
 fn reveal(path: String) -> Result<(), String> {
@@ -3192,6 +3264,7 @@ fn main() {
             publish,
             make_card,
             make_wrap,
+            share_file,
             reveal,
             settings_get,
             dbg_log,

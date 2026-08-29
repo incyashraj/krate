@@ -1,23 +1,23 @@
 package main
 
 import (
-	l36fs "github.com/incyashraj/krate/packages/sdk-go/krate/fs"
-	l36io "github.com/incyashraj/krate/packages/sdk-go/krate/io"
+	kratefs "github.com/incyashraj/krate/packages/sdk-go/krate/fs"
+	krateio "github.com/incyashraj/krate/packages/sdk-go/krate/io"
 )
 
 func main() {
-	args := l36io.Args()
+	args := krateio.Args()
 	if len(args) == 0 {
-		_ = l36io.Eprintln("usage: krate-go-cat <path> [path...]")
+		_ = krateio.Eprintln("usage: krate-go-cat <path> [path...]")
 		return
 	}
 
 	for _, file := range args {
-		body, err := l36fs.ReadText(file)
+		body, err := kratefs.ReadText(file)
 		if err != nil {
-			_ = l36io.Eprintln(err.Error())
+			_ = krateio.Eprintln(err.Error())
 			return
 		}
-		_ = l36io.Print(body)
+		_ = krateio.Print(body)
 	}
 }
