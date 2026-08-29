@@ -35,6 +35,18 @@ const GFX_WIT: &str = include_str!("../../../wit/krate/phase3/deps/gfx/gfx.wit")
 const AUDIO_WIT: &str = include_str!("../../../wit/krate/phase3/deps/audio/audio.wit");
 const CAMERA_WIT: &str = include_str!("../../../wit/krate/phase3/deps/camera/camera.wit");
 const SPEECH_WIT: &str = include_str!("../../../wit/krate/phase3/deps/speech/speech.wit");
+// The shared packages too, so the pack's interface index is COMPLETE. The
+// authoring study measured what an incomplete index costs: a build that
+// cannot answer "what exactly does locale expose?" from the pack opens
+// bindings.rs or the SDK source instead, and each such hunt is a full model
+// round trip (~14s and ~128k tokens re-read, measured across 15 builds).
+const FS_WIT: &str = include_str!("../../../wit/krate/phase3/deps/fs/fs.wit");
+const IO_WIT: &str = include_str!("../../../wit/krate/phase3/deps/io/io.wit");
+const LOCALE_WIT: &str = include_str!("../../../wit/krate/phase3/deps/locale/locale.wit");
+const NET_WIT: &str = include_str!("../../../wit/krate/phase3/deps/net/net.wit");
+const RANDOM_WIT: &str = include_str!("../../../wit/krate/phase3/deps/random/random.wit");
+const STORE_WIT: &str = include_str!("../../../wit/krate/phase3/deps/store/store.wit");
+const TIME_WIT: &str = include_str!("../../../wit/krate/phase3/deps/time/time.wit");
 
 /// Generate the full `KRATE_AUTHORING.md` for an app in `app_dir`.
 ///
@@ -83,6 +95,42 @@ The one hard rule: a Krate component may import ONLY `krate:*` interfaces.
 Reaching the operating system through `std` instead of through Krate pulls
 `wasi:*` imports in, and the app is rejected at the import check. Everything
 below is in service of writing an app that passes that check.
+
+## Before you doubt: these are all real
+
+Past builds concluded, mid-run, that Krate \"cannot\" do things it does --
+one wrote \"Krate apps cannot fetch live currency rates from the internet\"
+at step 49 and built a worse app around that wrong belief, while this file
+described the network in nine places. Every line below is a real, shipped
+capability. Believe this table over your instinct:
+
+- **Live network fetch IS real.** Declare `net.http`. `net::begin` /
+  `net::poll` in the SDK, `bindings::krate::net::http-client` in a GUI app.
+  A currency converter fetching live rates is a normal Krate app.
+- **The real clock IS real.** `time.clock` gives epoch milliseconds; the
+  day number is `epoch_ms / 86_400_000`.
+- **The microphone IS real** (`audio.capture`), **the camera IS real**
+  (`camera.capture`), **speech-to-text IS real** (`speech`).
+- **Remembering things IS real.** `store.kv` / `store.sql` persist across
+  runs with no fs grant at all.
+- **Working on the person's own files IS real.** Declare
+  `ui.dialog:open-folder`; their pick is the grant.
+
+If you catch yourself writing \"Krate apps cannot ...\" about anything in
+this file, stop and re-read the section instead. The true wall list is
+short: no screen capture, no sending input to other apps, no background
+process after the window closes, one window per app.
+
+## This file is complete. Do not go hunting.
+
+Every callable interface is in this file, generated from the same WIT and
+SDK source the bindings are built from. Do not open `src/bindings.rs` or
+the SDK's own sources (`main.rs`, `usability.rs`, `locale.rs`, ...) to
+check a name: they are generated plumbing at under 1% signal, each open
+costs a full model round trip, and they contain nothing this file lacks.
+If a name is not in this file, it does not exist -- do not invent it. The
+only files worth opening besides this one are the single closest example
+app and the code you are writing.
 
 ";
 
@@ -1162,6 +1210,24 @@ pub(crate) fn gui_world_section() -> String {
         out.push_str(&render_wit_interfaces(package, wit));
     }
     out.push_str(
+        "\n## The shared packages, exact shapes\n\n\
+         The same modules earlier sections describe in prose, but as the exact \
+         interfaces the generated `bindings` module exposes -- complete, so \
+         there is never a reason to open `bindings.rs` to check a name or a \
+         type. Reach each as `bindings::krate::<package>::<interface>::<fn>`.\n\n",
+    );
+    for (package, wit) in [
+        ("fs", FS_WIT),
+        ("io", IO_WIT),
+        ("locale", LOCALE_WIT),
+        ("net", NET_WIT),
+        ("random", RANDOM_WIT),
+        ("store", STORE_WIT),
+        ("time", TIME_WIT),
+    ] {
+        out.push_str(&render_wit_interfaces(package, wit));
+    }
+    out.push_str(
         "\n## Showing a camera feed\n\n\
          A live preview is a poll in the event loop, not a callback. Open once, \
          start once, then read a frame each time round and draw whatever came \
@@ -2051,6 +2117,24 @@ interface api {
         assert!(pack.contains("canvas2d::present"), "gfx WIT");
         assert!(pack.contains("krate-notes"), "example index");
         assert!(pack.contains("getrandom-backend"), "the getrandom remedy");
+        // The index is COMPLETE: the shared packages carry exact WIT shapes
+        // too, so a build never opens bindings.rs to check a name (the
+        // authoring study measured each such hunt at a full round trip).
+        assert!(
+            pack.contains("The shared packages, exact shapes"),
+            "shared-package surface"
+        );
+        for probe in ["## `locale`", "## `net`", "## `store`", "## `time`", "## `fs`"] {
+            assert!(pack.contains(probe), "missing shared WIT surface: {probe}");
+        }
+        assert!(
+            pack.contains("Before you doubt: these are all real"),
+            "the belief table"
+        );
+        assert!(
+            pack.contains("This file is complete. Do not go hunting."),
+            "the no-hunt rule"
+        );
     }
 
     #[test]
