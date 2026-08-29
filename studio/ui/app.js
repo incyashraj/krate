@@ -552,7 +552,12 @@ function openSession(s) {
   // The last recorded question in a session that never built gets its
   // Build button back on replay. Without this, reopening showed the
   // questions wordlessly and the only affordance left was typing.
-  const lastAsk = !building && !s.result
+  // Only when no build was ever attempted: once Build was clicked the
+  // question is answered, and re-arming the button under an old ask while
+  // a failure card sits below it gave one session two competing pasts
+  // (seen live: a glowing "Skip and build" after the build had already
+  // run and died).
+  const lastAsk = !building && !s.result && !s.buildStarted && !s.failedRequest
     ? msgs.map((m, i) => (m.kind === "ask" ? i : -1)).filter((i) => i >= 0).pop()
     : undefined;
   // After a restart the in-memory planning state is gone; rebuild enough of
@@ -600,8 +605,27 @@ function openSession(s) {
     }
     show("done");
     setRevisePlaceholders();
+  } else if (s.failedRequest || msgs.some((m) => m.who === "YOU")) {
+    // Unfinished and not live: the build stopped, failed, or was cut off
+    // by a restart. Never the idle "your app will appear here" ghost --
+    // that pane plus a revise-flavored composer was the hour-old zombie
+    // the founder kept meeting. The honest face is the stopped card with
+    // Resume wired to the person's own words.
+    const first = msgs.find((m) => m.who === "YOU");
+    if (!s.failedRequest && first) s.failedRequest = first.body;
+    state.lastFailed = s.failedRequest;
+    $("failTitle").textContent = s.buildStarted
+      ? "This build was interrupted."
+      : "This one never got going.";
+    $("failWhy").textContent =
+      "Nothing was lost -- your words are kept, ready to send again.";
+    $("retryBtn").textContent = "Resume build";
+    $("failRaw").textContent = "";
+    show("failed");
+    unlockComposer("Hit Resume build - or say what to do differently…");
   } else {
     show("idle");
+    unlockComposer("Describe the app you want…");
   }
   showView("session");
   $("prompt").focus();
@@ -865,16 +889,26 @@ function restoreBuild(sessionId) {
     const now = $("nowLine");
     if (now && rec.nowLine) now.textContent = rec.nowLine;
 
-    // The latest frame the AI rendered, if one has appeared.
-    const shotBox = $("buildShotBox");
+    // The latest frame the AI rendered, if one has appeared; the skeleton
+    // shimmers in the frame until then.
     const shotImg = $("buildShot");
-    if (shotBox && shotImg) {
+    const ghost = $("formingGhost");
+    const tag = $("buildShotTag");
+    if (shotImg) {
       if (rec.shot) {
         shotImg.src = rec.shot;
-        shotBox.classList.remove("hidden");
+        shotImg.classList.remove("hidden");
+        if (ghost) ghost.classList.add("hidden");
+        if (tag) tag.textContent = "your app so far";
       } else {
-        shotBox.classList.add("hidden");
+        shotImg.classList.add("hidden");
+        if (ghost) ghost.classList.remove("hidden");
+        if (tag) tag.textContent = "taking shape…";
       }
+    }
+    const track = $("buildTrack");
+    if (track && rec.stageIndex >= 0) {
+      track.style.transform = `scaleX(${(rec.stageIndex + 0.5) / STAGES.length})`;
     }
 
     // The clock keeps counting from when the build really started, not from
@@ -925,8 +959,16 @@ function beginBuild(title, expect) {
     (s) => `<li data-key="${s.key}"><span class="tick"></span>${s.label}</li>`,
   ).join("");
   $("buildLog").textContent = "";
-  const shotBox = $("buildShotBox");
-  if (shotBox) shotBox.classList.add("hidden");
+  // The forming frame starts as the shimmering skeleton; the first real
+  // test frame replaces it in place.
+  const shotImg = $("buildShot");
+  if (shotImg) { shotImg.classList.add("hidden"); shotImg.removeAttribute("src"); }
+  const ghost = $("formingGhost");
+  if (ghost) ghost.classList.remove("hidden");
+  const shotTag = $("buildShotTag");
+  if (shotTag) shotTag.textContent = "taking shape…";
+  const track = $("buildTrack");
+  if (track) track.style.transform = "scaleX(0.04)";
   state.stageIndex = -1;
   state.firstTimeSetupSaid = false;
   // Start this session's progress record fresh. Everything the pane shows is
@@ -990,6 +1032,10 @@ function advanceStage(key) {
     const bar = state.buildChip.querySelector(".vbar i");
     if (bar) bar.style.transform = `scaleX(${(idx + 0.5) / STAGES.length})`;
   }
+  // The card's own thin track moves on real stages only -- never a timer
+  // pretending to know how long an AI will think.
+  const track = $("buildTrack");
+  if (track) track.style.transform = `scaleX(${(idx + 0.5) / STAGES.length})`;
   setProgress((idx + 0.5) / STAGES.length);
 }
 
@@ -1025,12 +1071,15 @@ function onBuildShot(dataUrl) {
   const watching =
     state.session && state.buildingSession && state.session.id === state.buildingSession.id;
   if (!watching) return;
-  const box = $("buildShotBox");
   const img = $("buildShot");
-  if (box && img) {
+  if (img) {
     img.src = dataUrl;
-    box.classList.remove("hidden");
+    img.classList.remove("hidden");
   }
+  const ghost = $("formingGhost");
+  if (ghost) ghost.classList.add("hidden");
+  const tag = $("buildShotTag");
+  if (tag) tag.textContent = "your app so far";
 }
 
 /* Map the engine's own lines onto the stage story. These are our lines,
@@ -1340,17 +1389,45 @@ function monthKey() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
-function makesThisMonth() {
+/* The counter of record lives in the shell, keyed to the machine's own
+ * hardware identity (~/.krate/plan.json): three free makes belong to the
+ * DEVICE, so a cleared cache or a fresh email does not mint three more.
+ * localStorage stays as the seed for upgrades and the fallback when the
+ * shell cannot answer. */
+function makesLocal() {
   try {
     const rec = JSON.parse(localStorage.getItem("krateMakes") || "{}");
     return rec.month === monthKey() ? rec.n || 0 : 0;
   } catch (e) { return 0; }
 }
-function countMake() {
+function mirrorLocal(n) {
   try {
-    localStorage.setItem("krateMakes",
-      JSON.stringify({ month: monthKey(), n: makesThisMonth() + 1 }));
+    localStorage.setItem("krateMakes", JSON.stringify({ month: monthKey(), n }));
   } catch (e) {}
+}
+function makesThisMonth() {
+  const p = state.planMakes;
+  if (p && p.month === monthKey()) return p.n || 0;
+  return makesLocal();
+}
+async function loadPlanMakes() {
+  try {
+    const rec = await invoke("plan_makes", {
+      seedMonth: monthKey(),
+      seedN: makesLocal(),
+    });
+    state.planMakes = rec;
+    mirrorLocal(rec.n || 0);
+  } catch (e) { /* the localStorage fallback carries it */ }
+  renderFreeCount();
+}
+function countMake() {
+  const n = makesThisMonth() + 1;
+  state.planMakes = { month: monthKey(), n };
+  mirrorLocal(n);
+  invoke("plan_count_make")
+    .then((rec) => { state.planMakes = rec; mirrorLocal(rec.n || 0); renderFreeCount(); })
+    .catch(() => {});
   renderFreeCount();
 }
 /// One painter for every place the plan shows: the title-bar chip, the
@@ -1395,7 +1472,20 @@ async function make(request, opts) {
   // refuses it too, but stopping here keeps the UI honest. Keyed on the
   // building session, not the visible phase -- browsing away changes the
   // phase while the build very much continues.
-  if (state.buildingSession) { invoke("dbg_log", { line: "make() BAILED: buildingSession set" }).catch(()=>{}); return; }
+  if (state.buildingSession) {
+    // Self-heal a stuck flag: if the build already settled (stopped or
+    // failed) but the create promise never came back to clear this, the
+    // flag alone was blocking every future make -- silently. A settled
+    // build is over; clear it and carry on.
+    if (state.buildSettled) {
+      state.builds.delete(state.buildingSession.id);
+      state.buildingSession = null;
+      renderBuilding();
+    } else {
+      invoke("dbg_log", { line: "make() BAILED: buildingSession set" }).catch(()=>{});
+      return;
+    }
+  }
   if (!state.session) newSession(request);
   // The stage belongs to what is happening NOW. Without this a retry from
   // a rail chip left the previous failure card on screen while the plan
@@ -1694,6 +1784,10 @@ async function buildNow(request, files, revising, planSession) {
 
   state.buildingSession = state.session;
   state.lastRequest = request;
+  // The attempt itself is a fact about the session, persisted: a reopened
+  // session must know a build ran even when the process, the result, and
+  // this window are all gone.
+  state.session.buildStarted = true;
   renderBuilding();
   startBuildWatchdog();
   // The rail is a conversation: it should answer. Without this the left
@@ -3267,6 +3361,18 @@ async function stopBuild() {
   // failBuild with the "stopped" reason renders the stopped screen and settles
   // the chip once; the settle-once guard makes a later real exit harmless.
   failBuild("stopped", state.lastRequest || "");
+  // And end the building STATE, not just the screen. buildNow's finally
+  // clears these when the create promise settles -- but a kill that leaves
+  // a zombie IPC never settles the promise, and the stale flag kept the
+  // home bar saying "Making…" and silently refused every next build
+  // ("cancelled it already but it still shows active", seen live for an
+  // hour). buildNow's late finally is harmless after this: delete and
+  // null are both idempotent.
+  if (state.buildingSession) {
+    state.builds.delete(state.buildingSession.id);
+    state.buildingSession = null;
+  }
+  renderBuilding();
 }
 
 $("stopBtn").addEventListener("click", stopBuild);
@@ -3349,6 +3455,7 @@ $("planFounding")?.addEventListener("click", () => {
   invoke("open_external", { url: "https://krate.tech/studio/#founding" }).catch(() => {});
 });
 renderFreeCount();
+loadPlanMakes();
 {
   const g = $("galleryBtn");
   if (g) g.addEventListener("click", () => show("cloud"));

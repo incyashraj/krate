@@ -443,8 +443,51 @@ body.windows .titlebar { padding-right: 150px; }
 
 /* The app's own latest test frame, updating as the AI works. Small on
    purpose -- a preview riding above the stages, not the finished-app stage. */
-.build-shot { position: relative; margin: 10px 0 14px; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
-.build-shot img { display: block; width: 100%; max-height: 220px; object-fit: cover; object-position: top; }
+.build-shot { position: relative; margin: 10px 0 14px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.02); min-height: 190px; }
+.build-shot img { display: block; width: 100%; max-height: 240px; object-fit: cover; object-position: top; }
+
+/* The forming skeleton: a ghost of a window, breathing, until the AI's
+   first real test frame replaces it. One object, one idea -- the app,
+   arriving -- instead of a dead text card. */
+.forming-ghost {
+  position: absolute; inset: 0; padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.g-chrome { display: flex; gap: 5px; margin-bottom: 2px; }
+.g-chrome i { width: 8px; height: 8px; border-radius: 50%; background: rgba(255, 255, 255, 0.1); }
+.g-block {
+  display: block; border-radius: 8px;
+  background: linear-gradient(100deg, rgba(255, 255, 255, 0.045) 40%, rgba(255, 255, 255, 0.1) 50%, rgba(255, 255, 255, 0.045) 60%);
+  background-size: 220% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+.g-hero { flex: 1; min-height: 54px; }
+.g-row { display: flex; gap: 10px; }
+.g-half { height: 34px; flex: 1; }
+.g-line { height: 12px; width: 70%; }
+.g-line.short { width: 45%; }
+.forming-sweep {
+  position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(115deg, transparent 42%, rgba(98, 145, 255, 0.07) 50%, transparent 58%);
+  background-size: 300% 100%;
+  animation: formingSweep 3.2s ease-in-out infinite;
+}
+@keyframes formingSweep { 0% { background-position: 120% 0; } 100% { background-position: -120% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .g-block, .forming-sweep { animation: none; }
+}
+
+/* The thin honest track: moves on real stages only. */
+.build-track {
+  height: 2px; border-radius: 2px; margin: 10px 0 12px;
+  background: rgba(255, 255, 255, 0.07); overflow: hidden;
+}
+.build-track i {
+  display: block; height: 100%; border-radius: 2px;
+  background: linear-gradient(90deg, var(--accent, #6291ff), rgba(98, 145, 255, 0.55));
+  transform: scaleX(0.04); transform-origin: left center;
+  transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
 .build-shot-tag {
   position: absolute; left: 8px; bottom: 8px;
   font-size: 10.5px; letter-spacing: 0.02em; color: #fff;

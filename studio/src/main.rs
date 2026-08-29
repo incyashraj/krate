@@ -2704,6 +2704,143 @@ fn dirs_home() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from("."))
 }
 
+/* ---- the free counter, bound to the device ----------------------------
+ *
+ * Three free makes a month belong to the MACHINE, not to an email or a
+ * browser store: a localStorage counter reset with a cache wipe, and an
+ * account counter resets with a new address. The OS's own hardware
+ * identity does neither. The raw id never leaves this function -- only a
+ * salted hash is stored, and only locally in ~/.krate/plan.json (the
+ * engine's home, so it survives a Studio reinstall and an app-data wipe).
+ *
+ * Honest limit of the mechanism: a determined person with a shell can
+ * still edit the file. This is the strongest enforcement that exists
+ * before checkout; the hub entitlement takes over when billing arrives,
+ * and this same device hash is what it will join against. */
+
+#[cfg(target_os = "macos")]
+fn raw_device_id() -> Option<String> {
+    let out = silent_cmd("ioreg")
+        .args(["-rd1", "-c", "IOPlatformExpertDevice"])
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let line = text.lines().find(|l| l.contains("IOPlatformUUID"))?;
+    Some(line.split('"').nth(3)?.to_string())
+}
+#[cfg(target_os = "linux")]
+fn raw_device_id() -> Option<String> {
+    std::fs::read_to_string("/etc/machine-id")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+#[cfg(windows)]
+fn raw_device_id() -> Option<String> {
+    let out = silent_cmd("reg")
+        .args([
+            "query",
+            r"HKLM\SOFTWARE\Microsoft\Cryptography",
+            "/v",
+            "MachineGuid",
+        ])
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    text.split_whitespace()
+        .last()
+        .map(|s| s.to_string())
+        .filter(|s| s.len() >= 16)
+}
+
+fn device_hash() -> String {
+    use sha2::{Digest, Sha256};
+    let raw = raw_device_id().unwrap_or_default();
+    if raw.is_empty() {
+        return String::new();
+    }
+    let mut h = Sha256::new();
+    h.update(b"krate-device-v1:");
+    h.update(raw.as_bytes());
+    h.finalize().iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// `YYYY-MM` from the system clock, no chrono: Hinnant's civil-from-days.
+fn month_key_now() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let z = (secs / 86_400) as i64 + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe as i64 + era * 400 + if m <= 2 { 1 } else { 0 };
+    format!("{y:04}-{m:02}")
+}
+
+fn plan_file() -> PathBuf {
+    dirs_home().join(".krate").join("plan.json")
+}
+
+fn plan_read() -> (String, String, u64) {
+    let raw = std::fs::read_to_string(plan_file()).unwrap_or_default();
+    let v: serde_json::Value = serde_json::from_str(&raw).unwrap_or_default();
+    (
+        v["device"].as_str().unwrap_or("").to_string(),
+        v["month"].as_str().unwrap_or("").to_string(),
+        v["n"].as_u64().unwrap_or(0),
+    )
+}
+
+fn plan_write(device: &str, month: &str, n: u64) {
+    let path = plan_file();
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(
+        path,
+        serde_json::json!({ "device": device, "month": month, "n": n }).to_string(),
+    );
+}
+
+/// The month's count for THIS device. `seed` carries the UI's legacy
+/// localStorage value so an upgrade cannot reset anyone to zero -- the
+/// larger of the two wins for the current month, once.
+#[tauri::command]
+fn plan_makes(seed_month: Option<String>, seed_n: Option<u64>) -> serde_json::Value {
+    let device = device_hash();
+    let now = month_key_now();
+    let (stored_dev, stored_month, stored_n) = plan_read();
+    let mut n = if stored_dev == device && stored_month == now {
+        stored_n
+    } else {
+        0
+    };
+    if seed_month.as_deref() == Some(now.as_str()) {
+        n = n.max(seed_n.unwrap_or(0));
+    }
+    plan_write(&device, &now, n);
+    serde_json::json!({ "month": now, "n": n })
+}
+
+#[tauri::command]
+fn plan_count_make() -> serde_json::Value {
+    let device = device_hash();
+    let now = month_key_now();
+    let (stored_dev, stored_month, stored_n) = plan_read();
+    let n = if stored_dev == device && stored_month == now {
+        stored_n + 1
+    } else {
+        1
+    };
+    plan_write(&device, &now, n);
+    serde_json::json!({ "month": now, "n": n })
+}
+
 /// A path that is not already taken, by adding ` 2`, ` 3` and so on.
 ///
 /// Two sessions from the same words -- "a habit tracker" twice, or one
@@ -3269,6 +3406,8 @@ fn main() {
             settings_get,
             dbg_log,
             settings_set,
+            plan_makes,
+            plan_count_make,
             sessions_list,
             session_save,
             session_shot,
