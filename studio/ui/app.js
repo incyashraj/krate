@@ -858,6 +858,7 @@ function beginBuild(title, expect) {
   const shotBox = $("buildShotBox");
   if (shotBox) shotBox.classList.add("hidden");
   state.stageIndex = -1;
+  state.firstTimeSetupSaid = false;
   // Start this session's progress record fresh. Everything the pane shows is
   // mirrored here so re-entering the session can rebuild it (K-152).
   const rec = state.buildingSession ? buildRecord(state.buildingSession.id) : null;
@@ -1018,6 +1019,23 @@ function onEngineLineInner(line) {
     // and the sound have a visible explanation at the moment they happen.
     const card = document.querySelector("#stateBuilding .build-card");
     if (card) card.classList.toggle("flashing", FLASH_WORDS.test(clean));
+  }
+  // The one wait that is not the AI: the very first build on a machine sets
+  // up the build tools. The engine says so in its own words ("needs a
+  // compiler ... sets up once"); name that moment plainly instead of letting
+  // five silent minutes sit under "Reading Krate's API". Once per build.
+  if (!state.firstTimeSetupSaid && /needs a compiler|Still to install:/i.test(clean)) {
+    state.firstTimeSetupSaid = true;
+    sayTo(state.buildingSession || state.session, "KRATE",
+      "First-time setup: getting the build tools ready. About five " +
+      "minutes, and only this once -- every app you make after this " +
+      "starts fast.");
+    const nowStage = $("nowStage");
+    if (nowStage) nowStage.textContent = "First-time setup (once)";
+    if (state.buildChip) {
+      const phase = state.buildChip.querySelector("[data-phase]");
+      if (phase) phase.textContent = "first-time setup (once)";
+    }
   }
   // Drive the stages from what the AI is really doing, in the order it really
   // does it. The engine's progress vocabulary is the source: "reading ...",
