@@ -463,6 +463,15 @@ struct Session {
     updated: u64,
     messages: Vec<serde_json::Value>,
     result: Option<serde_json::Value>,
+    /// Everything else the UI records, kept losslessly. This struct used
+    /// to whitelist its six fields, and every other fact the UI saved --
+    /// failedRequest, buildStarted, the pending_path written value-level
+    /// by the shell itself -- silently vanished on the next round trip.
+    /// A failed session came back from disk with no memory of failing,
+    /// re-armed its Build button, and said "waiting on you" over its own
+    /// failure card (K-203, screenshots in hand).
+    #[serde(flatten)]
+    extra: serde_json::Map<String, serde_json::Value>,
 }
 
 #[tauri::command]

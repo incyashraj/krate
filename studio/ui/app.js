@@ -564,8 +564,14 @@ function openSession(s) {
   // question is answered, and re-arming the button under an old ask while
   // a failure card sits below it gave one session two competing pasts
   // (seen live: a glowing "Skip and build" after the build had already
-  // run and died).
-  const lastAsk = !building && !s.result && !s.buildStarted && !s.failedRequest
+  // run and died). The rail's own words are the fallback evidence for
+  // session files saved before these facts survived disk (K-203): a
+  // recorded failure line means a build ran, whatever the flags say.
+  const failedInRail = msgs.some(
+    (m) => m.kind === "fail"
+      || (m.who === "KRATE" && /didn't come together|^stopped$/.test(m.body || "")),
+  );
+  const lastAsk = !building && !s.result && !s.buildStarted && !s.failedRequest && !failedInRail
     ? msgs.map((m, i) => (m.kind === "ask" ? i : -1)).filter((i) => i >= 0).pop()
     : undefined;
   // After a restart the in-memory planning state is gone; rebuild enough of
@@ -634,7 +640,7 @@ function openSession(s) {
     $("failWhy").textContent =
       "Nothing was lost -- your words are kept, ready to send again.";
     $("retryBtn").textContent = "Resume build";
-    $("failRaw").textContent = "";
+    setFailRaw("");
     show("failed");
     unlockComposer("Hit Resume build - or say what to do differently…");
   } else {
@@ -1334,6 +1340,18 @@ function setRevisePlaceholders() {
   $("composerHint").textContent = "changes edit the app in place · a few minutes, the AI reads before it edits";
 }
 
+/// The raw engine tail is evidence, not decoration: folded away, and the
+/// fold only exists when there is something inside it.
+function setFailRaw(text) {
+  const raw = $("failRaw");
+  const wrap = $("failRawWrap");
+  if (raw) raw.textContent = text || "";
+  if (wrap) {
+    wrap.classList.toggle("hidden", !text);
+    wrap.open = false;
+  }
+}
+
 function failBuild(why, request) {
   // Settle once. If the build already succeeded, ignore this later failure --
   // most importantly a watchdog tick that fires just after create resolved.
@@ -1348,6 +1366,12 @@ function failBuild(why, request) {
   const built = state.buildingSession || state.session;
   if (built) built.failedRequest = request;
   sayTo(built, "KRATE", why === "stopped" ? "stopped" : "that build didn't come together");
+  // The failure is a recorded FACT on the message too, so replay can see
+  // it even in a session file saved before failedRequest survived disk.
+  {
+    const last = built && built.messages[built.messages.length - 1];
+    if (last) last.kind = "fail";
+  }
   persistSession(built);
   if (!(state.session && built && state.session.id === built.id)) return;
   /* The one hard rule of this card: plain words. A person here must never
@@ -1356,17 +1380,18 @@ function failBuild(why, request) {
     $("failTitle").textContent = "Stopped.";
     $("failWhy").textContent = "Nothing was lost -- your words are kept, ready to send again.";
     $("retryBtn").textContent = "Resume build";
+    setFailRaw("");
     unlockComposer("Changed your mind? Say it - or hit Resume build");
   } else {
     $("retryBtn").textContent = "Try again";
     unlockComposer("Say it another way, or hit Try again");
     $("failTitle").textContent = "That one didn't come together.";
     $("failWhy").textContent = why;
-    // The raw engine tail rides under the plain-words line. Two screenshots
-    // in a row said "needs signing in" for a PATH problem and a toolchain
-    // problem; a failure screen that hides its evidence costs a debugging
-    // round trip per bug.
-    $("failRaw").textContent = String(state.lastError || "").slice(-400);
+    // The raw engine tail rides under the plain-words line, folded. Two
+    // screenshots in a row said "needs signing in" for a PATH problem and
+    // a toolchain problem; a failure screen that hides its evidence costs
+    // a debugging round trip per bug.
+    setFailRaw(String(state.lastError || "").slice(-400));
   }
   show("failed");
 }
@@ -3499,6 +3524,9 @@ $("retryBtn").addEventListener("click", () => {
   show("idle");
   if (again) make(again);
 });
+// The failure card's second door: a different brain, one click away. The
+// sheet it opens is the same AI picker as everywhere else.
+$("switchAiBtn")?.addEventListener("click", openAiSheet);
 ["agentChip", "agentChip2", "builtByChip"].forEach((id) => {
   const chip = $(id);
   if (chip) chip.addEventListener("click", openAiSheet);

@@ -266,12 +266,27 @@
         </div>
 
         <div class="stage-state hidden" id="stateFailed">
-          <div class="fail-card">
+          <div class="fail-card bloom">
+            <span class="fail-mark" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 5.4v5.6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="10" cy="14.4" r="1.1" fill="currentColor"/></svg>
+            </span>
             <p class="fail-title" id="failTitle">That one didn't come together.</p>
             <p class="fail-why" id="failWhy"></p>
-            <p class="fail-raw" id="failRaw"></p>
-            <button class="btn btn-primary" id="retryBtn">Try again</button>
-            <button class="btn" id="reportBtn">Report an issue</button>
+            <div class="fail-actions">
+              <button class="btn btn-primary" id="retryBtn">Try again</button>
+              <button class="btn" id="switchAiBtn">Use a different AI</button>
+              <button class="btn btn-ghost" id="reportBtn">Report an issue</button>
+            </div>
+            <!-- The door that is coming: a brain of our own, so a broken
+                 sign-in stops being a dead end. Grey until it is real. -->
+            <div class="fail-krateai">
+              <span><b>Krate AI</b> &middot; builds without any sign-in, on our machines</span>
+              <span class="soon-tag">coming soon</span>
+            </div>
+            <details class="fail-raw-wrap hidden" id="failRawWrap">
+              <summary>what the engine said</summary>
+              <pre class="fail-raw" id="failRaw"></pre>
+            </details>
           </div>
         </div>
       </section>

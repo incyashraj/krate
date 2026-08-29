@@ -494,10 +494,13 @@ body.windows .titlebar { padding-right: 150px; }
 }
 
 /* The card's vertical rhythm: frame, title, track, live line, clock --
-   close-set, one composition, no dead air between them. */
-.brail .build-shot { margin: 0 0 16px; }
-.brail .build-title { margin: 0; }
-.brail .bpeek { margin: 2px 0 6px; }
+   one composition with real air between the frame and the words. The
+   review screenshot's complaint was exactly this: the title glued to the
+   frame read as unfinished. */
+.brail { width: min(560px, 94%); padding: 26px 28px 24px; }
+.brail .build-shot { margin: 0 0 20px; }
+.brail .build-title { margin: 0; font-size: 19px; font-weight: 550; }
+.brail .bpeek { margin: 6px 0 8px; }
 .brail .build-elapsed { margin: 0 0 2px; }
 .build-shot-tag {
   position: absolute; left: 8px; bottom: 8px;
@@ -635,9 +638,38 @@ body.windows .titlebar { padding-right: 150px; }
 .share-result .copied { font-size: 11px; color: var(--cyan); flex: none; }
 .share-result.error .link { color: var(--danger); font-family: var(--sans); white-space: normal; }
 
-.fail-card { width: min(400px, 92%); text-align: center; }
-.fail-title { font-size: 18px; font-weight: 500; letter-spacing: -0.022em; }
-.fail-why { color: var(--muted); font-size: 13.5px; margin: 12px 0 24px; line-height: 1.6; }
+/* Failure is a designed moment, not an apology with a stack trace. A
+   quiet card: soft mark, one honest line, the doors out (retry, another
+   AI, report), the coming Krate AI named, evidence folded away. */
+.fail-card {
+  width: min(460px, 92%); text-align: center;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius-card); padding: 34px 30px 24px;
+  --bloom-color: rgba(255, 176, 130, 0.16);
+}
+.fail-mark {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; border-radius: 50%; margin-bottom: 16px;
+  color: #ffb082; background: rgba(255, 176, 130, 0.09);
+  border: 1px solid rgba(255, 176, 130, 0.22);
+}
+.fail-title { font-size: 19px; font-weight: 550; letter-spacing: -0.022em; }
+.fail-why { color: var(--muted); font-size: 13.5px; margin: 10px auto 22px; line-height: 1.6; max-width: 360px; }
+.fail-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.fail-krateai {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin: 20px 0 0; padding: 11px 14px; text-align: left;
+  border: 1px dashed var(--line); border-radius: 10px;
+  color: var(--faint); font-size: 12.5px; opacity: 0.75;
+}
+.fail-krateai b { color: var(--muted); font-weight: 550; }
+.fail-raw-wrap { margin-top: 16px; text-align: left; }
+.fail-raw-wrap summary {
+  font-size: 11.5px; color: var(--quiet, rgba(255,255,255,0.35));
+  cursor: pointer; list-style: none; text-align: center;
+}
+.fail-raw-wrap summary::-webkit-details-marker { display: none; }
+.fail-raw-wrap[open] summary { color: var(--faint); }
 
 /* ---- sheets ----------------------------------------------------------- */
 
