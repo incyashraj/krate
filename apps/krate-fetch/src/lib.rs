@@ -1,4 +1,4 @@
-//! Krate fetch — a modern reader over a real HTTP fetch.
+//! Krate fetch -- a modern reader over a real HTTP fetch.
 //!
 //! The wall it tests: can an app reach the network and show what it got? A
 //! weather app, a feed reader, an API client -- all of it needs a real HTTP

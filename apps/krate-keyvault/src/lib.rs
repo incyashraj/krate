@@ -1,4 +1,4 @@
-//! Krate keyvault — the limitation probe for persistence, drawn on a canvas.
+//! Krate keyvault -- the limitation probe for persistence, drawn on a canvas.
 //!
 //! The wall it tests: can an app remember anything between runs? This app keeps
 //! a run counter in the key-value store: it reads the count, adds one, saves it,
@@ -189,7 +189,7 @@ fn draw(canvas: u64, count: u64) -> Result<(), gfx::GfxError> {
     }
 
     // ---- quiet subtitle below ----
-    let sub = "Reopen it — this keeps climbing.";
+    let sub = "Reopen it -- this keeps climbing.";
     let ssize = 14.0;
     let sw = text_width(canvas, sub, ssize);
     draw_text(canvas, sub, cx - sw * 0.5, HEIGHT - 46.0, ssize, INK_DIM)?;

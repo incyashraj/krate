@@ -1737,6 +1737,9 @@ async function runPlan() {
     // resumes that session, so the request and the agreed plan are already
     // in the AI's context instead of being re-sent to a cold start.
     if (answer.agent_session) state.planning.agentSession = answer.agent_session;
+    // The model's own pick of the working shape the build starts from --
+    // the universal matcher (no keywords): it read the request, it chose.
+    if (answer.shape) state.planning.shape = String(answer.shape);
     if (answer.ask && answer.ask.length && state.planning.rounds < 1) {
       // ONE round of questions, ever. The first live session got two
       // rounds and called it what it is: frustrating.
@@ -1839,10 +1842,10 @@ function finishPlanningAndBuild() {
   if (p.plan) {
     enriched += `\n\n(The agreed plan: ${p.plan})`;
   }
-  return buildNow(enriched, p.files, false, p.agentSession || "");
+  return buildNow(enriched, p.files, false, p.agentSession || "", p.shape || "");
 }
 
-async function buildNow(request, files, revising, planSession) {
+async function buildNow(request, files, revising, planSession, starterShape) {
   if (state.buildingSession) { invoke("dbg_log", { line: "buildNow() BAILED: buildingSession set" }).catch(()=>{}); return; }
   // The composer stays live during a build so a thought can be queued
   // rather than lost.
@@ -1922,6 +1925,7 @@ async function buildNow(request, files, revising, planSession) {
             || (state.sitting && state.sitting.agent === state.agent
               ? state.sitting.tag
               : ""),
+          starterShape: starterShape || "",
         });
     finishBuild(result);
   } catch (err) {

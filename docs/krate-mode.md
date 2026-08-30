@@ -619,6 +619,85 @@ takes the arguments is the function.
 - `transcription::match-line-stream: func( model-asset: string, pcm-s16-le: list<u8>, sample-rate: u32, language: option<string>, expected: string, finish: bool, ) -> result<option<u8>, match-error>`
 
 
+## The shared packages, exact shapes
+
+The same modules earlier sections describe in prose, but as the exact interfaces the generated `bindings` module exposes -- complete, so there is never a reason to open `bindings.rs` to check a name or a type. Reach each as `bindings::krate::<package>::<interface>::<fn>`.
+
+## `fs`
+
+- `files::open: func(path: string, mode: open-mode) -> result<file, fs-error>`
+- `files::open-chosen: func(token: string, mode: open-mode) -> result<file, fs-error>`
+- `files::stat: func(path: string) -> result<file-stat, fs-error>`
+- `files::%list: func(path: string) -> result<list<string>, fs-error>`
+- `files::remove-file: func(path: string) -> result<_, fs-error>`
+- `files::remove-dir: func(path: string) -> result<_, fs-error>`
+- `files::mkdir: func(path: string) -> result<_, fs-error>`
+- `files::rename: func(%from: string, to: string) -> result<_, fs-error>`
+
+## `io`
+
+- `stdio::stdin: func() -> input-stream`
+- `stdio::stdout: func() -> output-stream`
+- `stdio::stderr: func() -> output-stream`
+- `args::raw: func() -> string`
+- `log::emit: func(level: log-level, message: string, fields: list<field>)`
+
+## `locale`
+
+- `info::current: func() -> locale-id`
+- `info::timezone: func() -> string`
+- `format::format-date: func( millis: u64, tz: string, style: date-style, loc: locale-id, ) -> string`
+- `format::format-number: func( value: f64, style: number-style, loc: locale-id, ) -> string`
+
+## `net`
+
+- `http-client::get: func(url: string) -> result<list<u8>, net-error>`
+- `http-client::fetch: func(req: request) -> result<response, net-error>`
+- `http-client::begin: func(req: request) -> result<u64, net-error>`
+- `http-client::poll: func(handle: u64) -> fetch-status`
+- `http-client::cancel: func(handle: u64)`
+- `ws::open: func(url: string) -> result<u64, net-error>`
+- `ws::send: func(handle: u64, message: ws-message) -> result<_, net-error>`
+- `ws::poll: func(handle: u64) -> ws-event`
+- `ws::close: func(handle: u64)`
+
+## `random`
+
+- `bytes::get: func(count: u32) -> result<list<u8>, random-error>`
+- `bytes::next-u64: func() -> result<u64, random-error>`
+- `bytes::below: func(bound: u64) -> result<u64, random-error>`
+
+## `store`
+
+- `kv::get: func(key: string) -> result<option<list<u8>>, store-error>`
+- `kv::set: func(key: string, value: list<u8>) -> result<_, store-error>`
+- `kv::delete: func(key: string) -> result<_, store-error>`
+- `kv::keys: func() -> result<list<string>, store-error>`
+- `kv::clear: func() -> result<_, store-error>`
+- `sql::query: func(statement: string, params: list<value>) -> result<query-result, sql-error>`
+- `sql::execute: func(statement: string, params: list<value>) -> result<u64, sql-error>`
+- `sql::transaction: func(statements: list<string>) -> result<_, sql-error>`
+- `secret::get: func(name: string) -> result<option<list<u8>>, secret-error>`
+- `secret::set: func(name: string, secret: list<u8>) -> result<_, secret-error>`
+- `secret::delete: func(name: string) -> result<_, secret-error>`
+- `secret::names: func() -> result<list<string>, secret-error>`
+- `shared::code: func() -> result<option<string>, shared-error>`
+- `shared::create: func() -> result<string, shared-error>`
+- `shared::join: func(code: string) -> result<_, shared-error>`
+- `shared::leave: func() -> result<_, shared-error>`
+- `shared::get: func(key: string) -> result<option<list<u8>>, shared-error>`
+- `shared::set: func(key: string, value: list<u8>) -> result<_, shared-error>`
+- `shared::delete: func(key: string) -> result<_, shared-error>`
+- `shared::keys: func() -> result<list<string>, shared-error>`
+- `shared::sync: func() -> result<bool, shared-error>`
+
+## `time`
+
+- `clock::now-millis: func() -> u64`
+- `clock::monotonic-nanos: func() -> u64`
+- `sleep::sleep-millis: func(millis: u32)`
+
+
 ## Showing a camera feed
 
 A live preview is a poll in the event loop, not a callback. Open once, start once, then read a frame each time round and draw whatever came back:

@@ -1,7 +1,7 @@
-//! Krate tidy — the folder app that used to be impossible.
+//! Krate tidy -- the folder app that used to be impossible.
 //!
 //! Pick a folder; Tidy sorts what is inside into Images, Documents, Audio,
-//! Archives and Other, by extension. That is the whole app — and it is the
+//! Archives and Other, by extension. That is the whole app -- and it is the
 //! worked example of the pattern that makes folder apps buildable at all:
 //! **the pick is the grant**. The manifest declares no fs capability. The
 //! person chooses a folder in the native dialog, the app receives a token,

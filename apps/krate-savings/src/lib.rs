@@ -1,4 +1,4 @@
-//! Krate Budget Splitter — a modern allocation view drawn on a canvas.
+//! Krate Budget Splitter -- a modern allocation view drawn on a canvas.
 //!
 //! You type a monthly income; the app splits it into Rent, Taxes, Living, and
 //! Investments by fixed percentages and shows the result as a single stacked,
@@ -51,10 +51,10 @@ const CAT_NAMES: [&str; CAT_COUNT] = ["Rent", "Taxes", "Living", "Investments"];
 const CAT_PCT: [u32; CAT_COUNT] = [35, 20, 25, 20];
 // Segment colors: a considered, distinct set that reads on the dark ground.
 const CAT_COL: [gfx::Color; CAT_COUNT] = [
-    gfx::Color { r: 0.42, g: 0.62, b: 1.0, a: 1.0 },  // Rent — blue
-    gfx::Color { r: 1.0, g: 0.45, b: 0.42, a: 1.0 },  // Taxes — coral
-    gfx::Color { r: 0.36, g: 0.82, b: 0.62, a: 1.0 }, // Living — green
-    gfx::Color { r: 0.85, g: 0.66, b: 0.35, a: 1.0 }, // Investments — amber
+    gfx::Color { r: 0.42, g: 0.62, b: 1.0, a: 1.0 },  // Rent -- blue
+    gfx::Color { r: 1.0, g: 0.45, b: 0.42, a: 1.0 },  // Taxes -- coral
+    gfx::Color { r: 0.36, g: 0.82, b: 0.62, a: 1.0 }, // Living -- green
+    gfx::Color { r: 0.85, g: 0.66, b: 0.35, a: 1.0 }, // Investments -- amber
 ];
 
 // Palette.

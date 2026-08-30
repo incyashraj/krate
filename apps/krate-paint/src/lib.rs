@@ -1,4 +1,4 @@
-//! Krate paint — the limitation probe for fast animation.
+//! Krate paint -- the limitation probe for fast animation.
 //!
 //! The wall it tests: can an app run a smooth real-time loop, drawing a fresh
 //! frame many times a second? A game, a visualizer, a live chart -- all of it

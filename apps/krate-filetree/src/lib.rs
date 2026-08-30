@@ -1,4 +1,4 @@
-//! Krate filetree — the limitation probe for hierarchy.
+//! Krate filetree -- the limitation probe for hierarchy.
 //!
 //! The wall it tests: real apps show nested structure -- a file browser, an
 //! outline, a settings tree. The widget set has a TreeView kind, but the drawn

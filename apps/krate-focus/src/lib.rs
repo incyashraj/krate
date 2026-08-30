@@ -1,4 +1,4 @@
-//! Krate Focus — a pomodoro timer drawn entirely on a canvas2d.
+//! Krate Focus -- a pomodoro timer drawn entirely on a canvas2d.
 //!
 //! The centerpiece is a large progress ring: a quiet track circle with the
 //! elapsed part of the session drawn as an accent arc, the remaining time
@@ -10,7 +10,7 @@
 //!
 //! `#![no_std]` keeps the component `krate:*`-only: the SDK owns the
 //! allocator and panic handler, strings are built in fixed byte buffers, and
-//! the arc trigonometry is a small polynomial sine — no libm, no `format!`,
+//! the arc trigonometry is a small polynomial sine -- no libm, no `format!`,
 //! no panicking index.
 
 #![no_std]
@@ -266,7 +266,7 @@ impl bindings::Guest for Component {
         if quick {
             // The automated shot: mid-focus, paused at 18:24 with two of the
             // four pomodoros banked, so the frame shows the arc, the dots,
-            // and the Resume state all at once. Display-only seed — nothing
+            // and the Resume state all at once. Display-only seed -- nothing
             // is written back to the store.
             let mut timer = Timer::new(2);
             timer.remaining_ms = (18 * 60 + 24) * 1000;
@@ -516,7 +516,7 @@ fn ring_point(a: f32) -> (f32, f32) {
 }
 
 // ------------------------------------------------------------------
-// Tiny trig: a wrapped parabolic sine, refined. Max error ~0.001 —
+// Tiny trig: a wrapped parabolic sine, refined. Max error ~0.001 --
 // invisible at ring scale. No libm anywhere.
 // ------------------------------------------------------------------
 

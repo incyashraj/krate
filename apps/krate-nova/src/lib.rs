@@ -1,4 +1,4 @@
-//! Krate Nova — a neon top-down arcade space shooter.
+//! Krate Nova -- a neon top-down arcade space shooter.
 //!
 //! The hero app: a fast, juicy twin-stick-lite shooter that renders every frame
 //! into one canvas. A cyan ship at the bottom moves on arrows/WASD and fires

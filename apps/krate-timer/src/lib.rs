@@ -1,4 +1,4 @@
-//! Krate Timer — a Pomodoro / countdown timer with a clean UI.
+//! Krate Timer -- a Pomodoro / countdown timer with a clean UI.
 //!
 //! A 25:00 focus timer: the time remaining shown large in the middle, a
 //! "Focus" label above it, a progress bar tracking how much of the session
@@ -339,7 +339,7 @@ impl bindings::Guest for Component {
         if quick {
             // The automated verification path: advance the timer to a visible
             // state so the screenshot is not a static 25:00, redraw, and exit
-            // immediately. It must NOT enter the event-wait loop — waiting on
+            // immediately. It must NOT enter the event-wait loop -- waiting on
             // window events during a headless run is what makes verification
             // hang. 23 seconds elapsed leaves 24:37 on the clock with the
             // progress bar just barely filled.

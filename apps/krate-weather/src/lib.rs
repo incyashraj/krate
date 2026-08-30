@@ -1,4 +1,4 @@
-//! Krate weather — a modern weather card, drawn on a canvas.
+//! Krate weather -- a modern weather card, drawn on a canvas.
 //!
 //! A new user is not impressed by a column of plain labels. So the whole card
 //! is painted into a canvas: a soft gradient sky, a big temperature, a simple

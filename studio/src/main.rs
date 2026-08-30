@@ -783,6 +783,7 @@ async fn create_app(
     out_dir: String,
     session: String,
     plan_session: Option<String>,
+    starter_shape: Option<String>,
 ) -> Result<CreateResult, String> {
     // Trace the create lifecycle to stderr. A build has frozen on "While I work"
     // with no workspace and no error more than once (K-136), always right after
@@ -831,6 +832,12 @@ async fn create_app(
         // seeds the workspace with it and the build resumes hot.
         if let Some(tagged) = plan_session.as_deref().filter(|s| !s.is_empty()) {
             cmd.env("KRATE_PLAN_SESSION", tagged);
+        }
+        // The plan's chosen shape: the model's own pick of which working
+        // example the build starts FROM. The engine seeds that app as
+        // src/lib.rs and asks for a transformation instead of authorship.
+        if let Some(shape) = starter_shape.as_deref().filter(|s| !s.is_empty()) {
+            cmd.env("KRATE_STARTER_SHAPE", shape);
         }
         for file in &attachments {
             cmd.args(["--attach", file]);

@@ -1,4 +1,4 @@
-//! Krate convert — the limitation probe for a form of live values.
+//! Krate convert -- the limitation probe for a form of live values.
 //!
 //! The wall it tests: a form with more than one field and a computed result.
 //! Every app that converts, calculates, or previews as you type has this

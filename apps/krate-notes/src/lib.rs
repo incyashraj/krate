@@ -1,7 +1,7 @@
-//! Krate Notes — a two-pane notes app, drawn on a canvas.
+//! Krate Notes -- a two-pane notes app, drawn on a canvas.
 //!
 //! The Apple-Notes shape: a sidebar of note cards on the left (title, date,
-//! snippet), the selected note on the right as real type — first line as the
+//! snippet), the selected note on the right as real type -- first line as the
 //! title, the rest as body text with a caret. Click a row to switch, type to
 //! write, "+ New" to add a note. Everything persists as plain text files in
 //! the one directory the user granted (`./notes/`), same paths and format as
@@ -125,7 +125,7 @@ fn text_width(canvas: u64, s: &str, size: f32) -> f32 {
 }
 
 // ------------------------------------------------------------------
-// Note buffers — fixed-capacity, panic-free
+// Note buffers -- fixed-capacity, panic-free
 // ------------------------------------------------------------------
 
 #[derive(Clone, Copy)]
@@ -191,7 +191,7 @@ fn body_text(s: &str) -> &str {
 }
 
 // ------------------------------------------------------------------
-// Persistence — same plain-text-per-file scheme as always
+// Persistence -- same plain-text-per-file scheme as always
 // ------------------------------------------------------------------
 
 fn load_note(index: usize, buf: &mut NoteBuf) -> bool {
@@ -311,7 +311,7 @@ fn push_byte(buf: &mut [u8], pos: &mut usize, byte: u8) {
 }
 
 // ------------------------------------------------------------------
-// Sidebar snippet — body collapsed onto one line
+// Sidebar snippet -- body collapsed onto one line
 // ------------------------------------------------------------------
 
 /// Copy the body into `buf` with newlines and runs of spaces collapsed to a
@@ -348,7 +348,7 @@ fn snippet<'a>(body: &str, buf: &'a mut [u8; 64], max_chars: usize) -> &'a str {
 }
 
 // ------------------------------------------------------------------
-// Body wrap — greedy word wrap over ASCII bytes
+// Body wrap -- greedy word wrap over ASCII bytes
 // ------------------------------------------------------------------
 
 /// Draw the body word-wrapped. Returns (chars on the last drawn line, baseline
@@ -622,7 +622,7 @@ const SEED_TEXTS: [&str; INITIAL_NOTE_COUNT] = [
 const SEED_DATES: [&str; INITIAL_NOTE_COUNT] = ["Today", "Yesterday", "Sunday"];
 
 // ------------------------------------------------------------------
-// Widget tree — one canvas filling the window
+// Widget tree -- one canvas filling the window
 // ------------------------------------------------------------------
 
 fn stack_root() -> types::WidgetNode {
@@ -898,7 +898,7 @@ impl bindings::Guest for Component {
             }
         }
 
-        // Never lose the note being edited on the way out — but also never
+        // Never lose the note being edited on the way out -- but also never
         // erase a file by writing an empty buffer over it.
         if dirty {
             if let Some(buf) = notes.get(selected) {

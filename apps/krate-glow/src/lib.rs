@@ -1,4 +1,4 @@
-//! Krate glow — the modern-UI reference card.
+//! Krate glow -- the modern-UI reference card.
 //!
 //! One phone-shaped screen built entirely from the Phase 1 modern primitives:
 //! an angled three-stop gradient background, glass cards with rounded corners
@@ -9,7 +9,7 @@
 //! file is the worked example the authoring pack points at.
 //!
 //! The glow breathes and the ring sweeps, both time-based, so the screen is
-//! quietly alive the way current apps are — motion as polish, not spectacle.
+//! quietly alive the way current apps are -- motion as polish, not spectacle.
 
 #[allow(warnings)]
 mod bindings;
@@ -74,7 +74,7 @@ fn radii(all: f32) -> gfx::CornerRadii {
 
 /// One glass card: shadow first, then the translucent body, then a hairline
 /// edge. This trio is the whole "glassmorphism" recipe, and the order
-/// matters — shadow behind, never on top.
+/// matters -- shadow behind, never on top.
 fn glass_card(canvas: u64, area: gfx::Rect, corner: f32) -> Result<(), gfx::GfxError> {
     let r = radii(corner);
     canvas2d::drop_shadow_round_rect(

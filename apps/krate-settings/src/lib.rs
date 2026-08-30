@@ -1,4 +1,4 @@
-//! Krate settings — the limitation probe for tabs and the full control set.
+//! Krate settings -- the limitation probe for tabs and the full control set.
 //!
 //! The wall it tests: real apps are not one flat column. They have tab strips,
 //! nested containers, and a mix of controls -- switches, sliders, radio groups,

@@ -1,4 +1,4 @@
-//! Krate dashboard — the limitation probe for mixing a canvas with widgets.
+//! Krate dashboard -- the limitation probe for mixing a canvas with widgets.
 //!
 //! The wall it tests: every canvas app so far filled the whole window with one
 //! drawing. A real dashboard is different -- text stats, labels, and a chart in

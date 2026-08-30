@@ -1,4 +1,4 @@
-//! Krate hello-gui — the first GUI component vertical slice.
+//! Krate hello-gui -- the first GUI component vertical slice.
 //!
 //! One portable component builds a tiny widget tree (a button and a text
 //! field), the host lowers it to real native controls when the native window

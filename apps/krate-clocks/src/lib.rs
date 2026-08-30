@@ -1,4 +1,4 @@
-//! Krate clocks — a world clock at consumer-app quality, drawn on a canvas.
+//! Krate clocks -- a world clock at consumer-app quality, drawn on a canvas.
 //!
 //! Six city cards in a 2x3 grid, each with a live analog face (hour ticks,
 //! hour/minute hands, an accent second hand), the digital time, and an offset

@@ -1,4 +1,4 @@
-//! Krate Eo2 — a small photo shelf, rebuilt on a canvas.
+//! Krate Eo2 -- a small photo shelf, rebuilt on a canvas.
 //!
 //! View, keep, and remove images. The original rendered through the host widget
 //! layer: a flat light-grey ground, a stack of blue pill buttons, and a bare
@@ -129,7 +129,7 @@ impl bindings::Guest for Component {
             width: WIDTH as u32,
             height: HEIGHT as u32,
         };
-        let Ok(win) = window::create("Eo2 — Photos", size) else {
+        let Ok(win) = window::create("Eo2 -- Photos", size) else {
             return 30;
         };
         if window::show(win).is_err() {

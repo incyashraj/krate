@@ -1,4 +1,4 @@
-//! Krate contacts — a real SQL database behind a modern contact list.
+//! Krate contacts -- a real SQL database behind a modern contact list.
 //!
 //! The wall it tests: key-value storage is enough for a counter, but a real
 //! app has structured data it queries -- rows, columns, ordering, a WHERE.

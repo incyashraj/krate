@@ -1,10 +1,10 @@
-//! Pulse — a personal finance dashboard drawn entirely on a canvas.
+//! Pulse -- a personal finance dashboard drawn entirely on a canvas.
 //!
 //! The hero layout: a bold balance headline with a monthly delta chip, a
 //! 30-day spending area chart with a highlighted "today" point, a category
 //! breakdown with share bars, and a recent-transactions list with colored
 //! merchant avatars. Clicking a category filters the list; the selection is
-//! remembered in the key-value store. All data is a seeded local demo ledger —
+//! remembered in the key-value store. All data is a seeded local demo ledger --
 //! honest about being a demo, real about everything it does with it.
 //!
 //! `#![no_std]` keeps it `krate:*`-only: the SDK owns the allocator and a

@@ -1,4 +1,4 @@
-//! Krate clip — a modern clipboard tool over the system clipboard.
+//! Krate clip -- a modern clipboard tool over the system clipboard.
 //!
 //! The wall it tests: can an app hand text to the rest of the machine and get
 //! it back? Copy and paste is the oldest bridge between programs; if an app

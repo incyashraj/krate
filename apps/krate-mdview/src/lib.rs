@@ -1,4 +1,4 @@
-//! Krate Mdview — a Markdown reader, rebuilt on a canvas.
+//! Krate Mdview -- a Markdown reader, rebuilt on a canvas.
 //!
 //! Renders a Markdown document into a readable page. The original rendered
 //! through the host widget layer, and it showed: a flat light-grey ground, a

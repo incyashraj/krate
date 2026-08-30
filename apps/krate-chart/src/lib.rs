@@ -1,9 +1,9 @@
-//! Krate chart — the first app to draw with `gfx.canvas2d`.
+//! Krate chart -- the first app to draw with `gfx.canvas2d`.
 //!
 //! A bar chart of a week's rainfall, drawn with canvas commands: one clear,
 //! one filled bar per day, a stroked frame, and a text label. The point is not
 //! the chart; it is that this is the first guest ever to reach the rasterizer
-//! through the WIT boundary, so it proves the path the host tests cannot —
+//! through the WIT boundary, so it proves the path the host tests cannot --
 //! bindings, lifting, the canvas id round trip, and the draw commands
 //! themselves, on every operating system the runtime supports.
 //!

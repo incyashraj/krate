@@ -1,9 +1,9 @@
-//! Krate cubes — the first app that draws in 3D.
+//! Krate cubes -- the first app that draws in 3D.
 //!
 //! Nine cubes on a floor, spinning at different rates, lit by one directional
 //! light, with a camera the person drives using the arrow keys. It exists to
 //! prove the whole 3D path through the WIT boundary: bind, camera, light,
-//! placed meshes, depth test, present — and held-key input, which is what
+//! placed meshes, depth test, present -- and held-key input, which is what
 //! makes it a thing you control rather than a thing you watch.
 //!
 //! One cube mesh is sent nine times with different transforms. That is the

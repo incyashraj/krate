@@ -1,7 +1,7 @@
-//! Krate Journal — message yourself, WhatsApp-style, drawn on a canvas.
+//! Krate Journal -- message yourself, WhatsApp-style, drawn on a canvas.
 //!
 //! An honest local journal: every entry is a chat bubble you sent to yourself.
-//! No network, no account — the feed lives in the key-value store and nowhere
+//! No network, no account -- the feed lives in the key-value store and nowhere
 //! else. The UI is a familiar messenger layout: an avatar top bar, right-aligned
 //! accent bubbles with in-bubble timestamps, date separator pills, and a rounded
 //! input field with a paper-plane send button. Type, press Enter (or tap send),
@@ -373,10 +373,10 @@ fn draw_feed(canvas: u64, entries: &[Entry], now: u64) -> Result<(), gfx::GfxErr
     }
 
     // When the whole history fits with headroom, float a quiet privacy note
-    // in the empty space — the honest-local version of WhatsApp's E2E banner.
+    // in the empty space -- the honest-local version of WhatsApp's E2E banner.
     let first_top = tops.first().copied().unwrap_or(INPUT_TOP);
     if first_top > BAR_H + 120.0 {
-        let note = "Only you can see this — entries stay on this device";
+        let note = "Only you can see this -- entries stay on this device";
         let size = 11.5;
         let tw = text_width(canvas, note, size);
         let pw = tw + 28.0;

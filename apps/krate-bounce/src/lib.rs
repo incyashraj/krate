@@ -1,13 +1,13 @@
-//! Krate bounce — the first app you can actually play.
+//! Krate bounce -- the first app you can actually play.
 //!
 //! A Breakout: a paddle you steer, a ball, four rows of bricks, three lives,
 //! a score, a win. It began life as a falling-ball animation, and somebody
 //! asked the right question: can we even call that a game? You could not
 //! control it, so no. This is the honest version of the claim "2D games work
-//! on Krate" — input moves the paddle, the paddle changes where the ball goes,
+//! on Krate" -- input moves the paddle, the paddle changes where the ball goes,
 //! the bricks come down one by one, and you can lose.
 //!
-//! The loop is the ordinary game loop — measure elapsed time, advance the
+//! The loop is the ordinary game loop -- measure elapsed time, advance the
 //! simulation by that much, draw, ask for the next frame. Physics is
 //! time-based, not frame-based: a frame-based ball flies faster on a fast
 //! machine, which is the oldest bug in games and the reason the same `.krate`

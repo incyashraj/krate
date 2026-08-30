@@ -1,9 +1,9 @@
-//! Krate Aurora — a living northern-lights scene.
+//! Krate Aurora -- a living northern-lights scene.
 //!
 //! The aurora itself is not a gradient or a sprite: it is computed per pixel,
 //! every frame, into an RGBA buffer that is handed to the canvas in one call.
 //! Three curtains of light, each a flowing sine field with its own speed and
-//! hue, are summed additively the way real light adds — so where two curtains
+//! hue, are summed additively the way real light adds -- so where two curtains
 //! cross, the colour goes brighter and whiter rather than muddier. That single
 //! decision is what separates this from a picture of an aurora.
 //!
@@ -142,7 +142,7 @@ struct Curtain {
     drift: f32,
     /// Vertical thickness of the glow.
     thickness: f32,
-    /// Horizontal scale of the noise — small is billowy, large is streaky.
+    /// Horizontal scale of the noise -- small is billowy, large is streaky.
     scale: f32,
     rgb: (f32, f32, f32),
     strength: f32,
@@ -188,7 +188,7 @@ const CURTAINS: [Curtain; 3] = [
 ///
 /// The buffer is transparent where there is no light, so the starfield and the
 /// night gradient painted underneath show through untouched. Light is summed
-/// rather than blended, then tone-mapped at the end — that is why crossings go
+/// rather than blended, then tone-mapped at the end -- that is why crossings go
 /// bright instead of dark.
 fn render_aurora(buf: &mut [u8], t: f32) {
     // The centre line and the ray banding depend only on the column, not the

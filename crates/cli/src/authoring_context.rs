@@ -1963,10 +1963,16 @@ pub const EMBEDDED_EXAMPLES: &[EmbeddedExample] = &[
     EmbeddedExample {
         name: "krate-checklist",
         shows: "a list app that saves: widget tree, text input, buttons, store.kv persistence",
+        // Wide on purpose: this archetype (widgets + input + state +
+        // persistence) is the working shape under most form-and-numbers
+        // asks too -- tallies, splitters, rate cards, counters -- and it
+        // is the model-starter (K-205) for all of them.
         keywords: &[
             "list", "todo", "task", "check", "track", "habit", "note", "item", "grocery",
             "shopping", "journal", "log", "streak", "goal", "plan", "remember", "save", "share",
-            "family", "wife", "husband", "partner", "roommate", "together",
+            "family", "wife", "husband", "partner", "roommate", "together", "tally", "count",
+            "total", "tip", "split", "calculat", "rate card", "score", "point", "tracker",
+            "form", "entry", "entries", "vote", "poll", "tap", "click to add",
         ],
         lib: include_str!("../../../apps/krate-checklist/src/lib.rs"),
         manifest: include_str!("../../../apps/krate-checklist/manifest.toml"),
@@ -1998,7 +2004,8 @@ pub const EMBEDDED_EXAMPLES: &[EmbeddedExample] = &[
             "an app that reaches the internet: net.http requests, async polling, showing results",
         keywords: &[
             "fetch", "api", "weather", "news", "internet", "http", "online", "quote", "stock",
-            "crypto", "price", "feed", "download", "search", "lookup",
+            "crypto", "price", "feed", "download", "search", "lookup", "currency", "exchange",
+            "convert", "live rate", "live data",
         ],
         lib: include_str!("../../../apps/krate-fetch/src/lib.rs"),
         manifest: include_str!("../../../apps/krate-fetch/manifest.toml"),
@@ -2028,6 +2035,36 @@ pub const EMBEDDED_EXAMPLES: &[EmbeddedExample] = &[
 /// The embedded example closest to a request, by keyword hits. Ties and
 /// no-hits fall to the checklist: a list that saves is the most common shape
 /// asked for, and its tree/input/persist trio transfers to almost anything.
+/// An embedded example by its exact name -- how the plan step's chosen
+/// shape (the MODEL's pick, the system) resolves to a starter. Keyword
+/// matching below stays only as the fallback for a bare `krate create`
+/// that never ran a plan.
+pub fn example_by_name(name: &str) -> Option<&'static EmbeddedExample> {
+    EMBEDDED_EXAMPLES.iter().find(|ex| ex.name == name)
+}
+
+/// The shape menu the plan prompt offers, generated from the same list the
+/// seeding reads, so the two can never drift.
+pub fn shape_menu() -> String {
+    EMBEDDED_EXAMPLES
+        .iter()
+        .map(|ex| format!("  {} -- {}", ex.name, ex.shows))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The closest example ONLY when the request actually hit one of its
+/// keywords. The seeding decision needs confidence; the unconditional
+/// fallback below is fine for a reference file but wrong as a starting
+/// src/lib.rs.
+pub fn closest_example_matched(request: &str) -> Option<&'static EmbeddedExample> {
+    let lower = request.to_lowercase();
+    EMBEDDED_EXAMPLES
+        .iter()
+        .max_by_key(|ex| ex.keywords.iter().filter(|k| lower.contains(**k)).count())
+        .filter(|ex| ex.keywords.iter().any(|k| lower.contains(*k)))
+}
+
 pub fn closest_example(request: &str) -> &'static EmbeddedExample {
     let lower = request.to_lowercase();
     EMBEDDED_EXAMPLES

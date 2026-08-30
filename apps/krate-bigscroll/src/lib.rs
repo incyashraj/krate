@@ -1,4 +1,4 @@
-//! Krate bigscroll — the limitation probe for large widget trees.
+//! Krate bigscroll -- the limitation probe for large widget trees.
 //!
 //! The wall it tests: real apps have long lists. A file browser, a chat, a log
 //! viewer -- hundreds of rows, scrolled, clipped. If the layout engine chokes

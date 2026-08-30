@@ -1,4 +1,4 @@
-//! Krate calc — a calculator, the limitation probe for dense button grids.
+//! Krate calc -- a calculator, the limitation probe for dense button grids.
 //!
 //! The wall it tests: a real app is not one column of widgets, it is a grid of
 //! them. Four rows of four buttons plus a wide display, each button a live

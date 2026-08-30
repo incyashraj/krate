@@ -5015,7 +5015,14 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
          One boundary matters: a Krate app is sandboxed. It cannot send keystrokes or \
          clicks to other programs, read other apps' windows, or control the OS. If the \
          request needs that, do not ask questions about it -- reply with a plan for the \
-         CLOSEST thing that can truly work, saying plainly what changed and why."
+         CLOSEST thing that can truly work, saying plainly what changed and why.\n\n\
+         WHICHEVER form you reply with, also include a top-level \"shape\" field: the \
+         name of the working example whose SHAPE is closest to this request -- its \
+         interaction and data pattern, never its topic -- or \"none\" if nothing fits. \
+         The build will start FROM that example's working code and transform it, so \
+         pick the one whose structure carries the most. The shapes:\n\
+{shape_menu}",
+        shape_menu = authoring_context::shape_menu(),
     );
 
     let program = agent_provider::which_on_path(provider.program())
@@ -6048,15 +6055,57 @@ fn claude_author_prompt_with(
     let example = authoring_context::closest_example(request);
     let example_name = example.name;
     let example_shows = example.shows;
+    // The model-starter seed (K-205): when run_author_command placed a
+    // complete working example AS src/lib.rs, the job is transformation,
+    // not authorship. A stamped build put 82% of wall time in the model
+    // generating a full file from silence (263s before the first write on
+    // a 560s build); every line it does not have to retype is real time.
+    let model_starter = fs::read_to_string(Path::new(app_dir).join(".starter-mode"))
+        .ok()
+        .and_then(|s| s.strip_prefix("model:").map(|rest| rest.trim().to_string()));
+    let situation = match &model_starter {
+        Some(starter) => format!(
+            "Work in {app_dir}. src/lib.rs ALREADY IS a complete, working Krate app\n\
+({starter}). It builds, runs, and passes check-app, and its manifest.toml is\n\
+beside it -- it was chosen as the closest working shape to this request. Your\n\
+job is to TRANSFORM it into the app the request describes: change what\n\
+differs, delete what the request does not need, and keep its event loop and\n\
+no_std/krate:* discipline exactly as they are."
+        ),
+        None => format!(
+            "Work in {app_dir}. A minimal compiling skeleton is already there (Cargo.toml,\n\
+src/lib.rs, manifest.toml): it opens a window (or prints a line, for a CLI app),\n\
+builds cleanly, and imports only krate:* -- but it does nothing yet. Your job is\n\
+to make it the app the request describes."
+        ),
+    };
+    let steps_two_three = match &model_starter {
+        Some(_) => "\
+2. Read src/lib.rs once, whole -- it is your model AND your canvas. Then\n\
+   transform it with targeted edits. Prefer editing sections over retyping\n\
+   the file: the working structure is already right, and every line you\n\
+   rewrite costs real minutes. There is no EXAMPLE.rs; the app itself is\n\
+   the example.\n\
+3. Trim manifest.toml to exactly the capabilities the finished app uses --\n\
+   the starter may declare things your app does not need.\n"
+            .to_string(),
+        None => format!(
+            "\
+2. Your model app is EXAMPLE.rs in this directory ({example_name}: {example_shows}),\n\
+   picked for this request, with its manifest beside it as\n\
+   EXAMPLE.manifest.toml. Read it once, whole, and adapt its proven, working\n\
+   code -- do not write the no_std/krate:* discipline from a blank page, and\n\
+   do not go hunting the filesystem for other examples.\n\
+3. Write the app: edit src/lib.rs, and set manifest.toml to exactly the\n\
+   capabilities the app uses.\n"
+        ),
+    };
     let mut prompt = format!(
         "You are building a Krate desktop app in Rust from this request:\n\
 \n\
     {request}\n\
 \n\
-Work in {app_dir}. A minimal compiling skeleton is already there (Cargo.toml,\n\
-src/lib.rs, manifest.toml): it opens a window (or prints a line, for a CLI app),\n\
-builds cleanly, and imports only krate:* -- but it does nothing yet. Your job is\n\
-to make it the app the request describes.\n\
+{situation}\n\
 \n\
 How to work:\n\
 1. Read KRATE_AUTHORING.md in this directory first -- the WHOLE file in ONE\n\
@@ -6065,13 +6114,7 @@ How to work:\n\
    call, every capability a manifest may declare, the no_std rules, and the\n\
    GUI interfaces. It is generated from the real SDK, so everything in it is\n\
    accurate.\n\
-2. Your model app is EXAMPLE.rs in this directory ({example_name}: {example_shows}),\n\
-   picked for this request, with its manifest beside it as\n\
-   EXAMPLE.manifest.toml. Read it once, whole, and adapt its proven, working\n\
-   code -- do not write the no_std/krate:* discipline from a blank page, and\n\
-   do not go hunting the filesystem for other examples.\n\
-3. Write the app: edit src/lib.rs, and set manifest.toml to exactly the\n\
-   capabilities the app uses.\n\
+{steps_two_three}\
 4. While you are working, check with:\n\
 \n\
        {krate_bin} check-app . --no-run\n\
@@ -8125,6 +8168,67 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
     // redo; everything else it writes. The agent overwrites src/lib.rs and
     // tunes manifest.toml.
     let world = krate_author::AppKind::wants_gui(ctx.request);
+    // The model-starter seed (K-205): when the request confidently matches
+    // an embedded example and wants a GUI, that example becomes the
+    // STARTING src/lib.rs and manifest -- a complete app that builds, runs
+    // and passes check-app -- and the prompt asks for a transformation
+    // instead of authorship. The stamped build put 82% of wall time in the
+    // model generating a whole file from silence; starting close means it
+    // edits a delta. Same K-078 rule as the skeleton: a retry's work is
+    // never overwritten.
+    // The SYSTEM: the plan step already read this request with the model's
+    // eyes and chose the closest working shape (KRATE_STARTER_SHAPE, set by
+    // the studio from the plan's "shape" field). The model is the matcher;
+    // keyword matching below survives only as the fallback for a bare
+    // `krate create` that never planned.
+    let model_starter = match std::env::var("KRATE_STARTER_SHAPE")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+    {
+        Some(shape) if shape.eq_ignore_ascii_case("none") => None,
+        Some(shape) => authoring_context::example_by_name(&shape).or_else(|| {
+            if matches!(world, krate_author::Skeleton::Gui) {
+                authoring_context::closest_example_matched(ctx.request)
+            } else {
+                None
+            }
+        }),
+        None => {
+            if matches!(world, krate_author::Skeleton::Gui) {
+                authoring_context::closest_example_matched(ctx.request)
+            } else {
+                None
+            }
+        }
+    };
+    if let Some(example) = model_starter {
+        let lib_dest = ctx.app_dir.join("src/lib.rs");
+        if !lib_dest.exists() {
+            let _ = fs::write(&lib_dest, example.lib);
+            let snake = ctx.name.replace('-', "_");
+            let manifest: String = example
+                .manifest
+                .lines()
+                .map(|line| {
+                    let t = line.trim_start();
+                    if t.starts_with("id =") || t.starts_with("id=") {
+                        format!("id = \"dev.krate.{snake}\"")
+                    } else if t.starts_with("name =") || t.starts_with("name=") {
+                        format!("name = \"{}\"", ctx.name)
+                    } else {
+                        line.to_string()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            let _ = fs::write(ctx.app_dir.join("manifest.toml"), manifest);
+        }
+        let _ = fs::write(
+            ctx.app_dir.join(".starter-mode"),
+            format!("model:{}: {}", example.name, example.shows),
+        );
+    }
     if let Ok(app) = skeleton(ctx.name, ctx.sdk_prefix, world) {
         for file in &app.files {
             let dest = ctx.app_dir.join(&file.path);
@@ -8165,7 +8269,9 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
     // reads on a dev machine and was impossible on an installed Krate, where
     // apps/ does not exist. Written fresh each run (unlike the skeleton):
     // it is reference material, never the agent's work in progress.
-    {
+    // Skipped in model-starter mode: the starter IS the example, and a
+    // duplicate EXAMPLE.rs would cost the agent a 30KB read for nothing.
+    if model_starter.is_none() {
         let example = authoring_context::closest_example(ctx.request);
         let _ = fs::write(ctx.app_dir.join("EXAMPLE.rs"), example.lib);
         let _ = fs::write(ctx.app_dir.join("EXAMPLE.manifest.toml"), example.manifest);
