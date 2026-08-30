@@ -94,16 +94,15 @@ img { max-width: 100%; display: block; }
   will-change: transform, opacity, filter;
 }
 .eclipse > i { position: absolute; inset: 0; border-radius: 100%; display: block; }
-.eclipse .rim  { background: #fff; box-shadow: 0 10px 36px 6px rgba(214, 188, 255, 0.6), 0 26px 90px 30px rgba(114, 60, 240, 0.42); }
-.eclipse .glo1 { background: var(--purple); filter: blur(28px); transform: scale(0.985); }
-.eclipse .glo2 { background: var(--indigo); filter: blur(24px); transform: scale(0.952); }
-.eclipse .core { background: #000; filter: blur(60px); transform: scale(0.918); }
+.eclipse .rim  { background: #fff; box-shadow: 0 5px 18px 1px rgba(255, 255, 255, 0.55), 0 14px 44px 4px rgba(165, 88, 251, 0.32); }
+.eclipse .glo1 { background: var(--purple); filter: blur(22px); transform: scale(0.988); }
+.eclipse .glo2 { background: var(--indigo); filter: blur(22px); transform: scale(0.964); }
+.eclipse .core { background: #000; filter: blur(48px); transform: scale(0.94); }
 
 .heroContent {
   position: absolute; inset: 0; z-index: 10;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 24px; padding: 0 24px; text-align: center;
-  margin-top: -13vh;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+  gap: 24px; padding: max(15vh, 110px) 24px 0; text-align: center;
   will-change: transform, opacity, filter;
 }
 .heroContent h1 {
@@ -829,7 +828,7 @@ requestAnimationFrame(function () { requestAnimationFrame(function () {
   if (reduced) return;
   ecl.style.transition = "opacity 1.4s ease, filter 1.4s ease, transform 1.6s cubic-bezier(0.2, 0.8, 0.2, 1)";
   ecl.style.opacity = "1"; ecl.style.filter = "blur(0px)";
-  ecl.style.transform = "translateY(-138vh) scaleY(1)";
+  ecl.style.transform = "translateY(-143vh) scaleY(1)";
   setTimeout(function () { ecl.style.transition = ""; }, 1700);
   setTimeout(function () { $("heroH1").classList.add("in"); }, 250);
   setTimeout(function () { $("heroSub").classList.add("in"); }, 420);
@@ -911,7 +910,7 @@ function apply(p) {
   shot.style.transform = "translateY(" + (60 * (1 - e)).toFixed(1) + "px) scale(" + (0.85 + 0.15 * e).toFixed(4) + ")";
   if (!reduced) {
     var eDown = seg(p, 0, 0.7);
-    ecl.style.transform = "translateY(" + (-138 + 30 * eDown).toFixed(2) + "vh) scaleY(1)";
+    ecl.style.transform = "translateY(" + (-143 + 30 * eDown).toFixed(2) + "vh) scaleY(1)";
     ecl.style.opacity = (1 - seg(p, 0.45, 0.8) * 0.85).toFixed(3);
   }
   var on = p > 0.5;
