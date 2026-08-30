@@ -238,10 +238,14 @@ img { max-width: 100%; display: block; }
 .marqWrap.in { opacity: 1; filter: blur(0); transform: translateY(-50%);
   transition: opacity 0.9s ease, filter 0.9s ease, transform 0.9s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .marqLabel {
-  margin-top: 14px; text-align: center;
+  position: absolute; bottom: 14px; left: 0; right: 0; z-index: 40;
+  text-align: center;
   font-size: 10px; font-weight: 500; letter-spacing: 0.25em;
   text-transform: uppercase; color: #71717a;
+  opacity: 0; transition: opacity 1s ease;
+  will-change: opacity;
 }
+.marqLabel.in { opacity: 1; }
 .marqMask {
   overflow: hidden;
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 8% 92%, transparent);
@@ -636,8 +640,8 @@ img { max-width: 100%; display: block; }
       <div class="marqMask">
         <div class="marqTrack" id="marqTrack"></div>
       </div>
-      <p class="marqLabel">Benchmarks -- Krate 0.2.4, August 2026</p>
     </div>
+    <p class="marqLabel" id="marqLabel">Benchmarks -- Krate 0.2.4, August 2026</p>
 
   </div>
 </div>
@@ -838,10 +842,10 @@ requestAnimationFrame(function () { requestAnimationFrame(function () {
   setTimeout(function () { $("heroH1").classList.add("in"); }, 250);
   setTimeout(function () { $("heroSub").classList.add("in"); }, 420);
   setTimeout(function () { $("heroCtas").classList.add("in"); }, 580);
-  setTimeout(function () { $("marqWrap").classList.add("in"); }, 800);
+  setTimeout(function () { $("marqWrap").classList.add("in"); $("marqLabel").classList.add("in"); }, 800);
 }); });
 if (reduced) {
-  ["heroH1","heroSub","heroCtas","marqWrap"].forEach(function (i) { $(i).classList.add("in"); });
+  ["heroH1","heroSub","heroCtas","marqWrap","marqLabel"].forEach(function (i) { $(i).classList.add("in"); });
 }
 
 /* -------------------------------------------- headline glyph carousel */
@@ -909,6 +913,9 @@ function apply(p) {
   var mOut = seg(p, 0.04, 0.3);
   marq.style.opacity = 1 - mOut;
   marq.style.pointerEvents = mOut > 0.5 ? "none" : "auto";
+  var mlab = $("marqLabel");
+  if (p > 0.001) mlab.style.transition = "none";
+  mlab.style.opacity = 1 - mOut;
   var sIn = seg(p, 0.22, 0.58);
   var e = 1 - Math.pow(1 - sIn, 2);
   shot.style.opacity = e;
