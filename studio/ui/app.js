@@ -148,6 +148,10 @@ function liveRecord() {
 /* ---- views ------------------------------------------------------------ */
 
 function showView(name) {
+  // Sessions are the one split-screen workspace in Studio. Its aurora is
+  // contained behind the app object on the right instead of washing across
+  // the conversation rail; every other page keeps the shared horizon.
+  document.body.classList.toggle("session-view", name === "session");
   for (const id of [
     "viewGate", "viewHome", "viewSession", "viewCloud", "viewApp",
     "viewApps", "viewSettings", "viewProfile", "viewOnboard",

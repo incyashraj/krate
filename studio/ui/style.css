@@ -2692,6 +2692,42 @@ body.light .send-opt span, body.light .send-done p { color: rgba(0,0,0,0.55); }
 }
 #setPlanUsed, #setPlanBtn { white-space: nowrap; }
 
+/* ---- session-local aurora ---------------------------------------------
+ * The shared horizon remains the shell treatment everywhere else. Inside
+ * an app-making session, however, a page-wide glow crossed the conversation
+ * rail and made the whole workspace feel selected. The session returns to
+ * the neutral Studio ground and the same light is clipped inside the finished
+ * app card itself. Nothing around the card receives the effect. */
+body.session-view > .horizon { opacity: 0; }
+
+#viewSession .done-card {
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: var(--radius-card);
+}
+
+#viewSession .done-card.bloom::before {
+  inset: 0;
+  height: auto;
+  border-radius: inherit;
+  z-index: 0;
+  opacity: 1;
+  filter: none;
+  background:
+    radial-gradient(78% 46% at 50% 102%, rgba(190, 164, 255, 0.5), transparent 76%),
+    radial-gradient(104% 68% at 50% 106%, rgba(110, 98, 250, 0.34), transparent 80%),
+    linear-gradient(to top, rgba(44, 38, 130, 0.34), rgba(44, 38, 130, 0.04) 72%, transparent 92%);
+}
+
+#viewSession .done-card > * { z-index: 1; }
+#viewSession .done-card .shot-stage,
+#viewSession .done-card .done-meta { background: rgba(15, 16, 18, 0.8); }
+
+body.light.session-view > .horizon { opacity: 0; }
+body.light #viewSession .done-card.bloom::before { opacity: 0.5; }
+body.light #viewSession .done-card .shot-stage,
+body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 0.84); }
+
 /* The apps-count pill: one quiet rounded chip, not a mono box wrapping
    its own words. */
 .apps-count {
