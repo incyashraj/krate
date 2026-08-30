@@ -6390,6 +6390,26 @@ fn seed_agent_home(real_home: &Path, agent_home: &Path) -> bool {
                 .arg(&login)
                 .env("HOME", agent_home)
                 .output();
+            // The search list falls through to the person's REAL login
+            // keychain (K-206). Copying Claude's credential into the
+            // sandbox forked it, and OAuth refresh tokens ROTATE: the
+            // agent's copy refreshed first and the person's own sign-in
+            // became the dead twin -- their `claude` broke every time
+            // Krate built (seen twice in one night before the cause was
+            // found). With the real keychain second in the search list
+            // there is ONE token: reads find it, the refresh updates it
+            // in place, and new items still land in the sandbox default.
+            if let Some(real) = home_dir() {
+                let user_login = real.join("Library/Keychains/login.keychain-db");
+                if user_login.exists() {
+                    let _ = ProcessCommand::new("/usr/bin/security")
+                        .args(["list-keychains", "-d", "user", "-s"])
+                        .arg(&login)
+                        .arg(&user_login)
+                        .env("HOME", agent_home)
+                        .output();
+                }
+            }
         }
     }
 
@@ -6423,12 +6443,12 @@ fn seed_agent_home(real_home: &Path, agent_home: &Path) -> bool {
             .output()
         {
             if out.status.success() && !out.stdout.is_empty() {
-                if fs::write(&dest, out.stdout.trim_ascii()).is_ok() {
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::fs::PermissionsExt;
-                        let _ = fs::set_permissions(&dest, fs::Permissions::from_mode(0o600));
-                    }
+                {
+                    // Detection only. This used to WRITE the token to the
+                    // file too; with dest now a link to the person's real
+                    // credentials (K-206) that write would stomp their
+                    // file, and the search-list keychain already serves
+                    // the confined agent.
                     // Deliberately NOT an early return.
                     //
                     // It was one, and that single `return true` is why every
@@ -6439,31 +6459,19 @@ fn seed_agent_home(real_home: &Path, agent_home: &Path) -> bool {
                     // develop on -- Grok, Codex, Gemini and Copilot silently
                     // got nothing (K-189).
                     claude_ready = true;
-                    // The same fresh token goes into the CONFINED keychain
-                    // too, every seed. On macOS Claude reads its credential
-                    // from the keychain first, and with HOME rebased that is
-                    // the sandbox keychain (K-197) -- which kept whatever
-                    // token it was first seeded with. A re-sign-in refreshed
-                    // the person's real keychain and this file, and the
-                    // agent still ran on the revoked token from its own
-                    // keychain: builds 401'd an hour after the person had
-                    // signed back in (K-202). -U updates in place.
+                    // K-202 copied the token into the CONFINED keychain here.
+                    // That fixed the stale read and created K-206: OAuth
+                    // refresh tokens ROTATE, so two live copies means the
+                    // agent's refresh kills the person's own sign-in. The
+                    // sandbox keychain's search list now falls through to the
+                    // real login keychain instead (set where the keychain is
+                    // created), so there is exactly one token and Claude
+                    // refreshes it in place. Nothing to copy anymore; also
+                    // delete any forked copy an older build left behind.
                     let login = agent_home.join("Library/Keychains/login.keychain-db");
                     if login.exists() {
-                        let account =
-                            std::env::var("USER").unwrap_or_else(|_| "krate".to_string());
-                        let token = String::from_utf8_lossy(out.stdout.trim_ascii()).to_string();
                         let _ = ProcessCommand::new("/usr/bin/security")
-                            .args([
-                                "add-generic-password",
-                                "-U",
-                                "-s",
-                                "Claude Code-credentials",
-                                "-a",
-                                &account,
-                                "-w",
-                                &token,
-                            ])
+                            .args(["delete-generic-password", "-s", "Claude Code-credentials"])
                             .arg(&login)
                             .env("HOME", agent_home)
                             .output();
@@ -6472,8 +6480,22 @@ fn seed_agent_home(real_home: &Path, agent_home: &Path) -> bool {
             }
         }
     }
+    // An older build's COPIED file at dest is exactly the fork K-206
+    // kills: replace it with the link.
+    #[cfg(unix)]
+    if dest.exists() && !dest.is_symlink() {
+        let _ = fs::remove_file(&dest);
+    }
     if !dest.exists() {
-        let _ = fs::copy(real_home.join(".claude/.credentials.json"), &dest);
+        let source = real_home.join(".claude/.credentials.json");
+        // A LINK, not a copy (K-206): OAuth refresh tokens rotate, so a
+        // copied credential forks -- whichever copy refreshes first kills
+        // the other, and that other was the person's own sign-in. A link
+        // means one file, refreshed in place by whoever uses it.
+        #[cfg(unix)]
+        let _ = std::os::unix::fs::symlink(&source, &dest);
+        #[cfg(windows)]
+        let _ = fs::hard_link(&source, &dest).or_else(|_| fs::copy(&source, &dest).map(|_| ()));
     }
 
     // Every OTHER tool's sign-in, for the same reason Claude's is here.
@@ -6568,7 +6590,16 @@ fn run_provider_author(
     // A snapshot of the skeleton, to detect an agent that answered in chat and
     // never wrote code -- that would leave the blank skeleton, which builds and
     // passes check-app but is not the requested app.
-    let starter_lib = fs::read_to_string(Path::new(app_dir).join("src/lib.rs")).unwrap_or_default();
+    // The file the agent is expected to CHANGE. In the small-language
+    // world (stage 39) the app lives in src/app.rs and lib.rs is fixed
+    // glue -- comparing lib.rs there rejected a fully written app as "the
+    // agent did nothing" (seen on the first matrix run).
+    let watched_file = if Path::new(app_dir).join("src/app.rs").exists() {
+        "src/app.rs"
+    } else {
+        "src/lib.rs"
+    };
+    let starter_lib = fs::read_to_string(Path::new(app_dir).join(watched_file)).unwrap_or_default();
     let file = fs::File::create(&transcript).ok();
 
     // Resolve to a full path the same way the readiness probe does, so an
@@ -6968,7 +6999,7 @@ fn run_provider_author(
         // marker still failed the whole create. The artifact outranks the
         // remark: only honor a refusal when there is no working app to hand
         // over.
-        let lib_now = fs::read_to_string(Path::new(app_dir).join("src/lib.rs")).unwrap_or_default();
+        let lib_now = fs::read_to_string(Path::new(app_dir).join(watched_file)).unwrap_or_default();
         let delivered = lib_now != starter_lib && check_app_verdict(app_dir).is_ok();
         if delivered {
             eprintln!(
@@ -7073,7 +7104,7 @@ fn run_provider_author(
             }
         }
     }
-    let lib_after = fs::read_to_string(Path::new(app_dir).join("src/lib.rs")).unwrap_or_default();
+    let lib_after = fs::read_to_string(Path::new(app_dir).join(watched_file)).unwrap_or_default();
     if lib_after == starter_lib {
         // An untouched app usually means the agent explained instead of
         // writing -- but it is also exactly what an agent leaves behind when
@@ -7092,8 +7123,8 @@ fn run_provider_author(
             );
         }
         anyhow::bail!(
-            "the agent finished without changing the app: src/lib.rs is byte-identical \
-             to the blank skeleton, so this would package an empty app as if it were \
+            "the agent finished without changing the app: {watched_file} is byte-identical \
+             to the starter, so this would package an empty app as if it were \
              \"{request}\". The agent's transcript is at {} -- it usually means the \
              agent explained the app instead of writing it.",
             transcript.display()
