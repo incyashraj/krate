@@ -6650,7 +6650,28 @@ fn run_provider_author(
         // quietly asking for their Downloads folder.
         let _ = seed_agent_home(&home, &agent_home);
         if std::fs::create_dir_all(&agent_home).is_ok() {
-            command.env("HOME", &agent_home);
+            // Claude on macOS keeps its credential in the KEYCHAIN, which
+            // the Security framework resolves from the real user session no
+            // matter what $HOME says -- a fake-HOME `security` even reports
+            // success while writing nowhere (cfprefsd keys by real user).
+            // And a copied token forks: OAuth refresh rotation means the
+            // agent's copy killed the person's own sign-in (K-206). So
+            // claude alone keeps the real HOME and is confined through its
+            // own CLAUDE_CONFIG_DIR instead: config, projects and trust
+            // live in the agent home, while the one credential stays in the
+            // person's keychain and refreshes in place. Every other agent
+            // is file-based and confines the normal K-179 way.
+            // Measured, not assumed: CLAUDE_CONFIG_DIR scopes claude's
+            // LOGIN too -- with it set, a signed-in machine says "Not
+            // logged in" (the credential lookup follows the config dir).
+            // So on macOS claude simply keeps the real HOME: the one
+            // keychain token, refreshed in place, no fork to rotate dead.
+            // Its own permission flags already govern what it may touch.
+            let claude_native_keychain =
+                cfg!(target_os = "macos") && provider.name() == "claude";
+            if !claude_native_keychain {
+                command.env("HOME", &agent_home);
+            }
             // cargo and rustup resolve their homes from $HOME, and the agent
             // builds the app it writes -- pin them to the real one or
             // confining the agent costs it its compiler.
