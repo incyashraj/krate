@@ -257,34 +257,32 @@ img { max-width: 100%; display: block; }
 }
 .marqTrack:hover { animation-play-state: paused; }
 @keyframes marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
-/* Title-only cards; the full sentence surfaces on hover, sliding in under
-   the title while the card keeps its height so the row never jumps. */
+/* The reference site's card shape, carrying our promises: a small glyph,
+   a bold title, and the sentence right there -- nothing hidden. */
 .stat {
-  width: 330px; height: 138px; flex: none; position: relative;
-  display: flex; align-items: center;
-  text-align: left; user-select: none; cursor: default;
-  border-radius: 18px; background: rgba(24, 24, 27, 0.9); padding: 0 22px;
+  width: 296px; flex: none; text-align: left; user-select: none; cursor: default;
+  border-radius: 16px; background: rgba(24, 24, 27, 0.9); padding: 13px 15px 14px;
   box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 1px 2px -1px rgba(0,0,0,0.5);
   -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
-  transition: box-shadow 0.2s ease, background-color 0.2s ease, translate 0.2s ease;
+  transition: box-shadow 0.2s ease, background-color 0.2s ease, translate 0.2s ease, scale 0.2s ease;
 }
 .stat:hover {
   translate: 0 -2px; background: rgba(39, 39, 42, 0.9);
   box-shadow: 0 0 0 1px rgba(255,255,255,0.15), 0 12px 32px -12px rgba(0,0,0,0.7);
 }
-.stat .val {
-  font-family: var(--disp); font-weight: 700; font-size: 22px; color: #fff;
-  letter-spacing: -0.01em; line-height: 1.2;
-  transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+.stat .head { display: flex; align-items: center; gap: 10px; }
+.stat .ic {
+  flex: none; width: 34px; height: 34px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(165, 88, 251, 0.1);
+  outline: 1px solid rgba(165, 88, 251, 0.18); outline-offset: -1px;
 }
-.stat:hover .val { transform: translateY(-33px); }
+.stat .ic svg { width: 16px; height: 16px; }
+.stat .val { font-size: 13.5px; font-weight: 500; color: #f4f4f5; line-height: 1.3; }
 .stat .note {
-  position: absolute; left: 22px; right: 22px; top: 58px;
-  font-size: 13px; line-height: 1.5; color: #d4d4d8;
-  opacity: 0; transform: translateY(8px);
-  transition: opacity 0.3s ease 0.05s, transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) 0.05s;
+  margin-top: 9px; font-size: 12.5px; line-height: 1.5; color: #d4d4d8;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
-.stat:hover .note { opacity: 1; transform: none; }
 
 /* ----------------------------------------------------- section: works */
 .works {
@@ -944,20 +942,30 @@ onScroll();
 /* ----------------------------------------------------------- marquee */
 // Receipts, not tweets: every number here was measured, and dated code
 // or release notes back each one.
+var IC = {
+  photo: '<svg viewBox="0 0 24 24" fill="none" stroke="#d8c2ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.6"/><path d="M3.5 17.5 9 13l4 3.5 3.5-3 4 4"/></svg>',
+  click: '<svg viewBox="0 0 24 24" fill="none" stroke="#d8c2ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5v10.5l2.6-2 1.8 4.3 2.2-.9-1.8-4.3 3.3-.3z"/></svg>',
+  laptop: '<svg viewBox="0 0 24 24" fill="none" stroke="#d8c2ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="10" rx="2"/><path d="M3 19h18"/></svg>',
+  shield: '<svg viewBox="0 0 24 24" fill="none" stroke="#d8c2ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path d="M9 11.5l2.2 2.2L15.5 9"/></svg>',
+  inf: '<svg viewBox="0 0 24 24" fill="none" stroke="#d8c2ff" stroke-width="1.8" stroke-linecap="round"><path d="M8.5 15.5c-2 0-3.5-1.6-3.5-3.5S6.5 8.5 8.5 8.5c3.5 0 3.5 7 7 7 2 0 3.5-1.6 3.5-3.5s-1.5-3.5-3.5-3.5c-3.5 0-3.5 7-7 7z"/></svg>',
+  clock: '<svg viewBox="0 0 24 24" fill="none" stroke="#d8c2ff" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2.5"/></svg>',
+  game: '<svg viewBox="0 0 24 24" fill="none" stroke="#d8c2ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 8h11a4 4 0 013.9 4.9l-.9 3.6a2.5 2.5 0 01-4.3 1L14.5 15h-5l-1.7 2.5a2.5 2.5 0 01-4.3-1l-.9-3.6A4 4 0 016.5 8z"/><path d="M9 11v2M8 12h2M15.2 11.2h.01M17 13h.01"/></svg>',
+  link: '<svg viewBox="0 0 24 24" fill="none" stroke="#d8c2ff" stroke-width="1.8" stroke-linecap="round"><path d="M9.5 14.5l5-5"/><path d="M7.5 12.5l-2 2a3.5 3.5 0 105 5l2-2M16.5 11.5l2-2a3.5 3.5 0 10-5-5l-2 2"/></svg>'
+};
 var STATS = [
-  ["Smaller than a photo", "A whole app is about 100 KB. Send it in a chat, the way you'd send a picture."],
-  ["Nothing to install", "They get Krate once, like a video player. After that every app is just a double-click."],
-  ["Works on any computer", "The same file opens on Mac, Windows and Linux. You never ask what machine they have."],
-  ["Asks before it touches", "Every app says what it wants first -- and cannot touch anything you did not allow."],
-  ["Yours forever", "The file keeps working even if your plan lapses. Nothing you made can be taken back."],
-  ["Made in minutes", "One sentence in. A real, clickable app on your screen a few minutes later, built while you watch."],
-  ["Play it together", "Share a room code and a game becomes multiplayer -- no servers, no setup."],
-  ["A link works too", "No file handy? Send a krate.tech link and it opens on their machine."]
+  ["photo", "Smaller than a photo", "A whole app is about 100 KB. Send it in a chat, the way you'd send a picture."],
+  ["click", "Nothing to install", "They get Krate once, like a video player. After that every app is a double-click."],
+  ["laptop", "Works on any computer", "The same file opens on Mac, Windows and Linux. Never ask what machine they have."],
+  ["shield", "Asks before it touches", "Every app says what it wants first -- and cannot touch anything you did not allow."],
+  ["inf", "Yours forever", "The file keeps working even if your plan lapses. Nothing you made can be taken back."],
+  ["clock", "Made in minutes", "One sentence in. A real, clickable app on your screen minutes later, built while you watch."],
+  ["game", "Play it together", "Share a room code and a game becomes multiplayer -- no servers, no setup."],
+  ["link", "A link works too", "No file handy? Send a krate.tech link and it opens on their machine."]
 ];
 var trackEl = $("marqTrack");
 var cardHTML = STATS.map(function (s) {
-  return '<div class="stat"><div class="val">' + s[0] +
-    '</div><p class="note">' + s[1] + '</p></div>';
+  return '<div class="stat"><div class="head"><span class="ic">' + IC[s[0]] +
+    '</span><span class="val">' + s[1] + '</span></div><p class="note">' + s[2] + '</p></div>';
 }).join("");
 trackEl.innerHTML = cardHTML + cardHTML;
 

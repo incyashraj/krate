@@ -34,8 +34,8 @@
   --muted: rgba(255, 255, 255, 0.56);
   --faint: rgba(255, 255, 255, 0.32);
   --ghost: rgba(255, 255, 255, 0.18);
-  --blue: #8b78ff;
-  --blue-soft: #c3b3ff;
+  --blue: #6291ff;
+  --blue-soft: #a9c2ff;
   --cyan: #6cf4d7;
   --yellow: #f4dc74;
   --danger: #ff7f95;
@@ -470,7 +470,7 @@ body.windows .titlebar { padding-right: 150px; }
 .g-line.short { width: 45%; }
 .forming-sweep {
   position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(115deg, transparent 42%, rgba(165, 88, 251, 0.07) 50%, transparent 58%);
+  background: linear-gradient(115deg, transparent 42%, rgba(124, 108, 255, 0.07) 50%, transparent 58%);
   background-size: 300% 100%;
   animation: formingSweep 3.2s ease-in-out infinite;
 }
@@ -488,7 +488,7 @@ body.windows .titlebar { padding-right: 150px; }
 }
 .build-track i {
   display: block; height: 100%; border-radius: 3px;
-  background: linear-gradient(90deg, var(--accent, #8b78ff), rgba(165, 88, 251, 0.55));
+  background: linear-gradient(90deg, var(--accent, #6291ff), rgba(124, 108, 255, 0.55));
   transform: scaleX(0.04); transform-origin: left center;
   transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -521,7 +521,7 @@ body.windows .titlebar { padding-right: 150px; }
   transition: background 0.3s ease, box-shadow 0.3s ease;
 }
 .stages li.now { color: var(--text); }
-.stages li.now .tick { background: var(--blue); box-shadow: 0 0 0 4px rgba(165,88,251,0.14); }
+.stages li.now .tick { background: var(--blue); box-shadow: 0 0 0 4px rgba(124,108,255,0.14); }
 .stages li.done { color: var(--muted); }
 .stages li.done .tick { background: var(--cyan); }
 
@@ -742,7 +742,7 @@ body.windows .titlebar { padding-right: 150px; }
   content: "";
   position: absolute;
   left: 12%; right: 12%; bottom: -14px; height: 60%;
-  background: radial-gradient(ellipse at 50% 100%, var(--bloom-color, rgba(165,88,251,0.45)), transparent 70%);
+  background: radial-gradient(ellipse at 50% 100%, var(--bloom-color, rgba(124,108,255,0.45)), transparent 70%);
   filter: blur(34px);
   opacity: 0.55;
   z-index: -1;
@@ -784,7 +784,7 @@ body.windows .titlebar { padding-right: 150px; }
   content: "";
   position: absolute; inset: -5px;
   border-radius: 50%;
-  border: 1px solid rgba(165,88,251,0.35);
+  border: 1px solid rgba(124,108,255,0.35);
   animation: ripple 2s ease-out infinite;
 }
 @keyframes ripple {
@@ -834,7 +834,7 @@ body.windows .titlebar { padding-right: 150px; }
 .build-progress { margin: 4px 0 26px; }
 /* The build blooms blue; the finished app blooms warmer, because arriving
    and working are different feelings. */
-.build-card { --bloom-color: rgba(165,88,251,0.34); }
+.build-card { --bloom-color: rgba(124,108,255,0.34); }
 .build-card.bloom::before { left: 6%; right: 6%; bottom: -8px; height: 46%; }
 .done-card { --bloom-color: rgba(108,244,215,0.28); }
 
@@ -945,7 +945,7 @@ body.windows .titlebar { padding-right: 150px; }
   --ww: 220px;
   background-image:
     linear-gradient(100deg, transparent 40%, rgba(255, 255, 255, 0.9) 50%, transparent 60%),
-    linear-gradient(100deg, #8b78ff 0%, #a855f7 50%, #ec4899 100%);
+    linear-gradient(100deg, #6291ff 0%, #a855f7 50%, #ec4899 100%);
   background-size: 340px 100%, var(--ww) 100%;
   background-repeat: no-repeat, no-repeat;
   background-position: calc(-1 * var(--off) - 340px) 0, calc(-1 * var(--off)) 0;
@@ -1188,7 +1188,7 @@ body.resizing .divider { background: var(--blue); }
 .shot-none {
   display: grid; place-items: center; height: 100%; width: 100%;
   color: var(--ghost); font-size: 13px;
-  background: radial-gradient(120% 120% at 50% 0%, rgba(165, 88, 251, 0.07), transparent 70%);
+  background: radial-gradient(120% 120% at 50% 0%, rgba(124, 108, 255, 0.07), transparent 70%);
 }
 /* The name has to stay legible over whatever the app happens to draw, so
    the bottom of the stage is dimmed rather than trusting the screenshot. */
@@ -1426,8 +1426,8 @@ img.cloud-icon { object-fit: cover; }
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .bigbar:focus-within {
-  border-color: rgba(165, 88, 251, 0.55);
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.4), 0 0 0 3px rgba(165, 88, 251, 0.12);
+  border-color: rgba(124, 108, 255, 0.55);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.4), 0 0 0 3px rgba(124, 108, 255, 0.12);
 }
 .bigbar textarea {
   width: 100%; border: none; background: none; outline: none; resize: none;
@@ -1495,10 +1495,10 @@ img.cloud-icon { object-fit: cover; }
 }
 .msg.ask::before {
   background: var(--blue);
-  box-shadow: 0 0 0 4px rgba(165, 88, 251, 0.18);
+  box-shadow: 0 0 0 4px rgba(124, 108, 255, 0.18);
   animation: node-pulse 1.4s ease-in-out infinite;
 }
-@keyframes node-pulse { 50% { box-shadow: 0 0 0 2px rgba(165, 88, 251, 0.05); } }
+@keyframes node-pulse { 50% { box-shadow: 0 0 0 2px rgba(124, 108, 255, 0.05); } }
 @media (prefers-reduced-motion: reduce) { .msg.ask::before { animation: none; } }
 .msg.ask .body { color: var(--text); }
 
@@ -1520,10 +1520,10 @@ img.cloud-icon { object-fit: cover; }
 .msg.vbad::before { background: var(--danger); }
 .msg.vlive::before {
   background: var(--blue);
-  box-shadow: 0 0 0 4px rgba(165, 88, 251, 0.18);
+  box-shadow: 0 0 0 4px rgba(124, 108, 255, 0.18);
   animation: node-pulse 1.4s ease-in-out infinite;
 }
-.vchip.vlivec { border-color: rgba(165, 88, 251, 0.35); }
+.vchip.vlivec { border-color: rgba(124, 108, 255, 0.35); }
 .vchip.vbadc { border-color: rgba(255, 127, 149, 0.3); }
 .vchip .vbar {
   width: 66px; height: 3px; border-radius: 3px; background: var(--line);
@@ -1686,7 +1686,7 @@ img.cloud-icon { object-fit: cover; }
    the person's screen and its sounds play. The card says so at that exact
    moment -- unexplained, it reads as the machine misbehaving. */
 .build-card.flashing .bpeek {
-  border-color: rgba(165, 88, 251, 0.35);
+  border-color: rgba(124, 108, 255, 0.35);
   color: var(--muted);
 }
 .build-card.flashing .bpeek::after {
@@ -1715,8 +1715,8 @@ img.cloud-icon { object-fit: cover; }
   position: fixed; left: 0; right: 0; bottom: 0; height: 64%;
   pointer-events: none; z-index: 0; transition: opacity 0.5s ease;
   background:
-    radial-gradient(115% 92% at 50% 104%, rgba(73, 34, 229, 0.52), transparent 68%),
-    radial-gradient(88% 76% at 24% 108%, rgba(165, 88, 251, 0.34), transparent 66%),
+    radial-gradient(115% 92% at 50% 104%, rgba(74, 70, 216, 0.52), transparent 68%),
+    radial-gradient(88% 76% at 24% 108%, rgba(124, 108, 255, 0.34), transparent 66%),
     radial-gradient(84% 72% at 78% 110%, rgba(214, 188, 255, 0.16), transparent 68%);
   filter: blur(4px);
 }
@@ -1796,7 +1796,7 @@ body.scrolled .dock-solo {
 .dock-solo.on { border-color: rgba(255, 255, 255, 0.5); }
 .dock-solo .in {
   width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
-  background: linear-gradient(140deg, #2f2560, #181139);
+  background: linear-gradient(140deg, #2b3a63, #16203a);
   font-size: 11px; font-weight: 600; color: var(--blue-soft);
 }
 .dock-solo img { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; }
@@ -1866,7 +1866,7 @@ body.scrolled .dock-solo {
   backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
   transition: border-color 0.3s;
 }
-.upd.ready { border-color: rgba(165, 88, 251, 0.35); }
+.upd.ready { border-color: rgba(124, 108, 255, 0.35); }
 .upd.done { border-color: rgba(214, 188, 255, 0.3); }
 .upd-top { display: flex; align-items: center; gap: 13px; }
 .upd-ic {
@@ -1874,7 +1874,7 @@ body.scrolled .dock-solo {
   display: grid; place-items: center; background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--line); transition: background 0.3s, border-color 0.3s;
 }
-.upd.ready .upd-ic { background: rgba(165, 88, 251, 0.12); border-color: rgba(165, 88, 251, 0.3); }
+.upd.ready .upd-ic { background: rgba(124, 108, 255, 0.12); border-color: rgba(124, 108, 255, 0.3); }
 .upd.done .upd-ic { background: rgba(214, 188, 255, 0.12); border-color: rgba(214, 188, 255, 0.3); }
 .upd-t { font-size: 14px; font-weight: 500; letter-spacing: -0.015em; }
 .upd-s { font-size: 12.5px; color: var(--muted); margin-top: 3px; }
@@ -1886,7 +1886,7 @@ body.scrolled .dock-solo {
 .upd.working .upd-bar { display: block; }
 .upd-bar i {
   display: block; height: 100%; width: 0%; border-radius: var(--radius-pill);
-  background: linear-gradient(90deg, #5b2fe8, var(--blue)); transition: width 0.3s ease;
+  background: linear-gradient(90deg, #3a63d8, var(--blue)); transition: width 0.3s ease;
 }
 .upd-notes { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); display: none; }
 .upd.ready .upd-notes, .upd.working .upd-notes { display: block; }
@@ -1897,7 +1897,7 @@ body.scrolled .dock-solo {
 .upd-notes ul { margin: 0; padding-left: 17px; color: var(--muted); font-size: 12.5px; line-height: 1.75; }
 .upd-spin {
   width: 15px; height: 15px; border-radius: 50%;
-  border: 2px solid rgba(165, 88, 251, 0.25); border-top-color: var(--blue);
+  border: 2px solid rgba(124, 108, 255, 0.25); border-top-color: var(--blue);
   animation: updspin 0.8s linear infinite;
 }
 @keyframes updspin { to { transform: rotate(360deg); } }
@@ -1910,8 +1910,8 @@ body.scrolled .dock-solo {
 }
 .prof-av {
   width: 64px; height: 64px; border-radius: 50%; flex: none; display: grid; place-items: center;
-  background: linear-gradient(140deg, #2f2560, #181139);
-  border: 1px solid rgba(165, 88, 251, 0.28);
+  background: linear-gradient(140deg, #2b3a63, #16203a);
+  border: 1px solid rgba(124, 108, 255, 0.28);
   font-size: 24px; font-weight: 500; color: var(--blue-soft); overflow: hidden;
 }
 .prof-av img { width: 100%; height: 100%; object-fit: cover; }
@@ -2098,8 +2098,8 @@ body.light {
 body.light .horizon {
   height: 62%;
   background:
-    radial-gradient(115% 92% at 50% 104%, rgba(73, 34, 229, 0.20), transparent 68%),
-    radial-gradient(88% 76% at 24% 108%, rgba(165, 88, 251, 0.14), transparent 66%),
+    radial-gradient(115% 92% at 50% 104%, rgba(74, 70, 216, 0.20), transparent 68%),
+    radial-gradient(88% 76% at 24% 108%, rgba(124, 108, 255, 0.14), transparent 66%),
     radial-gradient(84% 72% at 78% 110%, rgba(214, 188, 255, 0.10), transparent 68%);
 }
 body.light .grain { opacity: 0.16; mix-blend-mode: multiply; }
@@ -2160,8 +2160,8 @@ body.light {
 body.light .horizon {
   height: 60%;
   background:
-    radial-gradient(115% 92% at 50% 104%, rgba(94, 54, 232, 0.30), transparent 70%),
-    radial-gradient(88% 76% at 24% 108%, rgba(165, 88, 251, 0.20), transparent 68%),
+    radial-gradient(115% 92% at 50% 104%, rgba(86, 78, 224, 0.30), transparent 70%),
+    radial-gradient(88% 76% at 24% 108%, rgba(124, 108, 255, 0.20), transparent 68%),
     radial-gradient(84% 72% at 78% 110%, rgba(80, 200, 190, 0.12), transparent 70%);
 }
 body.light .grain { opacity: 0.1; mix-blend-mode: multiply; }
@@ -2267,8 +2267,8 @@ body.light .thumb-well { background: var(--panel-raised); }
 .ob-sky {
   position: absolute; inset: 0; pointer-events: none; z-index: 0;
   background:
-    radial-gradient(80% 55% at 50% 34%, rgba(165, 88, 251, 0.16), transparent 70%),
-    radial-gradient(70% 50% at 50% 108%, rgba(73, 34, 229, 0.4), transparent 66%);
+    radial-gradient(80% 55% at 50% 34%, rgba(124, 108, 255, 0.16), transparent 70%),
+    radial-gradient(70% 50% at 50% 108%, rgba(74, 70, 216, 0.4), transparent 66%);
 }
 
 .ob-skip {
@@ -2324,7 +2324,7 @@ body.light .thumb-well { background: var(--panel-raised); }
 .fan-card:nth-child(5) { animation-delay: 0.04s; --x: 230px;  --r: 16deg;  --y: 24px; --s: 0.86; --o: 0.5; z-index: 1; }
 .fan-card.lead {
   border-color: rgba(255, 255, 255, 0.22);
-  box-shadow: 0 26px 60px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(165, 88, 251, 0.2);
+  box-shadow: 0 26px 60px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(124, 108, 255, 0.2);
 }
 @keyframes fanIn {
   to {
@@ -2378,7 +2378,7 @@ body.light .thumb-well { background: var(--panel-raised); }
   font-size: 14px; transition: border-color 0.18s, background 0.18s, transform 0.18s;
 }
 .ob-agent:hover:not(.off) { border-color: var(--line-strong); transform: translateY(-1px); }
-.ob-agent.picked { border-color: var(--blue); background: rgba(165, 88, 251, 0.07); }
+.ob-agent.picked { border-color: var(--blue); background: rgba(124, 108, 255, 0.07); }
 .ob-agent.off { opacity: 0.4; cursor: default; }
 .ob-agent-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ghost); flex: none; }
 .ob-agent-dot.ok { background: var(--cyan); }
@@ -2398,7 +2398,7 @@ body.light .thumb-well { background: var(--panel-raised); }
   animation: obUp 0.6s cubic-bezier(0.2, 0.9, 0.3, 1) 0.5s forwards;
   transition: border-color 0.2s, box-shadow 0.2s;
 }
-.ob-input:focus { border-color: rgba(165, 88, 251, 0.5); box-shadow: 0 0 0 3px rgba(165, 88, 251, 0.09); }
+.ob-input:focus { border-color: rgba(124, 108, 255, 0.5); box-shadow: 0 0 0 3px rgba(124, 108, 255, 0.09); }
 
 @media (prefers-reduced-motion: reduce) {
   .fan-card, .ob-h, .ob-p, .ob-cta, .ob-agents, .ob-input, .ob-quiet {
@@ -2413,7 +2413,7 @@ body.light .thumb-well { background: var(--panel-raised); }
  * carries the moment and needs the size to do it. */
 .gate-mark {
   width: 76px; height: 76px; margin: 0 auto 30px; opacity: 1;
-  filter: drop-shadow(0 10px 26px rgba(165, 88, 251, 0.22));
+  filter: drop-shadow(0 10px 26px rgba(124, 108, 255, 0.22));
 }
 
 /* "Hi, Y" sat at 32% opacity muted grey, which on this ground is barely
@@ -2463,7 +2463,7 @@ body.light .thumb-well { background: var(--panel-raised); }
 .greet-badge {
   width: 24px; height: 24px; border-radius: 50%; flex: none;
   display: grid; place-items: center;
-  background: linear-gradient(140deg, #2f2560, #181139);
+  background: linear-gradient(140deg, #2b3a63, #16203a);
   color: var(--blue-soft); font-size: 11.5px; font-weight: 600;
 }
 
@@ -2605,9 +2605,9 @@ body.light .send-opt span, body.light .send-done p { color: rgba(0,0,0,0.55); }
 /* Change must be seen to do something: the composer answers with one
    breath of light when the button sends you to it. */
 @keyframes composerGlow {
-  0% { box-shadow: 0 0 0 0 rgba(165, 88, 251, 0.0); }
-  30% { box-shadow: 0 0 0 3px rgba(165, 88, 251, 0.45); }
-  100% { box-shadow: 0 0 0 0 rgba(165, 88, 251, 0.0); }
+  0% { box-shadow: 0 0 0 0 rgba(124, 108, 255, 0.0); }
+  30% { box-shadow: 0 0 0 3px rgba(124, 108, 255, 0.45); }
+  100% { box-shadow: 0 0 0 0 rgba(124, 108, 255, 0.0); }
 }
 .composer-box.glow { animation: composerGlow 1.1s ease; }
 
@@ -2634,7 +2634,7 @@ body.light .send-opt span, body.light .send-done p { color: rgba(0,0,0,0.55); }
 .page-inner { padding-bottom: 110px !important; }
 .send-wrap-os { display: flex; gap: 8px; padding: 2px 4px 0; }
 .pub-list-row { display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; cursor: pointer; }
-.pub-list-row input { margin-top: 3px; accent-color: var(--accent, #8b78ff); }
+.pub-list-row input { margin-top: 3px; accent-color: var(--accent, #6291ff); }
 .pub-list-row small { display: block; color: var(--muted); font-size: 12px; }
 /* The plan chip lives in the title bar beside the theme toggle: quiet
    until hovered, and a door to the plan sheet rather than a label. */
@@ -2710,7 +2710,7 @@ body.light .send-opt span, body.light .send-done p { color: rgba(0,0,0,0.55); }
 .sup-tick .sup-head { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--text); }
 .sup-tick .sup-status { margin-left: auto; font-size: 11px; color: var(--faint); border: 1px solid var(--line); border-radius: 99px; padding: 2px 8px; }
 .sup-msg { font-size: 12.5px; color: var(--muted); margin-top: 6px; padding: 7px 10px; border-radius: 8px; background: rgba(255,255,255,0.035); white-space: pre-wrap; }
-.sup-msg.krate { background: rgba(165,88,251,0.10); }
+.sup-msg.krate { background: rgba(124,108,255,0.10); }
 .sup-msg .sup-who { display: block; font-size: 10.5px; color: var(--quiet, rgba(255,255,255,0.35)); margin-top: 3px; }
 .sup-replyrow { display: flex; gap: 8px; margin-top: 8px; }
 .sup-replyrow input { flex: 1; }
