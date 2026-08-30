@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#000000" />
+<title>Krate -- direct answers</title>
+<meta name="description" content="Short answers about how Krate works, with the technical boundary underneath." />
+<link rel="icon" href="/krate-favicon.png" />
+<style>
+@font-face { font-family: "Geist"; src: url("/fonts/geist-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Geist"; src: url("/fonts/geist-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
+@font-face { font-family: "Syne"; src: url("/fonts/syne-var.woff2") format("woff2"); font-weight: 400 800; font-display: swap; }
+:root { color-scheme: dark; --purple: #A558FB; --indigo: #4922E5;
+  --sans: "Geist", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --disp: "Syne", var(--sans); }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #000; color: #fff; font-family: var(--sans); font-size: 15px;
+  line-height: 1.65; -webkit-font-smoothing: antialiased; min-height: 100vh; }
+a { color: inherit; text-decoration: none; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+img { max-width: 100%; }
+.hidden { display: none !important; }
+::selection { background: rgba(165, 88, 251, 0.35); }
+.topblur { position: fixed; top: 0; left: 0; width: 100%; height: 120px; z-index: 40;
+  pointer-events: none; user-select: none;
+  background: linear-gradient(to top, transparent, #000);
+  -webkit-mask-image: linear-gradient(to bottom, #000 50%, transparent);
+          mask-image: linear-gradient(to bottom, #000 50%, transparent);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.brandbar { position: fixed; top: 20px; left: 50%; z-index: 50;
+  display: flex; align-items: center; gap: 14px; user-select: none;
+  transform: translateX(-50%); }
+.brandbar .name { display: flex; align-items: center; gap: 0.34em;
+  font-size: 17px; font-weight: 500; color: #e4e4e7; letter-spacing: 0.02em; }
+.brandbar .name img { height: 19px; width: auto; }
+.bnav { display: flex; align-items: center; gap: 2px; margin-left: 6px;
+  padding-left: 16px; border-left: 1px solid rgba(255,255,255,0.12); }
+.bnav a { font-size: 12.5px; color: #a1a1aa; padding: 5px 9px; border-radius: 999px;
+  transition: color 0.15s ease, background 0.15s ease; }
+.bnav a:hover { color: #fff; background: rgba(255,255,255,0.06); }
+.bnav a.here { color: #fff; background: rgba(255,255,255,0.08); }
+@media (max-width: 640px) { .bnav { display: none; } }
+.bloom { position: fixed; top: -340px; left: 50%; width: 900px; height: 500px;
+  margin-left: -450px; pointer-events: none; border-radius: 100%;
+  background: radial-gradient(closest-side, rgba(73, 34, 229, 0.35), transparent);
+  filter: blur(40px); }
+.wrap { position: relative; max-width: 760px; margin: 0 auto; padding: 130px 22px 80px; }
+h1.page { font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
+  font-size: clamp(28px, 4.4vw, 42px); line-height: 1.13; }
+.pagesub { margin: 12px 0 40px; font-size: 14px; color: #a1a1aa; max-width: 620px; }
+.card { border-radius: 20px; background: rgba(24, 24, 27, 0.5); padding: 24px 26px;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.08); margin-bottom: 14px;
+  opacity: 0; transform: translateY(12px); filter: blur(6px);
+  animation: rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  transition: box-shadow 0.25s ease, translate 0.25s ease; }
+.card:hover { translate: 0 -2px; box-shadow: 0 0 0 1px rgba(255,255,255,0.15), 0 14px 36px -14px rgba(0,0,0,0.8); }
+.card:nth-of-type(2) { animation-delay: 0.06s; }
+.card:nth-of-type(3) { animation-delay: 0.12s; }
+.card:nth-of-type(4) { animation-delay: 0.18s; }
+.card:nth-of-type(5) { animation-delay: 0.24s; }
+.card:nth-of-type(6) { animation-delay: 0.3s; }
+@keyframes rise { to { opacity: 1; transform: none; filter: blur(0); } }
+.card h2 { font-family: var(--disp); font-weight: 700; font-size: 17px; margin-bottom: 6px; }
+.card p { font-size: 13.5px; color: #a1a1aa; }
+.card p b { color: #d4d4d8; font-weight: 500; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 10px 16px; border-radius: 12px; font-size: 13.5px; font-weight: 500;
+  white-space: nowrap; user-select: none;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.16);
+  transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.btn:hover { transform: translateY(-1px); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.32); }
+.btn.primary { background: #fff; color: #0a0a0a; box-shadow: none; }
+.btn.primary:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
+.foot { max-width: 760px; margin: 40px auto 0; padding: 26px 22px 18px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  display: flex; align-items: center; justify-content: space-between; gap: 20px;
+  font-size: 12px; color: #a1a1aa; flex-wrap: wrap; }
+.foot nav { display: flex; gap: 18px; flex-wrap: wrap; }
+.foot nav a:hover { color: #d4d4d8; }
+
+details.qa { border-radius: 18px; background: rgba(24,24,27,0.5);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.08); margin-bottom: 12px;
+  opacity: 0; transform: translateY(12px); filter: blur(6px);
+  animation: rise 0.6s cubic-bezier(0.2,0.8,0.2,1) forwards; }
+details.qa:nth-of-type(2) { animation-delay: 0.05s; }
+details.qa:nth-of-type(3) { animation-delay: 0.1s; }
+details.qa:nth-of-type(4) { animation-delay: 0.15s; }
+details.qa:nth-of-type(5) { animation-delay: 0.2s; }
+details.qa:nth-of-type(6) { animation-delay: 0.25s; }
+details.qa summary { list-style: none; cursor: pointer; display: flex; gap: 16px;
+  align-items: baseline; padding: 18px 22px; font-size: 15px; font-weight: 500; }
+details.qa summary::-webkit-details-marker { display: none; }
+details.qa summary .n { font-family: var(--disp); font-weight: 700; color: var(--purple); font-size: 13px; flex: none; }
+details.qa summary .tw { margin-left: auto; color: #71717a; transition: transform 0.25s ease; flex: none; }
+details.qa[open] summary .tw { transform: rotate(45deg); }
+details.qa .a { padding: 0 22px 20px 51px; font-size: 13.5px; color: #a1a1aa; }
+details.qa .a p + p { margin-top: 8px; }
+details.qa .a code { font-family: ui-monospace, Menlo, monospace; font-size: 12px;
+  background: rgba(255,255,255,0.06); border-radius: 5px; padding: 1px 6px; }
+
+@media (prefers-reduced-motion: reduce) { .card { animation: none; opacity: 1; transform: none; filter: none; } }
+</style>
+</head>
+<body>
+<div class="bloom"></div>
+<div class="topblur"></div>
+<div class="brandbar">
+  <a class="name" href="/next/"><img src="/krate-glyph-white.png" alt="" /> KRATE</a>
+  <nav class="bnav" aria-label="Primary">
+    <a href="/next/#pricing" >Pricing</a>
+    <a href="/docs/" >Docs</a>
+    <a href="/next/cloud/" >Gallery</a>
+    <a href="/next/account/" >Account</a>
+  </nav>
+</div>
+<div class="wrap">
+<h1 class="page">Direct answers.</h1>
+<p class="pagesub">These came from people seeing Krate for the first time. The short answer is first, with the technical boundary underneath.</p>
+<details class="qa"><summary><span class="n">01</span>How can the same .krate file open on Mac, Windows, and Linux?<span class="tw">+</span></summary><div class="a"><p>The app does not call AppKit, Win32, or Linux APIs directly. It calls Krate interfaces, and the Krate player on each operating system translates approved calls into local behavior.</p><p>The <code>.krate</code> file carries the WebAssembly component and its requested access. It is one portable app, not three native installers hidden in one download.</p></div></details>
+<details class="qa"><summary><span class="n">02</span>Why not use an HTML file, browser link, or Electron?<span class="tw">+</span></summary><div class="a"><p>A browser link is the right answer when an app fits inside the browser. Krate is for local software: it works offline, it works next year even if the sender disappears, and “it cannot use the network” is enforced on your machine rather than promised in a policy.</p><p>An Electron app ships a browser engine and still needs platform packaging. A Krate app is a WebAssembly component: no bundled browser per app, and the shared player controls its access to the computer.</p></div></details>
+<details class="qa"><summary><span class="n">03</span>Can an app hide what it accesses or ignore the permission screen?<span class="tw">+</span></summary><div class="a"><p>The permission list is not a label written by the app. Krate checks operations at the boundary: if the app tries something that was not granted, the call is denied before it reaches the operating system.</p><p>If a required permission is denied, the app refuses to start and explains what is missing.</p></div></details>
+<details class="qa"><summary><span class="n">04</span>Is Krate ready for any untrusted app from the internet?<span class="tw">+</span></summary><div class="a"><p><b>Not yet.</b> The capability boundary is working and useful, but Krate is young and we are not claiming production hardening against hostile third-party code today.</p><p>Open apps from people you know, or from the gallery. The current limits and threat model are public.</p></div></details>
+<details class="qa"><summary><span class="n">05</span>Why does the person receiving an app need Krate?<span class="tw">+</span></summary><div class="a"><p>Krate is the player: the stable layer that makes one app file portable and enforces its access -- like a media player for movies. Without it, every app would have to bring its own engine and operating-system code, and the small-file story would die.</p><p>They install Krate once, about 24 MB. After that, every <code>.krate</code> anyone sends them just opens, through the same permission flow.</p></div></details>
+<details class="qa"><summary><span class="n">06</span>Does the name collide with a Rust “crate”?<span class="tw">+</span></summary><div class="a"><p>Rust calls a package a crate, so the similarity is real. Krate uses a different spelling and refers to the portable container that carries an application and its requested access.</p><p>We keep the distinction explicit wherever Rust developers could reasonably confuse the two.</p></div></details>
+</div>
+<footer class="foot">
+  <span>© 2026 Krate Labs</span>
+  <nav>
+    <a href="/next/">Home</a>
+    <a href="/next/#pricing">Pricing</a>
+    <a href="/next/open/">Received an app?</a>
+    <a href="/next/faq/">FAQ</a>
+    <a href="/next/contact/">Contact</a>
+    <a href="https://github.com/incyashraj/krate">GitHub</a>
+  </nav>
+</footer>
+
+</body>
+</html>

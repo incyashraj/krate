@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#000000" />
+<title>The Krate gallery</title>
+<meta name="description" content="Browse apps people have made and shared. One file each, sandboxed, permission-first." />
+<link rel="icon" href="/krate-favicon.png" />
+<style>
+@font-face { font-family: "Geist"; src: url("/fonts/geist-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Geist"; src: url("/fonts/geist-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
+@font-face { font-family: "Syne"; src: url("/fonts/syne-var.woff2") format("woff2"); font-weight: 400 800; font-display: swap; }
+:root { color-scheme: dark; --purple: #A558FB; --indigo: #4922E5;
+  --sans: "Geist", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --disp: "Syne", var(--sans); }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #000; color: #fff; font-family: var(--sans); font-size: 15px;
+  line-height: 1.65; -webkit-font-smoothing: antialiased; min-height: 100vh; }
+a { color: inherit; text-decoration: none; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+img { max-width: 100%; }
+.hidden { display: none !important; }
+::selection { background: rgba(165, 88, 251, 0.35); }
+.topblur { position: fixed; top: 0; left: 0; width: 100%; height: 120px; z-index: 40;
+  pointer-events: none; user-select: none;
+  background: linear-gradient(to top, transparent, #000);
+  -webkit-mask-image: linear-gradient(to bottom, #000 50%, transparent);
+          mask-image: linear-gradient(to bottom, #000 50%, transparent);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.brandbar { position: fixed; top: 20px; left: 50%; z-index: 50;
+  display: flex; align-items: center; gap: 14px; user-select: none;
+  transform: translateX(-50%); }
+.brandbar .name { display: flex; align-items: center; gap: 0.34em;
+  font-size: 17px; font-weight: 500; color: #e4e4e7; letter-spacing: 0.02em; }
+.brandbar .name img { height: 19px; width: auto; }
+.bnav { display: flex; align-items: center; gap: 2px; margin-left: 6px;
+  padding-left: 16px; border-left: 1px solid rgba(255,255,255,0.12); }
+.bnav a { font-size: 12.5px; color: #a1a1aa; padding: 5px 9px; border-radius: 999px;
+  transition: color 0.15s ease, background 0.15s ease; }
+.bnav a:hover { color: #fff; background: rgba(255,255,255,0.06); }
+.bnav a.here { color: #fff; background: rgba(255,255,255,0.08); }
+@media (max-width: 640px) { .bnav { display: none; } }
+.bloom { position: fixed; top: -340px; left: 50%; width: 900px; height: 500px;
+  margin-left: -450px; pointer-events: none; border-radius: 100%;
+  background: radial-gradient(closest-side, rgba(73, 34, 229, 0.35), transparent);
+  filter: blur(40px); }
+.wrap { position: relative; max-width: 1024px; margin: 0 auto; padding: 130px 22px 80px; }
+h1.page { font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
+  font-size: clamp(28px, 4.4vw, 42px); line-height: 1.13; }
+.pagesub { margin: 12px 0 40px; font-size: 14px; color: #a1a1aa; max-width: 620px; }
+.card { border-radius: 20px; background: rgba(24, 24, 27, 0.5); padding: 24px 26px;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.08); margin-bottom: 14px;
+  opacity: 0; transform: translateY(12px); filter: blur(6px);
+  animation: rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  transition: box-shadow 0.25s ease, translate 0.25s ease; }
+.card:hover { translate: 0 -2px; box-shadow: 0 0 0 1px rgba(255,255,255,0.15), 0 14px 36px -14px rgba(0,0,0,0.8); }
+.card:nth-of-type(2) { animation-delay: 0.06s; }
+.card:nth-of-type(3) { animation-delay: 0.12s; }
+.card:nth-of-type(4) { animation-delay: 0.18s; }
+.card:nth-of-type(5) { animation-delay: 0.24s; }
+.card:nth-of-type(6) { animation-delay: 0.3s; }
+@keyframes rise { to { opacity: 1; transform: none; filter: blur(0); } }
+.card h2 { font-family: var(--disp); font-weight: 700; font-size: 17px; margin-bottom: 6px; }
+.card p { font-size: 13.5px; color: #a1a1aa; }
+.card p b { color: #d4d4d8; font-weight: 500; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 10px 16px; border-radius: 12px; font-size: 13.5px; font-weight: 500;
+  white-space: nowrap; user-select: none;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.16);
+  transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.btn:hover { transform: translateY(-1px); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.32); }
+.btn.primary { background: #fff; color: #0a0a0a; box-shadow: none; }
+.btn.primary:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
+.foot { max-width: 1024px; margin: 40px auto 0; padding: 26px 22px 18px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  display: flex; align-items: center; justify-content: space-between; gap: 20px;
+  font-size: 12px; color: #a1a1aa; flex-wrap: wrap; }
+.foot nav { display: flex; gap: 18px; flex-wrap: wrap; }
+.foot nav a:hover { color: #d4d4d8; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+.appc { display: block; border-radius: 18px; overflow: hidden; background: rgba(24,24,27,0.5);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.08);
+  opacity: 0; transform: translateY(12px); animation: rise 0.55s cubic-bezier(0.2,0.8,0.2,1) forwards;
+  transition: box-shadow 0.25s ease, translate 0.25s ease; }
+.appc:hover { translate: 0 -3px; box-shadow: 0 0 0 1px rgba(255,255,255,0.16), 0 16px 40px -16px rgba(0,0,0,0.8); }
+.appc .shot { aspect-ratio: 16/10; background: #101013; overflow: hidden; }
+.appc .shot img { width: 100%; height: 100%; object-fit: cover; display: block;
+  transition: transform 0.35s cubic-bezier(0.2,0.8,0.2,1); }
+.appc:hover .shot img { transform: scale(1.035); }
+.appc .b { padding: 13px 15px 14px; }
+.appc .nm { font-size: 14px; font-weight: 500; }
+.appc .by { display: flex; align-items: center; gap: 7px; margin-top: 6px; font-size: 12px; color: #a1a1aa; }
+.appc .by img { width: 16px; height: 16px; border-radius: 50%; }
+.appc .kb { margin-left: auto; color: #71717a; font-size: 11px; }
+.gnote { margin-top: 26px; font-size: 12.5px; color: #71717a; text-align: center; }
+
+@media (prefers-reduced-motion: reduce) { .card { animation: none; opacity: 1; transform: none; filter: none; } }
+</style>
+</head>
+<body>
+<div class="bloom"></div>
+<div class="topblur"></div>
+<div class="brandbar">
+  <a class="name" href="/next/"><img src="/krate-glyph-white.png" alt="" /> KRATE</a>
+  <nav class="bnav" aria-label="Primary">
+    <a href="/next/#pricing" >Pricing</a>
+    <a href="/docs/" >Docs</a>
+    <a href="/next/cloud/" class="here">Gallery</a>
+    <a href="/next/account/" >Account</a>
+  </nav>
+</div>
+<div class="wrap">
+<h1 class="page">The gallery.</h1>
+<p class="pagesub">Apps people made and shared. Every one is a single file that runs in the sandbox and tells you what it wants before it starts.</p>
+<div class="grid" id="grid"><p style="color:#71717a;font-size:13px">Loading…</p></div>
+<p class="gnote">Every app opens with the same permission flow. Made something yourself? Studio's Send &rarr; Publish puts it here.</p>
+</div>
+<footer class="foot">
+  <span>© 2026 Krate Labs</span>
+  <nav>
+    <a href="/next/">Home</a>
+    <a href="/next/#pricing">Pricing</a>
+    <a href="/next/open/">Received an app?</a>
+    <a href="/next/faq/">FAQ</a>
+    <a href="/next/contact/">Contact</a>
+    <a href="https://github.com/incyashraj/krate">GitHub</a>
+  </nav>
+</footer>
+<script>
+(function () {
+  function esc(s) { var d = document.createElement("i"); d.textContent = s == null ? "" : s; return d.innerHTML; }
+  fetch("https://hub.krate.tech/apps").then(function (r) { return r.json(); }).then(function (d) {
+    var grid = document.getElementById("grid");
+    var apps = (d.apps || []).filter(function (a) { return a.meta && !a.meta.unlisted; });
+    if (!apps.length) { grid.innerHTML = '<p style="color:#71717a">Nothing here yet.</p>'; return; }
+    grid.innerHTML = apps.map(function (a, i) {
+      var m = a.meta;
+      return '<a class="appc" style="animation-delay:' + (i * 0.05) + 's" href="' + esc(a.url) + '" target="_blank" rel="noopener">'
+        + '<div class="shot"><img loading="lazy" src="' + esc(a.shot) + '" alt="" onerror="this.remove()" /></div>'
+        + '<div class="b"><div class="nm">' + esc(m.name) + '</div>'
+        + '<div class="by">' + (m.avatar_url ? '<img src="' + esc(m.avatar_url) + '" alt="" />' : '')
+        + esc(m.author || m.author_login || "") + '<span class="kb">' + Math.round((m.size || 0) / 1024) + ' KB</span></div>'
+        + '</div></a>';
+    }).join("");
+  }).catch(function () {
+    document.getElementById("grid").innerHTML = '<p style="color:#71717a">Could not reach the gallery -- try again in a moment.</p>';
+  });
+})();
+</script>
+</body>
+</html>

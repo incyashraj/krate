@@ -4279,7 +4279,7 @@ function updIcon(kind) {
     el.innerHTML = '<svg width="17" height="17" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.4l3 3 6-6.4" stroke="#6cf4d7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     return;
   }
-  el.innerHTML = '<svg width="17" height="17" viewBox="0 0 16 16" fill="none"><path d="M8 11V3M8 3L4.6 6.4M8 3l3.4 3.4" stroke="#6291ff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.8 12.4h10.4" stroke="#6291ff" stroke-width="1.6" stroke-linecap="round"/></svg>';
+  el.innerHTML = '<svg width="17" height="17" viewBox="0 0 16 16" fill="none"><path d="M8 11V3M8 3L4.6 6.4M8 3l3.4 3.4" stroke="#8b78ff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.8 12.4h10.4" stroke="#8b78ff" stroke-width="1.6" stroke-linecap="round"/></svg>';
 }
 
 async function checkForUpdate() {
