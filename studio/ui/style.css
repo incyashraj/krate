@@ -2662,6 +2662,8 @@ body.light .send-opt span, body.light .send-done p { color: rgba(0,0,0,0.55); }
   padding: 3px 10px;
 }
 .plan-row.current .plan-tag { color: var(--text); }
+.plan-actions { display: flex; gap: 8px; align-items: center; flex: none; }
+.plan-actions .btn { padding: 7px 12px; font-size: 12.5px; white-space: nowrap; }
 #setPlanUsed, #setPlanBtn { white-space: nowrap; }
 
 /* The apps-count pill: one quiet rounded chip, not a mono box wrapping

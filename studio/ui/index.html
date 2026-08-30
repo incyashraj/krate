@@ -325,7 +325,7 @@
         <div class="set-group">
           <h2>Your plan</h2>
           <div class="set-row">
-            <div><div class="lab">Free</div><div class="hint">Three apps a month. Changes to an app and failed builds never count.</div></div>
+            <div><div class="lab" id="setPlanName">Free</div><div class="hint" id="setPlanHint">Three apps a month. Changes to an app and failed builds never count.</div></div>
             <div class="ctl"><span class="set-val" id="setPlanUsed">…</span><button class="set-mini" id="setPlanBtn">See plans</button></div>
           </div>
         </div>
@@ -602,29 +602,29 @@
   <div class="sheet-wrap hidden" id="planSheet">
     <div class="sheet">
       <h2>Your plan</h2>
-      <p class="sheet-sub">Studio is in preview: making is free and nothing
-      is charged. Every app you make is a file that is yours forever,
-      whatever happens to your plan.</p>
+      <p class="sheet-sub" id="planSub">Every app you make is a file that is
+      yours forever, whatever happens to your plan.</p>
       <div class="plan-list">
-        <div class="plan-row current">
+        <div class="plan-row" id="planRowFree">
           <div><b>Free</b><span>Three apps a month. Changes to an app and
           failed builds never count.</span></div>
           <span class="plan-tag" id="planUsed"></span>
         </div>
-        <div class="plan-row">
+        <div class="plan-row" id="planRowStudio">
           <div><b>Studio</b><span>Unlimited apps -- $12 a month, or $96 a
-          year, when Studio leaves preview.</span></div>
-          <span class="plan-tag">at launch</span>
+          year.</span></div>
+          <span class="plan-actions" id="planStudioAct"></span>
         </div>
-        <div class="plan-row founding">
+        <div class="plan-row founding" id="planRowFounding">
           <div><b>Founding 200</b><span>$79 a year, locked in for as long as
-          you stay -- for the first 200 people on the list.</span></div>
-          <button class="btn btn-primary" id="planFounding">Join</button>
+          you stay -- for the first 200 people.</span></div>
+          <span class="plan-actions" id="planFoundingAct"></span>
         </div>
       </div>
       <div class="detail-actions">
         <button class="btn btn-ghost sheet-close" data-close="planSheet">Close</button>
       </div>
+      <p class="detail-note" id="planNote"></p>
     </div>
   </div>
 
@@ -632,13 +632,12 @@
     <div class="sheet">
       <h2 id="limitTitle">That's three this month</h2>
       <p class="sheet-sub" id="limitSub">The free plan is three apps a month -- failed
-      builds and changes to an app never count. While Studio is in preview,
-      making stays free past three; when it leaves preview, unlimited making
-      will be $12 a month.</p>
-      <p class="sheet-sub" id="limitSub2" style="margin-top:8px">The first 200 people on
-      the founding list lock it at $79 a year instead.</p>
+      builds and changes to an app never count. Unlimited making is the
+      Studio plan, $12 a month.</p>
+      <p class="sheet-sub" id="limitSub2" style="margin-top:8px">The first 200 people
+      lock it at $79 a year instead.</p>
       <div class="detail-actions" id="limitActions">
-        <button class="btn btn-primary" id="limitGo">Keep making -- free in preview</button>
+        <button class="btn btn-primary" id="limitGo">Keep making</button>
         <button class="btn" id="limitFounding">Join the founding 200</button>
       </div>
       <p class="detail-note" id="limitNote"></p>

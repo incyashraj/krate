@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0a0a0a" />
-  <meta name="description" content="Krate Studio: describe an app in plain words, watch an AI build it, and get one small file that opens on Mac, Windows and Linux. Free while in preview." />
+  <meta name="description" content="Krate Studio: describe an app in plain words, watch an AI build it, and get one small file that opens on Mac, Windows and Linux. Three apps a month free." />
   <link rel="canonical" href="https://krate.tech/studio/" />
   <meta property="og:title" content="Krate Studio: make an app, send the file" />
   <meta property="og:description" content="Say what you want in plain words. An AI writes it, and you get one small file you can send to anyone. Free." />
@@ -506,8 +506,7 @@
 <section class="wrap" id="pricing">
   <div class="price-head reveal">
     <h2>What it costs</h2>
-    <p>Studio is in preview: making is free and nothing is charged yet.
-    Whatever plan you are on, every app you make is a file that is yours
+    <p>Whatever plan you are on, every app you make is a file that is yours
     forever -- a plan can lapse, the file cannot.</p>
   </div>
   <div class="price-row reveal">
@@ -533,7 +532,7 @@
     <div class="price-card">
       <div class="price-top">
         <h3>Studio</h3>
-        <span class="price-badge">at launch</span>
+        <span class="price-badge">monthly or yearly</span>
       </div>
       <p class="price-num">$12<span> / month, or $96 a year</span></p>
       <p class="price-for">For people who make something every week.</p>
@@ -543,9 +542,9 @@
         <li>That is the whole difference, priced like it. Nothing you
         already have moves behind this price.</li>
       </ul>
-      <p class="price-note">Billing opens when Studio leaves preview.
-      Until then, this column is free too.</p>
-      <a class="pill price-cta" href="#founding">Lock it at $79 a year &darr;</a>
+      <p class="price-note">Cancel anytime. The apps you made stay yours.</p>
+      <a class="pill price-cta" href="/login/?next=pay-monthly">Start Studio -- $12/month</a>
+      <a class="price-alt" href="/login/?next=pay-yearly">or $96 a year</a>
     </div>
 
     <div class="price-card price-hot">
@@ -557,12 +556,12 @@
       <p class="price-for">For the first 200 people who want in before it
       is polished.</p>
       <ul class="price-list">
-        <li>Everything Studio will be, at $79 a year for as long as you stay</li>
-        <li>The price is locked before checkout even exists</li>
+        <li>Everything in Studio, at $79 a year for as long as you stay</li>
+        <li>The price never rises while you keep the seat</li>
         <li>A direct line while we build -- founding members get listened to</li>
-        <li>No payment now; an email holds your seat</li>
+        <li>200 seats, first come</li>
       </ul>
-      <a class="pill pill-primary price-cta" href="#founding">Join the founding 200</a>
+      <a class="pill pill-primary price-cta" href="/login/?next=pay-founding">Get founding -- $79/year</a>
     </div>
 
   </div>
@@ -597,6 +596,9 @@
   }
   .price-note { font-size: 12px; color: var(--quiet); line-height: 1.5; margin-bottom: 14px; }
   .price-cta { justify-content: center; text-align: center; }
+  .price-alt { display: block; text-align: center; margin-top: 10px;
+    font-size: 13.5px; color: var(--mut, #9aa3b5); text-decoration: none; }
+  .price-alt:hover { color: var(--fg, #e8ecf4); text-decoration: underline; }
   .price-card .pill:not(.pill-primary) { border: 1px solid var(--line); color: var(--ink); }
   .price-card .pill:not(.pill-primary):hover { border-color: var(--muted); }
 </style>
@@ -606,18 +608,19 @@
   <div class="get-grid">
     <div class="reveal">
       <h2>The founding 200</h2>
-      <p>Studio is free while it is in preview, and rough in places we will
-      be honest about. When it leaves preview it will cost $12 a month. The
-      first 200 people who join here lock it at <b>$79 a year</b> -- and get
-      listened to while we build.</p>
-      <p style="margin-top:10px; font-size:13px; color:var(--quiet);">No
-      payment now. An email, so we can offer you the lock before anyone
-      else.</p>
+      <p>Studio costs $12 a month. The first 200 people who join here lock
+      it at <b>$79 a year</b> for as long as they stay -- and get listened
+      to while we build.</p>
+      <p style="margin-top:14px;"><a class="pill pill-primary"
+      href="/login/?next=pay-founding">Get founding -- $79/year</a></p>
     </div>
     <div class="reveal">
+      <p style="font-size:13px; color:var(--quiet); margin-bottom:8px">Not
+      ready to pay? Leave an email and we will hold you a seat for a
+      while.</p>
       <form class="found-form" id="foundForm">
         <input type="email" id="foundEmail" placeholder="you@example.com" required />
-        <button class="pill pill-primary" type="submit" id="foundGo">Join</button>
+        <button class="pill" type="submit" id="foundGo">Hold a seat</button>
       </form>
       <p class="found-note hidden" id="foundNote"></p>
     </div>
@@ -653,9 +656,10 @@
       <details class="faq-item">
         <summary><span>How much does it cost?</span></summary>
         <div class="faq-answer"><p>The player -- the part that opens apps -- is
-        free and open source, forever. Krate Studio is free while we are in
-        preview. Making apps uses your own AI subscription, the one you already
-        pay for; Krate never holds its keys.</p></div>
+        free and open source, forever. Studio lets you make three apps a month
+        free; unlimited making is $12 a month, or $96 a year. Making apps uses
+        your own AI subscription, the one you already pay for; Krate never
+        holds its keys.</p></div>
       </details>
       <details class="faq-item">
         <summary><span>How stable is it?</span></summary>
@@ -909,28 +913,6 @@
     }).catch(function () {});
   } catch (e) {}
 })();
-</script>
-<script>
-// When billing is live, the pricing cards grow real doors: sign in, then
-// straight to checkout. Until then the founding email list stands alone.
-fetch("https://hub.krate.tech/billing/config").then(function(r){return r.json()}).then(function(c){
-  if (!c.live) return;
-  var cards = document.querySelectorAll("#pricing .price-card");
-  if (cards[1]) {
-    var cta = cards[1].querySelector(".price-cta");
-    cta.textContent = "Start Studio";
-    cta.href = "/login/?next=pay-monthly";
-    var badge = cards[1].querySelector(".price-badge");
-    if (badge) badge.textContent = "live";
-    var note = cards[1].querySelector(".price-note");
-    if (note) note.textContent = "Yearly is on the checkout page too.";
-  }
-  if (c.founding && cards[2]) {
-    var f = cards[2].querySelector(".price-cta");
-    f.textContent = "Get founding - $79/year";
-    f.href = "/login/?next=pay-founding";
-  }
-}).catch(function(){});
 </script>
 </body>
 </html>

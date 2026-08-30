@@ -1522,15 +1522,28 @@ function renderFreeCount() {
       planIsActiveSafe() ? "Studio plan"
       : n === 0 ? "3 free this month"
       : n <= 3 ? `${left} of 3 free left`
-      : "Free preview";
+      : "Free plan";
   }
-  const used = n === 0 ? "none used yet"
+  const used = planIsActiveSafe()
+    ? `${n} made this month`
+    : n === 0 ? "none used yet"
     : n <= 3 ? `${n} of 3 used this month`
     : `${n} made this month`;
   const sheetTag = $("planUsed");
   if (sheetTag) sheetTag.textContent = used;
   const setVal = $("setPlanUsed");
   if (setVal) setVal.textContent = used;
+  const setName = $("setPlanName");
+  if (setName) {
+    const active = planIsActiveSafe();
+    setName.textContent = active
+      ? (state.billing.plan === "founding" ? "Founding 200" : "Studio")
+      : "Free";
+    const hint = $("setPlanHint");
+    if (hint) hint.textContent = active
+      ? "Unlimited apps. Every one is a file that is yours forever."
+      : "Three apps a month. Changes to an app and failed builds never count.";
+  }
 }
 function limitAcked() {
   try { return localStorage.getItem("krateLimitAck") === monthKey(); } catch (e) { return false; }
@@ -3539,17 +3552,60 @@ $("limitGo").addEventListener("click", () => {
 $("limitFounding").addEventListener("click", () => {
   invoke("open_external", { url: "https://krate.tech/studio/#founding" }).catch(() => {});
 });
-// The plan sheet: the title-bar chip and the settings row both open it,
-// and the founding row goes to the same list the limit sheet names.
-function openPlanSheet() {
+// The plan sheet: the title-bar chip and the settings row both open it.
+// It is a store, not a notice -- the buy buttons live here so nobody has
+// to hit the three-app wall to subscribe.
+function dressPlanSheet() {
+  const b = state.billing || {};
+  const studio = $("planStudioAct");
+  const founding = $("planFoundingAct");
+  document.querySelectorAll("#planSheet .plan-row").forEach((r) => {
+    r.classList.remove("current", "hidden");
+  });
+  if (planIsActiveSafe()) {
+    const onFounding = b.plan === "founding";
+    (onFounding ? $("planRowFounding") : $("planRowStudio")).classList.add("current");
+    (onFounding ? founding : studio).innerHTML = '<span class="plan-tag">active</span>';
+    (onFounding ? studio : founding).innerHTML = "";
+    $("planSub").textContent =
+      "Your plan is active -- no cap. Every app you make is a file that is yours forever.";
+    return;
+  }
+  $("planRowFree").classList.add("current");
+  $("planSub").textContent =
+    "Every app you make is a file that is yours forever, whatever happens to your plan.";
+  if (b.live) {
+    studio.innerHTML =
+      '<button class="btn btn-primary" id="planBuyMonthly">$12/month</button>' +
+      '<button class="btn" id="planBuyYearly">$96/year</button>';
+    $("planBuyMonthly").addEventListener("click", () => startCheckout("monthly", "planNote"));
+    $("planBuyYearly").addEventListener("click", () => startCheckout("yearly", "planNote"));
+    if (b.founding) {
+      founding.innerHTML =
+        '<button class="btn btn-primary" id="planBuyFounding">Join -- $79/year</button>';
+      $("planBuyFounding").addEventListener("click", () => startCheckout("founding", "planNote"));
+    } else {
+      $("planRowFounding").classList.add("hidden");
+    }
+  } else {
+    // The hub is unreachable: show the list, without doors.
+    studio.innerHTML = '<span class="plan-tag">offline</span>';
+    founding.innerHTML = '<button class="btn" id="planFoundingList">Join the list</button>';
+    $("planFoundingList").addEventListener("click", () => {
+      invoke("open_external", { url: "https://krate.tech/studio/#founding" }).catch(() => {});
+    });
+  }
+}
+async function openPlanSheet() {
   renderFreeCount();
+  $("planNote").textContent = "";
+  dressPlanSheet();
   $("planSheet").classList.remove("hidden");
+  await loadBilling();
+  dressPlanSheet();
 }
 $("freeCount")?.addEventListener("click", openPlanSheet);
 $("setPlanBtn")?.addEventListener("click", openPlanSheet);
-$("planFounding")?.addEventListener("click", () => {
-  invoke("open_external", { url: "https://krate.tech/studio/#founding" }).catch(() => {});
-});
 renderFreeCount();
 loadPlanMakes();
 
@@ -3572,12 +3628,13 @@ function planIsActive() {
 
 /// Open a checkout in the browser, then watch for the plan to land. The
 /// person pays on stripe.com; Studio just notices.
-async function startCheckout(plan) {
-  $("limitNote").textContent = "Opening checkout in your browser…";
+async function startCheckout(plan, noteId) {
+  const note = $(noteId || "limitNote");
+  note.textContent = "Opening checkout in your browser…";
   try {
     const url = await invoke("billing_checkout", { plan });
     await invoke("open_external", { url });
-    $("limitNote").textContent = "Finish in the browser - this unlocks by itself.";
+    note.textContent = "Finish in the browser - this unlocks by itself.";
     let rounds = 0;
     clearInterval(state.billPoll);
     state.billPoll = setInterval(async () => {
@@ -3586,6 +3643,7 @@ async function startCheckout(plan) {
       if (planIsActive()) {
         clearInterval(state.billPoll);
         $("limitSheet").classList.add("hidden");
+        $("planSheet").classList.add("hidden");
         say("KRATE", "You're in -- the plan is active and the cap is gone. Every app you make stays a file that is yours forever.", null, { variant: "ask" });
         const p = state.pendingMake;
         state.pendingMake = null;
@@ -3595,10 +3653,10 @@ async function startCheckout(plan) {
     }, 5000);
   } catch (err) {
     if (String(err).includes("Sign in")) {
-      $("limitNote").textContent = "Sign in first, then hit the plan again.";
+      note.textContent = "Sign in first, then hit the plan again.";
       invoke("account_login").catch(() => {});
     } else {
-      $("limitNote").textContent = String(err);
+      note.textContent = String(err);
     }
   }
 }
