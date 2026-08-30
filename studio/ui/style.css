@@ -1711,14 +1711,35 @@ img.cloud-icon { object-fit: cover; }
  * Blue, because the product is blue. It sits behind everything on the
  * home view and dims when a page is scrolled, so content stays readable
  * over it. */
+/* The horizon, rebuilt as the website's eclipse: one giant ellipse hanging
+ * above the window, its downward-curving bottom edge glowing near the foot
+ * of the screen, aurora light pooling beneath it, black above. Lovable's
+ * warmth, our night. */
 .horizon {
-  position: fixed; left: 0; right: 0; bottom: 0; height: 64%;
+  position: fixed; left: 50%; top: -122vh; width: 210vw; height: 200vh;
+  margin-left: -105vw; pointer-events: none; z-index: 0;
+  transition: opacity 0.5s ease;
+}
+.horizon i { position: absolute; inset: 0; border-radius: 100%; display: block; }
+.horizon .rim {
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow:
+    0 4px 16px 1px rgba(255, 255, 255, 0.38),
+    0 16px 60px 8px rgba(124, 108, 255, 0.34),
+    0 36px 130px 30px rgba(74, 70, 216, 0.35);
+}
+.horizon .glo1 { background: #7c6cff; opacity: 0.85; filter: blur(24px); transform: scale(0.988); }
+.horizon .glo2 { background: #4a46d8; opacity: 0.85; filter: blur(24px); transform: scale(0.962); }
+.horizon .core { background: var(--bg); filter: blur(46px); transform: scale(0.938); }
+/* The pool of light under the arc, filling the last stretch of the window. */
+.horizonGlow {
+  position: fixed; left: 0; right: 0; bottom: 0; height: 34vh;
   pointer-events: none; z-index: 0; transition: opacity 0.5s ease;
   background:
-    radial-gradient(115% 92% at 50% 104%, rgba(74, 70, 216, 0.52), transparent 68%),
-    radial-gradient(88% 76% at 24% 108%, rgba(124, 108, 255, 0.34), transparent 66%),
-    radial-gradient(84% 72% at 78% 110%, rgba(214, 188, 255, 0.16), transparent 68%);
-  filter: blur(4px);
+    radial-gradient(130% 130% at 50% 130%, rgba(74, 70, 216, 0.55), transparent 72%),
+    radial-gradient(80% 100% at 22% 135%, rgba(124, 108, 255, 0.30), transparent 70%),
+    radial-gradient(70% 90% at 80% 140%, rgba(242, 162, 192, 0.10), transparent 70%);
+  filter: blur(6px);
 }
 /* A quiet field of pixels living inside the horizon's glow: clusters that
  * breathe in and out, and ripple away from the cursor. Ambience, not a
@@ -1737,7 +1758,7 @@ body.light .pixelsky { opacity: 0.12; }
   opacity: 0.35; mix-blend-mode: overlay;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/><feColorMatrix type='saturate' values='0'/></filter><rect width='140' height='140' filter='url(%23n)' opacity='.25'/></svg>");
 }
-body.scrolled .horizon { opacity: 0.45; }
+body.scrolled .horizon, body.scrolled .horizonGlow { opacity: 0.45; }
 
 /* ---- the dock ----------------------------------------------------------
  * One element for the whole app, outside every view, so switching pages
@@ -2028,7 +2049,7 @@ body.scrolled .dock-solo {
  * The horizon is also taller and lives behind every page, not just home,
  * because the dock and the cloud grid sit over the same light. */
 
-.horizon { height: 72%; }
+/* the horizon keeps its own geometry now */
 
 /* A trending mark in front of each suggestion: these are the things people
  * are actually making, so the icon says "popular", not "generic bullet". */
@@ -2083,7 +2104,7 @@ body.scrolled .dock-solo {
  * The .home-scoped rules above no longer reach it, and the views must sit
  * over it -- they are opaque only where they paint, and a view with no
  * background lets the light through by design. */
-body > .horizon, body > .grain { position: fixed; z-index: 0; }
+body > .horizon, body > .horizonGlow, body > .grain { position: fixed; z-index: 0; }
 .view { position: relative; z-index: 1; background: transparent; }
 
 /* ---- centring, round four ---------------------------------------------
@@ -2107,13 +2128,15 @@ body.light {
   --faint: rgba(13, 16, 21, 0.42);
   --ghost: rgba(13, 16, 21, 0.18);
 }
-body.light .horizon {
-  height: 62%;
-  background:
-    radial-gradient(115% 92% at 50% 104%, rgba(74, 70, 216, 0.20), transparent 68%),
-    radial-gradient(88% 76% at 24% 108%, rgba(124, 108, 255, 0.14), transparent 66%),
-    radial-gradient(84% 72% at 78% 110%, rgba(214, 188, 255, 0.10), transparent 68%);
+body.light .horizon .rim {
+  background: #cfc6ff;
+  box-shadow:
+    0 4px 16px 1px rgba(160, 140, 255, 0.30),
+    0 16px 60px 8px rgba(124, 108, 255, 0.22),
+    0 36px 130px 30px rgba(74, 70, 216, 0.16);
 }
+body.light .horizon .glo1, body.light .horizon .glo2 { opacity: 0.30; }
+body.light .horizonGlow { opacity: 0.45; }
 body.light .grain { opacity: 0.16; mix-blend-mode: multiply; }
 body.light .dock {
   background: rgba(255, 255, 255, 0.78);
@@ -2169,13 +2192,7 @@ body.light {
 
 /* The horizon is the product's signature, so it survives the theme --
  * lighter, but still blue light coming up from under the page. */
-body.light .horizon {
-  height: 60%;
-  background:
-    radial-gradient(115% 92% at 50% 104%, rgba(86, 78, 224, 0.30), transparent 70%),
-    radial-gradient(88% 76% at 24% 108%, rgba(124, 108, 255, 0.20), transparent 68%),
-    radial-gradient(84% 72% at 78% 110%, rgba(80, 200, 190, 0.12), transparent 70%);
-}
+/* light-theme horizon handled by the shared rim/glow rules above */
 body.light .grain { opacity: 0.1; mix-blend-mode: multiply; }
 
 /* Surfaces: white cards on the tinted ground, with a real border. */
