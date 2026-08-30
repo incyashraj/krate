@@ -621,6 +621,16 @@
           <span class="plan-actions" id="planFoundingAct"></span>
         </div>
       </div>
+      <div class="ref-block hidden" id="refBlock">
+        <b>Give a month, get a month</b>
+        <span>When three people join Krate through your link, you get a
+        month of Studio on us -- every three, another month.</span>
+        <div class="ref-box">
+          <input id="refLink" readonly />
+          <button class="btn" id="refCopy">Copy</button>
+        </div>
+        <p class="ref-stat" id="refStat"></p>
+      </div>
       <div class="detail-actions">
         <button class="btn btn-ghost sheet-close" data-close="planSheet">Close</button>
       </div>
@@ -646,8 +656,8 @@
 
   <div class="sheet-wrap hidden" id="supportSheet">
     <div class="sheet sheet-send">
-      <h2>Support</h2>
-      <p class="sheet-sub">A real person answers, in this same thread. Replies
+      <h2>Support <span class="plan-tag sup-priority hidden" id="supPriorityTag">priority</span></h2>
+      <p class="sheet-sub" id="supIntro">A real person answers, in this same thread. Replies
       show up right here.</p>
       <div id="supTickets"></div>
       <div id="supNewWrap">

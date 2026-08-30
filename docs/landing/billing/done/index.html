@@ -1,3 +1,128 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Welcome to Krate Studio</title>
-<style>:root{--bg:#0b0e15;--ink:#f2f5fa;--mut:#9aa3b5}*{margin:0;padding:0;box-sizing:border-box}body{background:var(--bg);color:var(--ink);font:16px/1.6 -apple-system,system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;text-align:center;padding:24px}h1{font-size:28px;letter-spacing:-0.02em;margin-bottom:10px}p{color:var(--mut);max-width:420px}</style></head>
-<body><div><h1>You're in.</h1><p>Your plan is active. Go back to Krate Studio -- it notices by itself within a few seconds, and the cap is gone. Every app you make stays a file that is yours forever.</p></div></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <title>Welcome to Krate Studio</title>
+  <link rel="icon" href="/krate-favicon.png" />
+  <style>
+  @font-face { font-family: "Geist"; src: url("/fonts/geist-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+  @font-face { font-family: "Geist"; src: url("/fonts/geist-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
+  :root { color-scheme: dark;
+    --bg: #0a0a0a; --panel: #0f1012; --line: #1f2228; --line-strong: #2e323a;
+    --text: #ffffff; --muted: rgba(255,255,255,0.55); --quiet: rgba(255,255,255,0.35);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text);
+    font: 16px/1.65 "Geist", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased; min-height: 100vh;
+    display: grid; place-items: center; padding: 24px; overflow-x: hidden; }
+  canvas#confetti { position: fixed; inset: 0; width: 100vw; height: 100vh;
+    pointer-events: none; z-index: 10; }
+  .card { position: relative; z-index: 1; width: 100%; max-width: 480px;
+    text-align: center; padding: 46px 38px;
+    border: 1px solid var(--line); border-radius: 20px; background: var(--panel);
+    animation: rise 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(14px) scale(0.98); }
+    to { opacity: 1; transform: none; } }
+  .card > img { display: block; margin: 0 auto 6px; }
+  h1 { margin-top: 14px; font-size: 27px; font-weight: 500; letter-spacing: -0.02em; }
+  .sub { margin-top: 10px; color: var(--muted); font-size: 14.5px; }
+  .vows { margin: 26px 0 4px; text-align: left; display: flex; flex-direction: column; gap: 13px; }
+  .vow { display: flex; gap: 12px; align-items: flex-start; font-size: 13.5px; color: var(--muted);
+    opacity: 0; animation: rise 0.6s cubic-bezier(0.2,0.8,0.2,1) forwards; }
+  .vow:nth-child(1) { animation-delay: 0.25s; }
+  .vow:nth-child(2) { animation-delay: 0.4s; }
+  .vow:nth-child(3) { animation-delay: 0.55s; }
+  .vow b { color: var(--text); font-weight: 500; display: block; font-size: 13.5px; }
+  .vow svg { flex: none; margin-top: 2px; }
+  .acts { display: flex; gap: 10px; margin-top: 28px; }
+  .acts a { flex: 1; padding: 12px 16px; border-radius: 12px; font-size: 14px;
+    font-weight: 500; text-decoration: none; transition: transform 0.15s ease; }
+  .acts a:hover { transform: translateY(-1px); }
+  .go { background: var(--text); color: #0a0a0a; }
+  .alt { border: 1px solid var(--line-strong); color: var(--text); }
+  .foot { margin-top: 20px; font-size: 12px; color: var(--quiet); }
+  </style>
+</head>
+<body>
+<canvas id="confetti"></canvas>
+<div class="card">
+  <img src="/krate-glyph-white.png" alt="" width="36" height="36" />
+  <h1>Welcome to the studio.</h1>
+  <p class="sub">Your plan is active. Krate Studio on your desktop notices by
+  itself within a few seconds -- the cap is gone.</p>
+  <div class="vows">
+    <div class="vow">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2.5 8.5l3.5 3.5 7.5-8" stroke="#7ee2a8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span><b>Our promise</b>Every app you make is a file that is yours
+      forever. A plan can lapse; the file cannot.</span>
+    </div>
+    <div class="vow">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2.5 8.5l3.5 3.5 7.5-8" stroke="#7ee2a8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span><b>Priority support</b>Your tickets go to the front of the queue,
+      around the clock. If anything breaks, you hear from a real person,
+      fast.</span>
+    </div>
+    <div class="vow">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2.5 8.5l3.5 3.5 7.5-8" stroke="#7ee2a8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span><b>A direct line</b>You are building this with us now. What you
+      report gets fixed, and what you ask for gets heard.</span>
+    </div>
+  </div>
+  <div class="acts">
+    <a class="go" href="/account/">Your account</a>
+    <a class="alt" href="krate://signed-in">Back to Studio</a>
+  </div>
+  <p class="foot">Manage or cancel any time from your account page.</p>
+</div>
+<script>
+// A short, quiet burst -- celebration, not a casino.
+(function () {
+  var c = document.getElementById("confetti");
+  var x = c.getContext("2d");
+  var W, H, dpr = Math.min(window.devicePixelRatio || 1, 2);
+  function size() { W = innerWidth; H = innerHeight; c.width = W * dpr; c.height = H * dpr; x.setTransform(dpr, 0, 0, dpr, 0, 0); }
+  size(); addEventListener("resize", size);
+  var colors = ["#ffffff", "#7ee2a8", "#8ab8ff", "#e7c766", "#f2a2c0"];
+  var bits = [];
+  for (var i = 0; i < 110; i++) {
+    bits.push({
+      px: W / 2 + (Math.random() - 0.5) * 60,
+      py: H * 0.38,
+      vx: (Math.random() - 0.5) * 11,
+      vy: -(4 + Math.random() * 9),
+      s: 3 + Math.random() * 4,
+      r: Math.random() * Math.PI,
+      vr: (Math.random() - 0.5) * 0.25,
+      col: colors[i % colors.length],
+      life: 1,
+    });
+  }
+  var t0 = performance.now();
+  function tick(t) {
+    x.clearRect(0, 0, W, H);
+    var done = true;
+    for (var i = 0; i < bits.length; i++) {
+      var b = bits[i];
+      b.vy += 0.22; b.px += b.vx; b.py += b.vy; b.r += b.vr;
+      b.vx *= 0.99;
+      if (t - t0 > 1600) b.life -= 0.02;
+      if (b.life <= 0 || b.py > H + 20) continue;
+      done = false;
+      x.save();
+      x.globalAlpha = Math.max(0, b.life) * 0.9;
+      x.translate(b.px, b.py); x.rotate(b.r);
+      x.fillStyle = b.col;
+      x.fillRect(-b.s / 2, -b.s / 2, b.s, b.s * 0.6);
+      x.restore();
+    }
+    if (!done) requestAnimationFrame(tick);
+    else c.remove();
+  }
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>

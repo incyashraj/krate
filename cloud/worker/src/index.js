@@ -178,6 +178,19 @@ export default {
       if (request.method === "GET" && pathname === "/billing/status") {
         return cors(await billingStatus(request, env));
       }
+      // ---- the account: profile, apps, referrals, the portal ----------
+      if (request.method === "GET" && pathname === "/me") {
+        return cors(await meProfile(request, env));
+      }
+      if (request.method === "GET" && pathname === "/my/apps") {
+        return cors(await myApps(request, env));
+      }
+      if (request.method === "POST" && pathname === "/referral/claim") {
+        return cors(await referralClaim(request, env));
+      }
+      if (request.method === "POST" && pathname === "/billing/portal") {
+        return cors(await billingPortal(request, env));
+      }
       // ---- support: tickets with real conversations -------------------
       if (request.method === "POST" && pathname === "/support/new") {
         return cors(await supportNew(request, env));
@@ -1769,6 +1782,116 @@ async function billingWebhook(request, env) {
   return json({ ok: true });
 }
 
+// ================================================================ account
+//
+// One profile call for the website's account page and the studio: who you
+// are, what plan you are on, how your referrals stand. Referrals: send
+// three people who actually sign up and you get a month of Studio on us.
+
+async function getOrMakeRefCode(env, user) {
+  if (user.refcode) return user.refcode;
+  const code = crypto.randomUUID().replaceAll("-", "").slice(0, 8);
+  user.refcode = code;
+  await env.APPS.put(`user:${user.id}`, JSON.stringify(user));
+  await env.APPS.put(`rcode:${code}`, user.id);
+  return code;
+}
+
+async function meProfile(request, env) {
+  const user = await authedUser(request, env);
+  if (!user) return text("Sign in first.", 401);
+  const ent = JSON.parse((await env.APPS.get(`ent:${user.id}`)) || "null");
+  const refs = JSON.parse((await env.APPS.get(`refs:${user.id}`)) || "[]");
+  const awards = parseInt((await env.APPS.get(`refawards:${user.id}`)) || "0", 10);
+  return json({
+    user: {
+      name: user.name, login: user.login, email: user.email,
+      avatar_url: user.avatar_url, created: user.created,
+    },
+    plan: {
+      plan: ent ? ent.plan : "free",
+      active: entitlementActive(ent),
+      until: ent ? ent.until : 0,
+      via: (ent && ent.via) || "",
+      portal: Boolean(ent && ent.customer),
+    },
+    referral: { code: await getOrMakeRefCode(env, user), count: refs.length, awards },
+  });
+}
+
+async function myApps(request, env) {
+  const user = await authedUser(request, env);
+  if (!user) return text("Sign in first.", 401);
+  const listing = await env.APPS.list({ prefix: "app:", limit: 1000 });
+  const out = [];
+  for (const k of listing.keys) {
+    const a = JSON.parse((await env.APPS.get(k.name)) || "null");
+    if (a && a.author_login && a.author_login === user.login) {
+      out.push({
+        hash: k.name.slice("app:".length),
+        name: a.name, description: a.description,
+        published: a.published, size: a.size, unlisted: a.unlisted,
+      });
+    }
+  }
+  out.sort((a, b) => b.published - a.published);
+  return json({ apps: out.slice(0, 50) });
+}
+
+// The claim comes from the NEW person's browser right after their first
+// sign-in; the credit lands on the referrer. Only a genuinely fresh
+// account counts, so codes cannot be farmed by re-claiming old sign-ins.
+async function referralClaim(request, env) {
+  const user = await authedUser(request, env);
+  if (!user) return text("Sign in first.", 401);
+  const body = await request.json().catch(() => ({}));
+  const code = String(body.code || "").trim().toLowerCase();
+  if (!/^[a-z0-9]{6,12}$/.test(code)) return text("No such code.", 400);
+  const ownerId = await env.APPS.get(`rcode:${code}`);
+  if (!ownerId || ownerId === user.id) return text("No such code.", 400);
+  if (await env.APPS.get(`refby:${user.id}`)) return json({ ok: true, already: true });
+  if (Date.now() - (user.created || 0) > 48 * 3600 * 1000) return json({ ok: true, stale: true });
+  await env.APPS.put(`refby:${user.id}`, ownerId);
+  const refs = JSON.parse((await env.APPS.get(`refs:${ownerId}`)) || "[]");
+  if (!refs.includes(user.id)) refs.push(user.id);
+  await env.APPS.put(`refs:${ownerId}`, JSON.stringify(refs.slice(0, 500)));
+  const awards = parseInt((await env.APPS.get(`refawards:${ownerId}`)) || "0", 10);
+  const due = Math.floor(refs.length / 3);
+  if (due > awards) {
+    // A month of Studio on us, stacked on whatever time is already there.
+    // If a paid subscription event later overwrites this record the person
+    // is paying anyway; the credit mostly serves free accounts, which is
+    // exactly who referrals recruit.
+    await env.APPS.put(`refawards:${ownerId}`, String(due));
+    const ent = JSON.parse((await env.APPS.get(`ent:${ownerId}`)) || "null");
+    const base = ent && ent.until && ent.until > Date.now() ? ent.until : Date.now();
+    await env.APPS.put(`ent:${ownerId}`, JSON.stringify({
+      plan: ent && entitlementActive(ent) && ent.via !== "referral" ? ent.plan : "studio",
+      status: "active",
+      until: base + (due - awards) * 30 * 24 * 3600 * 1000,
+      via: "referral",
+      sub: (ent && ent.sub) || "",
+      customer: (ent && ent.customer) || "",
+      at: Date.now(),
+    }));
+  }
+  return json({ ok: true, counted: true });
+}
+
+// Stripe's own customer portal: change card, switch plan, cancel. We never
+// touch any of it; the person manages their money on stripe.com.
+async function billingPortal(request, env) {
+  const user = await authedUser(request, env);
+  if (!user) return text("Sign in first.", 401);
+  const ent = JSON.parse((await env.APPS.get(`ent:${user.id}`)) || "null");
+  if (!ent || !ent.customer) return text("No subscription on this account yet.", 404);
+  const session = await stripe(env, "billing_portal/sessions", {
+    customer: ent.customer,
+    return_url: "https://krate.tech/account/",
+  });
+  return json({ url: session.url });
+}
+
 function entitlementActive(ent) {
   if (!ent) return false;
   if (ent.plan === "comp") return true;
@@ -1809,6 +1932,9 @@ async function supportNew(request, env) {
   }
   const id = crypto.randomUUID().slice(0, 8);
   const key = crypto.randomUUID().replaceAll("-", "");
+  // Paying people are promised the front of the queue; the stamp travels
+  // with the ticket so the desk can honor that without a lookup per row.
+  const ent = user ? JSON.parse((await env.APPS.get(`ent:${user.id}`)) || "null") : null;
   const ticket = {
     id,
     key,
@@ -1816,6 +1942,7 @@ async function supportNew(request, env) {
     login: user ? user.login : "",
     email,
     subject,
+    priority: entitlementActive(ent),
     status: "open",
     created: Date.now(),
     updated: Date.now(),
@@ -1933,7 +2060,11 @@ async function adminApi(request, pathname, env) {
       const t = JSON.parse((await env.APPS.get(k.name)) || "null");
       if (t) out.push(t);
     }
-    out.sort((a, b) => b.updated - a.updated);
+    // Open before closed, paying people first within open, newest first.
+    out.sort((a, b) =>
+      (a.status === "open" ? 0 : 1) - (b.status === "open" ? 0 : 1)
+      || (b.priority ? 1 : 0) - (a.priority ? 1 : 0)
+      || b.updated - a.updated);
     return json({ tickets: out });
   }
   if (route === "ticket/reply" && request.method === "POST") {
@@ -2039,7 +2170,7 @@ async function show(tab){
     v.innerHTML=tickets.length?"":'<p class="mut">No tickets.</p>';
     for(const t of tickets){
       const d=document.createElement("div");d.className="card";
-      d.innerHTML=\`<div class="row"><b>\${esc(t.subject)}</b><span class="pill \${t.status}">\${t.status}</span><span class="grow"></span><span class="mut">\${esc(t.login||t.email)} · \${when(t.updated)}</span></div>
+      d.innerHTML=\`<div class="row"><b>\${esc(t.subject)}</b>\${t.priority?'<span class="pill" style="border-color:#5a4a17;background:#2b2410;color:#e7c766">priority</span>':''}<span class="pill \${t.status}">\${t.status}</span><span class="grow"></span><span class="mut">\${esc(t.login||t.email)} · \${when(t.updated)}</span></div>
       <div>\${t.messages.map(m=>\`<div class="msg \${m.who}">\${esc(m.text)}<div class="mut">\${m.who==="krate"?"you":"them"} · \${when(m.at)}</div></div>\`).join("")}</div>
       <div class="row" style="margin-top:8px"><textarea placeholder="Reply…"></textarea></div>
       <div class="row" style="margin-top:8px"><button class="act">Send reply</button><button class="ghost">\${t.status==="open"?"Close":"Reopen"}</button></div>\`;

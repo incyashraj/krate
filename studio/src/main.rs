@@ -2166,6 +2166,24 @@ async fn billing_checkout(plan: String) -> Result<String, String> {
     .map_err(|e| e.to_string())?
 }
 
+/// The account in one call: who you are, your plan, how your referrals
+/// stand. The plan sheet uses it to show the referral link.
+#[tauri::command]
+async fn me_info() -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let token = hub_token().ok_or("Sign in first.")?;
+        ureq::get(&format!("{}/me", hub_url()))
+            .set("authorization", &format!("Bearer {token}"))
+            .timeout(std::time::Duration::from_secs(10))
+            .call()
+            .map_err(|e| e.to_string())?
+            .into_json()
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /* ---- support: real conversations with a person ------------------------ */
 
 #[tauri::command]
@@ -3627,6 +3645,7 @@ fn main() {
             latest_release,
             billing_info,
             billing_checkout,
+            me_info,
             support_new,
             support_list,
             support_reply,

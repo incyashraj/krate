@@ -320,6 +320,28 @@
     .m-you .caret { animation: none; display: none; }
   }
   </style>
+<style>
+/* Micro-motion: lift, glow, slide -- felt, not seen. */
+.pill { transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease; }
+.pill:hover { transform: translateY(-1.5px); box-shadow: 0 6px 20px rgba(0,0,0,0.35); }
+.pill:active { transform: translateY(0); }
+.head-nav a { position: relative; }
+.head-nav a::after { content: ""; position: absolute; left: 12px; right: 12px; bottom: 5px;
+  height: 1px; background: currentColor; transform: scaleX(0); transform-origin: left;
+  transition: transform 0.22s ease; opacity: 0.6; }
+.head-nav a:hover::after { transform: scaleX(1); }
+.price-card { transition: transform 0.25s cubic-bezier(0.2,0.8,0.2,1), border-color 0.25s ease, box-shadow 0.25s ease; }
+.price-card:hover { transform: translateY(-4px); border-color: rgba(255,255,255,0.22);
+  box-shadow: 0 14px 40px rgba(0,0,0,0.35); }
+@media (prefers-reduced-motion: reduce) {
+  .pill, .price-card, .head-nav a::after { transition: none !important; transform: none !important; }
+}
+</style>
+<script>
+// A referral code rides in on any visit and waits for the first sign-in.
+try { var _r = location.search.match(/[?&]ref=([A-Za-z0-9]{4,16})/);
+  if (_r) localStorage.setItem("krate_ref", _r[1]); } catch (e) {}
+</script>
 </head>
 <body>
 
@@ -332,8 +354,9 @@
     <nav class="head-nav" aria-label="Primary">
       <a href="/#how">How it works</a>
       <a href="/cloud/">Gallery</a>
+      <a href="#pricing">Pricing</a>
       <a href="/docs/">Docs</a>
-      <a href="https://github.com/incyashraj/krate">GitHub</a>
+      <a href="/account/">Account</a>
     </nav>
     <div class="head-cta">
       <a class="pill pill-primary" href="#get">Download</a>
@@ -353,7 +376,7 @@
     <a class="pill pill-primary" href="#get" id="heroDl">Download</a>
     <a class="pill" href="/cloud/">See what people made</a>
   </div>
-  <p class="free-note reveal">Free &middot; works with the AI you already have</p>
+  <p class="free-note reveal">Three apps a month free &middot; <a href="#pricing" style="color:inherit;text-decoration:underline">Studio is $12/month</a> &middot; works with the AI you already have</p>
 
   <!-- Studio, doing its job exactly once. The scene plays when it scrolls
        into view and then holds the finished state. It never loops. -->
@@ -682,6 +705,8 @@
     </div>
     <nav class="foot-links" aria-label="Footer">
       <a href="/">Home</a>
+      <a href="#pricing">Pricing</a>
+      <a href="/account/">Account</a>
       <a href="/cloud/">Gallery</a>
       <a href="/open/">Received an app?</a>
       <a href="/docs/">Docs</a>

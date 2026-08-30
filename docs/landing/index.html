@@ -559,6 +559,25 @@
     .say-box .caret { animation: none; }
   }
   </style>
+<style>
+/* Micro-motion: lift, glow, slide -- felt, not seen. */
+.pill { transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease; }
+.pill:hover { transform: translateY(-1.5px); box-shadow: 0 6px 20px rgba(0,0,0,0.35); }
+.pill:active { transform: translateY(0); }
+.head-nav a { position: relative; }
+.head-nav a::after { content: ""; position: absolute; left: 12px; right: 12px; bottom: 5px;
+  height: 1px; background: currentColor; transform: scaleX(0); transform-origin: left;
+  transition: transform 0.22s ease; opacity: 0.6; }
+.head-nav a:hover::after { transform: scaleX(1); }
+@media (prefers-reduced-motion: reduce) {
+  .pill, .head-nav a::after { transition: none !important; transform: none !important; }
+}
+</style>
+<script>
+// A referral code rides in on any visit and waits for the first sign-in.
+try { var _r = location.search.match(/[?&]ref=([A-Za-z0-9]{4,16})/);
+  if (_r) localStorage.setItem("krate_ref", _r[1]); } catch (e) {}
+</script>
 </head>
 <body>
 
@@ -572,8 +591,9 @@
     <nav class="head-nav" aria-label="Primary">
       <a href="#how">How it works</a>
       <a href="/cloud/">Gallery</a>
+      <a href="/studio/#pricing">Pricing</a>
       <a href="/docs/">Docs</a>
-      <a href="https://github.com/incyashraj/krate">GitHub</a>
+      <a href="/account/">Account</a>
     </nav>
     <div class="head-cta">
       <a class="pill pill-primary" href="/studio/">Download Studio</a>
@@ -597,7 +617,7 @@
         <a class="pill pill-primary" id="heroStudio" data-dl="krate-studio|universal|dmg" href="/studio/">Download Krate Studio</a>
         <a class="pill" href="#how">How it works</a>
       </div>
-      <p class="free-note">Free · works with the AI you already have · Mac, Windows and Linux</p>
+      <p class="free-note">Three apps a month free · <a href="/studio/#pricing" style="color:inherit;text-decoration:underline">Studio is $12/month</a> · Mac, Windows and Linux</p>
       <button class="film-link" id="filmLink" type="button">Watch the 20-second film &#9656;</button>
     </div>
 
@@ -919,6 +939,8 @@
     </div>
     <nav class="foot-links" aria-label="Footer">
       <a href="/studio/">Studio</a>
+      <a href="/studio/#pricing">Pricing</a>
+      <a href="/account/">Account</a>
       <a href="/cloud/">Gallery</a>
       <a href="/open/">Received an app?</a>
       <a href="/docs/">Docs</a>

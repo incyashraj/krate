@@ -1523,6 +1523,12 @@ function renderFreeCount() {
       : n === 0 ? "3 free this month"
       : n <= 3 ? `${left} of 3 free left`
       : "Free plan";
+    // When billing is open and the person is on free, the chip is a door
+    // to the store -- dressed so it reads as one.
+    chip.classList.toggle(
+      "upsell",
+      !planIsActiveSafe() && Boolean(state.billing && state.billing.live),
+    );
   }
   const used = planIsActiveSafe()
     ? `${n} made this month`
@@ -3601,9 +3607,35 @@ async function openPlanSheet() {
   $("planNote").textContent = "";
   dressPlanSheet();
   $("planSheet").classList.remove("hidden");
+  fillReferral();
   await loadBilling();
   dressPlanSheet();
 }
+
+/// The referral corner of the plan sheet: your link, and how far you are
+/// to the next free month. Needs a signed-in account; hides otherwise.
+async function fillReferral() {
+  try {
+    const me = await invoke("me_info");
+    const r = me && me.referral;
+    if (!r || !r.code) return;
+    $("refLink").value = `https://krate.tech/?ref=${r.code}`;
+    const toward = r.count % 3;
+    $("refStat").textContent =
+      r.count === 0 ? "Nobody yet -- send it to someone who'd like this."
+      : `${r.count} joined so far` +
+        (r.awards ? ` · ${r.awards} ${r.awards === 1 ? "month" : "months"} earned` : "") +
+        ` · ${3 - toward} more to the next free month.`;
+    $("refBlock").classList.remove("hidden");
+  } catch (e) { /* not signed in: the block stays hidden */ }
+}
+$("refCopy")?.addEventListener("click", () => {
+  const inp = $("refLink");
+  inp.select();
+  try { navigator.clipboard.writeText(inp.value); } catch (e) { document.execCommand("copy"); }
+  $("refCopy").textContent = "Copied";
+  setTimeout(() => { $("refCopy").textContent = "Copy"; }, 1500);
+});
 $("freeCount")?.addEventListener("click", openPlanSheet);
 $("setPlanBtn")?.addEventListener("click", openPlanSheet);
 renderFreeCount();
@@ -3644,7 +3676,9 @@ async function startCheckout(plan, noteId) {
         clearInterval(state.billPoll);
         $("limitSheet").classList.add("hidden");
         $("planSheet").classList.add("hidden");
-        say("KRATE", "You're in -- the plan is active and the cap is gone. Every app you make stays a file that is yours forever.", null, { variant: "ask" });
+        celebrate();
+        say("KRATE", "Welcome to the studio. The cap is gone, your tickets go to the front of the support queue, and our promise stands: every app you make is a file that is yours forever -- a plan can lapse, the file cannot.", null, { variant: "ask" });
+        renderFreeCount();
         const p = state.pendingMake;
         state.pendingMake = null;
         if (p) make(p.request, { ...(p.opts || {}), pastLimit: true });
@@ -3659,6 +3693,49 @@ async function startCheckout(plan, noteId) {
       note.textContent = String(err);
     }
   }
+}
+
+/// A short, quiet burst of confetti over the whole window -- celebration,
+/// not a casino. Used once, when a plan lands.
+function celebrate() {
+  const c = document.createElement("canvas");
+  c.style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:9999";
+  document.body.appendChild(c);
+  const x = c.getContext("2d");
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const W = window.innerWidth, H = window.innerHeight;
+  c.width = W * dpr; c.height = H * dpr;
+  x.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const colors = ["#ffffff", "#7ee2a8", "#8ab8ff", "#e7c766", "#f2a2c0"];
+  const bits = [];
+  for (let i = 0; i < 110; i++) {
+    bits.push({
+      px: W / 2 + (Math.random() - 0.5) * 80, py: H * 0.4,
+      vx: (Math.random() - 0.5) * 11, vy: -(4 + Math.random() * 9),
+      s: 3 + Math.random() * 4, r: Math.random() * Math.PI,
+      vr: (Math.random() - 0.5) * 0.25, col: colors[i % colors.length], life: 1,
+    });
+  }
+  const t0 = performance.now();
+  function tick(t) {
+    x.clearRect(0, 0, W, H);
+    let alive = false;
+    for (const b of bits) {
+      b.vy += 0.22; b.px += b.vx; b.py += b.vy; b.r += b.vr; b.vx *= 0.99;
+      if (t - t0 > 1600) b.life -= 0.02;
+      if (b.life <= 0 || b.py > H + 20) continue;
+      alive = true;
+      x.save();
+      x.globalAlpha = Math.max(0, b.life) * 0.9;
+      x.translate(b.px, b.py); x.rotate(b.r);
+      x.fillStyle = b.col;
+      x.fillRect(-b.s / 2, -b.s / 2, b.s, b.s * 0.6);
+      x.restore();
+    }
+    if (alive) requestAnimationFrame(tick);
+    else c.remove();
+  }
+  requestAnimationFrame(tick);
 }
 
 /// Dress the limit sheet for whichever world we are in: soft preview, or
@@ -3698,6 +3775,12 @@ function rememberSupKey(ref) {
 async function openSupportSheet() {
   $("supNote").textContent = "";
   $("supEmail").classList.toggle("hidden", Boolean(state.account && state.account.signed_in));
+  const paid = planIsActiveSafe();
+  $("supPriorityTag")?.classList.toggle("hidden", !paid);
+  if (paid) {
+    $("supIntro").textContent =
+      "A real person answers, in this same thread -- and your tickets go to the front of the queue.";
+  }
   $("supportSheet").classList.remove("hidden");
   renderSupportTickets();
 }

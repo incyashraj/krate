@@ -74,11 +74,36 @@
 (function () {
   var fromApp = new URLSearchParams(location.search).get("app") === "1";
   var hash = location.hash.replace(/^#/, "");
-  // A continuation set by /login?next=... : the desk, or a checkout.
+  var tok = hash ? (new URLSearchParams(hash).get("token") || "") : "";
+  // A continuation set by /login?next=... : the desk, a checkout, the
+  // account page.
   var next = "";
   try { next = localStorage.getItem("krate_next") || ""; localStorage.removeItem("krate_next"); } catch (e) {}
+  // The website keeps its own copy of the session, so the account page
+  // works without signing in again.
+  if (tok && !fromApp) {
+    try { localStorage.setItem("krate_tok", tok); } catch (e) {}
+  }
+  // A referral code picked up anywhere on the site is claimed on the first
+  // sign-in it sees; the worker only counts genuinely new accounts.
+  if (tok) {
+    try {
+      var ref = localStorage.getItem("krate_ref");
+      if (ref) {
+        localStorage.removeItem("krate_ref");
+        fetch("https://hub.krate.tech/referral/claim", {
+          method: "POST",
+          headers: { authorization: "Bearer " + tok, "content-type": "application/json" },
+          body: JSON.stringify({ code: ref }),
+        }).catch(function () {});
+      }
+    } catch (e) {}
+  }
   if (hash && next && !fromApp) {
-    var tok = new URLSearchParams(hash).get("token") || "";
+    if (next === "account") {
+      location.href = "/account/";
+      return;
+    }
     if (next === "admin") {
       location.href = "https://hub.krate.tech/admin#token=" + encodeURIComponent(tok);
       return;
