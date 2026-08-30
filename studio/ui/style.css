@@ -1718,30 +1718,38 @@ img.cloud-icon { object-fit: cover; }
  * into the black with no edge anywhere. The dome is highest at center and
  * falls away toward the sides. */
 .horizon {
-  position: fixed; left: 50%; bottom: -20vh; width: 190vw; height: 120vh;
-  margin-left: -95vw; pointer-events: none; z-index: 0;
+  position: fixed; left: -22vw; right: -22vw; bottom: -12vh; height: 84vh;
+  pointer-events: none; z-index: 0;
   transition: opacity 0.5s ease;
-  filter: blur(26px);
+  filter: blur(30px);
   background:
-    radial-gradient(34% 26% at 50% 92%, rgba(173, 148, 255, 0.60), transparent 70%),
-    radial-gradient(52% 40% at 50% 96%, rgba(196, 120, 205, 0.22), transparent 72%),
-    radial-gradient(78% 56% at 50% 100%, rgba(90, 78, 232, 0.48), transparent 74%),
-    radial-gradient(46% 42% at 20% 104%, rgba(96, 112, 255, 0.20), transparent 72%),
-    radial-gradient(46% 42% at 80% 104%, rgba(150, 96, 226, 0.16), transparent 72%),
-    radial-gradient(120% 78% at 50% 106%, rgba(42, 36, 132, 0.55), transparent 80%);
+    /* the luminous heart, lowest and brightest */
+    radial-gradient(58% 40% at 50% 104%, rgba(190, 164, 255, 0.68), transparent 72%),
+    /* a rose band breathing around it */
+    radial-gradient(95% 58% at 50% 108%, rgba(190, 116, 212, 0.32), transparent 74%),
+    /* the periwinkle strip */
+    radial-gradient(135% 80% at 50% 112%, rgba(110, 98, 250, 0.48), transparent 78%),
+    /* the deep indigo strip above it */
+    radial-gradient(175% 104% at 50% 118%, rgba(58, 50, 176, 0.55), transparent 84%),
+    /* and the widest wash, carrying the light up past half the window */
+    linear-gradient(to top,
+      rgba(44, 38, 130, 0.42),
+      rgba(44, 38, 130, 0.20) 52%,
+      rgba(44, 38, 130, 0.06) 74%,
+      transparent 92%);
 }
 /* A quiet field of pixels living inside the horizon's glow: clusters that
  * breathe in and out, and ripple away from the cursor. Ambience, not a
  * feature -- it sits under the grain and above the blooms. */
 .pixelsky {
-  position: fixed; left: 0; right: 0; bottom: 0; height: 60%;
-  width: 100%; pointer-events: none; z-index: 0; opacity: 0.34;
-  -webkit-mask-image: linear-gradient(to top, #000 55%, transparent);
-          mask-image: linear-gradient(to top, #000 55%, transparent);
+  position: fixed; left: 0; right: 0; bottom: 0; height: 34%;
+  width: 100%; pointer-events: none; z-index: 0; opacity: 0.16;
+  -webkit-mask-image: linear-gradient(to top, #000 45%, transparent);
+          mask-image: linear-gradient(to top, #000 45%, transparent);
   transition: opacity 0.5s ease;
 }
-body.scrolled .pixelsky { opacity: 0.15; }
-body.light .pixelsky { opacity: 0.12; }
+body.scrolled .pixelsky { opacity: 0.07; }
+body.light .pixelsky { opacity: 0.08; }
 .grain {
   position: fixed; inset: 0; pointer-events: none; z-index: 0;
   opacity: 0.35; mix-blend-mode: overlay;

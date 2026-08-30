@@ -4914,7 +4914,7 @@ $("aiRefresh")?.addEventListener("click", async () => {
           const dx = x * CELL - rp.x, dy = y * CELL - rp.y;
           const d = Math.sqrt(dx * dx + dy * dy);
           const ring = Math.abs(d - age * 230);
-          if (ring < 42) v += (1 - ring / 42) * (1 - age / 1.3) * 0.45;
+          if (ring < 38) v += (1 - ring / 38) * (1 - age / 1.3) * 0.28;
         }
         if (v < 0.56) continue;
         const band = v > 0.82 ? 3 : v > 0.72 ? 2 : v > 0.63 ? 1 : 0;
