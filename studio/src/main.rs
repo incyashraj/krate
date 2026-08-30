@@ -2075,6 +2075,24 @@ fn agent_session_tag(path: String) -> Result<String, String> {
     Ok(tag.trim().to_string())
 }
 
+/// The newest release, fetched by the shell: the webview's CSP blocks the
+/// network on purpose, so the old in-page fetch to GitHub failed every
+/// time and the updates row could only ever say "could not check".
+#[tauri::command]
+async fn latest_release() -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let response = ureq::get("https://api.github.com/repos/incyashraj/krate/releases/latest")
+            .set("User-Agent", "krate-studio")
+            .timeout(std::time::Duration::from_secs(15))
+            .call()
+            .map_err(|err| err.to_string())?;
+        let v: serde_json::Value = response.into_json().map_err(|err| err.to_string())?;
+        Ok(serde_json::json!({ "tag": v["tag_name"], "body": v["body"] }))
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
 /// "We'll make it for you": the human fallback when a build dies. Sends
 /// exactly what a person would need to build the app by hand -- the
 /// request, the answers they gave the AI, and an email to return the
@@ -3496,6 +3514,7 @@ fn main() {
             plan_count_make,
             make_for_me,
             agent_session_tag,
+            latest_release,
             sessions_list,
             session_save,
             session_shot,

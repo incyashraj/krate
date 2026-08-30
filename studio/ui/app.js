@@ -438,11 +438,23 @@ function renderSessions(sessions) {
   const buildingId = state.buildingSession && state.buildingSession.id;
   const resume = unfinished.find((s) => s.id !== buildingId);
   if (resume) {
+    const failed = Boolean(resume.failedRequest)
+      || (resume.messages || []).some(
+        (m) => m.kind === "fail"
+          || (m.who === "KRATE" && /didn't come together|^stopped$/.test(m.body || "")),
+      );
     const banner = document.createElement("button");
     banner.className = "apps-finish reveal";
-    banner.innerHTML = `<span>Finish <b></b></span><span class="go">&rarr;</span>`;
+    // A failed attempt says Resume, not Finish -- and carries its own way
+    // out: nothing else on this screen could delete a dead attempt.
+    banner.innerHTML = `<span>${failed ? "Resume" : "Finish"} <b></b></span><span class="go">&rarr;</span><span class="apps-x" title="Delete this attempt">&times;</span>`;
     banner.querySelector("b").textContent = resume.title || "your last app";
     banner.addEventListener("click", () => openSession(resume));
+    banner.querySelector(".apps-x").addEventListener("click", async (e) => {
+      e.stopPropagation();
+      try { await invoke("session_delete", { id: resume.id }); } catch (err) {}
+      loadAppsPage();
+    });
     grid.appendChild(banner);
   }
 
@@ -3536,7 +3548,7 @@ renderFreeCount();
 loadPlanMakes();
 {
   const g = $("galleryBtn");
-  if (g) g.addEventListener("click", () => show("cloud"));
+  if (g) g.addEventListener("click", () => showView("cloud"));
 }
 $("reportBtn")?.addEventListener("click", openReportSheet);
 $("repSend")?.addEventListener("click", sendReport);
@@ -3991,9 +4003,11 @@ async function checkForUpdate() {
   $("updCurrent").textContent = mine || "unknown";
 
   try {
-    const res = await fetch("https://api.github.com/repos/incyashraj/krate/releases/latest");
-    const rel = await res.json();
-    const latest = String(rel.tag_name || "").replace(/^v/, "");
+    // Through the shell, not fetch: the webview's CSP blocks the network
+    // on purpose, so a direct call here failed every time and Try again
+    // could only fail the same way (seen live, with working internet).
+    const rel = await invoke("latest_release");
+    const latest = String(rel.tag || "").replace(/^v/, "");
     const newer = latest && mine
       && latest.localeCompare(mine, undefined, { numeric: true }) > 0;
 

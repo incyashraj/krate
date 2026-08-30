@@ -2663,3 +2663,21 @@ body.light .send-opt span, body.light .send-done p { color: rgba(0,0,0,0.55); }
 }
 .plan-row.current .plan-tag { color: var(--text); }
 #setPlanUsed, #setPlanBtn { white-space: nowrap; }
+
+/* The apps-count pill: one quiet rounded chip, not a mono box wrapping
+   its own words. */
+.apps-count {
+  align-self: center; white-space: nowrap;
+  font-size: 12px; color: var(--faint);
+  border: 1px solid var(--line); border-radius: 99px; padding: 5px 12px;
+  font-variant-numeric: tabular-nums;
+}
+/* The unfinished banner's delete: present, quiet, and not the row's click.
+   Three children now, so the first takes the room and the rest sit right. */
+.apps-finish { justify-content: flex-start; gap: 10px; }
+.apps-finish > span:first-child { flex: 1; text-align: left; }
+.apps-finish .apps-x {
+  margin-left: auto; padding: 2px 8px; border-radius: 6px;
+  color: var(--quiet, rgba(255,255,255,0.35)); font-size: 15px; line-height: 1;
+}
+.apps-finish .apps-x:hover { color: var(--text); background: rgba(255,255,255,0.06); }
