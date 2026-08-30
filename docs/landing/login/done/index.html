@@ -74,6 +74,28 @@
 (function () {
   var fromApp = new URLSearchParams(location.search).get("app") === "1";
   var hash = location.hash.replace(/^#/, "");
+  // A continuation set by /login?next=... : the desk, or a checkout.
+  var next = "";
+  try { next = localStorage.getItem("krate_next") || ""; localStorage.removeItem("krate_next"); } catch (e) {}
+  if (hash && next && !fromApp) {
+    var tok = new URLSearchParams(hash).get("token") || "";
+    if (next === "admin") {
+      location.href = "https://hub.krate.tech/admin#token=" + encodeURIComponent(tok);
+      return;
+    }
+    var pay = next.match(/^pay-(monthly|yearly|founding)$/);
+    if (pay) {
+      document.body.insertAdjacentHTML("beforeend", "<p style='text-align:center;color:#9aa3b5'>Taking you to checkout…</p>");
+      fetch("https://hub.krate.tech/billing/checkout", {
+        method: "POST",
+        headers: { authorization: "Bearer " + tok, "content-type": "application/json" },
+        body: JSON.stringify({ plan: pay[1] }),
+      }).then(function (r) { return r.json(); }).then(function (res) {
+        if (res.url) location.href = res.url;
+      }).catch(function () {});
+      return;
+    }
+  }
   if (hash) {
     // Query, not fragment: fragments never leave a BROWSER, but this URL
     // leaves the browser on purpose -- and Windows' scheme plumbing drops

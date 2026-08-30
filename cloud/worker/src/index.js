@@ -165,6 +165,36 @@ export default {
       if (request.method === "GET" && pathname === "/admin/reports") {
         return cors(await listReports(request, env));
       }
+      // ---- billing: the paid plan, end to end -------------------------
+      if (request.method === "GET" && pathname === "/billing/config") {
+        return cors(billingConfig(env));
+      }
+      if (request.method === "POST" && pathname === "/billing/checkout") {
+        return cors(await billingCheckout(request, env));
+      }
+      if (request.method === "POST" && pathname === "/billing/webhook") {
+        return await billingWebhook(request, env);
+      }
+      if (request.method === "GET" && pathname === "/billing/status") {
+        return cors(await billingStatus(request, env));
+      }
+      // ---- support: tickets with real conversations -------------------
+      if (request.method === "POST" && pathname === "/support/new") {
+        return cors(await supportNew(request, env));
+      }
+      if (request.method === "POST" && pathname === "/support/list") {
+        return cors(await supportList(request, env));
+      }
+      if (request.method === "POST" && pathname === "/support/reply") {
+        return cors(await supportReply(request, env));
+      }
+      // ---- the admin desk ---------------------------------------------
+      if (request.method === "GET" && (pathname === "/admin" || pathname === "/admin/")) {
+        return adminPage();
+      }
+      if (pathname.startsWith("/admin/api/")) {
+        return cors(await adminApi(request, pathname, env));
+      }
       if (request.method === "GET" && pathname.startsWith("/admin/report/")) {
         return cors(await getReport(request, pathname.slice("/admin/report/".length), env));
       }
@@ -1138,6 +1168,8 @@ async function ensureUser(env, provider, stableId, profile) {
 async function newSession(env, userId) {
   const token = `krs_${crypto.randomUUID().replaceAll("-", "")}`;
   await env.APPS.put(`session:${token}`, userId, { expirationTtl: 90 * 24 * 3600 });
+  // Indexed per user so support can revoke a person's sessions.
+  await env.APPS.put(`usess:${userId}:${token}`, "1", { expirationTtl: 90 * 24 * 3600 });
   return token;
 }
 
@@ -1544,4 +1576,518 @@ export class Room {
 
     return new Response(null, { status: 101, webSocket: client });
   }
+}
+
+// ===================================================================== paid
+//
+// The paid plan, end to end. Stripe is the processor; the worker never sees
+// a card. Entitlements live in KV (`ent:{userId}`) and are written ONLY by
+// verified Stripe webhooks or an admin override -- the client can ask, never
+// tell. Everything is gated on the Stripe secrets existing, so this whole
+// surface is dormant until they are set and the studio's limit stays soft.
+
+function billingLive(env) {
+  return Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_PRICE_MONTHLY && env.STRIPE_PRICE_YEARLY);
+}
+
+function billingConfig(env) {
+  return json({
+    live: billingLive(env),
+    founding: Boolean(env.STRIPE_PRICE_FOUNDING),
+    prices: { monthly: "$12/month", yearly: "$96/year", founding: "$79/year" },
+  });
+}
+
+/// The signed-in user behind a request: a Krate session or a GitHub token.
+async function authedUser(request, env) {
+  const auth = request.headers.get("authorization") || "";
+  const token = auth.replace(/^Bearer\s+/i, "").trim();
+  if (!token) return null;
+  if (token.startsWith("krs_")) {
+    const userId = await env.APPS.get(`session:${token}`);
+    if (!userId) return null;
+    return JSON.parse((await env.APPS.get(`user:${userId}`)) || "null");
+  }
+  const gh = await fetch("https://api.github.com/user", {
+    headers: {
+      authorization: `Bearer ${token}`,
+      accept: "application/vnd.github+json",
+      "user-agent": "krate-hub",
+    },
+  });
+  if (!gh.ok) return null;
+  const p = await gh.json();
+  return ensureUser(env, "github", String(p.id), {
+    login: p.login,
+    name: p.name || "",
+    avatar_url: p.avatar_url || "",
+    email: (p.email || "").toLowerCase() || undefined,
+  });
+}
+
+function planForPrice(env, priceId) {
+  if (priceId === env.STRIPE_PRICE_MONTHLY) return "monthly";
+  if (priceId === env.STRIPE_PRICE_YEARLY) return "yearly";
+  if (priceId === env.STRIPE_PRICE_FOUNDING) return "founding";
+  return "unknown";
+}
+
+async function stripe(env, path, form) {
+  const response = await fetch(`https://api.stripe.com/v1/${path}`, {
+    method: form ? "POST" : "GET",
+    headers: {
+      authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
+      ...(form ? { "content-type": "application/x-www-form-urlencoded" } : {}),
+    },
+    body: form ? new URLSearchParams(form) : undefined,
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error((body.error && body.error.message) || `stripe ${path} failed`);
+  }
+  return body;
+}
+
+async function billingCheckout(request, env) {
+  if (!billingLive(env)) return text("Billing is not open yet.", 503);
+  const user = await authedUser(request, env);
+  if (!user) return text("Sign in first.", 401);
+  const { plan } = await request.json().catch(() => ({}));
+  const price =
+    plan === "monthly" ? env.STRIPE_PRICE_MONTHLY
+    : plan === "yearly" ? env.STRIPE_PRICE_YEARLY
+    : plan === "founding" ? env.STRIPE_PRICE_FOUNDING
+    : null;
+  if (!price) return text("Unknown plan.", 400);
+  try {
+    const session = await stripe(env, "checkout/sessions", {
+      mode: "subscription",
+      "line_items[0][price]": price,
+      "line_items[0][quantity]": "1",
+      client_reference_id: user.id,
+      ...(user.email ? { customer_email: user.email } : {}),
+      "subscription_data[metadata][krate_user]": user.id,
+      allow_promotion_codes: "true",
+      success_url: "https://krate.tech/billing/done/",
+      cancel_url: "https://krate.tech/studio/#pricing",
+    });
+    return json({ url: session.url });
+  } catch (err) {
+    return text(`Checkout could not start: ${err.message}`, 502);
+  }
+}
+
+/// Verify a Stripe webhook signature: HMAC-SHA256 of `t.payload`.
+async function stripeSignatureValid(request, payload, env) {
+  const header = request.headers.get("stripe-signature") || "";
+  const parts = Object.fromEntries(
+    header.split(",").map((p) => p.split("=")).filter((p) => p.length === 2),
+  );
+  if (!parts.t || !parts.v1) return false;
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(env.STRIPE_WEBHOOK_SECRET || ""),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const mac = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(`${parts.t}.${payload}`),
+  );
+  const hex = [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return hex === parts.v1;
+}
+
+async function writeEntitlementFromSubscription(env, sub) {
+  const userId =
+    (sub.metadata && sub.metadata.krate_user) || (await env.APPS.get(`cust:${sub.customer}`));
+  if (!userId) return;
+  const priceId =
+    sub.items && sub.items.data && sub.items.data[0] ? sub.items.data[0].price.id : "";
+  await env.APPS.put(`cust:${sub.customer}`, userId);
+  await env.APPS.put(
+    `ent:${userId}`,
+    JSON.stringify({
+      plan: planForPrice(env, priceId),
+      status: sub.status,
+      until: (sub.current_period_end || 0) * 1000,
+      sub: sub.id,
+      customer: sub.customer,
+      at: Date.now(),
+    }),
+  );
+}
+
+async function billingWebhook(request, env) {
+  const payload = await request.text();
+  if (!env.STRIPE_WEBHOOK_SECRET || !(await stripeSignatureValid(request, payload, env))) {
+    return text("bad signature", 400);
+  }
+  let event;
+  try {
+    event = JSON.parse(payload);
+  } catch (_) {
+    return text("bad payload", 400);
+  }
+  // Stripe retries; process each event once.
+  if (await env.APPS.get(`evt:${event.id}`)) return json({ ok: true });
+  await env.APPS.put(`evt:${event.id}`, "1", { expirationTtl: 7 * 24 * 3600 });
+
+  const obj = event.data && event.data.object;
+  if (event.type === "checkout.session.completed" && obj) {
+    if (obj.client_reference_id && obj.customer) {
+      await env.APPS.put(`cust:${obj.customer}`, obj.client_reference_id);
+    }
+    if (obj.subscription) {
+      try {
+        const sub = await stripe(env, `subscriptions/${obj.subscription}`);
+        await writeEntitlementFromSubscription(env, sub);
+      } catch (_) { /* the subscription.updated event will carry it */ }
+    }
+  } else if (
+    (event.type === "customer.subscription.updated"
+      || event.type === "customer.subscription.deleted"
+      || event.type === "customer.subscription.created") && obj
+  ) {
+    await writeEntitlementFromSubscription(env, obj);
+  } else if (event.type === "invoice.payment_succeeded" && obj) {
+    const userId = await env.APPS.get(`cust:${obj.customer}`);
+    await env.APPS.put(
+      `pay:${Date.now()}:${crypto.randomUUID().slice(0, 8)}`,
+      JSON.stringify({
+        userId: userId || "",
+        email: obj.customer_email || "",
+        amount: obj.amount_paid,
+        currency: obj.currency,
+        invoice: obj.id,
+        at: Date.now(),
+      }),
+    );
+  }
+  return json({ ok: true });
+}
+
+function entitlementActive(ent) {
+  if (!ent) return false;
+  if (ent.plan === "comp") return true;
+  const okStatus = ent.status === "active" || ent.status === "trialing";
+  const grace = 3 * 24 * 3600 * 1000;
+  return okStatus && (!ent.until || ent.until + grace > Date.now());
+}
+
+async function billingStatus(request, env) {
+  const user = await authedUser(request, env);
+  if (!user) return text("Sign in first.", 401);
+  const ent = JSON.parse((await env.APPS.get(`ent:${user.id}`)) || "null");
+  return json({
+    live: billingLive(env),
+    plan: ent ? ent.plan : "free",
+    active: entitlementActive(ent),
+    until: ent ? ent.until : 0,
+  });
+}
+
+// ================================================================== support
+//
+// Tickets with real conversations. A ticket is one KV record carrying its
+// whole thread. A signed-in person's tickets are indexed by user; a
+// signed-out person keeps a per-ticket secret key instead, so support works
+// before login does. Admin replies land in the same thread and show up in
+// the studio.
+
+async function supportNew(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const user = await authedUser(request, env);
+  const email = user ? user.email : String(body.email || "").trim().toLowerCase();
+  const subject = String(body.subject || "").trim().slice(0, 140);
+  const first = String(body.text || "").trim().slice(0, 4000);
+  if (!subject || !first) return text("Say what it is about, and what happened.", 400);
+  if (!user && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+    return text("An email address, so the answer can reach you.", 400);
+  }
+  const id = crypto.randomUUID().slice(0, 8);
+  const key = crypto.randomUUID().replaceAll("-", "");
+  const ticket = {
+    id,
+    key,
+    userId: user ? user.id : "",
+    login: user ? user.login : "",
+    email,
+    subject,
+    status: "open",
+    created: Date.now(),
+    updated: Date.now(),
+    messages: [{ who: "user", text: first, at: Date.now() }],
+  };
+  await env.APPS.put(`tick:${id}`, JSON.stringify(ticket));
+  if (user) {
+    const ids = JSON.parse((await env.APPS.get(`utick:${user.id}`)) || "[]");
+    ids.unshift(id);
+    await env.APPS.put(`utick:${user.id}`, JSON.stringify(ids.slice(0, 100)));
+  }
+  return json({ id, key });
+}
+
+function publicTicket(t) {
+  const { key, userId, ...rest } = t;
+  return rest;
+}
+
+async function supportList(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const user = await authedUser(request, env);
+  const out = [];
+  if (user) {
+    const ids = JSON.parse((await env.APPS.get(`utick:${user.id}`)) || "[]");
+    for (const id of ids) {
+      const t = JSON.parse((await env.APPS.get(`tick:${id}`)) || "null");
+      if (t) out.push(publicTicket(t));
+    }
+  }
+  for (const ref of Array.isArray(body.keys) ? body.keys.slice(0, 20) : []) {
+    const t = JSON.parse((await env.APPS.get(`tick:${ref.id}`)) || "null");
+    if (t && t.key === ref.key && !out.some((x) => x.id === t.id)) out.push(publicTicket(t));
+  }
+  out.sort((a, b) => b.updated - a.updated);
+  return json({ tickets: out });
+}
+
+async function supportReply(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const t = JSON.parse((await env.APPS.get(`tick:${body.id}`)) || "null");
+  if (!t) return text("No such ticket.", 404);
+  const user = await authedUser(request, env);
+  const owns = (user && user.id === t.userId) || (body.key && body.key === t.key);
+  if (!owns) return text("Not your ticket.", 403);
+  const line = String(body.text || "").trim().slice(0, 4000);
+  if (!line) return text("Say something.", 400);
+  t.messages.push({ who: "user", text: line, at: Date.now() });
+  t.status = "open";
+  t.updated = Date.now();
+  await env.APPS.put(`tick:${t.id}`, JSON.stringify(t));
+  return json({ ok: true });
+}
+
+// ==================================================================== admin
+//
+// The support desk: one page, the same verified-GitHub-login gate as
+// /admin/reports (KRATE_ADMINS). Users, plans, payments, tickets, the
+// make-it-for-me queue, and session revocation.
+
+async function adminApi(request, pathname, env) {
+  const admin = await isAdmin(request, env);
+  if (!admin) return text("not found", 404);
+  const route = pathname.slice("/admin/api/".length);
+  const body = request.method === "POST" ? await request.json().catch(() => ({})) : {};
+
+  if (route === "overview") {
+    const users = await env.APPS.list({ prefix: "user:", limit: 1000 });
+    const ticks = await env.APPS.list({ prefix: "tick:", limit: 1000 });
+    const pays = await env.APPS.list({ prefix: "pay:", limit: 1000 });
+    return json({
+      users: users.keys.length,
+      tickets: ticks.keys.length,
+      payments: pays.keys.length,
+      billing_live: billingLive(env),
+    });
+  }
+  if (route === "users") {
+    const q = (new URL(request.url).searchParams.get("q") || "").toLowerCase();
+    const listing = await env.APPS.list({ prefix: "user:", limit: 1000 });
+    const out = [];
+    for (const k of listing.keys) {
+      const u = JSON.parse((await env.APPS.get(k.name)) || "null");
+      if (!u) continue;
+      const hay = `${u.email} ${u.login} ${u.name}`.toLowerCase();
+      if (q && !hay.includes(q)) continue;
+      const ent = JSON.parse((await env.APPS.get(`ent:${u.id}`)) || "null");
+      out.push({ ...u, ent, active: entitlementActive(ent) });
+      if (out.length >= 100) break;
+    }
+    return json({ users: out });
+  }
+  if (route === "user/plan" && request.method === "POST") {
+    // The support override: comp a user, or clear an override.
+    if (body.plan === "comp") {
+      await env.APPS.put(`ent:${body.id}`, JSON.stringify({ plan: "comp", status: "active", until: 0, at: Date.now(), by: admin.login }));
+    } else {
+      await env.APPS.delete(`ent:${body.id}`);
+    }
+    return json({ ok: true });
+  }
+  if (route === "user/logout" && request.method === "POST") {
+    const sess = await env.APPS.list({ prefix: `usess:${body.id}:`, limit: 1000 });
+    for (const k of sess.keys) {
+      const token = k.name.split(":").pop();
+      await env.APPS.delete(`session:${token}`);
+      await env.APPS.delete(k.name);
+    }
+    return json({ revoked: sess.keys.length });
+  }
+  if (route === "tickets") {
+    const listing = await env.APPS.list({ prefix: "tick:", limit: 1000 });
+    const out = [];
+    for (const k of listing.keys) {
+      const t = JSON.parse((await env.APPS.get(k.name)) || "null");
+      if (t) out.push(t);
+    }
+    out.sort((a, b) => b.updated - a.updated);
+    return json({ tickets: out });
+  }
+  if (route === "ticket/reply" && request.method === "POST") {
+    const t = JSON.parse((await env.APPS.get(`tick:${body.id}`)) || "null");
+    if (!t) return text("no such ticket", 404);
+    t.messages.push({ who: "krate", text: String(body.text || "").slice(0, 4000), at: Date.now() });
+    t.updated = Date.now();
+    await env.APPS.put(`tick:${t.id}`, JSON.stringify(t));
+    return json({ ok: true });
+  }
+  if (route === "ticket/status" && request.method === "POST") {
+    const t = JSON.parse((await env.APPS.get(`tick:${body.id}`)) || "null");
+    if (!t) return text("no such ticket", 404);
+    t.status = body.status === "closed" ? "closed" : "open";
+    t.updated = Date.now();
+    await env.APPS.put(`tick:${t.id}`, JSON.stringify(t));
+    return json({ ok: true });
+  }
+  if (route === "payments") {
+    const listing = await env.APPS.list({ prefix: "pay:", limit: 1000 });
+    const out = [];
+    for (const k of listing.keys.reverse()) {
+      const p = JSON.parse((await env.APPS.get(k.name)) || "null");
+      if (p) out.push(p);
+    }
+    return json({ payments: out });
+  }
+  if (route === "makeit") {
+    const listing = await env.APPS.list({ prefix: "makeit:", limit: 1000 });
+    const out = [];
+    for (const k of listing.keys.reverse()) {
+      const m = JSON.parse((await env.APPS.get(k.name)) || "null");
+      if (m) out.push({ key: k.name, ...m });
+    }
+    return json({ requests: out });
+  }
+  if (route === "makeit/done" && request.method === "POST") {
+    await env.APPS.delete(String(body.key || ""));
+    return json({ ok: true });
+  }
+  return text("not found", 404);
+}
+
+/// The admin desk page. One file, no build step; signs in through the same
+/// krate.tech login the product uses and talks to /admin/api/* with the
+/// token. Renders nothing for non-admins because the APIs 404.
+function adminPage() {
+  const html = `<!doctype html><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Krate desk</title>
+<style>
+:root{--bg:#0b0e15;--panel:#12151d;--line:#252a36;--ink:#f2f5fa;--mut:#9aa3b5;--acc:#6291ff;--ok:#39d98a;--warn:#ffb082}
+*{margin:0;padding:0;box-sizing:border-box}body{background:var(--bg);color:var(--ink);font:14px/1.5 -apple-system,system-ui,sans-serif;padding:24px}
+h1{font-size:20px;margin-bottom:4px}.sub{color:var(--mut);font-size:12.5px;margin-bottom:18px}
+nav{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}
+nav button{background:none;border:1px solid var(--line);color:var(--mut);padding:7px 14px;border-radius:99px;cursor:pointer;font:inherit;font-size:13px}
+nav button.on{background:var(--ink);color:#0b0e15;border-color:var(--ink)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:10px}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.mut{color:var(--mut);font-size:12.5px}.grow{flex:1}
+button.act{background:var(--acc);border:none;color:#fff;padding:6px 13px;border-radius:8px;cursor:pointer;font:inherit;font-size:12.5px}
+button.ghost{background:none;border:1px solid var(--line);color:var(--mut);padding:6px 13px;border-radius:8px;cursor:pointer;font:inherit;font-size:12.5px}
+input,textarea{background:#0e1118;border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:8px 11px;font:inherit;width:100%}
+textarea{min-height:70px;resize:vertical}
+.msg{padding:8px 12px;border-radius:10px;margin:6px 0;max-width:640px;white-space:pre-wrap}
+.msg.user{background:#1a2233}.msg.krate{background:#15251c;margin-left:32px}
+.pill{font-size:11px;border:1px solid var(--line);border-radius:99px;padding:2px 9px;color:var(--mut)}
+.pill.open{color:var(--warn);border-color:#5a4636}.pill.active{color:var(--ok);border-color:#2c5243}
+#login{max-width:420px}
+</style>
+<h1>Krate desk</h1><p class="sub" id="who">signing in&hellip;</p>
+<div id="login" class="card" style="display:none">
+  <p style="margin-bottom:10px">Sign in with the same account Studio uses. Admins only; everyone else sees nothing.</p>
+  <button class="act" onclick="location='https://krate.tech/login/?next=admin'">Sign in</button>
+</div>
+<div id="app" style="display:none">
+<nav>
+  <button data-t="tickets" class="on">Tickets</button>
+  <button data-t="users">Users</button>
+  <button data-t="payments">Payments</button>
+  <button data-t="makeit">Make-it queue</button>
+</nav>
+<div id="view"></div>
+</div>
+<script>
+const HUB=location.origin;
+let TOKEN=localStorage.getItem("desk_token")||"";
+const frag=new URLSearchParams(location.hash.slice(1));
+if(frag.get("token")){TOKEN=frag.get("token");localStorage.setItem("desk_token",TOKEN);history.replaceState(null,"",location.pathname);}
+const api=(p,opt)=>fetch(HUB+"/admin/api/"+p,{...opt,headers:{authorization:"Bearer "+TOKEN,"content-type":"application/json",...(opt&&opt.headers)}}).then(r=>{if(!r.ok)throw new Error(r.status);return r.json()});
+const el=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const when=ms=>new Date(ms).toLocaleString();
+async function boot(){
+  try{const o=await api("overview");el("#who").textContent=\`\${o.users} users · \${o.tickets} tickets · \${o.payments} payments · billing \${o.billing_live?"LIVE":"not configured"}\`;el("#app").style.display="";show("tickets");}
+  catch(e){el("#who").textContent="not signed in, or not an admin";el("#login").style.display="";}
+}
+document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{document.querySelectorAll("nav button").forEach(x=>x.classList.remove("on"));b.classList.add("on");show(b.dataset.t);});
+async function show(tab){
+  const v=el("#view");v.innerHTML='<p class="mut">loading…</p>';
+  if(tab==="tickets"){
+    const {tickets}=await api("tickets");
+    v.innerHTML=tickets.length?"":'<p class="mut">No tickets.</p>';
+    for(const t of tickets){
+      const d=document.createElement("div");d.className="card";
+      d.innerHTML=\`<div class="row"><b>\${esc(t.subject)}</b><span class="pill \${t.status}">\${t.status}</span><span class="grow"></span><span class="mut">\${esc(t.login||t.email)} · \${when(t.updated)}</span></div>
+      <div>\${t.messages.map(m=>\`<div class="msg \${m.who}">\${esc(m.text)}<div class="mut">\${m.who==="krate"?"you":"them"} · \${when(m.at)}</div></div>\`).join("")}</div>
+      <div class="row" style="margin-top:8px"><textarea placeholder="Reply…"></textarea></div>
+      <div class="row" style="margin-top:8px"><button class="act">Send reply</button><button class="ghost">\${t.status==="open"?"Close":"Reopen"}</button></div>\`;
+      d.querySelector(".act").onclick=async()=>{const x=d.querySelector("textarea").value.trim();if(!x)return;await api("ticket/reply",{method:"POST",body:JSON.stringify({id:t.id,text:x})});show("tickets");};
+      d.querySelector(".ghost").onclick=async()=>{await api("ticket/status",{method:"POST",body:JSON.stringify({id:t.id,status:t.status==="open"?"closed":"open"})});show("tickets");};
+      v.appendChild(d);
+    }
+  }
+  if(tab==="users"){
+    v.innerHTML='<div class="card row"><input id="q" placeholder="Search email, login, name…"><button class="act" id="go">Search</button></div><div id="ulist"></div>';
+    const load=async()=>{
+      const {users}=await api("users?q="+encodeURIComponent(el("#q").value||""));
+      const u=el("#ulist");u.innerHTML=users.length?"":'<p class="mut">Nobody matches.</p>';
+      for(const x of users){
+        const d=document.createElement("div");d.className="card row";
+        d.innerHTML=\`<div class="grow"><b>\${esc(x.name||x.login||x.email)}</b> <span class="mut">\${esc(x.email)} · \${(x.providers||[]).join(", ")} · joined \${when(x.created)}</span></div>
+        <span class="pill \${x.active?"active":""}">\${x.ent?x.ent.plan:"free"}</span>
+        <button class="ghost" data-a="plan">\${x.ent&&x.ent.plan==="comp"?"Remove comp":"Comp plan"}</button>
+        <button class="ghost" data-a="out">Sign out everywhere</button>\`;
+        d.querySelector('[data-a=plan]').onclick=async()=>{await api("user/plan",{method:"POST",body:JSON.stringify({id:x.id,plan:x.ent&&x.ent.plan==="comp"?"none":"comp"})});load();};
+        d.querySelector('[data-a=out]').onclick=async()=>{const r=await api("user/logout",{method:"POST",body:JSON.stringify({id:x.id})});alert(r.revoked+" sessions revoked");};
+        u.appendChild(d);
+      }
+    };
+    el("#go").onclick=load;el("#q").onkeydown=e=>{if(e.key==="Enter")load()};load();
+  }
+  if(tab==="payments"){
+    const {payments}=await api("payments");
+    v.innerHTML=payments.length?"":'<p class="mut">No payments yet.</p>';
+    for(const p of payments){
+      const d=document.createElement("div");d.className="card row";
+      d.innerHTML=\`<b>\${(p.amount/100).toFixed(2)} \${esc((p.currency||"usd").toUpperCase())}</b><span class="mut grow">\${esc(p.email||p.userId)} · \${when(p.at)} · \${esc(p.invoice)}</span>\`;
+      v.appendChild(d);
+    }
+  }
+  if(tab==="makeit"){
+    const {requests}=await api("makeit");
+    v.innerHTML=requests.length?"":'<p class="mut">Queue is empty.</p>';
+    for(const m of requests){
+      const d=document.createElement("div");d.className="card";
+      d.innerHTML=\`<div class="row"><b>\${esc(m.email)}</b><span class="grow"></span><span class="mut">\${when(m.at*1000)}</span><button class="ghost">Done</button></div>
+      <p style="margin-top:6px">\${esc(m.request)}</p>\${m.answers?\`<p class="mut" style="margin-top:4px">answers: \${esc(m.answers)}</p>\`:""}\`;
+      d.querySelector("button").onclick=async()=>{await api("makeit/done",{method:"POST",body:JSON.stringify({key:m.key})});show("makeit");};
+      v.appendChild(d);
+    }
+  }
+}
+boot();
+</script>`;
+  return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
 }

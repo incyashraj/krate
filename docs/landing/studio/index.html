@@ -910,5 +910,27 @@
   } catch (e) {}
 })();
 </script>
+<script>
+// When billing is live, the pricing cards grow real doors: sign in, then
+// straight to checkout. Until then the founding email list stands alone.
+fetch("https://hub.krate.tech/billing/config").then(function(r){return r.json()}).then(function(c){
+  if (!c.live) return;
+  var cards = document.querySelectorAll("#pricing .price-card");
+  if (cards[1]) {
+    var cta = cards[1].querySelector(".price-cta");
+    cta.textContent = "Start Studio";
+    cta.href = "/login/?next=pay-monthly";
+    var badge = cards[1].querySelector(".price-badge");
+    if (badge) badge.textContent = "live";
+    var note = cards[1].querySelector(".price-note");
+    if (note) note.textContent = "Yearly is on the checkout page too.";
+  }
+  if (c.founding && cards[2]) {
+    var f = cards[2].querySelector(".price-cta");
+    f.textContent = "Get founding - $79/year";
+    f.href = "/login/?next=pay-founding";
+  }
+}).catch(function(){});
+</script>
 </body>
 </html>

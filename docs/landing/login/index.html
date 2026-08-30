@@ -87,6 +87,10 @@
 // identity back to the desktop through the krate:// scheme.
 (function () {
   var fromApp = new URLSearchParams(location.search).get("from") === "app";
+  // Where to continue AFTER sign-in (the desk, a checkout). Kept in this
+  // origin's storage so it survives the provider round trip.
+  var next = new URLSearchParams(location.search).get("next") || "";
+  try { if (next) localStorage.setItem("krate_next", next); } catch (e) {}
   if (fromApp) {
     document.getElementById("ghBtn").href = "https://hub.krate.tech/login/start?from=app";
     document.getElementById("googleBtn").href = "https://hub.krate.tech/login/google/start?from=app";

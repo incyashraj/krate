@@ -2093,6 +2093,116 @@ async fn latest_release() -> Result<serde_json::Value, String> {
     .map_err(|err| err.to_string())?
 }
 
+/// The engine's stored hub sign-in, for billing and support calls. Read,
+/// never written: the engine owns the sign-in lifecycle.
+fn hub_token() -> Option<String> {
+    let raw = std::fs::read_to_string(dirs_home().join(".krate").join("github.json")).ok()?;
+    serde_json::from_str::<serde_json::Value>(&raw)
+        .ok()?
+        .get("token")?
+        .as_str()
+        .map(|s| s.to_string())
+}
+
+fn hub_post(path: &str, token: Option<&str>, body: serde_json::Value) -> Result<serde_json::Value, String> {
+    let mut req = ureq::post(&format!("{}{path}", hub_url()))
+        .timeout(std::time::Duration::from_secs(20));
+    if let Some(t) = token {
+        req = req.set("authorization", &format!("Bearer {t}"));
+    }
+    match req.send_json(body) {
+        Ok(resp) => resp.into_json().map_err(|e| e.to_string()),
+        Err(ureq::Error::Status(_, resp)) => {
+            Err(resp.into_string().unwrap_or_else(|_| "the hub said no".into()))
+        }
+        Err(_) => Err("could not reach krate.tech - check your connection".into()),
+    }
+}
+
+/// Everything the UI needs to run the paid plan: is billing live, what the
+/// plans cost, and whether THIS person's plan is active. One call at boot
+/// and after a checkout.
+#[tauri::command]
+async fn billing_info() -> serde_json::Value {
+    tauri::async_runtime::spawn_blocking(|| {
+        let base = hub_url();
+        let config: serde_json::Value = ureq::get(&format!("{base}/billing/config"))
+            .timeout(std::time::Duration::from_secs(10))
+            .call()
+            .ok()
+            .and_then(|r| r.into_json().ok())
+            .unwrap_or_else(|| serde_json::json!({ "live": false }));
+        let mut out = config;
+        if let Some(token) = hub_token() {
+            if let Ok(status) = ureq::get(&format!("{base}/billing/status"))
+                .set("authorization", &format!("Bearer {token}"))
+                .timeout(std::time::Duration::from_secs(10))
+                .call()
+                .and_then(|r| r.into_json::<serde_json::Value>().map_err(Into::into))
+            {
+                out["plan"] = status["plan"].clone();
+                out["active"] = status["active"].clone();
+            }
+        }
+        out
+    })
+    .await
+    .unwrap_or_else(|_| serde_json::json!({ "live": false }))
+}
+
+/// Start a checkout for a plan; returns the Stripe URL to open in the
+/// person's browser. The card never comes anywhere near Krate.
+#[tauri::command]
+async fn billing_checkout(plan: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let token = hub_token().ok_or("Sign in first - the plan needs an account to land on.")?;
+        let out = hub_post("/billing/checkout", Some(&token), serde_json::json!({ "plan": plan }))?;
+        out["url"]
+            .as_str()
+            .map(|s| s.to_string())
+            .ok_or_else(|| "checkout did not return a link".to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/* ---- support: real conversations with a person ------------------------ */
+
+#[tauri::command]
+async fn support_new(subject: String, message: String, email: String) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        hub_post(
+            "/support/new",
+            hub_token().as_deref(),
+            serde_json::json!({ "subject": subject, "text": message, "email": email }),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn support_list(keys: serde_json::Value) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        hub_post("/support/list", hub_token().as_deref(), serde_json::json!({ "keys": keys }))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn support_reply(id: String, key: String, message: String) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        hub_post(
+            "/support/reply",
+            hub_token().as_deref(),
+            serde_json::json!({ "id": id, "key": key, "text": message }),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// "We'll make it for you": the human fallback when a build dies. Sends
 /// exactly what a person would need to build the app by hand -- the
 /// request, the answers they gave the AI, and an email to return the
@@ -3515,6 +3625,11 @@ fn main() {
             make_for_me,
             agent_session_tag,
             latest_release,
+            billing_info,
+            billing_checkout,
+            support_new,
+            support_list,
+            support_reply,
             sessions_list,
             session_save,
             session_shot,

@@ -1506,6 +1506,10 @@ function countMake() {
     .catch(() => {});
   renderFreeCount();
 }
+function planIsActiveSafe() {
+  return Boolean(state.billing && state.billing.active);
+}
+
 /// One painter for every place the plan shows: the title-bar chip, the
 /// plan sheet's Free row, and the settings row. They must never disagree
 /// about how many are left.
@@ -1515,7 +1519,8 @@ function renderFreeCount() {
   const chip = $("freeCount");
   if (chip) {
     chip.textContent =
-      n === 0 ? "3 free this month"
+      planIsActiveSafe() ? "Studio plan"
+      : n === 0 ? "3 free this month"
       : n <= 3 ? `${left} of 3 free left`
       : "Free preview";
   }
@@ -1534,14 +1539,15 @@ function limitAcked() {
 async function make(request, opts) {
   // The gate: at three, the sheet says what the deal is, once a month.
   // It never fires for revisions (the session already has a result).
-  if (
-    makesThisMonth() >= 3 &&
-    !limitAcked() &&
-    !(state.session && state.session.result) &&
-    !(opts && opts.pastLimit)
-  ) {
+  const overCap = makesThisMonth() >= 3
+    && !(state.session && state.session.result)
+    && !(opts && opts.pastLimit)
+    && !planIsActive();
+  if (overCap && ((state.billing && state.billing.live) || !limitAcked())) {
+    // Billing live: a real wall with a checkout door, every time past
+    // three. Preview: the soft sheet, once a month.
     state.pendingMake = { request, opts };
-    $("limitSheet").classList.remove("hidden");
+    openLimitSheet();
     return;
   }
   // Two builds at once would leave the first unstoppable; the backend
@@ -3546,6 +3552,151 @@ $("planFounding")?.addEventListener("click", () => {
 });
 renderFreeCount();
 loadPlanMakes();
+
+/* ---- the paid plan ---------------------------------------------------- */
+// One truth from the hub: is billing live, and is THIS person's plan
+// active. Until billing is live the limit stays the soft preview sheet;
+// the moment it is live, the fourth make is a wall with a checkout door.
+state.billing = { live: false, active: false };
+async function loadBilling() {
+  try {
+    state.billing = await invoke("billing_info");
+  } catch (e) { /* offline: stay soft */ }
+  renderFreeCount();
+}
+loadBilling();
+
+function planIsActive() {
+  return Boolean(state.billing && state.billing.active);
+}
+
+/// Open a checkout in the browser, then watch for the plan to land. The
+/// person pays on stripe.com; Studio just notices.
+async function startCheckout(plan) {
+  $("limitNote").textContent = "Opening checkout in your browser…";
+  try {
+    const url = await invoke("billing_checkout", { plan });
+    await invoke("open_external", { url });
+    $("limitNote").textContent = "Finish in the browser - this unlocks by itself.";
+    let rounds = 0;
+    clearInterval(state.billPoll);
+    state.billPoll = setInterval(async () => {
+      rounds += 1;
+      await loadBilling();
+      if (planIsActive()) {
+        clearInterval(state.billPoll);
+        $("limitSheet").classList.add("hidden");
+        say("KRATE", "You're in -- the plan is active and the cap is gone. Every app you make stays a file that is yours forever.", null, { variant: "ask" });
+        const p = state.pendingMake;
+        state.pendingMake = null;
+        if (p) make(p.request, { ...(p.opts || {}), pastLimit: true });
+      }
+      if (rounds > 90) clearInterval(state.billPoll);
+    }, 5000);
+  } catch (err) {
+    if (String(err).includes("Sign in")) {
+      $("limitNote").textContent = "Sign in first, then hit the plan again.";
+      invoke("account_login").catch(() => {});
+    } else {
+      $("limitNote").textContent = String(err);
+    }
+  }
+}
+
+/// Dress the limit sheet for whichever world we are in: soft preview, or
+/// the real wall with checkout doors.
+function openLimitSheet() {
+  const live = state.billing && state.billing.live;
+  $("limitNote").textContent = "";
+  if (live) {
+    $("limitTitle").textContent = "That's your three for this month";
+    $("limitSub").textContent =
+      "The free plan is three apps a month -- changes to an app and failed builds never count. Unlimited making is the Studio plan.";
+    $("limitSub2").textContent = state.billing.founding
+      ? "The founding 200 lock it at $79 a year instead of $96."
+      : "";
+    $("limitActions").innerHTML =
+      '<button class="btn btn-primary" id="buyMonthly">Upgrade - $12/month</button>' +
+      '<button class="btn" id="buyYearly">$96/year</button>' +
+      (state.billing.founding ? '<button class="btn" id="buyFounding">Founding - $79/year</button>' : "");
+    $("buyMonthly").addEventListener("click", () => startCheckout("monthly"));
+    $("buyYearly").addEventListener("click", () => startCheckout("yearly"));
+    $("buyFounding")?.addEventListener("click", () => startCheckout("founding"));
+  }
+  $("limitSheet").classList.remove("hidden");
+}
+
+/* ---- support: a real conversation ------------------------------------ */
+function supKeys() {
+  try { return JSON.parse(localStorage.getItem("krateSupKeys") || "[]"); } catch (e) { return []; }
+}
+function rememberSupKey(ref) {
+  try {
+    const keys = supKeys();
+    keys.unshift(ref);
+    localStorage.setItem("krateSupKeys", JSON.stringify(keys.slice(0, 20)));
+  } catch (e) {}
+}
+async function openSupportSheet() {
+  $("supNote").textContent = "";
+  $("supEmail").classList.toggle("hidden", Boolean(state.account && state.account.signed_in));
+  $("supportSheet").classList.remove("hidden");
+  renderSupportTickets();
+}
+async function renderSupportTickets() {
+  const box = $("supTickets");
+  box.innerHTML = "";
+  try {
+    const out = await invoke("support_list", { keys: supKeys() });
+    for (const t of (out.tickets || [])) {
+      const d = document.createElement("div");
+      d.className = "sup-tick";
+      d.innerHTML = '<div class="sup-head"><b></b><span class="sup-status"></span></div>'
+        + '<div class="sup-msgs"></div>'
+        + '<div class="sup-replyrow"><input class="makeit-email" placeholder="Reply…" /><button class="btn">Send</button></div>';
+      d.querySelector("b").textContent = t.subject;
+      d.querySelector(".sup-status").textContent = t.status;
+      const msgs = d.querySelector(".sup-msgs");
+      for (const m of t.messages) {
+        const el = document.createElement("div");
+        el.className = "sup-msg" + (m.who === "krate" ? " krate" : "");
+        el.textContent = m.text;
+        const who = document.createElement("span");
+        who.className = "sup-who";
+        who.textContent = (m.who === "krate" ? "Krate support" : "you") + " · " + new Date(m.at).toLocaleString();
+        el.appendChild(who);
+        msgs.appendChild(el);
+      }
+      const input = d.querySelector("input");
+      d.querySelector("button").addEventListener("click", async () => {
+        const line = input.value.trim();
+        if (!line) return;
+        const ref = supKeys().find((k) => k.id === t.id) || { id: t.id, key: "" };
+        try {
+          await invoke("support_reply", { id: t.id, key: ref.key || "", message: line });
+          renderSupportTickets();
+        } catch (err) { $("supNote").textContent = String(err); }
+      });
+      box.appendChild(d);
+    }
+  } catch (e) { /* offline: the new-ticket form still works next time */ }
+}
+$("supportBtn")?.addEventListener("click", openSupportSheet);
+$("supSend")?.addEventListener("click", async () => {
+  const subject = $("supSubject").value.trim();
+  const body = $("supBody").value.trim();
+  const email = $("supEmail").value.trim();
+  if (!subject || !body) { $("supNote").textContent = "Say what it is about, and what happened."; return; }
+  $("supSend").disabled = true;
+  try {
+    const out = await invoke("support_new", { subject, message: body, email });
+    if (out && out.id) rememberSupKey({ id: out.id, key: out.key });
+    $("supSubject").value = ""; $("supBody").value = "";
+    $("supNote").textContent = "Sent - the reply lands right here.";
+    renderSupportTickets();
+  } catch (err) { $("supNote").textContent = String(err); }
+  $("supSend").disabled = false;
+});
 {
   const g = $("galleryBtn");
   if (g) g.addEventListener("click", () => showView("cloud"));

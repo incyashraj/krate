@@ -331,6 +331,14 @@
         </div>
 
         <div class="set-group">
+          <h2>Support</h2>
+          <div class="set-row">
+            <div><div class="lab">Talk to a person</div><div class="hint">Ask anything; replies land right here in this window</div></div>
+            <div class="ctl"><button class="set-mini" id="supportBtn">Contact support</button></div>
+          </div>
+        </div>
+
+        <div class="set-group">
           <h2>Made by others</h2>
           <div class="set-row">
             <div><div class="nm">The shared gallery</div><div class="sub">Apps people have published, each one a file you can run.</div></div>
@@ -622,17 +630,37 @@
 
   <div class="sheet-wrap hidden" id="limitSheet">
     <div class="sheet">
-      <h2>That's three this month</h2>
-      <p class="sheet-sub">The free plan is three apps a month -- failed
+      <h2 id="limitTitle">That's three this month</h2>
+      <p class="sheet-sub" id="limitSub">The free plan is three apps a month -- failed
       builds and changes to an app never count. While Studio is in preview,
       making stays free past three; when it leaves preview, unlimited making
       will be $12 a month.</p>
-      <p class="sheet-sub" style="margin-top:8px">The first 200 people on
+      <p class="sheet-sub" id="limitSub2" style="margin-top:8px">The first 200 people on
       the founding list lock it at $79 a year instead.</p>
-      <div class="detail-actions">
+      <div class="detail-actions" id="limitActions">
         <button class="btn btn-primary" id="limitGo">Keep making -- free in preview</button>
         <button class="btn" id="limitFounding">Join the founding 200</button>
       </div>
+      <p class="detail-note" id="limitNote"></p>
+    </div>
+  </div>
+
+  <div class="sheet-wrap hidden" id="supportSheet">
+    <div class="sheet sheet-send">
+      <h2>Support</h2>
+      <p class="sheet-sub">A real person answers, in this same thread. Replies
+      show up right here.</p>
+      <div id="supTickets"></div>
+      <div id="supNewWrap">
+        <input class="makeit-email" id="supSubject" placeholder="What is it about?" maxlength="140" />
+        <textarea class="makeit-email" id="supBody" rows="3" placeholder="What happened, in your own words"></textarea>
+        <input class="makeit-email hidden" id="supEmail" type="email" placeholder="you@example.com (for the reply)" />
+      </div>
+      <div class="detail-actions">
+        <button class="btn btn-primary" id="supSend">Send to support</button>
+        <button class="btn btn-ghost sheet-close" data-close="supportSheet">Close</button>
+      </div>
+      <p class="detail-note" id="supNote"></p>
     </div>
   </div>
 
