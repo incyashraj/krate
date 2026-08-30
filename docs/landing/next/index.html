@@ -228,12 +228,14 @@ img { max-width: 100%; display: block; }
 @media (max-width: 760px) { .chip.c3, .chip.c4, .chip.c5 { display: none; } }
 
 /* ------------------------------------------------------------ marquee */
+/* Vertically centered in the dark band between the arc and the page end:
+   the arc's lowest dip sits at 57vh, so the band's middle is ~78vh. */
 .marqWrap {
-  position: absolute; top: max(64vh, 500px); left: 0; right: 0; z-index: 40;
-  opacity: 0; filter: blur(6px); transform: translateY(16px);
+  position: absolute; top: 78vh; left: 0; right: 0; z-index: 40;
+  opacity: 0; filter: blur(6px); transform: translateY(calc(-50% + 16px));
   will-change: transform, opacity, filter;
 }
-.marqWrap.in { opacity: 1; filter: blur(0); transform: none;
+.marqWrap.in { opacity: 1; filter: blur(0); transform: translateY(-50%);
   transition: opacity 0.9s ease, filter 0.9s ease, transform 0.9s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .marqLabel {
   margin-bottom: 12px; text-align: center;
@@ -540,7 +542,8 @@ img { max-width: 100%; display: block; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .eclipse { opacity: 1 !important; filter: none !important; transform: translateY(-50%) !important; }
-  .heroContent h1, .heroSub, .heroCtas, .marqWrap { opacity: 1 !important; filter: none !important; transform: none !important; }
+  .heroContent h1, .heroSub, .heroCtas { opacity: 1 !important; filter: none !important; transform: none !important; }
+  .marqWrap { opacity: 1 !important; filter: none !important; transform: translateY(-50%) !important; }
 }
 </style>
 </head>
