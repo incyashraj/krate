@@ -1720,6 +1720,18 @@ img.cloud-icon { object-fit: cover; }
     radial-gradient(84% 72% at 78% 110%, rgba(214, 188, 255, 0.16), transparent 68%);
   filter: blur(4px);
 }
+/* A quiet field of pixels living inside the horizon's glow: clusters that
+ * breathe in and out, and ripple away from the cursor. Ambience, not a
+ * feature -- it sits under the grain and above the blooms. */
+.pixelsky {
+  position: fixed; left: 0; right: 0; bottom: 0; height: 60%;
+  width: 100%; pointer-events: none; z-index: 0; opacity: 0.34;
+  -webkit-mask-image: linear-gradient(to top, #000 55%, transparent);
+          mask-image: linear-gradient(to top, #000 55%, transparent);
+  transition: opacity 0.5s ease;
+}
+body.scrolled .pixelsky { opacity: 0.15; }
+body.light .pixelsky { opacity: 0.12; }
 .grain {
   position: fixed; inset: 0; pointer-events: none; z-index: 0;
   opacity: 0.35; mix-blend-mode: overlay;
