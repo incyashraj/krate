@@ -1711,35 +1711,24 @@ img.cloud-icon { object-fit: cover; }
  * Blue, because the product is blue. It sits behind everything on the
  * home view and dims when a page is scrolled, so content stays readable
  * over it. */
-/* The horizon, rebuilt as the website's eclipse: one giant ellipse hanging
- * above the window, its downward-curving bottom edge glowing near the foot
- * of the screen, aurora light pooling beneath it, black above. Lovable's
- * warmth, our night. */
+/* The horizon: an aurora dome rising from the bottom of the window --
+ * Lovable's layered warmth translated to night. A bright periwinkle heart
+ * low at center, a rose halo around it, an indigo body, and a wide deep
+ * field, every layer a soft radial so the colors melt into each other and
+ * into the black with no edge anywhere. The dome is highest at center and
+ * falls away toward the sides. */
 .horizon {
-  position: fixed; left: 50%; top: -122vh; width: 210vw; height: 200vh;
-  margin-left: -105vw; pointer-events: none; z-index: 0;
+  position: fixed; left: 50%; bottom: -20vh; width: 190vw; height: 120vh;
+  margin-left: -95vw; pointer-events: none; z-index: 0;
   transition: opacity 0.5s ease;
-}
-.horizon i { position: absolute; inset: 0; border-radius: 100%; display: block; }
-.horizon .rim {
-  background: rgba(255, 255, 255, 0.85);
-  box-shadow:
-    0 4px 16px 1px rgba(255, 255, 255, 0.38),
-    0 16px 60px 8px rgba(124, 108, 255, 0.34),
-    0 36px 130px 30px rgba(74, 70, 216, 0.35);
-}
-.horizon .glo1 { background: #7c6cff; opacity: 0.85; filter: blur(24px); transform: scale(0.988); }
-.horizon .glo2 { background: #4a46d8; opacity: 0.85; filter: blur(24px); transform: scale(0.962); }
-.horizon .core { background: var(--bg); filter: blur(46px); transform: scale(0.938); }
-/* The pool of light under the arc, filling the last stretch of the window. */
-.horizonGlow {
-  position: fixed; left: 0; right: 0; bottom: 0; height: 34vh;
-  pointer-events: none; z-index: 0; transition: opacity 0.5s ease;
+  filter: blur(26px);
   background:
-    radial-gradient(130% 130% at 50% 130%, rgba(74, 70, 216, 0.55), transparent 72%),
-    radial-gradient(80% 100% at 22% 135%, rgba(124, 108, 255, 0.30), transparent 70%),
-    radial-gradient(70% 90% at 80% 140%, rgba(242, 162, 192, 0.10), transparent 70%);
-  filter: blur(6px);
+    radial-gradient(34% 26% at 50% 92%, rgba(173, 148, 255, 0.60), transparent 70%),
+    radial-gradient(52% 40% at 50% 96%, rgba(196, 120, 205, 0.22), transparent 72%),
+    radial-gradient(78% 56% at 50% 100%, rgba(90, 78, 232, 0.48), transparent 74%),
+    radial-gradient(46% 42% at 20% 104%, rgba(96, 112, 255, 0.20), transparent 72%),
+    radial-gradient(46% 42% at 80% 104%, rgba(150, 96, 226, 0.16), transparent 72%),
+    radial-gradient(120% 78% at 50% 106%, rgba(42, 36, 132, 0.55), transparent 80%);
 }
 /* A quiet field of pixels living inside the horizon's glow: clusters that
  * breathe in and out, and ripple away from the cursor. Ambience, not a
@@ -1758,7 +1747,7 @@ body.light .pixelsky { opacity: 0.12; }
   opacity: 0.35; mix-blend-mode: overlay;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/><feColorMatrix type='saturate' values='0'/></filter><rect width='140' height='140' filter='url(%23n)' opacity='.25'/></svg>");
 }
-body.scrolled .horizon, body.scrolled .horizonGlow { opacity: 0.45; }
+body.scrolled .horizon { opacity: 0.45; }
 
 /* ---- the dock ----------------------------------------------------------
  * One element for the whole app, outside every view, so switching pages
@@ -2104,7 +2093,7 @@ body.scrolled .dock-solo {
  * The .home-scoped rules above no longer reach it, and the views must sit
  * over it -- they are opaque only where they paint, and a view with no
  * background lets the light through by design. */
-body > .horizon, body > .horizonGlow, body > .grain { position: fixed; z-index: 0; }
+body > .horizon, body > .grain { position: fixed; z-index: 0; }
 .view { position: relative; z-index: 1; background: transparent; }
 
 /* ---- centring, round four ---------------------------------------------
@@ -2128,15 +2117,7 @@ body.light {
   --faint: rgba(13, 16, 21, 0.42);
   --ghost: rgba(13, 16, 21, 0.18);
 }
-body.light .horizon .rim {
-  background: #cfc6ff;
-  box-shadow:
-    0 4px 16px 1px rgba(160, 140, 255, 0.30),
-    0 16px 60px 8px rgba(124, 108, 255, 0.22),
-    0 36px 130px 30px rgba(74, 70, 216, 0.16);
-}
-body.light .horizon .glo1, body.light .horizon .glo2 { opacity: 0.30; }
-body.light .horizonGlow { opacity: 0.45; }
+body.light .horizon { opacity: 0.40; }
 body.light .grain { opacity: 0.16; mix-blend-mode: multiply; }
 body.light .dock {
   background: rgba(255, 255, 255, 0.78);
