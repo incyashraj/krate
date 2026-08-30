@@ -90,11 +90,14 @@
     try {
       var ref = localStorage.getItem("krate_ref");
       if (ref) {
-        localStorage.removeItem("krate_ref");
         fetch("https://hub.krate.tech/referral/claim", {
           method: "POST",
           headers: { authorization: "Bearer " + tok, "content-type": "application/json" },
           body: JSON.stringify({ code: ref }),
+        }).then(function (r) {
+          // Only a settled claim clears the code; a network blip keeps it
+          // for the next sign-in, so no invite is ever lost.
+          if (r.ok || r.status === 400) localStorage.removeItem("krate_ref");
         }).catch(function () {});
       }
     } catch (e) {}

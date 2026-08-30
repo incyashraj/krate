@@ -11,21 +11,54 @@
   @font-face { font-family: "Geist"; src: url("/fonts/geist-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
   :root { color-scheme: dark;
     --bg: #0a0a0a; --panel: #0f1012; --raised: #16171b;
-    --line: #1f2228; --line-strong: #2e323a;
+    --line: #1f2228; --line-strong: #2e323a; --line-soft: #17191e;
     --text: #ffffff; --muted: rgba(255,255,255,0.55); --quiet: rgba(255,255,255,0.35);
+    --r-pill: 999px; --max: 1120px;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text);
     font: 15px/1.6 "Geist", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
-    -webkit-font-smoothing: antialiased; }
+    -webkit-font-smoothing: antialiased; min-height: 100vh;
+    display: flex; flex-direction: column; }
   a { color: inherit; text-decoration: none; }
   .hidden { display: none !important; }
-  .wrap { max-width: 720px; margin: 0 auto; padding: 28px 22px 80px; }
-  .top { display: flex; align-items: center; gap: 12px; padding-bottom: 22px; }
-  .top img.glyph { width: 26px; height: 26px; }
-  .top .grow { flex: 1; }
-  .top a { font-size: 13px; color: var(--muted); }
-  .top a:hover { color: var(--text); }
+  /* The same chrome as every other page on the site. */
+  .site-head {
+    position: sticky; top: 0; z-index: 40;
+    background: color-mix(in srgb, var(--bg) 86%, transparent);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .head-inner { display: flex; align-items: center; gap: 28px; height: 64px;
+    max-width: var(--max); margin: 0 auto; padding: 0 24px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 500;
+    letter-spacing: 0.14em; font-size: 14px; }
+  .head-nav { display: flex; gap: 4px; margin-left: auto; }
+  .head-nav a { font-size: 14px; color: var(--muted); padding: 8px 12px;
+    border-radius: var(--r-pill); position: relative;
+    transition: color 150ms ease, background 150ms ease; }
+  .head-nav a:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+  .head-nav a::after { content: ""; position: absolute; left: 12px; right: 12px;
+    bottom: 5px; height: 1px; background: currentColor; transform: scaleX(0);
+    transform-origin: left; transition: transform 0.22s ease; opacity: 0.6; }
+  .head-nav a:hover::after { transform: scaleX(1); }
+  .pill { display: inline-flex; align-items: center; justify-content: center;
+    padding: 8px 16px; border-radius: var(--r-pill); border: 1px solid var(--line);
+    font-size: 14px; font-weight: 500;
+    transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease; }
+  .pill:hover { border-color: rgba(255,255,255,0.28); transform: translateY(-1.5px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.35); }
+  .pill-primary { background: var(--text); color: #0a0a0a; border-color: var(--text); }
+  @media (max-width: 720px) { .head-nav { display: none; } }
+  .site-foot { border-top: 1px solid var(--line-soft); padding: 36px 0 44px; margin-top: auto; }
+  .foot-inner { display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+    max-width: var(--max); margin: 0 auto; padding: 0 24px; }
+  .foot-brand { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+  .foot-links { margin-left: auto; display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; }
+  .foot-links a { color: var(--muted); }
+  .foot-links a:hover { color: var(--text); }
+  .foot-note { width: 100%; font-size: 12px; color: var(--quiet); }
+  .wrap { width: 100%; max-width: 720px; margin: 0 auto; padding: 34px 22px 80px; }
   .who { display: flex; align-items: center; gap: 14px; margin: 18px 0 26px; }
   .who img { width: 46px; height: 46px; border-radius: 50%; border: 1px solid var(--line); }
   .who h1 { font-size: 21px; font-weight: 500; letter-spacing: -0.015em; }
@@ -85,15 +118,26 @@
   </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="top">
-    <a href="/"><img class="glyph" src="/krate-glyph-white.png" alt="Krate" /></a>
-    <span class="grow"></span>
-    <a href="/studio/">Studio</a>
-    <a href="/studio/#pricing">Pricing</a>
-    <a href="#" id="signout" class="hidden">Sign out</a>
+<header class="site-head">
+  <div class="head-inner">
+    <a class="brand" href="/">
+      <img src="/krate-glyph-white.png" alt="" width="22" height="22" />
+      KRATE
+    </a>
+    <nav class="head-nav" aria-label="Primary">
+      <a href="/#how">How it works</a>
+      <a href="/cloud/">Gallery</a>
+      <a href="/studio/#pricing">Pricing</a>
+      <a href="/docs/">Docs</a>
+      <a href="#" id="signout" class="hidden">Sign out</a>
+    </nav>
+    <div class="head-cta">
+      <a class="pill pill-primary" href="/studio/">Download Studio</a>
+    </div>
   </div>
+</header>
 
+<div class="wrap">
   <div class="signedout" id="askLogin">
     <h1>Your Krate account</h1>
     <p>Your apps, your plan, your conversations with us -- all in one place.</p>
@@ -149,6 +193,26 @@
     </div>
   </div>
 </div>
+
+<footer class="site-foot">
+  <div class="foot-inner">
+    <div class="foot-brand">
+      <img src="/krate-glyph-white.png" alt="" width="18" height="18" />
+      <span>Krate</span>
+    </div>
+    <nav class="foot-links" aria-label="Footer">
+      <a href="/">Home</a>
+      <a href="/studio/#pricing">Pricing</a>
+      <a href="/cloud/">Gallery</a>
+      <a href="/open/">Received an app?</a>
+      <a href="/docs/">Docs</a>
+      <a href="/faq.html">FAQ</a>
+      <a href="/contact/">Contact</a>
+      <a href="https://github.com/incyashraj/krate">GitHub</a>
+    </nav>
+    <p class="foot-note">The player is open source, MIT or Apache-2.0. © 2026 Krate Labs.</p>
+  </div>
+</footer>
 <script>
 (function () {
   var HUB = "https://hub.krate.tech";
@@ -212,7 +276,7 @@
     }
 
     // Referral
-    $("refLink").value = "https://krate.tech/?ref=" + m.referral.code;
+    $("refLink").value = "https://krate.tech/login/?ref=" + m.referral.code;
     var toward = m.referral.count % 3;
     var meter = $("refMeter");
     for (var i = 0; i < 3; i++) {

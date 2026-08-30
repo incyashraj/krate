@@ -3619,7 +3619,7 @@ async function fillReferral() {
     const me = await invoke("me_info");
     const r = me && me.referral;
     if (!r || !r.code) return;
-    $("refLink").value = `https://krate.tech/?ref=${r.code}`;
+    $("refLink").value = `https://krate.tech/login/?ref=${r.code}`;
     const toward = r.count % 3;
     $("refStat").textContent =
       r.count === 0 ? "Nobody yet -- send it to someone who'd like this."
