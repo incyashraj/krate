@@ -12,7 +12,7 @@
 
 [package]
 name = "krate-studio"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 description = "Describe an app, watch it become real, open it, share it."
 # The open-core boundary: the player and format stay MIT/Apache, the
