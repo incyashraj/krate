@@ -1,141 +1,158 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="robots" content="noindex" />
-  <title>Your Krate account</title>
-  <link rel="icon" href="/krate-favicon.png" />
-  <style>
-  @font-face { font-family: "Geist"; src: url("/fonts/geist-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
-  @font-face { font-family: "Geist"; src: url("/fonts/geist-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
-  :root { color-scheme: dark;
-    --bg: #0a0a0a; --panel: #0f1012; --raised: #16171b;
-    --line: #1f2228; --line-strong: #2e323a; --line-soft: #17191e;
-    --text: #ffffff; --muted: rgba(255,255,255,0.55); --quiet: rgba(255,255,255,0.35);
-    --r-pill: 999px; --max: 1120px;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text);
-    font: 15px/1.6 "Geist", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
-    -webkit-font-smoothing: antialiased; min-height: 100vh;
-    display: flex; flex-direction: column; }
-  a { color: inherit; text-decoration: none; }
-  .hidden { display: none !important; }
-  /* The same chrome as every other page on the site. */
-  .site-head {
-    position: sticky; top: 0; z-index: 40;
-    background: color-mix(in srgb, var(--bg) 86%, transparent);
-    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-    border-bottom: 1px solid var(--line-soft);
-  }
-  .head-inner { display: flex; align-items: center; gap: 28px; height: 64px;
-    max-width: var(--max); margin: 0 auto; padding: 0 24px; }
-  .brand { display: flex; align-items: center; gap: 10px; font-weight: 500;
-    letter-spacing: 0.14em; font-size: 14px; }
-  .head-nav { display: flex; gap: 4px; margin-left: auto; }
-  .head-nav a { font-size: 14px; color: var(--muted); padding: 8px 12px;
-    border-radius: var(--r-pill); position: relative;
-    transition: color 150ms ease, background 150ms ease; }
-  .head-nav a:hover { color: var(--text); background: rgba(255,255,255,0.05); }
-  .head-nav a::after { content: ""; position: absolute; left: 12px; right: 12px;
-    bottom: 5px; height: 1px; background: currentColor; transform: scaleX(0);
-    transform-origin: left; transition: transform 0.22s ease; opacity: 0.6; }
-  .head-nav a:hover::after { transform: scaleX(1); }
-  .pill { display: inline-flex; align-items: center; justify-content: center;
-    padding: 8px 16px; border-radius: var(--r-pill); border: 1px solid var(--line);
-    font-size: 14px; font-weight: 500;
-    transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease; }
-  .pill:hover { border-color: rgba(255,255,255,0.28); transform: translateY(-1.5px);
-    box-shadow: 0 6px 20px rgba(0,0,0,0.35); }
-  .pill-primary { background: var(--text); color: #0a0a0a; border-color: var(--text); }
-  @media (max-width: 720px) { .head-nav { display: none; } }
-  .site-foot { border-top: 1px solid var(--line-soft); padding: 36px 0 44px; margin-top: auto; }
-  .foot-inner { display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
-    max-width: var(--max); margin: 0 auto; padding: 0 24px; }
-  .foot-brand { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
-  .foot-links { margin-left: auto; display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; }
-  .foot-links a { color: var(--muted); }
-  .foot-links a:hover { color: var(--text); }
-  .foot-note { width: 100%; font-size: 12px; color: var(--quiet); }
-  .wrap { width: 100%; max-width: 720px; margin: 0 auto; padding: 34px 22px 80px; }
-  .who { display: flex; align-items: center; gap: 14px; margin: 18px 0 26px; }
-  .who img { width: 46px; height: 46px; border-radius: 50%; border: 1px solid var(--line); }
-  .who h1 { font-size: 21px; font-weight: 500; letter-spacing: -0.015em; }
-  .who p { font-size: 13px; color: var(--muted); }
-  .card { border: 1px solid var(--line); border-radius: 16px; background: var(--panel);
-    padding: 20px 22px; margin-bottom: 14px;
-    opacity: 0; transform: translateY(10px);
-    animation: rise 0.55s cubic-bezier(0.2,0.8,0.2,1) forwards; }
-  .card:nth-of-type(2) { animation-delay: 0.06s; }
-  .card:nth-of-type(3) { animation-delay: 0.12s; }
-  .card:nth-of-type(4) { animation-delay: 0.18s; }
-  .card:nth-of-type(5) { animation-delay: 0.24s; }
-  @keyframes rise { to { opacity: 1; transform: none; } }
-  .card h2 { font-size: 14px; font-weight: 500; margin-bottom: 4px; }
-  .card .sub { font-size: 13px; color: var(--muted); }
-  .row { display: flex; align-items: center; gap: 12px; }
-  .grow { flex: 1; }
-  .btn { display: inline-block; padding: 9px 15px; border-radius: 10px; font-size: 13px;
-    font-weight: 500; cursor: pointer; border: 1px solid var(--line-strong);
-    background: none; color: var(--text); font-family: inherit;
-    transition: transform 0.15s ease, border-color 0.15s ease; }
-  .btn:hover { transform: translateY(-1px); border-color: rgba(255,255,255,0.35); }
-  .btn.primary { background: var(--text); color: #0a0a0a; border-color: transparent; }
-  .tag { font-size: 11.5px; color: var(--quiet); border: 1px solid var(--line);
-    border-radius: 99px; padding: 3px 10px; white-space: nowrap; }
-  .tag.on { color: #7ee2a8; border-color: rgba(126,226,168,0.35); }
-  .note { font-size: 12.5px; color: var(--quiet); margin-top: 10px; }
-  .refbox { display: flex; gap: 8px; margin-top: 14px; }
-  .refbox input { flex: 1; min-width: 0; padding: 10px 13px; border-radius: 10px;
-    border: 1px solid var(--line); background: var(--bg); color: var(--muted);
-    font: inherit; font-size: 12.5px; }
-  .meter { display: flex; gap: 6px; margin-top: 12px; }
-  .meter span { width: 34px; height: 5px; border-radius: 3px; background: var(--raised); }
-  .meter span.on { background: #7ee2a8; }
-  .approw { display: flex; align-items: center; gap: 12px; padding: 11px 0;
-    border-top: 1px solid var(--line); font-size: 13.5px; }
-  .approw:first-of-type { border-top: 0; }
-  .approw .m { color: var(--quiet); font-size: 12px; white-space: nowrap; }
-  .approw a:hover { text-decoration: underline; }
-  .tick { border-top: 1px solid var(--line); padding: 12px 0; font-size: 13.5px; }
-  .tick .msgs { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
-  .msg { font-size: 13px; padding: 8px 12px; border-radius: 10px; background: var(--raised);
-    color: var(--muted); max-width: 90%; }
-  .msg.krate { border: 1px solid var(--line); background: none; align-self: flex-end; }
-  .msg .m { font-size: 11px; color: var(--quiet); margin-top: 3px; }
-  .tickreply { display: flex; gap: 8px; margin-top: 10px; }
-  .tickreply input { flex: 1; min-width: 0; padding: 9px 12px; border-radius: 10px;
-    border: 1px solid var(--line); background: var(--bg); color: var(--text);
-    font: inherit; font-size: 13px; }
-  .newtick { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
-  .newtick input, .newtick textarea { padding: 10px 13px; border-radius: 10px;
-    border: 1px solid var(--line); background: var(--bg); color: var(--text);
-    font: inherit; font-size: 13px; resize: vertical; }
-  .signedout { text-align: center; padding: 90px 0; }
-  .signedout h1 { font-size: 22px; font-weight: 500; margin-bottom: 8px; }
-  .signedout p { color: var(--muted); font-size: 14px; margin-bottom: 22px; }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#000000" />
+<meta name="robots" content="noindex" />
+<title>Your Krate account</title>
+<link rel="icon" href="/krate-favicon.png" />
+<style>
+@font-face { font-family: "Geist"; src: url("/fonts/geist-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Geist"; src: url("/fonts/geist-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
+@font-face { font-family: "Syne"; src: url("/fonts/syne-var.woff2") format("woff2"); font-weight: 400 800; font-display: swap; }
+:root {
+  color-scheme: dark;
+  --purple: #A558FB; --indigo: #4922E5;
+  --sans: "Geist", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --disp: "Syne", var(--sans);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #000; color: #fff; font-family: var(--sans); font-size: 15px;
+  line-height: 1.6; -webkit-font-smoothing: antialiased; min-height: 100vh; }
+a { color: inherit; text-decoration: none; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+img { max-width: 100%; }
+.hidden { display: none !important; }
+::selection { background: rgba(165, 88, 251, 0.35); }
+
+.topblur {
+  position: fixed; top: 0; left: 0; width: 100%; height: 120px; z-index: 40;
+  pointer-events: none; user-select: none;
+  background: linear-gradient(to top, transparent, #000);
+  -webkit-mask-image: linear-gradient(to bottom, #000 50%, transparent);
+          mask-image: linear-gradient(to bottom, #000 50%, transparent);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+}
+.brandbar {
+  position: fixed; top: 20px; left: 50%; z-index: 50;
+  display: flex; align-items: center; gap: 14px; user-select: none;
+  transform: translateX(-50%);
+}
+.brandbar .name { display: flex; align-items: center; gap: 0.34em;
+  font-size: 17px; font-weight: 500; color: #e4e4e7; letter-spacing: 0.02em; }
+.brandbar .name img { height: 19px; width: auto; }
+.bnav { display: flex; align-items: center; gap: 2px; margin-left: 6px;
+  padding-left: 16px; border-left: 1px solid rgba(255,255,255,0.12); }
+.bnav a { font-size: 12.5px; color: #a1a1aa; padding: 5px 9px; border-radius: 999px;
+  transition: color 0.15s ease, background 0.15s ease; }
+.bnav a:hover { color: #fff; background: rgba(255,255,255,0.06); }
+.bnav a.here { color: #fff; background: rgba(255,255,255,0.08); }
+@media (max-width: 640px) { .bnav { display: none; } }
+
+/* a quiet echo of the eclipse: one soft purple bloom behind the header */
+.bloom {
+  position: fixed; top: -340px; left: 50%; width: 900px; height: 500px;
+  margin-left: -450px; pointer-events: none; border-radius: 100%;
+  background: radial-gradient(closest-side, rgba(73, 34, 229, 0.35), transparent);
+  filter: blur(40px);
+}
+
+.wrap { position: relative; max-width: 760px; margin: 0 auto; padding: 120px 22px 80px; }
+h1.page {
+  font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
+  font-size: clamp(26px, 4vw, 38px); line-height: 1.15;
+}
+.who { display: flex; align-items: center; gap: 16px; margin-bottom: 30px; }
+.who img { width: 52px; height: 52px; border-radius: 50%;
+  outline: 1px solid rgba(255,255,255,0.15); }
+.who p { font-size: 13px; color: #a1a1aa; }
+
+.card {
+  border-radius: 20px; background: rgba(24, 24, 27, 0.5); padding: 22px 24px;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.08); margin-bottom: 14px;
+  opacity: 0; transform: translateY(12px); filter: blur(6px);
+  animation: rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+.card:nth-of-type(2) { animation-delay: 0.07s; }
+.card:nth-of-type(3) { animation-delay: 0.14s; }
+.card:nth-of-type(4) { animation-delay: 0.21s; }
+@keyframes rise { to { opacity: 1; transform: none; filter: blur(0); } }
+.card h2 { font-family: var(--disp); font-weight: 700; font-size: 16px; letter-spacing: 0; margin-bottom: 4px; }
+.card .sub { font-size: 13px; color: #a1a1aa; }
+.row { display: flex; align-items: center; gap: 12px; }
+.grow { flex: 1; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 9px 15px; border-radius: 11px; font-size: 13px; font-weight: 500;
+  white-space: nowrap; user-select: none;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.16);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+.btn:hover { transform: translateY(-1px); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.32); }
+.btn.primary { background: #fff; color: #0a0a0a; box-shadow: none; }
+.btn.primary:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
+.tag { font-size: 11px; color: #a1a1aa; border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+.tag.on { color: #7ee2a8; border-color: rgba(126, 226, 168, 0.35); }
+.note { font-size: 12.5px; color: #71717a; margin-top: 10px; }
+
+.refbox { display: flex; gap: 8px; margin-top: 14px; }
+.refbox input { flex: 1; min-width: 0; padding: 10px 13px; border-radius: 11px;
+  border: 1px solid rgba(255,255,255,0.1); background: #000; color: #a1a1aa;
+  font: inherit; font-size: 12.5px; }
+.meter { display: flex; gap: 6px; margin-top: 12px; }
+.meter span { width: 34px; height: 5px; border-radius: 3px; background: rgba(255,255,255,0.09); }
+.meter span.on { background: var(--purple); }
+
+.approw { display: flex; align-items: center; gap: 12px; padding: 11px 0;
+  border-top: 1px solid rgba(255,255,255,0.07); font-size: 13.5px; }
+.approw:first-of-type { border-top: 0; }
+.approw .m { color: #71717a; font-size: 12px; white-space: nowrap; }
+.approw a:hover { text-decoration: underline; }
+
+.tick { border-top: 1px solid rgba(255,255,255,0.07); padding: 12px 0; font-size: 13.5px; }
+.tick .msgs { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.msg { font-size: 13px; padding: 8px 12px; border-radius: 11px;
+  background: rgba(255,255,255,0.05); color: #a1a1aa; max-width: 90%; }
+.msg.krate { border: 1px solid rgba(255,255,255,0.1); background: none; align-self: flex-end; }
+.msg .m { font-size: 11px; color: #71717a; margin-top: 3px; }
+.tickreply { display: flex; gap: 8px; margin-top: 10px; }
+.tickreply input { flex: 1; min-width: 0; padding: 9px 12px; border-radius: 11px;
+  border: 1px solid rgba(255,255,255,0.1); background: #000; color: #fff;
+  font: inherit; font-size: 13px; }
+.newtick { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.newtick input, .newtick textarea { padding: 10px 13px; border-radius: 11px;
+  border: 1px solid rgba(255,255,255,0.1); background: #000; color: #fff;
+  font: inherit; font-size: 13px; resize: vertical; }
+
+.signedout { text-align: center; padding: 60px 0; }
+.signedout h1 { font-family: var(--disp); font-weight: 700; font-size: 30px; margin-bottom: 10px; }
+.signedout p { color: #a1a1aa; font-size: 14px; margin-bottom: 24px; }
+
+.foot { max-width: 760px; margin: 40px auto 0; padding: 26px 22px 18px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  display: flex; align-items: center; justify-content: space-between; gap: 20px;
+  font-size: 12px; color: #a1a1aa; flex-wrap: wrap; }
+.foot nav { display: flex; gap: 18px; flex-wrap: wrap; }
+.foot nav a:hover { color: #d4d4d8; }
+@media (prefers-reduced-motion: reduce) { .card { animation: none; opacity: 1; transform: none; filter: none; } }
+</style>
 </head>
 <body>
-<header class="site-head">
-  <div class="head-inner">
-    <a class="brand" href="/">
-      <img src="/krate-glyph-white.png" alt="" width="22" height="22" />
-      KRATE
-    </a>
-    <nav class="head-nav" aria-label="Primary">
-      <a href="/#how">How it works</a>
-      <a href="/cloud/">Gallery</a>
-      <a href="/studio/#pricing">Pricing</a>
-      <a href="/docs/">Docs</a>
-      <a href="#" id="signout" class="hidden">Sign out</a>
-    </nav>
-    <div class="head-cta">
-      <a class="pill pill-primary" href="/studio/">Download Studio</a>
-    </div>
-  </div>
-</header>
+<div class="bloom"></div>
+<div class="topblur"></div>
+<div class="brandbar">
+  <a class="name" href="/"><img src="/krate-glyph-white.png" alt="" /> KRATE</a>
+  <nav class="bnav" aria-label="Primary">
+    <a href="/#pricing">Pricing</a>
+    <a href="/docs/">Docs</a>
+    <a href="/cloud/">Gallery</a>
+    <a href="#" class="here">Account</a>
+    <a href="#" id="signout" class="hidden">Sign out</a>
+  </nav>
+</div>
 
 <div class="wrap">
   <div class="signedout" id="askLogin">
@@ -147,7 +164,7 @@
   <div id="acct" class="hidden">
     <div class="who">
       <img id="avatar" src="/krate-glyph-white.png" alt="" />
-      <div><h1 id="uname">…</h1><p id="uemail"></p></div>
+      <div><h1 class="page" id="uname">…</h1><p id="uemail"></p></div>
     </div>
 
     <div class="card">
@@ -156,7 +173,7 @@
           <p class="sub" id="planSub">Three apps a month. Every app you make is a file that is yours forever.</p></div>
         <span class="tag" id="planTag">free</span>
       </div>
-      <div class="row" style="margin-top:14px" id="planActs"></div>
+      <div class="row" style="margin-top:16px; flex-wrap: wrap" id="planActs"></div>
       <p class="note hidden" id="planNote"></p>
     </div>
 
@@ -194,25 +211,16 @@
   </div>
 </div>
 
-<footer class="site-foot">
-  <div class="foot-inner">
-    <div class="foot-brand">
-      <img src="/krate-glyph-white.png" alt="" width="18" height="18" />
-      <span>Krate</span>
-    </div>
-    <nav class="foot-links" aria-label="Footer">
-      <a href="/">Home</a>
-      <a href="/studio/#pricing">Pricing</a>
-      <a href="/cloud/">Gallery</a>
-      <a href="/open/">Received an app?</a>
-      <a href="/docs/">Docs</a>
-      <a href="/faq.html">FAQ</a>
-      <a href="/contact/">Contact</a>
-      <a href="https://github.com/incyashraj/krate">GitHub</a>
-    </nav>
-    <p class="foot-note">The player is open source, MIT or Apache-2.0. © 2026 Krate Labs.</p>
-  </div>
+<footer class="foot">
+  <span>© 2026 Krate Labs</span>
+  <nav>
+    <a href="/">Home</a>
+    <a href="/#pricing">Pricing</a>
+    <a href="/docs/">Docs</a>
+    <a href="/contact/">Contact</a>
+  </nav>
 </footer>
+
 <script>
 (function () {
   var HUB = "https://hub.krate.tech";
@@ -236,9 +244,7 @@
   }
   if (!tok) { showLogin(); return; }
 
-  var me;
   api("/me").then(function (m) {
-    me = m;
     $("askLogin").classList.add("hidden");
     $("acct").classList.remove("hidden");
     $("signout").classList.remove("hidden");
@@ -246,11 +252,9 @@
     $("uemail").textContent = m.user.email || ("@" + m.user.login);
     if (m.user.avatar_url) $("avatar").src = m.user.avatar_url;
 
-    // Plan
     var acts = $("planActs");
     if (m.plan.active) {
-      $("planName").textContent =
-        m.plan.plan === "founding" ? "Founding 200" : "Studio plan";
+      $("planName").textContent = m.plan.plan === "founding" ? "Founding 200" : "Studio plan";
       $("planSub").textContent = "Unlimited apps. " +
         (m.plan.via === "referral" ? "This month is on us -- you earned it." :
           m.plan.until ? "Renews " + when(m.plan.until) + "." : "");
@@ -275,7 +279,6 @@
         '<a class="btn" href="/login/?next=pay-founding">Founding -- $79/year</a>';
     }
 
-    // Referral
     $("refLink").value = "https://krate.tech/login/?ref=" + m.referral.code;
     var toward = m.referral.count % 3;
     var meter = $("refMeter");
@@ -302,7 +305,6 @@
     setTimeout(function () { $("refCopy").textContent = "Copy"; }, 1500);
   });
 
-  // Apps
   api("/my/apps").then(function (r) {
     var box = $("appList");
     if (!r.apps || !r.apps.length) {
@@ -315,7 +317,6 @@
     }).join("");
   }).catch(function () {});
 
-  // Support
   function loadTickets() {
     fetch(HUB + "/support/list", {
       method: "POST",
@@ -369,6 +370,21 @@
     try { localStorage.removeItem("krate_tok"); } catch (x) {}
     showLogin();
   });
+})();
+</script>
+<script>
+// Count the visit, and nothing about the visitor. No cookie, no stored id,
+// no referrer -- the page path and the day, sent to our own hub.
+(function () {
+  try {
+    fetch("https://hub.krate.tech/view", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ page: location.pathname }),
+      keepalive: true,
+      mode: "cors",
+    }).catch(function () {});
+  } catch (e) {}
 })();
 </script>
 </body>

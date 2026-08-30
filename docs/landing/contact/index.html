@@ -1,179 +1,141 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#0a0a0a" />
-  <meta name="description" content="Where to ask a question, report a bug, or suggest something. Krate is built in the open, so everything gets a reply in public." />
-  <link rel="canonical" href="https://krate.tech/contact/" />
-  <meta property="og:title" content="Krate: contact" />
-  <meta property="og:description" content="Where to ask a question, report a bug, or suggest something. Krate is built in the open, so everything gets a reply in public." />
-  <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://krate.tech/contact/" />
-  <meta property="og:image" content="https://krate.tech/og-v2.png" />
-  <meta name="twitter:card" content="summary_large_image" />
-  <title>Krate: contact</title>
-  <link rel="icon" href="/krate-favicon.png" />
-  <link rel="apple-touch-icon" href="/krate-favicon.png" />
-  <style>
-  @font-face {
-    font-family: "Geist";
-    src: url("/fonts/geist-400.woff2") format("woff2");
-    font-weight: 400; font-style: normal; font-display: swap;
-  }
-  @font-face {
-    font-family: "Geist";
-    src: url("/fonts/geist-500.woff2") format("woff2");
-    font-weight: 500; font-style: normal; font-display: swap;
-  }
-  :root {
-    color-scheme: dark;
-    --bg: #0a0a0a; --panel: #0f1012; --panel-2: #141519;
-    --line: #1f2228; --line-soft: #17191e;
-    --text: #ffffff;
-    --muted: rgba(255, 255, 255, 0.55);
-    --quiet: rgba(255, 255, 255, 0.35);
-    --accent: #6291ff; --good: #4ade80; --warn: #f4dc74;
-    --r-card: 16px; --r-pill: 999px; --max: 760px;
-    --sans: "Geist", Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-    --mono: "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
-    --enter: 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    background: var(--bg); color: var(--text); font-family: var(--sans);
-    font-size: 16px; line-height: 1.6;
-    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
-  }
-  a { color: inherit; text-decoration: none; }
-  img { max-width: 100%; display: block; }
-  h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
-  .hidden { display: none !important; }
-  .wrap { max-width: var(--max); margin: 0 auto; padding: 0 24px; }
-  .site-head {
-    position: sticky; top: 0; z-index: 40;
-    background: color-mix(in srgb, var(--bg) 86%, transparent);
-    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-    border-bottom: 1px solid var(--line-soft);
-  }
-  .head-inner { display: flex; align-items: center; gap: 24px; height: 64px; max-width: 1120px; margin: 0 auto; padding: 0 24px; }
-  .brand { display: flex; align-items: center; gap: 10px; font-weight: 500; letter-spacing: 0.14em; font-size: 14px; }
-  .head-nav { display: flex; gap: 4px; margin-left: auto; }
-  .head-nav a { font-size: 14px; color: var(--muted); padding: 8px 12px; border-radius: var(--r-pill); transition: color 150ms ease, background 150ms ease; }
-  .head-nav a:hover { color: var(--text); background: rgba(255,255,255,0.05); }
-  @media (max-width: 640px) { .head-nav { display: none; } }
-  .pill {
-    display: inline-flex; align-items: center; justify-content: center;
-    padding: 9px 18px; border-radius: var(--r-pill);
-    border: 1px solid var(--line); font-size: 14.5px; font-weight: 500;
-    transition: border-color 150ms ease, background 150ms ease; cursor: pointer;
-    background: none; color: var(--text); font-family: inherit;
-  }
-  .pill:hover { border-color: rgba(255,255,255,0.28); }
-  .pill-primary { background: var(--text); color: #0a0a0a; border-color: var(--text); }
-  .pill-primary:hover { background: rgba(255,255,255,0.86); border-color: rgba(255,255,255,0.86); }
-  .page { padding-top: clamp(48px, 8vh, 84px); padding-bottom: clamp(64px, 10vh, 100px); }
-  .kicker { font-size: 12px; letter-spacing: 0.14em; color: var(--quiet); }
-  .page h1 { margin-top: 10px; font-size: clamp(30px, 4.6vw, 46px); letter-spacing: -0.028em; line-height: 1.08; }
-  .lede { margin-top: 14px; color: var(--muted); max-width: 38em; font-size: 16.5px; }
-  .site-foot { border-top: 1px solid var(--line-soft); padding: 32px 0 40px; }
-  .foot-inner { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; max-width: 1120px; margin: 0 auto; padding: 0 24px; font-size: 13px; color: var(--muted); }
-  .foot-inner nav { margin-left: auto; display: flex; gap: 18px; flex-wrap: wrap; }
-  .foot-inner a:hover { color: var(--text); }
-  code { font-family: var(--mono); font-size: 0.86em; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.1em 0.4em; }
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#000000" />
+<title>Contact Krate</title>
+<meta name="description" content="Ask a question, report a bug, or suggest something -- all in the open." />
+<link rel="icon" href="/krate-favicon.png" />
+<style>
+@font-face { font-family: "Geist"; src: url("/fonts/geist-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Geist"; src: url("/fonts/geist-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
+@font-face { font-family: "Syne"; src: url("/fonts/syne-var.woff2") format("woff2"); font-weight: 400 800; font-display: swap; }
+:root { color-scheme: dark; --purple: #A558FB; --indigo: #4922E5;
+  --sans: "Geist", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --disp: "Syne", var(--sans); }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #000; color: #fff; font-family: var(--sans); font-size: 15px;
+  line-height: 1.65; -webkit-font-smoothing: antialiased; min-height: 100vh; }
+a { color: inherit; text-decoration: none; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+img { max-width: 100%; }
+.hidden { display: none !important; }
+::selection { background: rgba(165, 88, 251, 0.35); }
+.topblur { position: fixed; top: 0; left: 0; width: 100%; height: 120px; z-index: 40;
+  pointer-events: none; user-select: none;
+  background: linear-gradient(to top, transparent, #000);
+  -webkit-mask-image: linear-gradient(to bottom, #000 50%, transparent);
+          mask-image: linear-gradient(to bottom, #000 50%, transparent);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.brandbar { position: fixed; top: 20px; left: 50%; z-index: 50;
+  display: flex; align-items: center; gap: 14px; user-select: none;
+  transform: translateX(-50%); }
+.brandbar .name { display: flex; align-items: center; gap: 0.34em;
+  font-size: 17px; font-weight: 500; color: #e4e4e7; letter-spacing: 0.02em; }
+.brandbar .name img { height: 19px; width: auto; }
+.bnav { display: flex; align-items: center; gap: 2px; margin-left: 6px;
+  padding-left: 16px; border-left: 1px solid rgba(255,255,255,0.12); }
+.bnav a { font-size: 12.5px; color: #a1a1aa; padding: 5px 9px; border-radius: 999px;
+  transition: color 0.15s ease, background 0.15s ease; }
+.bnav a:hover { color: #fff; background: rgba(255,255,255,0.06); }
+.bnav a.here { color: #fff; background: rgba(255,255,255,0.08); }
+@media (max-width: 640px) { .bnav { display: none; } }
+.bloom { position: fixed; top: -340px; left: 50%; width: 900px; height: 500px;
+  margin-left: -450px; pointer-events: none; border-radius: 100%;
+  background: radial-gradient(closest-side, rgba(73, 34, 229, 0.35), transparent);
+  filter: blur(40px); }
+.wrap { position: relative; max-width: 760px; margin: 0 auto; padding: 130px 22px 80px; }
+h1.page { font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
+  font-size: clamp(28px, 4.4vw, 42px); line-height: 1.13; }
+.pagesub { margin: 12px 0 40px; font-size: 14px; color: #a1a1aa; max-width: 620px; }
+.card { border-radius: 20px; background: rgba(24, 24, 27, 0.5); padding: 24px 26px;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.08); margin-bottom: 14px;
+  opacity: 0; transform: translateY(12px); filter: blur(6px);
+  animation: rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  transition: box-shadow 0.25s ease, translate 0.25s ease; }
+.card:hover { translate: 0 -2px; box-shadow: 0 0 0 1px rgba(255,255,255,0.15), 0 14px 36px -14px rgba(0,0,0,0.8); }
+.card:nth-of-type(2) { animation-delay: 0.06s; }
+.card:nth-of-type(3) { animation-delay: 0.12s; }
+.card:nth-of-type(4) { animation-delay: 0.18s; }
+.card:nth-of-type(5) { animation-delay: 0.24s; }
+.card:nth-of-type(6) { animation-delay: 0.3s; }
+@keyframes rise { to { opacity: 1; transform: none; filter: blur(0); } }
+.card h2 { font-family: var(--disp); font-weight: 700; font-size: 17px; margin-bottom: 6px; }
+.card p { font-size: 13.5px; color: #a1a1aa; }
+.card p b { color: #d4d4d8; font-weight: 500; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 10px 16px; border-radius: 12px; font-size: 13.5px; font-weight: 500;
+  white-space: nowrap; user-select: none;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.16);
+  transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.btn:hover { transform: translateY(-1px); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.32); }
+.btn.primary { background: #fff; color: #0a0a0a; box-shadow: none; }
+.btn.primary:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
+.foot { max-width: 760px; margin: 40px auto 0; padding: 26px 22px 18px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  display: flex; align-items: center; justify-content: space-between; gap: 20px;
+  font-size: 12px; color: #a1a1aa; flex-wrap: wrap; }
+.foot nav { display: flex; gap: 18px; flex-wrap: wrap; }
+.foot nav a:hover { color: #d4d4d8; }
 
-  .route {
-    display: block; margin-top: 14px; padding: 22px 24px;
-    border: 1px solid var(--line); border-radius: var(--r-card);
-    background: var(--panel); transition: border-color 150ms ease;
-  }
-  .route:hover { border-color: rgba(255,255,255,0.28); }
-  .route h2 { font-size: 17px; letter-spacing: -0.01em; }
-  .route p { margin-top: 6px; color: var(--muted); font-size: 14.5px; max-width: 44em; }
-  .route .go { display: inline-block; margin-top: 10px; font-size: 13.5px; color: var(--text); }
-  .note { margin-top: 36px; padding-top: 24px; border-top: 1px solid var(--line-soft); color: var(--muted); font-size: 14px; max-width: 46em; }
-  .note a { color: var(--text); border-bottom: 1px solid var(--line); }
-
-  </style>
+@media (prefers-reduced-motion: reduce) { .card { animation: none; opacity: 1; transform: none; filter: none; } }
+</style>
 </head>
 <body>
-
-<header class="site-head">
-  <div class="head-inner">
-    <a class="brand" href="/">
-      <img src="/krate-glyph-white.png" alt="" width="22" height="22" />
-      KRATE
-    </a>
-    <nav class="head-nav" aria-label="Primary">
-      <a href="/#how">How it works</a>
-      <a href="/cloud/">Gallery</a>
-      <a href="/docs/">Docs</a>
-      <a href="https://github.com/incyashraj/krate">GitHub</a>
-    </nav>
-    <a class="pill pill-primary" href="/studio/">Download Studio</a>
-  </div>
-</header>
-
-<main class="page wrap">
-  <p class="kicker">CONTACT</p>
-  <h1>Get in touch</h1>
-  <p class="lede">Krate is built in the open, so everything below is public
-  and gets a reply in public. Pick whichever fits -- if you are not sure,
-  the first one is always fine.</p>
-
-  <a class="route" href="https://github.com/incyashraj/krate/discussions" rel="noopener">
-    <h2>Ask a question, or say what is confusing</h2>
-    <p>GitHub Discussions. Anything that is not obviously a bug: how to do
-    something, why a thing works the way it does, or that a page made no
-    sense.</p>
-    <span class="go">Open Discussions &rarr;</span>
-  </a>
-
-  <a class="route" href="https://github.com/incyashraj/krate/issues/new" rel="noopener">
-    <h2>Report a bug</h2>
-    <p>Something crashed, an app would not open, a command failed. Paste what
-    you ran and what it printed -- that alone is usually enough to find it.</p>
-    <span class="go">Open an issue &rarr;</span>
-  </a>
-
-  <a class="route" href="https://github.com/incyashraj/krate/discussions/categories/ideas" rel="noopener">
-    <h2>Suggest something</h2>
-    <p>A capability Krate does not have, an app you tried to make and
-    couldn't, or a rough edge worth smoothing.</p>
-    <span class="go">Share an idea &rarr;</span>
-  </a>
-
-  <p class="note">
-    <strong>Reporting an app in the gallery</strong> is different: every
-    listing has a report link that opens an issue naming that app, so it does
-    not get lost among everything else.
-    <br /><br />
-    <strong>Before reporting a bug</strong>, <code>krate doctor</code> checks
-    your setup and prints what it finds. Including that output saves a round
-    trip. If it is a security problem, please open a private advisory on
-    <a href="https://github.com/incyashraj/krate/security/advisories/new" rel="noopener">the security tab</a>
-    rather than a public issue.
-  </p>
-</main>
-
-<footer class="site-foot">
-  <div class="foot-inner">
-    <span>© 2026 Krate Labs</span>
-    <nav aria-label="Footer">
-      <a href="/">Home</a>
-      <a href="/studio/">Studio</a>
-      <a href="/open/">Received an app?</a>
-      <a href="/faq.html">FAQ</a>
-      <a href="/contact/">Contact</a>
-      <a href="/privacy/">Privacy</a>
-      <a href="https://github.com/incyashraj/krate">GitHub</a>
-    </nav>
-  </div>
+<div class="bloom"></div>
+<div class="topblur"></div>
+<div class="brandbar">
+  <a class="name" href="/"><img src="/krate-glyph-white.png" alt="" /> KRATE</a>
+  <nav class="bnav" aria-label="Primary">
+    <a href="/#pricing" >Pricing</a>
+    <a href="/docs/" >Docs</a>
+    <a href="/cloud/" >Gallery</a>
+    <a href="/account/" >Account</a>
+  </nav>
+</div>
+<div class="wrap">
+<h1 class="page">Get in touch.</h1>
+<p class="pagesub">Krate is built in the open, so everything below is public and gets a reply in public. Not sure which fits? The first one is always fine.</p>
+<a class="card" href="https://github.com/incyashraj/krate/discussions" target="_blank" rel="noopener" style="display:block">
+  <h2>Ask a question, or say what is confusing</h2>
+  <p>GitHub Discussions. Anything that is not obviously a bug: how to do something, why a thing works the way it does, or that a page made no sense. &rarr;</p>
+</a>
+<a class="card" href="https://github.com/incyashraj/krate/issues/new" target="_blank" rel="noopener" style="display:block">
+  <h2>Report a bug</h2>
+  <p>Something crashed, an app would not open, a command failed. Paste what you ran and what it printed -- that alone is usually enough to find it. &rarr;</p>
+</a>
+<a class="card" href="https://github.com/incyashraj/krate/discussions/new?category=ideas" target="_blank" rel="noopener" style="display:block">
+  <h2>Suggest something</h2>
+  <p>A capability Krate does not have, an app you tried to make and could not, or a rough edge worth smoothing. &rarr;</p>
+</a>
+<div class="card">
+  <h2>Worth knowing first</h2>
+  <p><b>Reporting an app in the gallery</b> is different: every listing has a report link that opens an issue naming that app, so it does not get lost.</p>
+  <p style="margin-top:8px"><b>Before reporting a bug,</b> <code style="font-family:ui-monospace,Menlo,monospace;font-size:12px;background:rgba(255,255,255,0.06);border-radius:5px;padding:1px 6px">krate doctor</code> checks your setup and prints what it finds. Including that output saves a round trip.</p>
+  <p style="margin-top:8px"><b>Security problems</b> go to a private advisory on the repository's security tab, not a public issue.</p>
+</div>
+<div class="card" style="text-align:center">
+  <h2>Already have an account?</h2>
+  <p style="margin-bottom:14px">Signed-in support gets answered in a thread that follows you between the website and Studio.</p>
+  <a class="btn primary" href="/account/">Open support in your account</a>
+</div>
+</div>
+<footer class="foot">
+  <span>© 2026 Krate Labs</span>
+  <nav>
+    <a href="/">Home</a>
+    <a href="/#pricing">Pricing</a>
+    <a href="/open/">Received an app?</a>
+    <a href="/faq/">FAQ</a>
+    <a href="/contact/">Contact</a>
+    <a href="https://github.com/incyashraj/krate">GitHub</a>
+  </nav>
 </footer>
 
 <script>
-// One anonymous page view -- the page name and the day, to our own hub.
-// No cookie, no id, no referrer; strictly less than any analytics vendor.
+// Count the visit, and nothing about the visitor. No cookie, no stored id,
+// no referrer -- the page path and the day, sent to our own hub.
 (function () {
   try {
     fetch("https://hub.krate.tech/view", {

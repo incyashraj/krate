@@ -1,781 +1,175 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#0a0a0a" />
-  <meta name="description" content="Someone sent you a .krate file. Install Krate once -- about 24 MB, free -- and every app anyone sends you just opens, after telling you what it wants." />
-  <!-- The github.io project page redirects here, so name the canonical home
-       once. Without it the same page is reachable at two hosts and search
-       engines have to guess which one is real. -->
-  <link rel="canonical" href="https://krate.tech/open/" />
-  <meta property="og:title" content="Someone sent you an app" />
-  <meta property="og:description" content="One small file. Install Krate once, and it opens -- after telling you exactly what it is allowed to touch." />
-  <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://krate.tech/open/" />
-  <meta property="og:image" content="https://krate.tech/og-v2.png" />
-  <meta property="og:image:width" content="1200" />
-  <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="Krate opens one app file on Mac, Windows, and Linux." />
-  <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Someone sent you an app" />
-  <meta name="twitter:description" content="One small file. Install Krate once, and it opens -- after telling you exactly what it is allowed to touch." />
-  <meta name="twitter:image" content="https://krate.tech/og-v2.png" />
-  <title>Someone sent you an app -- Krate</title>
-  <link rel="icon" href="/krate-favicon.png" />
-  <link rel="apple-touch-icon" href="/krate-favicon.png" />
-  <link rel="preload" href="/fonts/geist-400.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="preload" href="/fonts/geist-500.woff2" as="font" type="font/woff2" crossorigin />
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#000000" />
+<title>Open a Krate app</title>
+<meta name="description" content="Someone sent you a .krate file. Install Krate once, double-click the file, decide what it may do." />
+<link rel="icon" href="/krate-favicon.png" />
+<style>
+@font-face { font-family: "Geist"; src: url("/fonts/geist-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Geist"; src: url("/fonts/geist-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
+@font-face { font-family: "Syne"; src: url("/fonts/syne-var.woff2") format("woff2"); font-weight: 400 800; font-display: swap; }
+:root { color-scheme: dark; --purple: #A558FB; --indigo: #4922E5;
+  --sans: "Geist", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --disp: "Syne", var(--sans); }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #000; color: #fff; font-family: var(--sans); font-size: 15px;
+  line-height: 1.65; -webkit-font-smoothing: antialiased; min-height: 100vh; }
+a { color: inherit; text-decoration: none; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+img { max-width: 100%; }
+.hidden { display: none !important; }
+::selection { background: rgba(165, 88, 251, 0.35); }
+.topblur { position: fixed; top: 0; left: 0; width: 100%; height: 120px; z-index: 40;
+  pointer-events: none; user-select: none;
+  background: linear-gradient(to top, transparent, #000);
+  -webkit-mask-image: linear-gradient(to bottom, #000 50%, transparent);
+          mask-image: linear-gradient(to bottom, #000 50%, transparent);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.brandbar { position: fixed; top: 20px; left: 50%; z-index: 50;
+  display: flex; align-items: center; gap: 14px; user-select: none;
+  transform: translateX(-50%); }
+.brandbar .name { display: flex; align-items: center; gap: 0.34em;
+  font-size: 17px; font-weight: 500; color: #e4e4e7; letter-spacing: 0.02em; }
+.brandbar .name img { height: 19px; width: auto; }
+.bnav { display: flex; align-items: center; gap: 2px; margin-left: 6px;
+  padding-left: 16px; border-left: 1px solid rgba(255,255,255,0.12); }
+.bnav a { font-size: 12.5px; color: #a1a1aa; padding: 5px 9px; border-radius: 999px;
+  transition: color 0.15s ease, background 0.15s ease; }
+.bnav a:hover { color: #fff; background: rgba(255,255,255,0.06); }
+.bnav a.here { color: #fff; background: rgba(255,255,255,0.08); }
+@media (max-width: 640px) { .bnav { display: none; } }
+.bloom { position: fixed; top: -340px; left: 50%; width: 900px; height: 500px;
+  margin-left: -450px; pointer-events: none; border-radius: 100%;
+  background: radial-gradient(closest-side, rgba(73, 34, 229, 0.35), transparent);
+  filter: blur(40px); }
+.wrap { position: relative; max-width: 760px; margin: 0 auto; padding: 130px 22px 80px; }
+h1.page { font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
+  font-size: clamp(28px, 4.4vw, 42px); line-height: 1.13; }
+.pagesub { margin: 12px 0 40px; font-size: 14px; color: #a1a1aa; max-width: 620px; }
+.card { border-radius: 20px; background: rgba(24, 24, 27, 0.5); padding: 24px 26px;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.08); margin-bottom: 14px;
+  opacity: 0; transform: translateY(12px); filter: blur(6px);
+  animation: rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  transition: box-shadow 0.25s ease, translate 0.25s ease; }
+.card:hover { translate: 0 -2px; box-shadow: 0 0 0 1px rgba(255,255,255,0.15), 0 14px 36px -14px rgba(0,0,0,0.8); }
+.card:nth-of-type(2) { animation-delay: 0.06s; }
+.card:nth-of-type(3) { animation-delay: 0.12s; }
+.card:nth-of-type(4) { animation-delay: 0.18s; }
+.card:nth-of-type(5) { animation-delay: 0.24s; }
+.card:nth-of-type(6) { animation-delay: 0.3s; }
+@keyframes rise { to { opacity: 1; transform: none; filter: blur(0); } }
+.card h2 { font-family: var(--disp); font-weight: 700; font-size: 17px; margin-bottom: 6px; }
+.card p { font-size: 13.5px; color: #a1a1aa; }
+.card p b { color: #d4d4d8; font-weight: 500; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 10px 16px; border-radius: 12px; font-size: 13.5px; font-weight: 500;
+  white-space: nowrap; user-select: none;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.16);
+  transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.btn:hover { transform: translateY(-1px); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.32); }
+.btn.primary { background: #fff; color: #0a0a0a; box-shadow: none; }
+.btn.primary:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
+.foot { max-width: 760px; margin: 40px auto 0; padding: 26px 22px 18px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  display: flex; align-items: center; justify-content: space-between; gap: 20px;
+  font-size: 12px; color: #a1a1aa; flex-wrap: wrap; }
+.foot nav { display: flex; gap: 18px; flex-wrap: wrap; }
+.foot nav a:hover { color: #d4d4d8; }
 
-  <!-- This page's styles live in the page, same rule as the homepage: a
-       deploy can never render new HTML against a stale cached stylesheet.
-       The person holding a file they were sent gets one job per screen and
-       nothing that smells like a developer tool. -->
-  <style>
-  @font-face {
-    font-family: "Geist";
-    src: url("/fonts/geist-400.woff2") format("woff2");
-    font-weight: 400; font-style: normal; font-display: swap;
-  }
-  @font-face {
-    font-family: "Geist";
-    src: url("/fonts/geist-500.woff2") format("woff2");
-    font-weight: 500; font-style: normal; font-display: swap;
-  }
+.perm { border-radius: 18px; background: #0c0c0e; box-shadow: 0 0 0 1px rgba(255,255,255,0.1), 0 24px 60px -20px rgba(0,0,0,0.9);
+  max-width: 420px; margin: 18px auto 6px; padding: 22px 24px; }
+.perm h3 { font-size: 14.5px; font-weight: 500; margin-bottom: 12px; }
+.perm .p { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: #d4d4d8; padding: 7px 0; }
+.perm .p svg { flex: none; margin-top: 3px; }
+.perm .p span b { display: block; font-weight: 500; color: #fff; }
+.perm .p span i { font-style: normal; font-size: 12px; color: #71717a; }
+.perm .acts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+.perm .deny { font-size: 12.5px; color: #a1a1aa; }
+.permnote { text-align: center; font-size: 12px; color: #71717a; margin-bottom: 4px; }
+.stepn { font-family: var(--disp); font-weight: 800; font-size: 26px; color: var(--purple); line-height: 1; margin-bottom: 10px; }
+.termbox { display: flex; gap: 8px; align-items: center; margin-top: 12px;
+  background: #000; border: 1px solid rgba(255,255,255,0.1); border-radius: 11px; padding: 10px 14px; }
+.termbox code { flex: 1; font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #d4d4d8; overflow-x: auto; white-space: nowrap; }
+.termbox button { font-size: 12px; color: #a1a1aa; flex: none; }
+.termbox button:hover { color: #fff; }
 
-  :root {
-    color-scheme: dark;
-    --bg: #0a0a0a;
-    --panel: #0f1012;
-    --panel-2: #141519;
-    --line: #1f2228;
-    --line-soft: #17191e;
-    --text: #ffffff;
-    --muted: rgba(255, 255, 255, 0.55);
-    --quiet: rgba(255, 255, 255, 0.35);
-    --accent: #6291ff;
-    --good: #4ade80;
-    --warn: #f4dc74;
-    --r-card: 16px;
-    --r-pill: 999px;
-    --max: 680px;
-    --sans: "Geist", Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-    --mono: "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
-    --wake: 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
-    --enter: 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
-  }
-
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    background: var(--bg); color: var(--text); font-family: var(--sans);
-    font-size: 16px; line-height: 1.6;
-    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
-  }
-  a { color: inherit; text-decoration: none; }
-  img { max-width: 100%; display: block; }
-  .wrap { max-width: var(--max); margin: 0 auto; padding: 0 24px; }
-  h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
-
-  .reveal { opacity: 0; transform: translateY(12px); transition: opacity var(--enter), transform var(--enter); }
-  .reveal.in { opacity: 1; transform: none; }
-  .hidden { display: none !important; }
-
-  /* ------------------------------------------------------------ header */
-  .site-head { position: sticky; top: 0; z-index: 40;
-    background: color-mix(in srgb, var(--bg) 86%, transparent);
-    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-    border-bottom: 1px solid transparent; transition: border-color 200ms ease; }
-  .site-head.scrolled { border-bottom-color: var(--line-soft); }
-  .head-inner { display: flex; align-items: center; gap: 20px; height: 64px; max-width: 1120px; margin: 0 auto; padding: 0 24px; }
-  .brand { display: flex; align-items: center; gap: 10px; font-weight: 500; letter-spacing: 0.14em; font-size: 14px; }
-  .head-note { margin-left: auto; font-size: 13.5px; color: var(--muted); }
-  .head-note a { color: var(--text); border-bottom: 1px solid var(--line); }
-
-  /* -------------------------------------------------------------- hero */
-  .hero { padding: clamp(56px, 10vh, 100px) 0 0; text-align: center; }
-  .hero h1 { font-size: clamp(34px, 6vw, 56px); letter-spacing: -0.03em; line-height: 1.06; }
-  .hero-sub { margin: 16px auto 0; max-width: 30em; font-size: clamp(15.5px, 1.6vw, 18px); color: var(--muted); }
-
-  /* The file they are holding, given a shape before the page talks about
-     it -- and then given the whole journey. Double-click it: the consent
-     sheet appears. Allow it: it becomes a working app, right here. Cancel:
-     nothing runs, which is the entire point. */
-  .demo-seat { position: relative; margin-top: 32px; min-height: 380px; }
-  .demo-state {
-    position: absolute; inset: 0; display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
-    opacity: 0; transform: translateY(8px); pointer-events: none;
-    transition: opacity var(--wake), transform var(--wake);
-  }
-  .demo-state.on { opacity: 1; transform: none; pointer-events: auto; }
-  .demo-hint { margin-top: 16px; font-size: 13px; color: var(--quiet); }
-  .demo-hint b { color: var(--muted); font-weight: 500; }
-
-  .fcard {
-    display: inline-block; width: min(280px, 88vw);
-    border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
-    background: var(--panel); text-align: left; cursor: pointer;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-    transition: border-color 150ms ease, transform 150ms ease;
-    -webkit-user-select: none; user-select: none;
-  }
-  .fcard:hover { border-color: rgba(255,255,255,0.28); transform: translateY(-2px); }
-  .fcard .face { padding: 16px 16px 14px; border-bottom: 1px solid var(--line-soft); }
-  .fcard .face b { font-size: 13px; font-weight: 500; }
-  .fcard .bars { margin-top: 9px; display: grid; gap: 5px; }
-  .fcard .bars i { display: block; height: 6px; border-radius: 3px; background: var(--line); }
-  .fcard .bars i:nth-child(1) { width: 74%; }
-  .fcard .bars i:nth-child(2) { width: 52%; }
-  .fcard .bars i:nth-child(3) { width: 64%; background: #2c3a5e; }
-  .fcard .frow { display: flex; align-items: center; gap: 8px; padding: 10px 14px; font-size: 12px; color: var(--muted); }
-  .fcard .frow .fname { color: var(--text); font-weight: 500; }
-  .fcard .frow span:last-child { margin-left: auto; color: var(--quiet); }
-
-  /* The consent dialog, exactly as Krate draws it. */
-  .dsheet {
-    width: min(360px, 92vw); text-align: center;
-    border: 1px solid var(--line); border-radius: var(--r-card);
-    background: var(--panel); padding: 26px 24px 22px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-  }
-  .dsheet img { width: 32px; height: 32px; margin: 0 auto 12px; }
-  .dsheet h3 { font-size: 17px; letter-spacing: -0.01em; font-weight: 500; }
-  .dsheet .asks { margin: 14px auto 0; display: inline-block; text-align: left; }
-  .dsheet .asks div { display: flex; gap: 10px; align-items: baseline; font-size: 14.5px; color: var(--muted); padding: 4px 0; }
-  .dsheet .asks i { color: var(--good); font-style: normal; font-size: 13px; }
-  .dsheet .none { margin-top: 12px; font-size: 12.5px; color: var(--quiet); }
-  .dsheet .btns { margin-top: 18px; display: flex; gap: 10px; justify-content: center; }
-  .dbtn {
-    padding: 9px 18px; border-radius: var(--r-pill); font: inherit; font-size: 14px;
-    font-weight: 500; cursor: pointer; border: 1px solid var(--line);
-    background: none; color: var(--text);
-    transition: border-color 150ms ease, background 150ms ease;
-  }
-  .dbtn:hover { border-color: rgba(255,255,255,0.28); }
-  .dbtn-primary { background: var(--text); color: #0a0a0a; border-color: var(--text); }
-  .dbtn-primary:hover { background: rgba(255,255,255,0.86); }
-
-  /* The groceries app, awake and usable. */
-  .gwin {
-    width: min(300px, 92vw); text-align: left;
-    border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
-    background: var(--panel);
-    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
-  }
-  .gbar {
-    display: flex; align-items: center; gap: 8px;
-    padding: 9px 13px; border-bottom: 1px solid var(--line-soft); background: var(--panel-2);
-  }
-  .gbar .dots { display: flex; gap: 6px; }
-  .gbar .dots i { width: 9px; height: 9px; border-radius: 50%; }
-  .gbar .dots i:nth-child(1) { background: #ff5f57; }
-  .gbar .dots i:nth-child(2) { background: #febc2e; }
-  .gbar .dots i:nth-child(3) { background: #28c840; }
-  .gtitle { font-size: 12px; color: var(--muted); margin: 0 auto; letter-spacing: 0.06em; }
-  .glive { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--quiet); }
-  .glive i { width: 6px; height: 6px; border-radius: 50%; background: var(--good); }
-  .gbody { padding: 8px 6px 12px; }
-  .gitem {
-    display: flex; align-items: center; gap: 11px; padding: 9px 12px;
-    font-size: 14.5px; cursor: pointer; border-radius: 9px;
-    transition: background 150ms ease;
-  }
-  .gitem:hover { background: rgba(255,255,255,0.04); }
-  .gitem i {
-    width: 17px; height: 17px; flex: none; border-radius: 50%;
-    border: 1.5px solid var(--line); position: relative;
-    transition: background var(--wake), border-color var(--wake);
-  }
-  .gitem.done { color: var(--quiet); text-decoration: line-through; }
-  .gitem.done i { background: var(--good); border-color: var(--good); }
-  .gitem.done i::after {
-    content: ""; position: absolute; left: 5px; top: 2.5px;
-    width: 4px; height: 8px; border: solid #0a0a0a; border-width: 0 1.5px 1.5px 0;
-    transform: rotate(45deg);
-  }
-  .gadd { display: flex; gap: 8px; margin: 6px 8px 0; }
-  .gadd input {
-    flex: 1; min-width: 0; padding: 8px 12px; font: inherit; font-size: 13.5px;
-    color: var(--text); background: var(--bg);
-    border: 1px solid var(--line); border-radius: 9px; outline: none;
-    transition: border-color 150ms ease;
-  }
-  .gadd input:focus { border-color: var(--accent); }
-  .gadd button {
-    padding: 0 14px; border-radius: 9px; border: 1px solid var(--line);
-    background: none; color: var(--text); font: inherit; font-size: 13px; cursor: pointer;
-    transition: border-color 150ms ease;
-  }
-  .gadd button:hover { border-color: rgba(255,255,255,0.3); }
-
-  /* --------------------------------------------------------- the track */
-  .track-sec { padding: clamp(56px, 9vh, 90px) 0 0; }
-  .track { list-style: none; }
-  .track > li { position: relative; padding: 0 0 44px 56px; }
-  .track > li:last-child { padding-bottom: 0; }
-  .track > li::before {
-    content: ""; position: absolute; left: 17px; top: 40px; bottom: 8px;
-    width: 1px; background: var(--line);
-  }
-  .track > li:last-child::before { display: none; }
-  .tnum {
-    position: absolute; left: 0; top: 0; width: 35px; height: 35px;
-    display: grid; place-items: center; border-radius: 50%;
-    background: var(--text); color: #0a0a0a; font-weight: 500; font-size: 14px;
-  }
-  .track h2 { font-size: clamp(19px, 2.4vw, 24px); margin: 4px 0 8px; }
-  .track > li > p, .os-panel > p { color: var(--muted); font-size: 15px; margin-bottom: 12px; max-width: 40em; }
-
-  .get-btn {
-    display: inline-flex; align-items: center; gap: 10px;
-    padding: 13px 24px; border-radius: var(--r-pill);
-    background: var(--text); color: #0a0a0a; font-weight: 500; font-size: 15.5px;
-    transition: background 150ms ease;
-  }
-  .get-btn:hover { background: rgba(255,255,255,0.86); }
-  .get-sub { margin-top: 10px; font-size: 12.5px; color: var(--quiet); }
-
-  .os-switch { margin-top: 16px; color: var(--quiet); font-size: 13px; }
-  .os-switch button {
-    padding: 0; color: var(--muted); background: none; border: 0;
-    border-bottom: 1px solid var(--line); cursor: pointer; font: inherit;
-  }
-  .os-switch button:hover { color: var(--text); }
-  .os-panel { display: none; }
-  .os-panel.is-active { display: block; }
-
-  /* The terminal is a footnote on this page, not a step. */
-  .alt-note {
-    margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line-soft);
-    font-size: 13px; color: var(--quiet); max-width: 42em;
-  }
-  .alt-note summary { cursor: pointer; color: var(--muted); list-style: none; }
-  .alt-note summary::-webkit-details-marker { display: none; }
-  .alt-note summary::after { content: " ›"; }
-  .alt-note[open] summary::after { content: " ⌄"; }
-  .copy-row {
-    display: flex; margin-top: 10px; background: var(--panel);
-    border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
-  }
-  .copy-row code {
-    flex: 1; min-width: 0; padding: 11px 14px; overflow-x: auto;
-    font-family: var(--mono); font-size: 12.5px; color: var(--muted); white-space: nowrap;
-  }
-  .copy-btn {
-    flex: none; padding: 0 16px; color: var(--text); background: var(--panel-2);
-    border: 0; border-left: 1px solid var(--line); cursor: pointer;
-    font: inherit; font-size: 12.5px;
-  }
-  .copy-btn:hover { background: var(--line); }
-  .copy-btn.is-done { color: var(--good); }
-
-  /* The permission window, live: untick something and the page tells you
-     what actually happens, because that is the question people have. */
-  .sheet {
-    margin-top: 6px; max-width: 420px;
-    border: 1px solid var(--line); border-radius: var(--r-card);
-    background: var(--panel); padding: 22px 22px 18px;
-  }
-  .sheet-title { font-size: 15px; font-weight: 500; }
-  .sheet-sub { margin: 2px 0 10px; color: var(--quiet); font-size: 12.5px; }
-  .ask-row {
-    display: flex; gap: 11px; align-items: flex-start; padding: 9px 0;
-    font-size: 14px; cursor: pointer;
-  }
-  .ask-row input { margin-top: 4px; accent-color: var(--accent); }
-  .ask-row small { display: block; margin-top: 1px; color: var(--quiet); font-size: 12.5px; }
-  .ask-row code { font-family: var(--mono); font-size: 12.5px; }
-  .verdict {
-    margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line-soft);
-    font-size: 13px; line-height: 1.55;
-  }
-  .verdict.is-ok { color: var(--good); }
-  .verdict.is-refused { color: var(--warn); }
-
-  /* ----------------------------------------------------- nothing yet */
-  .nothing { padding: clamp(64px, 10vh, 100px) 0 0; text-align: center; }
-  .nothing h2 { font-size: clamp(24px, 3vw, 32px); letter-spacing: -0.02em; }
-  .nothing p { margin: 10px auto 0; color: var(--muted); max-width: 34em; }
-  .pill {
-    display: inline-flex; align-items: center; justify-content: center;
-    padding: 11px 22px; border-radius: var(--r-pill);
-    border: 1px solid var(--line); font-size: 15px; font-weight: 500;
-    transition: border-color 150ms ease, background 150ms ease;
-  }
-  .pill:hover { border-color: rgba(255,255,255,0.28); background: var(--panel); }
-  .nothing .pill { margin-top: 20px; }
-
-  /* ------------------------------------------------------- the worries */
-  .worries { padding: clamp(64px, 10vh, 100px) 0 clamp(64px, 10vh, 100px); }
-  .worries h2 { font-size: clamp(24px, 3vw, 32px); letter-spacing: -0.02em; }
-  .worry { list-style: none; margin-top: 18px; }
-  .worry li { padding: 16px 0; border-top: 1px solid var(--line-soft); }
-  .worry strong { display: block; margin-bottom: 4px; font-size: 15px; font-weight: 500; }
-  .worry span { color: var(--muted); font-size: 14.5px; }
-
-  /* ------------------------------------------------------------ footer */
-  .site-foot { border-top: 1px solid var(--line-soft); padding: 32px 0 40px; }
-  .foot-inner { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; max-width: 1120px; margin: 0 auto; padding: 0 24px; font-size: 13px; color: var(--muted); }
-  .foot-inner nav { margin-left: auto; display: flex; gap: 18px; flex-wrap: wrap; }
-  .foot-inner a:hover { color: var(--text); }
-
-  @media (prefers-reduced-motion: reduce) {
-    .reveal { opacity: 1 !important; transform: none !important; transition: none !important; }
-    .demo-state { transition: none !important; transform: none !important; }
-    .gitem i { transition: none !important; }
-  }
-  </style>
+@media (prefers-reduced-motion: reduce) { .card { animation: none; opacity: 1; transform: none; filter: none; } }
+</style>
 </head>
 <body>
-
-<header class="site-head" id="siteHead">
-  <div class="head-inner">
-    <a class="brand" href="/">
-      <img src="/krate-glyph-white.png" alt="" width="22" height="22" />
-      KRATE
-    </a>
-    <p class="head-note">Want to make one? <a href="/studio/">Krate Studio</a></p>
+<div class="bloom"></div>
+<div class="topblur"></div>
+<div class="brandbar">
+  <a class="name" href="/"><img src="/krate-glyph-white.png" alt="" /> KRATE</a>
+  <nav class="bnav" aria-label="Primary">
+    <a href="/#pricing" >Pricing</a>
+    <a href="/docs/" >Docs</a>
+    <a href="/cloud/" >Gallery</a>
+    <a href="/account/" >Account</a>
+  </nav>
+</div>
+<div class="wrap">
+<h1 class="page">Someone sent you an app.</h1>
+<p class="pagesub">It is one small file, like a photo. To open it you need Krate once -- like a player for a movie. After that, every app anyone sends you just opens, and each one tells you what it wants first.</p>
+<div class="card">
+  <div class="stepn">1</div>
+  <h2>Get Krate, once</h2>
+  <p>About 24 MB, free and open source. This is the only setup there is: after it, every app anyone ever sends you is just a double-click.</p>
+  <p style="margin-top:14px"><a class="btn primary" href="https://github.com/incyashraj/krate/releases/latest">Download Krate</a></p>
+  <p style="margin-top:12px; font-size:12.5px">Comfortable in a terminal instead?</p>
+  <div class="termbox"><code>curl -fsSL https://krate.tech/install.sh | sh</code><button data-copy="curl -fsSL https://krate.tech/install.sh | sh">Copy</button></div>
+  <div class="termbox"><code>irm https://krate.tech/install.ps1 | iex</code><button data-copy="irm https://krate.tech/install.ps1 | iex">Copy</button></div>
+</div>
+<div class="card">
+  <div class="stepn">2</div>
+  <h2>Double-click the file</h2>
+  <p>The same as a document or a photo. Nothing to unzip, nothing to install per app, no developer tools.</p>
+</div>
+<div class="card">
+  <div class="stepn">3</div>
+  <h2>Decide what it may do</h2>
+  <p>Before any of the app runs, a window like this appears. The app opens with exactly what you allow -- it cannot reach the internet, or any other folder on your computer.</p>
+  <div class="perm">
+    <h3>“Notes” wants to:</h3>
+    <div class="p"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2.5 8.5l3.5 3.5 7.5-8" stroke="#7ee2a8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span><b>read files in its notes folder</b><i>to load the notes you saved before</i></span></div>
+    <div class="p"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2.5 8.5l3.5 3.5 7.5-8" stroke="#7ee2a8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span><b>save files in its notes folder</b><i>to keep the note you are writing</i></span></div>
+    <div class="p"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2.5 8.5l3.5 3.5 7.5-8" stroke="#7ee2a8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span><b>use your clipboard</b><i>to copy and paste inside the app</i></span></div>
+    <div class="acts"><button class="btn deny">Cancel</button><span class="btn primary">Allow and open</span></div>
   </div>
-</header>
-
-<main>
-
-<!-- ================================================================== hero -->
-<section class="hero wrap">
-  <h1 class="reveal">Someone sent you an app.</h1>
-  <p class="hero-sub reveal">It is one small file, like a photo. To open it you
-  need Krate, once -- like a player for a movie. After that, every app anyone
-  sends you just opens, and each one tells you what it wants first.</p>
-  <div class="demo-seat reveal">
-
-    <!-- State 1: the file, as it would sit on a desktop. -->
-    <div class="demo-state on" id="dFile">
-      <div class="fcard" id="dCard" role="button" tabindex="0" aria-label="Try opening the file">
-        <div class="face">
-          <b id="fcardName">Groceries</b>
-          <div class="bars" id="fcardBars"><i></i><i></i><i></i></div>
-        </div>
-        <div class="frow">
-          <span class="fname" id="fcardFile">groceries.krate</span>
-          <span id="fcardSize">12 KB</span>
-        </div>
-      </div>
-      <p class="demo-hint" id="dHint"><b>Try it:</b> double-click the file.</p>
-    </div>
-
-    <!-- State 2: the consent sheet, exactly as Krate draws it. -->
-    <div class="demo-state" id="dSheet">
-      <div class="dsheet">
-        <img src="/krate-glyph-white.png" alt="" />
-        <h3 id="dsheetTitle">Open &ldquo;Groceries&rdquo;?</h3>
-        <div class="asks" id="dsheetAsks">
-          <div><i>&#10003;</i> open a window</div>
-          <div><i>&#10003;</i> save your list on this computer</div>
-        </div>
-        <p class="none" id="dsheetNone">It gets nothing else: no files, no internet, no camera.</p>
-        <div class="btns">
-          <button class="dbtn" id="dCancel" type="button">Cancel</button>
-          <button class="dbtn dbtn-primary" id="dAllow" type="button">Allow and open</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- State 3: the app, awake and usable -- or, from a hub link, the
-         honest version: the real app opens on their computer, not in a
-         page, so this state hands them the download instead. -->
-    <div class="demo-state" id="dApp">
-      <div class="dsheet hidden" id="dReal">
-        <img src="/krate-glyph-white.png" alt="" />
-        <h3 id="dRealTitle">It opens on your computer.</h3>
-        <p class="none">Not in a web page -- that is the point. Get Krate
-        below (step 1), then download the app and double-click it.</p>
-        <div class="btns"><a class="dbtn dbtn-primary" id="dRealDl" href="#">Download the app</a></div>
-      </div>
-      <div class="gwin" id="gDemo" aria-label="The groceries app, working">
-        <div class="gbar">
-          <div class="dots"><i></i><i></i><i></i></div>
-          <span class="gtitle">GROCERIES</span>
-          <span class="glive"><i></i>live</span>
-        </div>
-        <div class="gbody" id="gList">
-          <div class="gitem"><i></i>Oat milk</div>
-          <div class="gitem"><i></i>Espresso beans</div>
-          <div class="gitem done"><i></i>Lemons</div>
-          <div class="gitem"><i></i>Pasta</div>
-          <div class="gadd">
-            <input id="gInput" type="text" placeholder="Add something&hellip;" maxlength="40" />
-            <button id="gAdd" type="button">Add</button>
-          </div>
-        </div>
-      </div>
-      <p class="demo-hint" id="gDemoHint">That was the whole thing. Tap the items -- it works.
-      Now do it for real, below.</p>
-    </div>
-
-  </div>
-</section>
-
-<!-- ============================================================= the track -->
-<section class="track-sec wrap">
-  <ol class="track">
-
-    <li class="reveal">
-      <span class="tnum">1</span>
-      <h2>Get Krate, once</h2>
-      <p>About 24 MB, free and open source. This is the only setup there is:
-      after it, every app anyone ever sends you is just a double-click.</p>
-
-      <a class="get-btn" id="getBtn" data-dl="krate-studio|universal|dmg" href="https://github.com/incyashraj/krate/releases/latest">Download Krate</a>
-      <p class="get-sub" id="getSub">For your computer &middot; free</p>
-
-      <div class="os-panel" data-os="mac">
-        <p class="get-sub">Open the download and drag Krate to Applications.
-        It is signed and notarised by Apple, so it opens without warnings.</p>
-      </div>
-      <div class="os-panel" data-os="windows">
-        <p class="get-sub">Run the installer. Windows may show a one-time
-        SmartScreen prompt -- choose &ldquo;More info&rdquo;, then
-        &ldquo;Run anyway&rdquo;.</p>
-      </div>
-      <div class="os-panel" data-os="linux">
-        <p class="get-sub">Make the AppImage executable and run it once; it
-        registers the .krate file type for you.</p>
-      </div>
-
-      <p class="os-switch">Showing <span id="osName">your computer</span>.
-      Using a different one?
-      <button type="button" data-pick="mac">Mac</button> &middot;
-      <button type="button" data-pick="windows">Windows</button> &middot;
-      <button type="button" data-pick="linux">Linux</button></p>
-
-      <details class="alt-note">
-        <summary>Comfortable in a terminal instead?</summary>
-        <div class="os-panel" data-os="mac">
-          <div class="copy-row">
-            <code>curl -fsSL https://krate.tech/install.sh | sh</code>
-            <button class="copy-btn" type="button">Copy</button>
-          </div>
-        </div>
-        <div class="os-panel" data-os="windows">
-          <div class="copy-row">
-            <code>irm https://krate.tech/install.ps1 | iex</code>
-            <button class="copy-btn" type="button">Copy</button>
-          </div>
-        </div>
-        <div class="os-panel" data-os="linux">
-          <div class="copy-row">
-            <code>curl -fsSL https://krate.tech/install.sh | sh</code>
-            <button class="copy-btn" type="button">Copy</button>
-          </div>
-        </div>
-      </details>
-    </li>
-
-    <li class="reveal">
-      <span class="tnum">2</span>
-      <h2 id="step2Title">Double-click the file</h2>
-      <p>The same as a document or a photo. Nothing to unzip, nothing to
-      install per app, no developer tools.</p>
-      <p class="hidden" id="dlRow" style="margin-top:4px"><a class="get-btn" id="dlApp" href="#">Download the app</a></p>
-    </li>
-
-    <li class="reveal">
-      <span class="tnum">3</span>
-      <h2>Decide what it may do</h2>
-      <p>Before any of the app runs, this window appears. Untick anything and
-      see what happens -- this one is live.</p>
-
-      <div class="sheet">
-        <div class="sheet-title">Krate Notes wants to:</div>
-        <p class="sheet-sub">You can change your mind on any of these.</p>
-        <label class="ask-row"><input type="checkbox" data-ask="required" checked /> <span>read files in its <code>notes</code> folder<small>To load the notes you saved before</small></span></label>
-        <label class="ask-row"><input type="checkbox" data-ask="required" checked /> <span>save files in its <code>notes</code> folder<small>To keep the note you are writing</small></span></label>
-        <label class="ask-row"><input type="checkbox" data-ask="optional" checked /> <span>use your clipboard<small>To copy and paste inside the app</small></span></label>
-        <p class="verdict is-ok" id="verdict">The app opens with exactly this. It cannot reach the internet, or any other folder on your computer.</p>
-      </div>
-    </li>
-
-  </ol>
-</section>
-
-<!-- =========================================================== nothing yet -->
-<section class="nothing wrap reveal">
+  <p class="permnote">It gets nothing else: no files, no internet, no camera.</p>
+</div>
+<div class="card" style="text-align:center">
   <h2>Nothing to open yet?</h2>
-  <p>Take a real one. The gallery has small, working apps people have made
-  and shared -- each one opens exactly as described above.</p>
-  <a class="pill" href="/cloud/">Get an app from the gallery</a>
-</section>
-
-<!-- =========================================================== the worries -->
-<section class="worries wrap">
-  <h2 class="reveal">The things people ask</h2>
-  <ul class="worry reveal">
-    <li><strong>Is it safe to open?</strong><span>Krate shows you what the app wants and gives it nothing else. An app that asks to save a list cannot read anything else on your computer, even if it tried.</span></li>
-    <li><strong>Do I need an account?</strong><span>No. There is nothing to sign up for and nothing to pay.</span></li>
-    <li><strong>Where does my information go?</strong><span>Nowhere. The app runs on your own computer, and whatever it saves stays there.</span></li>
-    <li><strong>What if I say no?</strong><span>The app does not start. It cannot run halfway on less than it asked for and quietly fail later.</span></li>
-    <li><strong>Can I change my mind later?</strong><span>Yes. You are asked each time it opens, so nothing you allow once is allowed forever.</span></li>
-  </ul>
-</section>
-
-</main>
-
-<footer class="site-foot">
-  <div class="foot-inner">
-    <span>© 2026 Krate Labs</span>
-    <nav aria-label="Footer">
-      <a href="/">What is Krate?</a>
-      <a href="/studio/">Make an app</a>
-      <a href="/faq.html">FAQ</a>
-      <a href="https://github.com/incyashraj/krate">GitHub</a>
-    </nav>
-  </div>
+  <p style="margin-bottom:14px">Take a real one from the gallery -- every listing is one click and the same permission flow.</p>
+  <a class="btn" href="/cloud/">Browse the gallery</a>
+</div>
+</div>
+<footer class="foot">
+  <span>© 2026 Krate Labs</span>
+  <nav>
+    <a href="/">Home</a>
+    <a href="/#pricing">Pricing</a>
+    <a href="/open/">Received an app?</a>
+    <a href="/faq/">FAQ</a>
+    <a href="/contact/">Contact</a>
+    <a href="https://github.com/incyashraj/krate">GitHub</a>
+  </nav>
 </footer>
-
 <script>
-(function () {
-  "use strict";
-  var reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  var head = document.getElementById("siteHead");
-  addEventListener("scroll", function () {
-    head.classList.toggle("scrolled", scrollY > 8);
-  }, { passive: true });
-
-  var reveals = document.querySelectorAll(".reveal");
-  if (reduced || !("IntersectionObserver" in window)) {
-    reveals.forEach(function (el) { el.classList.add("in"); });
-  } else {
-    var io = new IntersectionObserver(function (entries) {
-      entries.forEach(function (e) {
-        if (!e.isIntersecting) return;
-        e.target.classList.add("in");
-        io.unobserve(e.target);
-      });
-    }, { rootMargin: "0px 0px -8% 0px" });
-    reveals.forEach(function (el) { io.observe(el); });
-    setTimeout(function () {
-      reveals.forEach(function (el) { el.classList.add("in"); });
-    }, 2500);
-  }
-
-  /* ----------------------- the rehearsal: file, sheet, app, or nothing */
-  /* One click stands in for the double-click too: on a phone there is no
-     double-click, and a hesitating mouse should not be punished. */
-  var dFile = document.getElementById("dFile");
-  var dSheet = document.getElementById("dSheet");
-  var dApp = document.getElementById("dApp");
-  var dHint = document.getElementById("dHint");
-  var dCard = document.getElementById("dCard");
-  function swap(from, to) {
-    from.classList.remove("on");
-    setTimeout(function () { to.classList.add("on"); }, reduced ? 0 : 160);
-  }
-  function openFile() { swap(dFile, dSheet); }
-  dCard.addEventListener("click", openFile);
-  dCard.addEventListener("keydown", function (e) {
-    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openFile(); }
+document.querySelectorAll("[data-copy]").forEach(function (b) {
+  b.addEventListener("click", function () {
+    try { navigator.clipboard.writeText(b.dataset.copy); } catch (e) {}
+    b.textContent = "Copied";
+    setTimeout(function () { b.textContent = "Copy"; }, 1500);
   });
-  document.getElementById("dAllow").addEventListener("click", function () {
-    swap(dSheet, dApp);
-  });
-  document.getElementById("dCancel").addEventListener("click", function () {
-    swap(dSheet, dFile);
-    dHint.innerHTML = "Nothing ran. An app cannot start without your yes. <b>Try again?</b>";
-  });
-
-  /* The groceries list works, because the point of the page is that the
-     thing they were sent is real. */
-  var gList = document.getElementById("gList");
-  gList.addEventListener("click", function (e) {
-    var item = e.target.closest(".gitem");
-    if (item) item.classList.toggle("done");
-  });
-  var gAdd = function () {
-    var input = document.getElementById("gInput");
-    var text = input.value.trim();
-    if (!text) return;
-    var div = document.createElement("div");
-    div.className = "gitem";
-    var dot = document.createElement("i");
-    div.appendChild(dot);
-    div.appendChild(document.createTextNode(text));
-    gList.insertBefore(div, gList.querySelector(".gadd"));
-    input.value = "";
-    input.focus();
-  };
-  document.getElementById("gAdd").addEventListener("click", gAdd);
-  document.getElementById("gInput").addEventListener("keydown", function (e) {
-    if (e.key === "Enter") gAdd();
-  });
-
-  // Show the visitor's own system and nothing else. Two thirds of the
-  // install instructions are noise to any given person.
-  var pick = function () {
-    var p = ((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "").toLowerCase();
-    var ua = navigator.userAgent.toLowerCase();
-    if (p.indexOf("mac") !== -1 || ua.indexOf("mac os") !== -1) return "mac";
-    if (p.indexOf("win") !== -1 || ua.indexOf("windows") !== -1) return "windows";
-    return "linux";
-  };
-  var names = { mac: "your Mac", windows: "Windows", linux: "Linux" };
-  var dlFor = {
-    mac: { dl: "krate-studio|universal|dmg", label: "Download Krate for Mac" },
-    windows: { dl: "krate-studio|windows-x64-setup|exe", label: "Download Krate for Windows" },
-    linux: { dl: "krate-studio|linux-x86_64|AppImage", label: "Download Krate for Linux" }
-  };
-  var getBtn = document.getElementById("getBtn");
-  var current = pick();
-
-  var show = function (os) {
-    current = os;
-    document.querySelectorAll(".os-panel").forEach(function (el) {
-      el.classList.toggle("is-active", el.dataset.os === os);
-    });
-    var label = document.getElementById("osName");
-    if (label) label.textContent = names[os];
-    getBtn.textContent = dlFor[os].label;
-    getBtn.dataset.dl = dlFor[os].dl;
-    resolve();
-  };
-
-  // Point the button at the exact latest release asset for that system.
-  var release = null;
-  var resolve = function () {
-    if (!release || !release.assets) return;
-    var names_ = release.assets.map(function (a) { return a.name; });
-    var version = release.tag_name.replace(/^v/, "");
-    var p = getBtn.dataset.dl.split("|");
-    var file = p[1] === "universal"
-      ? p[0] + "-" + version + "-universal." + p[2]
-      : p[0] + "-" + version + "-" + p[1] + "." + p[2];
-    if (names_.indexOf(file) !== -1) {
-      getBtn.href = "https://github.com/incyashraj/krate/releases/download/" +
-        release.tag_name + "/" + file;
-    }
-  };
-  fetch("https://api.github.com/repos/incyashraj/krate/releases/latest")
-    .then(function (r) { return r.ok ? r.json() : null; })
-    .then(function (rel) { release = rel; resolve(); })
-    .catch(function () {});
-
-  show(current);
-  document.querySelectorAll("[data-pick]").forEach(function (b) {
-    b.addEventListener("click", function () { show(b.dataset.pick); });
-  });
-
-  // Copy the command rather than asking someone to select it exactly.
-  document.querySelectorAll(".copy-btn").forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      var text = btn.previousElementSibling.textContent.trim();
-      navigator.clipboard.writeText(text).then(function () {
-        btn.textContent = "Copied";
-        btn.classList.add("is-done");
-        setTimeout(function () {
-          btn.textContent = "Copy";
-          btn.classList.remove("is-done");
-        }, 1800);
-      });
-    });
-  });
-
-  // The permission window, live. Someone can untick a box and find out
-  // what actually happens, which is the question the whole page is about.
-  var boxes = Array.prototype.slice.call(document.querySelectorAll("[data-ask]"));
-  var verdict = document.getElementById("verdict");
-  if (boxes.length && verdict) {
-    var update = function () {
-      var missingRequired = boxes.some(function (b) {
-        return b.dataset.ask === "required" && !b.checked;
-      });
-      var allOn = boxes.every(function (b) { return b.checked; });
-      if (missingRequired) {
-        verdict.className = "verdict is-refused";
-        verdict.textContent =
-          "The app will not start. It needs this one to do its job, and Krate does not let it run on less than it asked for.";
-      } else if (!allOn) {
-        verdict.className = "verdict is-ok";
-        verdict.textContent =
-          "The app opens without that. It simply cannot do the part it was for, and nothing else changes.";
-      } else {
-        verdict.className = "verdict is-ok";
-        verdict.textContent =
-          "The app opens with exactly this. It cannot reach the internet, or any other folder on your computer.";
-      }
-    };
-    boxes.forEach(function (b) { b.addEventListener("change", update); });
-    update();
-  }
-
-  // ------------------------------------------------ a specific app's page
-  // Arriving from a hub link (?a=<hash>), the page is about THEIR app, not
-  // a generic one: its real face and name on the card, a download button in
-  // step 2, and the after-Allow state hands them the file instead of
-  // pretending their app can run in a web page.
-  (function () {
-    var id = new URLSearchParams(location.search).get("a");
-    if (!id || !/^[0-9a-f]{8,64}$/.test(id)) return;
-    // /meta answers for ANY app the link names -- listed or unlisted.
-    // Holding the link is the access, same as the bytes.
-    fetch("https://hub.krate.tech/meta/" + id)
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (app) {
-        if (!app) return;
-        var name = (app.meta && app.meta.name) || "The app";
-        var kb = Math.max(1, Math.ceil(((app.meta && app.meta.size) || 0) / 1024));
-        var slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "app";
-        var dlUrl = app.url + "?dl=1";
-
-        document.getElementById("fcardName").textContent = name;
-        document.getElementById("fcardFile").textContent = slug + ".krate";
-        document.getElementById("fcardSize").textContent = kb + " KB";
-        if (app.shot) {
-          var img = document.createElement("img");
-          img.src = app.shot;
-          img.alt = "";
-          img.style.cssText =
-            "display:block;width:100%;max-height:180px;object-fit:cover;object-position:top;border-radius:8px;margin-top:9px;";
-          var bars = document.getElementById("fcardBars");
-          bars.replaceChildren(img);
-          bars.style.display = "block";
-        }
-
-        // The consent sheet cannot know this app's real list from here, and
-        // it must not invent one -- the honest line is that Krate shows it.
-        document.getElementById("dsheetTitle").textContent =
-          "Open “" + name + "”?";
-        document.getElementById("dsheetAsks").innerHTML = "";
-        document.getElementById("dsheetNone").textContent =
-          "Before it runs, Krate shows you exactly what it is allowed to " +
-          "touch -- and enforces that list, whatever the app's code says.";
-
-        // After Allow: the download, not a pretend run.
-        document.getElementById("gDemo").classList.add("hidden");
-        document.getElementById("gDemoHint").classList.add("hidden");
-        var real = document.getElementById("dReal");
-        real.classList.remove("hidden");
-        var realDl = document.getElementById("dRealDl");
-        realDl.textContent = "Download " + name;
-        realDl.href = dlUrl;
-
-        // And step 2 hands over the file too, for people who skip the demo.
-        document.getElementById("step2Title").textContent =
-          "Download it, then double-click";
-        var dl = document.getElementById("dlApp");
-        dl.textContent = "Download " + name + " (" + kb + " KB)";
-        dl.href = dlUrl;
-        document.getElementById("dlRow").classList.remove("hidden");
-      })
-      .catch(function () {
-        // The generic page is a fine landing; a hub hiccup must not break it.
-      });
-  })();
-})();
+});
 </script>
-
 <script>
-// One anonymous page view -- the page name and the day, to our own hub.
-// No cookie, no id, no referrer; strictly less than any analytics vendor.
+// Count the visit, and nothing about the visitor. No cookie, no stored id,
+// no referrer -- the page path and the day, sent to our own hub.
 (function () {
   try {
     fetch("https://hub.krate.tech/view", {

@@ -106,12 +106,12 @@ details.qa .a code { font-family: ui-monospace, Menlo, monospace; font-size: 12p
 <div class="bloom"></div>
 <div class="topblur"></div>
 <div class="brandbar">
-  <a class="name" href="/next/"><img src="/krate-glyph-white.png" alt="" /> KRATE</a>
+  <a class="name" href="/"><img src="/krate-glyph-white.png" alt="" /> KRATE</a>
   <nav class="bnav" aria-label="Primary">
-    <a href="/next/#pricing" >Pricing</a>
+    <a href="/#pricing" >Pricing</a>
     <a href="/docs/" >Docs</a>
-    <a href="/next/cloud/" >Gallery</a>
-    <a href="/next/account/" >Account</a>
+    <a href="/cloud/" >Gallery</a>
+    <a href="/account/" >Account</a>
   </nav>
 </div>
 <div class="wrap">
@@ -127,14 +127,29 @@ details.qa .a code { font-family: ui-monospace, Menlo, monospace; font-size: 12p
 <footer class="foot">
   <span>© 2026 Krate Labs</span>
   <nav>
-    <a href="/next/">Home</a>
-    <a href="/next/#pricing">Pricing</a>
-    <a href="/next/open/">Received an app?</a>
-    <a href="/next/faq/">FAQ</a>
-    <a href="/next/contact/">Contact</a>
+    <a href="/">Home</a>
+    <a href="/#pricing">Pricing</a>
+    <a href="/open/">Received an app?</a>
+    <a href="/faq/">FAQ</a>
+    <a href="/contact/">Contact</a>
     <a href="https://github.com/incyashraj/krate">GitHub</a>
   </nav>
 </footer>
 
+<script>
+// Count the visit, and nothing about the visitor. No cookie, no stored id,
+// no referrer -- the page path and the day, sent to our own hub.
+(function () {
+  try {
+    fetch("https://hub.krate.tech/view", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ page: location.pathname }),
+      keepalive: true,
+      mode: "cors",
+    }).catch(function () {});
+  } catch (e) {}
+})();
+</script>
 </body>
 </html>

@@ -1,380 +1,157 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>The Krate gallery | Apps you can open in one click</title>
-  <meta name="description" content="Browse apps people have made and shared. Every one is a single file that runs in a sandbox and tells you what it wants before it starts." />
-  <meta name="theme-color" content="#0a0a0a" />
-  <style>
-  /* The ring shell, inlined: tokens and chrome this page used to borrow
-     from site.css. The page's own component styles below reference the
-     same token names. */
-  @font-face { font-family: "Geist"; src: url("/fonts/geist-400.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
-  @font-face { font-family: "Geist"; src: url("/fonts/geist-500.woff2") format("woff2"); font-weight: 500; font-style: normal; font-display: swap; }
-  :root {
-    color-scheme: dark;
-    --bg: #0a0a0a; --panel: #0f1012; --panel-raised: #16171b; --panel-2: #141519;
-    --line: #1f2228; --line-strong: #2e323a; --line-soft: #17191e;
-    --text: #ffffff; --muted: rgba(255,255,255,0.55); --quiet: rgba(255,255,255,0.35);
-    --blue: #6291ff; --blue-soft: #9db8ff; --yellow: #f4dc74;
-    --accent: #6291ff; --good: #4ade80; --warn: #f4dc74;
-    --radius-card: 14px; --radius-pill: 999px; --r-card: 16px; --r-pill: 999px;
-    --sans: "Geist", Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-    --mono: "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
-  a { color: inherit; text-decoration: none; }
-  img { max-width: 100%; display: block; }
-  h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
-  .hidden { display: none !important; }
-  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
-  .site-head { position: sticky; top: 0; z-index: 40; background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-bottom: 1px solid var(--line-soft); }
-  .head-inner { display: flex; align-items: center; gap: 24px; height: 64px; max-width: 1120px; margin: 0 auto; padding: 0 24px; }
-  .brand { display: flex; align-items: center; gap: 10px; font-weight: 500; letter-spacing: 0.14em; font-size: 14px; }
-  .head-nav { display: flex; gap: 4px; margin-left: auto; }
-  .head-nav a { font-size: 14px; color: var(--muted); padding: 8px 12px; border-radius: var(--r-pill); transition: color 150ms ease, background 150ms ease; }
-  .head-nav a:hover { color: var(--text); background: rgba(255,255,255,0.05); }
-  @media (max-width: 640px) { .head-nav { display: none; } }
-  .pill { display: inline-flex; align-items: center; justify-content: center; padding: 9px 18px; border-radius: var(--r-pill); border: 1px solid var(--line); font-size: 14.5px; font-weight: 500; transition: border-color 150ms ease, background 150ms ease; cursor: pointer; background: none; color: var(--text); font-family: inherit; }
-  .pill:hover { border-color: rgba(255,255,255,0.28); }
-  .pill-primary { background: var(--text); color: #0a0a0a; border-color: var(--text); }
-  .pill-primary:hover { background: rgba(255,255,255,0.86); border-color: rgba(255,255,255,0.86); }
-  .page-wide { max-width: 1120px; margin: 0 auto; padding: clamp(40px, 7vh, 72px) 24px clamp(64px, 10vh, 100px); }
-  .page-wrap { max-width: 820px; margin: 0 auto; padding: clamp(48px, 8vh, 84px) 24px clamp(64px, 10vh, 100px); }
-  .page-kicker { font-size: 12px; letter-spacing: 0.14em; color: var(--quiet); }
-  .page-wrap h1 { margin-top: 10px; font-size: clamp(30px, 4.6vw, 46px); letter-spacing: -0.028em; line-height: 1.08; }
-  .lede, .page-lede { margin-top: 14px; color: var(--muted); max-width: 38em; font-size: 16.5px; }
-  .site-foot { border-top: 1px solid var(--line-soft); padding: 32px 0 40px; }
-  .foot-inner { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; max-width: 1120px; margin: 0 auto; padding: 0 24px; font-size: 13px; color: var(--muted); }
-  .foot-inner nav { margin-left: auto; display: flex; gap: 18px; flex-wrap: wrap; }
-  .foot-inner a:hover { color: var(--text); }
-  .page-wrap a, .page-wide a { color: var(--blue-soft); }
-  code { font-family: var(--mono); font-size: 0.86em; }
-  </style>
-  <link rel="icon" href="/krate-favicon.png" />
-  <style>
-    /* This page's own components; the shell is inlined above. */
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#000000" />
+<title>The Krate gallery</title>
+<meta name="description" content="Browse apps people have made and shared. One file each, sandboxed, permission-first." />
+<link rel="icon" href="/krate-favicon.png" />
+<style>
+@font-face { font-family: "Geist"; src: url("/fonts/geist-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Geist"; src: url("/fonts/geist-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
+@font-face { font-family: "Syne"; src: url("/fonts/syne-var.woff2") format("woff2"); font-weight: 400 800; font-display: swap; }
+:root { color-scheme: dark; --purple: #A558FB; --indigo: #4922E5;
+  --sans: "Geist", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --disp: "Syne", var(--sans); }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #000; color: #fff; font-family: var(--sans); font-size: 15px;
+  line-height: 1.65; -webkit-font-smoothing: antialiased; min-height: 100vh; }
+a { color: inherit; text-decoration: none; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+img { max-width: 100%; }
+.hidden { display: none !important; }
+::selection { background: rgba(165, 88, 251, 0.35); }
+.topblur { position: fixed; top: 0; left: 0; width: 100%; height: 120px; z-index: 40;
+  pointer-events: none; user-select: none;
+  background: linear-gradient(to top, transparent, #000);
+  -webkit-mask-image: linear-gradient(to bottom, #000 50%, transparent);
+          mask-image: linear-gradient(to bottom, #000 50%, transparent);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.brandbar { position: fixed; top: 20px; left: 50%; z-index: 50;
+  display: flex; align-items: center; gap: 14px; user-select: none;
+  transform: translateX(-50%); }
+.brandbar .name { display: flex; align-items: center; gap: 0.34em;
+  font-size: 17px; font-weight: 500; color: #e4e4e7; letter-spacing: 0.02em; }
+.brandbar .name img { height: 19px; width: auto; }
+.bnav { display: flex; align-items: center; gap: 2px; margin-left: 6px;
+  padding-left: 16px; border-left: 1px solid rgba(255,255,255,0.12); }
+.bnav a { font-size: 12.5px; color: #a1a1aa; padding: 5px 9px; border-radius: 999px;
+  transition: color 0.15s ease, background 0.15s ease; }
+.bnav a:hover { color: #fff; background: rgba(255,255,255,0.06); }
+.bnav a.here { color: #fff; background: rgba(255,255,255,0.08); }
+@media (max-width: 640px) { .bnav { display: none; } }
+.bloom { position: fixed; top: -340px; left: 50%; width: 900px; height: 500px;
+  margin-left: -450px; pointer-events: none; border-radius: 100%;
+  background: radial-gradient(closest-side, rgba(73, 34, 229, 0.35), transparent);
+  filter: blur(40px); }
+.wrap { position: relative; max-width: 1024px; margin: 0 auto; padding: 130px 22px 80px; }
+h1.page { font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
+  font-size: clamp(28px, 4.4vw, 42px); line-height: 1.13; }
+.pagesub { margin: 12px 0 40px; font-size: 14px; color: #a1a1aa; max-width: 620px; }
+.card { border-radius: 20px; background: rgba(24, 24, 27, 0.5); padding: 24px 26px;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.08); margin-bottom: 14px;
+  opacity: 0; transform: translateY(12px); filter: blur(6px);
+  animation: rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  transition: box-shadow 0.25s ease, translate 0.25s ease; }
+.card:hover { translate: 0 -2px; box-shadow: 0 0 0 1px rgba(255,255,255,0.15), 0 14px 36px -14px rgba(0,0,0,0.8); }
+.card:nth-of-type(2) { animation-delay: 0.06s; }
+.card:nth-of-type(3) { animation-delay: 0.12s; }
+.card:nth-of-type(4) { animation-delay: 0.18s; }
+.card:nth-of-type(5) { animation-delay: 0.24s; }
+.card:nth-of-type(6) { animation-delay: 0.3s; }
+@keyframes rise { to { opacity: 1; transform: none; filter: blur(0); } }
+.card h2 { font-family: var(--disp); font-weight: 700; font-size: 17px; margin-bottom: 6px; }
+.card p { font-size: 13.5px; color: #a1a1aa; }
+.card p b { color: #d4d4d8; font-weight: 500; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 10px 16px; border-radius: 12px; font-size: 13.5px; font-weight: 500;
+  white-space: nowrap; user-select: none;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.16);
+  transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.btn:hover { transform: translateY(-1px); box-shadow: inset 0 0 0 1px rgba(255,255,255,0.32); }
+.btn.primary { background: #fff; color: #0a0a0a; box-shadow: none; }
+.btn.primary:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
+.foot { max-width: 1024px; margin: 40px auto 0; padding: 26px 22px 18px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  display: flex; align-items: center; justify-content: space-between; gap: 20px;
+  font-size: 12px; color: #a1a1aa; flex-wrap: wrap; }
+.foot nav { display: flex; gap: 18px; flex-wrap: wrap; }
+.foot nav a:hover { color: #d4d4d8; }
 
-    /* The hero states the one thing a visitor needs before browsing: these
-       open on your own machine, and they say what they want first. */
-    .hero { margin-bottom: 2.6rem; }
-    .hero-mark { display: block; width: 96px; height: 96px; margin: 0 0 .8rem -.15rem; }
-    .hero p { color: var(--muted); margin: 0; line-height: 1.65; max-width: 46rem; }
-    .hero .badge {
-      display: inline-block; margin-bottom: .8rem;
-      font-size: .72rem; text-transform: uppercase; letter-spacing: .1em;
-      color: var(--blue-soft); border: 1px solid var(--line-strong);
-      border-radius: 999px; padding: .22rem .7rem;
-    }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+.appc { display: block; border-radius: 18px; overflow: hidden; background: rgba(24,24,27,0.5);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.08);
+  opacity: 0; transform: translateY(12px); animation: rise 0.55s cubic-bezier(0.2,0.8,0.2,1) forwards;
+  transition: box-shadow 0.25s ease, translate 0.25s ease; }
+.appc:hover { translate: 0 -3px; box-shadow: 0 0 0 1px rgba(255,255,255,0.16), 0 16px 40px -16px rgba(0,0,0,0.8); }
+.appc .shot { aspect-ratio: 16/10; background: #101013; overflow: hidden; }
+.appc .shot img { width: 100%; height: 100%; object-fit: cover; display: block;
+  transition: transform 0.35s cubic-bezier(0.2,0.8,0.2,1); }
+.appc:hover .shot img { transform: scale(1.035); }
+.appc .b { padding: 13px 15px 14px; }
+.appc .nm { font-size: 14px; font-weight: 500; }
+.appc .by { display: flex; align-items: center; gap: 7px; margin-top: 6px; font-size: 12px; color: #a1a1aa; }
+.appc .by img { width: 16px; height: 16px; border-radius: 50%; }
+.appc .kb { margin-left: auto; color: #71717a; font-size: 11px; }
+.gnote { margin-top: 26px; font-size: 12.5px; color: #71717a; text-align: center; }
 
-    .bar { display: flex; gap: .8rem; align-items: center; flex-wrap: wrap; margin-bottom: 1.4rem; }
-    .bar input {
-      flex: 1; min-width: 220px;
-      background: var(--panel); color: var(--text);
-      border: 1px solid var(--line); border-radius: 9px;
-      padding: .6rem .8rem; font: inherit;
-    }
-    .bar input:focus { outline: none; border-color: var(--blue); }
-    .count { color: var(--quiet); font-size: .88rem; }
-
-    .grid { display: grid; gap: 1.1rem; grid-template-columns: repeat(auto-fill, minmax(236px, 1fr)); }
-
-    .card {
-      display: flex; flex-direction: column; text-decoration: none;
-      border: 1px solid var(--line); border-radius: 14px;
-      background: var(--panel); overflow: hidden;
-      transition: border-color .15s ease, transform .15s ease;
-    }
-    .card:hover { border-color: var(--line-strong); transform: translateY(-3px); }
-    /* A store is something you decide by looking at, so the picture leads. */
-    .shot {
-      aspect-ratio: 4 / 3; background: var(--bg);
-      border-bottom: 1px solid var(--line);
-      display: grid; place-items: center; overflow: hidden;
-    }
-    .shot img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
-    .shot .none { color: var(--quiet); font-size: .76rem; }
-
-    .card-body { padding: .85rem .95rem 1rem; display: flex; flex-direction: column; flex: 1; }
-    .card-id { display: flex; align-items: center; gap: .6rem; margin-bottom: .55rem; min-width: 0; }
-    .card-icon {
-      flex: none; width: 34px; height: 34px; border-radius: 9px;
-      display: grid; place-items: center; object-fit: cover;
-      color: rgba(255, 255, 255, .92); font-size: .8rem; font-weight: 600;
-      border: 1px solid rgba(255, 255, 255, .08);
-    }
-    .card-name {
-      color: var(--text); font-weight: 600; font-size: .98rem;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .card-cat { color: var(--quiet); font-size: .76rem; }
-    .card-desc {
-      color: var(--muted); font-size: .87rem; line-height: 1.5; margin: 0 0 .8rem;
-      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-    }
-    .card-foot {
-      display: flex; align-items: center; gap: .4rem;
-      margin-top: auto; color: var(--quiet); font-size: .8rem;
-    }
-    .card-foot img { width: 18px; height: 18px; border-radius: 50%; }
-    .card-foot .size { margin-left: auto; }
-
-    .cats { display: flex; gap: .45rem; flex-wrap: wrap; margin-bottom: 1.3rem; }
-    .cats button {
-      font: inherit; font-size: .82rem; cursor: pointer;
-      color: var(--muted); background: none;
-      border: 1px solid var(--line); border-radius: 999px;
-      padding: .32rem .85rem;
-      transition: color .15s, border-color .15s, background .15s;
-    }
-    .cats button:hover { color: var(--text); border-color: var(--line-strong); }
-    .cats button.on { color: #0a0a0a; background: var(--text); border-color: var(--text); }
-
-    /* While the hub answers, ghost cards hold the layout so the page never
-       reads as empty-then-popped. */
-    .skel { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
-    .skel .shot { border-bottom: 1px solid var(--line); }
-    .skel-line { height: .8rem; border-radius: 5px; margin: .9rem .95rem; background: var(--line); }
-    .skel-line.short { width: 45%; }
-    .skel .shot, .skel-line {
-      animation: skel-breathe 1.2s ease-in-out infinite alternate;
-    }
-    @keyframes skel-breathe { from { opacity: .55; } to { opacity: 1; } }
-    @media (prefers-reduced-motion: reduce) { .skel .shot, .skel-line { animation: none; } }
-
-    .empty { color: var(--quiet); text-align: center; padding: 3.5rem 1rem; line-height: 1.8; }
-    .empty a { color: var(--blue-soft); }
-
-    .how {
-      margin-top: 3.5rem; border-top: 1px solid var(--line); padding-top: 2rem;
-      display: grid; gap: 1.6rem; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    }
-    .how h2 {
-      font-size: .78rem; text-transform: uppercase; letter-spacing: .09em;
-      color: var(--quiet); margin: 0 0 .55rem; font-weight: 600;
-    }
-    .how p { color: var(--muted); line-height: 1.7; margin: 0; font-size: .92rem; }
-    .how a { color: var(--blue-soft); }
-    .how code {
-      font-family: var(--mono); font-size: .82rem; color: var(--blue-soft);
-      background: var(--bg); border: 1px solid var(--line);
-      border-radius: 5px; padding: .1rem .4rem;
-    }
-  </style>
+@media (prefers-reduced-motion: reduce) { .card { animation: none; opacity: 1; transform: none; filter: none; } }
+</style>
 </head>
 <body>
-  <header class="site-head">
-  <div class="head-inner">
-    <a class="brand" href="/">
-      <img src="/krate-glyph-white.png" alt="" width="22" height="22" />
-      KRATE
-    </a>
-    <nav class="head-nav" aria-label="Primary">
-      <a href="/#how">How it works</a>
-      <a href="/cloud/">Gallery</a>
-      <a href="/docs/">Docs</a>
-      <a href="https://github.com/incyashraj/krate">GitHub</a>
-    </nav>
-    <a class="pill pill-primary" href="/studio/">Download Studio</a>
-  </div>
-</header>
-
-  <main class="page-wide">
-    <div class="hero">
-      <span class="badge">Early access</span>
-      <img class="hero-mark" src="/krate-glyph-white.png"
-           alt="" width="96" height="96" />
-      <h1>What people made</h1>
-      <p>
-        Apps people have published. Each one is a single file that runs on your
-        own computer in a sandbox &mdash; it tells you what it wants before it
-        starts, and gets nothing else.
-      </p>
-    </div>
-
-    <div class="bar">
-      <input type="search" id="q" placeholder="Search apps" autocomplete="off" />
-      <span class="count" id="count"></span>
-    </div>
-    <div class="cats" id="cats"></div>
-
-    <div id="list"></div>
-
-    <div class="how">
-      <div>
-        <h2>Open one</h2>
-        <p>
-          <a href="/">Install Krate</a> once, then click any app here and copy
-          its command. Krate downloads it, shows what it asks for, and opens it
-          when you agree.
-        </p>
-      </div>
-      <div>
-        <h2>Make your own</h2>
-        <p>
-          Type <code>krate</code> in a terminal. It asks what you want to make,
-          and an AI you already have writes it.
-        </p>
-      </div>
-      <div>
-        <h2>Publish it</h2>
-        <p>
-          <code>krate publish yourapp.krate</code>, or drop the file on
-          <a href="/publish/">the publish page</a>. It appears here with your
-          name on it.
-        </p>
-      </div>
-    </div>
-  </main>
-
-  <script>
-    const HUB = "https://hub.krate.tech";
-    let ALL = [];
-    let CAT = "all";
-
-    /* The shelf comes from the hub; the fallback covers apps published
-       before the hub stored one. */
-    const CATS = [
-      ["all", "Everything"], ["games", "Games"], ["productivity", "Productivity"],
-      ["tools", "Tools"], ["media", "Media"], ["learning", "Learning"], ["apps", "More"],
-    ];
-    const catOf = (a) => (a.meta && a.meta.category) || "apps";
-    const catLabel = (id) => (CATS.find(([c]) => c === id) || [id, id])[1];
-
-    /* No uploaded logos, so each app gets a monogram tile coloured from its
-       own name -- stable across visits, distinct across apps. */
-    function tile(name) {
-      let h = 0;
-      for (const ch of name) h = (h * 31 + ch.codePointAt(0)) % 360;
-      const words = name.trim().split(/\s+/);
-      const mono = words.length > 1
-        ? (words[0][0] + words[1][0]).toUpperCase()
-        : name.slice(0, 2).replace(/^./, (c) => c.toUpperCase());
-      return `<span class="card-icon" style="background:linear-gradient(135deg,hsl(${h} 42% 30%),hsl(${(h + 40) % 360} 46% 18%))">${esc(mono)}</span>`;
-    }
-
-    const esc = (v) => String(v).replace(/[&<>"]/g, (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-
-    const kb = (b) => b < 1024 ? b + " B"
-      : b < 1048576 ? Math.round(b / 1024) + " KB"
-      : (b / 1048576).toFixed(1) + " MB";
-
-    function ago(seconds) {
-      const d = Math.max(0, Math.floor(Date.now() / 1000) - seconds);
-      if (d < 3600) return Math.max(1, Math.floor(d / 60)) + "m ago";
-      if (d < 86400) return Math.floor(d / 3600) + "h ago";
-      if (d < 2592000) return Math.floor(d / 86400) + "d ago";
-      return new Date(seconds * 1000).toLocaleDateString();
-    }
-
-    function card(app) {
-      const m = app.meta || {};
-      return `
-        <a class="card" href="/cloud/app/?id=${esc(app.id)}">
-          <div class="shot">
-            ${app.shot
-              ? `<img loading="lazy" src="${esc(app.shot)}" alt="${esc(m.name || "App")} running" />`
-              : '<span class="none">no screenshot yet</span>'}
-          </div>
-          <div class="card-body">
-            <div class="card-id">
-              ${app.icon
-                ? `<img class="card-icon" src="${esc(app.icon)}" alt="" onerror="this.remove()" />`
-                : tile(m.name || "App")}
-              <div style="min-width:0">
-                <div class="card-name">${esc(m.name || "Untitled app")}</div>
-                <div class="card-cat">${esc(catLabel(catOf(app)))}</div>
-              </div>
-            </div>
-            ${m.description ? `<p class="card-desc">${esc(m.description)}</p>` : ""}
-            <div class="card-foot">
-              ${m.avatar_url ? `<img src="${esc(m.avatar_url)}" alt="" />` : ""}
-              <span>${esc(m.author || "anonymous")}</span>
-              <span class="size">${kb(m.size || 0)} &middot; ${ago(m.published || 0)}</span>
-            </div>
-          </div>
-        </a>`;
-    }
-
-    function render(apps) {
-      const term = document.getElementById("q").value.trim().toLowerCase();
-      const shown = apps.filter((a) => {
-        const m = a.meta || {};
-        if (CAT !== "all" && catOf(a) !== CAT) return false;
-        return !term
-          || (m.name || "").toLowerCase().includes(term)
-          || (m.description || "").toLowerCase().includes(term)
-          || (m.author || "").toLowerCase().includes(term);
-      });
-
-      document.getElementById("count").textContent =
-        shown.length === apps.length
-          ? `${apps.length} app${apps.length === 1 ? "" : "s"}`
-          : `${shown.length} of ${apps.length}`;
-
-      document.getElementById("list").innerHTML = shown.length
-        ? '<div class="grid">' + shown.map(card).join("") + "</div>"
-        : '<p class="empty">Nothing matches that.</p>';
-    }
-
-    (async () => {
-      const list = document.getElementById("list");
-      // Ghost cards up immediately: the page must say "loading" by shape,
-      // not sit still and then pop.
-      list.innerHTML = '<div class="grid">' + Array.from({ length: 8 }).map(() =>
-        '<div class="skel"><div class="shot"></div><div class="skel-line"></div><div class="skel-line short"></div></div>'
-      ).join("") + "</div>";
-      document.getElementById("count").textContent = "loading\u2026";
-      try {
-        const { apps } = await fetch(HUB + "/apps").then((r) => r.json());
-        ALL = apps;
-        if (!apps.length) {
-          list.innerHTML =
-            '<p class="empty">Nothing published yet.<br /><a href="/publish/">Be the first</a>.</p>';
-          return;
-        }
-        // A shelf nobody has published to is noise, so it is not drawn.
-        const box = document.getElementById("cats");
-        box.innerHTML = CATS
-          .filter(([id]) => id === "all" || apps.some((a) => catOf(a) === id))
-          .map(([id, label]) => `<button data-cat="${id}"${id === CAT ? ' class="on"' : ""}>${label}</button>`)
-          .join("");
-        box.addEventListener("click", (e) => {
-          const b = e.target.closest("button[data-cat]");
-          if (!b) return;
-          CAT = b.dataset.cat;
-          for (const el of box.children) el.classList.toggle("on", el === b);
-          render(ALL);
-        });
-        render(ALL);
-        document.getElementById("q").addEventListener("input", () => render(ALL));
-      } catch (err) {
-        list.innerHTML =
-          '<p class="empty">Could not reach the gallery just now.<br />Try again in a moment.</p>';
-      }
-    })();
-  </script>
-
-  <footer class="site-foot">
-  <div class="foot-inner">
-    <span>© 2026 Krate Labs</span>
-    <nav aria-label="Footer">
-      <a href="/">Home</a>
-      <a href="/studio/">Studio</a>
-      <a href="/open/">Received an app?</a>
-      <a href="/faq.html">FAQ</a>
-      <a href="/contact/">Contact</a>
-      <a href="/privacy/">Privacy</a>
-      <a href="https://github.com/incyashraj/krate">GitHub</a>
-    </nav>
-  </div>
+<div class="bloom"></div>
+<div class="topblur"></div>
+<div class="brandbar">
+  <a class="name" href="/"><img src="/krate-glyph-white.png" alt="" /> KRATE</a>
+  <nav class="bnav" aria-label="Primary">
+    <a href="/#pricing" >Pricing</a>
+    <a href="/docs/" >Docs</a>
+    <a href="/cloud/" class="here">Gallery</a>
+    <a href="/account/" >Account</a>
+  </nav>
+</div>
+<div class="wrap">
+<h1 class="page">The gallery.</h1>
+<p class="pagesub">Apps people made and shared. Every one is a single file that runs in the sandbox and tells you what it wants before it starts.</p>
+<div class="grid" id="grid"><p style="color:#71717a;font-size:13px">Loading…</p></div>
+<p class="gnote">Every app opens with the same permission flow. Made something yourself? Studio's Send &rarr; Publish puts it here.</p>
+</div>
+<footer class="foot">
+  <span>© 2026 Krate Labs</span>
+  <nav>
+    <a href="/">Home</a>
+    <a href="/#pricing">Pricing</a>
+    <a href="/open/">Received an app?</a>
+    <a href="/faq/">FAQ</a>
+    <a href="/contact/">Contact</a>
+    <a href="https://github.com/incyashraj/krate">GitHub</a>
+  </nav>
 </footer>
 <script>
-// One anonymous page view -- the page name and the day, to our own hub.
-// No cookie, no id, no referrer; strictly less than any analytics vendor.
+(function () {
+  function esc(s) { var d = document.createElement("i"); d.textContent = s == null ? "" : s; return d.innerHTML; }
+  fetch("https://hub.krate.tech/apps").then(function (r) { return r.json(); }).then(function (d) {
+    var grid = document.getElementById("grid");
+    var apps = (d.apps || []).filter(function (a) { return a.meta && !a.meta.unlisted; });
+    if (!apps.length) { grid.innerHTML = '<p style="color:#71717a">Nothing here yet.</p>'; return; }
+    grid.innerHTML = apps.map(function (a, i) {
+      var m = a.meta;
+      return '<a class="appc" style="animation-delay:' + (i * 0.05) + 's" href="' + esc(a.url) + '" target="_blank" rel="noopener">'
+        + '<div class="shot"><img loading="lazy" src="' + esc(a.shot) + '" alt="" onerror="this.remove()" /></div>'
+        + '<div class="b"><div class="nm">' + esc(m.name) + '</div>'
+        + '<div class="by">' + (m.avatar_url ? '<img src="' + esc(m.avatar_url) + '" alt="" />' : '')
+        + esc(m.author || m.author_login || "") + '<span class="kb">' + Math.round((m.size || 0) / 1024) + ' KB</span></div>'
+        + '</div></a>';
+    }).join("");
+  }).catch(function () {
+    document.getElementById("grid").innerHTML = '<p style="color:#71717a">Could not reach the gallery -- try again in a moment.</p>';
+  });
+})();
+</script>
+<script>
+// Count the visit, and nothing about the visitor. No cookie, no stored id,
+// no referrer -- the page path and the day, sent to our own hub.
 (function () {
   try {
     fetch("https://hub.krate.tech/view", {
