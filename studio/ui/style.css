@@ -577,12 +577,14 @@ body.windows .titlebar { padding-right: 150px; }
 }
 .shot-stage img {
   display: block;
-  max-width: 100%; max-height: 42vh;
+  max-width: 100%; max-height: 52vh;
   width: auto; height: auto;
   border: 1px solid var(--line-strong);
   border-bottom: none;
   border-radius: 8px 8px 0 0;
-  object-fit: cover; object-position: top center;
+  /* contain, never cover: the total at the card's foot IS the product;
+     cropping it to save chat room was backwards (per-page review). */
+  object-fit: contain; object-position: top center;
 }
 /* No picture: a quiet placeholder rather than a broken-image glyph. An old
    session or a failed --shoot both land here. */

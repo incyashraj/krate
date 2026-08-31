@@ -113,9 +113,6 @@
     <main class="home">
 
       <div class="home-hero">
-        <p class="home-greet reveal" id="homeGreet"></p>
-        <h1 class="display home-title reveal" id="homeTitle">Make an app you can send</h1>
-        <p class="home-sub reveal">One sentence is enough. It becomes a real app you can send to anyone.</p>
         <div class="composer-shell reveal">
           <div class="bigbar">
             <div class="attach-row hidden" id="homeAttachRow"></div>
@@ -134,7 +131,7 @@
             <button type="button" data-sugg="a week 3 heat-loss lab for my class -- three checks and a score at the bottom; students open the file, no account. It cannot use the network"><span class="trend"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.8 11.2L6 7l3 3 5.2-5.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.6 4.4h3.8v3.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>A lab my students just open<svg class="go" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8 6 12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
           </div>
           <div class="airow">
-            <button class="aichip" id="builtByChip"><span class="dot" id="builtByDot"></span>Built by <b id="builtByName">…</b><span class="chev">· change ▾</span></button>
+            <button class="aichip hidden" id="builtByChip"><span class="dot" id="builtByDot"></span>Built by <b id="builtByName"></b><span class="chev">· change ▾</span></button>
           </div>
         </div>
       </div>
@@ -686,25 +683,23 @@
       <div class="send-opts">
         <button class="send-opt" id="sendCardBtn" type="button">
           <b>Send the file</b>
-          <span>Makes a card: a picture of your app running that is also the
-          app. Drag it into mail, AirDrop, or a chat&rsquo;s paperclip.</span>
-        </button>
-        <button class="send-opt" id="sendLinkBtn" type="button">
-          <b>Send a link</b>
-          <span>A URL anyone with it can open. For when you cannot drop a
-          file. Needs a sign-in.</span>
+          <span>AirDrop it, mail it, drop it in a chat -- anywhere you'd
+          send a photo.</span>
         </button>
         <button class="send-opt send-opt-quiet" id="sendWrapBtn" type="button">
           <b>For a friend without Krate</b>
-          <span>A double-clickable for their system that installs Krate once
-          (a small download), then opens this app. Their next .krate just
-          opens.</span>
+          <span>A double-clickable for their computer: installs Krate once,
+          then opens this app.</span>
         </button>
         <div class="send-wrap-os hidden" id="sendWrapOs">
           <button class="btn" data-wrap="mac" type="button">Mac</button>
           <button class="btn" data-wrap="windows" type="button">Windows</button>
           <button class="btn" data-wrap="linux" type="button">Linux</button>
         </div>
+        <button class="send-opt send-opt-quiet" id="sendLinkBtn" type="button">
+          <b>Send a link</b>
+          <span>A URL anyone can open. Needs a sign-in.</span>
+        </button>
       </div>
       <div class="send-done hidden" id="sendCardDone">
         <img id="sendCardImg" alt="The card: your app's picture with the app inside" />
