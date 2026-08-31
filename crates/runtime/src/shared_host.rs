@@ -27,6 +27,11 @@ pub enum SharedError {
     InvalidName,
     TooLarge,
     Io(String),
+    /// This host cannot reach the sharing hub at all -- a browser preview,
+    /// where the browser's own origin rules forbid one app reading
+    /// another's storage. Distinct from `Io`, which means the network was
+    /// tried and failed, so the words a person reads can say which.
+    Unsupported,
 }
 
 /// Bounds matching the hub's: a list, not a database.
@@ -154,6 +159,7 @@ impl AppShared {
             .collect()
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn create(&mut self) -> Result<String, SharedError> {
         let text = ureq::post(&format!("{}/share/new", self.hub))
             .timeout(std::time::Duration::from_secs(8))
@@ -175,6 +181,7 @@ impl AppShared {
         Ok(code)
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn join(&mut self, code: &str) -> Result<(), SharedError> {
         let code = code.trim().to_ascii_lowercase();
         if !code.chars().all(|c| c.is_ascii_alphanumeric()) || code.len() != 10 {
@@ -225,6 +232,30 @@ impl AppShared {
         }
     }
 
+    // The browser's answers. Everything local -- get, set, delete, keys --
+    // works exactly as it does anywhere; only reaching the hub is out of
+    // reach, because a tab is bound by the browser's origin rules and one
+    // app reading another's storage is precisely what those forbid.
+    //
+    // Refusing beats a silent no-op: an app whose share never syncs, with
+    // nothing said, looks broken to the person and to whoever they shared
+    // with.
+    #[cfg(target_arch = "wasm32")]
+    pub fn create(&mut self) -> Result<String, SharedError> {
+        Err(SharedError::Unsupported)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn join(&mut self, _code: &str) -> Result<(), SharedError> {
+        Err(SharedError::Unsupported)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn sync_now(&mut self) -> Result<bool, SharedError> {
+        Err(SharedError::Unsupported)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn sync_now(&mut self) -> Result<bool, SharedError> {
         let Some(code) = self.state.code.clone() else {
             return Err(SharedError::NotJoined);

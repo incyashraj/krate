@@ -489,6 +489,15 @@ fn shared_error_to_wit(error: crate::shared_host::SharedError) -> store::shared:
         SharedError::InvalidName => store::shared::SharedError::InvalidName,
         SharedError::TooLarge => store::shared::SharedError::TooLarge,
         SharedError::Io(message) => store::shared::SharedError::Io(message),
+        // Same reasoning as store.sql above: the guest contract does not
+        // grow a variant, because every existing .krate was built against
+        // it and an app that handles Io already handles this. The words
+        // carry the truth.
+        SharedError::Unsupported => store::shared::SharedError::Io(
+            "sharing between people needs the app on your computer, which a \
+             browser preview cannot do -- download it to share"
+                .to_string(),
+        ),
     }
 }
 
