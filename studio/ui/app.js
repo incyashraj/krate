@@ -16,7 +16,22 @@
 
 const tauri = window.__TAURI__ || null;
 const $ = (id) => document.getElementById(id);
-const invoke = (cmd, args) => (tauri ? tauri.core.invoke(cmd, args) : mockInvoke(cmd, args));
+
+/* One door to the shell, and three things that can be behind it.
+ *
+ * On a desktop it is Tauri. In a browser it is the bridge, which answers
+ * the same commands against the hub and the build service -- that is what
+ * lets this exact interface be Studio in a tab rather than a second UI
+ * written to look like one. And with neither, the design-time mock, so
+ * the interface can be worked on with no backend at all.
+ *
+ * Nothing else in this file knows or cares which. */
+const invoke = (cmd, args) =>
+  tauri
+    ? tauri.core.invoke(cmd, args)
+    : window.__KRATE_BRIDGE__
+      ? window.__KRATE_BRIDGE__(cmd, args)
+      : mockInvoke(cmd, args);
 
 /* One update check per session: newer release -> a quiet chip that opens
  * this machine's installer. No auto-download, no nagging; the person
@@ -1556,9 +1571,12 @@ function renderFreeCount() {
   const left = Math.max(0, 3 - n);
   const chip = $("freeCount");
   if (chip) {
+    // Three EVER, per account -- not three a month. The decision is
+    // Yashraj's (2026-09-01, K-216) and the words must not promise a
+    // monthly reset the wall will not honour.
     chip.textContent =
       planIsActiveSafe() ? "Studio plan"
-      : n === 0 ? "3 free this month"
+      : n === 0 ? "3 free apps"
       : n <= 3 ? `${left} of 3 free left`
       : "Free plan";
     // When billing is open and the person is on free, the chip is a door

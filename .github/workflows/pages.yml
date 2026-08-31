@@ -102,6 +102,27 @@ jobs:
           cp docs/landing/make/index.html _site/make/index.html
           cp docs/landing/make/make.js _site/make/make.js
           cp docs/landing/make/rate-card.png _site/make/rate-card.png
+          # Studio in a tab: STUDIO'S OWN interface, copied rather than
+          # reimplemented, with one script added. Its UI talks to the shell
+          # through a single invoke() call, so the bridge answers the same
+          # commands against the hub and the build service. Copying means
+          # the two surfaces cannot drift -- a fix to the build card lands
+          # on both at once, because there is one copy of it.
+          mkdir -p _site/app
+          cp -R studio/ui/. _site/app/
+          rm -f _site/app/*.bak
+          cp docs/landing/studio/bridge.js _site/app/bridge.js
+          python3 - <<'PY'
+          import re
+          p = "_site/app/index.html"
+          s = open(p).read()
+          # The bridge must be in place before app.js runs, or the first
+          # command fires against a door that is not there yet.
+          s = s.replace('<script src="app.js"></script>',
+                        '<script src="bridge.js"></script>\n  <script src="app.js"></script>')
+          open(p, "w").write(s)
+          print("studio bridged for the web")
+          PY
           # Krate Studio's public page. The homepage links to /studio/, so this
           # directory must be copied into the assembled artifact explicitly.
           cp docs/landing/studio/index.html _site/studio/index.html
