@@ -4426,6 +4426,10 @@ window.addEventListener("resize", () => {
 $("newBtn")?.addEventListener("click", () => {
   $("homePrompt") && $("homePrompt").focus();
 });
+// The send arrow wakes only when there is something to send.
+$("homePrompt")?.addEventListener("input", () => {
+  $("homeSend")?.classList.toggle("ready", Boolean($("homePrompt").value.trim()));
+});
 
 /* With the dock gone, the pages it reached need their own way home. */
 document.querySelectorAll("[data-backhome]").forEach((b) =>
@@ -4814,7 +4818,6 @@ const EXAMPLES = [
   { label: "A lab my students just open", sugg: "a week 3 heat-loss lab for my class -- three checks and a score at the bottom; students open the file, no account. It cannot use the network" },
   { label: "A trip splitter for the group chat", sugg: "a trip splitter -- add people by name, add expenses with who paid, and it shows who owes whom to settle up. It cannot use the network" },
   { label: "A care schedule for my parent", sugg: "a care schedule for my parent's medicines -- big readable text, tick each dose as given today, ticks reset each morning. It cannot use the network" },
-  { label: "A grocery list my partner can edit too", sugg: "a shared grocery list my partner can edit too" },
   { label: "A quote calculator customers fill in", sugg: "a quote calculator my customers fill in themselves. It cannot use the network" },
 ];
 

@@ -1477,6 +1477,7 @@ img.cloud-icon { object-fit: cover; }
   transition: transform 0.12s, color 0.15s, border-color 0.15s;
 }
 .bigbar-row .send:hover { color: var(--text); border-color: var(--muted); }
+.bigbar-row .send.ready { color: var(--text); border-color: var(--muted); }
 .bigbar-row .send:active { transform: scale(0.92); }
 
 /* One quiet sentence under the bar: who builds, and the door to change it. */
@@ -1999,10 +2000,10 @@ body.scrolled .dock-solo {
 .sugg-list button {
   width: 100%; display: block; font-family: var(--sans);
   font-size: 13.5px; color: var(--muted); background: transparent; border: 0;
-  border-radius: 8px; padding: 8px 10px; cursor: pointer; text-align: left;
-  transition: color 0.16s;
+  border-radius: 9px; padding: 9px 12px; cursor: pointer; text-align: left;
+  transition: color 0.16s, background 0.16s;
 }
-.sugg-list button:hover { color: var(--text); }
+.sugg-list button:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
 .sugg-list button:hover { background: rgba(255, 255, 255, 0.05); color: var(--text); }
 .sugg-list .ic {
   width: 24px; height: 24px; border-radius: 7px; border: 1px solid rgba(255, 255, 255, 0.1);
@@ -2795,35 +2796,38 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
 
 /* ---- the elite home (2026-08-31) -------------------------------------- */
 .dockwrap { display: none !important; }
-/* first-run: a column, box above true centre, black */
-.home { justify-content: flex-start; padding-top: 27vh; }
+/* the box + ideas are ONE block at the optical centre of the pane:
+   flex-centred, then nudged up -- no dead ceiling, no basement */
+.home { justify-content: center; padding-top: 0; }
+.home .home-hero { transform: translateY(-5.5vh); }
 /* returning: the roll on the left, the box standing where it was */
 .home.with-roll { flex-direction: row; align-items: stretch; padding: 0; }
 .home-side {
   width: 236px; flex: none; display: flex; flex-direction: column;
   border-right: 1px solid var(--line);
-  padding: 14px 10px 20px;
+  padding: 14px 10px 36px;
 }
 .new-btn {
   display: flex; align-items: center; gap: 9px; width: 100%;
-  padding: 8px 10px; margin-bottom: 12px;
-  border: 0; border-radius: 9px; background: rgba(255, 255, 255, 0.06);
-  color: var(--text); font-family: var(--sans); font-size: 13px; font-weight: 500;
+  padding: 8px 12px; margin-bottom: 12px;
+  border: 0; border-radius: 9px; background: none;
+  color: var(--muted); font-family: var(--sans); font-size: 13px; font-weight: 500;
   cursor: pointer; text-align: left;
+  transition: background 0.15s, color 0.15s;
 }
-.new-btn span { font-size: 15px; color: var(--muted); }
-.new-btn:hover { background: rgba(255, 255, 255, 0.09); }
+.new-btn span { font-size: 15px; }
+.new-btn:hover { background: rgba(255, 255, 255, 0.05); color: var(--text); }
 .home-roll {
   flex: 1; overflow-y: auto;
   display: flex; flex-direction: column; gap: 1px;
 }
 .home.with-roll .home-hero {
   flex: 1; align-self: stretch;
-  justify-content: flex-start; padding-top: 27vh;
+  justify-content: center;
 }
 .roll-item {
   display: block; width: 100%; min-height: 32px;
-  padding: 6px 10px; border: 0; border-radius: 8px; background: none;
+  padding: 6px 12px; border: 0; border-radius: 8px; background: none;
   cursor: pointer; text-align: left; font-family: var(--sans);
 }
 .roll-item:hover { background: rgba(255, 255, 255, 0.05); }
