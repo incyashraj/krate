@@ -131,6 +131,19 @@ fn engine() -> Result<PathBuf, String> {
             if sibling.exists() {
                 return Ok(sibling);
             }
+            // A dev studio lives at <repo>/studio/target/debug/; the engine
+            // it belongs with lives at <repo>/target/debug/. Resolving it
+            // by construction beats hoping PATH agrees -- the bare name
+            // below has picked stale installed binaries before (K-180).
+            let dev_engine = dir
+                .ancestors()
+                .nth(3)
+                .map(|repo| repo.join("target").join("debug").join(name));
+            if let Some(dev_engine) = dev_engine {
+                if dev_engine.exists() {
+                    return Ok(dev_engine);
+                }
+            }
             // Inside a macOS .app the bundler puts resources in
             // Contents/Resources/, NOT Contents/MacOS/ beside the binary.
             // Checking only for a sibling meant a bundled Krate.app shipped
@@ -2211,9 +2224,10 @@ fn show_wand(app: &tauri::AppHandle, path: &std::path::Path, cold: bool) {
         tauri::WebviewUrl::App("wand.html".into()),
     )
     .title("")
-    .inner_size(420.0, 176.0)
+    .inner_size(440.0, 190.0)
     .resizable(false)
     .decorations(false)
+    .transparent(true)
     .shadow(true)
     .always_on_top(true)
     .build();

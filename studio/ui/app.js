@@ -280,8 +280,12 @@ async function boot() {
   } catch (err) {
     // A missing engine shows on the gate too -- there is nowhere better,
     // and a person facing a broken install needs the real reason rather
-    // than a sign-in button that can never work.
-    $("gateError").textContent = plainWords(err);
+    // than a sign-in button that can never work. Never the build words
+    // here: nothing was being built, and the raw reason goes to the log.
+    invoke("dbg_log", { line: "boot failed: " + String(err).slice(0, 400) }).catch(() => {});
+    $("gateError").textContent =
+      "Krate's engine did not answer" + (String(err || "").trim() ? ": " + String(err).slice(0, 200) : ".") +
+      " Reinstalling Krate usually fixes this.";
     $("gateError").classList.remove("hidden");
     $("loginBtn").disabled = true;
   }

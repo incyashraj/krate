@@ -5,56 +5,75 @@
 <title>Change this app</title>
 <style>
   :root {
-    --bg: #101116; --line: #23262d; --text: #ffffff;
-    --muted: rgba(255, 255, 255, 0.56); --faint: rgba(255, 255, 255, 0.34);
-    --blue: #6291ff;
+    --bg: #101116; --panel: #14151b; --line: rgba(255, 255, 255, 0.1);
+    --text: #ffffff; --muted: rgba(255, 255, 255, 0.58);
+    --faint: rgba(255, 255, 255, 0.34); --blue: #6291ff;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { background: #101116; height: 100%; }
+  html, body { background: transparent; height: 100%; }
   body {
     font: 13.5px/1.5 "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
     color: var(--text); -webkit-font-smoothing: antialiased;
-    display: flex; align-items: stretch;
+    display: flex; align-items: stretch; padding: 10px;
   }
   .card {
-    position: relative; flex: 1; display: flex; flex-direction: column; gap: 8px;
-    background: var(--bg); border: 1px solid rgba(255, 255, 255, 0.1);
-    padding: 14px 16px 13px;
+    position: relative; flex: 1; display: flex; flex-direction: column;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 18px;
+    padding: 15px 18px 14px; overflow: hidden;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06);
   }
-  .drag { position: absolute; inset: 0 40px auto 0; height: 34px; }
-  .top { display: flex; align-items: baseline; gap: 8px; }
-  .top b { font-size: 14px; font-weight: 600; }
-  .top span { font-size: 12px; color: var(--faint); }
+  /* the twilight the rest of Krate lives in, kissing the card's floor */
+  .card::after {
+    content: ""; position: absolute; left: -20%; right: -20%; bottom: -55px;
+    height: 90px; pointer-events: none; filter: blur(18px);
+    background:
+      radial-gradient(60% 100% at 50% 100%, rgba(124, 108, 255, 0.34), transparent 75%),
+      radial-gradient(110% 100% at 50% 110%, rgba(74, 70, 216, 0.4), transparent 80%);
+  }
+  .card > * { position: relative; z-index: 1; }
+  .drag { position: absolute; inset: 0 44px auto 0; height: 40px; z-index: 2; }
+  .top { display: flex; align-items: center; gap: 9px; padding-right: 26px; }
+  .top img { width: 16px; height: 16px; opacity: 0.9; }
+  .top b { font-size: 14px; font-weight: 600; letter-spacing: -0.01em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .top span { font-size: 12px; color: var(--faint); white-space: nowrap; }
   .x {
-    position: absolute; top: 9px; right: 10px; width: 24px; height: 24px;
-    display: grid; place-items: center; border: 0; background: none;
-    color: var(--faint); cursor: pointer; border-radius: 7px; font-size: 14px;
+    position: absolute; top: 12px; right: 12px; width: 26px; height: 26px;
+    display: grid; place-items: center; border: 0; background: none; z-index: 3;
+    color: var(--faint); cursor: pointer; border-radius: 8px; font-size: 13px;
+    transition: color 0.15s ease, background 0.15s ease;
   }
-  .x:hover { color: var(--text); background: rgba(255, 255, 255, 0.07); }
-  .lead { color: var(--muted); font-size: 12.5px; }
-  .row { display: flex; gap: 8px; }
+  .x:hover { color: var(--text); background: rgba(255, 255, 255, 0.08); }
+  .lead { color: var(--muted); font-size: 12.5px; margin-top: 4px; }
+  .row { display: flex; gap: 8px; margin-top: 11px; }
   input {
-    flex: 1; min-width: 0; padding: 9px 12px; border-radius: 10px;
-    border: 1px solid var(--line); background: #0a0b0e; color: var(--text);
-    font: inherit; font-size: 13px; outline: none;
+    flex: 1; min-width: 0; padding: 10px 13px; border-radius: 11px;
+    border: 1px solid var(--line); background: rgba(0, 0, 0, 0.35);
+    color: var(--text); font: inherit; font-size: 13px; outline: none;
+    transition: border-color 0.15s ease;
   }
-  input:focus { border-color: rgba(98, 145, 255, 0.55); }
+  input::placeholder { color: var(--faint); }
+  input:focus { border-color: rgba(98, 145, 255, 0.6); }
   button.go {
-    flex: none; padding: 9px 15px; border-radius: 10px; border: 0;
+    flex: none; padding: 10px 16px; border-radius: 11px; border: 0;
     background: var(--text); color: #0a0a0a; font: inherit; font-size: 13px;
     font-weight: 600; cursor: pointer;
+    transition: transform 0.12s ease, opacity 0.15s ease;
   }
-  button.go:disabled { opacity: 0.45; cursor: default; }
-  .status { font-size: 12px; color: var(--muted); min-height: 16px;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .status.err { color: #ff9aab; white-space: normal; }
-  .status.ok { color: #7ee2a8; }
-  .pulse { display: inline-block; width: 7px; height: 7px; border-radius: 50%;
-    background: var(--blue); margin-right: 7px; vertical-align: 1px;
-    animation: pulse 1.2s ease-in-out infinite; }
-  @keyframes pulse { 50% { opacity: 0.25; } }
-  .invite { display: none; flex-direction: column; gap: 10px; }
-  .invite p { color: var(--muted); font-size: 12.5px; }
+  button.go:hover { transform: translateY(-1px); }
+  button.go:active { transform: none; }
+  button.go:disabled { opacity: 0.4; cursor: default; transform: none; }
+  .status { display: flex; align-items: center; gap: 8px; min-height: 18px;
+    margin-top: 9px; font-size: 12px; color: var(--muted); }
+  .status .words { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .status.err .words { color: #ff9aab; white-space: normal; }
+  .status.ok .words { color: #7ee2a8; }
+  .pulse { flex: none; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--blue); animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.2; } }
+  .hidden { display: none !important; }
+  .invite p { color: var(--muted); font-size: 12.5px; margin-top: 6px; line-height: 1.55; }
+  .invite .row { margin-top: 12px; }
 </style>
 </head>
 <body>
@@ -63,17 +82,23 @@
   <button class="x" id="close" title="Close">&#10005;</button>
 
   <div id="wish">
-    <div class="top"><b id="appName">This app</b><span>is yours to change</span></div>
-    <p class="lead" id="lead">Tell it what you'd like different, in your own words.</p>
-    <div class="row" style="margin-top:2px">
-      <input id="box" placeholder="bigger text&hellip; add a dark mode&hellip; split it by percentage&hellip;" maxlength="500" />
+    <div class="top">
+      <img src="krate-glyph-white.png" alt="" />
+      <b id="appName">This app</b><span>is yours to change</span>
+    </div>
+    <p class="lead">Tell it what you'd like different, in your own words.</p>
+    <div class="row">
+      <input id="box" placeholder="bigger text&hellip; a dark mode&hellip; split it by percentage&hellip;" maxlength="500" />
       <button class="go" id="go">Change it</button>
     </div>
-    <p class="status" id="status"></p>
+    <p class="status" id="status"><span class="pulse hidden" id="dot"></span><span class="words" id="words"></span></p>
   </div>
 
-  <div class="invite" id="invite">
-    <div class="top"><b id="appName2">This app</b><span>is yours to change</span></div>
+  <div class="invite hidden" id="invite">
+    <div class="top">
+      <img src="krate-glyph-white.png" alt="" />
+      <b id="appName2">This app</b><span>is yours to change</span>
+    </div>
     <p>Changing an app needs an AI to do the writing. Krate Studio sets one
     up free -- then every app you're ever given listens to you.</p>
     <div class="row"><button class="go" id="openStudio">Open Krate Studio</button></div>
@@ -91,19 +116,23 @@ function pretty(path) {
   const stem = (path.split(/[\\/]/).pop() || "").replace(/\.krate$/i, "");
   return stem.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) || "This app";
 }
+function setStatus(kind, text, pulsing) {
+  $("status").className = "status" + (kind ? " " + kind : "");
+  $("words").textContent = text || "";
+  $("dot").classList.toggle("hidden", !pulsing);
+}
 
 async function init() {
   target = await invoke("wand_target");
   const name = target ? pretty(target) : "This app";
   $("appName").textContent = name;
   $("appName2").textContent = name;
-  // No usable AI yet: the wand becomes the doorway to getting one.
   try {
     const agents = await invoke("agents");
     const ready = (agents || []).some((a) => a.state !== "missing" && a.state !== "not-ready");
     if (!ready) {
-      $("wish").style.display = "none";
-      $("invite").style.display = "flex";
+      $("wish").classList.add("hidden");
+      $("invite").classList.remove("hidden");
       return;
     }
   } catch (e) { /* if the probe fails, let them try; the error will say */ }
@@ -117,7 +146,7 @@ tauri.event.listen("wand-target", (ev) => {
   $("appName2").textContent = pretty(target);
 });
 tauri.event.listen("wand-line", (ev) => {
-  if (busy) $("status").innerHTML = '<span class="pulse"></span>' + String(ev.payload).slice(0, 90);
+  if (busy) setStatus("", String(ev.payload).slice(0, 90), true);
 });
 
 async function go() {
@@ -126,17 +155,14 @@ async function go() {
   busy = true;
   $("go").disabled = true;
   $("box").disabled = true;
-  $("status").className = "status";
-  $("status").innerHTML = '<span class="pulse"></span>Making it yours -- a few minutes. Leave this open.';
+  setStatus("", "Making it yours -- a few minutes. Leave this open.", true);
   try {
     await invoke("wand_change", { path: target, wish });
-    $("status").className = "status ok";
-    $("status").textContent = "Done -- opening the new version. Want more? Just say so.";
+    setStatus("ok", "Done -- opening the new version. Want more? Just say so.", false);
     $("box").value = "";
   } catch (err) {
-    $("status").className = "status err";
     const words = String(err).split("\n").filter(Boolean).pop() || "that change did not take";
-    $("status").textContent = words.slice(0, 160) + " -- the app is untouched.";
+    setStatus("err", words.slice(0, 160) + " -- the app is untouched.", false);
   }
   busy = false;
   $("go").disabled = false;
