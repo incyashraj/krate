@@ -14,21 +14,21 @@
   body {
     font: 13.5px/1.5 "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
     color: var(--text); -webkit-font-smoothing: antialiased;
-    display: flex; align-items: stretch; padding: 9px;
+    display: flex; align-items: stretch;
   }
   .card {
     position: relative; flex: 1; display: flex; flex-direction: column;
     background: var(--bg); border: 1px solid var(--line); border-radius: 18px;
     padding: 14px 18px 12px; overflow: hidden; justify-content: center;
-    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   }
   /* the twilight the rest of Krate lives in, kissing the card's floor */
   .card::after {
-    content: ""; position: absolute; left: -20%; right: -20%; bottom: -55px;
-    height: 90px; pointer-events: none; filter: blur(18px);
+    content: ""; position: absolute; left: -15%; right: -15%; bottom: -34px;
+    height: 52px; pointer-events: none; filter: blur(14px);
     background:
-      radial-gradient(60% 100% at 50% 100%, rgba(124, 108, 255, 0.34), transparent 75%),
-      radial-gradient(110% 100% at 50% 110%, rgba(74, 70, 216, 0.4), transparent 80%);
+      radial-gradient(55% 100% at 50% 100%, rgba(124, 108, 255, 0.26), transparent 72%),
+      radial-gradient(105% 100% at 50% 108%, rgba(74, 70, 216, 0.3), transparent 78%);
   }
   .card > * { position: relative; z-index: 1; }
   .drag { position: absolute; inset: 0 44px auto 0; height: 40px; z-index: 2; }
@@ -74,6 +74,30 @@
   .hidden { display: none !important; }
   .invite p { color: var(--muted); font-size: 12.5px; margin-top: 6px; line-height: 1.55; }
   .invite .row { margin-top: 12px; }
+  /* dot mode: the whole window is one quiet circle */
+  .dotwrap { position: relative; flex: 1; display: none; }
+  body.dot .card { display: none; }
+  body.dot .dotwrap { display: block; }
+  .dotbtn {
+    position: absolute; inset: 4px; border-radius: 50%; border: 1px solid var(--line);
+    background: var(--bg); cursor: pointer; display: grid; place-items: center;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+    transition: transform 0.15s ease, border-color 0.15s ease;
+  }
+  .dotbtn:hover { transform: scale(1.06); border-color: rgba(255, 255, 255, 0.22); }
+  .dotbtn img { width: 18px; height: 18px; opacity: 0.9; }
+  .dotwrap.working .dotbtn { border-color: rgba(98, 145, 255, 0.65); }
+  .dotwrap.working .dotbtn::after {
+    content: ""; position: absolute; inset: -1px; border-radius: 50%;
+    border: 1px solid rgba(98, 145, 255, 0.5); animation: pulse 1.2s ease-in-out infinite;
+  }
+  .dotx {
+    position: absolute; top: -2px; right: -2px; width: 18px; height: 18px;
+    border-radius: 50%; border: 0; background: #2a2c34; color: var(--muted);
+    font-size: 10px; display: none; place-items: center; cursor: pointer;
+  }
+  .dotwrap:hover .dotx { display: grid; }
+  .dotx:hover { color: var(--text); background: #3a3d47; }
 </style>
 </head>
 <body>
@@ -105,6 +129,11 @@
   </div>
 </div>
 
+<div class="dotwrap" id="dotwrap">
+  <button class="dotbtn" id="dotBtn" title="Change this app"><img src="krate-glyph-white.png" alt="" /></button>
+  <button class="dotx" id="dotX" title="Put the wand away">&#10005;</button>
+</div>
+
 <script>
 const tauri = window.__TAURI__;
 const invoke = (c, a) => tauri.core.invoke(c, a);
@@ -122,6 +151,17 @@ function setStatus(kind, text, pulsing) {
   $("dot").classList.toggle("hidden", !pulsing);
 }
 
+function seenKey() { return "wandSeen:" + (target || ""); }
+function toDot() {
+  document.body.classList.add("dot");
+  invoke("wand_mode", { mode: "dot" }).catch(() => {});
+}
+function toCard() {
+  document.body.classList.remove("dot");
+  invoke("wand_mode", { mode: "card" }).catch(() => {});
+  $("box").focus();
+}
+
 async function init() {
   target = await invoke("wand_target");
   const name = target ? pretty(target) : "This app";
@@ -136,9 +176,18 @@ async function init() {
       return;
     }
   } catch (e) { /* if the probe fails, let them try; the error will say */ }
-  $("box").focus();
+  // The full card teaches once per app; every open after that is a quiet
+  // dot in the corner until it is asked for.
+  let seen = false;
+  try { seen = localStorage.getItem(seenKey()) === "1"; } catch (e) {}
+  if (seen) { toDot(); } else {
+    try { localStorage.setItem(seenKey(), "1"); } catch (e) {}
+    $("box").focus();
+  }
 }
 init();
+$("dotBtn").addEventListener("click", toCard);
+$("dotX").addEventListener("click", () => invoke("wand_close"));
 
 tauri.event.listen("wand-target", (ev) => {
   target = ev.payload;
@@ -156,6 +205,7 @@ async function go() {
   $("go").disabled = true;
   $("box").disabled = true;
   setStatus("", "Making it yours -- a few minutes. Leave this open.", true);
+  $("dotwrap").classList.add("working");
   try {
     await invoke("wand_change", { path: target, wish });
     setStatus("ok", "Done -- opening the new version. Want more? Just say so.", false);
@@ -164,6 +214,8 @@ async function go() {
     const words = String(err).split("\n").filter(Boolean).pop() || "that change did not take";
     setStatus("err", words.slice(0, 160) + " -- the app is untouched.", false);
   }
+  $("dotwrap").classList.remove("working");
+  if (document.body.classList.contains("dot")) toCard();
   busy = false;
   $("go").disabled = false;
   $("box").disabled = false;
@@ -172,7 +224,7 @@ async function go() {
 $("go").addEventListener("click", go);
 $("box").addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
 $("openStudio").addEventListener("click", () => invoke("wand_open_studio"));
-$("close").addEventListener("click", () => invoke("wand_close"));
+$("close").addEventListener("click", toDot);
 </script>
 </body>
 </html>

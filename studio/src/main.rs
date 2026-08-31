@@ -2224,11 +2224,11 @@ fn show_wand(app: &tauri::AppHandle, path: &std::path::Path, cold: bool) {
         tauri::WebviewUrl::App("wand.html".into()),
     )
     .title("")
-    .inner_size(440.0, 168.0)
+    .inner_size(440.0, 142.0)
     .resizable(false)
     .decorations(false)
     .transparent(true)
-    .shadow(false)
+    .shadow(true)
     .always_on_top(true)
     .build();
     if let Ok(win) = built {
@@ -2284,6 +2284,29 @@ fn place_wand(win: &tauri::WebviewWindow) {
         let y = mpos.y + msize.height as i32 - wsize.height as i32 - (72.0 * scale) as i32;
         let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
     }
+}
+
+/// Card or dot: the wand's two sizes. The bottom-right corner stays put
+/// through the change, so collapsing feels like folding, not jumping.
+#[tauri::command]
+fn wand_mode(app: tauri::AppHandle, mode: String) {
+    let Some(win) = app.get_webview_window("wand") else { return };
+    let (w, h) = if mode == "dot" { (52.0, 52.0) } else { (440.0, 142.0) };
+    let scale = win.scale_factor().unwrap_or(1.0);
+    let (old_pos, old_size) = match (win.outer_position(), win.outer_size()) {
+        (Ok(p), Ok(s)) => (p, s),
+        _ => {
+            let _ = win.set_size(tauri::LogicalSize::new(w, h));
+            return;
+        }
+    };
+    let _ = win.set_size(tauri::LogicalSize::new(w, h));
+    let new_w = (w * scale) as i32;
+    let new_h = (h * scale) as i32;
+    let _ = win.set_position(tauri::PhysicalPosition::new(
+        old_pos.x + old_size.width as i32 - new_w,
+        old_pos.y + old_size.height as i32 - new_h,
+    ));
 }
 
 #[tauri::command]
@@ -3870,6 +3893,7 @@ fn main() {
             wand_change,
             wand_open_studio,
             wand_close,
+            wand_mode,
             support_new,
             support_list,
             support_reply,
