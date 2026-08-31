@@ -95,6 +95,13 @@ jobs:
           # Publish an app from the browser: sign in, attach a .krate, go.
           mkdir -p _site/publish _site/contact _site/studio
           cp docs/landing/publish/index.html _site/publish/index.html
+          # Make in the browser: the page, its script, and the still it
+          # shows. The mock hub is deliberately NOT copied -- it is a
+          # development tool and has no business in production.
+          mkdir -p _site/make
+          cp docs/landing/make/index.html _site/make/index.html
+          cp docs/landing/make/make.js _site/make/make.js
+          cp docs/landing/make/rate-card.png _site/make/rate-card.png
           # Krate Studio's public page. The homepage links to /studio/, so this
           # directory must be copied into the assembled artifact explicitly.
           cp docs/landing/studio/index.html _site/studio/index.html
