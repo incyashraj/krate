@@ -167,7 +167,7 @@ export default {
       }
       // ---- billing: the paid plan, end to end -------------------------
       if (request.method === "GET" && pathname === "/billing/config") {
-        return cors(billingConfig(env));
+        return cors(await billingConfig(env));
       }
       if (request.method === "POST" && pathname === "/billing/checkout") {
         return cors(await billingCheckout(request, env));
@@ -177,6 +177,17 @@ export default {
       }
       if (request.method === "GET" && pathname === "/billing/status") {
         return cors(await billingStatus(request, env));
+      }
+      // ---- the free-tier device counter -------------------------------
+      // The three-a-month wall is device-bound. The device keeps its own
+      // count (plan.json), and this mirror makes deleting that file
+      // pointless: the studio takes the max of both whenever it is online.
+      // The device hash is anonymous and is the whole identity here.
+      if (request.method === "POST" && pathname === "/plan/count") {
+        return cors(await planCount(request, env, true));
+      }
+      if (request.method === "POST" && pathname === "/plan/get") {
+        return cors(await planCount(request, env, false));
       }
       // ---- the account: profile, apps, referrals, the portal ----------
       if (request.method === "GET" && pathname === "/me") {
@@ -1603,10 +1614,19 @@ function billingLive(env) {
   return Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_PRICE_MONTHLY && env.STRIPE_PRICE_YEARLY);
 }
 
-function billingConfig(env) {
+const FOUNDING_SEATS = 200;
+
+async function foundingSold(env) {
+  return parseInt((await env.APPS.get("foundingSold")) || "0", 10);
+}
+
+async function billingConfig(env) {
+  const sold = await foundingSold(env);
   return json({
     live: billingLive(env),
-    founding: Boolean(env.STRIPE_PRICE_FOUNDING),
+    // The founding door closes itself the moment the 200th seat is taken:
+    // every buy button keyed on this flag disappears with it.
+    founding: Boolean(env.STRIPE_PRICE_FOUNDING) && sold < FOUNDING_SEATS,
     prices: { monthly: "$12/month", yearly: "$96/year", founding: "$79/year" },
   });
 }
@@ -1666,6 +1686,9 @@ async function billingCheckout(request, env) {
   const user = await authedUser(request, env);
   if (!user) return text("Sign in first.", 401);
   const { plan } = await request.json().catch(() => ({}));
+  if (plan === "founding" && (await foundingSold(env)) >= FOUNDING_SEATS) {
+    return text("The founding 200 is full. The monthly and yearly plans are open.", 409);
+  }
   const price =
     plan === "monthly" ? env.STRIPE_PRICE_MONTHLY
     : plan === "yearly" ? env.STRIPE_PRICE_YEARLY
@@ -1720,6 +1743,21 @@ async function writeEntitlementFromSubscription(env, sub) {
   const priceId =
     sub.items && sub.items.data && sub.items.data[0] ? sub.items.data[0].price.id : "";
   await env.APPS.put(`cust:${sub.customer}`, userId);
+  // The founding seat count follows real transitions: taken when a founding
+  // subscription becomes active, freed when that subscription ends. The evt
+  // replay guard upstream keeps retries from double-counting.
+  {
+    const plan = planForPrice(env, priceId);
+    const active = sub.status === "active" || sub.status === "trialing";
+    const prior = JSON.parse((await env.APPS.get(`ent:${userId}`)) || "null");
+    const priorFounding = Boolean(prior && prior.plan === "founding" && entitlementActive(prior));
+    const nowFounding = plan === "founding" && active;
+    if (nowFounding && !priorFounding) {
+      await env.APPS.put("foundingSold", String((await foundingSold(env)) + 1));
+    } else if (priorFounding && !nowFounding) {
+      await env.APPS.put("foundingSold", String(Math.max(0, (await foundingSold(env)) - 1)));
+    }
+  }
   await env.APPS.put(
     `ent:${userId}`,
     JSON.stringify({
@@ -1780,6 +1818,27 @@ async function billingWebhook(request, env) {
     );
   }
   return json({ ok: true });
+}
+
+
+// ================================================================ free tier
+
+async function planCount(request, env, increment) {
+  const body = await request.json().catch(() => ({}));
+  const device = String(body.device || "");
+  const month = String(body.month || "");
+  if (!/^[0-9a-f]{64}$/.test(device) || !/^\d{4}-\d{2}$/.test(month)) {
+    return text("bad shape", 400);
+  }
+  const key = `mk:${device}:${month}`;
+  let n = parseInt((await env.APPS.get(key)) || "0", 10);
+  // A device that counted while offline reports the higher local number;
+  // the mirror never goes backward.
+  const local = Number.isFinite(body.n) ? Math.max(0, Math.floor(body.n)) : 0;
+  n = Math.max(n, increment ? 0 : local);
+  if (increment) n = Math.max(n + 1, local);
+  await env.APPS.put(key, String(n), { expirationTtl: 70 * 24 * 3600 });
+  return json({ n });
 }
 
 // ================================================================ account

@@ -3055,6 +3055,10 @@ fn plan_makes(seed_month: Option<String>, seed_n: Option<u64>) -> serde_json::Va
     if seed_month.as_deref() == Some(now.as_str()) {
         n = n.max(seed_n.unwrap_or(0));
     }
+    // The hub keeps a mirror keyed by the device hash, so a deleted
+    // plan.json or a wiped cache does not mint three fresh makes. Best
+    // effort: offline, the local count stands alone.
+    n = n.max(plan_hub_sync(&device, &now, n, false));
     plan_write(&device, &now, n);
     serde_json::json!({ "month": now, "n": n })
 }
@@ -3064,13 +3068,33 @@ fn plan_count_make() -> serde_json::Value {
     let device = device_hash();
     let now = month_key_now();
     let (stored_dev, stored_month, stored_n) = plan_read();
-    let n = if stored_dev == device && stored_month == now {
+    let mut n = if stored_dev == device && stored_month == now {
         stored_n + 1
     } else {
         1
     };
+    n = n.max(plan_hub_sync(&device, &now, n, true));
     plan_write(&device, &now, n);
     serde_json::json!({ "month": now, "n": n })
+}
+
+/// The hub's copy of this device's count for the month. `count` increments
+/// there and returns the authoritative number; a plain sync only reads it
+/// (reporting the local number so the mirror can catch up after offline
+/// makes). Returns 0 on any failure so offline behaves exactly as before.
+fn plan_hub_sync(device: &str, month: &str, local_n: u64, count: bool) -> u64 {
+    if device.is_empty() {
+        return 0;
+    }
+    let path = if count { "/plan/count" } else { "/plan/get" };
+    let body = serde_json::json!({ "device": device, "month": month, "n": local_n });
+    ureq::post(&format!("{}{}", hub_url(), path))
+        .timeout(std::time::Duration::from_secs(4))
+        .send_json(body)
+        .ok()
+        .and_then(|r| r.into_json::<serde_json::Value>().ok())
+        .and_then(|v| v["n"].as_u64())
+        .unwrap_or(0)
 }
 
 /// A path that is not already taken, by adding ` 2`, ` 3` and so on.

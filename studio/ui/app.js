@@ -1585,10 +1585,18 @@ function limitAcked() {
 async function make(request, opts) {
   // The gate: at three, the sheet says what the deal is, once a month.
   // It never fires for revisions (the session already has a result).
-  const overCap = makesThisMonth() >= 3
+  let overCap = makesThisMonth() >= 3
     && !(state.session && state.session.result)
     && !(opts && opts.pastLimit)
     && !planIsActive();
+  // Before blocking, ask the hub once more. This is what unlocks the
+  // person whose checkout finished after the poll gave up, and the one
+  // whose plan landed on another machine -- the wall never runs on stale
+  // knowledge when fresh knowledge is one request away.
+  if (overCap) {
+    await loadBilling();
+    overCap = !planIsActive();
+  }
   if (overCap && ((state.billing && state.billing.live) || !limitAcked())) {
     // Billing live: a real wall with a checkout door, every time past
     // three. Preview: the soft sheet, once a month.
@@ -3673,10 +3681,19 @@ loadPlanMakes();
 // active. Until billing is live the limit stays the soft preview sheet;
 // the moment it is live, the fourth make is a wall with a checkout door.
 state.billing = { live: false, active: false };
+try {
+  // The last truth the hub told us, surviving restarts: a paying person
+  // stays unlocked through a hub blip, and the wall stays a wall for
+  // everyone who has ever seen billing live -- going dark does not
+  // reopen the free tap.
+  const cached = JSON.parse(localStorage.getItem("krateBilling") || "null");
+  if (cached && cached.live !== undefined) state.billing = cached;
+} catch (e) {}
 async function loadBilling() {
   try {
     state.billing = await invoke("billing_info");
-  } catch (e) { /* offline: stay soft */ }
+    try { localStorage.setItem("krateBilling", JSON.stringify(state.billing)); } catch (e) {}
+  } catch (e) { /* unreachable hub: the cached truth above stands */ }
   renderFreeCount();
 }
 loadBilling();
@@ -3710,7 +3727,11 @@ async function startCheckout(plan, noteId) {
         state.pendingMake = null;
         if (p) make(p.request, { ...(p.opts || {}), pastLimit: true });
       }
-      if (rounds > 90) clearInterval(state.billPoll);
+      if (rounds > 90) {
+        clearInterval(state.billPoll);
+        note.textContent =
+          "Still not seeing the payment. If you finished in the browser, just hit Make again -- it re-checks. If not, reopen this sheet to retry.";
+      }
     }, 5000);
   } catch (err) {
     if (String(err).includes("Sign in")) {
@@ -3768,6 +3789,16 @@ function celebrate() {
 /// Dress the limit sheet for whichever world we are in: soft preview, or
 /// the real wall with checkout doors.
 function openLimitSheet() {
+  // A fresh look at the hub every time the wall shows: if the plan landed
+  // since, the sheet closes itself and the held make runs.
+  loadBilling().then(() => {
+    if (planIsActive() && !$("limitSheet").classList.contains("hidden")) {
+      $("limitSheet").classList.add("hidden");
+      const p = state.pendingMake;
+      state.pendingMake = null;
+      if (p) make(p.request, { ...(p.opts || {}), pastLimit: true });
+    }
+  });
   const live = state.billing && state.billing.live;
   $("limitNote").textContent = "";
   if (live) {
