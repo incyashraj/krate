@@ -2789,3 +2789,134 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
 .pub-signin { display: flex; flex-direction: column; gap: 6px; padding: 6px 0 2px; }
 .pub-signin .sheet-actions { justify-content: flex-start; }
 .pub-code { margin-top: 10px; text-align: center; }
+
+
+/* =======================================================================
+ * THE HOME, REDRAWN (2026-09-01)
+ *
+ * A workspace drawer on the left, a gradient room on the right, and the
+ * box in the middle of it. Built to a reference Yashraj chose, with our
+ * own background kept -- the aurora is ours and it is the one thing in
+ * the picture that should not be borrowed.
+ *
+ * The drawer is CLOSED on arrival. Everything about this page argues that
+ * the box is the only thing that matters on the way in; a panel standing
+ * open beside it is a second thing to read before typing.
+ * ===================================================================== */
+
+.side {
+  position: fixed; top: 0; left: 0; bottom: 0; z-index: 60;
+  width: 240px; flex: none;
+  display: flex; flex-direction: column;
+  background: #0F0F10;
+  border-right: 1px solid rgba(255,255,255,0.07);
+  padding: 12px 10px 12px;
+  transform: translateX(-100%);
+  transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.side[data-open="true"] { transform: none; }
+@media (prefers-reduced-motion: reduce) { .side { transition: none; } }
+
+/* The drawer sits over the room rather than pushing it. Pushing would
+   move the box mid-thought, and the box is where the person is looking. */
+.side-scrim {
+  position: fixed; inset: 0; z-index: 55;
+  background: rgba(0,0,0,0.42);
+  animation: scrimIn 0.24s ease;
+}
+@keyframes scrimIn { from { opacity: 0; } }
+
+.side-top {
+  height: 34px; display: flex; align-items: center;
+  padding: 0 4px; margin-bottom: 10px;
+}
+.side-mark {
+  width: 26px; height: 26px; display: grid; place-items: center;
+  background: none; border: 0; cursor: pointer; border-radius: 7px;
+}
+.side-mark img { width: 17px; height: 17px; opacity: 0.95; }
+
+/* The workspace row: a coloured badge, the name, and a chevron that says
+   there is more than one of these later. */
+.side-space {
+  display: flex; align-items: center; gap: 9px;
+  width: 100%; height: 38px; padding: 0 8px; margin-bottom: 14px;
+  background: none; border: 0; border-radius: 9px;
+  color: var(--text); font-family: var(--sans); font-size: 13.5px; font-weight: 500;
+  cursor: pointer; text-align: left;
+  transition: background 0.15s;
+}
+.side-space:hover { background: rgba(255,255,255,0.05); }
+.space-badge {
+  width: 21px; height: 21px; flex: none; border-radius: 6px;
+  display: grid; place-items: center;
+  background: linear-gradient(150deg, #ff8a3d, #ff5f6d);
+  color: #1a0d06; font-size: 11px; font-weight: 700;
+}
+.space-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-space .chev { color: var(--faint); flex: none; }
+
+.side-nav { display: flex; flex-direction: column; gap: 1px; }
+.side-row {
+  display: flex; align-items: center; gap: 11px;
+  width: 100%; height: 34px; padding: 0 8px;
+  background: none; border: 0; border-radius: 8px;
+  color: var(--muted); font-family: var(--sans); font-size: 13.5px;
+  cursor: pointer; text-align: left;
+  transition: background 0.15s, color 0.15s;
+}
+.side-row svg { flex: none; opacity: 0.85; }
+.side-row:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+/* Selected is a fill, not a brick: the reference marks the current page
+   with a lighter panel, and the text goes white with it. */
+.side-row.on { background: rgba(255,255,255,0.08); color: var(--text); }
+
+.side-label {
+  margin: 18px 0 6px; padding: 0 9px;
+  font-size: 11.5px; color: var(--faint); font-weight: 400;
+}
+
+/* The bottom of the drawer: two offers and the person themself. */
+.side-foot { margin-top: auto; padding-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.side-card {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 11px 12px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.07); border-radius: 11px;
+  color: var(--text); font-family: var(--sans); cursor: pointer; text-align: left;
+  transition: background 0.15s, border-color 0.15s;
+}
+.side-card:hover { background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.13); }
+.card-text { flex: 1; min-width: 0; }
+.card-text b { display: block; font-size: 13px; font-weight: 500; }
+.card-text small { display: block; font-size: 11.5px; color: var(--faint); margin-top: 1px; }
+.card-icon { flex: none; color: var(--muted); display: grid; place-items: center; }
+.card-icon.bolt { color: #8fb3ff; }
+.side-card.upsell { background: rgba(98,145,255,0.10); border-color: rgba(98,145,255,0.22); }
+.side-card.upsell:hover { background: rgba(98,145,255,0.16); border-color: rgba(98,145,255,0.34); }
+
+.side-me { display: flex; align-items: center; gap: 8px; padding: 4px 2px 0; }
+.side-avatar {
+  width: 28px; height: 28px; border-radius: 50%; overflow: hidden;
+  background: var(--panel-raised); border: 1px solid var(--line);
+  color: var(--muted); font-size: 11.5px; font-weight: 500;
+  display: grid; place-items: center; cursor: pointer;
+  transition: border-color 0.15s;
+}
+.side-avatar:hover { border-color: var(--line-strong); }
+.side-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.side-bell {
+  position: relative; margin-left: auto;
+  width: 28px; height: 28px; border-radius: 8px;
+  display: grid; place-items: center;
+  background: none; border: 0; color: var(--faint); cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.side-bell:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+.bell-dot {
+  position: absolute; top: 5px; right: 6px;
+  width: 6px; height: 6px; border-radius: 50%; background: #ff6b6b;
+}
+
+/* The panel button, top-left, where the reference puts it. */
+.titlebar .side-toggle { margin-right: 2px; }

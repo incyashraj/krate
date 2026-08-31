@@ -4391,6 +4391,61 @@ window.addEventListener("resize", () => {
   if (on) moveGlide(on);
 });
 
+/* ---- the workspace drawer ----------------------------------------------
+ * Closed on arrival, opened by the panel button. The box in the middle is
+ * the only thing this page is for, and a drawer standing open beside it is
+ * a second thing to read before typing.
+ *
+ * It floats OVER the room rather than pushing it: pushing would slide the
+ * box sideways mid-thought, and the box is where the person is looking.
+ */
+(function sidebar() {
+  const side = $("side");
+  const scrim = $("sideScrim");
+  const toggle = $("sideToggle");
+  if (!side || !toggle) return;
+
+  function setOpen(open) {
+    side.dataset.open = open ? "true" : "false";
+    toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    toggle.title = open ? "Hide your workspace" : "Show your workspace";
+    if (scrim) scrim.hidden = !open;
+  }
+
+  toggle.addEventListener("click", () => setOpen(side.dataset.open !== "true"));
+  scrim?.addEventListener("click", () => setOpen(false));
+  // Escape closes it, the way it closes every other panel here. A drawer
+  // the keyboard cannot back out of reads as a trap.
+  document.addEventListener("keydown", (e) => {
+    if ((e.key === "Escape" || e.key === "Esc") && side.dataset.open === "true") setOpen(false);
+  });
+
+  // The rows that already have a home elsewhere in Studio go there; the
+  // rest are honest about not being built yet rather than doing nothing.
+  const goes = {
+    home: () => setOpen(false),
+    recent: () => { setOpen(false); showView("apps"); loadAppsPage(); },
+    all: () => { setOpen(false); showView("apps"); loadAppsPage(); },
+    examples: () => { setOpen(false); openCloud(); },
+    discover: () => { setOpen(false); openCloud(); },
+  };
+  document.querySelectorAll("#side .side-row").forEach((row) => {
+    row.addEventListener("click", () => {
+      document.querySelectorAll("#side .side-row").forEach((r) => r.classList.remove("on"));
+      row.classList.add("on");
+      const go = goes[row.dataset.side];
+      if (go) go();
+      else setOpen(false);
+    });
+  });
+
+  $("sideAccount")?.addEventListener("click", () => { setOpen(false); openAccount(); });
+  $("sideUpgrade")?.addEventListener("click", () => { setOpen(false); openPlanSheet(); });
+  $("sideShare")?.addEventListener("click", () => { setOpen(false); openPlanSheet(); });
+  $("sideSpace")?.addEventListener("click", () => { setOpen(false); openAccount(); });
+  $("sideHome")?.addEventListener("click", () => setOpen(false));
+})();
+
 /* ---- starter suggestions ---------------------------------------------- */
 document.querySelectorAll("#suggList button[data-sugg]").forEach((button) => {
   button.addEventListener("click", () => {
