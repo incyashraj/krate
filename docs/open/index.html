@@ -97,6 +97,33 @@ h1.page { font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
 .termbox button:hover { color: #fff; }
 
 @media (prefers-reduced-motion: reduce) { .card { animation: none; opacity: 1; transform: none; filter: none; } }
+
+/* The app they were actually sent, above everything else on the page. */
+.theirapp {
+  display: flex; align-items: center; gap: 18px;
+  margin: 0 0 26px; padding: 16px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 16px;
+}
+.theirapp img {
+  width: 132px; height: 92px; flex: none;
+  object-fit: cover; object-position: top center;
+  border-radius: 9px; border: 1px solid rgba(255,255,255,0.10);
+  background: #101014;
+}
+.ta-kicker {
+  font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: #7ee2a8; margin: 0 0 4px;
+}
+.theirapp h2 { font-size: 21px; margin: 0; line-height: 1.2; }
+.ta-sub { font-size: 13px; color: #a1a1aa; margin: 5px 0 0; }
+@media (max-width: 560px) {
+  .theirapp { flex-direction: column; align-items: flex-start; gap: 13px; }
+  .theirapp img { width: 100%; height: 128px; }
+}
+.dlnote { margin-top: 9px; font-size: 12.5px; color: #a1a1aa; }
+.dlnote:empty { display: none; }
 </style>
 </head>
 <body>
@@ -111,24 +138,44 @@ h1.page { font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
   </nav>
 </div>
 <div class="wrap">
-<h1 class="page">Someone sent you an app.</h1>
+<!-- When a link carries ?a=<hash>, this page is about ONE app: the one they
+     were actually sent. The worker already redirects here with the hash;
+     until now the page threw it away and showed the generic form. -->
+<div class="theirapp" id="theirApp" hidden>
+  <img id="taShot" alt="" hidden />
+  <div class="ta-text">
+    <p class="ta-kicker">Waiting for you</p>
+    <h2 id="taName">Your app</h2>
+    <p class="ta-sub" id="taSize"></p>
+  </div>
+</div>
+<h1 class="page" id="pageHead">Someone sent you an app.</h1>
 <p class="pagesub">It is one small file, like a photo. To open it you need Krate once -- like a player for a movie. After that, every app anyone sends you just opens, and each one tells you what it wants first.</p>
 <div class="card">
   <div class="stepn">1</div>
   <h2>Get Krate, once</h2>
   <p>About 24 MB, free and open source. This is the only setup there is: after it, every app anyone ever sends you is just a double-click.</p>
-  <p style="margin-top:14px"><a class="btn primary" href="https://github.com/incyashraj/krate/releases/latest">Download Krate</a></p>
+  <p style="margin-top:14px"><a class="btn primary" id="dlBtn" href="https://github.com/incyashraj/krate/releases/latest">Download Krate</a></p>
+  <p class="dlnote" id="dlNote"></p>
   <p style="margin-top:12px; font-size:12.5px">Comfortable in a terminal instead?</p>
   <div class="termbox"><code>curl -fsSL https://krate.tech/install.sh | sh</code><button data-copy="curl -fsSL https://krate.tech/install.sh | sh">Copy</button></div>
   <div class="termbox"><code>irm https://krate.tech/install.ps1 | iex</code><button data-copy="irm https://krate.tech/install.ps1 | iex">Copy</button></div>
 </div>
-<div class="card">
+<!-- The warning is going to happen. A receiver who was told about it clicks
+     through; a receiver surprised by it closes the tab and tells the sender
+     the file was broken. So we say it first, in the words their own OS uses. -->
+<div class="card" id="warnCard" hidden>
   <div class="stepn">2</div>
+  <h2 id="warnTitle">Your computer will ask once</h2>
+  <p id="warnBody"></p>
+</div>
+<div class="card">
+  <div class="stepn" id="stepOpen">2</div>
   <h2>Double-click the file</h2>
   <p>The same as a document or a photo. Nothing to unzip, nothing to install per app, no developer tools.</p>
 </div>
 <div class="card">
-  <div class="stepn">3</div>
+  <div class="stepn" id="stepPerm">3</div>
   <h2>Decide what it may do</h2>
   <p>Before any of the app runs, a window like this appears. The app opens with exactly what you allow -- it cannot reach the internet, or any other folder on your computer.</p>
   <div class="perm">
@@ -140,7 +187,7 @@ h1.page { font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
   </div>
   <p class="permnote">It gets nothing else: no files, no internet, no camera.</p>
 </div>
-<div class="card" style="text-align:center">
+<div class="card" style="text-align:center" id="galleryCard">
   <h2>Nothing to open yet?</h2>
   <p style="margin-bottom:14px">Take a real one from the gallery -- every listing is one click and the same permission flow.</p>
   <a class="btn" href="/cloud/">Browse the gallery</a>
@@ -166,6 +213,154 @@ document.querySelectorAll("[data-copy]").forEach(function (b) {
     setTimeout(function () { b.textContent = "Copy"; }, 1500);
   });
 });
+
+/* ---------------------------------------------------------------- the OS
+ * This page is for the person who was SENT a file and has never heard of
+ * Krate. Landing them on a GitHub releases page with five artifacts and
+ * asking them to pick is not a receiver path; it is a developer path with
+ * a friendly headline. One button, their OS, the PLAYER -- which is what
+ * this page's own "about 24 MB" describes.
+ */
+(function () {
+  var ua = navigator.userAgent;
+  var os = /Windows/.test(ua) ? "win"
+    : (/Linux|X11/.test(ua) && !/Mac/.test(ua)) ? "linux"
+    : /Mac/.test(ua) ? "mac" : "";
+  // A phone cannot run a desktop app. Say so rather than handing them a
+  // download that will never open.
+  var mobile = /Android/.test(ua) || /iPhone|iPad|iPod/.test(ua);
+
+  var btn = document.getElementById("dlBtn");
+  var note = document.getElementById("dlNote");
+  var LATEST = "https://github.com/incyashraj/krate/releases/latest";
+
+  if (mobile) {
+    btn.textContent = "Krate runs on computers";
+    btn.href = LATEST;
+    note.textContent = "Open this page on your Mac, Windows or Linux computer "
+      + "and the file will open there. Phones are not supported yet.";
+    return;
+  }
+  if (os === "mac") {
+    btn.textContent = "Download Krate for Mac";
+    note.textContent = "Works on both Apple Silicon and Intel Macs.";
+  } else if (os === "win") {
+    btn.textContent = "Download Krate for Windows";
+  } else if (os === "linux") {
+    btn.textContent = "Download Krate for Linux";
+  }
+  // The asset names carry the version, so the exact file is resolved at
+  // click time from the releases API rather than hard-coded here and going
+  // stale on the next tag. If the API is unreachable we fall back to the
+  // releases page, which is where we were sending everyone anyway.
+  var WANT = {
+    mac: function (n) { return /^krate-app-.*\.zip$/.test(n); },
+    win: function (n) { return /^krate-studio-.*-windows-x64-setup\.exe$/.test(n); },
+    linux: function (n) { return /^krate-studio-.*\.AppImage$/.test(n); }
+  };
+  if (!WANT[os]) return;
+  fetch("https://api.github.com/repos/incyashraj/krate/releases/latest")
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (rel) {
+      if (!rel || !rel.assets) return;
+      // On a Mac the player ships per-architecture. navigator tells us
+      // almost nothing trustworthy about Apple Silicon vs Intel, so prefer
+      // the arm64 build (every Mac sold since 2020) and let the Intel
+      // owner take the other from the releases page.
+      var hits = rel.assets.filter(function (a) { return WANT[os](a.name); });
+      if (!hits.length) return;
+      var pick = hits[0];
+      if (os === "mac") {
+        var arm = hits.filter(function (a) { return /aarch64/.test(a.name); });
+        if (arm.length) pick = arm[0];
+      }
+      btn.href = pick.browser_download_url;
+    })
+    .catch(function () { /* the releases page is the fallback, already set */ });
+
+  /* -------------------------------------------------- the honest warning
+   * Anything downloaded from a browser gets one confirmation on first
+   * launch, on both operating systems. Krate for Mac is signed and
+   * notarized by Apple, so it is the ordinary "downloaded from the
+   * internet" question. Windows is not signed yet, so it is SmartScreen's
+   * blue screen, where the only obvious button is the wrong one.
+   *
+   * Telling them beforehand costs one paragraph. Not telling them costs
+   * the user, and makes the sender look like they sent junk.
+   */
+  var card = document.getElementById("warnCard");
+  var title = document.getElementById("warnTitle");
+  var body = document.getElementById("warnBody");
+  if (os === "mac") {
+    title.textContent = "Your Mac will ask once";
+    body.textContent = "The first time you open it, macOS asks whether you are "
+      + "sure, because it came from the internet. Click Open. Krate is signed "
+      + "and notarized by Apple, so there is no scary unidentified-developer "
+      + "warning -- just the ordinary question.";
+  } else if (os === "win") {
+    title.textContent = "Windows will warn once";
+    body.innerHTML = "You will see a blue <b>Windows protected your PC</b> screen. "
+      + "This is not a virus warning: it means we have not bought a Microsoft "
+      + "signing certificate yet. Click <b>More info</b>, then <b>Run anyway</b>. "
+      + "It only happens on this one install.";
+  } else if (os === "linux") {
+    title.textContent = "One box to tick";
+    body.textContent = "Depending on your desktop, you may need to mark the "
+      + "downloaded file as executable before it will run -- right-click, "
+      + "Properties, Permissions, Allow executing as program.";
+  }
+  if (os) {
+    card.hidden = false;
+    document.getElementById("stepOpen").textContent = "3";
+    document.getElementById("stepPerm").textContent = "4";
+  }
+})();
+
+/* ------------------------------------------------------------ their app
+ * The worker redirects a desktop browser here as /open/?a=<hash>. Until
+ * now the page ignored the parameter and showed the generic form, so a
+ * person who was sent one specific app landed on "Nothing to open yet?".
+ */
+(function () {
+  var hash;
+  try { hash = new URLSearchParams(location.search).get("a"); } catch (e) { return; }
+  if (!hash || !/^[0-9a-f]{8,64}$/.test(hash)) return;
+  fetch("https://hub.krate.tech/meta/" + hash)
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (d) {
+      if (!d || !d.meta) return;
+      var name = (d.meta.name || "").trim();
+      if (!name) return;
+      document.getElementById("taName").textContent = name;
+      // The hub stores size as a raw byte count. "38845 -- it runs on..."
+      // is a number nobody reads; "38 KB" is the whole size argument.
+      var size = d.meta.size;
+      var pretty = "";
+      if (typeof size === "number" && size > 0) {
+        pretty = size < 1024 * 1024
+          ? Math.round(size / 1024) + " KB"
+          : (size / (1024 * 1024)).toFixed(1) + " MB";
+      } else if (typeof size === "string" && size.trim()) {
+        pretty = size.trim();
+      }
+      document.getElementById("taSize").textContent = pretty
+        ? pretty + " -- it runs on Mac, Windows and Linux"
+        : "It runs on Mac, Windows and Linux";
+      if (d.shot) {
+        var img = document.getElementById("taShot");
+        img.src = d.shot;
+        img.alt = name;
+        img.hidden = false;
+      }
+      document.getElementById("theirApp").hidden = false;
+      document.getElementById("pageHead").textContent = "Someone sent you " + name + ".";
+      // They have a specific app in hand; an invitation to browse the
+      // gallery is a distraction from the one thing they came to do.
+      var g = document.getElementById("galleryCard");
+      if (g) g.hidden = true;
+    })
+    .catch(function () { /* the generic page is a correct fallback */ });
+})();
 </script>
 <script>
 // Count the visit, and nothing about the visitor. No cookie, no stored id,
