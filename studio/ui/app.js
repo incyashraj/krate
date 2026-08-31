@@ -357,10 +357,6 @@ async function enterHome() {
   paintGreeting();
   showView("home");
   renderAccount();
-  // The screen at rest is the input. They should be typing in under a
-  // second, not reading a slogan they have seen before.
-  setTimeout(() => $("homePrompt") && $("homePrompt").focus(), 60);
-  renderHomeRoll();
   // Settings FIRST, then agents.
   //
   // These two lines were once the other way round, so a request submitted
@@ -584,11 +580,9 @@ function openSession(s) {
   state.planning = null;
   state.session = building ? state.buildingSession : s;
   state.attachments = [];
-  $("railTitle").textContent = sessionLabel(state.session);
+  $("railTitle").textContent = state.session.title;
   $("thread").innerHTML = "";
-  const msgs = (state.session.result
-    ? state.session.messages.filter((m) => !(m.who === "KRATE" && DIARY.test(m.body || "")))
-    : state.session.messages);
+  const msgs = state.session.messages;
   // The last recorded question in a session that never built gets its
   // Build button back on replay. Without this, reopening showed the
   // questions wordlessly and the only affordance left was typing.
@@ -804,28 +798,6 @@ function sayTo(session, who, body, files) {
 
 const baseName = (p) => p.split(/[\\/]/).pop();
 
-/* What the title bar calls a session: the finished app's own name when it
- * has one, the person's sentence only before then. */
-function sessionLabel(s) {
-  const file = s && s.result && s.result.name;
-  if (file) {
-    const stem = String(file).replace(/\.krate$/i, "").replace(/[-_]+/g, " ").trim();
-    return stem ? stem.charAt(0).toUpperCase() + stem.slice(1) : s.title;
-  }
-  return (s && s.title) || "New app";
-}
-
-/* Build narration is scaffolding: it earns its place while the person
- * waits and becomes a tombstone the moment v1 exists. One matcher decides,
- * for both the reopen render and the live sweep at finish. */
-const DIARY = /^(Looking at your request|Here's what I'll build|While I work, I'll open your app|On it\. I'll show you each step|Reading your app, then making)/;
-function sweepDiary() {
-  document.querySelectorAll("#thread .msg").forEach((el) => {
-    const text = (el.textContent || "").replace(/^KRATE\s*/, "");
-    if (DIARY.test(text)) el.remove();
-  });
-}
-
 /* ---- build state machine ---------------------------------------------- */
 
 function show(phase) {
@@ -1023,9 +995,7 @@ function beginBuild(title, expect) {
   const box = $("prompt");
   if (box) {
     box.disabled = true;
-    box.placeholder = /change/i.test(title)
-      ? "Wait until this change is a file…"
-      : "Wait -- your app is becoming a file…";
+    box.placeholder = "Wait - v1 is becoming a file…";
   }
   // Rescue the peek box before wiping the stage list.
   //
@@ -1097,7 +1067,7 @@ function beginBuild(title, expect) {
   // Defensive on purpose: nothing in this function may throw, because a throw
   // here happens BEFORE the build is invoked and loses it silently.
   const nowLine = $("nowLine");
-  if (nowLine) nowLine.textContent = /change/i.test(title) ? "reading the app…" : "starting…";
+  if (nowLine) nowLine.textContent = "warming up…";
   show("building");
 }
 
@@ -1304,13 +1274,13 @@ function unlockComposer(placeholder) {
 function fillDone(result, opts) {
   unlockComposer("Want it different? Say what to change…");
   try { localStorage.setItem("krateMadeOnce", "1"); } catch (e) {}
-  $("doneName").textContent = sessionLabel({ result });
+  $("doneName").textContent = result.name;
   $("doneSize").textContent = result.size;
   $("asks").innerHTML = cardAsks(result.asks).map((w) => `<li>${w}</li>`).join("");
   // The preview is the share object: the still with the card's own caption
   // strip -- filename, size, and ONE human trust line. If someone
   // screenshots this screen, they are screenshotting the card.
-  $("capName").textContent = "";
+  $("capName").textContent = result.name || "";
   $("capSize").textContent = result.size || "";
   $("capTrust").textContent = trustLine(result.asks || []);
   const shot = $("shot");
@@ -1384,7 +1354,7 @@ function finishBuild(result) {
   // The transcript keeps the receipt, not the live chip.
   built.messages.push({
     who: "KRATE",
-    body: `v${version} built · ${result.size}. Tell me what to change and it becomes v${version + 1}.`,
+    body: `v${version} built · ${result.size}${mins ? ` · ${mins} min` : ""}. Tell me what to change and it becomes v${version + 1}.`,
     files: [],
     when: Math.floor(Date.now() / 1000),
   });
@@ -1394,8 +1364,6 @@ function finishBuild(result) {
     document.querySelectorAll("#stages li").forEach((li) => {
       li.className = "done";
     });
-    sweepDiary();
-    $("railTitle").textContent = sessionLabel(built);
     fillDone(result, { reveal: true });
     show("done");
     setRevisePlaceholders();
@@ -1983,12 +1951,10 @@ async function buildNow(request, files, revising, planSession, starterShape) {
   // the app to look at it and fix what it sees -- windows appear for a
   // second and sounds play. Unexplained, that reads as the machine
   // misbehaving; the founder watched exactly that (K-132).
-  if (version === 1) {
-    say("KRATE", "While I work, I'll open your app a few times to look at it -- so a window may flash and you might hear its sounds. That's me testing it, not something breaking.");
-  }
+  say("KRATE", "While I work, I'll open your app a few times to look at it -- so a window may flash and you might hear its sounds. That's me testing it, not something breaking.");
   // The build itself is one chip on the timeline, born live and settled
   // into a receipt when it ends -- narration never piles up in the rail.
-  state.buildChip = version === 1 ? appendLiveChip(version) : null;
+  state.buildChip = appendLiveChip(version);
   state.buildVersion = version;
   // A build settles exactly once. The watchdog fires on its own interval and
   // the create promise resolves on its own; both call in to settle the build,
@@ -2264,10 +2230,6 @@ function setChips(dot, text, title) {
   const bbd = $("builtByDot");
   if (bbn) bbn.textContent = agentLabel();
   if (bbd) bbd.className = `dot ${dot}`;
-  // The chip appears only once it can say a real name -- "Built by ..."
-  // with an ellipsis read as broken.
-  const bbc = $("builtByChip");
-  if (bbc && agentLabel()) bbc.classList.remove("hidden");
   const sv = $("setAgent");
   if (sv) sv.textContent = agentLabel();
 }
@@ -3324,33 +3286,13 @@ async function openSettings() {
  * about who you are; settings is about where things go. */
 function openAccount() {
   const a = state.account || {};
-  const signedIn = Boolean(a.signed_in || a.login);
-  $("accountName").textContent = signedIn ? (a.name || a.login) : "You";
+  $("accountName").textContent = a.name || a.login || "Signed in";
   $("accountLogin").textContent = a.login ? "@" + a.login : "";
   const img = $("accountAvatar");
   if (a.avatar_url) { img.src = a.avatar_url; img.classList.remove("hidden"); }
   else { img.classList.add("hidden"); }
-  $("acctSignInBtn").classList.toggle("hidden", signedIn);
-  $("logoutBtn").classList.toggle("hidden", !signedIn);
-  const n = makesThisMonth();
-  $("acctPlanVal").textContent = planIsActiveSafe()
-    ? "Studio -- no cap"
-    : `${Math.max(0, 3 - n)} of 3 free left`;
   $("accountSheet").classList.remove("hidden");
 }
-$("acctPlanBtn").addEventListener("click", () => {
-  $("accountSheet").classList.add("hidden");
-  openPlanSheet();
-});
-$("acctSettingsBtn").addEventListener("click", () => {
-  $("accountSheet").classList.add("hidden");
-  showView("settings");
-  loadSettingsPage();
-});
-$("acctSignInBtn").addEventListener("click", () => {
-  $("accountSheet").classList.add("hidden");
-  invoke("login_browser").catch(() => {});
-});
 
 
 /* ---- the rotating word ------------------------------------------------ */
@@ -3513,7 +3455,7 @@ function startFromHome() {
   const text = $("homePrompt").value.trim();
   if (!text) return;
   newSession(text);
-  $("railTitle").textContent = sessionLabel(state.session);
+  $("railTitle").textContent = state.session.title;
   $("thread").innerHTML = "";
   show("idle");
   showView("session");
@@ -4423,48 +4365,6 @@ window.addEventListener("resize", () => {
   if (on) moveGlide(on);
 });
 
-$("newBtn")?.addEventListener("click", () => {
-  $("homePrompt") && $("homePrompt").focus();
-});
-// The send arrow wakes only when there is something to send.
-$("homePrompt")?.addEventListener("input", () => {
-  $("homeSend")?.classList.toggle("ready", Boolean($("homePrompt").value.trim()));
-});
-
-/* With the dock gone, the pages it reached need their own way home. */
-document.querySelectorAll("[data-backhome]").forEach((b) =>
-  b.addEventListener("click", () => { showView("home"); renderHomeRoll(); }));
-
-/* ---- the home roll: their files, newest first, one click to the done
- * screen. This is where Home goes after the first make -- the dock's
- * "Your apps" job, standing where a sidebar belongs. */
-async function renderHomeRoll() {
-  const roll = $("homeRoll");
-  if (!roll) return;
-  let sessions = [];
-  try { sessions = (await invoke("sessions_list")) || []; } catch (e) {}
-  const files = [];
-  const seen = new Set();
-  for (const s of [...sessions].sort((x, y) => (y.updated || 0) - (x.updated || 0))) {
-    if (s.result && s.result.path && !seen.has(s.result.path)) {
-      seen.add(s.result.path);
-      files.push(s);
-    }
-  }
-  $("homeMain").classList.toggle("with-roll", files.length > 0);
-  $("homeSide").classList.toggle("hidden", files.length === 0);
-  roll.innerHTML = "";
-  // A reading list, not a contact list: names in one quiet line each.
-  // Stills belong on the done card, where clicking any row lands.
-  for (const s of files.slice(0, 40)) {
-    const b = document.createElement("button");
-    b.className = "roll-item";
-    b.innerHTML = `<b>${escapeHtml(sessionLabel(s))}</b>`;
-    b.addEventListener("click", () => openSession(s));
-    roll.appendChild(b);
-  }
-}
-
 /* ---- starter suggestions ---------------------------------------------- */
 document.querySelectorAll("#suggList button[data-sugg]").forEach((button) => {
   button.addEventListener("click", () => {
@@ -4818,6 +4718,7 @@ const EXAMPLES = [
   { label: "A lab my students just open", sugg: "a week 3 heat-loss lab for my class -- three checks and a score at the bottom; students open the file, no account. It cannot use the network" },
   { label: "A trip splitter for the group chat", sugg: "a trip splitter -- add people by name, add expenses with who paid, and it shows who owes whom to settle up. It cannot use the network" },
   { label: "A care schedule for my parent", sugg: "a care schedule for my parent's medicines -- big readable text, tick each dose as given today, ticks reset each morning. It cannot use the network" },
+  { label: "A grocery list my partner can edit too", sugg: "a shared grocery list my partner can edit too" },
   { label: "A quote calculator customers fill in", sugg: "a quote calculator my customers fill in themselves. It cannot use the network" },
 ];
 
@@ -4835,10 +4736,16 @@ function pickExamples(n) {
 function paintExamples() {
   const list = $("suggList");
   if (!list) return;
-  // Three quiet lines of text, nothing else: the column's floor, the way
-  // an ideas list should read -- not chips with arrows doing a dance.
+  const trend = '<span class="trend"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.8 11.2L6 7l3 3 5.2-5.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><path d="M10.6 4.4h3.8v3.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></span>';
   list.innerHTML = pickExamples(3)
-    .map((ex) => `<button type="button" data-sugg="${ex.sugg.replace(/"/g, "&quot;")}">${ex.label}</button>`)
+    .map((ex) => {
+      const shown = ex.label;
+      return `<button type="button" data-sugg="${ex.sugg.replace(/"/g, "&quot;")}">
+        <span class="trend"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.8 11.2L6 7l3 3 5.2-5.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.6 4.4h3.8v3.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        ${shown}
+        <svg class="go" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8 6 12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>`;
+    })
     .join("");
   list.querySelectorAll("button[data-sugg]").forEach((button) => {
     button.addEventListener("click", () => {
