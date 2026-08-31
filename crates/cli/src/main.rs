@@ -3809,6 +3809,144 @@ exit /b %STATUS%
     script.replace('\n', "\r\n")
 }
 
+/// The opener that goes inside a Mac gift's `.app`.
+///
+/// It sits at `Contents/MacOS/open` and finds the app file BESIDE the
+/// bundle, never inside it. That placement is the whole design, and it is
+/// forced by how Apple seals a signed bundle: dropping a payload into
+/// `Contents/Resources/` after signing breaks the seal outright
+/// (`codesign --verify` answers "a sealed resource is missing or invalid",
+/// measured 2026-08-31). A sidecar leaves the signature intact, so ONE
+/// opener can be notarized in CI and copied into every gift afterwards.
+fn mac_opener_script(app_file: &str) -> String {
+    format!(
+        r#"#!/bin/sh
+# The opener for a Krate gift. It installs the free player once if it is
+# missing, then opens the app file sitting next to this bundle.
+set -u
+here="$(cd "$(dirname "$0")/../../.." && pwd)"
+app="$here/{app_file}"
+find_krate() {{
+  command -v krate 2>/dev/null && return 0
+  for c in /usr/local/bin/krate "$HOME/.local/bin/krate"; do
+    if [ -x "$c" ]; then printf '%s\n' "$c"; return 0; fi
+  done
+  return 1
+}}
+krate_bin="$(find_krate || true)"
+if [ -z "$krate_bin" ]; then
+  # No player yet. Say so in a window -- there is no console behind a
+  # double-clicked .app, so a printed line would go nowhere.
+  osascript -e 'display dialog "This app runs on Krate, a small free player (about 24 MB).\n\nInstall it once, and every Krate app anyone sends you from now on just opens." buttons {{"Not now","Install once"}} default button "Install once" with title "Krate"' \
+    | grep -q "Install once" || exit 0
+  curl -fsSL https://krate.tech/install.sh | sh >/dev/null 2>&1
+  krate_bin="$(find_krate || true)"
+  if [ -z "$krate_bin" ]; then
+    osascript -e 'display dialog "Krate could not install itself.\n\nThe steps are at krate.tech/open" buttons {{"OK"}} with title "Krate"' >/dev/null 2>&1
+    open "https://krate.tech/open"
+    exit 1
+  fi
+fi
+if [ ! -f "$app" ]; then
+  osascript -e 'display dialog "The app file is missing.\n\nKeep this opener and the .krate file together in the same folder." buttons {{"OK"}} with title "Krate"' >/dev/null 2>&1
+  exit 1
+fi
+exec "$krate_bin" run "$app" --consent
+"#
+    )
+}
+
+/// The Mac gift: a folder holding a signed-and-notarizable `.app` opener
+/// and the app's own `.krate` beside it.
+///
+/// Why not the single self-installing script the other platforms get:
+/// macOS refuses it. A downloaded `.command` is Gatekeeper-rejected ("no
+/// usable signature"), signing it only moves the verdict to "Unnotarized
+/// Developer ID", and it can never be notarized because `stapler` will not
+/// process one -- "Stapler is incapable of working with Terminal shell
+/// script files", Apple's own words. The receiver is left doing a
+/// right-click -> Open ritual on a security warning, which is exactly the
+/// moment a stranger decides the sender sent junk (K-211).
+///
+/// An `.app` is a shape Apple will notarize, so this one can be signed in
+/// CI and trusted on arrival.
+fn wrap_mac_folder(bundle: &Path, app_name: &str, stem: &str, output: Option<&Path>) -> Result<u8> {
+    let out_dir = match output {
+        Some(path) => path.to_path_buf(),
+        None => bundle
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join(format!("{stem}-for-Mac")),
+    };
+    if out_dir.exists() {
+        fs::remove_dir_all(&out_dir)
+            .with_context(|| format!("could not replace {}", out_dir.display()))?;
+    }
+
+    let app_file = format!("{stem}.krate");
+    let opener = out_dir.join(format!("Open {app_name}.app"));
+    let macos_dir = opener.join("Contents/MacOS");
+    fs::create_dir_all(&macos_dir)
+        .with_context(|| format!("could not create {}", macos_dir.display()))?;
+
+    fs::write(
+        opener.join("Contents/Info.plist"),
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleName</key><string>Open {app_name}</string>
+  <key>CFBundleDisplayName</key><string>Open {app_name}</string>
+  <key>CFBundleIdentifier</key><string>tech.krate.gift</string>
+  <key>CFBundleExecutable</key><string>open</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleShortVersionString</key><string>1.0</string>
+  <key>LSMinimumSystemVersion</key><string>10.13</string>
+  <key>NSHighResolutionCapable</key><true/>
+</dict></plist>
+"#
+        ),
+    )
+    .context("could not write the opener's Info.plist")?;
+
+    let script = mac_opener_script(&app_file);
+    let exe = macos_dir.join("open");
+    fs::write(&exe, script).context("could not write the opener")?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&exe)?.permissions();
+        perms.set_mode(perms.mode() | 0o755);
+        fs::set_permissions(&exe, perms)?;
+    }
+
+    fs::copy(bundle, out_dir.join(&app_file))
+        .with_context(|| format!("could not copy {}", bundle.display()))?;
+
+    // One line the receiver can read without opening anything.
+    fs::write(
+        out_dir.join("Read me first.txt"),
+        format!(
+            "{app_name}\n\n\
+             Double-click \"Open {app_name}\" and the app opens.\n\n\
+             The first time, it installs Krate -- a small free player, about\n\
+             24 MB, the same idea as a video player. After that, every Krate\n\
+             app anyone sends you just opens.\n\n\
+             Keep these two files together in this folder.\n\n\
+             More at krate.tech/open\n"
+        ),
+    )
+    .context("could not write the read-me")?;
+
+    println!("Gift written: {}", out_dir.display());
+    println!("  for a friend on Mac who does not have Krate yet.");
+    println!("  Double-clicking \"Open {app_name}\" installs the player once, then opens {app_name}.");
+    println!("  The player is planted, never bundled: their next .krate just opens too.");
+    println!("  Send the whole folder (zip it, or drop it in a shared drive).");
+    Ok(0)
+}
+
 fn wrap_bundle(bundle: &Path, target: WrapTarget, output: Option<&Path>) -> Result<u8> {
     if !krate_bundle::is_bundle_path(bundle) {
         anyhow::bail!(
@@ -3822,8 +3960,14 @@ fn wrap_bundle(bundle: &Path, target: WrapTarget, output: Option<&Path>) -> Resu
     drop(opened);
     let stem = card_file_stem(&app_name);
 
+    // macOS gets a folder with a notarizable opener, not a script: a
+    // downloaded .command cannot be made to pass Gatekeeper at all (K-211).
+    if target == WrapTarget::Mac {
+        return wrap_mac_folder(bundle, &app_name, &stem, output);
+    }
+
     let (prefix, suffix, friend) = match target {
-        WrapTarget::Mac => (wrap_prefix_unix(&app_name, &stem), "command", "Mac"),
+        WrapTarget::Mac => unreachable!("handled above"),
         WrapTarget::Linux => (wrap_prefix_unix(&app_name, &stem), "sh", "Linux"),
         WrapTarget::Windows => (wrap_prefix_windows(&app_name, &stem), "cmd", "Windows"),
     };

@@ -3806,6 +3806,128 @@ fn pack_fixture(dir: &std::path::Path) -> Option<PathBuf> {
     Some(bundle)
 }
 
+/// The gift a friend without Krate receives. Three properties, and every
+/// one of them has already been wrong at least once:
+///
+/// 1. The Mac gift is a FOLDER, not a script. A downloaded `.command`
+///    cannot pass Gatekeeper -- signing gets it as far as "Unnotarized
+///    Developer ID" and it can never go further, because `stapler` refuses
+///    the format outright (K-211). An `.app` is a shape Apple will notarize.
+/// 2. The payload sits BESIDE the opener, never inside it. Dropping it into
+///    a signed bundle's Resources breaks the seal, which is what killed the
+///    notarize-once-parameterize-later design.
+/// 3. The copied bundle still opens as the same app.
+#[test]
+fn a_mac_gift_is_a_notarizable_app_with_the_payload_beside_it() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let Some(bundle) = pack_fixture(dir.path()) else {
+        eprintln!("skipping: phase2 smoke fixture not built");
+        return;
+    };
+    let out = dir.path().join("gift");
+    let status = krate()
+        .args(["wrap", "--for", "mac"])
+        .arg(&bundle)
+        .arg("-o")
+        .arg(&out)
+        .status()
+        .expect("run krate wrap");
+    assert!(status.success(), "wrap should succeed");
+
+    // The opener is a real bundle: an executable Launch Services can start,
+    // and a plist naming it.
+    let opener: PathBuf = std::fs::read_dir(&out)
+        .expect("read gift dir")
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .find(|p| p.extension().map(|e| e == "app").unwrap_or(false))
+        .expect("the gift should contain a .app opener");
+    let exe = opener.join("Contents/MacOS/open");
+    assert!(exe.is_file(), "the opener needs an executable");
+    assert!(
+        opener.join("Contents/Info.plist").is_file(),
+        "the opener needs an Info.plist or Launch Services will not run it",
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&exe).expect("opener metadata").permissions().mode();
+        assert!(mode & 0o111 != 0, "the opener must be executable");
+    }
+
+    // The payload is a sibling, not a sealed resource.
+    let payload: PathBuf = std::fs::read_dir(&out)
+        .expect("read gift dir")
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .find(|p| p.extension().map(|e| e == "krate").unwrap_or(false))
+        .expect("the app file should sit beside the opener");
+    assert!(
+        !payload.starts_with(&opener),
+        "the payload must not live inside the signed bundle: that breaks the seal",
+    );
+
+    // The opener looks for the file by the name it was actually written to.
+    let script = std::fs::read_to_string(&exe).expect("read opener");
+    let name = payload.file_name().unwrap().to_string_lossy().to_string();
+    assert!(
+        script.contains(&name),
+        "the opener should reference {name}, the file it ships with",
+    );
+
+    // And the copy is still a readable app: --dump-caps opens the bundle
+    // and reports its identity without running it.
+    let read = krate()
+        .arg("run")
+        .arg(&payload)
+        .arg("--dump-caps")
+        .output()
+        .expect("run krate run --dump-caps");
+    assert!(
+        read.status.success(),
+        "the gifted bundle should still be readable: {}",
+        String::from_utf8_lossy(&read.stderr),
+    );
+}
+
+/// The other two platforms keep the single self-installing file, and it has
+/// to stay a readable bundle behind its script prefix -- `krate run` opens
+/// the wrap itself. This is the property the concatenation trick rests on,
+/// and nothing tested it before.
+#[test]
+fn a_linux_wrap_is_one_file_that_is_still_a_bundle() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let Some(bundle) = pack_fixture(dir.path()) else {
+        eprintln!("skipping: phase2 smoke fixture not built");
+        return;
+    };
+    let out = dir.path().join("gift.sh");
+    let status = krate()
+        .args(["wrap", "--for", "linux"])
+        .arg(&bundle)
+        .arg("-o")
+        .arg(&out)
+        .status()
+        .expect("run krate wrap");
+    assert!(status.success(), "wrap should succeed");
+
+    let bytes = std::fs::read(&out).expect("read wrap");
+    assert!(bytes.starts_with(b"#!/bin/sh"), "a wrap must run as a script");
+    assert!(
+        bytes.windows(4).any(|w| w == b"PK\x03\x04"),
+        "the bundle must still be in there behind the prefix",
+    );
+    let read = krate()
+        .arg("run")
+        .arg(&out)
+        .arg("--dump-caps")
+        .output()
+        .expect("run krate run --dump-caps");
+    assert!(
+        read.status.success(),
+        "krate must still read the app out of its own wrap: {}",
+        String::from_utf8_lossy(&read.stderr),
+    );
+}
+
 #[test]
 fn pack_writes_a_single_bundle_file() {
     let dir = tempfile::tempdir().expect("tempdir");

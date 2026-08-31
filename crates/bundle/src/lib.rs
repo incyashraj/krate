@@ -209,30 +209,45 @@ pub fn is_bundle_path(path: &Path) -> bool {
 }
 
 /// Whether a file's bytes look like a Krate bundle: a ZIP archive that names
-/// `manifest.toml` in its first local-file-header. A raw `.wasm` (which starts
+/// `manifest.toml` in a local-file-header. A raw `.wasm` (which starts
 /// with `\0asm`) never matches, so the two are never confused.
+///
+/// The header is not required to sit at offset 0. A wrap -- the gift we hand
+/// someone who does not have Krate yet -- is a shell or batch script with the
+/// bundle concatenated behind it, which is legal precisely because a zip is
+/// read from its END. Demanding the magic at offset 0 made the same bytes a
+/// bundle or not depending on their filename: `gift.krate` opened with its
+/// identity, `gift.sh` came back as a bare component and then failed its own
+/// permission check (K-213). Every real zip reader opens both; so does this.
 fn looks_like_bundle_file(path: &Path) -> bool {
     let mut file = match std::fs::File::open(path) {
         Ok(f) => f,
         Err(_) => return false,
     };
-    // 4-byte ZIP local-file-header signature + 26 header bytes + the file name.
-    // "manifest.toml" is 13 bytes; read enough to see it if it is the first
-    // entry (which `pack` always writes first).
-    let mut head = [0u8; 64];
+    // A bundle's own header is at offset 0; a wrap's sits after a script
+    // prefix that is well under a kilobyte. Read a bounded window rather
+    // than the whole file -- this is a cheap sniff, not an open, and it must
+    // stay cheap because it runs on every run target.
+    let mut head = [0u8; 4096];
     let n = match std::io::Read::read(&mut file, &mut head) {
         Ok(n) => n,
         Err(_) => return false,
     };
     let head = &head[..n];
-    // ZIP local file header magic.
-    if !head.starts_with(&[0x50, 0x4B, 0x03, 0x04]) {
+    // Find a ZIP local file header, then confirm the entry it names. Both
+    // parts matter: the magic alone would claim any zip, and "manifest.toml"
+    // alone would claim a text file that merely mentions it.
+    let Some(start) = head
+        .windows(4)
+        .position(|w| w == [0x50, 0x4B, 0x03, 0x04])
+    else {
         return false;
-    }
+    };
     // The file name follows the 30-byte fixed local header. Look for
-    // "manifest.toml" anywhere in the bytes we read (it is right there when it
-    // is the first entry, and this avoids parsing header length fields).
-    head.windows(b"manifest.toml".len())
+    // "manifest.toml" after the header we found (pack always writes it
+    // first), which avoids parsing the header's length fields.
+    head[start..]
+        .windows(b"manifest.toml".len())
         .any(|w| w == b"manifest.toml")
 }
 
