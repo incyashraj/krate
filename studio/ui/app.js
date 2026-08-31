@@ -311,6 +311,12 @@ async function login() {
 }
 
 function onLoginStep(step) {
+  // Sign-in can start from the gate OR from mid-app (the publish sheet).
+  // The code and the outcome go to whichever surface asked; before this,
+  // a publish-time sign-in rendered its code into the hidden gate view --
+  // the browser opened on GitHub's code page while the code itself was
+  // invisible. (K-210)
+  if (state.loginSurface === "publish") { onPublishLoginStep(step); return; }
   if (step.step === "code") {
     $("gateStart").classList.add("hidden");
     $("gateCode").classList.remove("hidden");
@@ -3135,9 +3141,79 @@ async function pickPublishImage(kind) {
   }
 }
 
+/* The sign-in step inside the publish sheet: the form steps aside, one
+ * button does the browser round trip, and the publish resumes by itself
+ * the moment the account lands. The code path stays as the fallback. */
+function showPubSignin(why) {
+  state.loginSurface = "publish";
+  $("pubForm").classList.add("hidden");
+  $("pubSignin").classList.remove("hidden");
+  $("pubCodeWrap").classList.add("hidden");
+  $("pubSigninErr").classList.add("hidden");
+  if (why) $("pubSigninWhy").textContent = why;
+  $("pubGo").disabled = false;
+  $("pubGo").textContent = "Publish";
+}
+function pubSigninDone() {
+  state.loginSurface = "gate";
+  clearInterval(state.pubSigninPoll);
+  $("pubSignin").classList.add("hidden");
+  $("pubForm").classList.remove("hidden");
+  publishFromSheet();
+}
+function onPublishLoginStep(step) {
+  if (step.step === "code") {
+    $("pubCodeWrap").classList.remove("hidden");
+    $("pubCodeValue").textContent = step.code;
+    $("pubCodeValue").onclick = async () => {
+      try { await navigator.clipboard.writeText(step.code); } catch {}
+    };
+    $("pubCodeUrl").textContent = step.url;
+  } else if (step.step === "done" || step.step === "adopted") {
+    if (step.login) {
+      state.account = { signed_in: true, login: step.login, name: step.name, avatar_url: step.avatar_url };
+    }
+    pubSigninDone();
+  } else if (step.step === "error") {
+    $("pubSigninErr").textContent = signInWords(step.why || step);
+    $("pubSigninErr").classList.remove("hidden");
+  }
+}
+$("pubSigninGo").addEventListener("click", () => {
+  state.loginSurface = "publish";
+  invoke("login_browser").catch(() => {});
+  // The browser hand-off lands as a login-step event; polling is the net
+  // under it, and also catches an approval finished in another window.
+  clearInterval(state.pubSigninPoll);
+  state.pubSigninPoll = setInterval(async () => {
+    if ($("pubSignin").classList.contains("hidden")) { clearInterval(state.pubSigninPoll); return; }
+    try {
+      const a = await invoke("account_status");
+      if (a && a.signed_in) { state.account = a; pubSigninDone(); }
+    } catch {}
+  }, 3000);
+});
+$("pubSigninCode").addEventListener("click", () => {
+  state.loginSurface = "publish";
+  invoke("account_login").catch((err) => {
+    $("pubSigninErr").textContent = signInWords(err);
+    $("pubSigninErr").classList.remove("hidden");
+  });
+});
+
 async function publishFromSheet() {
   const app = currentApp();
   if (!app) return;
+  // Publishing needs an account; find out BEFORE the engine does. The
+  // engine behind a pipe cannot show anyone a code.
+  if (!(state.account && state.account.signed_in)) {
+    let ok = false;
+    try {
+      const a = await invoke("account_status");
+      if (a && a.signed_in) { state.account = a; ok = true; }
+    } catch {}
+    if (!ok) { showPubSignin(); return; }
+  }
   $("pubGo").disabled = true;
   $("pubGo").textContent = "Publishing…";
   $("pubNote").textContent = "";
@@ -3159,6 +3235,12 @@ async function publishFromSheet() {
     $("shareCopied").classList.toggle("hidden", !copied);
     persist();
   } catch (err) {
+    // A revoked or expired sign-in comes back as words about signing in.
+    // That is one click away from fixed, so offer the click, not prose.
+    if (/sign.?in|signed in|not signed/i.test(String(err))) {
+      showPubSignin("Your sign-in expired. Sign in once more and the publish finishes by itself.");
+      return;
+    }
     $("pubNote").textContent = plainWords(err);
     $("pubGo").disabled = false;
     $("pubGo").textContent = "Publish";
@@ -3580,6 +3662,12 @@ $("sendRawBtn").addEventListener("click", async () => {
   try { await invoke("reveal", { path: app.path }); } catch (e) {}
 });
 $("pubGo").addEventListener("click", publishFromSheet);
+document.querySelector('[data-close="publishSheet"]').addEventListener("click", () => {
+  state.loginSurface = "gate";
+  clearInterval(state.pubSigninPoll);
+  $("pubSignin").classList.add("hidden");
+  $("pubForm").classList.remove("hidden");
+});
 $("pubShotPick").addEventListener("click", () => pickPublishImage("shot"));
 $("pubIconPick").addEventListener("click", () => pickPublishImage("icon"));
 $("infoBtn").addEventListener("click", showInfo);

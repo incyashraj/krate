@@ -4287,6 +4287,15 @@ fn publish_bundle(
     let identity = match github_auth::current() {
         Some(identity) => Some(identity),
         None => {
+            // Behind a pipe (the studio, MCP, CI) there is no one to read a
+            // printed code: the browser would open on GitHub's code page
+            // while the code itself vanished into the captured stdout, and
+            // this command would sit polling for 15 minutes. Fail fast in
+            // words the caller can act on instead. (K-210)
+            use std::io::IsTerminal;
+            if !std::io::stdout().is_terminal() {
+                anyhow::bail!("not signed in. Sign in first, then publish again.");
+            }
             println!("Publishing puts your name on the app, so it needs a GitHub sign-in.");
             match github_auth::sign_in() {
                 Ok(identity) => Some(identity),

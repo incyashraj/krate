@@ -715,6 +715,22 @@
   <div class="sheet-wrap hidden" id="publishSheet">
     <div class="sheet sheet-publish">
       <h2>Send a link</h2>
+      <div class="pub-signin hidden" id="pubSignin">
+        <p class="pub-sub" id="pubSigninWhy">Publishing puts your name on the
+        app, so it needs a quick sign-in. One click -- your browser approves
+        it and the publish finishes by itself.</p>
+        <div class="sheet-actions">
+          <button class="btn btn-primary" id="pubSigninGo">Sign in with krate.tech</button>
+          <button class="btn btn-ghost" id="pubSigninCode">Use a code instead</button>
+        </div>
+        <div class="pub-code hidden" id="pubCodeWrap">
+          <p class="gate-step">Enter this code on the page that just opened</p>
+          <p class="gate-code" id="pubCodeValue">····-····</p>
+          <p class="gate-hint" id="pubCodeUrl"></p>
+        </div>
+        <p class="gate-error hidden" id="pubSigninErr"></p>
+      </div>
+      <div id="pubForm">
       <p class="pub-sub">Anyone with the link can open it. Publishing again
       later replaces it.</p>
       <label class="pub-list-row"><input type="checkbox" id="pubListed" />
@@ -750,6 +766,7 @@
         <button class="btn btn-ghost sheet-close" data-close="publishSheet">Cancel</button>
       </div>
       <p class="detail-note" id="pubNote"></p>
+      </div>
     </div>
   </div>
 

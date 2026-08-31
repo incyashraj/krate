@@ -2758,3 +2758,9 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
 .sup-replyrow input { flex: 1; }
 #supBody { margin-top: 8px; }
 #supEmail { margin-top: 8px; }
+
+/* The publish sheet's sign-in step: one clear button, the code as the
+   quiet fallback, nothing else competing. */
+.pub-signin { display: flex; flex-direction: column; gap: 6px; padding: 6px 0 2px; }
+.pub-signin .sheet-actions { justify-content: flex-start; }
+.pub-code { margin-top: 10px; text-align: center; }
