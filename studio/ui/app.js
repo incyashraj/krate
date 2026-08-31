@@ -1300,8 +1300,9 @@ function fillDone(result, opts) {
   $("shareResult").classList.toggle("hidden", !result.share_url);
   $("shareResult").classList.remove("error");
   if (result.share_url) {
+    $("shareHead").textContent = "Anyone with this link can open it";
     $("shareLink").textContent = result.share_url;
-    $("shareCopied").classList.add("hidden");
+    resetShareCopy();
   }
   const card = $("doneCard");
   card.classList.remove("in");
@@ -3039,10 +3040,30 @@ async function openApp() {
 function showActionError(err) {
   const text = String(err && err.message ? err.message : err);
   $("shareLink").textContent = text;
-  $("shareCopied").classList.add("hidden");
   $("shareResult").classList.remove("hidden");
   $("shareResult").classList.add("error");
 }
+
+/* One button owns copying the link; every path that fills the link row
+ * resets it back to "Copy". */
+function resetShareCopy() {
+  const b = $("shareCopyBtn");
+  b.classList.remove("done");
+  b.textContent = "Copy";
+}
+function markShareCopied() {
+  const b = $("shareCopyBtn");
+  b.classList.add("done");
+  b.textContent = "Copied \u2713";
+  clearTimeout(state.shareCopyTimer);
+  state.shareCopyTimer = setTimeout(resetShareCopy, 2600);
+}
+$("shareCopyBtn").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText($("shareLink").textContent);
+    markShareCopied();
+  } catch (e) {}
+});
 /* The publish sheet: what the person is about to put in the store, shown
    before it goes -- name, one line, screenshot, optional logo. Publishing
    again later replaces the listing server-side, so this is also the edit
@@ -3232,11 +3253,11 @@ async function publishFromSheet() {
     });
     state.session.result.share_url = url;
     $("publishSheet").classList.add("hidden");
+    $("shareHead").textContent = "Here's your link -- send it to anyone";
     $("shareLink").textContent = url;
     $("shareResult").classList.remove("hidden", "error");
-    let copied = false;
-    try { await navigator.clipboard.writeText(url); copied = true; } catch (e) {}
-    $("shareCopied").classList.toggle("hidden", !copied);
+    resetShareCopy();
+    try { await navigator.clipboard.writeText(url); markShareCopied(); } catch (e) {}
     persist();
   } catch (err) {
     // The raw engine words go to the log even when the sheet shows plainer
