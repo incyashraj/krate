@@ -3,12 +3,31 @@
 //! CPAL owns the operating-system stream. The Wasm guest sees only bounded PCM
 //! chunks after the runtime policy has granted microphone access.
 
+//! ## In a browser tab
+//!
+//! There is no CPAL. A tab has `getUserMedia`, but it is a different contract:
+//! asynchronous, gated behind a permission prompt the page does not control,
+//! and delivering audio through nodes rather than a blocking device callback.
+//! Bridging it is later work. This module keeps its shapes on wasm32 so the
+//! rest of the runtime compiles unchanged, and every call answers
+//! `CaptureError::Unsupported` -- which the permission wall turns into words a
+//! person can act on.
+//!
+//! An app that was told capture opened, and then read silence forever, would
+//! be worse than one told plainly it cannot record here, so nothing here
+//! reports success.
+
+#[cfg(not(target_arch = "wasm32"))]
 use std::collections::{BTreeMap, VecDeque};
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::{Arc, Mutex};
 
+#[cfg(not(target_arch = "wasm32"))]
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
+#[cfg(not(target_arch = "wasm32"))]
 const MAX_CAPTURE_BUFFER_BYTES: usize = 8 * 1024 * 1024;
+#[cfg(not(target_arch = "wasm32"))]
 const MAX_READ_BYTES: usize = 1024 * 1024;
 const MIN_SAMPLE_RATE: u32 = 8_000;
 const MAX_SAMPLE_RATE: u32 = 192_000;
@@ -34,8 +53,20 @@ pub enum CaptureError {
     DeviceUnavailable,
     InvalidConfig(String),
     Platform(String),
+    /// This host has no microphone path at all -- a browser preview. Only
+    /// added on wasm32: a native build can never produce it, and adding a
+    /// variant there would change what the rest of the runtime has to match
+    /// on for no gain.
+    ///
+    /// Distinct from the permission wall, which refuses before a call ever
+    /// reaches this module. An app that was granted `audio.capture` and still
+    /// cannot record learns that from here, so the words a person reads can
+    /// say which of the two it was.
+    #[cfg(target_arch = "wasm32")]
+    Unsupported,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 struct CaptureStream {
     stream: cpal::Stream,
     bytes: Arc<Mutex<VecDeque<u8>>>,
@@ -43,11 +74,13 @@ struct CaptureStream {
     started: bool,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub struct AudioCaptureRuntime {
     next_stream_id: u64,
     streams: BTreeMap<u64, CaptureStream>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Default for AudioCaptureRuntime {
     fn default() -> Self {
         Self {
@@ -57,6 +90,7 @@ impl Default for AudioCaptureRuntime {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl AudioCaptureRuntime {
     pub fn open(&mut self, config: CaptureConfig) -> Result<u64, CaptureError> {
         validate_config(config)?;
@@ -198,10 +232,47 @@ impl AudioCaptureRuntime {
     }
 }
 
+// The browser's answer: the same shapes, and an honest refusal.
+//
+// Kept beside the real one rather than behind a runtime branch so the wasm
+// build never links CPAL at all, and so the two cannot drift into disagreeing
+// about the type the rest of the runtime sees.
+#[cfg(target_arch = "wasm32")]
+#[derive(Default)]
+pub struct AudioCaptureRuntime;
+
+#[cfg(target_arch = "wasm32")]
+impl AudioCaptureRuntime {
+    /// A bad config is still a bad config here. Reporting it before the
+    /// refusal means an app with a broken sample rate hears the same thing on
+    /// both hosts, rather than having the mistake hidden until it ships
+    /// somewhere with a microphone.
+    pub fn open(&mut self, config: CaptureConfig) -> Result<u64, CaptureError> {
+        validate_config(config)?;
+        Err(CaptureError::Unsupported)
+    }
+
+    pub fn start(&mut self, _stream_id: u64) -> Result<(), CaptureError> {
+        Err(CaptureError::Unsupported)
+    }
+
+    pub fn stop(&mut self, _stream_id: u64) -> Result<(), CaptureError> {
+        Err(CaptureError::Unsupported)
+    }
+
+    /// Refuses rather than returning an empty buffer. No stream can exist
+    /// here, so an empty read would read as "the microphone is quiet" and an
+    /// app would wait forever for audio that is never coming.
+    pub fn read(&mut self, _stream_id: u64, _max_bytes: u32) -> Result<Vec<u8>, CaptureError> {
+        Err(CaptureError::Unsupported)
+    }
+}
+
 /// Normalizes the host's default microphone format to the exact bounded PCM
 /// contract requested by the guest. A phone headset, laptop microphone, and
 /// USB interface can expose different rates and channel counts; that is a host
 /// detail and must not make the same `.krate` file behave differently.
+#[cfg(not(target_arch = "wasm32"))]
 struct CaptureConverter {
     input_rate: u32,
     input_channels: usize,
@@ -211,6 +282,7 @@ struct CaptureConverter {
     rate_accumulator: u64,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl CaptureConverter {
     fn new(input_rate: u32, input_channels: u16, output: CaptureConfig) -> Self {
         Self {
@@ -304,6 +376,7 @@ fn validate_config(config: CaptureConfig) -> Result<(), CaptureError> {
     Ok(())
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn append_bytes(buffer: &Arc<Mutex<VecDeque<u8>>>, incoming: Vec<u8>) {
     let Ok(mut buffer) = buffer.lock() else {
         return;
@@ -319,7 +392,9 @@ fn append_bytes(buffer: &Arc<Mutex<VecDeque<u8>>>, incoming: Vec<u8>) {
     buffer.extend(incoming.into_iter().take(remaining));
 }
 
-#[cfg(test)]
+// The tests reach for the converter and the ring, which only the native
+// build has. They run where the device code they cover does.
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
 

@@ -9,7 +9,22 @@
 //! Every query answers as though nothing is plugged in when no pad is present,
 //! which is what an app must already handle: a person without a controller is
 //! the common case, not an error.
+//!
+//! ## In a browser tab
+//!
+//! There is no `gilrs`. A tab has the Gamepad API, but it is a different
+//! contract: nothing appears until the person has pressed a button on the pad
+//! first, and the pad list comes from the page's own event loop rather than a
+//! system library. Bridging it is later work.
+//!
+//! Until then this reports no controller, which is the one refusal in these
+//! three modules that needs no error type: these calls have no way to fail,
+//! and "no pad connected" is a state every app already handles and every
+//! person can act on -- they reach for the keyboard. There is no silent
+//! success being faked here, because a controller that reads as absent is
+//! exactly what an absent controller looks like.
 
+#[cfg(not(target_arch = "wasm32"))]
 use std::collections::BTreeMap;
 
 /// Buttons every controller has, whatever is printed on them.
@@ -39,6 +54,7 @@ const BUTTONS: &[&str] = &[
 const AXES: &[&str] = &["left-x", "left-y", "right-x", "right-y", "l2", "r2"];
 
 /// Gamepad state for one app session.
+#[cfg(not(target_arch = "wasm32"))]
 pub struct Gamepads {
     /// The `gilrs` context, or `None` when it could not start.
     ///
@@ -54,6 +70,7 @@ pub struct Gamepads {
     connected: bool,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl std::fmt::Debug for Gamepads {
     /// Hand-written because `gilrs::Gilrs` is not `Debug`, and the useful
     /// summary is what apps can see rather than the backend's internals.
@@ -68,6 +85,7 @@ impl std::fmt::Debug for Gamepads {
 }
 
 /// The `gilrs` button behind each portable name.
+#[cfg(not(target_arch = "wasm32"))]
 fn button_of(name: &str) -> Option<gilrs::Button> {
     use gilrs::Button;
     Some(match name {
@@ -94,6 +112,7 @@ fn button_of(name: &str) -> Option<gilrs::Button> {
 /// `LeftZ` and `RightZ` are the analog triggers, which is why `l2` and `r2`
 /// appear both here and in the button list: a trigger can be read as a button
 /// that is down past a threshold or as a position, and games want both.
+#[cfg(not(target_arch = "wasm32"))]
 fn axis_of(name: &str) -> Option<gilrs::Axis> {
     use gilrs::Axis;
     Some(match name {
@@ -107,12 +126,14 @@ fn axis_of(name: &str) -> Option<gilrs::Axis> {
     })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Default for Gamepads {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Gamepads {
     pub fn new() -> Self {
         // A failure here is "no gamepad", not an error worth propagating --
@@ -225,7 +246,56 @@ impl Gamepads {
     }
 }
 
-#[cfg(test)]
+// The browser's answer: the same shapes, and no controller.
+//
+// Kept beside the real one rather than behind a runtime branch so the wasm
+// build never links `gilrs` at all, and so the two cannot drift into
+// disagreeing about the type the rest of the runtime sees.
+//
+// There is no state to hold, because there is no backend to poll.
+#[cfg(target_arch = "wasm32")]
+#[derive(Debug, Default)]
+pub struct Gamepads;
+
+#[cfg(target_arch = "wasm32")]
+impl Gamepads {
+    pub fn new() -> Self {
+        Self
+    }
+
+    pub fn connected(&mut self) -> bool {
+        false
+    }
+
+    /// Unpressed, the same answer the native path gives when nothing is
+    /// plugged in. An app checking this every frame gets a quiet controller
+    /// rather than a wall of refusals it has no way to act on.
+    pub fn held(&mut self, _button: &str) -> bool {
+        false
+    }
+
+    /// Centred, so an app that never checks `connected` reads still sticks
+    /// rather than drift.
+    pub fn axis(&mut self, _axis: &str) -> f32 {
+        0.0
+    }
+
+    /// Answered from the same lists as the native build. Which names exist is
+    /// the interface's contract, not the backend's, so it must not change
+    /// with the host -- an app must not discover that `north` is an unknown
+    /// name only in a browser.
+    pub fn is_known_button(name: &str) -> bool {
+        BUTTONS.contains(&name)
+    }
+
+    pub fn is_known_axis(name: &str) -> bool {
+        AXES.contains(&name)
+    }
+}
+
+// The tests reach into the cached state and the `gilrs` mapping, which only
+// the native build has. They run where the backend they cover does.
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
 

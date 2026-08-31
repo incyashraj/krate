@@ -5,6 +5,12 @@
 //! detection, while manifest-backed `.krate` runs select their declared world
 //! explicitly.
 
+// The browser build carries the same types as every other host but
+// constructs fewer of them: it matches on the error variants and refuses,
+// where a native host also produces them. Scoped to wasm32 on purpose --
+// a genuinely dead item still has to show up on the builds that ship.
+#![cfg_attr(target_arch = "wasm32", allow(dead_code))]
+
 use std::{
     cell::RefCell,
     collections::BTreeMap,
@@ -400,11 +406,36 @@ impl Runtime {
         self.run_bytes_captured_for_world(&bytes, config, world)
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn load_component(&self, bytes: &[u8]) -> Result<LoadedComponent> {
         let component = Component::from_binary(&self.engine, bytes)
             .map_err(|err| RuntimeError::InvalidComponent(err.to_string()))?;
 
         Ok(LoadedComponent { component })
+    }
+
+    /// The last thing standing between a browser tab and a running guest.
+    ///
+    /// Turning a component's bytes into something runnable needs wasmtime's
+    /// compiler, and that does not build for wasm32: the target is neither
+    /// unix nor windows, so wasmtime's vm layer falls to its `custom`
+    /// backend and then cannot find `mmap`, `Mmap::from_file` or
+    /// `MmapVec::new_mmap`. Closing it means supplying the ~19 extern "C"
+    /// symbols of wasmtime's documented min-platform port -- virtual
+    /// memory, thread-locals and sync primitives.
+    ///
+    /// That work is real and scoped, so this refuses in words rather than
+    /// quietly failing to compile the crate. Everything around it -- the
+    /// painter, layout, the capability hosts and their honest refusals --
+    /// is already in place for the browser, so this is the piece to do
+    /// next, not a wall.
+    #[cfg(target_arch = "wasm32")]
+    pub fn load_component(&self, _bytes: &[u8]) -> Result<LoadedComponent> {
+        Err(RuntimeError::InvalidComponent(
+            "this build cannot load a guest yet: wasmtime needs its \
+             min-platform symbols on wasm32"
+                .to_string(),
+        ))
     }
 
     pub fn run_loaded_silent(
@@ -2115,7 +2146,28 @@ pub(crate) fn perform_http_request(
 ///   through the other one.
 /// - **The timeout is the caller's**, not a default, so a guest cannot be made
 ///   to wait longer than the run allows.
-#[cfg(feature = "phase2-bindings")]
+// A tab has `fetch`, and it is asynchronous and same-origin-policed --
+// a different contract from a blocking call that returns a response. It
+// belongs with the event loop work, since both turn on who owns the
+// waiting. Until then an app hears a refusal it can act on rather than
+// getting a request that silently never completes.
+#[cfg(all(feature = "phase2-bindings", target_arch = "wasm32"))]
+fn fetch_over_tls(
+    _req: &HttpRequest,
+    _url: &PlainHttpUrl,
+    _max_response_bytes: usize,
+) -> std::result::Result<HttpResponse, AdapterError> {
+    // `Unsupported` carries no message, and the message is the whole
+    // point: an app that only prints the error should still show words a
+    // person can act on.
+    Err(AdapterError::Network(
+        "reaching the internet needs the app on your computer, which a browser \
+         preview cannot do yet -- download it to use this part"
+            .to_string(),
+    ))
+}
+
+#[cfg(all(feature = "phase2-bindings", not(target_arch = "wasm32")))]
 fn fetch_over_tls(
     req: &HttpRequest,
     url: &PlainHttpUrl,

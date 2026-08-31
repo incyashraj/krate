@@ -2815,12 +2815,12 @@ impl ui::dialog::Host for Phase3GuiHost {
         // Android has no rfd backend; until M3 wires the platform document
         // picker, a dialog there answers as cancelled -- the headless rule,
         // for the same reason: there is no desktop dialog to show.
-        #[cfg(any(target_os = "android", target_os = "ios"))]
+        #[cfg(any(target_os = "android", target_os = "ios", target_arch = "wasm32"))]
         {
             let _ = (&title, &filter);
             Ok(Ok(None))
         }
-        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        #[cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))]
         {
             let chosen = match choose_file_on_host(&title, &filter) {
                 Ok(Some(path)) => path,
@@ -2867,12 +2867,12 @@ impl ui::dialog::Host for Phase3GuiHost {
         }
         // Android: cancelled until M3 wires the document picker (see
         // open_file).
-        #[cfg(any(target_os = "android", target_os = "ios"))]
+        #[cfg(any(target_os = "android", target_os = "ios", target_arch = "wasm32"))]
         {
             let _ = &title;
             Ok(Ok(None))
         }
-        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        #[cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))]
         {
             let mut dialog = rfd::FileDialog::new();
             if !title.is_empty() {
@@ -2914,12 +2914,12 @@ impl ui::dialog::Host for Phase3GuiHost {
             return Ok(Ok(()));
         }
         // Android: shown-and-dismissed, the headless rule, until M3.
-        #[cfg(any(target_os = "android", target_os = "ios"))]
+        #[cfg(any(target_os = "android", target_os = "ios", target_arch = "wasm32"))]
         {
             let _ = (&title, &body);
             Ok(Ok(()))
         }
-        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        #[cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))]
         {
             rfd::MessageDialog::new()
                 .set_title(&title)
@@ -2956,12 +2956,12 @@ impl ui::dialog::Host for Phase3GuiHost {
             return Ok(Ok(false));
         }
         // Android: dismissed means no, the function's own rule, until M3.
-        #[cfg(any(target_os = "android", target_os = "ios"))]
+        #[cfg(any(target_os = "android", target_os = "ios", target_arch = "wasm32"))]
         {
             let _ = (&title, &body);
             Ok(Ok(false))
         }
-        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        #[cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))]
         {
             let answer = rfd::MessageDialog::new()
                 .set_title(&title)
@@ -4345,6 +4345,14 @@ fn capture_error(error: CaptureError) -> audio::types::AudioError {
         CaptureError::DeviceUnavailable => audio::types::AudioError::DeviceUnavailable,
         CaptureError::InvalidConfig(message) => audio::types::AudioError::Unsupported(message),
         CaptureError::Platform(message) => audio::types::AudioError::Platform(message),
+        // The guest contract already has the right variant here, so unlike
+        // store.sql this needs no translation into Io -- just the words.
+        #[cfg(target_arch = "wasm32")]
+        CaptureError::Unsupported => audio::types::AudioError::Unsupported(
+            "listening through the microphone needs the app on your computer, \
+             which a browser preview cannot do -- download it to use this part"
+                .to_string(),
+        ),
     }
 }
 
@@ -4366,6 +4374,12 @@ fn playback_error(error: PlaybackError) -> audio::types::AudioError {
         PlaybackError::DeviceUnavailable => audio::types::AudioError::DeviceUnavailable,
         PlaybackError::InvalidConfig(message) => audio::types::AudioError::Unsupported(message),
         PlaybackError::Platform(message) => audio::types::AudioError::Platform(message),
+        #[cfg(target_arch = "wasm32")]
+        PlaybackError::Unsupported => audio::types::AudioError::Unsupported(
+            "playing sound needs the app on your computer, which a browser \
+             preview cannot do -- download it to use this part"
+                .to_string(),
+        ),
     }
 }
 
@@ -4758,7 +4772,7 @@ fn match_error(error: SpeechError) -> speech::transcription::MatchError {
 /// `filter` is a comma-separated extension list. It narrows what the dialog
 /// offers and is not a rule the runtime enforces -- whatever the person picks
 /// is what the app gets, because the click is the grant.
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))]
 fn choose_file_on_host(title: &str, filter: &str) -> Result<Option<std::path::PathBuf>, String> {
     let mut dialog = rfd::FileDialog::new();
     if !title.is_empty() {

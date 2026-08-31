@@ -1,5 +1,7 @@
 //! Shared locale helpers for host adapters.
 
+// Only the Unix timezone lookup walks paths.
+#[cfg(unix)]
 use std::path::Path;
 
 /// BCP 47 locale identifier used by the Phase 2 host adapter layer.
@@ -208,10 +210,12 @@ fn infer_unix_timezone_from_localtime() -> Option<String> {
     ])
 }
 
+#[cfg(unix)]
 fn timezone_from_candidate_files(paths: &[&str]) -> Option<String> {
     timezone_from_candidate_files_with_reader(paths, |path| std::fs::read_to_string(path).ok())
 }
 
+#[cfg(unix)]
 fn timezone_from_candidate_files_with_reader(
     paths: &[&str],
     mut read: impl FnMut(&str) -> Option<String>,
@@ -228,6 +232,7 @@ fn timezone_from_candidate_files_with_reader(
     None
 }
 
+#[cfg(unix)]
 fn timezone_from_localtime_link_target(target: &Path) -> Option<String> {
     let portable = target.to_string_lossy().replace('\\', "/");
     let marker = "/zoneinfo/";
@@ -235,6 +240,7 @@ fn timezone_from_localtime_link_target(target: &Path) -> Option<String> {
     normalize_timezone_candidate(suffix.trim_matches('/'))
 }
 
+#[cfg(unix)]
 fn timezone_from_etc_timezone_contents(contents: &str) -> Option<String> {
     for raw_line in contents.lines() {
         let line = raw_line.split('#').next().unwrap_or("").trim();
@@ -249,6 +255,7 @@ fn timezone_from_etc_timezone_contents(contents: &str) -> Option<String> {
     None
 }
 
+#[cfg(unix)]
 fn normalize_timezone_candidate(candidate: &str) -> Option<String> {
     let candidate = candidate.trim_matches('/').trim();
     if candidate.is_empty() {

@@ -11,7 +11,10 @@ publish = false
 # iOS the platform document picker is a different mechanism (mobile plan,
 # M3); until it is wired, dialog calls there answer as cancelled -- the
 # same honest degradation headless runs use.
-[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+# A browser tab is the third place with no native file dialog, alongside
+# the two phones: it has the File System Access API, which is a different
+# mechanism and Chromium-only. Same honest degradation until it is wired.
+[target.'cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))'.dependencies]
 rfd.workspace = true
 
 [features]
@@ -53,6 +56,18 @@ wasmtime.workspace = true
 # answer iOS needs and it costs almost nothing: measured on the rate card,
 # 1909 ms interpreted against 1934 ms jitted.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+#
+# NOT `cranelift`. A guest arrives as bytes that something must turn into
+# runnable code, and `Component::from_binary` is that step -- but adding
+# the compiler here does not build: wasmtime's vm layer falls to its
+# `custom` backend on wasm32 (the target is neither unix nor windows) and
+# then cannot find `mmap`, `Mmap::from_file` or `MmapVec::new_mmap`.
+#
+# That is wasmtime's documented min-platform port: the embedder supplies
+# ~19 extern "C" symbols for virtual memory, TLS and sync primitives. It
+# is the next real piece of work for running a guest in a tab, and it is
+# tracked as such rather than papered over -- so `load_component` is
+# gated off for wasm32 until those symbols exist.
 wasmtime = { version = "46.0.2", default-features = false, features = ["component-model", "runtime", "pulley", "gc", "gc-drc"] }
 
 [dependencies]

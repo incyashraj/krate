@@ -7,9 +7,25 @@
 //! or a lock held too long becomes an audible glitch, so it does nothing but
 //! pop samples and fill silence when the ring runs dry.
 
+//! ## In a browser tab
+//!
+//! There is no CPAL. A tab has WebAudio, but it is a different contract:
+//! asynchronous, and silent until the person has clicked something, because a
+//! browser will not let a page make noise on its own. Bridging it is later
+//! work. This module keeps its shapes on wasm32 so the rest of the runtime
+//! compiles unchanged, and every call answers `PlaybackError::Unsupported` --
+//! which the permission wall turns into words a person can act on.
+//!
+//! Nothing here reports success. An app that believes it is playing a sound
+//! and is not will look broken in a way nobody can trace, which is worse than
+//! being told plainly there is no audio on this host.
+
+#[cfg(not(target_arch = "wasm32"))]
 use std::collections::{BTreeMap, VecDeque};
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::{Arc, Mutex};
 
+#[cfg(not(target_arch = "wasm32"))]
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 /// Most samples the ring may hold: about 10 seconds of 48 kHz stereo.
@@ -19,6 +35,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 /// oldest is dropped — playback must never drop, or the person hears a skip.
 /// So a full ring accepts fewer bytes and the guest learns it from `write`'s
 /// return value: backpressure, not loss.
+#[cfg(not(target_arch = "wasm32"))]
 const MAX_RING_SAMPLES: usize = 48_000 * 2 * 10;
 /// Largest device callback this mixes in one pass.
 ///
@@ -26,12 +43,14 @@ const MAX_RING_SAMPLES: usize = 48_000 * 2 * 10;
 /// must not allocate. 8192 samples is far beyond any normal callback -- 1024
 /// is typical -- and anything past it is filled with silence rather than
 /// stale audio.
+#[cfg(not(target_arch = "wasm32"))]
 const MAX_CALLBACK_FRAMES: usize = 8_192;
 /// Most sound effects that may sound at once.
 ///
 /// Beyond this a mix is noise anyway, and the bound is what stops an app that
 /// calls `play-sound` in a loop from growing the voice list until the
 /// real-time callback cannot keep up.
+#[cfg(not(target_arch = "wasm32"))]
 const MAX_VOICES: usize = 64;
 const MIN_SAMPLE_RATE: u32 = 8_000;
 const MAX_SAMPLE_RATE: u32 = 192_000;
@@ -57,8 +76,20 @@ pub enum PlaybackError {
     DeviceUnavailable,
     InvalidConfig(String),
     Platform(String),
+    /// This host has no speakers at all -- a browser preview. Only added on
+    /// wasm32: a native build can never produce it, and adding a variant
+    /// there would change what the rest of the runtime has to match on for no
+    /// gain.
+    ///
+    /// Distinct from the permission wall, which refuses before a call ever
+    /// reaches this module. An app that was granted `audio.playback` and
+    /// still cannot make a sound learns that from here, so the words a person
+    /// reads can say which of the two it was.
+    #[cfg(target_arch = "wasm32")]
+    Unsupported,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 struct PlaybackStream {
     stream: cpal::Stream,
     ring: Arc<Mutex<VecDeque<f32>>>,
@@ -76,6 +107,7 @@ struct PlaybackStream {
 ///
 /// A copy per play rather than a cursor per sound, so firing the same shot
 /// twice in quick succession sounds like two shots rather than one restarting.
+#[cfg(not(target_arch = "wasm32"))]
 struct Voice {
     /// Which loaded sound this is, so `stop-sound` can find every copy.
     sound: u64,
@@ -85,11 +117,13 @@ struct Voice {
     gain: f32,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub struct AudioPlaybackRuntime {
     next_stream_id: u64,
     streams: BTreeMap<u64, PlaybackStream>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Default for AudioPlaybackRuntime {
     fn default() -> Self {
         Self {
@@ -99,6 +133,7 @@ impl Default for AudioPlaybackRuntime {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl AudioPlaybackRuntime {
     pub fn open(&mut self, config: PlaybackConfig) -> Result<u64, PlaybackError> {
         validate_config(config)?;
@@ -321,11 +356,68 @@ impl AudioPlaybackRuntime {
     }
 }
 
+// The browser's answer: the same shapes, and an honest refusal.
+//
+// Kept beside the real one rather than behind a runtime branch so the wasm
+// build never links CPAL at all, and so the two cannot drift into disagreeing
+// about the type the rest of the runtime sees.
+#[cfg(target_arch = "wasm32")]
+#[derive(Default)]
+pub struct AudioPlaybackRuntime;
+
+#[cfg(target_arch = "wasm32")]
+impl AudioPlaybackRuntime {
+    /// A bad config is still a bad config here. Reporting it before the
+    /// refusal means an app with a broken sample rate hears the same thing on
+    /// both hosts, rather than having the mistake hidden until it ships
+    /// somewhere with speakers.
+    pub fn open(&mut self, config: PlaybackConfig) -> Result<u64, PlaybackError> {
+        validate_config(config)?;
+        Err(PlaybackError::Unsupported)
+    }
+
+    pub fn start(&mut self, _stream_id: u64) -> Result<(), PlaybackError> {
+        Err(PlaybackError::Unsupported)
+    }
+
+    pub fn stop(&mut self, _stream_id: u64) -> Result<(), PlaybackError> {
+        Err(PlaybackError::Unsupported)
+    }
+
+    pub fn load_sound(&mut self, _stream_id: u64, _bytes: &[u8]) -> Result<u64, PlaybackError> {
+        Err(PlaybackError::Unsupported)
+    }
+
+    pub fn play_sound(
+        &mut self,
+        _stream_id: u64,
+        _sound: u64,
+        _gain: f32,
+    ) -> Result<(), PlaybackError> {
+        Err(PlaybackError::Unsupported)
+    }
+
+    /// Refuses rather than answering `Ok(())` the way the native path does
+    /// when the voice list is full. There, the sound was genuinely handled and
+    /// only the mix was crowded; here it never played at all.
+    pub fn stop_sound(&mut self, _stream_id: u64, _sound: u64) -> Result<(), PlaybackError> {
+        Err(PlaybackError::Unsupported)
+    }
+
+    /// Refuses rather than claiming the bytes were accepted. Reporting them
+    /// consumed would let a guest stream a whole song into nothing and never
+    /// learn the speakers were not there.
+    pub fn write(&mut self, _stream_id: u64, _bytes: &[u8]) -> Result<u32, PlaybackError> {
+        Err(PlaybackError::Unsupported)
+    }
+}
+
 /// Fill a device buffer from the ring, silence on underrun.
 ///
 /// Runs on the real-time audio thread: one try_lock, no allocation. If the
 /// guest's thread holds the lock right now, this callback plays silence rather
 /// than blocking — a missed millisecond of audio beats a stalled device.
+#[cfg(not(target_arch = "wasm32"))]
 fn drain_into<T>(
     ring: &Arc<Mutex<VecDeque<f32>>>,
     voices: &Arc<Mutex<Vec<Voice>>>,
@@ -383,6 +475,7 @@ fn drain_into<T>(
 /// guest frame, emit device frames while the accumulator carries. Upsampling
 /// repeats frames, downsampling skips them — nearest-neighbour, matching the
 /// fidelity promise capture already makes.
+#[cfg(not(target_arch = "wasm32"))]
 struct WriteConverter {
     guest_rate: u32,
     guest_channels: usize,
@@ -392,6 +485,7 @@ struct WriteConverter {
     rate_accumulator: u64,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl WriteConverter {
     fn new(guest: PlaybackConfig, device_rate: u32, device_channels: u16) -> Self {
         Self {
@@ -521,6 +615,7 @@ impl WriteConverter {
 }
 
 /// Remix one guest frame into the device's channel count.
+#[cfg(not(target_arch = "wasm32"))]
 fn push_device_frame(out: &mut Vec<f32>, frame: &[f32], device_channels: usize) {
     if device_channels == 1 {
         let sum = frame.iter().copied().sum::<f32>();
@@ -556,7 +651,9 @@ fn validate_config(config: PlaybackConfig) -> Result<(), PlaybackError> {
     Ok(())
 }
 
-#[cfg(test)]
+// The tests reach for the converter and the ring, which only the native
+// build has. They run where the device code they cover does.
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
 
