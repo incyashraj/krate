@@ -18,7 +18,10 @@
 //! sends anything the guest queued, and notices a requested or remote close.
 
 use std::collections::BTreeMap;
-use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
+use std::sync::mpsc::{Receiver, Sender, TryRecvError};
+// Only the native path opens connections, so only it builds channels.
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::mpsc::channel;
 
 /// The most connections one app may hold open at once. Each one is an OS
 /// thread for as long as it lives, and the thread ceiling is a process-wide
@@ -87,6 +90,20 @@ impl AsyncWs {
     ///
     /// Returns a handle immediately; the handshake happens on the worker and
     /// reports back as `Opened` or `Failed` through `poll`.
+    // A tab HAS WebSocket -- but the browser's own, reached from
+    // JavaScript, not a socket this thread can block on. Wiring the
+    // adapter's WebSocket into this handle table is real work and belongs
+    // with the event loop, since both turn on the same question of who
+    // owns the waiting. Until then an app is told plainly rather than
+    // handed a handle that never opens.
+    #[cfg(target_arch = "wasm32")]
+    pub fn open(&mut self, _url: String) -> Result<u64, String> {
+        Err("live connections need the app on your computer, which a browser \
+             preview cannot do yet -- download it to use this part"
+            .to_string())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn open(&mut self, url: String) -> Result<u64, String> {
         if self.connections.len() >= MAX_WS_CONNECTIONS {
             return Err(format!(
@@ -168,6 +185,7 @@ impl AsyncWs {
 }
 
 /// The worker: owns the socket for the connection's whole life.
+#[cfg(not(target_arch = "wasm32"))]
 fn run_connection(url: String, reports: Sender<Report>, commands: Receiver<Command>) {
     use tungstenite::client::connect;
     use tungstenite::protocol::Message;
