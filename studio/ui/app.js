@@ -390,6 +390,7 @@ async function enterHome() {
   // submitted before then is safe: runPlan awaits ensureUsableAgent, which
   // finishes the same probe before any agent is asked to work.
   renderSessions(await invoke("sessions_list"));
+  renderShelf();
   renderBuilding();
   refreshAgents();
 }
@@ -4390,6 +4391,70 @@ window.addEventListener("resize", () => {
   const on = document.querySelector("#dock button.on");
   if (on) moveGlide(on);
 });
+
+/* ---- the shelf ---------------------------------------------------------
+ * What they have made, along the foot of the room. It answers the second
+ * question a person asks -- "where did my last one go?" -- while the box
+ * above answers the first.
+ *
+ * Packed files only, newest first, deduped by path. A session that never
+ * became a file is not a thing you can pick up again, and putting one here
+ * would make the shelf a list of attempts rather than a shelf of apps.
+ */
+async function renderShelf() {
+  const body = $("shelfBody");
+  if (!body) return;
+  let sessions = [];
+  try { sessions = (await invoke("sessions_list")) || []; } catch (e) {}
+
+  const files = [];
+  const seen = new Set();
+  for (const s of [...sessions].sort((a, b) => (b.updated || 0) - (a.updated || 0))) {
+    if (s.result && s.result.path && !seen.has(s.result.path)) {
+      seen.add(s.result.path);
+      files.push(s);
+    }
+  }
+
+  if (!files.length) {
+    body.innerHTML = `<p class="shelf-empty">Nothing here yet. The box above is where it starts.</p>`;
+    return;
+  }
+
+  body.innerHTML = "";
+  for (const session of files.slice(0, 12)) {
+    const card = document.createElement("button");
+    card.className = "shelf-card";
+    card.innerHTML = `<span class="shot"><span>opening…</span></span><b>${escapeHtml(sessionLabel(session))}</b>`;
+    card.addEventListener("click", () => openSession(session));
+    body.appendChild(card);
+
+    // The still is fetched per app, and a missing one leaves the frame
+    // empty rather than showing a broken-image glyph where the app should
+    // be.
+    const slot = card.querySelector(".shot");
+    resolveShot(session)
+      .then((src) => {
+        if (src) slot.innerHTML = `<img src="${src}" alt="" />`;
+        else slot.innerHTML = "";
+      })
+      .catch(() => { slot.innerHTML = ""; });
+  }
+}
+
+(function shelfControls() {
+  $("shelfAll")?.addEventListener("click", () => { showView("apps"); loadAppsPage(); });
+  $("tabMine")?.addEventListener("click", () => {
+    $("tabMine").classList.add("on");
+    $("tabExamples").classList.remove("on");
+    renderShelf();
+  });
+  $("tabExamples")?.addEventListener("click", () => {
+    $("tabExamples").classList.add("on");
+    $("tabMine").classList.remove("on");
+    openCloud();
+  });
+})();
 
 /* ---- the workspace drawer ----------------------------------------------
  * Closed on arrival, opened by the panel button. The box in the middle is

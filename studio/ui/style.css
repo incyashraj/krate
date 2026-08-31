@@ -3007,3 +3007,92 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
 .bigbar-row .send.ready { background: #F2F2F2; color: #111; }
 .bigbar-row .send.ready:hover { background: #fff; }
 .bigbar-row .send:active { transform: scale(0.93); }
+
+/* ---- the shelf -----------------------------------------------------------
+ * A raised panel at the foot of the room, the way the reference does it:
+ * pinned to the bottom, rounded only at the top, and wider than the box so
+ * it reads as the floor the box is standing on rather than another card. */
+.shelf {
+  /* Fixed, not absolute. `.home` is the scroll container, so an absolute
+     shelf anchors to the scrolled CONTENT and slides away with it -- it
+     ended up 64px wide and hanging below the fold. The shelf belongs to
+     the window's floor, which is what fixed means. */
+  /* Centred by margins, NOT by translateX. The reveal animation sets
+     `transform` inline to slide things up, and a centring transform loses
+     that fight -- the shelf ended up 26px wide in the corner. Margins are
+     not something an animation can take away. */
+  position: fixed; left: 0; right: 0; bottom: 0;
+  width: min(900px, calc(100vw - 56px));
+  margin: 0 auto;
+  background: #131315;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-bottom: 0;
+  border-radius: 16px 16px 0 0;
+  padding: 12px 16px 20px;
+  z-index: 3;
+}
+.shelf-head { display: flex; align-items: center; gap: 8px; }
+.shelf-tabs {
+  display: flex; gap: 3px; padding: 3px;
+  background: rgba(255,255,255,0.05); border-radius: 10px;
+}
+.shelf-tab {
+  height: 28px; padding: 0 13px; border-radius: 8px;
+  background: none; border: 0; color: var(--muted);
+  font-family: var(--sans); font-size: 13px; cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.shelf-tab:hover { color: var(--text); }
+.shelf-tab.on { background: rgba(255,255,255,0.10); color: var(--text); }
+.shelf-all {
+  margin-left: auto;
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 28px; padding: 0 6px; border-radius: 8px;
+  background: none; border: 0; color: var(--muted);
+  font-family: var(--sans); font-size: 13px; cursor: pointer;
+  transition: color 0.15s, gap 0.15s;
+}
+.shelf-all:hover { color: var(--text); gap: 9px; }
+
+/* The apps themselves: small stills in a row, the way a shelf of things
+   you have made should look. */
+.shelf-body {
+  display: flex; gap: 10px; margin-top: 12px;
+  overflow-x: auto; scrollbar-width: none;
+  padding-bottom: 2px;
+}
+.shelf-body::-webkit-scrollbar { display: none; }
+.shelf-card {
+  flex: none; width: 148px;
+  background: none; border: 0; padding: 0; cursor: pointer; text-align: left;
+}
+.shelf-card .shot {
+  width: 100%; aspect-ratio: 16 / 10; border-radius: 9px;
+  background: #1A1A1C; border: 1px solid rgba(255,255,255,0.08);
+  overflow: hidden; display: grid; place-items: center;
+  transition: border-color 0.15s, transform 0.18s cubic-bezier(0.22,1,0.36,1);
+}
+.shelf-card:hover .shot { border-color: rgba(255,255,255,0.20); transform: translateY(-2px); }
+.shelf-card .shot img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
+.shelf-card .shot span { color: var(--ghost); font-size: 11px; }
+.shelf-card b {
+  display: block; margin-top: 7px;
+  font-size: 12.5px; font-weight: 400; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: color 0.15s;
+}
+.shelf-card:hover b { color: var(--text); }
+.shelf-empty {
+  padding: 14px 2px 6px; font-size: 13px; color: var(--faint);
+}
+
+/* The room has to leave space for the shelf, and the old dock goes: the
+   shelf does its job better and two navigations at one edge is one too
+   many. */
+.home { position: relative; padding-bottom: 200px; }
+.dockwrap { display: none !important; }
+
+@media (max-width: 700px) {
+  .shelf { width: 100%; border-radius: 14px 14px 0 0; padding: 10px 12px 16px; }
+  .home { padding-bottom: 176px; }
+}
