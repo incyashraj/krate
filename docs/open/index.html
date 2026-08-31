@@ -154,7 +154,7 @@ h1.page { font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
 <div class="card">
   <div class="stepn">1</div>
   <h2>Get Krate, once</h2>
-  <p>About 24 MB, free and open source. This is the only setup there is: after it, every app anyone ever sends you is just a double-click.</p>
+  <p id="dlSize">Free and open source. This is the only setup there is: after it, every app anyone ever sends you is just a double-click.</p>
   <p style="margin-top:14px"><a class="btn primary" id="dlBtn" href="https://github.com/incyashraj/krate/releases/latest">Download Krate</a></p>
   <p class="dlnote" id="dlNote"></p>
   <p style="margin-top:12px; font-size:12.5px">Comfortable in a terminal instead?</p>
@@ -253,11 +253,23 @@ document.querySelectorAll("[data-copy]").forEach(function (b) {
   // click time from the releases API rather than hard-coded here and going
   // stale on the next tag. If the API is unreachable we fall back to the
   // releases page, which is where we were sending everyone anyway.
+  // Mac gets the Player: krate-app-*.zip IS a double-clickable Krate
+  // Player.app. Windows and Linux have no Player installer yet -- their
+  // Player artifact is a zip of loose binaries that registers nothing
+  // (K-214) -- so they get the Studio installer, which does register the
+  // file type and can also open a received app. It is a bigger download
+  // than a receiver strictly needs, and the note below says so rather than
+  // quietly handing them the wrong product.
   var WANT = {
     mac: function (n) { return /^krate-app-.*\.zip$/.test(n); },
     win: function (n) { return /^krate-studio-.*-windows-x64-setup\.exe$/.test(n); },
     linux: function (n) { return /^krate-studio-.*\.AppImage$/.test(n); }
   };
+  if (os === "win" || os === "linux") {
+    note.textContent = "This installs Krate Studio, which opens files people "
+      + "send you and also lets you make your own. A smaller open-only "
+      + "player for " + (os === "win" ? "Windows" : "Linux") + " is coming.";
+  }
   if (!WANT[os]) return;
   fetch("https://api.github.com/repos/incyashraj/krate/releases/latest")
     .then(function (r) { return r.ok ? r.json() : null; })
@@ -275,6 +287,17 @@ document.querySelectorAll("[data-copy]").forEach(function (b) {
         if (arm.length) pick = arm[0];
       }
       btn.href = pick.browser_download_url;
+      // The size comes from the asset we are actually linking, never from a
+      // number typed into the page. "About 24 MB" was wrong in both
+      // directions -- the Mac player is 10 MB and the Windows zip is 19 --
+      // and a size claim a receiver can check is one they will check.
+      var mb = pick.size / (1024 * 1024);
+      var size = document.getElementById("dlSize");
+      if (mb > 0 && size) {
+        size.textContent = "About " + (mb < 10 ? mb.toFixed(1) : Math.round(mb))
+          + " MB, free and open source. This is the only setup there is: "
+          + "after it, every app anyone ever sends you is just a double-click.";
+      }
     })
     .catch(function () { /* the releases page is the fallback, already set */ });
 
