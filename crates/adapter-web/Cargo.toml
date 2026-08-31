@@ -1,0 +1,31 @@
+[package]
+name = "krate-adapter-web"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+# The browser adapter: a Krate app painting into a canvas in a tab.
+#
+# This crate starts as the spike proving the pixel path -- the shared
+# painter's framebuffer reaching a canvas through putImageData with no
+# GPU and no runtime changes. The adapter contract and the event loop
+# land on top of it once that is proven.
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+krate-adapter-common = { path = "../adapter-common" }
+krate-layout = { path = "../layout" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies.web-sys]
+version = "0.3"
+features = [
+  "Document", "Element", "HtmlCanvasElement", "Window",
+  "CanvasRenderingContext2d", "ImageData",
+]

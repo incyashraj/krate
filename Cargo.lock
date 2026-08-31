@@ -2239,6 +2239,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "krate-adapter-web"
+version = "0.2.5"
+dependencies = [
+ "js-sys",
+ "krate-adapter-common",
+ "krate-layout",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
 name = "krate-adapter-windows"
 version = "0.2.5"
 dependencies = [

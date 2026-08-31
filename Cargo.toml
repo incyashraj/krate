@@ -9,6 +9,7 @@ members = [
     "crates/player-ios",
     "crates/adapter-linux",
     "crates/adapter-macos",
+    "crates/adapter-web",
     "crates/adapter-windows",
     "crates/bindings-rust",
     "crates/layout",
