@@ -23,12 +23,39 @@ default = ["phase2-bindings"]
 phase2-bindings = []
 speech = ["dep:whisper-rs"]
 
-[dependencies]
+# Everything here needs an operating system underneath it, and a browser
+# tab is not one. Gated so `krate-runtime` can build for wasm32, where the
+# host answers these capabilities a different way or refuses them honestly:
+#
+#   ureq / tungstenite  the tab already has fetch and WebSocket
+#   rusqlite            bundled C SQLite; store.sql is refused in a tab
+#   cpal                WebAudio is a different contract
+#   gilrs               the Gamepad API is a different contract
+#
+# The same shape `rfd` already uses above for Android and iOS.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # HTTPS for guest apps. Same TLS stack the CLI and bundle crates already use,
 # so there is one certificate story in the workspace rather than two.
 ureq.workspace = true
 tungstenite.workspace = true
 rusqlite.workspace = true
+cpal = "0.18.1"
+# Gamepads. Pulls libudev-sys on Linux, which is why every Linux build got the
+# udev headers in the change before this one.
+gilrs = "0.11.0"
+wasmtime.workspace = true
+
+# The browser build of wasmtime drops the compilation cache, which pulls
+# zstd's C library and means nothing in a tab with no disk to cache to.
+# Everything else about the engine is the same -- including pulley, the
+# portable interpreter, which wasmtime selects on its own for wasm32
+# because there is no JIT backend for that architecture. That is the same
+# answer iOS needs and it costs almost nothing: measured on the rate card,
+# 1909 ms interpreted against 1934 ms jitted.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasmtime = { version = "46.0.2", default-features = false, features = ["component-model", "runtime", "pulley", "gc", "gc-drc"] }
+
+[dependencies]
 sha2 = "0.10.9"
 # Encoding a window frame to a PNG for `krate shoot` and headless verification.
 png = "0.18.1"
@@ -45,12 +72,7 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
-wasmtime.workspace = true
-cpal = "0.18.1"
 whisper-rs = { version = "0.16.0", optional = true }
-# Gamepads. Pulls libudev-sys on Linux, which is why every Linux build got the
-# udev headers in the change before this one.
-gilrs = "0.11.0"
 
 [target.'cfg(target_os = "android")'.dependencies]
 krate-adapter-android = { path = "../adapter-android" }
