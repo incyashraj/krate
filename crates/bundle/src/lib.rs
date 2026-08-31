@@ -241,6 +241,33 @@ pub fn is_url(target: &str) -> bool {
     target.starts_with("https://") || target.starts_with("http://")
 }
 
+/// The URL a scheme-less `host/path` target implies, if it can only be one.
+///
+/// People retype the short command a page printed -- `krate run
+/// krate.tech/notes.krate` -- and the scheme is the part they drop. This
+/// claims such a target for https ONLY when it cannot be a real relative
+/// path: the first segment must read as a host (dotted labels of letters,
+/// digits and hyphens, an optional port), and the caller must already have
+/// found no file of that name on disk. `apps/foo.krate` has no dot and
+/// stays a path; `./a.krate` and `/tmp/a.krate` never reach the host test.
+pub fn implied_url(target: &str) -> Option<String> {
+    let (host, rest) = target.split_once('/')?;
+    if rest.is_empty() {
+        return None;
+    }
+    let name = host.split(':').next().unwrap_or("");
+    if !name.contains('.') {
+        return None;
+    }
+    let host_reads_as_dns = name
+        .split('.')
+        .all(|label| !label.is_empty() && label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'));
+    if !host_reads_as_dns {
+        return None;
+    }
+    Some(format!("https://{target}"))
+}
+
 /// Write a bundle from a manifest and a component.
 ///
 /// The manifest is parsed and validated first, so `pack` cannot produce a
@@ -1189,5 +1216,29 @@ required = true
         assert!(is_url("https://example.com/a.krate"));
         assert!(is_url("http://127.0.0.1:8000/a.krate"));
         assert!(!is_url("./a.krate"));
+    }
+
+    #[test]
+    fn implied_url_claims_only_host_shaped_targets() {
+        // The short printed command, retyped without its scheme.
+        assert_eq!(
+            implied_url("krate.tech/notes.krate").as_deref(),
+            Some("https://krate.tech/notes.krate")
+        );
+        assert_eq!(
+            implied_url("hub.krate.tech/a/b1d81b0bf5ea").as_deref(),
+            Some("https://hub.krate.tech/a/b1d81b0bf5ea")
+        );
+        assert_eq!(
+            implied_url("localhost.test:8000/a.krate").as_deref(),
+            Some("https://localhost.test:8000/a.krate")
+        );
+        // Real path shapes stay paths.
+        assert_eq!(implied_url("apps/foo.krate"), None); // no dot in first segment
+        assert_eq!(implied_url("./a.krate"), None); // "." is not a host label
+        assert_eq!(implied_url("/tmp/a.krate"), None); // empty first segment
+        assert_eq!(implied_url("my file/x.krate"), None); // space is not DNS
+        assert_eq!(implied_url("a.krate"), None); // no slash at all
+        assert_eq!(implied_url("krate.tech/"), None); // nothing after the host
     }
 }

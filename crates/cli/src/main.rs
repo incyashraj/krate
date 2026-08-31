@@ -9274,6 +9274,23 @@ fn resolve_run_target(
     }
 
     let path = PathBuf::from(target);
+
+    // `krate run krate.tech/notes.krate` -- the short command a page prints,
+    // retyped without its scheme. Only when nothing on disk has that name
+    // AND the first segment reads as a host does the target become https.
+    // A real file always wins; this can never shadow one.
+    if !path.exists() {
+        if let Some(url) = krate_bundle::implied_url(target) {
+            let bundle = krate_bundle::fetch(&url, insecure_http)
+                .with_context(|| format!("could not open bundle from {url} (from `{target}`)"))?;
+            return Ok((
+                bundle.component_path().to_path_buf(),
+                Some(bundle.manifest_path().to_path_buf()),
+                Some(bundle),
+            ));
+        }
+    }
+
     if krate_bundle::is_bundle_path(&path) {
         let bundle = krate_bundle::open(&path)
             .with_context(|| format!("could not open bundle {}", path.display()))?;
