@@ -2197,212 +2197,6 @@ async fn me_info() -> Result<serde_json::Value, String> {
     .map_err(|e| e.to_string())?
 }
 
-/* ---- the wand: change an app you were given --------------------------- */
-
-/// The file the wand window is pointed at, set before that window exists.
-static WAND_TARGET: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
-/// True when the whole process exists only because a document was opened:
-/// closing the wand then ends the process, like the hand-off used to.
-static WAND_COLD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-/// Show the small companion beside a received app: its one job is the
-/// sentence "want it different?". Created fresh each open so the state
-/// machine inside always starts at the beginning.
-fn show_wand(app: &tauri::AppHandle, path: &std::path::Path, cold: bool) {
-    *WAND_TARGET.lock().unwrap() = Some(path.display().to_string());
-    WAND_COLD.store(cold, std::sync::atomic::Ordering::SeqCst);
-    if let Some(win) = app.get_webview_window("wand") {
-        let _ = win.show();
-        place_wand(&win);
-        let _ = win.set_focus();
-        let _ = win.emit("wand-target", path.display().to_string());
-        return;
-    }
-    let built = tauri::WebviewWindowBuilder::new(
-        app,
-        "wand",
-        tauri::WebviewUrl::App("wand.html".into()),
-    )
-    .title("")
-    .inner_size(440.0, 142.0)
-    .resizable(false)
-    .decorations(false)
-    .transparent(true)
-    .shadow(true)
-    .always_on_top(true)
-    .build();
-    if let Ok(win) = built {
-        let win: tauri::WebviewWindow = win;
-        place_wand(&win);
-    }
-}
-
-#[tauri::command]
-fn wand_boot_test(app: &tauri::AppHandle) {
-    // Dev only: KRATE_WAND_TEST=<path> shows the wand at startup, because
-    // Finder's open-document event only reaches the installed, registered
-    // app -- never a dev binary.
-    if let Ok(test) = std::env::var("KRATE_WAND_TEST") {
-        let path = std::path::PathBuf::from(test);
-        if path.exists() {
-            show_wand(app, &path, false);
-        }
-    }
-}
-
-/// Close the wand from its own ✕ -- routed through a command so it works
-/// on every platform's webview, and so the cold-exit rule still runs.
-#[tauri::command]
-fn wand_close(app: tauri::AppHandle) {
-    if let Some(win) = app.get_webview_window("wand") {
-        let _ = win.close();
-    }
-    if WAND_COLD.load(std::sync::atomic::Ordering::SeqCst)
-        && app
-            .get_webview_window("main")
-            .and_then(|w| w.is_visible().ok())
-            != Some(true)
-    {
-        std::process::exit(0);
-    }
-}
-
-/// Bottom-right of the monitor the wand is on, respecting that monitor's
-/// own origin -- the first cut ignored it, and on a two-screen desk the
-/// window landed mid-screen over whatever was open.
-fn place_wand(win: &tauri::WebviewWindow) {
-    let mon = win
-        .current_monitor()
-        .ok()
-        .flatten()
-        .or_else(|| win.primary_monitor().ok().flatten());
-    if let (Some(mon), Ok(wsize)) = (mon, win.outer_size()) {
-        let mpos = mon.position();
-        let msize = mon.size();
-        let scale = mon.scale_factor();
-        let x = mpos.x + msize.width as i32 - wsize.width as i32 - (24.0 * scale) as i32;
-        let y = mpos.y + msize.height as i32 - wsize.height as i32 - (72.0 * scale) as i32;
-        let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
-    }
-}
-
-/// Card or dot: the wand's two sizes. The bottom-right corner stays put
-/// through the change, so collapsing feels like folding, not jumping.
-#[tauri::command]
-fn wand_mode(app: tauri::AppHandle, mode: String) {
-    let Some(win) = app.get_webview_window("wand") else { return };
-    let (w, h) = if mode == "dot" { (52.0, 52.0) } else { (440.0, 142.0) };
-    let scale = win.scale_factor().unwrap_or(1.0);
-    let (old_pos, old_size) = match (win.outer_position(), win.outer_size()) {
-        (Ok(p), Ok(s)) => (p, s),
-        _ => {
-            let _ = win.set_size(tauri::LogicalSize::new(w, h));
-            return;
-        }
-    };
-    let _ = win.set_size(tauri::LogicalSize::new(w, h));
-    let new_w = (w * scale) as i32;
-    let new_h = (h * scale) as i32;
-    let _ = win.set_position(tauri::PhysicalPosition::new(
-        old_pos.x + old_size.width as i32 - new_w,
-        old_pos.y + old_size.height as i32 - new_h,
-    ));
-}
-
-#[tauri::command]
-fn wand_target() -> Option<String> {
-    WAND_TARGET.lock().unwrap().clone()
-}
-
-/// The wish itself: revise the bundle through the engine, atomically swap
-/// the file, and open the new version. Every progress line the engine
-/// prints streams to the wand window as it happens.
-#[tauri::command]
-async fn wand_change(app: tauri::AppHandle, path: String, wish: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let path = existing(&path)?;
-        let engine = engine()?;
-        let agent = settings_get().agent;
-        let fresh = path.with_extension("wand-new.krate");
-        let _ = std::fs::remove_file(&fresh);
-        let mut cmd = silent_cmd(&engine);
-        cmd.current_dir(studio_dir())
-            .arg("revise")
-            .arg(&path)
-            .arg(&wish)
-            .arg("--output")
-            .arg(&fresh);
-        if !agent.trim().is_empty() {
-            cmd.arg("--agent").arg(agent.trim());
-        }
-        cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).stdin(Stdio::null());
-        let mut child = cmd
-            .spawn()
-            .map_err(|err| format!("could not start the Krate engine: {err}"))?;
-        let mut tail: Vec<String> = Vec::new();
-        let stdout = child.stdout.take();
-        let stderr = child.stderr.take();
-        let app2 = app.clone();
-        let err_thread = stderr.map(|e| {
-            std::thread::spawn(move || {
-                let mut lines = Vec::new();
-                for line in std::io::BufReader::new(e).lines().map_while(Result::ok) {
-                    lines.push(line);
-                }
-                lines
-            })
-        });
-        if let Some(out) = stdout {
-            for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {
-                let trimmed = line.trim().to_string();
-                if !trimmed.is_empty() {
-                    let _ = app2.emit("wand-line", &trimmed);
-                    tail.push(trimmed);
-                    if tail.len() > 40 {
-                        tail.remove(0);
-                    }
-                }
-            }
-        }
-        let status = child.wait().map_err(|err| err.to_string())?;
-        if let Some(t) = err_thread {
-            if let Ok(mut lines) = t.join() {
-                tail.append(&mut lines);
-            }
-        }
-        if !status.success() || !fresh.exists() {
-            let _ = std::fs::remove_file(&fresh);
-            let why = tail.join("\n");
-            return Err(if why.trim().is_empty() {
-                "the change did not take -- the app is untouched".to_string()
-            } else {
-                why
-            });
-        }
-        // Same directory, so the swap is atomic: the person's file is never
-        // half-written, and a failure anywhere above leaves it untouched.
-        std::fs::rename(&fresh, &path).map_err(|err| err.to_string())?;
-        let _ = silent_cmd(&engine)
-            .current_dir(studio_dir())
-            .arg("launch")
-            .arg(&path)
-            .spawn();
-        Ok(())
-    })
-    .await
-    .map_err(|err| err.to_string())?
-}
-
-/// From the wand's "get an AI" invitation: bring the full studio forward.
-#[tauri::command]
-fn wand_open_studio(app: tauri::AppHandle) {
-    WAND_COLD.store(false, std::sync::atomic::Ordering::SeqCst);
-    if let Some(win) = app.get_webview_window("main") {
-        let _ = win.show();
-        let _ = win.set_focus();
-    }
-}
-
 /* ---- support: real conversations with a person ------------------------ */
 
 #[tauri::command]
@@ -3889,11 +3683,6 @@ fn main() {
             billing_info,
             billing_checkout,
             me_info,
-            wand_target,
-            wand_change,
-            wand_open_studio,
-            wand_close,
-            wand_mode,
             support_new,
             support_list,
             support_reply,
@@ -4004,16 +3793,11 @@ fn main() {
                                     .get()
                                     .map(|t| t.elapsed() < std::time::Duration::from_secs(3))
                                     .unwrap_or(false);
-                                if handed {
-                                    // The wand rides along with every opened
-                                    // app: the file carries its source, so
-                                    // "want it different?" is always true.
-                                    if cold {
-                                        if let Some(win) = app.get_webview_window("main") {
-                                            let _ = win.hide();
-                                        }
+                                if handed && cold {
+                                    if let Some(win) = app.get_webview_window("main") {
+                                        let _ = win.hide();
                                     }
-                                    show_wand(app, &path, cold);
+                                    std::process::exit(0);
                                 }
                             }
                         }
@@ -4021,28 +3805,6 @@ fn main() {
                 }
             }
 
-            // The wand was the only reason this process stayed alive after a
-            // cold document open; closing it is the person saying done.
-            if let tauri::RunEvent::Ready = &event {
-                wand_boot_test(app);
-            }
-
-            if let tauri::RunEvent::WindowEvent {
-                label,
-                event: tauri::WindowEvent::CloseRequested { .. },
-                ..
-            } = &event
-            {
-                if label == "wand"
-                    && WAND_COLD.load(std::sync::atomic::Ordering::SeqCst)
-                    && app
-                        .get_webview_window("main")
-                        .and_then(|w| w.is_visible().ok())
-                        != Some(true)
-                {
-                    std::process::exit(0);
-                }
-            }
 
             // Cmd-Q and Dock > Quit close no window, so the window handler
             // above never sees them. Same question, same three answers.
