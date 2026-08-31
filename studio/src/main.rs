@@ -2200,6 +2200,7 @@ fn show_wand(app: &tauri::AppHandle, path: &std::path::Path, cold: bool) {
     WAND_COLD.store(cold, std::sync::atomic::Ordering::SeqCst);
     if let Some(win) = app.get_webview_window("wand") {
         let _ = win.show();
+        place_wand(&win);
         let _ = win.set_focus();
         let _ = win.emit("wand-target", path.display().to_string());
         return;
@@ -2218,18 +2219,7 @@ fn show_wand(app: &tauri::AppHandle, path: &std::path::Path, cold: bool) {
     .build();
     if let Ok(win) = built {
         let win: tauri::WebviewWindow = win;
-        // Bottom-right of the work area, where a companion belongs --
-        // near the app it accompanies, over nothing important.
-        if let Ok(Some(mon)) = win.primary_monitor() {
-            let size = mon.size();
-            let scale = mon.scale_factor();
-            let w = (420.0 * scale) as i32;
-            let h = (176.0 * scale) as i32;
-            let _ = win.set_position(tauri::PhysicalPosition::new(
-                size.width as i32 - w - (24.0 * scale) as i32,
-                size.height as i32 - h - (64.0 * scale) as i32,
-            ));
-        }
+        place_wand(&win);
     }
 }
 
@@ -2243,6 +2233,42 @@ fn wand_boot_test(app: &tauri::AppHandle) {
         if path.exists() {
             show_wand(app, &path, false);
         }
+    }
+}
+
+/// Close the wand from its own ✕ -- routed through a command so it works
+/// on every platform's webview, and so the cold-exit rule still runs.
+#[tauri::command]
+fn wand_close(app: tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("wand") {
+        let _ = win.close();
+    }
+    if WAND_COLD.load(std::sync::atomic::Ordering::SeqCst)
+        && app
+            .get_webview_window("main")
+            .and_then(|w| w.is_visible().ok())
+            != Some(true)
+    {
+        std::process::exit(0);
+    }
+}
+
+/// Bottom-right of the monitor the wand is on, respecting that monitor's
+/// own origin -- the first cut ignored it, and on a two-screen desk the
+/// window landed mid-screen over whatever was open.
+fn place_wand(win: &tauri::WebviewWindow) {
+    let mon = win
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| win.primary_monitor().ok().flatten());
+    if let (Some(mon), Ok(wsize)) = (mon, win.outer_size()) {
+        let mpos = mon.position();
+        let msize = mon.size();
+        let scale = mon.scale_factor();
+        let x = mpos.x + msize.width as i32 - wsize.width as i32 - (24.0 * scale) as i32;
+        let y = mpos.y + msize.height as i32 - wsize.height as i32 - (72.0 * scale) as i32;
+        let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
     }
 }
 
@@ -3829,6 +3855,7 @@ fn main() {
             wand_target,
             wand_change,
             wand_open_studio,
+            wand_close,
             support_new,
             support_list,
             support_reply,
