@@ -2224,11 +2224,11 @@ fn show_wand(app: &tauri::AppHandle, path: &std::path::Path, cold: bool) {
         tauri::WebviewUrl::App("wand.html".into()),
     )
     .title("")
-    .inner_size(440.0, 190.0)
+    .inner_size(440.0, 168.0)
     .resizable(false)
     .decorations(false)
     .transparent(true)
-    .shadow(true)
+    .shadow(false)
     .always_on_top(true)
     .build();
     if let Ok(win) = built {
