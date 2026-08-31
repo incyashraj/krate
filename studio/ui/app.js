@@ -4490,6 +4490,9 @@ async function renderShelf() {
 
   function setOpen(open) {
     side.dataset.open = open ? "true" : "false";
+    // The body class is what lets the room step aside and take its rounded
+    // corner, so the two panels read as one window with a seam.
+    document.body.classList.toggle("side-open", open);
     toggle.setAttribute("aria-expanded", open ? "true" : "false");
     toggle.title = open ? "Hide your workspace" : "Show your workspace";
     if (scrim) scrim.hidden = !open;

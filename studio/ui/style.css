@@ -3096,3 +3096,28 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
   .shelf { width: 100%; border-radius: 14px 14px 0 0; padding: 10px 12px 16px; }
   .home { padding-bottom: 176px; }
 }
+
+/* When the drawer is open, the room gets the reference's rounded top-left
+   corner -- the two panels read as one window with a seam rather than a
+   sheet sliding over a page. The shelf steps aside with it so it is not
+   half-hidden behind the drawer. */
+body.side-open .home,
+body.side-open .titlebar {
+  border-top-left-radius: 14px;
+}
+body.side-open .home { overflow: hidden; }
+body.side-open #viewHome {
+  margin-left: 240px;
+  transition: margin-left 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+}
+#viewHome { transition: margin-left 0.34s cubic-bezier(0.22, 1, 0.36, 1); }
+body.side-open .shelf { left: 240px; }
+@media (prefers-reduced-motion: reduce) {
+  #viewHome, body.side-open #viewHome { transition: none; }
+}
+/* Below this the drawer covers the room instead of sharing it: 240px out
+   of a narrow window leaves nothing to type into. */
+@media (max-width: 860px) {
+  body.side-open #viewHome { margin-left: 0; }
+  body.side-open .shelf { left: 0; }
+}
