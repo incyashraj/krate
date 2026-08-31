@@ -29,7 +29,8 @@
 //! hosts use, so this cannot drift from what a Mac draws.
 
 use krate_adapter_common::painter::{self, PaintInteraction};
-use krate_adapter_common::ui::WidgetPlacement;
+use krate_adapter_common::ui::{WidgetPlacement, WidgetTree};
+use krate_layout::{absolute_rect, compute_layout, LayoutViewport};
 
 /// A frame of pixels, painted by the shared painter.
 ///
@@ -81,10 +82,60 @@ impl Frame {
     }
 }
 
+/// Lay a widget tree out at a given size and lower it to placements the
+/// painter can draw.
+///
+/// This is the second half of the chain an app actually travels: the guest
+/// describes a tree, the layout crate computes rectangles, and the painter
+/// fills pixels. Both crates already compile to wasm32 untouched, so the
+/// whole chain runs in a tab today.
+///
+/// The runtime owns a richer version of this (scroll clipping, list-row
+/// selection, native-control hints in `phase3_gui_host.rs`). That code is
+/// not reachable here yet because `krate-runtime` does not build for
+/// wasm32 -- rusqlite, ureq and tungstenite are unconditional dependencies
+/// that a browser build must gate out first. Until then this covers the
+/// plain case honestly, and it must NOT grow into a second, drifting
+/// implementation: when the runtime compiles for the browser, this goes.
+pub fn lay_out(tree: &WidgetTree, width: f32, height: f32) -> Vec<WidgetPlacement> {
+    let Ok(viewport) = LayoutViewport::new(width, height) else {
+        return Vec::new();
+    };
+    let Ok(layout) = compute_layout(tree, viewport) else {
+        return Vec::new();
+    };
+    let mut placements = Vec::new();
+    for (id, node) in tree.nodes() {
+        let Some(rect) = absolute_rect(tree, &layout, *id) else {
+            continue;
+        };
+        placements.push(WidgetPlacement {
+            widget: *id,
+            kind: node.kind,
+            label: node.label.clone(),
+            checked: node.checked,
+            value: node.value,
+            selection: None,
+            text_cursor: node.text_cursor,
+            clip: None,
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+            clickable: false,
+            role: node.role.clone(),
+            pixels: None,
+        });
+    }
+    placements
+}
+
 #[cfg(target_arch = "wasm32")]
 mod web {
     use super::Frame;
-    use krate_adapter_common::ui::{WidgetId, WidgetKind, WidgetPlacement};
+    use krate_adapter_common::ui::{
+        WidgetId, WidgetKind, WidgetNode, WidgetPlacement, WidgetStyle, WidgetTree,
+    };
     use wasm_bindgen::prelude::*;
     use wasm_bindgen::Clamped;
 
@@ -110,8 +161,14 @@ mod web {
             .ok_or("no 2d context")?
             .dyn_into::<web_sys::CanvasRenderingContext2d>()?;
 
+        // The real chain: a widget tree, laid out by the layout crate,
+        // painted by the shared painter. Not hand-placed rectangles.
         let mut frame = Frame::new(width, height);
-        frame.paint(&demo_placements(width as f32, height as f32), 1.0);
+        let placements = match demo_tree() {
+            Some(tree) => super::lay_out(&tree, width as f32, height as f32),
+            None => demo_placements(width as f32, height as f32),
+        };
+        frame.paint(&placements, 1.0);
 
         let mut rgba = frame.to_rgba();
         let data = web_sys::ImageData::new_with_u8_clamped_array_and_sh(
@@ -123,7 +180,44 @@ mod web {
         Ok(())
     }
 
-    /// A handful of widgets, laid out by hand, to exercise the painter.
+    /// A small app's widget tree, the way a guest would describe one:
+    /// a padded stack with a heading, a line of body text, a button, a
+    /// text field and a progress bar. The layout crate decides where
+    /// they all go.
+    fn demo_tree() -> Option<WidgetTree> {
+        let id = |n: u64| WidgetId::new(n).ok();
+        let mut root = WidgetNode::new(id(1)?, WidgetKind::Stack);
+        root.style = WidgetStyle {
+            width: None,
+            height: None,
+            grow: 1.0,
+            padding: 24.0,
+        };
+        let mut tree = WidgetTree::new(root).ok()?;
+
+        let mut add = |n: u64, kind: WidgetKind, label: Option<&str>, height: f32, value: Option<f32>| {
+            let mut node = WidgetNode::new(id(n).expect("non-zero"), kind);
+            node.parent = Some(id(1).expect("non-zero"));
+            node.label = label.map(|s| s.to_string());
+            node.value = value;
+            node.style = WidgetStyle {
+                width: None,
+                height: Some(height),
+                grow: 0.0,
+                padding: 0.0,
+            };
+            let _ = tree.upsert(node);
+        };
+        add(2, WidgetKind::Text, Some("Krate, running in a browser tab"), 30.0, None);
+        add(3, WidgetKind::Text, Some("Laid out and painted by the same code a Mac runs."), 24.0, None);
+        add(4, WidgetKind::Button, Some("A button"), 38.0, None);
+        add(5, WidgetKind::TextField, Some("A text field"), 34.0, None);
+        add(6, WidgetKind::Progress, None, 16.0, Some(0.6));
+        Some(tree)
+    }
+
+    /// A handful of widgets, laid out by hand. The fallback for when the
+    /// tree cannot be built, kept so the canvas is never blank.
     fn demo_placements(width: f32, _height: f32) -> Vec<WidgetPlacement> {
         let pad = 24.0;
         let w = width - pad * 2.0;
@@ -225,6 +319,43 @@ mod tests {
             painter::COLOR_BACKGROUND,
             "the far corner should be untouched",
         );
+    }
+
+    /// The whole chain an app travels: a widget tree, laid out by the
+    /// real layout engine, lowered to placements, painted. This is what
+    /// separates "we can draw rectangles" from "an app can appear".
+    #[test]
+    fn a_widget_tree_lays_out_and_paints() {
+        use krate_adapter_common::ui::{WidgetNode, WidgetStyle};
+
+        let id = |n: u64| WidgetId::new(n).expect("non-zero");
+        let mut root = WidgetNode::new(id(1), WidgetKind::Stack);
+        root.style = WidgetStyle { width: None, height: None, grow: 1.0, padding: 12.0 };
+        let mut tree = WidgetTree::new(root).expect("root");
+
+        let mut child = WidgetNode::new(id(2), WidgetKind::Button);
+        child.parent = Some(id(1));
+        child.label = Some("Press".to_string());
+        child.style = WidgetStyle { width: None, height: Some(30.0), grow: 0.0, padding: 0.0 };
+        tree.upsert(child).expect("child");
+
+        let placements = lay_out(&tree, 300.0, 150.0);
+        assert_eq!(placements.len(), 2, "the stack and its button");
+
+        let button = placements
+            .iter()
+            .find(|p| p.kind == WidgetKind::Button)
+            .expect("the button should be placed");
+        // The layout engine, not us, decided this: the padding pushed it in
+        // from the edge and the height came from the style.
+        assert_eq!(button.x, 12.0, "padding should offset the child");
+        assert_eq!(button.height, 30.0, "the styled height should survive");
+        assert!(button.width > 0.0, "the button should have real width");
+
+        let mut frame = Frame::new(300, 150);
+        let blank = frame.buffer.clone();
+        frame.paint(&placements, 1.0);
+        assert_ne!(frame.buffer, blank, "a laid-out tree should paint");
     }
 
     /// The byte order the canvas expects, pinned. A red pixel must come
