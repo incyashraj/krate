@@ -4844,7 +4844,6 @@ function paintExamples() {
  * onboarding name is the fallback for anyone who skipped signing in. */
 function paintGreeting() {
   const greet = $("homeGreet");
-  const title = $("homeTitle") || document.querySelector(".home-title");
   const fromAccount = state.account && state.account.name;
   const saved = localStorage.getItem("krate-name") || "";
   const name = (fromAccount || saved || "").trim();
@@ -4854,14 +4853,18 @@ function paintGreeting() {
   // A small pill with the initial in it, then the greeting: at 15px of
   // faint grey the old line was there and unreadable, and a name is the
   // one thing on this screen that should feel addressed to a person.
+  // The name belongs IN the sentence, not in a pill above it. "What's in
+  // your mind, Yashraj," reads as being spoken to; a badge and a separate
+  // "Hi, Yashraj" reads as a dashboard greeting bolted on top.
   if (greet) {
-    greet.innerHTML = initial
-      ? `<span class="greet-badge">${initial}</span><span>Hi, ${
-          (name.split(/\s+/)[0] || "").replace(/[<>]/g, "")
-        }</span>`
-      : "";
+    const first = (name.split(/\s+/)[0] || "").replace(/[<>]/g, "");
+    greet.textContent = first
+      ? `What's in your mind, ${first},`
+      : "What's in your mind,";
   }
-  if (title) title.textContent = "Make an app you can send";
+  // The title is two lines of markup, not a string: setting textContent
+  // here would flatten it back into one and lose the break where the
+  // sentence's meaning breaks. It is static now, so leave it alone.
 }
 
 /* ---- onboarding -------------------------------------------------------- */

@@ -2920,3 +2920,90 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
 
 /* The panel button, top-left, where the reference puts it. */
 .titlebar .side-toggle { margin-right: 2px; }
+
+/* ---- the title -----------------------------------------------------------
+ * Two lines, because the sentence has two halves and breaking it where the
+ * meaning breaks is what makes it read as one thought rather than a
+ * paragraph that happened to wrap. Balanced and centred, and the second
+ * line is the quieter half. */
+.home-title.display {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 2px; text-align: center;
+  font-size: clamp(27px, 3.3vw, 40px);
+  font-weight: 600; letter-spacing: -0.032em; line-height: 1.12;
+  margin-bottom: 30px;
+}
+.home-title.display span:last-child { color: rgba(255,255,255,0.62); }
+
+/* ---- the box -------------------------------------------------------------
+ * Wider and taller than before, with the controls on one row underneath and
+ * real air around the text. The reference's box is the biggest object on
+ * the page after the title, and it should be: it is the only thing anyone
+ * came here to use. */
+.composer-shell { width: min(680px, 100%); }
+.bigbar {
+  background: #1A1A1C;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 20px;
+  padding: 18px 20px 0;
+  box-shadow: 0 26px 60px -30px rgba(0,0,0,0.85);
+  transition: border-color 0.2s, box-shadow 0.3s;
+}
+.bigbar:focus-within {
+  border-color: rgba(255,255,255,0.17);
+  box-shadow: 0 30px 70px -30px rgba(0,0,0,0.95);
+}
+.bigbar textarea {
+  min-height: 46px; max-height: 168px;
+  font-size: 15.5px; line-height: 1.55;
+  padding: 0 2px 6px;
+}
+.bigbar-row {
+  display: flex; align-items: center; gap: 8px;
+  height: 52px; margin: 0 -20px; padding: 0 14px;
+  border-top: 0;
+}
+.bigbar-row .grow { flex: 1; }
+
+/* The round + on the left. */
+.bigbar-row .tool.plus {
+  width: 30px; height: 30px; padding: 0;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  color: var(--muted); background: none; border: 0;
+  transition: background 0.15s, color 0.15s;
+}
+.bigbar-row .tool.plus:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+
+/* "Plan": a word, not a button. It is an alternative to sending, and
+   dressing it as a control would make the send arrow look like one of two
+   equal choices when it is the main one. */
+.bar-btn {
+  height: 30px; padding: 0 10px; border-radius: 8px;
+  background: none; border: 0; color: var(--muted);
+  font-family: var(--sans); font-size: 13.5px; cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.bar-btn:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+
+.bigbar-row .tool.wave {
+  width: 30px; height: 30px; padding: 0; border-radius: 8px;
+  display: grid; place-items: center;
+  color: var(--muted); background: none; border: 0;
+  transition: background 0.15s, color 0.15s;
+}
+.bigbar-row .tool.wave:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+
+/* The send: a filled circle, the one solid thing in the box. */
+.bigbar-row .send {
+  width: 32px; height: 32px; flex: none;
+  border-radius: 50%; border: 0;
+  display: grid; place-items: center;
+  background: rgba(255,255,255,0.16); color: rgba(255,255,255,0.62);
+  transition: background 0.2s, color 0.2s, transform 0.12s;
+}
+.bigbar-row .send:hover { background: rgba(255,255,255,0.24); color: #fff; }
+/* Awake the moment there is something to send. */
+.bigbar-row .send.ready { background: #F2F2F2; color: #111; }
+.bigbar-row .send.ready:hover { background: #fff; }
+.bigbar-row .send:active { transform: scale(0.93); }

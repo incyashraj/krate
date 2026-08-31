@@ -215,19 +215,28 @@
     <main class="home">
 
       <div class="home-hero">
-        <p class="home-greet reveal" id="homeGreet"></p>
-        <h1 class="display home-title reveal" id="homeTitle">Make an app you can send</h1>
-        <p class="home-sub reveal">One sentence is enough. It becomes a real app you can send to anyone.</p>
+        <h1 class="display home-title reveal" id="homeTitle">
+          <span id="homeGreet">What's in your mind,</span>
+          <span>lets turn that into a Krate app</span>
+        </h1>
         <div class="composer-shell reveal">
           <div class="bigbar">
             <div class="attach-row hidden" id="homeAttachRow"></div>
-            <textarea id="homePrompt" rows="1" placeholder="A rate card for my studio -- the client types days and sees the total…" autocomplete="off" spellcheck="false"></textarea>
+            <textarea id="homePrompt" rows="1" placeholder="Describe the app you want…" autocomplete="off" spellcheck="false"></textarea>
             <div class="bigbar-row">
-              <button class="tool" id="homeAttachBtn">
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M13 7.5l-4.9 4.9a3.2 3.2 0 01-4.5-4.5l5.3-5.3a2.1 2.1 0 013 3l-5.3 5.3a1 1 0 01-1.5-1.5L9.8 4.7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-                Add a picture or file
+              <!-- Left: one round + for anything you want to hand the AI. -->
+              <button class="tool plus" id="homeAttachBtn" title="Add a picture or file">
+                <svg width="17" height="17" viewBox="0 0 16 16" fill="none"><path d="M8 3.4v9.2M3.4 8h9.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
               </button>
-              <button id="homeSend" class="send" title="Make it (Enter)"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 13V3.5M8 3.5L3.8 7.7M8 3.5l4.2 4.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+              <span class="grow"></span>
+              <!-- Right: think-first, speak-it, and send. -->
+              <button class="bar-btn" id="homePlanBtn" title="Talk it through before building">Plan</button>
+              <button class="tool wave" id="homeVoiceBtn" title="Say it out loud">
+                <svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                  <path d="M3 7.6v2.8M6 5.4v7.2M9 3.4v11.2M12 5.9v6.2M15 7.9v2.2"/>
+                </svg>
+              </button>
+              <button id="homeSend" class="send" title="Make it (Enter)"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 12.8V3.6M8 3.6L4.2 7.4M8 3.6l3.8 3.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
             </div>
           </div>
           <div class="sugg-list reveal" id="suggList">
