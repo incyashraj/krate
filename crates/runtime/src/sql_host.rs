@@ -17,8 +17,21 @@
 //!    out of its user's input by accident, because the text and the values
 //!    travel separately all the way to SQLite.
 
+//! ## In a browser tab
+//!
+//! There is no SQLite. This module keeps its shapes on wasm32 so the rest
+//! of the runtime compiles unchanged, and every call answers
+//! `SqlError::Unsupported` -- which the permission wall turns into words a
+//! person can act on, rather than an app that opens and then silently
+//! loses everything it saved.
+//!
+//! IndexedDB is deliberately not pretended to be a substitute: it is not
+//! SQL, and an app that asked for a database and got a key-value store
+//! back would fail in ways nobody could explain.
+
 use std::path::PathBuf;
 
+#[cfg(not(target_arch = "wasm32"))]
 use rusqlite::{types::ValueRef, Connection};
 
 /// Largest result a single query may return, so one `SELECT *` on a large table
@@ -54,6 +67,11 @@ pub enum SqlError {
     TooLarge,
     /// The database could not be read or written.
     Io(String),
+    /// This host has no database at all -- a browser preview. Distinct from
+    /// `Denied`, which means the app was not granted the capability: this
+    /// one says the capability cannot exist here, so the words a person
+    /// reads can be honest about which it is.
+    Unsupported,
 }
 
 /// The rows a query returned.
@@ -64,6 +82,8 @@ pub struct QueryResult {
 }
 
 /// One application's database.
+// The real database, on a machine that has one.
+#[cfg(not(target_arch = "wasm32"))]
 pub struct AppDatabase {
     path: PathBuf,
     connection: Option<Connection>,
@@ -72,6 +92,7 @@ pub struct AppDatabase {
     granted: bool,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl std::fmt::Debug for AppDatabase {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AppDatabase")
@@ -81,6 +102,7 @@ impl std::fmt::Debug for AppDatabase {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl AppDatabase {
     /// Prepare an app's database. The file is not opened until the app runs a
     /// statement, so an app that never queries never creates one.
@@ -186,6 +208,62 @@ impl AppDatabase {
     }
 }
 
+// The browser's answer: the same shapes, and an honest refusal.
+//
+// Kept beside the real one rather than behind a runtime branch so the
+// wasm build never links SQLite at all, and so the two cannot drift into
+// disagreeing about the type the rest of the runtime sees.
+#[cfg(target_arch = "wasm32")]
+pub struct AppDatabase {
+    path: PathBuf,
+    granted: bool,
+}
+
+#[cfg(target_arch = "wasm32")]
+impl std::fmt::Debug for AppDatabase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AppDatabase")
+            .field("path", &self.path)
+            .field("granted", &self.granted)
+            .finish_non_exhaustive()
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+impl AppDatabase {
+    pub fn new(path: PathBuf, granted: bool) -> Self {
+        Self { path, granted }
+    }
+
+    /// Denied beats unsupported. An app that was never granted the
+    /// capability should hear the same thing everywhere; only an app that
+    /// WAS granted it, and still cannot have it here, learns that this
+    /// host has no database.
+    fn refuse<T>(&self) -> Result<T, SqlError> {
+        if !self.granted {
+            return Err(SqlError::Denied);
+        }
+        Err(SqlError::Unsupported)
+    }
+
+    pub fn query(&mut self, statement: &str, _params: &[SqlValue]) -> Result<QueryResult, SqlError> {
+        check_statement(statement)?;
+        self.refuse()
+    }
+
+    pub fn execute(&mut self, statement: &str, _params: &[SqlValue]) -> Result<u64, SqlError> {
+        check_statement(statement)?;
+        self.refuse()
+    }
+
+    pub fn transaction(&mut self, statements: &[String]) -> Result<(), SqlError> {
+        for statement in statements {
+            check_statement(statement)?;
+        }
+        self.refuse()
+    }
+}
+
 /// Refuse the statements that would reach outside the app's own database.
 ///
 /// SQLite is a capable engine, and some of that capability is filesystem
@@ -237,6 +315,7 @@ fn contains_word(haystack: &str, needle: &str) -> bool {
     false
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn to_rusqlite_params(params: &[SqlValue]) -> Vec<rusqlite::types::Value> {
     params
         .iter()
@@ -250,6 +329,7 @@ fn to_rusqlite_params(params: &[SqlValue]) -> Vec<rusqlite::types::Value> {
         .collect()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn from_rusqlite_value(value: ValueRef<'_>) -> Result<SqlValue, SqlError> {
     Ok(match value {
         ValueRef::Null => SqlValue::Null,

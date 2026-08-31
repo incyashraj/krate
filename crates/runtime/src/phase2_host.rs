@@ -532,6 +532,16 @@ fn sql_error_to_wit(error: crate::sql_host::SqlError) -> store::sql::SqlError {
         SqlError::Forbidden(message) => store::sql::SqlError::Forbidden(message),
         SqlError::TooLarge => store::sql::SqlError::TooLarge,
         SqlError::Io(message) => store::sql::SqlError::Io(message),
+        // A host with no database at all -- a browser preview. The WIT has
+        // no variant for this and must not grow one: the guest contract is
+        // what every existing .krate was compiled against, and an app that
+        // handles Io already handles this. The words carry the truth, so
+        // whoever reads them knows it is the place, not the app.
+        SqlError::Unsupported => store::sql::SqlError::Io(
+            "this app keeps records on your computer, which a browser preview cannot do -- \
+             download it to use this part"
+                .to_string(),
+        ),
     }
 }
 
