@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Change this app</title>
+<style>
+  :root {
+    --bg: #101116; --line: #23262d; --text: #ffffff;
+    --muted: rgba(255, 255, 255, 0.56); --faint: rgba(255, 255, 255, 0.34);
+    --blue: #6291ff;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #101116; height: 100%; }
+  body {
+    font: 13.5px/1.5 "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--text); -webkit-font-smoothing: antialiased;
+    display: flex; align-items: stretch;
+  }
+  .card {
+    position: relative; flex: 1; display: flex; flex-direction: column; gap: 8px;
+    background: var(--bg); border-top: 1px solid rgba(255, 255, 255, 0.09);
+    padding: 14px 16px 13px;
+  }
+  .drag { position: absolute; inset: 0 40px auto 0; height: 30px; -webkit-app-region: drag; }
+  .top { display: flex; align-items: baseline; gap: 8px; }
+  .top b { font-size: 14px; font-weight: 600; }
+  .top span { font-size: 12px; color: var(--faint); }
+  .x {
+    position: absolute; top: 9px; right: 10px; width: 24px; height: 24px;
+    display: grid; place-items: center; border: 0; background: none;
+    color: var(--faint); cursor: pointer; border-radius: 7px; font-size: 14px;
+  }
+  .x:hover { color: var(--text); background: rgba(255, 255, 255, 0.07); }
+  .lead { color: var(--muted); font-size: 12.5px; }
+  .row { display: flex; gap: 8px; }
+  input {
+    flex: 1; min-width: 0; padding: 9px 12px; border-radius: 10px;
+    border: 1px solid var(--line); background: #0a0b0e; color: var(--text);
+    font: inherit; font-size: 13px; outline: none;
+  }
+  input:focus { border-color: rgba(98, 145, 255, 0.55); }
+  button.go {
+    flex: none; padding: 9px 15px; border-radius: 10px; border: 0;
+    background: var(--text); color: #0a0a0a; font: inherit; font-size: 13px;
+    font-weight: 600; cursor: pointer;
+  }
+  button.go:disabled { opacity: 0.45; cursor: default; }
+  .status { font-size: 12px; color: var(--muted); min-height: 16px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .status.err { color: #ff9aab; white-space: normal; }
+  .status.ok { color: #7ee2a8; }
+  .pulse { display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--blue); margin-right: 7px; vertical-align: 1px;
+    animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.25; } }
+  .invite { display: none; flex-direction: column; gap: 10px; }
+  .invite p { color: var(--muted); font-size: 12.5px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="drag"></div>
+  <button class="x" id="close" title="Close">&#10005;</button>
+
+  <div id="wish">
+    <div class="top"><b id="appName">This app</b><span>is yours to change</span></div>
+    <p class="lead" id="lead">Tell it what you'd like different, in your own words.</p>
+    <div class="row" style="margin-top:2px">
+      <input id="box" placeholder="bigger text&hellip; add a dark mode&hellip; split it by percentage&hellip;" maxlength="500" />
+      <button class="go" id="go">Change it</button>
+    </div>
+    <p class="status" id="status"></p>
+  </div>
+
+  <div class="invite" id="invite">
+    <div class="top"><b id="appName2">This app</b><span>is yours to change</span></div>
+    <p>Changing an app needs an AI to do the writing. Krate Studio sets one
+    up free -- then every app you're ever given listens to you.</p>
+    <div class="row"><button class="go" id="openStudio">Open Krate Studio</button></div>
+  </div>
+</div>
+
+<script>
+const tauri = window.__TAURI__;
+const invoke = (c, a) => tauri.core.invoke(c, a);
+const $ = (id) => document.getElementById(id);
+let target = null;
+let busy = false;
+
+function pretty(path) {
+  const stem = (path.split(/[\\/]/).pop() || "").replace(/\.krate$/i, "");
+  return stem.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) || "This app";
+}
+
+async function init() {
+  target = await invoke("wand_target");
+  const name = target ? pretty(target) : "This app";
+  $("appName").textContent = name;
+  $("appName2").textContent = name;
+  // No usable AI yet: the wand becomes the doorway to getting one.
+  try {
+    const agents = await invoke("agents");
+    const ready = (agents || []).some((a) => a.state !== "missing" && a.state !== "not-ready");
+    if (!ready) {
+      $("wish").style.display = "none";
+      $("invite").style.display = "flex";
+      return;
+    }
+  } catch (e) { /* if the probe fails, let them try; the error will say */ }
+  $("box").focus();
+}
+init();
+
+tauri.event.listen("wand-target", (ev) => {
+  target = ev.payload;
+  $("appName").textContent = pretty(target);
+  $("appName2").textContent = pretty(target);
+});
+tauri.event.listen("wand-line", (ev) => {
+  if (busy) $("status").innerHTML = '<span class="pulse"></span>' + String(ev.payload).slice(0, 90);
+});
+
+async function go() {
+  const wish = $("box").value.trim();
+  if (!wish || !target || busy) return;
+  busy = true;
+  $("go").disabled = true;
+  $("box").disabled = true;
+  $("status").className = "status";
+  $("status").innerHTML = '<span class="pulse"></span>Making it yours -- a few minutes. Leave this open.';
+  try {
+    await invoke("wand_change", { path: target, wish });
+    $("status").className = "status ok";
+    $("status").textContent = "Done -- opening the new version. Want more? Just say so.";
+    $("box").value = "";
+  } catch (err) {
+    $("status").className = "status err";
+    const words = String(err).split("\n").filter(Boolean).pop() || "that change did not take";
+    $("status").textContent = words.slice(0, 160) + " -- the app is untouched.";
+  }
+  busy = false;
+  $("go").disabled = false;
+  $("box").disabled = false;
+  $("box").focus();
+}
+$("go").addEventListener("click", go);
+$("box").addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+$("openStudio").addEventListener("click", () => invoke("wand_open_studio"));
+$("close").addEventListener("click", () => tauri.window.getCurrentWindow().close());
+</script>
+</body>
+</html>
