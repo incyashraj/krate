@@ -3672,11 +3672,19 @@ document.querySelectorAll("#sendWrapOs [data-wrap]").forEach((b) => {
     $("sendNote").textContent = "Making the wrap…";
     try {
       const wrapPath = await invoke("make_wrap", { path: app.path, target: os });
-      $("sendNote").textContent =
-        wrapPath.split(/[\\/]/).pop() +
-        " is in the folder that just opened. It installs Krate once on their " +
-        (os === "mac" ? "Mac" : os === "windows" ? "Windows PC" : "Linux machine") +
-        ", then opens this app -- the player is downloaded, never bundled.";
+      const name = wrapPath.split(/[\\/]/).pop();
+      const machine = os === "mac" ? "Mac" : os === "windows" ? "Windows PC" : "Linux machine";
+      // The Mac gift is a FOLDER -- an opener Apple has notarized, with the
+      // app beside it, because a downloaded script cannot pass Gatekeeper.
+      // Telling someone to send a file when they must send a folder is how
+      // a friend receives an opener with nothing to open.
+      $("sendNote").textContent = os === "mac"
+        ? name + " just opened in Finder. Send the WHOLE folder -- zip it, or "
+          + "drop it in a shared drive. Their first double-click installs Krate "
+          + "once, then opens this app."
+        : name + " is in the folder that just opened. It installs Krate once on "
+          + "their " + machine + ", then opens this app -- the player is "
+          + "downloaded, never bundled.";
       try { await invoke("reveal", { path: wrapPath }); } catch (e) {}
     } catch (err) {
       $("sendNote").textContent = plainWords(err);
