@@ -1,0 +1,26 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Krate web spike</title>
+<style>
+body { background:#0b0b0c; color:#f2f2f2; font-family:-apple-system,sans-serif; padding:24px; }
+canvas { border:1px solid #333; border-radius:8px; display:block; margin-top:16px; }
+#status { font-size:13px; color:#888; }
+</style></head>
+<body>
+<h1 style="font-size:16px">Krate: the shared painter, in a browser tab</h1>
+<p id="status">loading…</p>
+<canvas id="app"></canvas>
+<script type="module">
+import init, { paint_demo } from "./krate_adapter_web.js";
+const status = document.getElementById("status");
+try {
+  await init();
+  paint_demo("app", 640, 320);
+  status.textContent = "painted by krate-adapter-common, via putImageData";
+  window.__spikeOk = true;
+} catch (e) {
+  status.textContent = "FAILED: " + e;
+  window.__spikeOk = false;
+  window.__spikeErr = String(e);
+}
+</script>
+</body></html>
