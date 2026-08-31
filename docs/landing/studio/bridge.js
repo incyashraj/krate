@@ -29,18 +29,14 @@ const bridge = {
   poll: null,
 };
 
-try { bridge.token = localStorage.getItem("krate-token"); } catch (e) {}
+/* The site's own session key. NOT a new one: /login/done already stores
+ * the token here, and a second key would mean signing in twice for one
+ * account. */
+const TOKEN_KEY = "krate_tok";
+/* What they were typing when the wall stopped them. */
+const PENDING_KEY = "krate_pending_request";
 
-/* A sign-in hands the token back on the URL. Take it, keep it, and get it
- * out of the address bar so nobody shares a link with their session in it. */
-(function claimToken() {
-  const params = new URLSearchParams(location.search);
-  const handed = params.get("token");
-  if (!handed) return;
-  bridge.token = handed;
-  try { localStorage.setItem("krate-token", handed); } catch (e) {}
-  history.replaceState({}, "", location.pathname);
-})();
+try { bridge.token = localStorage.getItem(TOKEN_KEY); } catch (e) {}
 
 async function hub(path, opts = {}) {
   const headers = { ...(opts.headers || {}) };
@@ -58,6 +54,34 @@ async function builder(path, opts = {}) {
   const res = await fetch(BUILDER + path, { ...opts, headers });
   if (!res.ok) throw new Error((await res.text().catch(() => "")) || res.statusText);
   return (res.headers.get("content-type") || "").includes("json") ? res.json() : res.text();
+}
+
+/* The browser's half of the second key.
+ *
+ * A browser has no hardware id, and must not be given a fingerprint: a
+ * canvas or font probe would identify people across the whole web, which
+ * is a far bigger thing than counting three free apps and not a trade we
+ * are willing to make.
+ *
+ * So this is a plain random id, stored once. A determined person can clear
+ * it, and that is accepted. What it stops is the ordinary case -- a second
+ * email address for three more apps -- because the id survives signing out
+ * and signing in as someone else. The account key catches the rest, and
+ * the real backstop is that abuse costs more effort than $12.
+ */
+function deviceId() {
+  try {
+    let id = localStorage.getItem("krate_device");
+    if (!id) {
+      const bytes = new Uint8Array(32);
+      crypto.getRandomValues(bytes);
+      id = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+      localStorage.setItem("krate_device", id);
+    }
+    return id;
+  } catch (e) {
+    return "";
+  }
 }
 
 /* Sessions live on the hub, keyed to the account, so a person's work
@@ -88,7 +112,7 @@ const COMMANDS = {
       return { signed_in: true, login: u.login, name: u.name, avatar_url: u.avatar_url, email: u.email };
     } catch (e) {
       bridge.token = null;
-      try { localStorage.removeItem("krate-token"); } catch (e2) {}
+      try { localStorage.removeItem(TOKEN_KEY); } catch (e2) {}
       return { signed_in: false };
     }
   },
@@ -99,8 +123,9 @@ const COMMANDS = {
   },
 
   login_browser() {
-    const back = encodeURIComponent(location.origin + location.pathname);
-    location.href = `${HUB}/login/start?return=${back}`;
+    // The site's own sign-in, which knows how to come back here: /login
+    // remembers `next` and /login/done honours it.
+    location.href = "/login/?next=studio";
     return Promise.resolve();
   },
 
@@ -111,7 +136,7 @@ const COMMANDS = {
   account_logout() {
     bridge.token = null;
     bridge.me = null;
-    try { localStorage.removeItem("krate-token"); } catch (e) {}
+    try { localStorage.removeItem(TOKEN_KEY); } catch (e) {}
     return Promise.resolve();
   },
 
@@ -119,16 +144,19 @@ const COMMANDS = {
 
   async plan_makes() {
     try {
-      const out = await hub("/plan/get", { method: "POST", body: JSON.stringify({}) });
+      const out = await hub("/plan/get", {
+        method: "POST",
+        body: JSON.stringify({ device: deviceId() }),
+      });
       return out.n || 0;
     } catch (e) { return 0; }
   },
 
   async plan_count_make() {
-    try {
-      const out = await hub("/plan/count", { method: "POST", body: JSON.stringify({}) });
-      return out.n || 0;
-    } catch (e) { return 0; }
+    // Counting is the builder's job, not the browser's -- a page that
+    // counts its own makes is a page anyone can edit. This only reads back
+    // what the server already recorded.
+    return COMMANDS.plan_makes();
   },
 
   async billing_info() {
@@ -153,7 +181,20 @@ const COMMANDS = {
    */
 
   async create_app({ request } = {}) {
-    const started = await builder("/build", { method: "POST", body: JSON.stringify({ request }) });
+    // Nobody makes an app without an account: it is how the three free
+    // ones are counted, and how the work belongs to someone. But the
+    // sentence they just typed must survive the round trip -- being asked
+    // to remember and retype it is the moment a person decides the
+    // product is careless.
+    if (!bridge.token) {
+      try { localStorage.setItem(PENDING_KEY, request || ""); } catch (e) {}
+      await COMMANDS.login_browser();
+      return new Promise(() => {});  // the page is navigating away
+    }
+    const started = await builder("/build", {
+      method: "POST",
+      body: JSON.stringify({ request, device: deviceId() }),
+    });
     bridge.job = started.id;
     bridge.jobResult = null;
 
@@ -321,6 +362,37 @@ window.__KRATE_BRIDGE__ = async function bridgeInvoke(cmd, args) {
  * Kept to a short, explicit list rather than a rewrite: anything not named
  * here is Studio's own copy, unchanged, which is the point of reusing it.
  */
+/* The sentence they typed before signing in, put back in the box.
+ *
+ * Restored rather than auto-submitted: they are landing on a screen they
+ * have not seen before, and a build starting by itself would take the
+ * decision away at the exact moment they are getting their bearings. The
+ * words are there, the cursor is at the end, and the next move is theirs.
+ */
+function restorePending() {
+  let pending = "";
+  try {
+    pending = localStorage.getItem(PENDING_KEY) || "";
+    localStorage.removeItem(PENDING_KEY);
+  } catch (e) {}
+  if (!pending) return;
+  const box = document.getElementById("homePrompt");
+  if (!box) return;
+  box.value = pending;
+  box.dispatchEvent(new Event("input"));
+  box.focus();
+  // Size it once the box is actually on screen. Measuring a hidden element
+  // gives a scrollHeight that is not the text's, and the box ends up
+  // wearing its full 132px cap for one short line -- which looks broken in
+  // a way that is hard to trace back to a restore that otherwise worked.
+  requestAnimationFrame(() => {
+    box.style.height = "auto";
+    box.style.height = Math.min(box.scrollHeight, 132) + "px";
+    try { box.setSelectionRange(box.value.length, box.value.length); } catch (e) {}
+  });
+  try { box.setSelectionRange(box.value.length, box.value.length); } catch (e) {}
+}
+
 function speakWeb() {
   const swaps = [
     [".ob-p", "Krate hands your words to our AI. Nothing to install."],
@@ -335,6 +407,10 @@ function speakWeb() {
   // entry and no answer. Offering it would be a dead end dressed as help.
   const switchAi = document.getElementById("switchAiBtn");
   if (switchAi) switchAi.remove();
+  // Studio paints its home a beat after boot, so the box may not exist
+  // yet when this first runs.
+  restorePending();
+  setTimeout(restorePending, 900);
 }
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", speakWeb);

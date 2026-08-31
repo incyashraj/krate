@@ -107,6 +107,14 @@
       location.href = "/account/";
       return;
     }
+    // Back to the studio, and back to what they were typing. Someone who
+    // wrote a sentence and hit enter should not have to remember it and
+    // type it again after signing in -- that moment is exactly where a
+    // person decides the product is careless.
+    if (next === "studio") {
+      location.href = "/app/";
+      return;
+    }
     if (next === "admin") {
       location.href = "https://hub.krate.tech/admin#token=" + encodeURIComponent(tok);
       return;

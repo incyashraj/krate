@@ -1826,19 +1826,47 @@ async function billingWebhook(request, env) {
 async function planCount(request, env, increment) {
   const body = await request.json().catch(() => ({}));
   const device = String(body.device || "");
-  const month = String(body.month || "");
-  if (!/^[0-9a-f]{64}$/.test(device) || !/^\d{4}-\d{2}$/.test(month)) {
-    return text("bad shape", 400);
+  const user = await authedUser(request, env);
+
+  // Two keys, and an allowance is spent if EITHER says so.
+  //
+  // The account is the primary one: makes belong to a person, and follow
+  // them between machines. But an account is free to create, so the
+  // account alone is not a limit -- it is an invitation to make another
+  // email. The device hash is the second key precisely because it does not
+  // change when the account does.
+  //
+  // Neither is airtight on its own and neither needs to be. Together they
+  // mean getting a fourth free app costs either a new machine or real
+  // effort, which is the honest bar for a free tier: enough friction that
+  // it is easier to pay $12 than to cheat.
+  const keys = [];
+  if (user) keys.push(`mkacct:${user.id}`);
+  if (/^[0-9a-f]{64}$/.test(device)) keys.push(`mkdev:${device}`);
+  if (!keys.length) {
+    return text("Sign in first, or send a device id.", 400);
   }
-  const key = `mk:${device}:${month}`;
-  let n = parseInt((await env.APPS.get(key)) || "0", 10);
-  // A device that counted while offline reports the higher local number;
-  // the mirror never goes backward.
+
+  // No month in the key. Three EVER, per Yashraj's ruling (2026-09-01):
+  // the words must not promise a reset the wall will not honour.
+  const counts = await Promise.all(keys.map((k) => env.APPS.get(k)));
+  let n = counts.reduce((most, raw) => Math.max(most, parseInt(raw || "0", 10)), 0);
+
+  // A device that made apps offline reports the higher local number; the
+  // mirror never goes backward, so an offline make is still counted.
   const local = Number.isFinite(body.n) ? Math.max(0, Math.floor(body.n)) : 0;
-  n = Math.max(n, increment ? 0 : local);
-  if (increment) n = Math.max(n + 1, local);
-  await env.APPS.put(key, String(n), { expirationTtl: 70 * 24 * 3600 });
-  return json({ n });
+  n = Math.max(n, local);
+  if (increment) n = n + 1;
+
+  if (increment) {
+    // Both keys carry the same number, so removing either one does not
+    // hand back an allowance. No TTL: an expiry is a monthly reset by
+    // another name.
+    await Promise.all(keys.map((k) => env.APPS.put(k, String(n))));
+    // The old per-month key is left alone. It expires on its own, and
+    // deleting it would give anyone mid-month a silent extra make.
+  }
+  return json({ n, keys: keys.length });
 }
 
 // ================================================================ account
