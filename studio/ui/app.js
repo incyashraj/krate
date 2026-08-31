@@ -4425,20 +4425,38 @@ async function renderShelf() {
   for (const session of files.slice(0, 12)) {
     const card = document.createElement("button");
     card.className = "shelf-card";
-    card.innerHTML = `<span class="shot"><span>opening…</span></span><b>${escapeHtml(sessionLabel(session))}</b>`;
+    // The same naming the apps grid uses, so one app is not called two
+    // different things on two screens.
+    const label = ((session.result && session.result.name) || session.title || "")
+      .replace(/\.krate$/, "")
+      .replace(/[-_]+/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+    card.innerHTML = `<span class="shot"></span><b>${escapeHtml(label || session.title || "App")}</b>`;
     card.addEventListener("click", () => openSession(session));
     body.appendChild(card);
 
-    // The still is fetched per app, and a missing one leaves the frame
-    // empty rather than showing a broken-image glyph where the app should
-    // be.
+    // The app's own picture, and nothing where there is none. A missing
+    // still leaves the frame empty rather than showing a broken-image
+    // glyph exactly where the app should be.
     const slot = card.querySelector(".shot");
-    resolveShot(session)
-      .then((src) => {
-        if (src) slot.innerHTML = `<img src="${src}" alt="" />`;
-        else slot.innerHTML = "";
-      })
-      .catch(() => { slot.innerHTML = ""; });
+    const shot = session.result && session.result.shot;
+    if (shot && shot !== "file") {
+      const img = new Image();
+      img.alt = "";
+      img.onload = () => slot.appendChild(img);
+      img.src = shot;
+    } else if (shot === "file") {
+      // Persisted sessions keep their pixels beside the file.
+      invoke("session_shot", { id: session.id })
+        .then((data) => {
+          if (!data) return;
+          const img = new Image();
+          img.alt = "";
+          img.onload = () => slot.appendChild(img);
+          img.src = data;
+        })
+        .catch(() => {});
+    }
   }
 }
 
