@@ -1266,7 +1266,7 @@ function fillDone(result, opts) {
   try { localStorage.setItem("krateMadeOnce", "1"); } catch (e) {}
   $("doneName").textContent = result.name;
   $("doneSize").textContent = result.size;
-  $("asks").innerHTML = (result.asks || []).map((a) => `<li>${friendlyAsk(a)}</li>`).join("");
+  $("asks").innerHTML = cardAsks(result.asks).map((w) => `<li>${w}</li>`).join("");
   // The preview is the share object: the still with the card's own caption
   // strip -- filename, size, and ONE human trust line. If someone
   // screenshots this screen, they are screenshotting the card.
@@ -1427,11 +1427,16 @@ function failBuild(why, request) {
 /* The card's one-line trust sentence: the abilities in plain words, ending
  * with the guarantee. Network absence is stated, because that is the line
  * that makes a stranger dare to open it. */
+/* The done card is the trust line, not an audit log. Anything a person
+ * would not be asked to say yes or no to -- printing text, reading its own
+ * start-up options, the clock, the locale -- is plumbing, and it belongs
+ * behind More info, which lists every last one. What stays on the card is
+ * what a stranger receiving this file actually needs to decide. */
+const ASK_PLUMBING = /^(io\.|time\.|locale\.|gfx\.gpu|random\.)/;
 function trustLine(asks) {
-  const PLUMBING = /^(io\.|time\.|locale\.|gfx\.gpu)/;
   const words = [];
   for (const cap of asks) {
-    if (PLUMBING.test(String(cap))) continue;
+    if (ASK_PLUMBING.test(String(cap))) continue;
     const w = friendlyAsk(cap);
     if (w && !words.includes(w)) words.push(w);
     if (words.length === 2) break;
@@ -1454,8 +1459,26 @@ function friendlyAsk(cap) {
     "net.http": "reach the internet",
     "fs.read": "read files you choose",
     "fs.write": "save files you choose",
+    "audio.capture": "use the microphone",
+    "audio.playback": "play sound",
+    "camera.capture": "use the camera",
+    "speech.recognize": "turn your speech into text",
+    "notify.send": "show you a notification",
+    "clipboard.read": "read what you copied",
+    "clipboard.write": "copy things for you",
+    "random.bytes": "make random numbers",
   };
   return map[cap] || map[cap.split(":")[0]] || cap;
+}
+
+function cardAsks(asks) {
+  const out = [];
+  for (const cap of asks || []) {
+    if (ASK_PLUMBING.test(String(cap))) continue;
+    const w = friendlyAsk(cap);
+    if (w && !out.includes(w)) out.push(w);
+  }
+  return out;
 }
 
 /* ---- driving the engine ----------------------------------------------- */

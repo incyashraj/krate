@@ -142,6 +142,11 @@ img { max-width: 100%; display: block; }
   opacity: 0; filter: blur(4px); transform: translateY(16px);
 }
 .heroCtas { opacity: 0; transform: translateY(16px); }
+/* The second door: makers download, receivers open. Both start here. */
+.secondDoor { margin-top: 18px; font-size: 13px; color: #71717a; }
+.secondDoor a { color: #a1a1aa; text-decoration: underline;
+  text-underline-offset: 3px; transition: color 0.15s ease; }
+.secondDoor a:hover { color: #fff; }
 .heroContent h1.in, .heroSub.in, .heroCtas.in { opacity: 1; filter: blur(0); transform: none;
   transition: opacity 0.9s ease, filter 0.9s ease, transform 0.9s cubic-bezier(0.2, 0.8, 0.2, 1); }
 
@@ -583,7 +588,6 @@ img { max-width: 100%; display: block; }
   <nav class="bnav" aria-label="Primary">
     <a href="#pricing">Pricing</a>
     <a href="/docs/">Docs</a>
-    <a href="/cloud/">Gallery</a>
     <a href="/account/">Account</a>
   </nav>
 </div>
@@ -629,6 +633,8 @@ img { max-width: 100%; display: block; }
             <span class="hoverco"></span><span class="ripple"></span>
           </button>
         </div>
+        <p class="secondDoor">Someone sent you a file?
+        <a href="/open/">Here's how it opens.</a></p>
       </div>
     </div>
 
@@ -658,7 +664,7 @@ img { max-width: 100%; display: block; }
         <div class="marqTrack" id="marqTrack"></div>
       </div>
     </div>
-    <p class="marqLabel" id="marqLabel">All true today -- Krate 0.2.4, August 2026</p>
+    <p class="marqLabel" id="marqLabel">All true today -- Krate 0.2.5, August 2026</p>
 
   </div>
 </div>
@@ -718,7 +724,7 @@ img { max-width: 100%; display: block; }
 
 <!-- ========================================================= how it works -->
 <section class="how" id="how">
-  <h2>Three moves, start to sent.</h2>
+  <h2>Say it. Build it. Send it.</h2>
   <p class="lead">No code, no setup, no store between you and the person you made it for.</p>
   <div class="stepGrid">
     <div class="step">
@@ -729,13 +735,13 @@ img { max-width: 100%; display: block; }
     </div>
     <div class="step">
       <div class="n">2</div>
-      <h3>Watch it build</h3>
+      <h3>Build it</h3>
       <p>Your AI writes, tests, and packs the app while you watch each step.
       A few minutes later it opens on your screen, real and clickable.</p>
     </div>
     <div class="step">
       <div class="n">3</div>
-      <h3>Send the file</h3>
+      <h3>Send it</h3>
       <p>One small .krate -- as a file, a link, or a card. It opens on Mac,
       Windows and Linux, and it cannot touch anything they did not allow.</p>
     </div>
@@ -967,12 +973,11 @@ var IC = {
 };
 var STATS = [
   ["photo", "Smaller than a photo", "A whole app is about 100 KB. Send it in a chat, the way you'd send a picture."],
-  ["click", "Nothing to install", "They get Krate once, like a video player. After that every app is a double-click."],
-  ["laptop", "Works on any computer", "The same file opens on Mac, Windows and Linux. Never ask what machine they have."],
+  ["click", "Install once", "They get Krate once, like a video player. After that every app they get is a double-click."],
+  ["laptop", "Mac, Windows and Linux", "The same file opens on all three. You never have to ask which one they use."],
   ["shield", "Asks before it touches", "Every app says what it wants first -- and cannot touch anything you did not allow."],
   ["inf", "Yours forever", "The file keeps working even if your plan lapses. Nothing you made can be taken back."],
-  ["clock", "Made in minutes", "One sentence in. A real, clickable app on your screen minutes later, built while you watch."],
-  ["game", "Play it together", "Share a room code and a game becomes multiplayer -- no servers, no setup."],
+  ["clock", "Ready in a few minutes", "One sentence in, and a real app you can click opens on your screen."],
   ["link", "A link works too", "No file handy? Send a krate.tech link and it opens on their machine."]
 ];
 var trackEl = $("marqTrack");
