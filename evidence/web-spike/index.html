@@ -50,9 +50,11 @@
 <body>
 <div class="wrap">
 
-  <h1>Krate, running in a browser tab</h1>
-  <p class="sub">Everything below is the real thing. The same drawing code and
-  the same layout engine a Mac runs, compiled for the browser.</p>
+  <h1>Krate, previewing in a browser tab</h1>
+  <p class="sub">Everything below is the real thing: the same drawing code and
+  the same layout engine a Mac runs, compiled for the browser. This is a
+  <b>preview</b>, not a player. The file you send still opens natively on the
+  desktop, which is where an app is meant to run.</p>
 
   <h2>The app, painted here in the page</h2>
   <div class="stage">
@@ -78,10 +80,10 @@
       <span><b>The engine starts</b><small>wasmtime needs eight low-level functions from a host it does not know. All eight are supplied.</small></span>
       <span class="tag">done</span></div>
     <div class="step here"><span class="dot"></span>
-      <span><b>Loading an app</b><small>Blocked on one thing: browser wasm has no clock, and loading reaches for one.</small></span>
+      <span><b>Loading an app</b><small>Components are compiled on our machines and arrive ready to run, so the page carries no compiler.</small></span>
       <span class="tag">here</span></div>
     <div class="step"><span class="dot"></span>
-      <span><b>Running an app</b><small>Then the event loop, which is the long piece.</small></span>
+      <span><b>Running one, in a limited box</b><small>Enough for a rate card or a tip-out. Anything wanting a real window, a microphone, the GPU or your folders is honest about it and points at the desktop.</small></span>
       <span class="tag">next</span></div>
   </div>
 

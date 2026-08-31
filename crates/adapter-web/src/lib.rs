@@ -394,11 +394,14 @@ mod runtime_probe {
     /// A real app's compiled component, baked in so the probe answers its
     /// question without needing a fetch.
     ///
-    /// Not committed -- it is build input, extracted from a demo bundle:
+    /// Not committed -- it is build input. A browser build has no
+    /// compiler, so this is a component ALREADY compiled for pulley, the
+    /// interpreter a tab runs:
     ///
     /// ```text
-    /// unzip -o evidence/demo/ratecard.krate code.wasm \
-    ///   && mv code.wasm crates/adapter-web/probe-component.wasm
+    /// unzip -o evidence/demo/ratecard.krate code.wasm
+    /// cargo run -p krate-runtime --example precompile_for_web -- \
+    ///   code.wasm crates/adapter-web/probe-component.wasm
     /// ```
     const BUNDLED_COMPONENT: &[u8] = include_bytes!("../probe-component.wasm");
 
@@ -411,7 +414,16 @@ mod runtime_probe {
         std::panic::set_hook(Box::new(|info| {
             web_sys::console::error_1(&format!("krate panic: {info}").into());
         }));
-        let runtime = match krate_runtime::Runtime::new(&krate_runtime::Config::default()) {
+        // The engine's settings must match the ones the component was
+        // compiled with, or wasmtime answers "compilation settings are not
+        // compatible with the native host". A previewed app opens a
+        // window, so this is a windowed mode -- the same one
+        // `precompile_for_web` uses.
+        let config = krate_runtime::Config {
+            phase3_ui_mode: krate_runtime::phase3_ui::Phase3HostUiMode::NativePrototype,
+            ..krate_runtime::Config::default()
+        };
+        let runtime = match krate_runtime::Runtime::new(&config) {
             Ok(runtime) => runtime,
             Err(err) => return format!("engine refused: {err}"),
         };

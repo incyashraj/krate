@@ -259,7 +259,15 @@ const EPOCH_TICKS_PER_PUMP: u64 = 1;
 pub static EPOCH_PUMPS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 impl Runtime {
-    pub fn new(config: &Config) -> Result<Self> {
+    /// The engine settings, in one place.
+    ///
+    /// Split out because a component compiled ahead of time is only
+    /// loadable by an engine configured the SAME way -- wasmtime checks,
+    /// and answers "compilation settings are not compatible with the
+    /// native host" when they differ. Both the engine below and
+    /// `precompile_component_for` read this, so the two cannot drift into
+    /// producing artifacts that will not load.
+    fn engine_settings(config: &Config) -> Result<wasmtime::Config> {
         let mut wt_config = wasmtime::Config::new();
         wt_config.wasm_component_model(true);
 
@@ -267,7 +275,14 @@ impl Runtime {
         // Pulley is wasmtime's portable interpreter backend: guests are
         // small and the painter is native host code, so the interpreter
         // tax lands on the lightest part of the system (mobile plan, M2).
-        #[cfg(target_os = "ios")]
+        //
+        // A browser tab is the second place with the same constraint, and
+        // it must SAY so even though wasmtime would pick pulley on its own
+        // for wasm32: components are compiled ahead of time on our
+        // machines, and the engine has to be looking for the same
+        // architecture the artifact was built for, or it refuses with
+        // "Module was compiled for architecture 'pulley64'".
+        #[cfg(any(target_os = "ios", target_arch = "wasm32"))]
         if let Err(err) = wt_config.target("pulley64") {
             return Err(RuntimeError::EngineInit(format!(
                 "pulley backend unavailable: {err}"
@@ -276,7 +291,7 @@ impl Runtime {
         // The same interpreter, anywhere, on request: KRATE_PULLEY=1 is the
         // dev knob that answers "how slow would this app be on an iPhone"
         // without owning one. Not documented for users; measurement only.
-        #[cfg(not(target_os = "ios"))]
+        #[cfg(not(any(target_os = "ios", target_arch = "wasm32")))]
         if std::env::var("KRATE_PULLEY").as_deref() == Ok("1") {
             if let Err(err) = wt_config.target("pulley64") {
                 return Err(RuntimeError::EngineInit(format!(
@@ -325,6 +340,11 @@ impl Runtime {
             wt_config.epoch_interruption(true);
         }
 
+        Ok(wt_config)
+    }
+
+    pub fn new(config: &Config) -> Result<Self> {
+        let wt_config = Self::engine_settings(config)?;
         let engine =
             Engine::new(&wt_config).map_err(|err| RuntimeError::EngineInit(err.to_string()))?;
 
@@ -406,6 +426,38 @@ impl Runtime {
         self.run_bytes_captured_for_world(&bytes, config, world)
     }
 
+    /// Compile a component ahead of time, for a host with no compiler.
+    ///
+    /// This is the build server's half of the browser story: our machines
+    /// compile, the tab only runs. It keeps a compiler out of the page's
+    /// download, and it sidesteps the fact that browser wasm has no clock
+    /// for cranelift's profiler to read.
+    ///
+    /// Two things must match the engine that will load the result, or
+    /// wasmtime refuses it:
+    ///
+    /// 1. **The architecture.** A tab runs pulley, wasmtime's portable
+    ///    interpreter, not this machine's own instruction set.
+    /// 2. **The settings.** Which is why this reads `engine_settings`
+    ///    rather than building its own config -- a second copy would drift
+    ///    and start producing artifacts nothing can open.
+    ///
+    /// The output is tied to this exact wasmtime version, so it is a build
+    /// artifact to produce and serve together, never cached across
+    /// releases.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn precompile_component_for_web(config: &Config, bytes: &[u8]) -> Result<Vec<u8>> {
+        let mut wt_config = Self::engine_settings(config)?;
+        wt_config
+            .target("pulley64")
+            .map_err(|err| RuntimeError::EngineInit(format!("pulley unavailable: {err}")))?;
+        let engine =
+            Engine::new(&wt_config).map_err(|err| RuntimeError::EngineInit(err.to_string()))?;
+        engine
+            .precompile_component(bytes)
+            .map_err(|err| RuntimeError::InvalidComponent(err.to_string()))
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     pub fn load_component(&self, bytes: &[u8]) -> Result<LoadedComponent> {
         let component = Component::from_binary(&self.engine, bytes)
@@ -433,12 +485,18 @@ impl Runtime {
     /// Gated meanwhile so the crate builds and every other capability
     /// stays exercised, and so this says which step is actually left.
     #[cfg(target_arch = "wasm32")]
-    pub fn load_component(&self, _bytes: &[u8]) -> Result<LoadedComponent> {
-        Err(RuntimeError::InvalidComponent(
-            "this build cannot load a guest yet: wasm32 has no clock, and \
-             loading one reaches std::time::Instant"
-                .to_string(),
-        ))
+    pub fn load_component(&self, bytes: &[u8]) -> Result<LoadedComponent> {
+        // A browser build has no compiler in it, by design: our machines
+        // build the app anyway, so the tab receives one that is already
+        // compiled. That also keeps a compiler out of the page's download.
+        //
+        // Safety: the bytes must be a component this same wasmtime
+        // version produced. That is the caller's contract, and for the web
+        // builder it holds by construction -- the same release compiles
+        // and serves them.
+        let component = unsafe { Component::deserialize(&self.engine, bytes) }
+            .map_err(|err| RuntimeError::InvalidComponent(err.to_string()))?;
+        Ok(LoadedComponent { component })
     }
 
     pub fn run_loaded_silent(
