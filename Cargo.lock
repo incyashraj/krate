@@ -2245,6 +2245,7 @@ dependencies = [
  "js-sys",
  "krate-adapter-common",
  "krate-layout",
+ "krate-runtime",
  "wasm-bindgen",
  "web-sys",
 ]

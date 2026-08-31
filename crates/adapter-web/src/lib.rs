@@ -28,6 +28,12 @@
 //! mocked: same painter, same placements, same layout crate the native
 //! hosts use, so this cannot drift from what a Mac draws.
 
+// The symbols wasmtime asks a host it does not recognise to supply.
+// Declared before anything else uses the runtime, since without them the
+// module loads and then fails to find them.
+#[cfg(target_arch = "wasm32")]
+mod platform;
+
 use krate_adapter_common::painter::{self, PaintInteraction};
 use krate_adapter_common::ui::{WidgetPlacement, WidgetTree};
 use krate_layout::{absolute_rect, compute_layout, LayoutViewport};
@@ -366,5 +372,55 @@ mod tests {
         let mut frame = Frame::new(1, 1);
         frame.buffer[0] = 0xFF_FF_00_00; // opaque red
         assert_eq!(frame.to_rgba(), vec![0xFF, 0x00, 0x00, 0xFF]);
+    }
+}
+
+/// Does wasmtime actually run in a browser tab?
+///
+/// Compiling and linking are not the same as running, and the answer
+/// should come from a browser rather than a build log. This starts a real
+/// engine and then asks it to load a real app's component -- the two steps
+/// that decide whether an in-tab preview is possible at all.
+///
+/// Verified 2026-09-01: the engine STARTS. Loading a component then panics
+/// with "time not implemented on this platform", because bare
+/// wasm32-unknown-unknown has no clock and `std::time::Instant` is
+/// unimplemented there. That is the next piece of work, and it is
+/// plumbing -- the browser has `performance.now()`.
+#[cfg(target_arch = "wasm32")]
+mod runtime_probe {
+    use wasm_bindgen::prelude::*;
+
+    /// A real app's compiled component, baked in so the probe answers its
+    /// question without needing a fetch.
+    ///
+    /// Not committed -- it is build input, extracted from a demo bundle:
+    ///
+    /// ```text
+    /// unzip -o evidence/demo/ratecard.krate code.wasm \
+    ///   && mv code.wasm crates/adapter-web/probe-component.wasm
+    /// ```
+    const BUNDLED_COMPONENT: &[u8] = include_bytes!("../probe-component.wasm");
+
+    #[wasm_bindgen]
+    pub fn probe_engine() -> String {
+        // wasm panics abort rather than unwind, so `catch_unwind` never
+        // sees them and a browser reports only "RuntimeError:
+        // unreachable". The hook is what turned that shrug into the real
+        // sentence naming the clock.
+        std::panic::set_hook(Box::new(|info| {
+            web_sys::console::error_1(&format!("krate panic: {info}").into());
+        }));
+        let runtime = match krate_runtime::Runtime::new(&krate_runtime::Config::default()) {
+            Ok(runtime) => runtime,
+            Err(err) => return format!("engine refused: {err}"),
+        };
+        match runtime.load_component(BUNDLED_COMPONENT) {
+            Ok(_) => format!(
+                "engine started and loaded a component ({} bytes)",
+                BUNDLED_COMPONENT.len()
+            ),
+            Err(err) => format!("engine started, load refused: {err}"),
+        }
     }
 }

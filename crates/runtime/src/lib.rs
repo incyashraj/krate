@@ -414,26 +414,29 @@ impl Runtime {
         Ok(LoadedComponent { component })
     }
 
-    /// The last thing standing between a browser tab and a running guest.
+    /// The last thing standing between a browser tab and a running guest,
+    /// now measured rather than assumed.
     ///
-    /// Turning a component's bytes into something runnable needs wasmtime's
-    /// compiler, and that does not build for wasm32: the target is neither
-    /// unix nor windows, so wasmtime's vm layer falls to its `custom`
-    /// backend and then cannot find `mmap`, `Mmap::from_file` or
-    /// `MmapVec::new_mmap`. Closing it means supplying the ~19 extern "C"
-    /// symbols of wasmtime's documented min-platform port -- virtual
-    /// memory, thread-locals and sync primitives.
+    /// The platform symbols are NOT the blocker. wasmtime's `custom`
+    /// virtual-memory backend needs eight of them on wasm32, and
+    /// `crates/adapter-web/src/platform.rs` supplies all eight -- the
+    /// module links with no unresolved imports and the engine starts in a
+    /// real browser ("engine started", verified 2026-09-01).
     ///
-    /// That work is real and scoped, so this refuses in words rather than
-    /// quietly failing to compile the crate. Everything around it -- the
-    /// painter, layout, the capability hosts and their honest refusals --
-    /// is already in place for the browser, so this is the piece to do
-    /// next, not a wall.
+    /// What stops it here is the clock. Loading a component reaches
+    /// `std::time::Instant`, and bare wasm32-unknown-unknown has no time
+    /// source at all: it panics with "time not implemented on this
+    /// platform". The browser has `performance.now()` and `Date.now()`;
+    /// wiring them in is the next piece, and it is a plumbing job rather
+    /// than a port.
+    ///
+    /// Gated meanwhile so the crate builds and every other capability
+    /// stays exercised, and so this says which step is actually left.
     #[cfg(target_arch = "wasm32")]
     pub fn load_component(&self, _bytes: &[u8]) -> Result<LoadedComponent> {
         Err(RuntimeError::InvalidComponent(
-            "this build cannot load a guest yet: wasmtime needs its \
-             min-platform symbols on wasm32"
+            "this build cannot load a guest yet: wasm32 has no clock, and \
+             loading one reaches std::time::Instant"
                 .to_string(),
         ))
     }
