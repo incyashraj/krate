@@ -407,12 +407,12 @@ body.windows .titlebar { padding-right: 150px; }
 .clip:hover { color: var(--text); }
 .send {
   display: grid; place-items: center;
-  width: 30px; height: 30px; flex: none;
-  border-radius: 8px; border: none;
-  background: var(--blue); color: #0a0a0a;
-  cursor: pointer; transition: background 0.15s, opacity 0.15s;
+  width: 28px; height: 28px; flex: none;
+  border-radius: 8px; border: 1px solid var(--line-strong);
+  background: none; color: var(--muted);
+  cursor: pointer; transition: color 0.15s, border-color 0.15s, opacity 0.15s;
 }
-.send:hover { background: var(--blue-soft); }
+.send:hover { color: var(--text); border-color: var(--muted); }
 .send:disabled { opacity: 0.32; cursor: default; }
 .composer-hint { margin-top: 9px; font-size: 11px; color: var(--ghost); text-align: right; line-height: 1.5; }
 
@@ -1447,15 +1447,12 @@ img.cloud-icon { object-fit: cover; }
   width: min(620px, 86vw);
   background: var(--panel);
   border: 1px solid var(--line-strong);
-  border-radius: 18px;
-  padding: 16px 16px 12px;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.4);
-  transition: border-color 0.15s, box-shadow 0.15s;
+  border-radius: 16px;
+  padding: 18px 16px 12px;
+  transition: border-color 0.15s;
 }
-.bigbar:focus-within {
-  border-color: rgba(124, 108, 255, 0.55);
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.4), 0 0 0 3px rgba(124, 108, 255, 0.12);
-}
+.bigbar:focus-within { border-color: rgba(255, 255, 255, 0.24); }
+.bigbar textarea { min-height: 64px; }
 .bigbar textarea {
   width: 100%; border: none; background: none; outline: none; resize: none;
   color: var(--text); font: inherit; font-size: 16.5px; line-height: 1.5;
@@ -1474,13 +1471,12 @@ img.cloud-icon { object-fit: cover; }
 }
 .bigbar-row .tool:hover { color: var(--text); }
 .bigbar-row .send {
-  margin-left: auto;
-  width: 34px; height: 34px; border-radius: 11px;
-  background: var(--blue); border: none; color: #fff; cursor: pointer;
-  display: grid; place-items: center;
-  transition: transform 0.12s, background 0.15s;
+  width: 30px; height: 30px; border-radius: 9px;
+  background: none; border: 1px solid var(--line-strong); color: var(--muted);
+  cursor: pointer; display: grid; place-items: center;
+  transition: transform 0.12s, color 0.15s, border-color 0.15s;
 }
-.bigbar-row .send:hover { background: var(--blue-soft); color: #0a0a0a; }
+.bigbar-row .send:hover { color: var(--text); border-color: var(--muted); }
 .bigbar-row .send:active { transform: scale(0.92); }
 
 /* One quiet sentence under the bar: who builds, and the door to change it. */
@@ -1745,6 +1741,9 @@ img.cloud-icon { object-fit: cover; }
  * into the black with no edge anywhere. The dome is highest at center and
  * falls away toward the sides. */
 .horizon {
+  /* Killed 2026-08-31 (per-page review): a purple floor reads as
+     wallpaper, not a tool. The element stays for cheap reversal. */
+  display: none;
   position: fixed; left: -22vw; right: -22vw; bottom: -12vh; height: 84vh;
   pointer-events: none; z-index: 0;
   transition: opacity 0.5s ease;
@@ -1996,13 +1995,14 @@ body.scrolled .dock-solo {
   position: relative; z-index: 1;
 }
 .home-v2 .display { text-align: center; text-wrap: balance; }
-.sugg-list { width: min(660px, 100%); margin-top: 14px; }
+.sugg-list { width: min(620px, 86vw); margin-top: 22px; display: flex; flex-direction: column; gap: 2px; }
 .sugg-list button {
-  width: 100%; display: flex; align-items: center; gap: 11px; font-family: var(--sans);
+  width: 100%; display: block; font-family: var(--sans);
   font-size: 13.5px; color: var(--muted); background: transparent; border: 0;
-  border-radius: 11px; padding: 11px 13px; cursor: pointer; text-align: left;
-  transition: background 0.16s, color 0.16s;
+  border-radius: 8px; padding: 8px 10px; cursor: pointer; text-align: left;
+  transition: color 0.16s;
 }
+.sugg-list button:hover { color: var(--text); }
 .sugg-list button:hover { background: rgba(255, 255, 255, 0.05); color: var(--text); }
 .sugg-list .ic {
   width: 24px; height: 24px; border-radius: 7px; border: 1px solid rgba(255, 255, 255, 0.1);
@@ -2791,3 +2791,54 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
 .pub-signin { display: flex; flex-direction: column; gap: 6px; padding: 6px 0 2px; }
 .pub-signin .sheet-actions { justify-content: flex-start; }
 .pub-code { margin-top: 10px; text-align: center; }
+
+
+/* ---- the elite home (2026-08-31) -------------------------------------- */
+.dockwrap { display: none !important; }
+/* first-run: a column, box above true centre, black */
+.home { justify-content: flex-start; padding-top: 27vh; }
+/* returning: the roll on the left, the box standing where it was */
+.home.with-roll { flex-direction: row; align-items: stretch; padding: 0; }
+.home-side {
+  width: 236px; flex: none; display: flex; flex-direction: column;
+  border-right: 1px solid var(--line);
+  padding: 14px 10px 20px;
+}
+.new-btn {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  padding: 8px 10px; margin-bottom: 12px;
+  border: 0; border-radius: 9px; background: rgba(255, 255, 255, 0.06);
+  color: var(--text); font-family: var(--sans); font-size: 13px; font-weight: 500;
+  cursor: pointer; text-align: left;
+}
+.new-btn span { font-size: 15px; color: var(--muted); }
+.new-btn:hover { background: rgba(255, 255, 255, 0.09); }
+.home-roll {
+  flex: 1; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 1px;
+}
+.home.with-roll .home-hero {
+  flex: 1; align-self: stretch;
+  justify-content: flex-start; padding-top: 27vh;
+}
+.roll-item {
+  display: block; width: 100%; min-height: 32px;
+  padding: 6px 10px; border: 0; border-radius: 8px; background: none;
+  cursor: pointer; text-align: left; font-family: var(--sans);
+}
+.roll-item:hover { background: rgba(255, 255, 255, 0.05); }
+.roll-item { min-height: 32px; display: flex; align-items: center; }
+.roll-item b { display: block; width: 100%; font-size: 13px; font-weight: 400; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: color 0.15s; }
+.roll-item:hover b { color: var(--text); }
+.roll-item small { display: block; font-size: 11px; color: var(--faint); margin-top: 1px; }
+.account-rows { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.acct-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  width: 100%; padding: 11px 13px; border-radius: 10px;
+  border: 1px solid var(--line); background: none; color: var(--text);
+  font-family: var(--sans); font-size: 13px; cursor: pointer;
+}
+.acct-row:hover { border-color: var(--line-strong); }
+.acct-row small { color: var(--faint); font-size: 11.5px; }

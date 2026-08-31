@@ -360,6 +360,7 @@ async function enterHome() {
   // The screen at rest is the input. They should be typing in under a
   // second, not reading a slogan they have seen before.
   setTimeout(() => $("homePrompt") && $("homePrompt").focus(), 60);
+  renderHomeRoll();
   // Settings FIRST, then agents.
   //
   // These two lines were once the other way round, so a request submitted
@@ -3323,13 +3324,33 @@ async function openSettings() {
  * about who you are; settings is about where things go. */
 function openAccount() {
   const a = state.account || {};
-  $("accountName").textContent = a.name || a.login || "Signed in";
+  const signedIn = Boolean(a.signed_in || a.login);
+  $("accountName").textContent = signedIn ? (a.name || a.login) : "You";
   $("accountLogin").textContent = a.login ? "@" + a.login : "";
   const img = $("accountAvatar");
   if (a.avatar_url) { img.src = a.avatar_url; img.classList.remove("hidden"); }
   else { img.classList.add("hidden"); }
+  $("acctSignInBtn").classList.toggle("hidden", signedIn);
+  $("logoutBtn").classList.toggle("hidden", !signedIn);
+  const n = makesThisMonth();
+  $("acctPlanVal").textContent = planIsActiveSafe()
+    ? "Studio -- no cap"
+    : `${Math.max(0, 3 - n)} of 3 free left`;
   $("accountSheet").classList.remove("hidden");
 }
+$("acctPlanBtn").addEventListener("click", () => {
+  $("accountSheet").classList.add("hidden");
+  openPlanSheet();
+});
+$("acctSettingsBtn").addEventListener("click", () => {
+  $("accountSheet").classList.add("hidden");
+  showView("settings");
+  loadSettingsPage();
+});
+$("acctSignInBtn").addEventListener("click", () => {
+  $("accountSheet").classList.add("hidden");
+  invoke("login_browser").catch(() => {});
+});
 
 
 /* ---- the rotating word ------------------------------------------------ */
@@ -4402,12 +4423,45 @@ window.addEventListener("resize", () => {
   if (on) moveGlide(on);
 });
 
+$("newBtn")?.addEventListener("click", () => {
+  $("homePrompt") && $("homePrompt").focus();
+});
+
+/* With the dock gone, the pages it reached need their own way home. */
+document.querySelectorAll("[data-backhome]").forEach((b) =>
+  b.addEventListener("click", () => { showView("home"); renderHomeRoll(); }));
+
+/* ---- the home roll: their files, newest first, one click to the done
+ * screen. This is where Home goes after the first make -- the dock's
+ * "Your apps" job, standing where a sidebar belongs. */
+async function renderHomeRoll() {
+  const roll = $("homeRoll");
+  if (!roll) return;
+  let sessions = [];
+  try { sessions = (await invoke("sessions_list")) || []; } catch (e) {}
+  const files = [];
+  const seen = new Set();
+  for (const s of [...sessions].sort((x, y) => (y.updated || 0) - (x.updated || 0))) {
+    if (s.result && s.result.path && !seen.has(s.result.path)) {
+      seen.add(s.result.path);
+      files.push(s);
+    }
+  }
+  $("homeMain").classList.toggle("with-roll", files.length > 0);
+  $("homeSide").classList.toggle("hidden", files.length === 0);
+  roll.innerHTML = "";
+  // A reading list, not a contact list: names in one quiet line each.
+  // Stills belong on the done card, where clicking any row lands.
+  for (const s of files.slice(0, 40)) {
+    const b = document.createElement("button");
+    b.className = "roll-item";
+    b.innerHTML = `<b>${escapeHtml(sessionLabel(s))}</b>`;
+    b.addEventListener("click", () => openSession(s));
+    roll.appendChild(b);
+  }
+}
+
 /* ---- starter suggestions ---------------------------------------------- */
-// Once they have made one file of their own, the chips step aside: the
-// left-hand history is the better suggestion list from then on.
-try {
-  if (localStorage.getItem("krateMadeOnce")) $("suggList")?.classList.add("hidden");
-} catch (e) {}
 document.querySelectorAll("#suggList button[data-sugg]").forEach((button) => {
   button.addEventListener("click", () => {
     const box = $("homePrompt");
@@ -4778,16 +4832,10 @@ function pickExamples(n) {
 function paintExamples() {
   const list = $("suggList");
   if (!list) return;
-  const trend = '<span class="trend"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.8 11.2L6 7l3 3 5.2-5.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><path d="M10.6 4.4h3.8v3.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></span>';
+  // Three quiet lines of text, nothing else: the column's floor, the way
+  // an ideas list should read -- not chips with arrows doing a dance.
   list.innerHTML = pickExamples(3)
-    .map((ex) => {
-      const shown = ex.label;
-      return `<button type="button" data-sugg="${ex.sugg.replace(/"/g, "&quot;")}">
-        <span class="trend"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.8 11.2L6 7l3 3 5.2-5.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.6 4.4h3.8v3.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-        ${shown}
-        <svg class="go" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8 6 12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>`;
-    })
+    .map((ex) => `<button type="button" data-sugg="${ex.sugg.replace(/"/g, "&quot;")}">${ex.label}</button>`)
     .join("");
   list.querySelectorAll("button[data-sugg]").forEach((button) => {
     button.addEventListener("click", () => {
