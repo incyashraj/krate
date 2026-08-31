@@ -607,6 +607,52 @@ jobs:
           (cd dist && rm -f "$zip_name" && zip -qry "$zip_name" "Krate Player.app")
           echo "notarized and stapled"
 
+          # The gift opener: the .app a friend without Krate double-clicks.
+          #
+          # It is notarized ONCE here and reused for every gift, because a
+          # gift is made on the sender's laptop where no certificate lives.
+          # That reuse is only possible because the app file rides BESIDE the
+          # opener rather than inside it -- a payload dropped into a signed
+          # bundle answers "a sealed resource is missing or invalid" and the
+          # ticket is void (K-211).
+          #
+          # This replaces the old .command wrap on macOS, which could never
+          # work: `stapler` refuses shell scripts outright, so a downloaded
+          # one always met Gatekeeper with no ticket to show.
+          opener="dist/Krate Opener.app"
+          rm -rf "$opener"
+          mkdir -p "$opener/Contents/MacOS"
+          "target/${{ matrix.target }}/release/krate" gift-opener \
+            > "$opener/Contents/MacOS/open"
+          chmod +x "$opener/Contents/MacOS/open"
+          cat > "$opener/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>CFBundleName</key><string>Open</string>
+            <key>CFBundleIdentifier</key><string>tech.krate.gift</string>
+            <key>CFBundleExecutable</key><string>open</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleVersion</key><string>1</string>
+            <key>CFBundleShortVersionString</key><string>1.0</string>
+            <key>LSMinimumSystemVersion</key><string>10.13</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict></plist>
+          PLIST
+          codesign --force --options runtime --timestamp \
+            --sign "$IDENTITY" "$opener"
+          opener_zip="krate-opener-${version}.zip"
+          (cd dist && rm -f "$opener_zip" && zip -qry "$opener_zip" "Krate Opener.app")
+          notarize "dist/$opener_zip"
+          if [ $? -eq 0 ]; then
+            xcrun stapler staple "$opener"
+            (cd dist && rm -f "$opener_zip" && zip -qry "$opener_zip" "Krate Opener.app")
+            echo "gift opener notarized and stapled"
+          else
+            echo "::warning::The gift opener is signed but not notarized;"
+            echo "a friend without Krate will still see a Gatekeeper warning."
+          fi
+
           # Krate Studio: notarize the signed bundle, then package the .dmg
           # around it. This order matters -- a .dmg built before notarization
           # carries an un-stapled app, and the person who downloads it is

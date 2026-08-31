@@ -3865,12 +3865,19 @@ fn a_mac_gift_is_a_notarizable_app_with_the_payload_beside_it() {
         "the payload must not live inside the signed bundle: that breaks the seal",
     );
 
-    // The opener looks for the file by the name it was actually written to.
+    // The opener must NOT name a particular app. One opener is notarized per
+    // release and copied into every gift, so a script naming this app could
+    // only ever be signed for this app -- and the sender's laptop has no
+    // certificate. It finds the .krate beside it instead.
     let script = std::fs::read_to_string(&exe).expect("read opener");
     let name = payload.file_name().unwrap().to_string_lossy().to_string();
     assert!(
-        script.contains(&name),
-        "the opener should reference {name}, the file it ships with",
+        !script.contains(&name),
+        "the opener must not bake in {name}: it has to serve every gift",
+    );
+    assert!(
+        script.contains("*.krate"),
+        "the opener should find the app file beside it",
     );
 
     // And the copy is still a readable app: --dump-caps opens the bundle

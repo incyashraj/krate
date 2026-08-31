@@ -539,6 +539,15 @@ enum Command {
         output: Option<PathBuf>,
     },
 
+    /// Print the macOS gift opener's script to stdout.
+    ///
+    /// The release pipeline uses this to build, sign and notarize ONE
+    /// opener per release, which every gift then reuses. It is here rather
+    /// than duplicated in the workflow so that the script a gift ships and
+    /// the script Apple notarized are the same text by construction.
+    #[command(hide = true)]
+    GiftOpener,
+
     Publish {
         /// Path to the .krate bundle to upload.
         bundle: PathBuf,
@@ -1265,6 +1274,10 @@ fn run() -> Result<u8> {
             target,
             output,
         } => wrap_bundle(&bundle, target, output.as_deref()),
+        Command::GiftOpener => {
+            print!("{}", mac_opener_script());
+            Ok(0)
+        }
         Command::UsageFlush => {
             usage::flush_spool_now();
             Ok(0)
@@ -3818,42 +3831,50 @@ exit /b %STATUS%
 /// (`codesign --verify` answers "a sealed resource is missing or invalid",
 /// measured 2026-08-31). A sidecar leaves the signature intact, so ONE
 /// opener can be notarized in CI and copied into every gift afterwards.
-fn mac_opener_script(app_file: &str) -> String {
-    format!(
-        r#"#!/bin/sh
+///
+/// Which means this script must not name a particular app: it FINDS the
+/// `.krate` beside it. A per-gift script would need a per-gift signature,
+/// and the sender's laptop has no certificate.
+fn mac_opener_script() -> String {
+    r#"#!/bin/sh
 # The opener for a Krate gift. It installs the free player once if it is
 # missing, then opens the app file sitting next to this bundle.
 set -u
 here="$(cd "$(dirname "$0")/../../.." && pwd)"
-app="$here/{app_file}"
-find_krate() {{
+# The gift's app file is whichever .krate shares this folder. Named by
+# search, not baked in, so one notarized opener serves every gift.
+app=""
+for candidate in "$here"/*.krate; do
+  if [ -f "$candidate" ]; then app="$candidate"; break; fi
+done
+find_krate() {
   command -v krate 2>/dev/null && return 0
   for c in /usr/local/bin/krate "$HOME/.local/bin/krate"; do
     if [ -x "$c" ]; then printf '%s\n' "$c"; return 0; fi
   done
   return 1
-}}
+}
 krate_bin="$(find_krate || true)"
 if [ -z "$krate_bin" ]; then
   # No player yet. Say so in a window -- there is no console behind a
   # double-clicked .app, so a printed line would go nowhere.
-  osascript -e 'display dialog "This app runs on Krate, a small free player (about 24 MB).\n\nInstall it once, and every Krate app anyone sends you from now on just opens." buttons {{"Not now","Install once"}} default button "Install once" with title "Krate"' \
+  osascript -e 'display dialog "This app runs on Krate, a small free player (about 24 MB).\n\nInstall it once, and every Krate app anyone sends you from now on just opens." buttons {"Not now","Install once"} default button "Install once" with title "Krate"' \
     | grep -q "Install once" || exit 0
   curl -fsSL https://krate.tech/install.sh | sh >/dev/null 2>&1
   krate_bin="$(find_krate || true)"
   if [ -z "$krate_bin" ]; then
-    osascript -e 'display dialog "Krate could not install itself.\n\nThe steps are at krate.tech/open" buttons {{"OK"}} with title "Krate"' >/dev/null 2>&1
+    osascript -e 'display dialog "Krate could not install itself.\n\nThe steps are at krate.tech/open" buttons {"OK"} with title "Krate"' >/dev/null 2>&1
     open "https://krate.tech/open"
     exit 1
   fi
 fi
 if [ ! -f "$app" ]; then
-  osascript -e 'display dialog "The app file is missing.\n\nKeep this opener and the .krate file together in the same folder." buttons {{"OK"}} with title "Krate"' >/dev/null 2>&1
+  osascript -e 'display dialog "The app file is missing.\n\nKeep this opener and the .krate file together in the same folder." buttons {"OK"} with title "Krate"' >/dev/null 2>&1
   exit 1
 fi
 exec "$krate_bin" run "$app" --consent
 "#
-    )
+    .to_string()
 }
 
 /// The Mac gift: a folder holding a signed-and-notarizable `.app` opener
@@ -3885,6 +3906,31 @@ fn wrap_mac_folder(bundle: &Path, app_name: &str, stem: &str, output: Option<&Pa
 
     let app_file = format!("{stem}.krate");
     let opener = out_dir.join(format!("Open {app_name}.app"));
+
+    // Prefer the opener the release notarized. A gift is made on a sender's
+    // laptop, where there is no certificate and no notary account, so an
+    // opener written here is unsigned and the receiver meets the warning
+    // this whole design exists to remove. The installed one carries Apple's
+    // stapled ticket, and copying a bundle preserves it.
+    //
+    // Its name is generic ("Open") because one notarized bundle serves every
+    // gift; renaming the .app on copy is cosmetic and leaves the seal alone,
+    // but the executable and Info.plist inside must not be touched.
+    if let Some(shipped) = shipped_gift_opener() {
+        fs::create_dir_all(&out_dir)
+            .with_context(|| format!("could not create {}", out_dir.display()))?;
+        let status = std::process::Command::new("cp")
+            .arg("-R")
+            .arg(&shipped)
+            .arg(&opener)
+            .status();
+        if matches!(status, Ok(s) if s.success()) {
+            return finish_mac_gift(bundle, &out_dir, &app_file, app_name, true);
+        }
+        // A failed copy is not a reason to refuse the gift; fall through and
+        // write the plain opener, which works but shows the warning.
+    }
+
     let macos_dir = opener.join("Contents/MacOS");
     fs::create_dir_all(&macos_dir)
         .with_context(|| format!("could not create {}", macos_dir.display()))?;
@@ -3910,7 +3956,7 @@ fn wrap_mac_folder(bundle: &Path, app_name: &str, stem: &str, output: Option<&Pa
     )
     .context("could not write the opener's Info.plist")?;
 
-    let script = mac_opener_script(&app_file);
+    let script = mac_opener_script();
     let exe = macos_dir.join("open");
     fs::write(&exe, script).context("could not write the opener")?;
     #[cfg(unix)]
@@ -3921,7 +3967,36 @@ fn wrap_mac_folder(bundle: &Path, app_name: &str, stem: &str, output: Option<&Pa
         fs::set_permissions(&exe, perms)?;
     }
 
-    fs::copy(bundle, out_dir.join(&app_file))
+    finish_mac_gift(bundle, &out_dir, &app_file, app_name, false)
+}
+
+/// The notarized opener that shipped with this install, if it is there.
+///
+/// It sits beside the binary in the release layout, and inside the app
+/// bundle when Krate was installed as `Krate Player.app`.
+fn shipped_gift_opener() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    let candidates = [
+        dir.join("Krate Opener.app"),
+        dir.join("../Resources/Krate Opener.app"),
+        dir.join("../../../Krate Opener.app"),
+    ];
+    candidates
+        .into_iter()
+        .find(|p| p.join("Contents/MacOS/open").is_file())
+}
+
+/// The half of a Mac gift that is the same whichever opener it got: the app
+/// file beside it, a read-me, and the sender's summary.
+fn finish_mac_gift(
+    bundle: &Path,
+    out_dir: &Path,
+    app_file: &str,
+    app_name: &str,
+    notarized: bool,
+) -> Result<u8> {
+    fs::copy(bundle, out_dir.join(app_file))
         .with_context(|| format!("could not copy {}", bundle.display()))?;
 
     // One line the receiver can read without opening anything.
@@ -3929,7 +4004,7 @@ fn wrap_mac_folder(bundle: &Path, app_name: &str, stem: &str, output: Option<&Pa
         out_dir.join("Read me first.txt"),
         format!(
             "{app_name}\n\n\
-             Double-click \"Open {app_name}\" and the app opens.\n\n\
+             Double-click the opener and the app opens.\n\n\
              The first time, it installs Krate -- a small free player, about\n\
              24 MB, the same idea as a video player. After that, every Krate\n\
              app anyone sends you just opens.\n\n\
@@ -3941,9 +4016,15 @@ fn wrap_mac_folder(bundle: &Path, app_name: &str, stem: &str, output: Option<&Pa
 
     println!("Gift written: {}", out_dir.display());
     println!("  for a friend on Mac who does not have Krate yet.");
-    println!("  Double-clicking \"Open {app_name}\" installs the player once, then opens {app_name}.");
+    println!("  Double-clicking the opener installs the player once, then opens {app_name}.");
     println!("  The player is planted, never bundled: their next .krate just opens too.");
     println!("  Send the whole folder (zip it, or drop it in a shared drive).");
+    if !notarized {
+        println!();
+        println!("  Note: this opener is not notarized, so your friend will see one");
+        println!("  security warning. A Krate installed from krate.tech ships the");
+        println!("  notarized opener and this note goes away.");
+    }
     Ok(0)
 }
 
