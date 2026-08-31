@@ -3235,6 +3235,9 @@ async function publishFromSheet() {
     $("shareCopied").classList.toggle("hidden", !copied);
     persist();
   } catch (err) {
+    // The raw engine words go to the log even when the sheet shows plainer
+    // ones -- a failure nobody can read back is a failure twice. (K-210)
+    invoke("dbg_log", { line: "publish failed: " + String(err).slice(0, 600) }).catch(() => {});
     // A revoked or expired sign-in comes back as words about signing in.
     // That is one click away from fixed, so offer the click, not prose.
     if (/sign.?in|signed in|not signed/i.test(String(err))) {
