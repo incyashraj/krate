@@ -1,0 +1,12 @@
+{
+  "name": "krate-builder",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The box that makes an app when someone types a sentence on krate.tech",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "engines": { "node": ">=20" }
+}
