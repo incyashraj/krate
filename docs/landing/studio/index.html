@@ -189,9 +189,12 @@ p.sub { color: #a1a1aa; margin-top: 12px; max-width: 62ch; line-height: 1.65; }
 }
 
 /* ---- apps ---- */
+/* Two up, not four across. These are wide screenshots of dense interfaces,
+   and at a quarter of the page the grid rows and log lines turn to mush --
+   which defeats the point of showing them. */
 .appRow {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-  gap: 14px; margin-top: 40px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 16px; margin-top: 34px;
 }
 .appCard {
   border-radius: 18px; overflow: hidden; display: block;
@@ -200,8 +203,8 @@ p.sub { color: #a1a1aa; margin-top: 12px; max-width: 62ch; line-height: 1.65; }
   transition: box-shadow 0.25s ease, translate 0.25s ease;
 }
 .appCard:hover { box-shadow: 0 0 0 1px rgba(255,255,255,0.2); translate: 0 -3px; }
-.appCard .frame { aspect-ratio: 4 / 3; overflow: hidden; background: #0b0b0d; }
-.appCard img { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
+.appCard .frame { aspect-ratio: 16 / 10; overflow: hidden; background: #0b0b0d; }
+.appCard img { width: 100%; height: 100%; object-fit: cover; object-position: top left; display: block; }
 .appCard .meta { padding: 13px 15px 16px; }
 .appCard b { font-size: 14px; font-weight: 500; display: block; }
 .appCard span { font-size: 12.5px; color: #71717a; }
@@ -353,32 +356,24 @@ p.sub { color: #a1a1aa; margin-top: 12px; max-width: 62ch; line-height: 1.65; }
 <!-- ================================================================ apps -->
 <section class="pad wrapx" id="apps">
   <h2 class="big">Built with it</h2>
-  <p class="sub">Every one is a single file, tens of kilobytes.</p>
+  <p class="sub">Each one is a single file, around 110 KB, running from the same bytes on Mac, Windows and Linux.</p>
 
   <div class="appRow">
     <a class="appCard" href="/cloud/">
-      <div class="frame"><img src="/app-shots/pulse.png" alt="Pulse, a spending dashboard" loading="lazy" /></div>
-      <div class="meta"><b>Pulse</b><span>a spending dashboard</span></div>
+      <div class="frame"><img src="/app-shots/query.png" alt="Query, a SQL client made with Krate" loading="lazy" /></div>
+      <div class="meta"><b>Query</b><span>SQL client, 116 KB</span></div>
     </a>
     <a class="appCard" href="/cloud/">
-      <div class="frame"><img src="/app-shots/eo2.png" alt="A photo viewer" loading="lazy" /></div>
-      <div class="meta"><b>Photos</b><span>ported image viewer, 77 KB</span></div>
+      <div class="frame"><img src="/app-shots/trace.png" alt="Trace, a log viewer made with Krate" loading="lazy" /></div>
+      <div class="meta"><b>Trace</b><span>logs and traces, 111 KB</span></div>
     </a>
     <a class="appCard" href="/cloud/">
-      <div class="frame"><img src="/app-shots/nova.png" alt="Nova, a space shooter" loading="lazy" /></div>
-      <div class="meta"><b>Nova</b><span>a space shooter</span></div>
+      <div class="frame"><img src="/app-shots/probe.png" alt="Probe, an API client made with Krate" loading="lazy" /></div>
+      <div class="meta"><b>Probe</b><span>API client, 113 KB</span></div>
     </a>
     <a class="appCard" href="/cloud/">
-      <div class="frame"><img src="/app-shots/mdview.png" alt="A markdown viewer" loading="lazy" /></div>
-      <div class="meta"><b>Markdown</b><span>ported from 4,863 lines, 51 KB</span></div>
-    </a>
-    <a class="appCard" href="/cloud/">
-      <div class="frame"><img src="/app-shots/clocks.png" alt="World clocks" loading="lazy" /></div>
-      <div class="meta"><b>Clocks</b><span>time in five places</span></div>
-    </a>
-    <a class="appCard" href="/cloud/">
-      <div class="frame"><img src="/app-shots/notes.png" alt="A notes app" loading="lazy" /></div>
-      <div class="meta"><b>Notes</b><span>37 KB, the benchmark app</span></div>
+      <div class="frame"><img src="/app-shots/pulse.png" alt="Pulse, a finance dashboard made with Krate" loading="lazy" /></div>
+      <div class="meta"><b>Pulse</b><span>dashboard, 92 KB</span></div>
     </a>
   </div>
 </section>
