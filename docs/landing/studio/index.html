@@ -1,961 +1,518 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#0a0a0a" />
-  <meta name="description" content="Krate Studio: build a desktop app, watch it compile and run, and pack it into one file that works on Mac, Windows and Linux. Bring an app you already have, or start fresh. Free while we build it." />
-  <link rel="canonical" href="https://krate.tech/studio/" />
-  <meta property="og:title" content="Krate Studio: make an app, send the file" />
-  <meta property="og:description" content="Your code, your toolchain, one file out. Build once and ship to Mac, Windows and Linux without a per-OS port." />
-  <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://krate.tech/studio/" />
-  <meta property="og:image" content="https://krate.tech/og-v2.png" />
-  <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Krate Studio: make an app, send the file" />
-  <title>Krate Studio: build it, pack it, ship one file</title>
-  <link rel="icon" href="/krate-favicon.png" />
-  <link rel="apple-touch-icon" href="/krate-favicon.png" />
-  <link rel="preload" href="/fonts/geist-400.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="preload" href="/fonts/geist-500.woff2" as="font" type="font/woff2" crossorigin />
-
-  <!-- Same rule as the homepage: this page's styles live in the page, so a
-       deploy can never render new HTML against a stale cached stylesheet. -->
-  <style>
-  @font-face {
-    font-family: "Geist";
-    src: url("/fonts/geist-400.woff2") format("woff2");
-    font-weight: 400; font-style: normal; font-display: swap;
-  }
-  @font-face {
-    font-family: "Geist";
-    src: url("/fonts/geist-500.woff2") format("woff2");
-    font-weight: 500; font-style: normal; font-display: swap;
-  }
-
-  :root {
-    color-scheme: dark;
-    --bg: #0a0a0a;
-    --panel: #0f1012;
-    --panel-2: #141519;
-    --line: #1f2228;
-    --line-soft: #17191e;
-    --text: #ffffff;
-    --muted: rgba(255, 255, 255, 0.55);
-    --quiet: rgba(255, 255, 255, 0.35);
-    --accent: #6291ff;
-    --good: #4ade80;
-    --r-card: 16px;
-    --r-pill: 999px;
-    --max: 1120px;
-    --sans: "Geist", Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-    --wake: 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
-    --enter: 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
-  }
-
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  html { scroll-behavior: smooth; }
-  body {
-    background: var(--bg); color: var(--text); font-family: var(--sans);
-    font-size: 16px; line-height: 1.6;
-    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
-  }
-  a { color: inherit; text-decoration: none; }
-  img { max-width: 100%; display: block; }
-  .wrap { max-width: var(--max); margin: 0 auto; padding: 0 24px; }
-  h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
-
-  /* The reveal moves things; it must never be what makes them exist.
-     On the homepage a section whose observer never fired sat at opacity 0
-     forever and rendered as a screen of black. The words start visible
-     here, and the animation only slides them into place -- so the worst
-     case is a missing slide rather than a missing page. */
-  .reveal { opacity: 1; transform: translateY(12px); transition: opacity var(--enter), transform var(--enter); }
-  .reveal.in { opacity: 1; transform: none; }
-  @media (prefers-reduced-motion: reduce) {
-    .reveal { transform: none; transition: none; }
-  }
-
-  /* ------------------------------------------------------------ header */
-  .site-head {
-    position: sticky; top: 0; z-index: 40;
-    background: color-mix(in srgb, var(--bg) 86%, transparent);
-    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-    border-bottom: 1px solid transparent; transition: border-color 200ms ease;
-  }
-  .site-head.scrolled { border-bottom-color: var(--line-soft); }
-  .head-inner { display: flex; align-items: center; gap: 28px; height: 64px; }
-  .brand { display: flex; align-items: center; gap: 10px; font-weight: 500; letter-spacing: 0.14em; font-size: 14px; }
-  .head-nav { display: flex; gap: 4px; margin-left: auto; }
-  .head-nav a {
-    font-size: 14px; color: var(--muted); padding: 8px 12px; border-radius: var(--r-pill);
-    transition: color 150ms ease, background 150ms ease;
-  }
-  .head-nav a:hover { color: var(--text); background: rgba(255,255,255,0.05); }
-  .pill {
-    display: inline-flex; align-items: center; justify-content: center;
-    padding: 10px 20px; border-radius: var(--r-pill);
-    border: 1px solid var(--line); font-size: 15px; font-weight: 500;
-    transition: background 150ms ease, border-color 150ms ease;
-  }
-  .pill:hover { border-color: rgba(255,255,255,0.28); }
-  .pill-primary { background: var(--text); color: #0a0a0a; border-color: var(--text); }
-  .pill-primary:hover { background: rgba(255,255,255,0.86); border-color: rgba(255,255,255,0.86); }
-  .head-cta .pill { padding: 8px 16px; font-size: 14px; }
-  @media (max-width: 720px) { .head-nav { display: none; } }
-
-  /* -------------------------------------------------------------- hero */
-  .hero { padding: clamp(56px, 10vh, 100px) 0 0; text-align: center; }
-  .hero h1 { font-size: clamp(38px, 5.6vw, 64px); letter-spacing: -0.03em; line-height: 1.05; }
-  .hero-sub { margin: 18px auto 0; max-width: 34em; font-size: clamp(16px, 1.6vw, 19px); color: var(--muted); }
-  .hero-cta { margin-top: 28px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-  .free-note { margin-top: 14px; font-size: 13px; color: var(--quiet); }
-
-  /* ------------------------------------------------- the making, once */
-  /* Studio, shown doing its job exactly one time. The sentence types, the
-     stages check in, the file appears -- and then the scene holds. It is a
-     finished thing on the desk, not a screensaver. */
-  .maker { margin: clamp(40px, 7vh, 64px) auto 0; width: min(880px, 100%); }
-  .m-window {
-    border: 1px solid var(--line); border-radius: var(--r-card);
-    background: var(--panel); overflow: hidden; text-align: left;
-    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
-  }
-  .m-bar {
-    display: flex; align-items: center; gap: 8px;
-    padding: 10px 14px; border-bottom: 1px solid var(--line-soft); background: var(--panel-2);
-  }
-  .m-bar .dots { display: flex; gap: 6px; }
-  .m-bar .dots i { width: 10px; height: 10px; border-radius: 50%; }
-  .m-bar .dots i:nth-child(1) { background: #ff5f57; }
-  .m-bar .dots i:nth-child(2) { background: #febc2e; }
-  .m-bar .dots i:nth-child(3) { background: #28c840; }
-  .m-title { font-size: 12.5px; color: var(--muted); margin: 0 auto; letter-spacing: 0.1em; }
-  .m-chip {
-    display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted);
-    border: 1px solid var(--line); border-radius: var(--r-pill); padding: 3px 10px;
-  }
-  .m-chip i { width: 6px; height: 6px; border-radius: 50%; background: var(--good); }
-
-  .m-body { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); }
-  @media (max-width: 720px) { .m-body { grid-template-columns: 1fr; } }
-  .m-chat { padding: 18px; border-right: 1px solid var(--line-soft); display: flex; flex-direction: column; gap: 10px; }
-  @media (max-width: 720px) { .m-chat { border-right: none; border-bottom: 1px solid var(--line-soft); } }
-  .m-msg {
-    max-width: 92%; padding: 9px 13px; border-radius: 14px; font-size: 13.5px; line-height: 1.5;
-    opacity: 0; transform: translateY(10px);
-    transition: opacity var(--enter), transform var(--enter);
-  }
-  .m-msg.on { opacity: 1; transform: none; }
-  .m-you { align-self: flex-end; background: #1c2b4d; border-bottom-right-radius: 5px; }
-  .m-krate { align-self: flex-start; background: var(--panel-2); color: var(--muted); border-bottom-left-radius: 5px; }
-  .m-you .caret { display: inline-block; width: 1px; height: 1.05em; background: var(--text); vertical-align: -0.15em; animation: caret 1.1s steps(1) infinite; }
-  @keyframes caret { 50% { opacity: 0; } }
-
-  .m-stage { padding: 18px; display: flex; flex-direction: column; gap: 4px; }
-  .m-step {
-    display: flex; align-items: center; gap: 10px; padding: 7px 0;
-    font-size: 13.5px; color: var(--quiet);
-    transition: color var(--enter);
-  }
-  .m-step i {
-    width: 16px; height: 16px; flex: none; border-radius: 50%;
-    border: 1px solid var(--line); position: relative;
-    transition: border-color var(--wake), background var(--wake);
-  }
-  .m-step.doing { color: var(--muted); }
-  .m-step.doing i { border-color: var(--accent); }
-  .m-step.done { color: var(--muted); }
-  .m-step.done i { border-color: transparent; background: var(--good); }
-  .m-step.done i::after {
-    content: ""; position: absolute; left: 5px; top: 2.5px;
-    width: 4px; height: 7px; border: solid #0a0a0a; border-width: 0 1.5px 1.5px 0;
-    transform: rotate(45deg);
-  }
-
-  .m-file {
-    margin-top: 12px; padding: 14px 16px;
-    border: 1px solid var(--line); border-radius: 12px; background: var(--bg);
-    display: flex; align-items: center; gap: 12px;
-    opacity: 0; transform: translateY(8px) scale(0.98);
-    transition: opacity var(--wake), transform var(--wake);
-  }
-  .m-file.on { opacity: 1; transform: none; }
-  .m-file b { font-weight: 500; font-size: 14.5px; display: block; }
-  .m-file span { font-size: 12px; color: var(--quiet); }
-  .m-file .go {
-    margin-left: auto; font-size: 12.5px; font-weight: 500; color: #0a0a0a;
-    background: var(--text); border-radius: var(--r-pill); padding: 6px 14px;
-    border: none; cursor: pointer; font-family: inherit;
-    transition: background 150ms ease;
-  }
-  .m-file .go:hover { background: rgba(255,255,255,0.86); }
-
-  /* The app the scene just made, opened for real. Clicking "Open it" is the
-     whole product in one gesture: the file becomes a working thing. */
-  .ts-seat { display: flex; justify-content: center; }
-  .ts-window {
-    width: min(340px, 100%); margin-top: 18px; text-align: left;
-    border: 1px solid var(--line); border-radius: var(--r-card);
-    background: var(--panel); overflow: hidden;
-    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
-    opacity: 0; transform: translateY(10px) scale(0.98);
-    transition: opacity var(--wake), transform var(--wake);
-  }
-  .ts-window.on { opacity: 1; transform: none; }
-  .ts-body { padding: 18px; }
-  .ts-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; }
-  .ts-row label { font-size: 12px; color: var(--muted); letter-spacing: 0.04em; }
-  .ts-bill {
-    width: 110px; padding: 8px 10px; font: inherit; font-size: 15px; text-align: right;
-    color: var(--text); background: var(--bg);
-    border: 1px solid var(--line); border-radius: 9px; outline: none;
-    transition: border-color 150ms ease;
-  }
-  .ts-bill:focus { border-color: var(--accent); }
-  .ts-step { display: flex; align-items: center; gap: 10px; }
-  .ts-step button {
-    width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line);
-    background: none; color: var(--text); font-size: 15px; cursor: pointer;
-    transition: border-color 150ms ease;
-  }
-  .ts-step button:hover { border-color: rgba(255,255,255,0.3); }
-  .ts-step b { font-weight: 500; min-width: 1.4em; text-align: center; }
-  .ts-tips { display: flex; gap: 6px; }
-  .ts-tips button {
-    padding: 5px 12px; border-radius: var(--r-pill); border: 1px solid var(--line);
-    background: none; color: var(--muted); font: inherit; font-size: 12.5px; cursor: pointer;
-    transition: all 150ms ease;
-  }
-  .ts-tips button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .ts-total {
-    display: flex; align-items: baseline; justify-content: space-between;
-    margin-top: 10px; padding-top: 12px; border-top: 1px solid var(--line-soft);
-  }
-  .ts-total span { font-size: 12px; color: var(--muted); letter-spacing: 0.04em; }
-  .ts-total b { font-size: 24px; font-weight: 500; font-variant-numeric: tabular-nums; }
-  .ts-note { margin-top: 12px; text-align: center; font-size: 13px; color: var(--quiet); }
-
-  /* ------------------------------------------------- what people made */
-  /* Real screenshots of real published apps, straight from the gallery.
-     Nothing here is a mock. */
-  .made { padding: clamp(70px, 11vh, 110px) 0 0; }
-  .made-head { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
-  .made-head h2 { font-size: clamp(26px, 3.4vw, 38px); letter-spacing: -0.025em; }
-  .made-head a { margin-left: auto; font-size: 14px; color: var(--muted); border-bottom: 1px solid var(--line); }
-  .made-head a:hover { color: var(--text); }
-  .made-sub { margin-top: 10px; color: var(--muted); font-size: 15px; max-width: 40em; }
-  .shots {
-    margin-top: 28px; display: grid; grid-auto-flow: column;
-    grid-auto-columns: clamp(180px, 24vw, 230px); gap: 12px;
-    overflow-x: auto; padding-bottom: 10px;
-    scroll-snap-type: x proximity; scrollbar-width: thin;
-  }
-  .shot {
-    border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
-    background: var(--panel); scroll-snap-align: start;
-    transition: border-color 150ms ease;
-  }
-  .shot:hover { border-color: rgba(255,255,255,0.28); }
-  .shot img { width: 100%; height: 150px; object-fit: cover; object-position: top; }
-  .shot b { display: block; padding: 10px 13px 1px; font-size: 13.5px; font-weight: 500; }
-  .shot span { display: block; padding: 0 13px 11px; font-size: 12px; color: var(--quiet); }
-
-  /* ---------------------------------------------------------- features */
-  .feats { padding: clamp(70px, 11vh, 110px) 0 0; }
-  .feat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; background: var(--line-soft); border: 1px solid var(--line-soft); border-radius: var(--r-card); overflow: hidden; }
-  @media (max-width: 720px) { .feat-grid { grid-template-columns: 1fr; } }
-  .feat-cell { background: var(--bg); padding: 28px 26px; }
-  .feat-cell h2 { font-size: 18px; letter-spacing: -0.01em; }
-  .feat-cell p { margin-top: 8px; font-size: 14.5px; color: var(--muted); }
-
-  /* ---------------------------------------------------------- download */
-  .get { padding: clamp(70px, 11vh, 110px) 0 0; }
-  .get-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: clamp(28px, 5vw, 64px); align-items: center; }
-  @media (max-width: 820px) { .get-grid { grid-template-columns: 1fr; } }
-  .get h2 { font-size: clamp(26px, 3.4vw, 38px); letter-spacing: -0.025em; }
-  .get p { margin-top: 12px; color: var(--muted); font-size: 15px; }
-  .dl-col { display: flex; flex-direction: column; gap: 10px; }
-  .dl {
-    display: flex; align-items: center; gap: 14px; padding: 16px 18px;
-    border: 1px solid var(--line); border-radius: 12px;
-    transition: border-color 150ms ease, background 150ms ease;
-  }
-  .dl:hover { border-color: rgba(255,255,255,0.28); background: var(--panel); }
-  .dl b { display: block; font-weight: 500; font-size: 15px; }
-  .dl span { font-size: 12.5px; color: var(--quiet); }
-  .dl .arr { margin-left: auto; color: var(--quiet); }
-  .dl.dl-primary { border-color: rgba(255,255,255,0.35); background: var(--panel); }
-
-  /* ----------------------------------------------------------- founding */
-  .found-form { display: flex; gap: 10px; }
-  .found-form input {
-    flex: 1; min-width: 0; padding: 12px 16px; border-radius: 12px;
-    border: 1px solid var(--line); background: var(--bg); color: var(--text);
-    font: inherit; font-size: 14.5px; outline: none;
-    transition: border-color 150ms ease;
-  }
-  .found-form input:focus { border-color: var(--accent); }
-  .found-note { margin-top: 12px; font-size: 13px; color: var(--muted); }
-
-  /* --------------------------------------------------------------- faq */
-  .faq { padding: clamp(70px, 11vh, 110px) 0 clamp(70px, 11vh, 110px); }
-  .faq-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: clamp(28px, 5vw, 64px); }
-  @media (max-width: 820px) { .faq-grid { grid-template-columns: 1fr; } }
-  .faq h2 { font-size: clamp(26px, 3.4vw, 38px); letter-spacing: -0.025em; }
-  .faq-item { border-bottom: 1px solid var(--line-soft); }
-  .faq-item summary {
-    display: flex; justify-content: space-between; align-items: center; gap: 16px;
-    padding: 18px 0; cursor: pointer; list-style: none; font-weight: 500; font-size: 15.5px;
-  }
-  .faq-item summary::-webkit-details-marker { display: none; }
-  .faq-item summary::after { content: "+"; color: var(--quiet); font-size: 18px; transition: transform 150ms ease; }
-  .faq-item[open] summary::after { transform: rotate(45deg); }
-  .faq-answer { padding: 0 0 18px; color: var(--muted); font-size: 14.5px; max-width: 46em; }
-
-  /* ------------------------------------------------------------ footer */
-  .site-foot { border-top: 1px solid var(--line-soft); padding: 36px 0 44px; }
-  .foot-inner { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
-  .foot-brand { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
-  .foot-links { margin-left: auto; display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; }
-  .foot-links a { color: var(--muted); }
-  .foot-links a:hover { color: var(--text); }
-  .foot-note { width: 100%; font-size: 12px; color: var(--quiet); }
-
-  @media (prefers-reduced-motion: reduce) {
-    html { scroll-behavior: auto; }
-    .reveal, .m-msg, .m-file { opacity: 1 !important; transform: none !important; transition: none !important; }
-    .m-you .caret { animation: none; display: none; }
-  }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Krate Studio: your code, your toolchain, one file out</title>
+<meta name="description" content="Krate Studio is the workbench: build a desktop app, watch it compile and run, and pack it into one file that works on Mac, Windows and Linux. Bring an app you already have, or start fresh." />
+<meta property="og:title" content="Krate Studio" />
+<meta property="og:description" content="Your code, your toolchain, one file out. Build once and ship to Mac, Windows and Linux without a per-OS port." />
+<meta property="og:image" content="https://krate.tech/og-v2.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<link rel="icon" href="/krate-glyph-white.png" />
+<link rel="canonical" href="https://krate.tech/studio/" />
 <style>
-/* Micro-motion: lift, glow, slide -- felt, not seen. */
-.pill { transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease; }
-.pill:hover { transform: translateY(-1.5px); box-shadow: 0 6px 20px rgba(0,0,0,0.35); }
-.pill:active { transform: translateY(0); }
-.head-nav a { position: relative; }
-.head-nav a::after { content: ""; position: absolute; left: 12px; right: 12px; bottom: 5px;
-  height: 1px; background: currentColor; transform: scaleX(0); transform-origin: left;
-  transition: transform 0.22s ease; opacity: 0.6; }
-.head-nav a:hover::after { transform: scaleX(1); }
-.price-card { transition: transform 0.25s cubic-bezier(0.2,0.8,0.2,1), border-color 0.25s ease, box-shadow 0.25s ease; }
-.price-card:hover { transform: translateY(-4px); border-color: rgba(255,255,255,0.22);
-  box-shadow: 0 14px 40px rgba(0,0,0,0.35); }
-@media (prefers-reduced-motion: reduce) {
-  .pill, .price-card, .head-nav a::after { transition: none !important; transform: none !important; }
+@font-face { font-family: "Geist"; src: url("/fonts/geist-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "Geist"; src: url("/fonts/geist-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
+@font-face { font-family: "Syne"; src: url("/fonts/syne-var.woff2") format("woff2"); font-weight: 400 800; font-display: swap; }
+
+:root {
+  color-scheme: dark;
+  --purple: #A558FB;
+  --indigo: #4922E5;
+  --z50: #fafafa; --z100: #f4f4f5; --z300: #d4d4d8; --z400: #a1a1aa;
+  --z500: #71717a; --z700: #3f3f46; --z800: #27272a; --z900: #18181b;
+  --sans: "Geist", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --disp: "Syne", var(--sans);
 }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: auto; }
+body {
+  background: #000; color: #fff; font-family: var(--sans);
+  font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+a { color: inherit; text-decoration: none; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+img { max-width: 100%; display: block; }
+::selection { background: rgba(165, 88, 251, 0.35); }
+
+/* ------------------------------------------------ progressive blur bar */
+.topblur {
+  position: fixed; top: 0; left: 0; width: 100%; height: 120px; z-index: 40;
+  pointer-events: none; user-select: none;
+  background: linear-gradient(to top, transparent, #000);
+  -webkit-mask-image: linear-gradient(to bottom, #000 50%, transparent);
+          mask-image: linear-gradient(to bottom, #000 50%, transparent);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+}
+
+/* ------------------------------------------------------- brand header */
+.brandbar {
+  position: fixed; top: 20px; left: 50%; z-index: 50;
+  display: flex; align-items: center; gap: 14px; user-select: none;
+  opacity: 0; transform: translateX(-50%) translateY(-8px);
+  transition: opacity 0.8s ease, transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.bnav { display: flex; align-items: center; gap: 2px; margin-left: 6px;
+  padding-left: 16px; border-left: 1px solid rgba(255,255,255,0.12); }
+.bnav a { font-size: 12.5px; color: #a1a1aa; padding: 5px 9px; border-radius: 999px;
+  transition: color 0.15s ease, background 0.15s ease; }
+.bnav a:hover { color: #fff; background: rgba(255,255,255,0.06); }
+@media (max-width: 760px) { .bnav { display: none; } }
+.brandbar.in { opacity: 1; transform: translateX(-50%) translateY(0); }
+.brandbar .name {
+  display: flex; align-items: center; gap: 0.34em;
+  font-size: 17px; font-weight: 500; color: #e4e4e7; letter-spacing: 0.02em;
+}
+.brandbar .name img { height: 19px; width: auto; }
+.starpill {
+  display: flex; align-items: center; gap: 6px; white-space: nowrap;
+  border-radius: 999px; background: rgba(24, 24, 27, 0.8); padding: 5px 11px;
+  font-size: 10px; font-weight: 500; color: #d4d4d8;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 4px 12px -4px rgba(0,0,0,0.6);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  transition: box-shadow 0.2s ease, background-color 0.2s ease, scale 0.2s ease;
+}
+.starpill:hover {
+  background: rgba(39, 39, 42, 0.9);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.15), 0 8px 20px -8px rgba(0,0,0,0.7);
+}
+.starpill:active { scale: 0.96; }
+.starpill svg { width: 12px; height: 12px; color: #fbbf24; flex: none; }
+.starpill .num { font-variant-numeric: tabular-nums; }
+
+
+/* ============================================================== studio
+ * Built on the homepage's system above, not beside it: same tokens, same
+ * fonts, same card treatment. The two pages were drifting into different
+ * products, which is the one thing a small site cannot afford.
+ */
+.wrapx { width: 100%; max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+section.pad { padding: 88px 0; }
+.eyebrow {
+  font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: #71717a; margin-bottom: 14px;
+}
+h2.big {
+  font-family: var(--disp); font-weight: 700; letter-spacing: -0.02em;
+  font-size: clamp(26px, 3vw, 38px); line-height: 1.1;
+}
+p.sub { color: #a1a1aa; margin-top: 12px; max-width: 62ch; line-height: 1.65; }
+
+/* ---- hero ---- */
+.sHero { padding: 148px 0 24px; text-align: center; }
+.sHero h1 {
+  font-family: var(--disp); font-weight: 700; letter-spacing: -0.03em;
+  font-size: clamp(34px, 5.4vw, 62px); line-height: 1.04;
+}
+.sHero h1 .dim { color: #52525b; display: block; }
+.sHero .lede {
+  color: #a1a1aa; margin: 18px auto 0; max-width: 60ch;
+  font-size: 16.5px; line-height: 1.65;
+}
+.sCtas { display: flex; gap: 10px; justify-content: center; margin-top: 28px; flex-wrap: wrap; }
+.pill {
+  display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 20px;
+  border-radius: 999px; font-size: 14px; font-weight: 500; color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.14);
+  transition: box-shadow 0.2s ease, background 0.2s ease, scale 0.15s ease;
+}
+.pill:hover { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.3); background: rgba(255,255,255,0.05); }
+.pill:active { scale: 0.98; }
+.pill-primary { background: #fff; color: #09090b; box-shadow: none; }
+.pill-primary:hover { background: #e4e4e7; }
+.freeline { margin-top: 16px; font-size: 12.5px; color: #52525b; }
+.freeline a { color: #a1a1aa; text-decoration: underline; }
+
+/* ---- the workbench: one wide shot of Studio doing its job ---- */
+.bench {
+  margin: 44px auto 0; max-width: 1000px;
+  border-radius: 20px; overflow: hidden;
+  background: rgba(24,24,27,0.5);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 40px 90px -40px rgba(0,0,0,0.9);
+}
+.bench img { display: block; width: 100%; height: auto; }
+.benchCap {
+  display: flex; gap: 18px; justify-content: center; flex-wrap: wrap;
+  margin-top: 16px; font-size: 12.5px; color: #52525b;
+}
+.benchCap b { color: #a1a1aa; font-weight: 500; }
+
+/* ---- what is in it ---- */
+.toolGrid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px; margin-top: 40px;
+}
+.tool {
+  border-radius: 20px; padding: 24px 22px 26px;
+  background: rgba(24,24,27,0.5);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.08);
+  transition: box-shadow 0.25s ease, translate 0.25s ease;
+}
+.tool:hover { box-shadow: 0 0 0 1px rgba(255,255,255,0.18); translate: 0 -3px; }
+.tool .ic { width: 30px; height: 30px; color: #A558FB; margin-bottom: 14px; }
+.tool h3 { font-size: 15.5px; font-weight: 600; letter-spacing: -0.01em; }
+.tool p { color: #a1a1aa; font-size: 14px; margin-top: 7px; line-height: 1.6; }
+.tool code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px;
+  color: #d4d4d8; background: rgba(255,255,255,0.06);
+  padding: 1px 6px; border-radius: 6px;
+}
+
+/* ---- the loop: four beats of what using it feels like ---- */
+.loop { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-top: 40px; }
+.beat {
+  border-radius: 20px; padding: 22px;
+  background: rgba(24,24,27,0.5);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.08);
+}
+.beat .n {
+  font-family: var(--disp); font-weight: 700; font-size: 13px;
+  color: #A558FB; margin-bottom: 10px;
+}
+.beat h3 { font-size: 15px; font-weight: 600; }
+.beat p { color: #a1a1aa; font-size: 13.5px; margin-top: 6px; line-height: 1.6; }
+.beat .t { margin-top: 12px; font-size: 12px; color: #52525b; font-variant-numeric: tabular-nums; }
+
+/* ---- apps ---- */
+.appRow {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 14px; margin-top: 40px;
+}
+.appCard {
+  border-radius: 18px; overflow: hidden; display: block;
+  background: rgba(24,24,27,0.5);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.08);
+  transition: box-shadow 0.25s ease, translate 0.25s ease;
+}
+.appCard:hover { box-shadow: 0 0 0 1px rgba(255,255,255,0.2); translate: 0 -3px; }
+.appCard .frame { aspect-ratio: 4 / 3; overflow: hidden; background: #0b0b0d; }
+.appCard img { width: 100%; height: 100%; object-fit: cover; object-position: top center; display: block; }
+.appCard .meta { padding: 13px 15px 16px; }
+.appCard b { font-size: 14px; font-weight: 500; display: block; }
+.appCard span { font-size: 12.5px; color: #71717a; }
+
+/* ---- faq ---- */
+.faqList { margin-top: 34px; max-width: 780px; }
+.faqItem { border-top: 1px solid rgba(255,255,255,0.09); }
+.faqItem:last-child { border-bottom: 1px solid rgba(255,255,255,0.09); }
+.faqItem summary {
+  list-style: none; cursor: pointer; padding: 20px 0;
+  display: flex; align-items: center; gap: 14px;
+  font-size: 15.5px; font-weight: 500;
+}
+.faqItem summary::-webkit-details-marker { display: none; }
+.faqItem summary::after {
+  content: ""; margin-left: auto; width: 9px; height: 9px; flex: none;
+  border-right: 1.6px solid #71717a; border-bottom: 1.6px solid #71717a;
+  transform: rotate(45deg) translateY(-2px); transition: transform 0.2s ease;
+}
+.faqItem[open] summary::after { transform: rotate(-135deg) translateY(-2px); }
+.faqItem .ans { padding: 0 0 22px; color: #a1a1aa; font-size: 14.5px; line-height: 1.7; max-width: 68ch; }
+.faqItem .ans code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px;
+  color: #d4d4d8; background: rgba(255,255,255,0.06); padding: 1px 6px; border-radius: 6px;
+}
+
+/* ---- close ---- */
+.close { text-align: center; padding: 96px 0 120px; }
+.close h2 { font-family: var(--disp); font-weight: 700; font-size: clamp(28px, 3.4vw, 44px); letter-spacing: -0.025em; line-height: 1.08; }
+.close p { color: #a1a1aa; margin: 14px auto 26px; max-width: 52ch; }
+
+.foot {
+  border-top: 1px solid rgba(255,255,255,0.08); padding: 26px 0 40px;
+  display: flex; gap: 18px; flex-wrap: wrap; align-items: center;
+  font-size: 12.5px; color: #52525b;
+}
+.foot a { color: #71717a; }
+.foot a:hover { color: #d4d4d8; }
+.foot .sp { flex: 1; }
 </style>
-<script>
-// A referral code rides in on any visit and waits for the first sign-in.
-try { var _r = location.search.match(/[?&]ref=([A-Za-z0-9]{4,16})/);
-  if (_r) localStorage.setItem("krate_ref", _r[1]); } catch (e) {}
-</script>
 </head>
 <body>
 
-<header class="site-head" id="siteHead">
-  <div class="wrap head-inner">
-    <a class="brand" href="/">
-      <img src="/krate-glyph-white.png" alt="" width="22" height="22" />
-      KRATE
+<div class="brandbar" id="brandbar">
+  <a class="name" href="/">
+    <img src="/krate-glyph-white.png" alt="" /> KRATE
+  </a>
+  <a class="starpill" href="https://github.com/incyashraj/krate" target="_blank" rel="noopener" aria-label="Krate on GitHub">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+    <span><span class="num" id="starNum">open source</span></span>
+  </a>
+  <nav class="bnav" aria-label="Primary">
+    <a href="#pricing">Pricing</a>
+    <a href="/docs/">Docs</a>
+    <a href="/account/">Account</a>
+  </nav>
+</div>
+
+<!-- ================================================================ hero -->
+<section class="sHero wrapx">
+  <h1>Your code. Your toolchain.<span class="dim">One file out.</span></h1>
+  <p class="lede">Studio is the workbench. Build a Krate app, watch it compile
+  and run, and pack it into a single file that works on Mac, Windows and Linux
+  from the same bytes. Bring an app you already have, start from a template, or
+  let an AI draft it and take over.</p>
+  <div class="sCtas">
+    <a class="pill pill-primary" href="/#get" id="dlBtn">Download Studio</a>
+    <a class="pill" href="https://github.com/incyashraj/krate">Read the source</a>
+  </div>
+  <p class="freeline">Free while we build it &middot; the player is
+  <a href="https://github.com/incyashraj/krate">MIT and Apache licensed</a>
+  &middot; works with the AI you already pay for</p>
+
+  <!-- The shot of Studio itself. It must be RECAPTURED after any redesign
+       of studio/ui: a hero image showing an interface the download does not
+       have is the first thing a careful reader catches, and the one that
+       costs the most trust. Last taken against the pre-2026-09 home. -->
+  <div class="bench">
+    <img src="/app-shots/studio-home.png" alt="Krate Studio, with a project open" />
+  </div>
+  <p class="benchCap">
+    <span><b>Build</b> and run without leaving the window</span>
+    <span><b>Pack</b> to one file for six targets</span>
+    <span><b>Ship</b> as a file, a link, or a card</span>
+  </p>
+</section>
+
+<!-- =============================================================== tools -->
+<section class="pad wrapx" id="tools">
+  <p class="eyebrow">What is in it</p>
+  <h2 class="big">A workbench, not a wizard.</h2>
+  <p class="sub">Everything you need between an idea and a shippable file,
+  and nothing that gets between you and your own code.</p>
+
+  <div class="toolGrid">
+    <div class="tool">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l-6-6 6-6M15 6l6 6-6 6"/></svg>
+      <h3>The build, watched</h3>
+      <p>Compile, import-check, run and pack, with the engine's real output on
+      screen. When something fails you see the error, not a shrug.</p>
+    </div>
+    <div class="tool">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16M4 12h10M4 19h7"/></svg>
+      <h3>Port what you have</h3>
+      <p><code>krate port</code> reads an existing project and reports what maps
+      cleanly, what needs a capability, and what will not work. Read-only, so it
+      never touches your source.</p>
+    </div>
+    <div class="tool">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      <h3>Any AI, or none</h3>
+      <p>Drives the coding AI you already pay for. Your keys stay with your
+      tool, and you can turn it off entirely and write every line yourself.</p>
+    </div>
+    <div class="tool">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 4.5-3.2 7.8-8 9-4.8-1.2-8-4.5-8-9V7z"/><path d="M9 12l2 2 4-4"/></svg>
+      <h3>The capability wall</h3>
+      <p>See what an app declares before it runs, and what it will be allowed
+      to touch. <code>krate run app.krate --dump-caps</code> reads any file
+      without executing it.</p>
+    </div>
+    <div class="tool">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg>
+      <h3>See it render</h3>
+      <p>Every build paints a real frame, headless if you want it. Screenshot
+      your app in CI on any machine, with no display attached.</p>
+    </div>
+    <div class="tool">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></svg>
+      <h3>Ship three ways</h3>
+      <p>The file itself, a link anyone can open, or a card that carries the
+      app inside a picture of it. Whichever costs the person receiving it the
+      least.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ loop -->
+<section class="pad wrapx" id="loop">
+  <p class="eyebrow">What it feels like</p>
+  <h2 class="big">Idea to shippable file, in one window.</h2>
+  <p class="sub">The times below are what a small app really takes on an M4.
+  Nothing here is a mock: it is the same engine the CLI runs.</p>
+
+  <div class="loop">
+    <div class="beat">
+      <div class="n">01</div>
+      <h3>Say what it is</h3>
+      <p>A sentence, a template, or an existing project. Studio hands the
+      request to your AI with the whole capability surface already in context.</p>
+      <p class="t">a few seconds</p>
+    </div>
+    <div class="beat">
+      <div class="n">02</div>
+      <h3>Watch it build</h3>
+      <p>Reading the API, writing the code, checking it builds, running it. Real
+      stages from the real engine, not a progress bar guessing.</p>
+      <p class="t">two to fifteen minutes</p>
+    </div>
+    <div class="beat">
+      <div class="n">03</div>
+      <h3>See it run</h3>
+      <p>The app opens and paints a frame. If it cannot be clicked or will not
+      stay open, the check fails and says which.</p>
+      <p class="t">about two seconds</p>
+    </div>
+    <div class="beat">
+      <div class="n">04</div>
+      <h3>Ship it</h3>
+      <p>One file, tens of kilobytes, for Mac, Windows and Linux. No installer
+      to maintain, no certificate per platform.</p>
+      <p class="t">instant</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================ apps -->
+<section class="pad wrapx" id="apps">
+  <p class="eyebrow">Built with it</p>
+  <h2 class="big">Real apps, real screenshots.</h2>
+  <p class="sub">Every one is a single file of tens of kilobytes, running from
+  the same bytes on all three desktops.</p>
+
+  <div class="appRow">
+    <a class="appCard" href="/cloud/">
+      <div class="frame"><img src="/app-shots/pulse.png" alt="Pulse, a spending dashboard" loading="lazy" /></div>
+      <div class="meta"><b>Pulse</b><span>a spending dashboard</span></div>
     </a>
-    <nav class="head-nav" aria-label="Primary">
-      <a href="/#how">How it works</a>
-      <a href="/cloud/">Gallery</a>
-      <a href="#pricing">Pricing</a>
-      <a href="/docs/">Docs</a>
-      <a href="/account/">Account</a>
-    </nav>
-    <div class="head-cta">
-      <a class="pill pill-primary" href="#get">Download</a>
-    </div>
-  </div>
-</header>
-
-<main>
-
-<!-- ================================================================== hero -->
-<section class="hero wrap">
-  <h1 class="reveal">Your code. Your toolchain.<br />One file out.</h1>
-  <p class="hero-sub reveal">Studio is the workbench: build a Krate app, watch
-  it compile and run, and pack it into a single file that works on Mac,
-  Windows and Linux. Bring an app you already have, start from a template, or
-  let an AI draft it and take over from there.</p>
-  <div class="hero-cta reveal">
-    <a class="pill pill-primary" href="#get" id="heroDl">Download</a>
-    <a class="pill" href="/cloud/">See what people made</a>
-  </div>
-  <p class="free-note reveal">Free while we build it &middot; the player is <a href="https://github.com/incyashraj/krate" style="color:inherit;text-decoration:underline">MIT and Apache licensed</a> &middot; works with the AI you already pay for</p>
-
-  <!-- Studio, doing its job exactly once. The scene plays when it scrolls
-       into view and then holds the finished state. It never loops. -->
-  <div class="maker reveal">
-    <div class="m-window" id="maker" aria-label="Krate Studio making an app from one sentence">
-      <div class="m-bar">
-        <div class="dots"><i></i><i></i><i></i></div>
-        <div class="m-title">KRATE STUDIO</div>
-        <span class="m-chip"><i></i>Claude</span>
-      </div>
-      <div class="m-body">
-        <div class="m-chat">
-          <p class="m-msg m-you" id="mkSay"><span id="mkTyped"></span><span class="caret" id="mkCaret"></span></p>
-          <p class="m-msg m-krate" id="mkReply">On it. I&rsquo;ll show you each step as it happens.</p>
-          <p class="m-msg m-you" id="mkAsk2">make the total bigger and bold</p>
-          <p class="m-msg m-krate" id="mkReply2">Changing the app you have -- not rebuilding it.</p>
-        </div>
-        <div class="m-stage">
-          <div class="m-step" data-step="0"><i></i>Understanding what you asked for</div>
-          <div class="m-step" data-step="1"><i></i>Writing the app</div>
-          <div class="m-step" data-step="2"><i></i>Checking it only touches what it declared</div>
-          <div class="m-step" data-step="3"><i></i>Packing one small file</div>
-          <div class="m-file" id="mkFile">
-            <div>
-              <b>TipSplitter.krate</b>
-              <span>31 KB &middot; Mac, Windows and Linux</span>
-            </div>
-            <button class="go" id="mkOpen" type="button">Open it</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- The made thing, openable for real. Hidden until "Open it". -->
-    <div class="ts-seat">
-      <div class="ts-window" id="tsWin" hidden aria-label="The tip splitter the demo made, working">
-        <div class="m-bar">
-          <div class="dots"><i></i><i></i><i></i></div>
-          <div class="m-title">TIP SPLITTER</div>
-          <span class="m-chip"><i></i>live</span>
-        </div>
-        <div class="ts-body">
-          <div class="ts-row">
-            <label for="tsBill">THE BILL</label>
-            <input class="ts-bill" id="tsBill" type="number" min="0" value="96" inputmode="decimal" />
-          </div>
-          <div class="ts-row">
-            <label>PEOPLE</label>
-            <div class="ts-step">
-              <button type="button" id="tsMinus" aria-label="Fewer people">&minus;</button>
-              <b id="tsPeople">4</b>
-              <button type="button" id="tsPlus" aria-label="More people">+</button>
-            </div>
-          </div>
-          <div class="ts-row">
-            <label>TIP</label>
-            <div class="ts-tips" id="tsTips">
-              <button type="button" data-tip="10" aria-pressed="false">10%</button>
-              <button type="button" data-tip="15" aria-pressed="true">15%</button>
-              <button type="button" data-tip="20" aria-pressed="false">20%</button>
-            </div>
-          </div>
-          <div class="ts-total">
-            <span>EACH PAYS</span>
-            <b id="tsEach">$27.60</b>
-          </div>
-        </div>
-      </div>
-    </div>
-    <p class="ts-note" id="tsNote" hidden>That is the app it made. Working, in the page,
-    because the real one is too -- on any Mac, Windows or Linux machine.</p>
+    <a class="appCard" href="/cloud/">
+      <div class="frame"><img src="/app-shots/eo2.png" alt="A photo viewer" loading="lazy" /></div>
+      <div class="meta"><b>Photos</b><span>ported image viewer, 77 KB</span></div>
+    </a>
+    <a class="appCard" href="/cloud/">
+      <div class="frame"><img src="/app-shots/nova.png" alt="Nova, a space shooter" loading="lazy" /></div>
+      <div class="meta"><b>Nova</b><span>a space shooter</span></div>
+    </a>
+    <a class="appCard" href="/cloud/">
+      <div class="frame"><img src="/app-shots/mdview.png" alt="A markdown viewer" loading="lazy" /></div>
+      <div class="meta"><b>Markdown</b><span>ported from 4,863 lines, 51 KB</span></div>
+    </a>
+    <a class="appCard" href="/cloud/">
+      <div class="frame"><img src="/app-shots/clocks.png" alt="World clocks" loading="lazy" /></div>
+      <div class="meta"><b>Clocks</b><span>time in five places</span></div>
+    </a>
+    <a class="appCard" href="/cloud/">
+      <div class="frame"><img src="/app-shots/notes.png" alt="A notes app" loading="lazy" /></div>
+      <div class="meta"><b>Notes</b><span>37 KB, the benchmark app</span></div>
+    </a>
   </div>
 </section>
 
-<!-- ======================================================= what people made -->
-<section class="made wrap">
-  <div class="reveal">
-    <div class="made-head">
-      <h2>What people made.</h2>
-      <a href="/cloud/">Browse the gallery &rarr;</a>
-    </div>
-    <p class="made-sub">Real screenshots of apps people published. Every one
-    is a single file of tens of kilobytes, running on Mac, Windows and Linux
-    from the same bytes.</p>
-  </div>
-  <div class="shots reveal">
-    <a class="shot" href="/cloud/"><img src="/cloud/shots/nova.png" alt="Nova, a space shooter made with Krate" loading="lazy" /><b>Nova</b><span>a space shooter</span></a>
-    <a class="shot" href="/cloud/"><img src="/cloud/shots/weather.png" alt="A five-day weather app made with Krate" loading="lazy" /><b>Weather</b><span>five-day forecast</span></a>
-    <a class="shot" href="/cloud/"><img src="/cloud/shots/savings.png" alt="Budget Splitter, a monthly budget app made with Krate" loading="lazy" /><b>Budget Splitter</b><span>where the money goes</span></a>
-    <a class="shot" href="/cloud/"><img src="/cloud/shots/notes.png" alt="A notes app made with Krate" loading="lazy" /><b>Notes</b><span>37 KB, the benchmark app</span></a>
-    <a class="shot" href="/cloud/"><img src="/cloud/shots/journal.png" alt="A private journal app made with Krate" loading="lazy" /><b>My Journal</b><span>stays on this device</span></a>
-  </div>
-</section>
+<!-- ================================================================= faq -->
+<section class="pad wrapx" id="faq">
+  <p class="eyebrow">Questions</p>
+  <h2 class="big">The ones worth asking first.</h2>
 
-<!-- ============================================================== features -->
-<section class="feats wrap" id="how">
-  <div class="feat-grid reveal">
-    <div class="feat-cell">
-      <h2>Bring what you already have</h2>
-      <p><code>krate port</code> reads an existing project and tells you what
-      it would take to make it a Krate app: what maps cleanly, what needs a
-      capability, and what will not work. Read-only, so it never touches your
-      source.</p>
-    </div>
-    <div class="feat-cell">
-      <h2>The source rides along</h2>
-      <p>Every <code>.krate</code> carries the code that made it. Open one you
-      shipped a year ago and the project is right there, so an app is never a
-      binary you have lost the source to.</p>
-    </div>
-    <div class="feat-cell">
-      <h2>One artifact, six targets</h2>
-      <p>Intel and ARM for Mac, Windows and Linux, from the same bytes. No
-      per-OS build, no installer to maintain, no certificate per platform.
-      Your user gets the player once.</p>
-    </div>
-    <div class="feat-cell">
-      <h2>A wall, not a policy</h2>
-      <p>An app reaches nothing it did not declare, and the runtime enforces
-      it. Read what any app asks for without running it:
-      <code>krate run app.krate --dump-caps</code>.</p>
-    </div>
-  </div>
-</section>
-
-<!-- ============================================================== download -->
-<section class="get wrap" id="get">
-  <div class="get-grid">
-    <div class="reveal">
-      <h2>Download Krate</h2>
-      <p>One app that makes apps and opens them. The macOS build is signed
-      and notarised by Apple. Windows and Linux builds are newer and unsigned
-      for now, so expect a one-time SmartScreen prompt on Windows.</p>
-    </div>
-    <div class="dl-col reveal" id="dlCards">
-      <a class="dl" data-os="mac" data-dl="krate-studio|universal|dmg" href="https://github.com/incyashraj/krate/releases/latest">
-        <span><b>macOS</b><span>Apple silicon and Intel &middot; one file</span></span>
-        <span class="arr">&darr;</span>
-      </a>
-      <a class="dl" data-os="win" data-dl="krate-studio|windows-x64-setup|exe" href="https://github.com/incyashraj/krate/releases/latest">
-        <span><b>Windows</b><span>Installer &middot; 64-bit</span></span>
-        <span class="arr">&darr;</span>
-      </a>
-      <a class="dl" data-os="linux" data-dl="krate-studio|linux-x86_64|AppImage" href="https://github.com/incyashraj/krate/releases/latest">
-        <span><b>Linux</b><span>AppImage &middot; x86_64</span></span>
-        <span class="arr">&darr;</span>
-      </a>
-    </div>
+  <div class="faqList">
+    <details class="faqItem">
+      <summary>What language do I write in?</summary>
+      <div class="ans">Rust today, compiled to a WebAssembly component. The guest
+      is ordinary Rust with one rule: it may import only <code>krate:*</code>
+      interfaces, never <code>wasi:*</code>. That rule is what keeps an app to
+      tens of kilobytes and inside its sandbox. <code>krate check-app</code> is
+      the oracle: it tells you whether your code builds, imports cleanly, runs
+      and paints a frame.</div>
+    </details>
+    <details class="faqItem">
+      <summary>Can I bring an app I already have?</summary>
+      <div class="ans">That is what <code>krate port</code> is for. It reads your
+      project and reports what maps cleanly, what needs a capability, and what
+      will not work at all. It is read-only: it never builds, runs or edits your
+      source. Start there before you decide whether the rest is worth your
+      weekend.</div>
+    </details>
+    <details class="faqItem">
+      <summary>What can it not do yet?</summary>
+      <div class="ans">Plenty, and we would rather say so. Working today:
+      windows and widgets, 2D canvas and GPU rendering, audio in and out,
+      speech to text, camera, scoped filesystem, HTTP and WebSockets, key-value
+      and SQL storage, clipboard, dialogs, notifications. Not yet: text to
+      speech, printing, multiple windows, serial and Bluetooth, screen capture.
+      Anything needing heavy GPU work is early.</div>
+    </details>
+    <details class="faqItem">
+      <summary>How big is the runtime my users install?</summary>
+      <div class="ans">About 11 MB on macOS, once. After that every Krate app
+      they receive is just a file. You ship no installer and maintain no
+      per-platform build, and the player is open source so nobody is trusting a
+      binary they cannot read.</div>
+    </details>
+    <details class="faqItem">
+      <summary>What happens to my dependencies?</summary>
+      <div class="ans">Pure Rust crates generally work. Anything reaching the
+      operating system directly does not, because that is what the sandbox
+      exists to prevent. Krate provides the same capability through its own
+      interface instead, which is why the import rule is strict.
+      <code>krate port</code> tells you which of your dependencies land on which
+      side of that line.</div>
+    </details>
+    <details class="faqItem">
+      <summary>Do I have to use the AI?</summary>
+      <div class="ans">No. Studio drives whichever coding AI you already pay for,
+      and it can be turned off entirely. The CLI does everything the window
+      does, so <code>krate create</code>, <code>krate pack</code> and
+      <code>krate run</code> work fine from a terminal and a text editor.</div>
+    </details>
+    <details class="faqItem">
+      <summary>Is my app locked to your servers?</summary>
+      <div class="ans">No. A <code>.krate</code> is a plain zip that carries the
+      app and its own source. It runs with the open source player and nothing
+      else. If we disappeared tomorrow, every file already shipped keeps
+      working.</div>
+    </details>
   </div>
 </section>
 
-<!-- ============================================================== pricing -->
-<section class="wrap" id="pricing">
-  <div class="price-head reveal">
-    <h2>What it costs</h2>
-    <p>Whatever plan you are on, every app you make is a file that is yours
-    forever -- a plan can lapse, the file cannot.</p>
-  </div>
-  <div class="price-row reveal">
-
-    <div class="price-card">
-      <div class="price-top">
-        <h3>The player</h3>
-        <span class="price-badge">open source</span>
-      </div>
-      <p class="price-num">$0</p>
-      <p class="price-for">The runtime your apps ship on. MIT and Apache
-      licensed, and you can build it yourself.</p>
-      <ul class="price-list">
-        <li>Runs any .krate on Mac, Windows and Linux</li>
-        <li>Every capability an app asks for is enforced, not promised</li>
-        <li>No account, no telemetry you did not opt into</li>
-        <li>Read the source, fork it, ship it</li>
-      </ul>
-      <a class="pill price-cta" href="https://github.com/incyashraj/krate">Read the source</a>
-    </div>
-
-    <div class="price-card price-hot">
-      <div class="price-top">
-        <h3>Everything else</h3>
-        <span class="price-badge badge-hot">free, for now</span>
-      </div>
-      <p class="price-num">$0</p>
-      <p class="price-for">Making, shipping, hosting, the lot. No cap and
-      no meter.</p>
-      <ul class="price-list">
-        <li>Make as many apps as you want</li>
-        <li>Ship them as a file, a link, or a card</li>
-        <li>Your toolchain and your code -- or our AI, if you would rather</li>
-        <li>Every app you make is a file that is yours forever</li>
-      </ul>
-      <p class="price-note">We will charge one day, and we will say so long
-      before we do. Nobody should bet their distribution on a runtime that
-      might price them out at app four.</p>
-      <a class="pill pill-primary price-cta" href="#get">Get Krate</a>
-    </div>
-
-  </div>
-</section>
-<style>
-  #pricing { padding: 72px 0 8px; }
-  .price-head { max-width: 560px; margin-bottom: 30px; }
-  .price-head h2 { font-size: 28px; letter-spacing: -0.02em; }
-  .price-head p { color: var(--muted); margin-top: 8px; line-height: 1.55; }
-  /* Two cards now, and a max-width so a wide screen does not stretch
-     them into billboards. */
-  .price-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px;
-    align-items: stretch; max-width: 760px; }
-  @media (max-width: 860px) { .price-row { grid-template-columns: 1fr; } }
-  .price-card {
-    display: flex; flex-direction: column;
-    border: 1px solid var(--line-soft); border-radius: var(--r-card);
-    padding: 26px 24px 22px; background: var(--bg);
-  }
-  .price-hot { border-color: rgba(98, 145, 255, 0.55); box-shadow: 0 0 0 1px rgba(98, 145, 255, 0.25), 0 18px 50px -30px rgba(98, 145, 255, 0.35); }
-  .price-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-  .price-top h3 { font-size: 17px; letter-spacing: -0.01em; }
-  .price-badge { font-size: 11.5px; color: var(--quiet); border: 1px solid var(--line-soft); border-radius: 99px; padding: 3px 10px; white-space: nowrap; }
-  .badge-hot { color: var(--accent); border-color: rgba(98, 145, 255, 0.5); }
-  .price-num { font-size: 34px; letter-spacing: -0.03em; color: var(--ink); margin: 14px 0 4px; }
-  .price-num span { font-size: 13.5px; color: var(--quiet); letter-spacing: 0; margin-left: 2px; }
-  .price-for { font-size: 13.5px; color: var(--muted); line-height: 1.5; min-height: 40px; }
-  .price-list { list-style: none; margin: 16px 0 18px; padding: 0; display: flex; flex-direction: column; gap: 10px; flex: 1; }
-  .price-list li { position: relative; padding-left: 24px; font-size: 13.5px; color: var(--muted); line-height: 1.5; }
-  .price-list li::before {
-    content: ""; position: absolute; left: 0; top: 4px; width: 14px; height: 14px;
-    border-radius: 50%; background: rgba(98, 145, 255, 0.14);
-    background-image: url('data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 14"%3E%3Cpath d="M3.6 7.2l2.2 2.2 4.6-4.8" fill="none" stroke="%236291ff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/%3E%3C/svg%3E');
-    background-size: 14px 14px;
-  }
-  .price-note { font-size: 12px; color: var(--quiet); line-height: 1.5; margin-bottom: 14px; }
-  .price-cta { justify-content: center; text-align: center; }
-  .price-alt { display: block; text-align: center; margin-top: 10px;
-    font-size: 13.5px; color: var(--mut, #9aa3b5); text-decoration: none; }
-  .price-alt:hover { color: var(--fg, #e8ecf4); text-decoration: underline; }
-  .price-card .pill:not(.pill-primary) { border: 1px solid var(--line); color: var(--ink); }
-  .price-card .pill:not(.pill-primary):hover { border-color: var(--muted); }
-</style>
-
-<!-- ============================================================== founding -->
-<section class="get wrap" id="founding">
-  <div class="get-grid">
-    <div class="reveal">
-      <h2>Build with us</h2>
-      <p>Krate is free while we build it, and it gets better fastest when
-      the people using it are the ones telling us what breaks. If you are
-      porting something real -- or want to -- we want to hear about it,
-      and you get a direct line while we work.</p>
-      <p style="margin-top:14px;"><a class="pill pill-primary"
-      href="https://github.com/incyashraj/krate">Read the source</a></p>
-    </div>
-    <div class="reveal">
-      <p style="font-size:13px; color:var(--quiet); margin-bottom:8px">Leave
-      an email and we will tell you when the things you are waiting on
-      land.</p>
-      <form class="found-form" id="foundForm">
-        <input type="email" id="foundEmail" placeholder="you@example.com" required />
-        <button class="pill" type="submit" id="foundGo">Hold a seat</button>
-      </form>
-      <p class="found-note hidden" id="foundNote"></p>
-    </div>
+<!-- =============================================================== close -->
+<section class="close wrapx">
+  <h2>Build once. Ship one file.</h2>
+  <p>Free while we build it. The player is open source, and every app you make
+  is a file that is yours forever.</p>
+  <div class="sCtas">
+    <a class="pill pill-primary" href="/#get">Download Studio</a>
+    <a class="pill" href="/docs/">Read the docs</a>
   </div>
 </section>
 
-<!-- =================================================================== faq -->
-<section class="faq wrap">
-  <div class="faq-grid">
-    <h2 class="reveal">Questions</h2>
-    <div class="reveal">
-      <details class="faq-item">
-        <summary><span>What language do I write in?</span></summary>
-        <div class="faq-answer"><p>Rust today, compiled to a WebAssembly
-        component. The guest is ordinary Rust with one rule: it may import
-        only <code>krate:*</code> interfaces, never <code>wasi:*</code>, which
-        is what keeps an app to tens of kilobytes and inside its sandbox.
-        <code>krate check-app</code> is the oracle that tells you whether your
-        code builds, imports cleanly, runs and paints a frame.</p></div>
-      </details>
-      <details class="faq-item">
-        <summary><span>Can I bring an app I already have?</span></summary>
-        <div class="faq-answer"><p>That is what <code>krate port</code> is
-        for. It reads your project and reports what maps cleanly, what needs a
-        capability, and what will not work at all. It is read-only: it never
-        builds, runs or edits your source. Start there before you decide.</p></div>
-      </details>
-      <details class="faq-item">
-        <summary><span>What can it not do yet?</span></summary>
-        <div class="faq-answer"><p>Plenty, and we would rather say so.
-        Databases through <code>store.sql</code>, sound, camera and the file
-        picker all work; text-to-speech, printing, multi-window, serial and
-        Bluetooth do not yet. Anything needing heavy GPU work is early. The
-        capability list an app can ask for is fixed and public, so you can
-        check before you invest a weekend.</p></div>
-      </details>
-      <details class="faq-item">
-        <summary><span>Which AI does it use?</span></summary>
-        <div class="faq-answer"><p>Whichever you already have. Claude, Codex,
-        Gemini and Copilot are detected automatically, and Krate can install
-        one for you. Your sign-in stays with that tool -- Krate never
-        holds its keys.</p></div>
-      </details>
-      <details class="faq-item">
-        <summary><span>Is an app I receive safe to open?</span></summary>
-        <div class="faq-answer"><p>Before it runs, you see exactly what it is
-        allowed to do -- and Krate enforces that list at the system boundary.
-        An app cannot touch anything you did not allow, whatever its code
-        says. If you do not have Krate yet, the first open installs it once --
-        about 24 MB -- and every later app is just a file.</p></div>
-      </details>
-      <details class="faq-item">
-        <summary><span>How much does it cost?</span></summary>
-        <div class="faq-answer"><p>Nothing, right now. The player -- the part
-        that opens apps -- is free and open source, forever. Everything else
-        is free while we build it, with no cap and no meter. We will charge
-        one day and we will say so long before we do; nobody should bet their
-        distribution on a runtime that might price them out at app four. If
-        you use your own AI to write the code, that stays your subscription
-        and Krate never holds its keys.</p></div>
-      </details>
-      <details class="faq-item">
-        <summary><span>How stable is it?</span></summary>
-        <div class="faq-answer"><p>Krate Studio is the recommended way to use
-        Krate, and it ships often: fixes and improvements land as releases,
-        and the numbers behind them are measured and published. If something
-        breaks or feels wrong, telling us gets it fixed fast.</p></div>
-      </details>
-    </div>
-  </div>
-</section>
-
-</main>
-
-<footer class="site-foot">
-  <div class="wrap foot-inner">
-    <div class="foot-brand">
-      <img src="/krate-glyph-white.png" alt="" width="18" height="18" />
-      <span>Krate</span>
-    </div>
-    <nav class="foot-links" aria-label="Footer">
-      <a href="/">Home</a>
-      <a href="#pricing">Pricing</a>
-      <a href="/account/">Account</a>
-      <a href="/cloud/">Gallery</a>
-      <a href="/open/">Received an app?</a>
-      <a href="/docs/">Docs</a>
-      <a href="/faq.html">FAQ</a>
-      <a href="/contact/">Contact</a>
-      <a href="https://github.com/incyashraj/krate">GitHub</a>
-    </nav>
-    <p class="foot-note">The player is open source, MIT or Apache-2.0. © 2026 Krate Labs.</p>
-  </div>
+<footer class="foot wrapx">
+  <span>&copy; 2026 Krate Labs</span>
+  <span class="sp"></span>
+  <a href="/">Home</a>
+  <a href="/open/">Received an app?</a>
+  <a href="/faq/">FAQ</a>
+  <a href="/docs/">Docs</a>
+  <a href="https://github.com/incyashraj/krate">GitHub</a>
 </footer>
 
 <script>
 (function () {
   "use strict";
-  var reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  var head = document.getElementById("siteHead");
-  addEventListener("scroll", function () {
-    head.classList.toggle("scrolled", scrollY > 8);
-  }, { passive: true });
-
-  var reveals = document.querySelectorAll(".reveal");
-  if (reduced || !("IntersectionObserver" in window)) {
-    reveals.forEach(function (el) { el.classList.add("in"); });
-  } else {
-    var io = new IntersectionObserver(function (entries) {
-      entries.forEach(function (e) {
-        if (!e.isIntersecting) return;
-        e.target.classList.add("in");
-        io.unobserve(e.target);
-      });
-    }, { rootMargin: "0px 0px -8% 0px" });
-    reveals.forEach(function (el) { io.observe(el); });
-    setTimeout(function () {
-      reveals.forEach(function (el) { el.classList.add("in"); });
-    }, 2500);
-  }
-
-  /* ----------------------------------------- the making, played once */
-  var SENTENCE = "a tip splitter for dinners with friends";
-  var typed = document.getElementById("mkTyped");
-  var caret = document.getElementById("mkCaret");
-  var say = document.getElementById("mkSay");
-  var reply = document.getElementById("mkReply");
-  var ask2 = document.getElementById("mkAsk2");
-  var reply2 = document.getElementById("mkReply2");
-  var file = document.getElementById("mkFile");
-  var steps = document.querySelectorAll(".m-step");
-
-  function finish() {
-    say.classList.add("on");
-    typed.textContent = SENTENCE;
-    if (caret) caret.remove();
-    reply.classList.add("on");
-    ask2.classList.add("on");
-    reply2.classList.add("on");
-    steps.forEach(function (s) { s.classList.add("done"); });
-    file.classList.add("on");
-  }
-
-  var played = false;
-  function play() {
-    if (played) return;
-    played = true;
-    var t = 0;
-    var at = function (ms, fn) { setTimeout(fn, ms); };
-
-    /* The sentence types... */
-    at(0, function () { say.classList.add("on"); });
-    var i = 0;
-    at(300, function () {
-      var typer = setInterval(function () {
-        i += 1;
-        typed.textContent = SENTENCE.slice(0, i);
-        if (i >= SENTENCE.length) { clearInterval(typer); caret.style.opacity = "0"; }
-      }, 32);
-    });
-    /* ...Studio answers... */
-    at(1900, function () { reply.classList.add("on"); });
-    /* ...the stages check in... */
-    var stage = 2400;
-    steps.forEach(function (s, n) {
-      at(stage + n * 700, function () { s.classList.add("doing"); });
-      at(stage + n * 700 + 620, function () { s.classList.remove("doing"); s.classList.add("done"); });
-    });
-    /* ...the file lands... */
-    at(stage + steps.length * 700 + 200, function () { file.classList.add("on"); });
-    /* ...and one revision shows change-by-asking. Then the scene holds. */
-    at(stage + steps.length * 700 + 1100, function () { ask2.classList.add("on"); });
-    at(stage + steps.length * 700 + 1600, function () { reply2.classList.add("on"); });
-  }
-
-  if (reduced || !("IntersectionObserver" in window)) {
-    finish();
-  } else {
-    var mkIo = new IntersectionObserver(function (entries) {
-      entries.forEach(function (e) {
-        if (!e.isIntersecting) return;
-        mkIo.disconnect();
-        play();
-      });
-    }, { threshold: 0.35 });
-    mkIo.observe(document.getElementById("maker"));
-    /* If the observer never fires, the finished scene still appears. */
-    setTimeout(function () { if (!played) { played = true; finish(); } }, 10000);
-  }
-
-  /* --------------------------- "Open it" opens the thing it just made */
-  var tsWin = document.getElementById("tsWin");
-  var tsNote = document.getElementById("tsNote");
-  document.getElementById("mkOpen").addEventListener("click", function () {
-    if (!tsWin.hidden) return;
-    tsWin.hidden = false;
-    tsNote.hidden = false;
-    /* Not requestAnimationFrame: rAF never fires in a backgrounded tab,
-       and the window would stay invisible. A timer always runs. */
-    setTimeout(function () { tsWin.classList.add("on"); }, 30);
-    tsWin.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "nearest" });
+  function $(id) { return document.getElementById(id); }
+  addEventListener("load", function () {
+    setTimeout(function () { $("brandbar").classList.add("in"); }, 120);
   });
 
-  var tsBill = document.getElementById("tsBill");
-  var tsPeopleEl = document.getElementById("tsPeople");
-  var tsEach = document.getElementById("tsEach");
-  var tsPeople = 4;
-  var tsTip = 15;
-  function tsCalc() {
-    var bill = Math.max(0, parseFloat(tsBill.value) || 0);
-    var each = (bill * (1 + tsTip / 100)) / Math.max(1, tsPeople);
-    tsEach.textContent = "$" + each.toFixed(2);
-  }
-  tsBill.addEventListener("input", tsCalc);
-  document.getElementById("tsMinus").addEventListener("click", function () {
-    tsPeople = Math.max(1, tsPeople - 1); tsPeopleEl.textContent = tsPeople; tsCalc();
-  });
-  document.getElementById("tsPlus").addEventListener("click", function () {
-    tsPeople = Math.min(20, tsPeople + 1); tsPeopleEl.textContent = tsPeople; tsCalc();
-  });
-  document.querySelectorAll("#tsTips button").forEach(function (b) {
-    b.addEventListener("click", function () {
-      document.querySelectorAll("#tsTips button").forEach(function (o) {
-        o.setAttribute("aria-pressed", "false");
-      });
-      b.setAttribute("aria-pressed", "true");
-      tsTip = parseInt(b.dataset.tip, 10);
-      tsCalc();
-    });
-  });
-
-  /* ---------------------------------------------- the founding list */
-  var foundForm = document.getElementById("foundForm");
-  if (foundForm) {
-    foundForm.addEventListener("submit", function (e) {
-      e.preventDefault();
-      var go = document.getElementById("foundGo");
-      var note = document.getElementById("foundNote");
-      go.disabled = true;
-      fetch("https://hub.krate.tech/founding", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: document.getElementById("foundEmail").value.trim() }),
-      })
-        .then(function (r) { return r.text().then(function (t) { return { ok: r.ok, t: t }; }); })
-        .then(function (res) {
-          note.textContent = res.ok
-            ? "You're on the list. We'll write to you before anyone pays anything."
-            : res.t;
-          note.classList.remove("hidden");
-        })
-        .catch(function () {
-          note.textContent = "Could not reach the hub. Check your connection.";
-          note.classList.remove("hidden");
-        })
-        .finally(function () { go.disabled = false; });
-    });
-  }
-
-  /* ------------------- put the visitor's own system first, and say so */
-  (function () {
-    var ua = navigator.userAgent;
-    var os = /Mac/i.test(ua) ? "mac" : /Win/i.test(ua) ? "win" : /Linux|X11/i.test(ua) ? "linux" : null;
-    var box = document.getElementById("dlCards");
-    if (!os || !box) return;
-    var mine = box.querySelector('[data-os="' + os + '"]');
-    if (!mine) return;
-    var hero = document.getElementById("heroDl");
-    if (hero) hero.textContent = "Download for " + mine.querySelector("b").textContent;
-    box.prepend(mine);
-    mine.classList.add("dl-primary");
-    var label = mine.querySelector("b");
-    label.textContent = "Download for " + label.textContent;
-  })();
-
-  /* --------------------------- resolve the exact latest release asset */
-  var dls = document.querySelectorAll("[data-dl]");
-  if (dls.length) {
-    fetch("https://api.github.com/repos/incyashraj/krate/releases/latest")
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (rel) {
-        if (!rel || !rel.assets) return;
-        var names = rel.assets.map(function (a) { return a.name; });
-        var version = rel.tag_name.replace(/^v/, "");
-        dls.forEach(function (a) {
-          var p = a.dataset.dl.split("|");
-          var file = p[1] === "universal"
-            ? p[0] + "-" + version + "-universal." + p[2]
-            : p[0] + "-" + version + "-" + p[1] + "." + p[2];
-          if (names.indexOf(file) !== -1) {
-            a.href = "https://github.com/incyashraj/krate/releases/download/" +
-              rel.tag_name + "/" + file;
-          }
-        });
-      })
-      .catch(function () {});
-  }
+  // The download button follows the visitor's platform, the way the
+  // homepage's does.
+  var ua = navigator.userAgent;
+  var label = /Windows/.test(ua) ? "Download for Windows"
+    : (/Linux|X11/.test(ua) && !/Android/.test(ua)) ? "Download for Linux"
+    : "Download Studio";
+  var btn = $("dlBtn");
+  if (btn) btn.textContent = label;
 })();
 </script>
-
 <script>
-// One anonymous page view -- the page name and the day, to our own hub.
-// No cookie, no id, no referrer; strictly less than any analytics vendor.
+// Count the visit, and nothing about the visitor.
 (function () {
   try {
     fetch("https://hub.krate.tech/view", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ page: location.pathname }),
-      keepalive: true,
-      mode: "cors",
+      keepalive: true, mode: "cors",
     }).catch(function () {});
   } catch (e) {}
 })();
