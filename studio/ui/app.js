@@ -4703,12 +4703,15 @@ async function renderShelf() {
 
   // The rows that already have a home elsewhere in Studio go there; the
   // rest are honest about not being built yet rather than doing nothing.
+  // The drawer stays open when you navigate with it. Closing on every
+  // click meant clicking "Your apps" made the sidebar vanish, which reads
+  // as the app losing its navigation rather than as a page change. It
+  // closes when you pick something that leaves this window (a sheet, an
+  // external link) and when you press the panel button again.
   const goes = {
-    home: () => setOpen(false),
-    recent: () => { setOpen(false); showView("apps"); loadAppsPage(); },
-    all: () => { setOpen(false); showView("apps"); loadAppsPage(); },
-    examples: () => { setOpen(false); openCloud(); },
-    discover: () => { setOpen(false); openCloud(); },
+    home: () => showView("home"),
+    all: () => { showView("apps"); loadAppsPage(); },
+    discover: () => openCloud(),
   };
   document.querySelectorAll("#side .side-row").forEach((row) => {
     row.addEventListener("click", () => {
@@ -4727,7 +4730,6 @@ async function renderShelf() {
     invoke("open_external", { url: "https://krate.tech/docs/" }).catch(() => {});
   });
   $("sideShare")?.addEventListener("click", () => { setOpen(false); openPlanSheet(); });
-  $("sideSpace")?.addEventListener("click", () => { setOpen(false); openAccount(); });
   $("sideHome")?.addEventListener("click", () => setOpen(false));
 })();
 

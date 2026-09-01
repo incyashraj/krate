@@ -1555,6 +1555,17 @@ img.cloud-icon { object-fit: cover; }
 .aichip b { font-weight: 560; color: var(--text); }
 .aichip .chev { color: var(--ghost); }
 
+/* Inside the composer the chip is a control on a row of controls, not a
+   standalone pill: no border, tighter, and it only picks up a background
+   on hover the way the + and Plan buttons do. */
+.bigbar-row .aichip {
+  border: 0; padding: 5px 9px; gap: 6px; font-size: 12px;
+  border-radius: 9px; margin-left: 2px;
+}
+.bigbar-row .aichip:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+.bigbar-row .aichip .dot { width: 5px; height: 5px; }
+.bigbar-row .aichip .chev { font-size: 11px; }
+
 /* Your apps become a shelf: present, never competing with the bar. */
 .apps { width: 100%; max-width: 860px; margin: auto auto 0; padding-bottom: 28px; }
 
@@ -1815,39 +1826,45 @@ img.cloud-icon { object-fit: cover; }
  * high-contrast, and masked to where the colour is.
  */
 .horizon {
-  /* Anchored to the window, not spilling far outside it: the wedges below
-     are angular slices, and when the element is much larger than the
-     screen those slices land mostly off it. This is why the field read as
-     almost black -- the colour was there, just not on screen. */
-  position: fixed; left: 0; right: 0; bottom: 0; height: 76vh;
+  /* A dome: one wide semicircle sitting on the floor of the window, dense
+     through its body and fading out at the top corners. Anchored to the
+     window rather than spilling far outside it -- the wedges are angular
+     slices, and an oversized element throws most of them off screen. */
+  position: fixed; left: 0; right: 0; bottom: 0; height: 82vh;
   pointer-events: none; z-index: 0;
   transition: opacity 0.5s ease;
-  /* Small blur: enough to soften the raster, not enough to lose the edge. */
-  filter: blur(10px) saturate(1.2);
+  filter: blur(9px) saturate(1.22);
+  /* The dome's own shape. Everything inside is clipped to this, so the
+     colour ends on a curve instead of at the window's square edges, and
+     the corners go dark on their own. */
+  -webkit-mask-image: radial-gradient(112% 100% at 50% 100%,
+    #000 40%, rgba(0,0,0,0.85) 62%, rgba(0,0,0,0.35) 82%, transparent 97%);
+          mask-image: radial-gradient(112% 100% at 50% 100%,
+    #000 40%, rgba(0,0,0,0.85) 62%, rgba(0,0,0,0.35) 82%, transparent 97%);
   background:
     /* the bright blade, sweeping up and left from the lower right */
-    conic-gradient(from 188deg at 78% 96%,
+    conic-gradient(from 188deg at 76% 98%,
       transparent 0deg,
-      rgba(214, 206, 255, 0.72) 9deg,
-      rgba(168, 148, 255, 0.52) 17deg,
-      rgba(126, 106, 246, 0.24) 26deg,
-      transparent 36deg),
+      rgba(218, 210, 255, 0.78) 9deg,
+      rgba(172, 152, 255, 0.56) 18deg,
+      rgba(128, 108, 248, 0.26) 27deg,
+      transparent 37deg),
     /* the colder blade crossing it from the lower left */
-    conic-gradient(from 292deg at 16% 100%,
+    conic-gradient(from 292deg at 18% 100%,
       transparent 0deg,
-      rgba(118, 104, 246, 0.60) 11deg,
-      rgba(76, 58, 210, 0.34) 21deg,
+      rgba(122, 108, 248, 0.64) 11deg,
+      rgba(78, 60, 214, 0.36) 21deg,
       transparent 34deg),
-    /* the violet body the blades cut through */
-    radial-gradient(66% 52% at 50% 100%, rgba(134, 106, 248, 0.52), transparent 70%),
-    /* deep indigo shoulder, keeping the corners off flat black */
-    radial-gradient(100% 66% at 32% 106%, rgba(58, 42, 172, 0.42), transparent 76%),
-    /* the widest wash, carrying light up past the middle */
+    /* the violet body the blades cut through, filling most of the dome */
+    radial-gradient(74% 62% at 50% 100%, rgba(138, 110, 250, 0.56), transparent 72%),
+    /* deep indigo, keeping the lower field off flat black */
+    radial-gradient(104% 74% at 40% 104%, rgba(60, 44, 178, 0.46), transparent 78%),
+    /* the widest wash */
     linear-gradient(to top,
-      rgba(42, 34, 128, 0.52),
-      rgba(42, 34, 128, 0.26) 44%,
-      rgba(42, 34, 128, 0.08) 70%,
-      transparent 92%);
+      rgba(44, 36, 132, 0.54),
+      rgba(44, 36, 132, 0.26) 46%,
+      rgba(44, 36, 132, 0.07) 72%,
+      transparent 94%);
 }
 
 /* Fine curved lines across the field, like the poster's hairlines. They
@@ -1868,6 +1885,12 @@ img.cloud-icon { object-fit: cover; }
   position: fixed; inset: 0; width: 100%; height: 100%;
   pointer-events: none; z-index: 0; display: block;
   transition: opacity 0.5s ease;
+  /* The same dome the colour uses, a little wider, so the field thins at
+     the top corners instead of ending on the window's square edge. */
+  -webkit-mask-image: radial-gradient(120% 104% at 50% 100%,
+    #000 44%, rgba(0,0,0,0.8) 66%, rgba(0,0,0,0.3) 85%, transparent 98%);
+          mask-image: radial-gradient(120% 104% at 50% 100%,
+    #000 44%, rgba(0,0,0,0.8) 66%, rgba(0,0,0,0.3) 85%, transparent 98%);
 }
 
 /* The grain, which is the point.
@@ -2932,7 +2955,10 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
   display: flex; flex-direction: column;
   background: #0F0F10;
   border-right: 1px solid rgba(255,255,255,0.07);
-  padding: 12px 10px 12px;
+  /* No top padding: the mark sits in the window's corner, level with the
+     title bar, the way every desktop app puts its identity. The rows keep
+     their own side padding. */
+  padding: 0 10px 12px;
   transform: translateX(-100%);
   transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -2948,52 +2974,31 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
 }
 @keyframes scrimIn { from { opacity: 0; } }
 
+/* Same height as the title bar, so the mark sits on the window's top row
+   rather than floating below it. */
 .side-top {
-  height: 34px; display: flex; align-items: center;
-  padding: 0 4px; margin-bottom: 10px;
+  height: var(--titlebar); display: flex; align-items: center;
+  padding: 0 4px; margin-bottom: 2px;
 }
 /* The mark reads as the product's name, so it carries the wordmark beside
    the glyph at the same size the title bar uses. A lone 17px glyph in a
    26px box read as a decoration rather than as "this is Krate". */
 .side-mark {
-  height: 28px; display: flex; align-items: center; gap: 7px;
+  height: 30px; display: flex; align-items: center; gap: 9px;
   padding: 0 6px; background: none; border: 0; cursor: pointer;
   border-radius: 8px; transition: background 0.15s;
 }
 .side-mark:hover { background: rgba(255,255,255,0.05); }
-.side-mark img { width: 15px; height: 15px; opacity: 0.95; flex: none; }
+.side-mark img { width: 20px; height: 20px; opacity: 1; flex: none; }
 .side-mark span {
-  font-size: 12.5px; font-weight: 600; letter-spacing: 0.08em;
+  font-size: 13px; font-weight: 600; letter-spacing: 0.08em;
   color: var(--text);
 }
 
-/* The workspace row: a coloured badge, the name, and a chevron that says
-   there is more than one of these later. */
-.side-space {
-  display: flex; align-items: center; gap: 9px;
-  width: 100%; height: 38px; padding: 0 8px; margin-bottom: 14px;
-  background: none; border: 0; border-radius: 9px;
-  color: var(--text); font-family: var(--sans); font-size: 13.5px; font-weight: 500;
-  cursor: pointer; text-align: left;
-  transition: background 0.15s;
-}
-.side-space:hover { background: rgba(255,255,255,0.05); }
-/* The workspace mark is the Krate glyph, not a letter in a coloured box.
-   An initial in a tile is what an app draws when it has no logo; drawing
-   one next to a product that HAS a logo reads as a placeholder nobody
-   replaced. The gradient stays as the tile behind it, so the row keeps its
-   colour. */
-.space-badge {
-  width: 24px; height: 24px; flex: none; border-radius: 7px;
-  display: grid; place-items: center;
-  background: linear-gradient(155deg, #7c4dff, #5b21e8);
-}
-/* The glyph sits INSIDE the tile with air around it, the way an app icon
-   does. Filling the tile edge to edge reads as a cropped image rather
-   than a mark. */
-.space-badge img { width: 11px; height: 11px; display: block; }
-.space-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.side-space .chev { color: var(--faint); flex: none; }
+/* The workspace switcher and its purple tile are gone: there is one
+   workspace, so a switcher for it was furniture, and a logo boxed in a
+   coloured square read as a placeholder icon rather than a brand. The
+   mark at the top is the identity, and it is enough. */
 
 .side-nav { display: flex; flex-direction: column; gap: 1px; }
 .side-row {

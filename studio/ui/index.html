@@ -120,52 +120,23 @@
         </button>
       </div>
 
-      <button class="side-space" id="sideSpace">
-        <span class="space-badge" id="spaceBadge"><img src="krate-glyph-white.png" alt="" /></span>
-        <span class="space-name" id="spaceName">Your Krate</span>
-        <svg class="chev" width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M4.5 6.5L8 10l3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
-
+      <!-- Every row here goes somewhere different. The old list had eight
+           rows and five handlers: Recent and All apps opened the same page,
+           Discover and Examples opened the same page, and Search, Starred
+           and Sent to me only closed the drawer. A row that does nothing
+           teaches people not to trust the ones that do. -->
       <nav class="side-nav" aria-label="Primary">
         <button class="side-row on" data-side="home">
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2.5 7L8 2.5L13.5 7v6a1 1 0 01-1 1h-9a1 1 0 01-1-1V7z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/></svg>
           <span>Home</span>
         </button>
-        <button class="side-row" data-side="search">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><circle cx="7.2" cy="7.2" r="4.3" stroke="currentColor" stroke-width="1.35"/><path d="M10.4 10.4L13.5 13.5" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>
-          <span>Search</span>
-        </button>
-      </nav>
-
-      <p class="side-label">Apps</p>
-      <nav class="side-nav" aria-label="Your apps">
-        <button class="side-row" data-side="recent">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.6" stroke="currentColor" stroke-width="1.35"/><path d="M8 4.9V8l2.1 1.4" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          <span>Recent</span>
-        </button>
         <button class="side-row" data-side="all">
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2.4" y="2.4" width="4.6" height="4.6" rx="1.1" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="2.4" width="4.6" height="4.6" rx="1.1" stroke="currentColor" stroke-width="1.3"/><rect x="2.4" y="9" width="4.6" height="4.6" rx="1.1" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="9" width="4.6" height="4.6" rx="1.1" stroke="currentColor" stroke-width="1.3"/></svg>
-          <span>All apps</span>
+          <span>Your apps</span>
         </button>
-        <button class="side-row" data-side="starred">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 2.6l1.7 3.5 3.8.55-2.75 2.7.65 3.8L8 11.35 4.6 13.15l.65-3.8L2.5 6.65l3.8-.55L8 2.6z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
-          <span>Starred</span>
-        </button>
-        <button class="side-row" data-side="shared">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><circle cx="5.6" cy="6" r="2.1" stroke="currentColor" stroke-width="1.3"/><circle cx="10.8" cy="6" r="2.1" stroke="currentColor" stroke-width="1.3"/><path d="M2.4 12.8c0-1.7 1.4-2.7 3.2-2.7s3.2 1 3.2 2.7M8.6 12.8c0-1.7 1.2-2.7 2.9-2.7 1.4 0 2.5.7 2.5 2.1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-          <span>Sent to me</span>
-        </button>
-      </nav>
-
-      <p class="side-label">Learn</p>
-      <nav class="side-nav" aria-label="Resources">
         <button class="side-row" data-side="discover">
           <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.6" stroke="currentColor" stroke-width="1.35"/><path d="M10.3 5.7l-1.4 3.2-3.2 1.4 1.4-3.2 3.2-1.4z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
-          <span>Discover</span>
-        </button>
-        <button class="side-row" data-side="examples">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 3.4h4.2c.7 0 1.3.6 1.3 1.3v8c0-.6-.5-1.1-1.1-1.1H3V3.4z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M13 3.4H8.8c-.7 0-1.3.6-1.3 1.3v8c0-.6.5-1.1 1.1-1.1H13V3.4z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
-          <span>Examples</span>
+          <span>Gallery</span>
         </button>
       </nav>
 
@@ -242,6 +213,11 @@
               <button class="tool plus" id="homeAttachBtn" title="Add a picture or file">
                 <svg width="17" height="17" viewBox="0 0 16 16" fill="none"><path d="M8 3.4v9.2M3.4 8h9.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
               </button>
+              <!-- Who writes the code belongs with the box it writes from,
+                   the way a model picker sits inside the prompt bar. On its
+                   own line under the suggestions it read as a footnote about
+                   the app rather than a control for this message. -->
+              <button class="aichip" id="builtByChip"><span class="dot" id="builtByDot"></span>Built by <b id="builtByName">…</b><span class="chev">· change ▾</span></button>
               <span class="grow"></span>
               <!-- Right: think-first, speak-it, and send. -->
               <button class="bar-btn" id="homePlanBtn" title="Talk it through before building">Plan</button>
@@ -257,9 +233,6 @@
             <button type="button" data-sugg="a JSON inspector -- paste a payload, get a collapsible tree, search keys and values, and copy any subtree as JSON. It cannot use the network"><span class="trend"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.8 11.2L6 7l3 3 5.2-5.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.6 4.4h3.8v3.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>A JSON payload inspector for my team<svg class="go" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8 6 12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
             <button type="button" data-sugg="a regex tester -- a pattern box, a test string, live highlighted matches, and a list of capture groups per match. It cannot use the network"><span class="trend"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.8 11.2L6 7l3 3 5.2-5.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.6 4.4h3.8v3.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>A regex tester my team can keep<svg class="go" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8 6 12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
             <button type="button" data-sugg="a log viewer -- open a log file, filter by level and by text, and click a line to see the full entry. It cannot use the network"><span class="trend"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.8 11.2L6 7l3 3 5.2-5.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M10.6 4.4h3.8v3.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>A log viewer for a support engineer<svg class="go" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8 6 12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-          </div>
-          <div class="airow">
-            <button class="aichip" id="builtByChip"><span class="dot" id="builtByDot"></span>Built by <b id="builtByName">…</b><span class="chev">· change ▾</span></button>
           </div>
         </div>
       </div>
