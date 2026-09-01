@@ -38,7 +38,7 @@
 
 <p align="center">
   <a href="https://krate.tech/">
-    <img src="docs/landing/og-v2.png" width="900" alt="Krate turns an app into one file that opens on Mac, Windows, and Linux">
+    <img src="docs/landing/og-v3.png" width="900" alt="Krate turns an app into one file that opens on Mac, Windows, and Linux">
   </a>
 </p>
 
@@ -62,7 +62,8 @@ stage and the fix when something fails.
 Prefer a window? [Krate Studio](https://krate.tech/studio/) does the same
 things with the same engine underneath.
 
-Someone sent YOU a file? [krate.tech/open](https://krate.tech/open/).
+Sent a `.krate` and just want to open it?
+[krate.tech/open](https://krate.tech/open/).
 
 ## 271 MB became 37 KB
 
@@ -106,10 +107,11 @@ the notes editor in the benchmark is **37 KB**.
 </p>
 
 Studio runs the same engine the CLI does: build, import-check, run and
-pack, with the engine's real output on screen. It detects which coding AI
-you have installed if you want one driving, and stays out of the way if
-you do not. Every `.krate` carries its own source, so a build you shipped
-a year ago opens as a project. Download from
+pack, with the engine's real output on screen -- not a summary of it. It
+uses the coding AI you already have installed and pay for, and stays out of
+the way if you would rather write the code yourself. Every `.krate` carries
+its own source, so a build you shipped a year ago opens as a project you
+can edit. Download from
 [krate.tech/studio](https://krate.tech/studio/) -- signed `.dmg` on macOS,
 installer on Windows (unsigned for now, so SmartScreen asks once), AppImage
 on Linux.
@@ -150,17 +152,15 @@ because the door was never built into the app. Check any app yourself with
 
 ## Work on it
 
-Everything above is for using Krate. Everything below is the machinery:
+Everything above is what Krate does. Everything below is the machinery:
 the player, the `.krate` format, and `krate check-app` live in this
 repository; Krate Studio and the hub are the product layer (`studio/`
-and `cloud/`). If you came here to send an app to someone, you already
-have everything you need -- download Studio and go.
+and `cloud/`).
 
 ## A terminal or your own AI tools
 
-Studio is the recommended way to make an app. For people who live in a
-shell or want their own AI driving Krate, all paths end at the same
-`.krate` file:
+Studio is one front end for the engine, not the only one. Whichever you
+pick, every path ends at the same `.krate` file:
 
 - **MCP**: `krate mcp` is a server Claude Desktop or Cursor can call; add
   `{"mcpServers": {"krate": {"command": "krate", "args": ["mcp"]}}}` to the
@@ -228,7 +228,7 @@ cd krate
 cargo build --workspace && cargo test --workspace
 ```
 
-The workspace has 1,220 Rust tests. You need the Rust toolchain named in
+The workspace has 1,266 Rust tests. You need the Rust toolchain named in
 `rust-toolchain.toml` and `cargo-component`; check your machine with
 `krate doctor`. Platform packages, the two Windows traps, and the
 one-package Linux receiver note live in [docs/build.md](docs/build.md).
