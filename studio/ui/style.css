@@ -3557,22 +3557,3 @@ body:not(.macos) .side-brandrow { height: var(--titlebar); margin-bottom: 10px; 
   background: rgba(255,255,255,0.06); border-radius: 4px; padding: 1px 5px;
 }
 
-/* ---- the commands behind the buttons -----------------------------------
- * Studio is one way to drive the engine; this is the other. Listed rather
- * than hidden, because someone putting a build in CI needs the command,
- * not an explanation of the button. */
-.set-cmds { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
-.set-cmds-lede { font-size: 12.5px; color: var(--faint); margin-bottom: 10px; }
-.cmd-list { margin: 0 0 12px; }
-.cmd-list dt { margin-top: 9px; }
-.cmd-list dt:first-child { margin-top: 0; }
-.cmd-list dt code {
-  display: block; padding: 7px 10px;
-  background: rgba(0,0,0,0.4); border: 1px solid var(--line);
-  border-radius: 8px;
-  font: 11.5px/1.5 var(--mono); color: #c9cfda;
-  user-select: text; word-break: break-all;
-}
-.cmd-list dd {
-  margin: 4px 0 0 2px; font-size: 12px; color: var(--faint);
-}

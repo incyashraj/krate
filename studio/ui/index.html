@@ -516,29 +516,36 @@
         </div>
 
         <div class="set-group">
-          <h2>Your plan</h2>
+          <h2>Agent</h2>
           <div class="set-row">
-            <div><div class="lab" id="setPlanName">Free</div><div class="hint" id="setPlanHint">Everything is free while we build Krate. Nothing is metered.</div></div>
-            <div class="ctl"><span class="set-val hidden" id="setPlanUsed"></span><button class="set-mini" id="setPlanBtn">Details</button></div>
+            <div><div class="lab">Coding agent</div><div class="hint">Drives the build loop: writes the code, runs check-app, fixes what it reports</div></div>
+            <div class="ctl"><span class="set-val" id="setAgent">…</span><button class="set-mini" id="setAgentBtn">Change</button></div>
+          </div>
+          <div class="set-row soon">
+            <div><div class="lab">Confirm the plan first</div><div class="hint">Review what will be built before the agent starts</div></div>
+            <div class="ctl"><span class="soon-tag">soon</span><button class="sw on" id="swPlan" data-soon aria-label="Ask before building" disabled></button></div>
           </div>
         </div>
-
         <div class="set-group">
-          <h2>Support</h2>
+          <h2>Output</h2>
           <div class="set-row">
-            <div><div class="lab">Report a problem</div><div class="hint">Goes to us with the session log attached; replies land in this window</div></div>
-            <div class="ctl"><button class="set-mini" id="supportBtn">Contact support</button></div>
+            <div><div class="lab">Output folder</div><div class="hint">Where packed .krate files are written</div></div>
+            <div class="ctl"><span class="set-val" id="setOutDir">…</span><button class="set-mini" id="setOutBtn">Choose</button></div>
           </div>
         </div>
-
-        <div class="set-group">
-          <h2>Gallery</h2>
+        <div class="set-group hidden" id="setTerminalGroup">
+          <h2>Terminal</h2>
           <div class="set-row">
-            <div><div class="nm">Published apps</div><div class="sub">What other people have shipped. Every one is a file you can download and inspect.</div></div>
-            <button class="btn btn-ghost" id="galleryBtn">Open the gallery</button>
+            <div><div class="lab">The <code>krate</code> command</div><div class="hint" id="setTermHint">…</div></div>
+            <div class="ctl"><button class="set-mini" id="setTermBtn">Set up</button></div>
+          </div>
+          <div class="set-row">
+            <div><div class="lab">Everything here works from a shell</div>
+            <div class="hint">Studio calls the same binary. <code>krate --help</code>
+            lists it; the docs cover porting, capabilities and CI.</div></div>
+            <div class="ctl"><button class="set-mini" id="setOpenDocs">Docs</button></div>
           </div>
         </div>
-
         <div class="set-group">
           <h2>Updates</h2>
           <div class="upd" id="upd">
@@ -559,52 +566,20 @@
             </div>
           </div>
         </div>
-
         <div class="set-group">
-          <h2>Agent</h2>
+          <h2>Gallery</h2>
           <div class="set-row">
-            <div><div class="lab">Coding agent</div><div class="hint">Drives the build loop: writes the code, runs check-app, fixes what it reports</div></div>
-            <div class="ctl"><span class="set-val" id="setAgent">…</span><button class="set-mini" id="setAgentBtn">Change</button></div>
-          </div>
-          <div class="set-row soon">
-            <div><div class="lab">Confirm the plan first</div><div class="hint">Review what will be built before the agent starts</div></div>
-            <div class="ctl"><span class="soon-tag">soon</span><button class="sw on" id="swPlan" data-soon aria-label="Ask before building" disabled></button></div>
+            <div><div class="nm">Published apps</div><div class="sub">What other people have shipped. Every one is a file you can download and inspect.</div></div>
+            <button class="btn btn-ghost" id="galleryBtn">Open the gallery</button>
           </div>
         </div>
-
         <div class="set-group">
-          <h2>Output</h2>
+          <h2>Support</h2>
           <div class="set-row">
-            <div><div class="lab">Output folder</div><div class="hint">Where packed .krate files are written</div></div>
-            <div class="ctl"><span class="set-val" id="setOutDir">…</span><button class="set-mini" id="setOutBtn">Choose</button></div>
+            <div><div class="lab">Report a problem</div><div class="hint">Goes to us with the session log attached; replies land in this window</div></div>
+            <div class="ctl"><button class="set-mini" id="supportBtn">Contact support</button></div>
           </div>
         </div>
-
-        <div class="set-group hidden" id="setTerminalGroup">
-          <h2>Terminal</h2>
-          <div class="set-row">
-            <div><div class="lab">The <code>krate</code> command</div><div class="hint" id="setTermHint">…</div></div>
-            <div class="ctl"><button class="set-mini" id="setTermBtn">Set up</button></div>
-          </div>
-          <!-- Everything Studio does, Studio does by calling these. Worth
-               saying plainly: the GUI is not the product's only surface, and
-               anyone who wants this in CI needs the commands, not a tour. -->
-          <div class="set-cmds">
-            <p class="set-cmds-lede">Studio drives the same commands you can:</p>
-            <dl class="cmd-list">
-              <dt><code>krate create "a regex tester" --agent claude</code></dt>
-              <dd>Author, build, check and pack in one step.</dd>
-              <dt><code>krate port ./my-project</code></dt>
-              <dd>Read an existing project and report what porting it takes.</dd>
-              <dt><code>krate run app.krate --dump-caps</code></dt>
-              <dd>Show exactly what a file may touch, without running it.</dd>
-              <dt><code>krate check-app .</code></dt>
-              <dd>The oracle: builds, checks imports, runs, paints a frame.</dd>
-            </dl>
-            <button class="set-mini" id="setOpenDocs">Read the docs</button>
-          </div>
-        </div>
-
         <div class="set-group">
           <h2>Privacy</h2>
           <div class="set-row soon">
