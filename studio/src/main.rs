@@ -358,6 +358,18 @@ fn silent_cmd(program: impl AsRef<std::ffi::OsStr>) -> Command {
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
     }
+    // Never inherit the launcher's working directory.
+    //
+    // A Finder-launched .app runs with cwd `/` (confirmed with lsof on the
+    // running bundle: `cwd DIR ... /`). Anything spawned from here inherits
+    // it, and a child that resolves a relative path then walks the real
+    // filesystem root -- which is what makes macOS ask, in Krate's name, to
+    // read Downloads or a mounted network volume. run_author already did
+    // this for the authoring child; every other command was still starting
+    // at `/` (K-219).
+    let work = studio_dir().join("work");
+    let _ = std::fs::create_dir_all(&work);
+    cmd.current_dir(work);
     cmd
 }
 
@@ -3683,6 +3695,22 @@ fn win_close(window: tauri::Window) {
 
 fn main() {
     let _ = STARTED.set(std::time::Instant::now());
+
+    // Step off the filesystem root before anything else runs.
+    //
+    // A Finder-launched .app inherits cwd `/`. Confirmed with lsof against
+    // the running bundle: `krate-stu ... cwd DIR 1,15 736 2 /`. From there
+    // any relative path, any library that scans "." , and every child
+    // process that does not set its own directory is walking the real root
+    // -- and macOS asks the user, in Krate's name, for Downloads and for
+    // mounted network volumes. An app that has built nothing yet has no
+    // business near either, and the prompt is alarming precisely because it
+    // is unjustifiable (K-219, and K-179 before it for the agent's half).
+    //
+    // Our own directory is always readable and never guarded by TCC.
+    let home_work = studio_dir().join("work");
+    let _ = std::fs::create_dir_all(&home_work);
+    let _ = std::env::set_current_dir(&home_work);
 
     // Register the file type and the krate:// scheme BEFORE the early
     // returns below, not after.
