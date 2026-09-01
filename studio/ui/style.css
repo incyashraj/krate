@@ -190,12 +190,17 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
    hole, and it is what made the bar's content look shoved diagonally away
    from the corner. The brand starts at normal padding instead, and on
    Windows the right side clears our own window buttons. */
-/* macOS draws its traffic lights over our content at x:20, y:24. Rather
-   than surrender the whole left run (78px of dead space at every window
-   width), the bar grows and our row sits UNDER the lights. The corner is
-   then ours, and the lights keep their place. */
-body.macos .titlebar { padding-left: 12px; align-items: flex-end; padding-bottom: 8px; height: 74px; }
-body.macos { --titlebar: 74px; }
+/* macOS draws its traffic lights over our content. The bar keeps its
+   normal height and normal centring -- growing it to 74px and bottom
+   aligning everything bought a taller header and a row that sat low, for
+   no gain: the lights are moved out of the way in tauri.conf instead
+   (trafficLightPosition), so nothing has to dodge them. */
+/* The lights occupy x:20 to about x:74. Our row starts after them, on the
+   bar's own centre line -- no taller header, no bottom alignment. The
+   drawer is a separate surface with no lights over it, so it keeps the
+   corner. */
+body.macos .titlebar { padding-left: 84px; }
+body.macos.side-open .titlebar { padding-left: 12px; }
 body.windows .titlebar { padding-right: 150px; }
 
 .brand {
@@ -214,7 +219,9 @@ body.windows .titlebar { padding-right: 150px; }
    number. */
 /* Full opacity and bigger: at 17px and 0.9 the mark was a grey smudge
    next to the wordmark rather than a logo anyone could read. */
-.brand img { width: 22px; height: 22px; opacity: 1; margin-top: -1px; }
+/* No optical nudge: the drawer's mark has none, and a 1px lift here is
+   exactly 1px of disagreement across the seam. */
+.brand img { width: 22px; height: 22px; opacity: 1; }
 .crumb {
   font-size: 13px; color: var(--muted);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 42ch;
@@ -2937,13 +2944,24 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
    traffic lights and this one kept centring, which put the drawer's mark
    13px above the toggle right beside it. */
 .side-top {
-  height: var(--titlebar); display: flex; align-items: center;
+  /* flex: none, or the drawer's flex column shrinks this strip to its
+     content (30px) while the title bar beside it stays 60px -- the mark
+     then sits 14px above the one across the seam, which is the "sidebar
+     is higher than the header" everyone sees. */
+  height: var(--titlebar); flex: none;
+  display: flex; align-items: center;
   /* No side padding of its own: the mark carries 6px and the nav rows
      carry 8px, so an extra 4px here put the logo 2px right of every row
      under it -- visible as a wobble down the drawer's left edge. */
   padding: 0 2px; margin-bottom: 2px;
 }
-body.macos .side-top { align-items: flex-end; padding-bottom: 8px; }
+/* The drawer's mark is a 30px button (it has a hover state and a click
+   target); the room's brand is a bare 21px row. Bottom-aligning two boxes
+   of different heights puts their CONTENT on different lines -- 3.5px
+   apart, which is exactly the daylight that showed between them. So the
+   strip bottom-aligns and the button gives back its own extra height as
+   negative margin, putting the glyph inside it on the room's line. */
+
 /* The mark reads as the product's name, so it carries the wordmark beside
    the glyph at the same size the title bar uses. A lone 17px glyph in a
    26px box read as a decoration rather than as "this is Krate". */
@@ -3326,3 +3344,9 @@ body.side-resizing .side-grip::after { background: rgba(140,120,255,0.55); }
 body.side-resizing { cursor: col-resize; user-select: none; }
 body.side-resizing * { pointer-events: none; }
 body.side-resizing .side-grip { pointer-events: auto; }
+
+/* The Your apps header's button group. It used to carry class="side",
+   which the drawer also uses: a fixed 240px panel pinned to the window's
+   left edge, over the page. Two very different things cannot share a
+   class name and only one of them wins. */
+.page-head .head-actions { display: flex; align-items: center; gap: 10px; }
