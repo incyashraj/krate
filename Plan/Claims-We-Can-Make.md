@@ -61,6 +61,34 @@ catches.
 
 ---
 
+## Start time: measured, and stated honestly
+
+Run headless, painting one frame, on this Mac (M4), 2026-09-01. Five runs:
+
+```
+$ for i in 1 2 3 4 5; do
+    /usr/bin/time -p env KRATE_SHOOT_AFTER_MS=1 \
+      krate run evidence/demo/ratecard.krate --shoot /tmp/f.png --consent
+  done
+real 1.99   real 1.94   real 1.91   real 1.93   real 1.92
+```
+
+**What this number is:** the whole thing, end to end -- process spawn,
+engine init, component load, GPU and window setup, first frame painted,
+PNG written, exit. About **1.9 seconds**.
+
+**What it is not:** a "cold start" figure to put beside a native app's.
+Most of it is window and GPU setup that any app pays, and the shoot path
+adds work a normal run does not do. **Do not print "starts in 1.9s" as a
+speed claim** -- it is neither flattering nor precise, and a developer
+will time it themselves in a minute.
+
+The honest speed claims stay the ones already in this file: the size, and
+that the guest is native-compiled WebAssembly rather than a browser.
+
+*(To claim a real cold start, instrument the runtime for time-to-first-
+frame and report that alone. Not done yet, so not claimed.)*
+
 ## What Krate can build (each proven by a running app)
 
 - **2D games.** A Breakout you actually play: arrow keys or a gamepad move

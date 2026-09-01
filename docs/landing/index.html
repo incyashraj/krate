@@ -4,12 +4,12 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="theme-color" content="#000000" />
-<title>Krate -- Make an app. Send the file.</title>
-<meta name="description" content="Say what you want in plain words. An AI writes it. What you get is one small file that opens on Mac, Windows and Linux -- and cannot touch anything you did not allow." />
+<title>Krate -- Build once. Ship one file.</title>
+<meta name="description" content="Ship desktop software as one small file that runs on Mac, Windows and Linux. No installer, no per-OS port, no signing dance -- and a sandbox that is enforced, not promised." />
 <link rel="icon" href="/krate-favicon.png" />
   <link rel="canonical" href="https://krate.tech/" />
   <meta property="og:title" content="Krate: make an app you can send" />
-  <meta property="og:description" content="Make an app by asking. Send it as one file that opens on Mac, Windows, and Linux, and shows what it wants before it runs." />
+  <meta property="og:description" content="Build once, ship one file. Desktop software in tens of kilobytes that runs on Mac, Windows and Linux -- no installer, no port, no signing dance." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://krate.tech/" />
   <meta property="og:image" content="https://krate.tech/og-v2.png" />
@@ -602,13 +602,13 @@ img { max-width: 100%; display: block; }
 
     <div class="heroContent" id="heroContent">
       <h1 id="heroH1">
-        <span>Make an app</span>
+        <span>Build once.</span>
         <span class="heroCycle" id="heroCycle"><span class="glyph" id="heroGlyph"></span></span>
-        <span class="dim">Send the file</span>
+        <span class="dim">Ship one file.</span>
       </h1>
-      <p class="heroSub" id="heroSub">Say what you want in plain words. An AI writes
-      it. What you get is one small file that opens on Mac, Windows and Linux --
-      and cannot touch anything you did not allow.</p>
+      <p class="heroSub" id="heroSub">No installer. No per-OS port. No signing
+      dance. A Krate app is tens of kilobytes, runs on Mac, Windows and Linux
+      from the same file, and cannot touch anything it did not declare.</p>
       <div class="heroCtas" id="heroCtas">
         <div class="ctaRow">
           <div class="split">
@@ -724,28 +724,86 @@ img { max-width: 100%; display: block; }
 
 <!-- ========================================================= how it works -->
 <section class="how" id="how">
-  <h2>Say it. Build it. Send it.</h2>
-  <p class="lead">No code, no setup, no store between you and the person you made it for.</p>
+  <h2>Write it. Pack it. Ship it.</h2>
+  <p class="lead">Your code, your toolchain, your editor. One file out the
+  other end, and no platform between you and the person using it.</p>
   <div class="stepGrid">
     <div class="step">
       <div class="n">1</div>
-      <h3>Say it</h3>
-      <p>Plain words -- "a habit tracker for me". Add a picture or a
-      spreadsheet if you have one. The AI asks before it assumes.</p>
+      <h3>Write it</h3>
+      <p>Rust today, compiled to WebAssembly. Bring an app you already have
+      with <code>krate port</code>, start from a template, or let an AI draft
+      it and take over from there.</p>
     </div>
     <div class="step">
       <div class="n">2</div>
-      <h3>Build it</h3>
-      <p>Your AI writes, tests, and packs the app while you watch each step.
-      A few minutes later it opens on your screen, real and clickable.</p>
+      <h3>Pack it</h3>
+      <p>One command produces one <code>.krate</code>: your app, its manifest,
+      and the source that made it. Tens of kilobytes, and the same bytes on
+      every platform -- there is no per-OS build.</p>
     </div>
     <div class="step">
       <div class="n">3</div>
-      <h3>Send it</h3>
-      <p>One small .krate -- as a file, a link, or a card. It opens on Mac,
-      Windows and Linux, and it cannot touch anything they did not allow.</p>
+      <h3>Ship it</h3>
+      <p>Send the file, a link, or a card. Your user needs the player once --
+      free and open source -- and every app after that just opens. No
+      installer for you to maintain, no certificate per platform.</p>
     </div>
   </div>
+</section>
+
+<!-- ============================================================ receipts -->
+<section class="price" id="receipts">
+  <h2>The numbers, and how to check them.</h2>
+  <p class="lead">Every figure here came from a command you can run yourself.
+  Where the honest answer is "not yet", it says that instead.</p>
+
+  <div class="priceGrid">
+    <div class="plan">
+      <div class="top"><h3>Size</h3><span class="badge">measured</span></div>
+      <div class="amount">13 KB</div>
+      <ul>
+        <li>A playable 2D game -- paddle, bricks, lives, a win state</li>
+        <li>A markdown viewer, ported from 4,863 lines: <b>51 KB</b></li>
+        <li>An image viewer, ported from 2,677 lines: <b>77 KB</b></li>
+        <li>Ten complete apps together: <b>283 KB</b></li>
+      </ul>
+      <p class="note" style="margin:10px 0 0;text-align:left">Against Electron
+      apps, which ship a browser in every copy: Discord is 431 MB, VS Code
+      1.4 GB. <code>ls -la evidence/ported/*.krate</code></p>
+    </div>
+
+    <div class="plan">
+      <div class="top"><h3>Portability</h3><span class="badge">six targets</span></div>
+      <div class="amount">1 file</div>
+      <ul>
+        <li>Intel and ARM, for each of Mac, Windows and Linux</li>
+        <li>The same bytes on all of them -- there is no per-OS build</li>
+        <li>Nine apps re-run nightly on all three, and the output is checked</li>
+        <li>Your user installs the player once, then files just open</li>
+      </ul>
+      <p class="note" style="margin:10px 0 0;text-align:left">ARM Windows is
+      included because a Windows VM on an Apple Silicon Mac is ARM -- which is
+      how most people try Windows.</p>
+    </div>
+
+    <div class="plan">
+      <div class="top"><h3>The wall</h3><span class="badge">enforced</span></div>
+      <div class="amount">0 trust</div>
+      <ul>
+        <li>An app reaches nothing it did not declare in its manifest</li>
+        <li>Enforced by the runtime, not promised in a policy</li>
+        <li>The person sees the list before the first line runs</li>
+        <li>956 tests, and a fuzzer on the bundle parser</li>
+      </ul>
+      <p class="note" style="margin:10px 0 0;text-align:left">Read what any
+      app asks for without running it: <code>krate run app.krate --dump-caps</code></p>
+    </div>
+  </div>
+
+  <p class="note">What we do not claim: a cold-start number. Most of a start is
+  window and GPU setup that any app pays, and we have not instrumented
+  time-to-first-frame yet -- so we do not print one.</p>
 </section>
 
 <!-- ============================================================= pricing -->
@@ -964,13 +1022,13 @@ var IC = {
   link: '<svg viewBox="0 0 24 24" fill="none" stroke="#b6abd8" stroke-width="1.4" stroke-linecap="round"><path d="M9.5 14.5l5-5"/><path d="M7.5 12.5l-2 2a3.5 3.5 0 105 5l2-2M16.5 11.5l2-2a3.5 3.5 0 10-5-5l-2 2"/></svg>'
 };
 var STATS = [
-  ["photo", "Smaller than a photo", "A whole app is about 100 KB. Send it in a chat, the way you'd send a picture."],
-  ["click", "Install once", "They get Krate once, like a video player. After that every app they get is a double-click."],
-  ["laptop", "Mac, Windows and Linux", "The same file opens on all three. You never have to ask which one they use."],
-  ["shield", "Asks before it touches", "Every app says what it wants first -- and cannot touch anything you did not allow."],
-  ["inf", "Yours forever", "The file keeps working even if your plan lapses. Nothing you made can be taken back."],
-  ["clock", "Ready in a few minutes", "One sentence in, and a real app you can click opens on your screen."],
-  ["link", "A link works too", "No file handy? Send a krate.tech link and it opens on their machine."]
+  ["photo", "Tens of kilobytes", "A playable 2D game is 13 KB. A ported markdown viewer is 51 KB. No browser in the box."],
+  ["laptop", "One build, six targets", "Intel and ARM for Mac, Windows and Linux -- the same bytes, no per-OS build."],
+  ["click", "No installer to maintain", "Your user gets the player once, free and open source. Every app after that just opens."],
+  ["shield", "A wall, not a policy", "An app reaches nothing it did not declare. The runtime enforces it; read any app with --dump-caps."],
+  ["clock", "No signing dance", "One artifact instead of a certificate per platform and a notarization queue."],
+  ["inf", "The file outlives us", "It carries its own source. Nothing you ship depends on our servers staying up."],
+  ["link", "Ship it however", "A file, a link, or a card -- whichever costs the person receiving it the least."]
 ];
 var trackEl = $("marqTrack");
 var cardHTML = STATS.map(function (s) {
