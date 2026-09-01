@@ -64,32 +64,42 @@ async function draw() {
   const CX = W / 2, R = 1100, CY = H - 74 + R;   // matches _og-source.html
 
   x.save();
-  // outer bloom
-  const bloom = x.createRadialGradient(CX, CY, R * 0.86, CX, CY, R * 1.10);
+
+  // The bloom above the rim. On the page this is a 22px blur on a disc the
+  // size of the viewport, so the colour climbs a long way up the screen and
+  // fades out slowly. A tight band reads as a stripe instead of a horizon,
+  // so this reaches well past the rim and dies gradually.
+  const bloom = x.createRadialGradient(CX, CY, R * 0.62, CX, CY, R * 1.06);
   bloom.addColorStop(0.00, "rgba(73,34,229,0)");
-  bloom.addColorStop(0.62, "rgba(73,34,229,0.30)");
-  bloom.addColorStop(0.80, "rgba(165,88,251,0.42)");
-  bloom.addColorStop(0.92, "rgba(190,140,255,0.30)");
+  bloom.addColorStop(0.30, "rgba(73,34,229,0.10)");
+  bloom.addColorStop(0.55, "rgba(88,42,235,0.22)");
+  bloom.addColorStop(0.75, "rgba(124,68,246,0.38)");
+  bloom.addColorStop(0.88, "rgba(165,88,251,0.52)");
+  bloom.addColorStop(0.96, "rgba(196,150,255,0.42)");
   bloom.addColorStop(1.00, "rgba(165,88,251,0)");
   x.fillStyle = bloom;
-  x.beginPath(); x.arc(CX, CY, R * 1.10, 0, Math.PI * 2); x.fill();
+  x.beginPath(); x.arc(CX, CY, R * 1.06, 0, Math.PI * 2); x.fill();
 
-  // the disc body, purple to indigo inward
-  const body = x.createRadialGradient(CX, CY, R * 0.90, CX, CY, R);
+  // The disc body. The black core eats the middle, so only the top edge
+  // survives as the lit horizon.
+  const body = x.createRadialGradient(CX, CY, R * 0.80, CX, CY, R);
   body.addColorStop(0.00, "rgba(0,0,0,1)");
-  body.addColorStop(0.45, "rgba(43,20,120,1)");
-  body.addColorStop(0.72, INDIGO);
-  body.addColorStop(0.92, PURPLE);
-  body.addColorStop(1.00, "rgba(214,180,255,1)");
+  body.addColorStop(0.40, "rgba(26,12,78,1)");
+  body.addColorStop(0.66, "rgba(58,28,168,1)");
+  body.addColorStop(0.84, INDIGO);
+  body.addColorStop(0.95, PURPLE);
+  body.addColorStop(1.00, "rgba(206,168,255,1)");
   x.fillStyle = body;
   x.beginPath(); x.arc(CX, CY, R, 0, Math.PI * 2); x.fill();
 
-  // the hot rim itself
-  x.lineWidth = 1.8;
-  x.strokeStyle = "rgba(255,255,255,0.80)";
-  x.shadowColor = "rgba(255,255,255,0.55)"; x.shadowBlur = 30;
+  // The rim: a thin white line with a wide purple halo, not a hard edge.
+  x.lineWidth = 1.6;
+  x.strokeStyle = "rgba(255,255,255,0.72)";
+  x.shadowColor = "rgba(255,255,255,0.45)"; x.shadowBlur = 22;
   x.beginPath(); x.arc(CX, CY, R - 1, 0, Math.PI * 2); x.stroke();
-  x.shadowColor = "rgba(165,88,251,0.50)"; x.shadowBlur = 72;
+  x.shadowColor = "rgba(165,88,251,0.55)"; x.shadowBlur = 110;
+  x.beginPath(); x.arc(CX, CY, R - 1, 0, Math.PI * 2); x.stroke();
+  x.shadowColor = "rgba(124,68,246,0.40)"; x.shadowBlur = 190;
   x.beginPath(); x.arc(CX, CY, R - 1, 0, Math.PI * 2); x.stroke();
   x.restore();
 
