@@ -2931,10 +2931,19 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
 
 /* Same height as the title bar, so the mark sits on the window's top row
    rather than floating below it. */
+/* The drawer's top strip and the title bar are the same component seen on
+   two sides of the seam: same height, same vertical alignment, same bottom
+   padding. They drifted apart when macOS grew its bar to sit under the
+   traffic lights and this one kept centring, which put the drawer's mark
+   13px above the toggle right beside it. */
 .side-top {
   height: var(--titlebar); display: flex; align-items: center;
-  padding: 0 4px; margin-bottom: 2px;
+  /* No side padding of its own: the mark carries 6px and the nav rows
+     carry 8px, so an extra 4px here put the logo 2px right of every row
+     under it -- visible as a wobble down the drawer's left edge. */
+  padding: 0 2px; margin-bottom: 2px;
 }
+body.macos .side-top { align-items: flex-end; padding-bottom: 8px; }
 /* The mark reads as the product's name, so it carries the wordmark beside
    the glyph at the same size the title bar uses. A lone 17px glyph in a
    26px box read as a decoration rather than as "this is Krate". */
