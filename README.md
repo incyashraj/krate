@@ -5,13 +5,13 @@
 <h1 align="center">Krate</h1>
 
 <p align="center">
-  <strong>Make an app. Send the file. It opens on Mac, Windows, and Linux.</strong>
+  <strong>Build once. Ship one file. It runs on Mac, Windows, and Linux.</strong>
 </p>
 
 <p align="center">
-  Before it runs, the person opening it sees what it is allowed to touch.<br>
-  The <strong>player</strong> is open source and installs once (~24 MB).
-  <strong>Studio</strong> is how you make and send.
+  No installer, no per-OS port, no signing dance. A Krate app is tens of<br>
+  kilobytes, and it reaches nothing it did not declare.<br>
+  The <strong>player</strong> is open source and installs once (~11 MB on macOS).
 </p>
 
 <p align="center">
@@ -42,16 +42,27 @@
   </a>
 </p>
 
-## Use it
+## Start
 
-[Download Krate Studio](https://krate.tech/studio/), describe an app in
-plain words, and send the file it gives you. The person you send it to
-double-clicks it; the first time, Krate installs once (~24 MB, free,
-this repository), and every later app just opens -- after showing them
-exactly what it is allowed to touch.
+```sh
+curl -fsSL https://krate.tech/install.sh | sh     # macOS and Linux
+irm https://krate.tech/install.ps1 | iex          # Windows
+```
 
-Someone sent YOU a file? The friendly version lives at
-[krate.tech/open](https://krate.tech/open/).
+```sh
+krate create "a tip calculator" --output tip.krate   # write one
+krate port ./my-existing-app                         # or bring one you have
+krate run tip.krate --dump-caps                      # read what it asks for
+```
+
+`krate check-app` is the oracle: it compiles the crate, confirms it imports
+only `krate:*`, runs it once headless and paints a frame, then names the
+stage and the fix when something fails.
+
+Prefer a window? [Krate Studio](https://krate.tech/studio/) does the same
+things with the same engine underneath.
+
+Someone sent YOU a file? [krate.tech/open](https://krate.tech/open/).
 
 ## 271 MB became 37 KB
 
@@ -72,11 +83,12 @@ player once, then every app is one file. Method and raw numbers: the
 [lab note](evidence/benchmarks/2026-08-16-notes-battery-macos.md) and the
 [reproducible benchmark kit](evidence/benchmarks/marktext-vs-krate/README.md).
 
-## The software file for the AI era
+## Why a file
 
-AI can write a useful little app in a minute. Sharing it is still the hard
-part: a web link needs hosting and can phone home, and a normal desktop app
-has to be packaged per operating system.
+Shipping a desktop app means a build per operating system, an installer to
+maintain, and a code-signing certificate for each platform. A web app
+trades that for hosting you keep paying for and a machine you do not
+control.
 
 1. The app and the access it asks for go into one `.krate` file.
 2. That same file opens on Mac, Windows, and Linux. The bytes do not change.
@@ -90,30 +102,26 @@ the notes editor in the benchmark is **37 KB**.
 ## Krate Studio
 
 <p align="center">
-  <img src="docs/landing/app-shots/studio-home.png" width="900" alt="Krate Studio: describe an app in plain words and watch it being made">
+  <img src="docs/landing/app-shots/studio-home.png" width="900" alt="Krate Studio">
 </p>
 
-Studio detects which AI tools are installed, so you pick one with a click,
-describe what you want, and watch the app being made and checked. No
-terminal, no project setup. The file carries its own source, so "make the
-button blue" edits the app you have. Download from
+Studio runs the same engine the CLI does: build, import-check, run and
+pack, with the engine's real output on screen. It detects which coding AI
+you have installed if you want one driving, and stays out of the way if
+you do not. Every `.krate` carries its own source, so a build you shipped
+a year ago opens as a project. Download from
 [krate.tech/studio](https://krate.tech/studio/) -- signed `.dmg` on macOS,
 installer on Windows (unsigned for now, so SmartScreen asks once), AppImage
 on Linux.
 
 ## What it costs
 
-- **Free** -- open any `.krate`, forever. Make three apps a month; changes
-  to an app and failed builds never count.
-- **Studio** -- unlimited making at **$12 a month or $96 a year** when
-  Studio leaves preview. Free while it is in preview, and nothing is
-  charged today.
-- **Founding 200** -- the first 200 people on
-  [the list](https://krate.tech/studio/#founding) lock Studio at
-  **$79 a year** for as long as they stay.
+Nothing, right now. The player is MIT and Apache licensed and always will
+be; everything else is free while we build it, with no cap and no meter.
+We will charge one day and we will say so long before we do.
 
-Making uses the coding AI you already pay for -- Claude, Codex, Gemini,
-Copilot, Grok -- and Krate never holds its keys.
+If you point Krate at your own coding AI, that stays your subscription and
+Krate never holds its keys.
 
 ## The permission wall
 
