@@ -36,15 +36,15 @@ Examples that do **not** need an ADR:
 
 | ADR | Title | Status |
 |-----|-------|--------|
-| [ADR-0001](../../../adr/0001-rust-for-runtime.md) | Rust for the Krate runtime | Accepted |
-| [ADR-0002](../../../adr/0002-wasmtime-runtime-engine.md) | Wasmtime as runtime engine | Accepted |
-| [ADR-0003](../../../adr/0003-component-model-from-day-one.md) | Component Model from day one | Accepted |
-| [ADR-0006](../../../adr/0006-wit-versioning-strategy.md) | WIT versioning strategy | Accepted |
-| [ADR-0007](../../../adr/0007-ucap-soft-enforcement.md) | UCap v0.1 soft enforcement | Accepted |
-| [ADR-0008](../../../adr/0008-host-async-runtime.md) | Host async runtime | Accepted |
-| [ADR-0009](../../../adr/0009-sandbox-link-semantics.md) | Sandbox link-semantics guardrails | Accepted |
-| [ADR-0010](../../../adr/0010-locale-timezone-discovery-fallbacks.md) | Locale and timezone discovery fallbacks | Accepted |
-| [ADR-0011](../../../adr/0011-phase2-benchmark-regression-policy.md) | Phase 2 benchmark regression policy | Accepted |
-| [ADR-0012](../../../adr/0012-adapter-crate-split-per-os.md) | Adapter crate split per host OS | Accepted |
-| [ADR-0013](../../../adr/0013-widget-lowering-strategy.md) | Widget lowering strategy | Proposed |
-| [ADR-0014](../../../adr/0014-layout-engine-taffy.md) | Layout engine uses Taffy | Proposed |
+| [ADR-0001](https://github.com/incyashraj/krate/blob/main/docs/adr/0001-rust-for-runtime.md) | Rust for the Krate runtime | Accepted |
+| [ADR-0002](https://github.com/incyashraj/krate/blob/main/docs/adr/0002-wasmtime-runtime-engine.md) | Wasmtime as runtime engine | Accepted |
+| [ADR-0003](https://github.com/incyashraj/krate/blob/main/docs/adr/0003-component-model-from-day-one.md) | Component Model from day one | Accepted |
+| [ADR-0006](https://github.com/incyashraj/krate/blob/main/docs/adr/0006-wit-versioning-strategy.md) | WIT versioning strategy | Accepted |
+| [ADR-0007](https://github.com/incyashraj/krate/blob/main/docs/adr/0007-ucap-soft-enforcement.md) | UCap v0.1 soft enforcement | Accepted |
+| [ADR-0008](https://github.com/incyashraj/krate/blob/main/docs/adr/0008-host-async-runtime.md) | Host async runtime | Accepted |
+| [ADR-0009](https://github.com/incyashraj/krate/blob/main/docs/adr/0009-sandbox-link-semantics.md) | Sandbox link-semantics guardrails | Accepted |
+| [ADR-0010](https://github.com/incyashraj/krate/blob/main/docs/adr/0010-locale-timezone-discovery-fallbacks.md) | Locale and timezone discovery fallbacks | Accepted |
+| [ADR-0011](https://github.com/incyashraj/krate/blob/main/docs/adr/0011-phase2-benchmark-regression-policy.md) | Phase 2 benchmark regression policy | Accepted |
+| [ADR-0012](https://github.com/incyashraj/krate/blob/main/docs/adr/0012-adapter-crate-split-per-os.md) | Adapter crate split per host OS | Accepted |
+| [ADR-0013](https://github.com/incyashraj/krate/blob/main/docs/adr/0013-widget-lowering-strategy.md) | Widget lowering strategy | Proposed |
+| [ADR-0014](https://github.com/incyashraj/krate/blob/main/docs/adr/0014-layout-engine-taffy.md) | Layout engine uses Taffy | Proposed |

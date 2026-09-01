@@ -1,6 +1,6 @@
 [book]
-title = "Krate -- run AI-generated software safely on any computer"
-description = "Krate packs an app and its permissions into one file. Share it like a document, run it natively on macOS, Windows and Linux, and it touches nothing it was not granted. Open source."
+title = "Krate docs"
+description = "Build a desktop app in Rust, compile it to a WebAssembly component, and ship it as one file that runs on macOS, Windows and Linux and reaches nothing it did not declare."
 authors = ["Krate contributors"]
 language = "en"
 multilingual = false

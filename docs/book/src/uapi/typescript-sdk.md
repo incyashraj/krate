@@ -1,5 +1,9 @@
 # TypeScript SDK
 
+> **Not ready to ship an app with.** There are no UI bindings here, so you
+> cannot open a window from this SDK today. Rust is the only language that
+> can. See [what Krate cannot do yet](../limits.md).
+
 The TypeScript SDK is now started at `packages/sdk-ts`. It is not the final
 binding proof yet. Think of it as the first clean shape for TypeScript app code:
 stable import names, clear types, and small helpers over the Phase 2 UAPI.

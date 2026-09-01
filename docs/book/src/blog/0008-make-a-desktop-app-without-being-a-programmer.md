@@ -2,6 +2,11 @@
 
 **Published:** 2026-08-05
 
+> **Where this stands now.** Krate is built for developers. This post is from
+> when the pitch was broader, and it is kept because the walkthrough still
+> works, not because it is the current framing. Start at the
+> [Quickstart](../quickstart.md) instead.
+
 You can describe a small desktop tool in one sentence and have a working
 version of it in a few minutes. This is genuinely new, and it is worth
 explaining exactly what is and is not required, because most explanations

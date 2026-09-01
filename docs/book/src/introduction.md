@@ -1,18 +1,40 @@
 # Introduction
 
-> **Naming:** The project was renamed from **Layer36** to **Krate** (by Krate Labs) in July 2026. Code, commands, and `krate:*` API namespaces keep the legacy name until the scheduled code-level rename lands. Docs may use both names during the transition.
+Krate is a way to build a desktop app and ship it as one file.
 
+You write Rust. It compiles to a WebAssembly component. Krate packs that
+component, its manifest and its own source into a single `.krate` file that
+runs on macOS, Windows and Linux from the same bytes, with no installer, no
+per-OS build and no signing queue.
 
-Krate is an attempt to make apps portable in the way files are portable.
+The app reaches nothing it did not declare. Every capability -- a file, a
+socket, the microphone -- is named in the manifest, and the runtime enforces
+that list rather than trusting the code. You can read any app's list without
+running it:
 
-The goal is simple to say and hard to build:
+```sh
+krate run app.krate --dump-caps
+```
 
-> Write one app. Run it on Windows, Linux, macOS, Android, iOS, ChromeOS, and
-> the web through the same Krate runtime model.
+## Where to start
 
-Today every platform has its own SDK, app format, permission model, UI rules,
-and hardware APIs. That is why the same product often becomes six different
-codebases. Krate puts one common layer in the middle.
+- **[Quickstart](quickstart.md)** if you want a running app in a few minutes.
+- **[Porting](porting.md)** if you have a project already.
+- **[What Krate cannot do yet](limits.md)** before you spend a weekend. It is
+  written from `krate manifest capabilities` rather than from memory, and it
+  says plainly what is missing.
+
+## What is real today
+
+Desktop, on Intel and ARM: macOS, Windows and Linux, from byte-identical
+artifacts. Components run through the CLI or the embedding API, GUI apps open
+real native windows, and capabilities are enforced before any host access.
+Agents can drive the whole thing through `krate run --json` and an MCP server,
+receiving permission decisions as data.
+
+Rust is the only language you can ship a window from today. iOS and Android
+exist in the tree as reference ports and are not shipping. The
+[limits page](limits.md) keeps the honest list.
 
 ## The Core Idea
 

@@ -1,5 +1,9 @@
 # Go SDK
 
+> **Not ready to ship an app with.** There are no UI bindings here, so you
+> cannot open a window from this SDK today. Rust is the only language that
+> can. See [what Krate cannot do yet](../limits.md).
+
 The Go SDK is now started at `packages/sdk-go`. This is the first Go/TinyGo
 shape for Phase 2, not the final component proof.
 

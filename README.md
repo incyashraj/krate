@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/landing/krate-app-icon.png" width="128" alt="Krate logo">
+  <img src="docs/landing/krate-logo.png" width="128" alt="Krate logo">
 </p>
 
 <h1 align="center">Krate</h1>

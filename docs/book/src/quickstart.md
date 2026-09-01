@@ -1,18 +1,68 @@
-# Quickstart: Run A Phase 2 Krate Component
+# Quickstart
 
-This walkthrough builds the Krate CLI, builds the current Phase 2 sample
-components, and runs a file-reading WebAssembly component through the Krate
-UAPI and capability path.
+From nothing to a running app you can send someone.
 
-At the end your terminal should print:
+## Get Krate
 
-```text
-hello from Krate
+Download the release for your machine from
+[the releases page](https://github.com/incyashraj/krate/releases), or build
+from source if you would rather:
+
+```sh
+cargo build --release -p krate-cli
 ```
 
-Krate is in beta: versioned releases ship continuously for six desktop
-targets, and a public store is live at krate.tech/cloud. The permission wall
-is enforced in code; the project is young, so review what an app asks for.
+Check it can build apps on this machine:
+
+```sh
+krate doctor
+```
+
+That reports the toolchain, the WebAssembly target and whether an AI agent
+is reachable, and it names the fix for anything missing.
+
+## Make something
+
+```sh
+krate create "a regex tester with a pattern box and live matches" \
+  --agent claude --output regex.krate
+```
+
+The agent writes the code, `check-app` builds it, checks that it imports only
+`krate:*`, runs it and confirms it paints a frame. What lands is one file.
+
+## Run it, and read what it may touch
+
+```sh
+krate run regex.krate
+krate run regex.krate --dump-caps
+```
+
+The second command prints the capability list without running anything. That
+list is the manifest's, and the runtime enforces it rather than trusting the
+code.
+
+## Send it
+
+The `.krate` is the whole app, source included. Mail it, drop it in a chat,
+or publish it and send a URL:
+
+```sh
+krate publish regex.krate
+```
+
+Anyone with Krate can open the file. Anyone without it can use the wrapped
+double-clickable from Studio's Ship it sheet.
+
+## Where next
+
+- **[Porting](porting.md)** to bring a project you already have.
+- **[What Krate cannot do yet](limits.md)** before planning anything large.
+- **[The Rust SDK](uapi/rust-sdk.md)** for writing the code by hand.
+
+---
+
+The rest of this page is the from-source path, kept for contributors.
 
 ## Prerequisites
 

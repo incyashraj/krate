@@ -100,7 +100,7 @@
 - [How to run AI-generated code without reading it](blog/0005-how-to-run-ai-generated-code-safely.md)
 - [WebAssembly for desktop apps: what actually works in 2026](blog/0006-webassembly-outside-the-browser.md)
 - [Six automated checks passed an app that could not be clicked](blog/0007-testing-software-like-a-stranger.md)
-- [How to make a desktop app without being a programmer](blog/0008-make-a-desktop-app-without-being-a-programmer.md)
+- [How to make a desktop app without being a programmer (2026-08)](blog/0008-make-a-desktop-app-without-being-a-programmer.md)
 
 # Appendix
 
