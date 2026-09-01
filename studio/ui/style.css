@@ -213,11 +213,18 @@ body.macos.side-open .titlebar { padding-left: 12px; }
    underneath, where nothing is drawn over it. Trying to fit the mark
    beside the lights on one row is what kept it looking half a line off:
    a 22px logo and three 12px dots do not share a baseline. */
-/* 60px tall and centring, so anything in this row lands on y=30 -- the
-   traffic lights' own centre (they sit at y:24 and are 12px tall). That
-   is what puts the panel glyph level with the green dot instead of under
-   it. Left padding clears the lights themselves. */
-body.macos .side-top { height: 60px; padding-left: 78px; align-items: center; }
+/* The lights row.
+ *
+ * trafficLightPosition is measured from the WINDOW frame, which sits above
+ * the webview's origin, so a light configured at y:24 does not land at
+ * y:24 in our coordinates -- measured on screen it sits about 6px higher
+ * than centring in a 60px strip would put our own content. Rather than
+ * chase the frame offset, this row is shorter than the bar and its content
+ * is pinned to the top, which is where the lights actually are. */
+body.macos .side-top {
+  height: 48px; padding-left: 78px;
+  align-items: center;
+}
 body.macos .side-mark {
   padding-left: 10px;
 }
@@ -3267,19 +3274,36 @@ body.side-open .titlebar {
   border-top-left-radius: 14px;
 }
 body.side-open .home { overflow: hidden; }
-body.side-open #viewHome {
-  margin-left: 240px;
+
+/* The room steps aside by the drawer's ACTUAL width, not a hardcoded 240.
+   With a fixed number the room stayed put while the drawer was dragged,
+   so a wider drawer simply covered more of the page: the content read as
+   a static backdrop rather than a panel sharing the window.
+   --side-w is the one source of truth, so dragging moves both. */
+body.side-open .view {
+  margin-left: var(--side-w, 240px);
   transition: margin-left 0.34s cubic-bezier(0.22, 1, 0.36, 1);
 }
-#viewHome { transition: margin-left 0.34s cubic-bezier(0.22, 1, 0.36, 1); }
-body.side-open .shelf { left: 240px; }
-@media (prefers-reduced-motion: reduce) {
-  #viewHome, body.side-open #viewHome { transition: none; }
+.view { transition: margin-left 0.34s cubic-bezier(0.22, 1, 0.36, 1); }
+/* The shelf is fixed and centred by margins, so shifting its left edge
+   alone would push it off-centre by the drawer's width. Giving it the
+   drawer's width as a left inset lets the auto margins re-centre it in
+   what is left of the window. */
+body.side-open .shelf {
+  left: var(--side-w, 240px);
+  width: min(900px, calc(100vw - var(--side-w, 240px) - 56px));
 }
-/* Below this the drawer covers the room instead of sharing it: 240px out
-   of a narrow window leaves nothing to type into. */
+/* While the grip is held the drawer follows the pointer every frame; a
+   0.34s ease on the room would lag a whole third of a second behind it. */
+body.side-resizing .view,
+body.side-resizing .shelf { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .view, body.side-open .view { transition: none; }
+}
+/* Below this the drawer covers the room instead of sharing it: a 240px
+   drawer out of a narrow window leaves nothing to type into. */
 @media (max-width: 860px) {
-  body.side-open #viewHome { margin-left: 0; }
+  body.side-open .view { margin-left: 0; }
   body.side-open .shelf { left: 0; }
 }
 
@@ -3436,7 +3460,7 @@ body.session-view .horizon { opacity: 0.35; }
  */
 .side-brandrow {
   flex: none; display: flex; align-items: center;
-  height: 44px; padding: 0 2px; margin-bottom: 6px;
+  height: 42px; padding: 0 2px; margin-bottom: 6px;
 }
 .side-top { justify-content: flex-end; }
 .side-top .side-toggle { margin-right: 2px; }
