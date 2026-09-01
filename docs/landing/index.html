@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="theme-color" content="#000000" />
 <title>Krate -- Build once. Ship one file.</title>
-<meta name="description" content="Ship desktop software as one small file that runs on Mac, Windows and Linux. No installer, no per-OS port, no signing dance -- and a sandbox that is enforced, not promised." />
+<meta name="description" content="Ship desktop software as one small file that runs on Mac, Windows and Linux. No installer, no per-OS port, no signing dance, and a sandbox the runtime enforces." />
 <link rel="icon" href="/krate-favicon.png" />
   <link rel="canonical" href="https://krate.tech/" />
   <meta property="og:title" content="Krate: make an app you can send" />
@@ -823,7 +823,7 @@ img { max-width: 100%; display: block; }
       <div class="amount">0 trust</div>
       <ul>
         <li>An app reaches nothing it did not declare in its manifest</li>
-        <li>Enforced by the runtime, not promised in a policy</li>
+        <li>The runtime enforces it, whatever the code says</li>
         <li>The person sees the list before the first line runs</li>
         <li>956 tests, and a fuzzer on the bundle parser</li>
       </ul>
@@ -850,7 +850,7 @@ img { max-width: 100%; display: block; }
       <ul>
         <li>MIT and Apache licensed</li>
         <li>Runs any .krate on Mac, Windows and Linux</li>
-        <li>Every capability an app asks for is enforced, not promised</li>
+        <li>Every capability an app asks for is enforced by the runtime</li>
         <li>Build it from source if you would rather</li>
       </ul>
       <a class="btn ghosty" href="https://github.com/incyashraj/krate"><span>Read the source</span><span class="hoverco"></span><span class="ripple"></span></a>
