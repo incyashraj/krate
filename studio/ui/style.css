@@ -202,8 +202,12 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
    bar's own centre line -- no taller header, no bottom alignment. The
    drawer is a separate surface with no lights over it, so it keeps the
    corner. */
+/* The drawer owns the corner when it is open, so the room's bar starts
+   after it; when it is closed the room's own bar clears the lights. */
 body.macos .titlebar { padding-left: 84px; }
 body.macos.side-open .titlebar { padding-left: 12px; }
+/* The drawer's top strip clears the traffic lights the same way. */
+body.macos .side-top { padding-left: 78px; }
 body.windows .titlebar { padding-right: 150px; }
 
 .brand {
@@ -2948,14 +2952,12 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
    13px above the toggle right beside it. */
 .side-top {
   /* flex: none, or the drawer's flex column shrinks this strip to its
-     content (30px) while the title bar beside it stays 60px -- the mark
-     then sits 14px above the one across the seam, which is the "sidebar
-     is higher than the header" everyone sees. */
+     content while the title bar beside it stays full height. */
   height: var(--titlebar); flex: none;
   display: flex; align-items: center;
-  /* No side padding of its own: the mark carries 6px and the nav rows
-     carry 8px, so an extra 4px here put the logo 2px right of every row
-     under it -- visible as a wobble down the drawer's left edge. */
+  /* On macOS the traffic lights are drawn over this strip at x:20..74.
+     The mark starts after them, so the drawer's own content never sits
+     underneath the close/minimise/zoom buttons. Set per platform below. */
   padding: 0 2px; margin-bottom: 10px;
 }
 /* The drawer's mark is a 30px button (it has a hover state and a click

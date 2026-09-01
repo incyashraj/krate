@@ -168,11 +168,24 @@ function liveRecord() {
 
 /* ---- views ------------------------------------------------------------ */
 
+/* The shelf's tabs describe what the shelf is showing. Examples navigates
+ * away to the gallery, so coming back to home with Examples still lit
+ * claimed the tray held examples while it held your apps. Home resets it. */
+function resetShelfTab() {
+  const mine = $("tabMine"), examples = $("tabExamples");
+  if (!mine || !examples) return;
+  mine.classList.add("on");
+  mine.setAttribute("aria-selected", "true");
+  examples.classList.remove("on");
+  examples.setAttribute("aria-selected", "false");
+}
+
 function showView(name) {
   // Sessions are the one split-screen workspace in Studio. Its aurora is
   // contained behind the app object on the right instead of washing across
   // the conversation rail; every other page keeps the shared horizon.
   document.body.classList.toggle("session-view", name === "session");
+  if (name === "home") resetShelfTab();
   for (const id of [
     "viewGate", "viewHome", "viewSession", "viewCloud", "viewApp",
     "viewApps", "viewSettings", "viewProfile", "viewOnboard",
@@ -4854,10 +4867,13 @@ async function renderShelf() {
   // as the app losing its navigation rather than as a page change. It
   // closes when you pick something that leaves this window (a sheet, an
   // external link) and when you press the panel button again.
+  // Navigating closes the drawer. It overlays the room rather than pushing
+  // it, so leaving it open after a click leaves the page you asked for
+  // half covered by the menu you asked it from.
   const goes = {
-    home: () => showView("home"),
-    all: () => { showView("apps"); loadAppsPage(); },
-    discover: () => openCloud(),
+    home: () => { setOpen(false); showView("home"); },
+    all: () => { setOpen(false); showView("apps"); loadAppsPage(); },
+    discover: () => { setOpen(false); openCloud(); },
   };
   document.querySelectorAll("#side .side-row").forEach((row) => {
     row.addEventListener("click", () => {
