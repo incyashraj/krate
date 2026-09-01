@@ -4,14 +4,21 @@
 
 ---
 
-# The Platform
+# Start here
 
+- [Quickstart](quickstart.md)
+- [Create and Share an App](create-and-share.md)
+- [Porting an app you already have](porting.md)
+- [What Krate cannot do yet](limits.md)
+
+# How it works
+
+- [Core Concepts](concepts.md)
+- [Architecture](architecture.md)
 - [Vision](vision.md)
 - [Roadmap](roadmap.md)
 - [Build Log](build-log.md)
 - [Krate for Everyone](progress-for-everyone.md)
-- [Architecture](architecture.md)
-- [Core Concepts](concepts.md)
 
 # UAPI Reference
 
@@ -20,15 +27,13 @@
 - [Widget parity](reference/widget-parity.md)
 - [Rust SDK](uapi/rust-sdk.md)
 - [First Rust CLI](uapi/first-rust-cli.md)
-- [Go SDK](uapi/go-sdk.md)
+- [Go SDK (early)](uapi/go-sdk.md)
 - [First Go CLI](uapi/first-go-cli.md)
-- [TypeScript SDK](uapi/typescript-sdk.md)
+- [TypeScript SDK (early)](uapi/typescript-sdk.md)
 - [First TypeScript CLI](uapi/first-typescript-cli.md)
 
 # Developer Guide
 
-- [Quickstart](quickstart.md)
-- [Create and Share an App](create-and-share.md)
 - [Try Krate Notes](try-krate-notes.md)
 - [Contributing](contributing/index.md)
   - [Your first PR](contributing/first-pr.md)
