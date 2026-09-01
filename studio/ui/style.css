@@ -213,16 +213,18 @@ body.macos.side-open .titlebar { padding-left: 12px; }
    underneath, where nothing is drawn over it. Trying to fit the mark
    beside the lights on one row is what kept it looking half a line off:
    a 22px logo and three 12px dots do not share a baseline. */
-/* The lights row.
+/* The lights row, sized from a measurement rather than a guess.
  *
- * trafficLightPosition is measured from the WINDOW frame, which sits above
- * the webview's origin, so a light configured at y:24 does not land at
- * y:24 in our coordinates -- measured on screen it sits about 6px higher
- * than centring in a 60px strip would put our own content. Rather than
- * chase the frame offset, this row is shorter than the bar and its content
- * is pinned to the top, which is where the lights actually are. */
+ * Probed in the running window: outerHeight - innerHeight shows the
+ * webview fills the whole window, so there is NO frame inset above us and
+ * trafficLightPosition is already in our coordinates. The lights' top is
+ * y:24 and they are 12px tall, so their centre is y:30. A row that centres
+ * its content puts that content at height/2, so the row must be 60.
+ *
+ * (This was briefly 48, from misreading a screenshot; that put our glyph
+ * at y:24 -- level with the TOP of the lights instead of their middle.) */
 body.macos .side-top {
-  height: 48px; padding-left: 78px;
+  height: 60px; padding-left: 78px;
   align-items: center;
 }
 body.macos .side-mark {
@@ -3460,7 +3462,7 @@ body.session-view .horizon { opacity: 0.35; }
  */
 .side-brandrow {
   flex: none; display: flex; align-items: center;
-  height: 42px; padding: 0 2px; margin-bottom: 6px;
+  height: 44px; padding: 0 2px; margin-bottom: 6px;
 }
 .side-top { justify-content: flex-end; }
 .side-top .side-toggle { margin-right: 2px; }
