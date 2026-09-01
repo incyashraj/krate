@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Krate Studio: your code, your toolchain, one file out</title>
-<meta name="description" content="Krate Studio is the workbench: build a desktop app, watch it compile and run, and pack it into one file that works on Mac, Windows and Linux. Bring an app you already have, or start fresh." />
+<title>Krate Studio: your tool, to make a krate file</title>
+<meta name="description" content="Write it, build it, run it, pack it. Krate Studio makes one file that works on Mac, Windows and Linux." />
 <meta property="og:title" content="Krate Studio" />
-<meta property="og:description" content="Your code, your toolchain, one file out. Build once and ship to Mac, Windows and Linux without a per-OS port." />
+<meta property="og:description" content="Your tool, to make a krate file. One artifact for Mac, Windows and Linux." />
 <meta property="og:image" content="https://krate.tech/og-v2.png" />
 <meta name="twitter:card" content="summary_large_image" />
 <link rel="icon" href="/krate-glyph-white.png" />
@@ -160,20 +160,33 @@ p.sub { color: #a1a1aa; margin-top: 12px; max-width: 62ch; line-height: 1.65; }
   padding: 1px 6px; border-radius: 6px;
 }
 
-/* ---- the loop: four beats of what using it feels like ---- */
-.loop { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-top: 40px; }
-.beat {
-  border-radius: 20px; padding: 22px;
+/* ---- the rail ----
+   Four steps as one short strip rather than four cards. Cards made a
+   two minute loop look like four projects; a rail reads as a journey you
+   have already nearly finished. */
+.rail {
+  display: flex; gap: 0; margin-top: 34px; list-style: none;
+  border-radius: 16px; overflow: hidden;
   background: rgba(24,24,27,0.5);
   box-shadow: 0 0 0 1px rgba(255,255,255,0.08);
 }
-.beat .n {
-  font-family: var(--disp); font-weight: 700; font-size: 13px;
-  color: #A558FB; margin-bottom: 10px;
+.rail li {
+  flex: 1; position: relative; padding: 18px 18px 16px;
+  display: flex; flex-direction: column; gap: 4px;
 }
-.beat h3 { font-size: 15px; font-weight: 600; }
-.beat p { color: #a1a1aa; font-size: 13.5px; margin-top: 6px; line-height: 1.6; }
-.beat .t { margin-top: 12px; font-size: 12px; color: #52525b; font-variant-numeric: tabular-nums; }
+.rail li + li { box-shadow: inset 1px 0 0 rgba(255,255,255,0.07); }
+.rail .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #3f3f46; box-shadow: 0 0 0 3px rgba(255,255,255,0.04);
+  margin-bottom: 8px;
+}
+.rail .dot.done { background: #A558FB; box-shadow: 0 0 0 3px rgba(165,88,251,0.18); }
+.rail b { font-size: 14px; font-weight: 500; }
+.rail .t { font-size: 12px; color: #52525b; font-variant-numeric: tabular-nums; }
+@media (max-width: 620px) {
+  .rail { flex-direction: column; }
+  .rail li + li { box-shadow: inset 0 1px 0 rgba(255,255,255,0.07); }
+}
 
 /* ---- apps ---- */
 .appRow {
@@ -249,11 +262,9 @@ p.sub { color: #a1a1aa; margin-top: 12px; max-width: 62ch; line-height: 1.65; }
 
 <!-- ================================================================ hero -->
 <section class="sHero wrapx">
-  <h1>Your code. Your toolchain.<span class="dim">One file out.</span></h1>
-  <p class="lede">Studio is the workbench. Build a Krate app, watch it compile
-  and run, and pack it into a single file that works on Mac, Windows and Linux
-  from the same bytes. Bring an app you already have, start from a template, or
-  let an AI draft it and take over.</p>
+  <h1>Studio?<span class="dim">Your tool, to make a krate file.</span></h1>
+  <p class="lede">Write it, build it, run it, pack it. One file that works on
+  Mac, Windows and Linux from the same bytes.</p>
   <div class="sCtas">
     <a class="pill pill-primary" href="/#get" id="dlBtn">Download Studio</a>
     <a class="pill" href="https://github.com/incyashraj/krate">Read the source</a>
@@ -262,115 +273,87 @@ p.sub { color: #a1a1aa; margin-top: 12px; max-width: 62ch; line-height: 1.65; }
   <a href="https://github.com/incyashraj/krate">MIT and Apache licensed</a>
   &middot; works with the AI you already pay for</p>
 
-  <!-- The shot of Studio itself. It must be RECAPTURED after any redesign
-       of studio/ui: a hero image showing an interface the download does not
-       have is the first thing a careful reader catches, and the one that
-       costs the most trust. Last taken against the pre-2026-09 home. -->
+  <!-- Studio, doing its job.
+       This shot predates the 2026-09 redesign and is holding the space
+       until the UI work lands (Yashraj's call: recapture from the real app
+       then, or replace with a 20 second screen recording, which suits this
+       slot better anyway). K-217 tracks it. -->
   <div class="bench">
     <img src="/app-shots/studio-home.png" alt="Krate Studio, with a project open" />
   </div>
-  <p class="benchCap">
-    <span><b>Build</b> and run without leaving the window</span>
-    <span><b>Pack</b> to one file for six targets</span>
-    <span><b>Ship</b> as a file, a link, or a card</span>
-  </p>
 </section>
 
 <!-- =============================================================== tools -->
 <section class="pad wrapx" id="tools">
-  <p class="eyebrow">What is in it</p>
-  <h2 class="big">A workbench, not a wizard.</h2>
-  <p class="sub">Everything you need between an idea and a shippable file,
-  and nothing that gets between you and your own code.</p>
+  <h2 class="big">What is in it</h2>
 
   <div class="toolGrid">
     <div class="tool">
       <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l-6-6 6-6M15 6l6 6-6 6"/></svg>
       <h3>The build, watched</h3>
-      <p>Compile, import-check, run and pack, with the engine's real output on
-      screen. When something fails you see the error, not a shrug.</p>
+      <p>Compile, check, run and pack, with the engine's real output on screen.</p>
     </div>
     <div class="tool">
       <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16M4 12h10M4 19h7"/></svg>
       <h3>Port what you have</h3>
-      <p><code>krate port</code> reads an existing project and reports what maps
-      cleanly, what needs a capability, and what will not work. Read-only, so it
-      never touches your source.</p>
+      <p><code>krate port</code> reads a project you already have and tells you what it would take. Read-only.</p>
     </div>
     <div class="tool">
       <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
       <h3>Any AI, or none</h3>
-      <p>Drives the coding AI you already pay for. Your keys stay with your
-      tool, and you can turn it off entirely and write every line yourself.</p>
+      <p>Drives the coding AI you already pay for. Your keys stay with your tool. Turn it off and write every line yourself.</p>
     </div>
     <div class="tool">
       <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 4.5-3.2 7.8-8 9-4.8-1.2-8-4.5-8-9V7z"/><path d="M9 12l2 2 4-4"/></svg>
-      <h3>The capability wall</h3>
-      <p>See what an app declares before it runs, and what it will be allowed
-      to touch. <code>krate run app.krate --dump-caps</code> reads any file
-      without executing it.</p>
+      <h3>The wall</h3>
+      <p>Read what any app declares without running it:<br /><code>krate run app.krate --dump-caps</code></p>
     </div>
     <div class="tool">
       <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg>
       <h3>See it render</h3>
-      <p>Every build paints a real frame, headless if you want it. Screenshot
-      your app in CI on any machine, with no display attached.</p>
+      <p>Every build paints a real frame. Screenshot your app in CI with no display attached.</p>
     </div>
     <div class="tool">
       <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></svg>
       <h3>Ship three ways</h3>
-      <p>The file itself, a link anyone can open, or a card that carries the
-      app inside a picture of it. Whichever costs the person receiving it the
-      least.</p>
+      <p>The file, a link, or a card that carries the app inside a picture of it.</p>
     </div>
   </div>
 </section>
 
 <!-- ================================================================ loop -->
 <section class="pad wrapx" id="loop">
-  <p class="eyebrow">What it feels like</p>
-  <h2 class="big">Idea to shippable file, in one window.</h2>
-  <p class="sub">The times below are what a small app really takes on an M4.
-  Nothing here is a mock: it is the same engine the CLI runs.</p>
+  <h2 class="big">Four steps</h2>
+  <p class="sub">Real timings on an M4.</p>
 
-  <div class="loop">
-    <div class="beat">
-      <div class="n">01</div>
-      <h3>Say what it is</h3>
-      <p>A sentence, a template, or an existing project. Studio hands the
-      request to your AI with the whole capability surface already in context.</p>
-      <p class="t">a few seconds</p>
-    </div>
-    <div class="beat">
-      <div class="n">02</div>
-      <h3>Watch it build</h3>
-      <p>Reading the API, writing the code, checking it builds, running it. Real
-      stages from the real engine, not a progress bar guessing.</p>
-      <p class="t">two to fifteen minutes</p>
-    </div>
-    <div class="beat">
-      <div class="n">03</div>
-      <h3>See it run</h3>
-      <p>The app opens and paints a frame. If it cannot be clicked or will not
-      stay open, the check fails and says which.</p>
-      <p class="t">about two seconds</p>
-    </div>
-    <div class="beat">
-      <div class="n">04</div>
-      <h3>Ship it</h3>
-      <p>One file, tens of kilobytes, for Mac, Windows and Linux. No installer
-      to maintain, no certificate per platform.</p>
-      <p class="t">instant</p>
-    </div>
-  </div>
+  <ol class="rail">
+    <li>
+      <span class="dot"></span>
+      <b>Say what it is</b>
+      <span class="t">seconds</span>
+    </li>
+    <li>
+      <span class="dot"></span>
+      <b>It builds</b>
+      <span class="t">minutes</span>
+    </li>
+    <li>
+      <span class="dot"></span>
+      <b>It runs</b>
+      <span class="t">~2s</span>
+    </li>
+    <li>
+      <span class="dot done"></span>
+      <b>One file</b>
+      <span class="t">instant</span>
+    </li>
+  </ol>
 </section>
 
 <!-- ================================================================ apps -->
 <section class="pad wrapx" id="apps">
-  <p class="eyebrow">Built with it</p>
-  <h2 class="big">Real apps, real screenshots.</h2>
-  <p class="sub">Every one is a single file of tens of kilobytes, running from
-  the same bytes on all three desktops.</p>
+  <h2 class="big">Built with it</h2>
+  <p class="sub">Every one is a single file, tens of kilobytes.</p>
 
   <div class="appRow">
     <a class="appCard" href="/cloud/">
@@ -402,8 +385,7 @@ p.sub { color: #a1a1aa; margin-top: 12px; max-width: 62ch; line-height: 1.65; }
 
 <!-- ================================================================= faq -->
 <section class="pad wrapx" id="faq">
-  <p class="eyebrow">Questions</p>
-  <h2 class="big">The ones worth asking first.</h2>
+  <h2 class="big">Questions</h2>
 
   <div class="faqList">
     <details class="faqItem">
