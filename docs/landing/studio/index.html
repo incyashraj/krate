@@ -4,16 +4,16 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0a0a0a" />
-  <meta name="description" content="Krate Studio: describe an app in plain words, watch an AI build it, and get one small file that opens on Mac, Windows and Linux. Three apps a month free." />
+  <meta name="description" content="Krate Studio: build a desktop app, watch it compile and run, and pack it into one file that works on Mac, Windows and Linux. Bring an app you already have, or start fresh. Free while we build it." />
   <link rel="canonical" href="https://krate.tech/studio/" />
   <meta property="og:title" content="Krate Studio: make an app, send the file" />
-  <meta property="og:description" content="Say what you want in plain words. An AI writes it, and you get one small file you can send to anyone. Free." />
+  <meta property="og:description" content="Your code, your toolchain, one file out. Build once and ship to Mac, Windows and Linux without a per-OS port." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://krate.tech/studio/" />
   <meta property="og:image" content="https://krate.tech/og-v2.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="Krate Studio: make an app, send the file" />
-  <title>Krate Studio: make an app, send the file</title>
+  <title>Krate Studio: build it, pack it, ship one file</title>
   <link rel="icon" href="/krate-favicon.png" />
   <link rel="apple-touch-icon" href="/krate-favicon.png" />
   <link rel="preload" href="/fonts/geist-400.woff2" as="font" type="font/woff2" crossorigin />
@@ -65,8 +65,16 @@
   .wrap { max-width: var(--max); margin: 0 auto; padding: 0 24px; }
   h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
 
-  .reveal { opacity: 0; transform: translateY(12px); transition: opacity var(--enter), transform var(--enter); }
+  /* The reveal moves things; it must never be what makes them exist.
+     On the homepage a section whose observer never fired sat at opacity 0
+     forever and rendered as a screen of black. The words start visible
+     here, and the animation only slides them into place -- so the worst
+     case is a missing slide rather than a missing page. */
+  .reveal { opacity: 1; transform: translateY(12px); transition: opacity var(--enter), transform var(--enter); }
   .reveal.in { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) {
+    .reveal { transform: none; transition: none; }
+  }
 
   /* ------------------------------------------------------------ header */
   .site-head {
@@ -368,15 +376,16 @@ try { var _r = location.search.match(/[?&]ref=([A-Za-z0-9]{4,16})/);
 
 <!-- ================================================================== hero -->
 <section class="hero wrap">
-  <h1 class="reveal">Make an app. Send the file.<br />It opens anywhere.</h1>
-  <p class="hero-sub reveal">Say what you want in plain words. An AI writes it,
-  and a few minutes later you have one small file that opens on Mac, Windows
-  and Linux -- and that you can send to anyone.</p>
+  <h1 class="reveal">Your code. Your toolchain.<br />One file out.</h1>
+  <p class="hero-sub reveal">Studio is the workbench: build a Krate app, watch
+  it compile and run, and pack it into a single file that works on Mac,
+  Windows and Linux. Bring an app you already have, start from a template, or
+  let an AI draft it and take over from there.</p>
   <div class="hero-cta reveal">
     <a class="pill pill-primary" href="#get" id="heroDl">Download</a>
     <a class="pill" href="/cloud/">See what people made</a>
   </div>
-  <p class="free-note reveal">Three apps a month free &middot; <a href="#pricing" style="color:inherit;text-decoration:underline">Studio is $12/month</a> &middot; works with the AI you already have</p>
+  <p class="free-note reveal">Free while we build it &middot; the player is <a href="https://github.com/incyashraj/krate" style="color:inherit;text-decoration:underline">MIT and Apache licensed</a> &middot; works with the AI you already pay for</p>
 
   <!-- Studio, doing its job exactly once. The scene plays when it scrolls
        into view and then holds the finished state. It never loops. -->
@@ -458,9 +467,9 @@ try { var _r = location.search.match(/[?&]ref=([A-Za-z0-9]{4,16})/);
       <h2>What people made.</h2>
       <a href="/cloud/">Browse the gallery &rarr;</a>
     </div>
-    <p class="made-sub">Real screenshots of real published apps -- games,
-    tools, little private things. Every one is a single small file someone
-    could drop in a chat.</p>
+    <p class="made-sub">Real screenshots of apps people published. Every one
+    is a single file of tens of kilobytes, running on Mac, Windows and Linux
+    from the same bytes.</p>
   </div>
   <div class="shots reveal">
     <a class="shot" href="/cloud/"><img src="/cloud/shots/nova.png" alt="Nova, a space shooter made with Krate" loading="lazy" /><b>Nova</b><span>a space shooter</span></a>
@@ -475,26 +484,29 @@ try { var _r = location.search.match(/[?&]ref=([A-Za-z0-9]{4,16})/);
 <section class="feats wrap" id="how">
   <div class="feat-grid reveal">
     <div class="feat-cell">
-      <h2>No templates, no setup</h2>
-      <p>The thing you describe is the thing you get. No framework to pick, no
-      project to configure, no code on your screen unless you ask for it.</p>
+      <h2>Bring what you already have</h2>
+      <p><code>krate port</code> reads an existing project and tells you what
+      it would take to make it a Krate app: what maps cleanly, what needs a
+      capability, and what will not work. Read-only, so it never touches your
+      source.</p>
     </div>
     <div class="feat-cell">
-      <h2>Change it by asking</h2>
-      <p>The file carries its own source, so &ldquo;make the button blue&rdquo;
-      edits the app you have. Come back after feedback and pick up where you
-      left off.</p>
+      <h2>The source rides along</h2>
+      <p>Every <code>.krate</code> carries the code that made it. Open one you
+      shipped a year ago and the project is right there, so an app is never a
+      binary you have lost the source to.</p>
     </div>
     <div class="feat-cell">
-      <h2>Send it to anyone</h2>
-      <p>One small file. They double-click it, see exactly what it is allowed
-      to do, and Krate enforces that list -- not the app&rsquo;s promises.</p>
+      <h2>One artifact, six targets</h2>
+      <p>Intel and ARM for Mac, Windows and Linux, from the same bytes. No
+      per-OS build, no installer to maintain, no certificate per platform.
+      Your user gets the player once.</p>
     </div>
     <div class="feat-cell">
-      <h2>Your AI, your account</h2>
-      <p>Krate drives the coding AI you already pay for -- Claude, Codex,
-      Gemini, Copilot -- and can set one up for you. Your keys stay with
-      your tool.</p>
+      <h2>A wall, not a policy</h2>
+      <p>An app reaches nothing it did not declare, and the runtime enforces
+      it. Read what any app asks for without running it:
+      <code>krate run app.krate --dump-caps</code>.</p>
     </div>
   </div>
 </section>
@@ -644,10 +656,29 @@ try { var _r = location.search.match(/[?&]ref=([A-Za-z0-9]{4,16})/);
     <h2 class="reveal">Questions</h2>
     <div class="reveal">
       <details class="faq-item">
-        <summary><span>Do I need to know how to code?</span></summary>
-        <div class="faq-answer"><p>No. You describe the app in plain words and
-        read plain words back. The raw engine output is one click away if you
-        ever want it, but nothing requires it.</p></div>
+        <summary><span>What language do I write in?</span></summary>
+        <div class="faq-answer"><p>Rust today, compiled to a WebAssembly
+        component. The guest is ordinary Rust with one rule: it may import
+        only <code>krate:*</code> interfaces, never <code>wasi:*</code>, which
+        is what keeps an app to tens of kilobytes and inside its sandbox.
+        <code>krate check-app</code> is the oracle that tells you whether your
+        code builds, imports cleanly, runs and paints a frame.</p></div>
+      </details>
+      <details class="faq-item">
+        <summary><span>Can I bring an app I already have?</span></summary>
+        <div class="faq-answer"><p>That is what <code>krate port</code> is
+        for. It reads your project and reports what maps cleanly, what needs a
+        capability, and what will not work at all. It is read-only: it never
+        builds, runs or edits your source. Start there before you decide.</p></div>
+      </details>
+      <details class="faq-item">
+        <summary><span>What can it not do yet?</span></summary>
+        <div class="faq-answer"><p>Plenty, and we would rather say so.
+        Databases through <code>store.sql</code>, sound, camera and the file
+        picker all work; text-to-speech, printing, multi-window, serial and
+        Bluetooth do not yet. Anything needing heavy GPU work is early. The
+        capability list an app can ask for is fixed and public, so you can
+        check before you invest a weekend.</p></div>
       </details>
       <details class="faq-item">
         <summary><span>Which AI does it use?</span></summary>
