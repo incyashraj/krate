@@ -2830,11 +2830,20 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
   height: 34px; display: flex; align-items: center;
   padding: 0 4px; margin-bottom: 10px;
 }
+/* The mark reads as the product's name, so it carries the wordmark beside
+   the glyph at the same size the title bar uses. A lone 17px glyph in a
+   26px box read as a decoration rather than as "this is Krate". */
 .side-mark {
-  width: 26px; height: 26px; display: grid; place-items: center;
-  background: none; border: 0; cursor: pointer; border-radius: 7px;
+  height: 28px; display: flex; align-items: center; gap: 7px;
+  padding: 0 6px; background: none; border: 0; cursor: pointer;
+  border-radius: 8px; transition: background 0.15s;
 }
-.side-mark img { width: 17px; height: 17px; opacity: 0.95; }
+.side-mark:hover { background: rgba(255,255,255,0.05); }
+.side-mark img { width: 15px; height: 15px; opacity: 0.95; flex: none; }
+.side-mark span {
+  font-size: 12.5px; font-weight: 600; letter-spacing: 0.08em;
+  color: var(--text);
+}
 
 /* The workspace row: a coloured badge, the name, and a chevron that says
    there is more than one of these later. */

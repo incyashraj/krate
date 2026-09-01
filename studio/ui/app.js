@@ -2221,6 +2221,18 @@ function aiLogo(name) {
     + '<circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>';
 }
 
+/// The provider registry, in the order a person sees them. Mirrors
+/// PROVIDERS in crates/cli/src/agent_provider.rs. It exists so the picker
+/// can draw its rows before the probe answers; the probe's own list still
+/// wins once it lands.
+const AGENT_ORDER = [
+  { name: "claude", label: "Claude" },
+  { name: "codex", label: "Codex" },
+  { name: "gemini", label: "Gemini" },
+  { name: "copilot", label: "Copilot" },
+  { name: "grok", label: "Grok" },
+];
+
 async function refreshAgents() {
   try {
     state.agents = await invoke("agents");
@@ -4913,16 +4925,21 @@ function showCloudSkeleton() {
  * one of three that all sounded like homework. */
 /* Every example has a someone else -- these train the muscle the product
  * sells. Apps-for-me (habit trackers, countdowns, voice memos) train the
- * wrong one and fill the library with things nobody sends. */
+ * wrong one and fill the library with things nobody sends.
+ *
+ * They are also all things a DEVELOPER would build and hand to a teammate,
+ * a client or a user. A tip splitter is a fine app and the wrong pitch: a
+ * developer reading it concludes this is a toy for non-programmers and
+ * closes the window. */
 const EXAMPLES = [
-  { label: "A rate card my client can keep", sugg: "a rate card for my studio -- day rate 800, extra hour 120, rush adds 25 percent; the client types days and extra hours and sees the total. It cannot use the network" },
-  { label: "A tip-out for tonight's staff", sugg: "a tip-out for tonight -- staff type the night total; bar gets 40 percent, floor 35, kitchen 25. It cannot use the network" },
-  { label: "A tip splitter for dinners with friends", sugg: "a tip splitter for dinners with friends" },
-  { label: "A lab my students just open", sugg: "a week 3 heat-loss lab for my class -- three checks and a score at the bottom; students open the file, no account. It cannot use the network" },
-  { label: "A trip splitter for the group chat", sugg: "a trip splitter -- add people by name, add expenses with who paid, and it shows who owes whom to settle up. It cannot use the network" },
-  { label: "A care schedule for my parent", sugg: "a care schedule for my parent's medicines -- big readable text, tick each dose as given today, ticks reset each morning. It cannot use the network" },
-  { label: "A grocery list my partner can edit too", sugg: "a shared grocery list my partner can edit too" },
-  { label: "A quote calculator customers fill in", sugg: "a quote calculator my customers fill in themselves. It cannot use the network" },
+  { label: "A JSON payload inspector for my team", sugg: "a JSON inspector -- paste a payload, get a collapsible tree, search keys and values, and copy any subtree as JSON. It cannot use the network" },
+  { label: "A regex tester my team can keep", sugg: "a regex tester -- a pattern box, a test string, live highlighted matches, and a list of capture groups per match. It cannot use the network" },
+  { label: "A log viewer for a support engineer", sugg: "a log viewer -- open a log file, filter by level and by text, and click a line to see the full entry. It cannot use the network" },
+  { label: "A JWT decoder that stays on the machine", sugg: "a JWT decoder -- paste a token, see header and payload decoded, and show whether it has expired. It cannot use the network" },
+  { label: "An API playground for a client", sugg: "an API playground -- set a URL, method, headers and body, send the request, and show the status, timing and pretty-printed response" },
+  { label: "A diff viewer for a code review", sugg: "a diff viewer -- paste two blocks of text and show a side by side line diff with additions and deletions marked. It cannot use the network" },
+  { label: "A cron expression explainer", sugg: "a cron expression explainer -- type a cron line, get it in plain English plus the next five run times. It cannot use the network" },
+  { label: "A UUID and hash generator for a QA team", sugg: "a small toolbox -- generate UUIDs, and hash any text with sha256 and md5, each with a copy button. It cannot use the network" },
 ];
 
 function pickExamples(n) {
@@ -5018,8 +5035,24 @@ async function obLoadAgents() {
   const box = $("obAgents");
   const next = $("obAgentNext");
   if (!box) return;
+  // The probe runs each installed tool for real, and a slow one has taken
+  // thirteen seconds on a cold cache. Waiting on it left this screen empty
+  // with no sign anything was happening, which reads as a hang. So: draw
+  // the rows immediately in a checking state, never block Continue, and
+  // let the answers replace the placeholders as they land.
+  if (!box.dataset.filled) {
+    box.innerHTML = AGENT_ORDER.map(
+      (a) => `<button class="ob-agent off" data-agent="${a.name}" disabled>
+        <span class="ob-agent-mark">${aiLogo(a.name)}</span>
+        <span class="ob-agent-name">${a.label}</span>
+        <span class="ob-agent-state">checking…</span>
+      </button>`,
+    ).join("");
+  }
+  if (next) next.disabled = false;
   try {
     const agents = await invoke("agents");
+    box.dataset.filled = "1";
     const usable = (agents || []).filter((a) => a.state === "working");
     if (!agents || !agents.length) throw new Error("none");
     box.innerHTML = agents
@@ -5092,8 +5125,21 @@ async function obLoadAgents() {
       if (next) next.disabled = false;
     }
   } catch (e) {
-    box.innerHTML = `<p class="ob-none">Krate could not check for AI tools.
-      You can pick one later in Settings.</p>`;
+    // Keep the rows: they are still the real choices, and each one is
+    // clickable to install or sign in. Only the readiness answer is
+    // missing, so say that instead of blanking the screen.
+    box.querySelectorAll(".ob-agent-state").forEach((s) => {
+      s.textContent = "tap to set up";
+    });
+    box.querySelectorAll("button[data-agent]").forEach((button) => {
+      button.disabled = false;
+      button.classList.remove("off");
+      button.addEventListener("click", () => {
+        box.querySelectorAll("button").forEach((b) => b.classList.remove("picked"));
+        button.classList.add("picked");
+        state.agent = button.dataset.agent;
+      });
+    });
     if (next) next.disabled = false;
   }
 }
