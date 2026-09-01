@@ -73,6 +73,22 @@ newer version of Krate"). Both mistakes have cost real time.
 `git checkout apps/*/src/bindings.rs` before committing unless you actually
 changed the WIT.
 
+## Parallel agents share one checkout
+
+Agents running at the same time in the same directory can commit each
+other's half-finished work. A repo-wide `git add` sweeps in whatever
+another agent happens to have on disk at that second.
+
+It happened on 2026-09-01: a commit for two new apps also swept in a
+third that a different agent was still iterating on. It landed clean by
+luck -- that agent had finished seven minutes earlier. Seven minutes the
+other way and the commit would have held a half-drawn app.
+
+So: **stage the paths you actually touched.** `git add apps/krate-query
+apps/krate-trace`, never a bare `git add -A` or `git add .` while other
+agents are running. If the work is genuinely parallel and long, give each
+agent its own worktree.
+
 ## Commits
 
 Credited to Yashraj Pardeshi only. **Never** add AI co-author trailers or
