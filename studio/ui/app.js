@@ -5515,8 +5515,8 @@ $("aiRefresh")?.addEventListener("click", async () => {
     // searchlights and pulled the eye away from the box, which is the one
     // thing on the screen anyone came to use. Background is background.
     const blades = [
-      { at: -0.62, half: 0.15, r: 190, g: 182, b: 245, power: 0.42 },
-      { at: -2.35, half: 0.13, r: 112, g: 98, b: 226, power: 0.34 },
+      { at: -0.62, half: 0.17, r: 198, g: 190, b: 250, power: 0.62 },
+      { at: -2.35, half: 0.15, r: 116, g: 102, b: 236, power: 0.50 },
     ];
 
     for (let py = 0; py < buf.height; py += 1) {
@@ -5549,10 +5549,10 @@ $("aiRefresh")?.addEventListener("click", async () => {
         }
 
         // Compose: indigo body, blade colour laid over it.
-        let r = 34 * body + br * blade * 0.6;
-        let g = 25 * body + bg * blade * 0.6;
-        let b = 112 * body + bb * blade * 0.6;
-        let a = (body * 0.42 + blade * 0.44);
+        let r = 40 * body + br * blade * 0.72;
+        let g = 30 * body + bg * blade * 0.72;
+        let b = 130 * body + bb * blade * 0.72;
+        let a = (body * 0.51 + blade * 0.57);
 
         if (a <= 0.004) { d[i + 3] = 0; continue; }
 
@@ -5665,5 +5665,195 @@ $("aiRefresh")?.addEventListener("click", async () => {
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) stop();
     else if (!calm.matches) start();
+  });
+})();
+
+/* ---- sessions in the drawer, and the drawer's own width ----------------
+ *
+ * The work someone is in the middle of is the most likely reason they
+ * opened this drawer, so recent sessions live in it rather than two clicks
+ * away behind Your apps.
+ *
+ * Renaming writes through session_save, which takes the whole session and
+ * keeps unknown fields losslessly (see the Session struct's `rest`), so a
+ * title change cannot quietly drop the build state the way a field-by-field
+ * update would.
+ */
+(function drawerSessions() {
+  const list = $("sideSessions");
+  const label = $("sideSessLabel");
+  if (!list) return;
+
+  const MAX_ROWS = 14;
+
+  function clean(title) {
+    return (title || "").replace(/\s+/g, " ").trim();
+  }
+
+  async function paint() {
+    let sessions = [];
+    try { sessions = (await invoke("sessions_list")) || []; } catch (e) { }
+    sessions = [...sessions].sort((a, b) => (b.updated || 0) - (a.updated || 0));
+    if (!sessions.length) {
+      list.innerHTML = `<p class="side-empty">Nothing yet.</p>`;
+      if (label) label.classList.remove("hidden");
+      return;
+    }
+    if (label) label.classList.remove("hidden");
+    list.innerHTML = "";
+    for (const session of sessions.slice(0, MAX_ROWS)) {
+      const row = document.createElement("div");
+      row.className = "sess-row";
+      row.dataset.id = session.id;
+      if (state.session && state.session.id === session.id) row.classList.add("on");
+
+      const name = document.createElement("span");
+      name.className = "sess-name";
+      name.textContent = clean(session.title) || "Untitled";
+      name.title = name.textContent;
+
+      const rename = document.createElement("button");
+      rename.className = "sess-kebab";
+      rename.title = "Rename";
+      rename.setAttribute("aria-label", `Rename ${name.textContent}`);
+      rename.innerHTML =
+        '<svg width="13" height="13" viewBox="0 0 16 16" fill="none">' +
+        '<path d="M11.2 2.9l1.9 1.9-7.2 7.2-2.4.5.5-2.4 7.2-7.2z" ' +
+        'stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>';
+
+      row.append(name, rename);
+      list.appendChild(row);
+
+      // Open the session. Guarded so a click while renaming does not
+      // navigate out from under the edit.
+      row.addEventListener("click", (event) => {
+        if (name.isContentEditable) return;
+        if (event.target === rename || rename.contains(event.target)) return;
+        openSession(session);
+      });
+
+      const startEdit = () => beginRename(session, name, row);
+      rename.addEventListener("click", (e) => { e.stopPropagation(); startEdit(); });
+      name.addEventListener("dblclick", (e) => { e.stopPropagation(); startEdit(); });
+    }
+  }
+
+  function beginRename(session, name, row) {
+    const before = name.textContent;
+    name.contentEditable = "plaintext-only";
+    // Some engines do not support plaintext-only and silently allow rich
+    // paste; fall back rather than leave the field uneditable.
+    if (name.contentEditable !== "plaintext-only") name.contentEditable = "true";
+    name.focus();
+    const range = document.createRange();
+    range.selectNodeContents(name);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+
+    let done = false;
+    const finish = async (keep) => {
+      if (done) return;
+      done = true;
+      name.contentEditable = "false";
+      const next = clean(name.textContent);
+      if (!keep || !next || next === before) {
+        name.textContent = before;
+        name.title = before;
+        return;
+      }
+      name.textContent = next;
+      name.title = next;
+      try {
+        // Save the whole session back, not a patch: the shell keeps every
+        // field it does not know about, and a partial write would lose them.
+        await invoke("session_save", { session: { ...session, title: next } });
+        if (state.session && state.session.id === session.id) {
+          state.session.title = next;
+          const heading = $("railTitle");
+          if (heading) heading.textContent = next;
+        }
+      } catch (err) {
+        name.textContent = before;
+        name.title = before;
+      }
+    };
+
+    name.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); finish(true); }
+      else if (e.key === "Escape") { e.preventDefault(); finish(false); }
+      e.stopPropagation();
+    });
+    name.addEventListener("blur", () => finish(true), { once: true });
+  }
+
+  // Repaint when the drawer opens, so it never shows a stale list, and
+  // after a build finishes.
+  const side = $("side");
+  if (side) {
+    new MutationObserver((muts) => {
+      for (const m of muts) {
+        if (m.attributeName === "data-open" && side.dataset.open === "true") paint();
+      }
+    }).observe(side, { attributes: true });
+  }
+  paint();
+  window.__paintDrawerSessions = paint;
+})();
+
+/* The drawer's width, dragged and remembered.
+ *
+ * Bounded on both sides: narrow enough and the rows become unreadable
+ * ellipses, wide enough and the drawer eats the room it is meant to sit
+ * beside. Pointer capture means a fast drag that leaves the handle keeps
+ * resizing instead of stopping halfway. */
+(function drawerResize() {
+  const grip = $("sideGrip");
+  const side = $("side");
+  if (!grip || !side) return;
+
+  const MIN = 190, MAX = 420, KEY = "krateSideWidth";
+
+  function apply(px) {
+    const w = Math.max(MIN, Math.min(MAX, Math.round(px)));
+    document.documentElement.style.setProperty("--side-w", `${w}px`);
+    return w;
+  }
+
+  try {
+    const saved = parseInt(localStorage.getItem(KEY) || "", 10);
+    if (saved) apply(saved);
+  } catch (e) { }
+
+  let dragging = false;
+  grip.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    grip.setPointerCapture(e.pointerId);
+    document.body.classList.add("side-resizing");
+    e.preventDefault();
+  });
+  grip.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    apply(e.clientX);
+  });
+  const end = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    try { grip.releasePointerCapture(e.pointerId); } catch (x) { }
+    document.body.classList.remove("side-resizing");
+    const w = parseInt(getComputedStyle(side).width, 10);
+    try { localStorage.setItem(KEY, String(w)); } catch (x) { }
+  };
+  grip.addEventListener("pointerup", end);
+  grip.addEventListener("pointercancel", end);
+
+  // Keyboard: the handle is a real separator, so arrows move it.
+  grip.addEventListener("keydown", (e) => {
+    const step = e.shiftKey ? 24 : 8;
+    const now = parseInt(getComputedStyle(side).width, 10);
+    if (e.key === "ArrowLeft") { e.preventDefault(); apply(now - step); }
+    else if (e.key === "ArrowRight") { e.preventDefault(); apply(now + step); }
+    else return;
+    try { localStorage.setItem(KEY, String(parseInt(getComputedStyle(side).width, 10))); } catch (x) { }
   });
 })();

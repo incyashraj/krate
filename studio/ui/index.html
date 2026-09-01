@@ -24,7 +24,7 @@
 
     <div class="side-top">
       <button class="side-mark" id="sideHome" title="Krate">
-        <img src="krate-glyph-white.png" alt="" />
+        <img src="krate-logo.png" alt="" />
         <span>KRATE</span>
       </button>
     </div>
@@ -48,6 +48,12 @@
         <span>Gallery</span>
       </button>
     </nav>
+
+    <!-- Recent sessions. The work someone is in the middle of is the most
+         likely reason they opened this drawer, so it lives here rather than
+         two clicks away. Double-click a name to rename it. -->
+    <p class="side-label" id="sideSessLabel">Recent</p>
+    <div class="side-sessions" id="sideSessions"></div>
 
     <div class="side-foot">
       <button class="side-card" id="sideShare">
@@ -102,12 +108,12 @@
 
   <div class="view" id="viewGate">
     <header class="titlebar">
-      <div class="brand"><img src="krate-glyph-white.png" alt="" /><span>KRATE</span></div>
+      <div class="brand"><img src="krate-logo.png" alt="" /><span>KRATE</span></div>
       <div class="spacer"></div>
     </header>
     <div class="gate-body">
       <div class="gate-card">
-        <img class="gate-mark reveal" src="krate-glyph-white.png" alt="" />
+        <img class="gate-mark reveal" src="krate-logo.png" alt="" />
         <h1 class="reveal">Build a desktop app, ship one file</h1>
         <p class="gate-sub reveal">Describe it or bring your own code. You get a
         single file that runs on Mac, Windows and Linux, with no installer,
@@ -188,7 +194,7 @@
       <button class="icon-btn side-toggle" id="sideToggle" title="Show your workspace" aria-expanded="false">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="10" rx="2" stroke="currentColor" stroke-width="1.35"/><path d="M6.2 3v10" stroke="currentColor" stroke-width="1.35"/></svg>
       </button>
-      <div class="brand"><img src="krate-glyph-white.png" alt="" /><span>KRATE</span></div>
+      <div class="brand"><img src="krate-logo.png" alt="" /><span>KRATE</span></div>
       <div class="spacer"></div>
       <button class="link-btn update-chip hidden" id="updateChip" title="A newer Krate is ready">Update ready</button>
       <button class="plan-chip" id="freeCount" title="Your plan"></button>
@@ -206,7 +212,7 @@
              greeting says who this is for, the question is the thing to
              answer. Stacking them at the same size made both shout. -->
         <p class="home-hail reveal" id="homeHail">
-          <img src="krate-glyph-white.png" alt="" />
+          <img src="krate-logo.png" alt="" />
           <span id="homeGreet">Hi</span>
         </p>
         <h1 class="display home-title reveal" id="homeTitle">
@@ -296,7 +302,11 @@
           </div>
           <p class="composer-hint" id="composerHint">↩ to make it · shift-↩ for a new line</p>
         </footer>
-      </aside>
+        <!-- Drag the edge to reshape the drawer. The handle is part of the
+           drawer, not a separate bar, so there is nothing to hit and miss. -->
+      <div class="side-grip" id="sideGrip" role="separator" aria-orientation="vertical"
+           aria-label="Resize the sidebar" tabindex="0"></div>
+    </aside>
 
       <div class="divider" id="divider" title="Drag to resize"></div>
 
@@ -304,7 +314,7 @@
   
         <div class="stage-state" id="stateIdle">
           <div class="stage-empty">
-            <img src="krate-glyph-white.png" alt="" />
+            <img src="krate-logo.png" alt="" />
             <p id="idleNote">Your app will appear here.</p>
           </div>
         </div>
@@ -438,7 +448,7 @@
 
   <div class="view hidden" id="viewApps">
     <header class="titlebar">
-      <div class="brand"><img src="krate-glyph-white.png" alt="" /><span>KRATE</span></div>
+      <div class="brand"><img src="krate-logo.png" alt="" /><span>KRATE</span></div>
       <div class="spacer"></div>
     </header>
     <div class="page-scroll" data-scroller>
@@ -460,7 +470,7 @@
 
   <div class="view hidden" id="viewSettings">
     <header class="titlebar">
-      <div class="brand"><img src="krate-glyph-white.png" alt="" /><span>KRATE</span></div>
+      <div class="brand"><img src="krate-logo.png" alt="" /><span>KRATE</span></div>
       <div class="spacer"></div>
     </header>
     <div class="page-scroll" data-scroller>
@@ -558,7 +568,7 @@
 
   <div class="view hidden" id="viewProfile">
     <header class="titlebar">
-      <div class="brand"><img src="krate-glyph-white.png" alt="" /><span>KRATE</span></div>
+      <div class="brand"><img src="krate-logo.png" alt="" /><span>KRATE</span></div>
       <div class="spacer"></div>
     </header>
     <div class="page-scroll" data-scroller>
