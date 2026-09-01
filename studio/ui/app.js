@@ -5014,7 +5014,20 @@ async function renderShelf() {
     });
   });
 
-  $("sideAccount")?.addEventListener("click", () => { setOpen(false); openAccount(); });
+  /* The avatar opens the profile PAGE, not the sign-out sheet. The page
+     has what someone actually wants -- how many apps, how much they weigh,
+     which account publishes them -- and the sheet was a dead end whose only
+     action was to sign out. */
+  $("sideAccount")?.addEventListener("click", () => {
+    setOpen(false);
+    showView("profile");
+    loadProfilePage();
+  });
+  $("sideSettings")?.addEventListener("click", () => {
+    setOpen(false);
+    showView("settings");
+    loadSettingsPage();
+  });
   /* The bell looked live and did nothing. It opens the place that actually
      answers "what is new": the Updates block in Settings, which carries the
      version and the release notes. */
@@ -5264,9 +5277,19 @@ async function loadProfilePage() {
     $("connGhSub").textContent = account?.login
       ? `${account.login} · used for publishing`
       : "Used when you publish a link";
+    // Connected, and a way back out. Sign-out used to live only in the
+    // account sheet, which nothing opens now that the avatar goes to this
+    // page -- so it moves here, beside the account it signs out of.
     $("connGhAct").innerHTML = account?.login
       ? '<span class="linked"><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5.2l2 2L8 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Connected</span>'
+        + '<button class="set-mini" id="profSignOut">Sign out</button>'
       : '<button class="set-mini" data-connect="github">Connect</button>';
+    $("profSignOut")?.addEventListener("click", async () => {
+      try { await invoke("account_logout"); } catch (e) {}
+      state.account = null;
+      loadProfilePage();
+      paintGreeting();
+    });
   } catch (e) { /* signed out; the page still renders */ }
 
   // The numbers are the person's own work, read from what the app already
