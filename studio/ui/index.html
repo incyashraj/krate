@@ -352,9 +352,28 @@
               <img id="buildShot" class="hidden" alt="Your app so far" />
               <span class="forming-sweep" aria-hidden="true"></span>
               <span class="build-shot-tag" id="buildShotTag">taking shape…</span>
+              <!-- Every raw line the engine writes, in order, live. Hidden
+                   until Details is pressed; it fills the same rectangle the
+                   forming frame uses so the card never changes size. -->
+              <div class="build-term hidden" id="buildTerm">
+                <div class="term-bar">
+                  <span class="term-what" id="termWhat">krate create</span>
+                  <span class="term-stage" id="termStage"></span>
+                  <button class="term-copy" id="termCopy" title="Copy the whole log">Copy</button>
+                </div>
+                <pre class="term-log" id="buildLog" tabindex="0"></pre>
+              </div>
             </div>
             <div class="build-head">
               <p class="build-title" id="buildTitle">Making your app</p>
+              <!-- The card shows the app forming, which is the right default
+                   for most people. A developer wants the actual output, so
+                   this swaps the frame for the raw engine stream in place. -->
+              <button class="build-detail-toggle" id="detailToggle"
+                      aria-pressed="false" title="Show the raw engine output">
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 5.5L6.5 8 4 10.5M8.5 10.5H12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span id="detailToggleLabel">Details</span>
+              </button>
             </div>
             <div class="bpeek" id="peekBox"><span id="nowLine">warming up…</span><span class="caret"></span></div>
             <p class="build-elapsed"><span id="elapsed">0:00</span> · <span id="buildExpect">a few minutes</span></p>

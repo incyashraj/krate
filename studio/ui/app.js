@@ -1084,6 +1084,11 @@ function beginBuild(title, expect) {
   // here happens BEFORE the build is invoked and loses it silently.
   const nowLine = $("nowLine");
   if (nowLine) nowLine.textContent = "warming up…";
+  // Someone who asked for the log last time gets it from the first line of
+  // this build, rather than having to press Details again every time.
+  applyDetail(detailOn());
+  const termStage = $("termStage");
+  if (termStage) termStage.textContent = "starting…";
   show("building");
 }
 
@@ -1114,6 +1119,10 @@ function advanceStage(key) {
   // pretending to know how long an AI will think.
   const track = $("buildTrack");
   if (track) track.style.transform = `scaleX(${(idx + 0.5) / STAGES.length})`;
+  // The terminal's own header says which step the raw lines belong to, so
+  // a log that has scrolled past the last human sentence still has context.
+  const termStage = $("termStage");
+  if (termStage) termStage.textContent = `${idx + 1}/${STAGES.length} ${STAGES[idx].label.toLowerCase()}`;
   setProgress((idx + 0.5) / STAGES.length);
 }
 
@@ -1163,6 +1172,52 @@ function onBuildShot(dataUrl) {
 /* Map the engine's own lines onto the stage story. These are our lines,
  * printed by our CLI -- if one changes, the worst case is a stage advancing
  * late, never a wrong claim. */
+/* ---- details: the engine's own output ---------------------------------
+ *
+ * The build card shows the app forming, which is what most people want to
+ * watch. A developer wants to know what is actually running -- which crate
+ * is compiling, what the agent read, why a step took four minutes. Every
+ * raw line already arrives here and is already recorded on the session
+ * (bounded to BUILD_LOG_LINES); this only decides whether the card shows
+ * the frame or the stream. The choice sticks, because someone who wants
+ * the log wants it on every build, not once.
+ */
+const DETAIL_KEY = "krateShowDetail";
+function detailOn() {
+  try { return localStorage.getItem(DETAIL_KEY) === "1"; } catch (e) { return false; }
+}
+function applyDetail(on) {
+  const term = $("buildTerm");
+  const shot = $("buildShotBox");
+  const toggle = $("detailToggle");
+  const label = $("detailToggleLabel");
+  if (term) term.classList.toggle("hidden", !on);
+  if (shot) shot.classList.toggle("showing-term", on);
+  if (toggle) toggle.setAttribute("aria-pressed", on ? "true" : "false");
+  if (label) label.textContent = on ? "Preview" : "Details";
+  if (on) {
+    const log = $("buildLog");
+    if (log) log.scrollTop = log.scrollHeight;
+  }
+}
+function setDetail(on) {
+  try { localStorage.setItem(DETAIL_KEY, on ? "1" : "0"); } catch (e) {}
+  applyDetail(on);
+}
+$("detailToggle")?.addEventListener("click", () => setDetail(!detailOn()));
+$("termCopy")?.addEventListener("click", async () => {
+  const log = $("buildLog");
+  if (!log) return;
+  const button = $("termCopy");
+  try {
+    await navigator.clipboard.writeText(log.textContent || "");
+    if (button) button.textContent = "Copied";
+  } catch (e) {
+    if (button) button.textContent = "Press cmd-C";
+  }
+  setTimeout(() => { if (button) button.textContent = "Copy"; }, 1400);
+});
+
 function onEngineLine(line) {
   // Any word from the engine is proof the plumbing works; the watchdog
   // only fires when we have heard nothing at all.

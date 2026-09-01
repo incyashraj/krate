@@ -856,6 +856,55 @@ body.light .share-row { background: rgba(0, 0, 0, 0.04); }
 /* ---- building card, laid out for the live pill ------------------------ */
 
 .build-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+
+/* Details: the same card, showing the engine's real output instead of the
+   forming frame. The default screen is written for someone who does not
+   want to know; this is for the person who does, and both are one click
+   apart rather than two different screens. */
+.build-detail-toggle {
+  display: inline-flex; align-items: center; gap: 6px; flex: none;
+  padding: 5px 10px; border-radius: 999px;
+  background: none; border: 1px solid var(--line);
+  color: var(--faint); font-family: var(--sans); font-size: 11.5px;
+  cursor: pointer; transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.build-detail-toggle:hover { color: var(--text); border-color: rgba(255,255,255,0.22); }
+.build-detail-toggle[aria-pressed="true"] {
+  color: var(--text); border-color: rgba(255,255,255,0.28);
+  background: rgba(255,255,255,0.06);
+}
+
+/* Fills the forming frame's rectangle exactly, so switching views never
+   changes the card's height. */
+.build-term {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  background: #0b0b0d; z-index: 2;
+}
+.term-bar {
+  display: flex; align-items: center; gap: 8px; flex: none;
+  padding: 7px 10px; border-bottom: 1px solid var(--line);
+  font-family: var(--mono); font-size: 10.5px; color: var(--faint);
+}
+.term-what { color: var(--text); }
+.term-stage { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.term-copy {
+  flex: none; background: none; border: 0; cursor: pointer;
+  color: var(--faint); font-family: var(--sans); font-size: 11px;
+  padding: 2px 6px; border-radius: 6px;
+}
+.term-copy:hover { color: var(--text); background: rgba(255,255,255,0.07); }
+.term-log {
+  flex: 1; margin: 0; padding: 9px 11px 11px; overflow-y: auto;
+  font: 11px/1.65 var(--mono); color: #b9bfc9;
+  white-space: pre-wrap; word-break: break-word;
+}
+.term-log::-webkit-scrollbar { width: 8px; }
+.term-log::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.12); border-radius: 4px;
+}
+/* The terminal is the tall view: a log at 190px is a keyhole. */
+.build-shot.showing-term { min-height: 320px; }
+.build-shot.showing-term img { display: none; }
 .build-progress { margin: 4px 0 26px; }
 /* The build blooms blue; the finished app blooms warmer, because arriving
    and working are different feelings. */
