@@ -3486,10 +3486,19 @@ body.session-view .horizon { opacity: 0.35; }
  */
 .side-brandrow {
   flex: none; display: flex; align-items: center;
-  height: 44px; padding: 0 2px; margin-bottom: 6px;
+  /* Tight under the lights row. At 44px with the row above it at 60 the
+     mark sat in a pocket of empty drawer, which is dead space at the one
+     place a person looks first. */
+  height: 34px; padding: 0 2px; margin-bottom: 2px;
+  /* Pulled up under the lights row rather than shortening that row: it is
+     60px because that is what puts the toggle on the traffic lights'
+     centre line, and changing it moves the toggle off them again. */
+  margin-top: -14px;
 }
 .side-top { justify-content: flex-end; }
-.side-top .side-toggle { margin-right: 2px; }
+/* The row is flex-end, so a SMALLER right margin moves the toggle
+   further right, toward the drawer's edge. */
+.side-top .side-toggle { margin-right: 0; }
 /* One toggle on screen at a time. While the drawer is open it carries its
    own, so the room's would be a second identical button two inches away
    doing the same thing. */
