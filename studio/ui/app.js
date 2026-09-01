@@ -3724,29 +3724,6 @@ function submitInSession() {
 $("loginBtn").addEventListener("click", login);
 $("homeSend").addEventListener("click", startFromHome);
 
-/* Plan: talk it through before anything builds.
- *
- * The conversation gate already runs on a first message, so this button's
- * job is to force it -- including for a change to an app that already
- * works, which normally goes straight to the build. It was in the markup
- * with no handler at all, which is worse than not being there: a control
- * that does nothing teaches people the others might not either. */
-function planFromHome() {
-  const text = $("homePrompt").value.trim();
-  if (!text) {
-    $("homePrompt").focus();
-    return;
-  }
-  newSession(text);
-  $("railTitle").textContent = state.session.title;
-  $("thread").innerHTML = "";
-  show("idle");
-  showView("session");
-  $("homePrompt").value = "";
-  say("YOU", text);
-  startPlanning(text, []);
-}
-$("homePlanBtn")?.addEventListener("click", planFromHome);
 
 /* Speak it. Browser speech recognition, which the webview provides, so
  * nothing is installed and no audio leaves the machine except through the
@@ -4955,6 +4932,20 @@ async function renderShelf() {
   });
 
   $("sideAccount")?.addEventListener("click", () => { setOpen(false); openAccount(); });
+  /* The bell looked live and did nothing. It opens the place that actually
+     answers "what is new": the Updates block in Settings, which carries the
+     version and the release notes. */
+  $("sideBell")?.addEventListener("click", () => {
+    setOpen(false);
+    showView("settings");
+    loadSettingsPage();
+    // Land on the notes rather than the top of a long page.
+    setTimeout(() => {
+      $("upd")?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, 120);
+    // Clear the unread mark once it has been looked at.
+    $("sideBellDot")?.classList.add("hidden");
+  });
   $("sideUpgrade")?.addEventListener("click", () => { setOpen(false); openPlanSheet(); });
   $("sideDocs")?.addEventListener("click", () => {
     setOpen(false);
