@@ -216,7 +216,7 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
    bar keeps its height -- the room below depends on it -- and only its
    controls move onto the lights' line. */
 body.macos .titlebar { padding-left: 84px; }
-body.macos .titlebar > * { position: relative; top: -8px; }
+body.macos .titlebar > * { position: relative; top: -6px; }
 body.macos.side-open .titlebar { padding-left: 12px; }
 /* The drawer's top strip clears the traffic lights the same way. */
 /* macOS only: the traffic lights are drawn over the drawer's first row.
