@@ -96,6 +96,13 @@
         </button>
       </div>
     </div>
+
+    <!-- Drag this edge to reshape the drawer. It belongs to the workspace
+         drawer, and lived in the SESSION rail by mistake: when the drawer
+         was hoisted to the top level the grip stayed behind, so it was
+         rendering inside a hidden container and could never be grabbed. -->
+    <div class="side-grip" id="sideGrip" role="separator" aria-orientation="vertical"
+         aria-label="Resize the sidebar" tabindex="0"></div>
   </aside>
   <div class="side-scrim" id="sideScrim" hidden></div>
 
@@ -310,10 +317,6 @@
           </div>
           <p class="composer-hint" id="composerHint">↩ to make it · shift-↩ for a new line</p>
         </footer>
-        <!-- Drag the edge to reshape the drawer. The handle is part of the
-           drawer, not a separate bar, so there is nothing to hit and miss. -->
-      <div class="side-grip" id="sideGrip" role="separator" aria-orientation="vertical"
-           aria-label="Resize the sidebar" tabindex="0"></div>
     </aside>
 
       <div class="divider" id="divider" title="Drag to resize"></div>

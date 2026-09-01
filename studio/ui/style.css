@@ -213,7 +213,11 @@ body.macos.side-open .titlebar { padding-left: 12px; }
    underneath, where nothing is drawn over it. Trying to fit the mark
    beside the lights on one row is what kept it looking half a line off:
    a 22px logo and three 12px dots do not share a baseline. */
-body.macos .side-top { padding-left: 78px; }
+/* 60px tall and centring, so anything in this row lands on y=30 -- the
+   traffic lights' own centre (they sit at y:24 and are 12px tall). That
+   is what puts the panel glyph level with the green dot instead of under
+   it. Left padding clears the lights themselves. */
+body.macos .side-top { height: 60px; padding-left: 78px; align-items: center; }
 body.macos .side-mark {
   padding-left: 10px;
 }
@@ -3353,12 +3357,17 @@ body.side-open .shelf { left: 240px; }
      which is why dragging never did anything. `flex: none` plus explicit
      offsets is what makes an absolutely positioned child of a flex
      container actually take its own size. */
-  position: absolute; top: 0; bottom: 0; right: -4px;
-  width: 9px; flex: none;
+  /* Entirely INSIDE the drawer. It used to hang 4px past the right edge,
+     and out there the scrim (which covers the whole window under the
+     drawer) took the pointer instead: the grip's z-index only orders it
+     within .side, so outside that box it cannot win. A 10px strip on the
+     inside of the edge is grabbable and beats nothing. */
+  position: absolute; top: 0; bottom: 0; right: 0;
+  width: 10px; flex: none;
   cursor: col-resize; z-index: 70;
 }
 .side-grip::after {
-  content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 1px;
+  content: ""; position: absolute; top: 0; bottom: 0; right: 0; width: 1px;
   background: transparent; transition: background 0.15s;
 }
 .side-grip:hover::after,
@@ -3427,10 +3436,14 @@ body.session-view .horizon { opacity: 0.35; }
  */
 .side-brandrow {
   flex: none; display: flex; align-items: center;
-  height: 38px; padding: 0 2px; margin-bottom: 8px;
+  height: 44px; padding: 0 2px; margin-bottom: 6px;
 }
 .side-top { justify-content: flex-end; }
 .side-top .side-toggle { margin-right: 2px; }
+/* One toggle on screen at a time. While the drawer is open it carries its
+   own, so the room's would be a second identical button two inches away
+   doing the same thing. */
+body.side-open .view .side-toggle { display: none; }
 /* Off macOS there are no lights to dodge, so the two rows collapse back
    into one: the toggle sits beside the mark. */
 body:not(.macos) .side-top { display: none; }
