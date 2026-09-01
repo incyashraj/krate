@@ -147,12 +147,12 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
   position: relative;
   height: var(--titlebar); flex: none;
   display: flex; align-items: center;
-  /* The nav starts below the header's line, not against it. At 2px the
-     first tile's rounded corner and its hover fill touched the seam, so
-     hovering Home read as the tile bleeding into the title bar. */ gap: 12px;
+  gap: 12px;
   /* The corner belongs to us on every platform. */
   padding: 0 16px 0 12px;
-  border-bottom: 1px solid var(--line);
+  /* No rule under the bar. The window is one surface: a line here draws a
+     header that is not really there, and every app worth copying (Codex,
+     ChatGPT) lets the content start without announcing itself. */
   -webkit-app-region: drag;
 }
 /* A drag layer covering the whole strip, behind the controls. Relying on
@@ -207,6 +207,9 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
 body.macos .titlebar { padding-left: 84px; }
 body.macos.side-open .titlebar { padding-left: 12px; }
 /* The drawer's top strip clears the traffic lights the same way. */
+/* The drawer's own strip clears the lights horizontally. Vertically both
+   strips are --titlebar tall and centre their content, which lands on the
+   lights' centre line (they sit at y:24, 12px tall, in a 60px bar). */
 body.macos .side-top { padding-left: 78px; }
 body.windows .titlebar { padding-right: 150px; }
 
