@@ -15,7 +15,10 @@
 //! available, or Windows without a console all fall back to plain `read_line`.
 //! A person who cannot use arrows still gets a prompt that works.
 
-use std::io::{self, IsTerminal, Read, Write};
+// IsTerminal is only consulted where raw mode exists.
+#[cfg(unix)]
+use std::io::IsTerminal;
+use std::io::{self, Read, Write};
 
 /// One prompt's worth of editable input.
 pub struct Editor {
@@ -43,7 +46,10 @@ impl Editor {
         let line = match RawMode::enter() {
             Some(raw) => {
                 let result = self.read_raw(label);
-                drop(raw);
+                // The guard restores the terminal when it falls out of
+                // scope. On Windows RawMode carries no Drop impl, so an
+                // explicit drop() is a no-op clippy rightly rejects.
+                let _ = raw;
                 match result {
                     Ok(line) => line,
                     // A read error mid-edit leaves the terminal restored by

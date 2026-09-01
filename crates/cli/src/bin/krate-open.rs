@@ -98,8 +98,9 @@ fn message_box(title: &str, text: &str) {
 
     let text = wide(text);
     let title = wide(title);
-    // MB_OK | MB_ICONINFORMATION
-    const KIND: u32 = 0x0000_0000 | 0x0000_0040;
+    // MB_ICONINFORMATION. MB_OK is 0x0, so naming it in the OR added
+    // nothing but a lint; the comment carries the meaning instead.
+    const KIND: u32 = 0x0000_0040;
     // SAFETY: both strings are null-terminated UTF-16 that outlive the call.
     unsafe {
         MessageBoxW(0, text.as_ptr(), title.as_ptr(), KIND);

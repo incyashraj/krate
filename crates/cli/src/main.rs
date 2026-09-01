@@ -10773,6 +10773,8 @@ fn write_icns(png: &Path, out: &Path) -> Result<()> {
 /// The running executable, resolved through symlinks: an app installed by a
 /// given Krate keeps running against that same Krate rather than whatever
 /// later lands on PATH.
+/// Only the macOS relaunch path asks this; elsewhere it is dead.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn current_engine_path() -> Result<PathBuf> {
     let exe = std::env::current_exe().context("finding the Krate engine")?;
     Ok(fs::canonicalize(&exe).unwrap_or(exe))
@@ -11258,7 +11260,7 @@ fn prompt_for_session_grants(manifest: &Manifest, policy: &SessionPolicy) -> Res
             }
             body.push_str("\nAllow this? Krate enforces exactly this list.");
             let allow = rfd::MessageDialog::new()
-                .set_title(&format!("Open {}?", manifest.app.name))
+                .set_title(format!("Open {}?", manifest.app.name))
                 .set_description(&body)
                 .set_buttons(rfd::MessageButtons::OkCancelCustom(
                     "Allow and open".to_string(),
@@ -13312,6 +13314,7 @@ fn gnullvm_toolchain_name() -> &'static str {
 /// happened in the same stale process, so it could never come right -- the
 /// only way out was to quit and rerun, which is what people actually did.
 #[cfg(windows)]
+#[allow(dead_code)]
 fn gnullvm_toolchain_present() -> bool {
     let rustup = resolve_tool("rustup").unwrap_or_else(|| PathBuf::from("rustup"));
     let listed = ProcessCommand::new(rustup)
@@ -13342,6 +13345,7 @@ fn gnullvm_toolchain_present() -> bool {
 /// invokes exist? Cheap (a PATH lookup and two file checks) and honest --
 /// nothing else predicts this failure.
 #[cfg(windows)]
+#[allow(dead_code)]
 fn gnullvm_can_link() -> bool {
     let prefix = if cfg!(target_arch = "aarch64") {
         "aarch64-w64-mingw32-clang"

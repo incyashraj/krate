@@ -104,6 +104,10 @@ pub fn keychain_available() -> bool {
     cfg!(any(target_os = "macos", target_os = "windows"))
 }
 
+/// The keychain service name. Only the macOS keychain path calls this, and
+/// that path is cfg-gated, so the function has to carry the same gate or it
+/// is dead code everywhere else -- which `-D warnings` rightly refuses.
+#[cfg(target_os = "macos")]
 fn service_name(vendor: ApiVendor) -> String {
     format!("tech.krate.studio.{}", vendor.name())
 }
