@@ -41,11 +41,11 @@ def chrome():
 
     nav = """<header class="subnav">
   <div class="wrap subnav-inner">
-    <a class="brand" href="/"><img src="/krate-glyph-white.png" alt="" width="22" height="22" /> KRATE</a>
+    <a class="brand" href="/"><img src="/krate-logo.png" alt="" width="22" height="22" /> KRATE</a>
     <nav>
       <a href="/#install">Start</a>
       <a href="/docs/">Docs</a>
-      <a href="/cloud/">Cloud</a>
+      <a href="/cloud/">Apps</a>
       <a href="https://github.com/incyashraj/krate">GitHub</a>
     </nav>
     <a class="pill pill-primary" href="/#install">Install</a>
