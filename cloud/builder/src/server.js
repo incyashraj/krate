@@ -51,7 +51,7 @@ const STAGE_ORDER = ["read", "write", "test", "done"];
  * Asked of the hub, never of the browser. A counter the page owns is a
  * counter anyone can edit, and this one costs us money to be wrong about.
  */
-async function allowedToBuild(token) {
+async function allowedToBuild(token, device) {
   // A local escape hatch for developing the service itself, so testing the
   // build path does not need a real session. Opt-in through an env var
   // production never sets, and the ONLY way past the wall.
@@ -65,13 +65,19 @@ async function allowedToBuild(token) {
     const me = await res.json();
     if (me.plan && me.plan.active) return { ok: true, account: me.user.login || me.user.email };
 
+    // Both keys, so a new account on the same machine does not reset the
+    // allowance. The hub answers with the higher of the two.
     const count = await fetch(`${HUB}/plan/get`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ device: device || "" }),
     });
     const made = count.ok ? (await count.json()).n || 0 : 0;
-    if (made >= 3) {
+    // FREE, FOR NOW (Yashraj, 2026-09-01). The count is still taken and
+    // still recorded, so the day KRATE_CHARGING is set the numbers are
+    // already right and the wall works on real history rather than
+    // starting everyone at zero. Today it does not refuse anyone.
+    if (process.env.KRATE_CHARGING === "1" && made >= 3) {
       return {
         ok: false,
         message: "You have made your three free apps. Studio is unlimited, $12 a month.",
@@ -88,14 +94,14 @@ async function allowedToBuild(token) {
 
 /* ---- running one build --------------------------------------------------- */
 
-async function startBuild({ request, token, account }) {
+async function startBuild({ request, token, account, device }) {
   const id = randomUUID().slice(0, 12);
   const dir = await mkdtemp(join(tmpdir(), "krate-build-"));
   const output = join(dir, "app.krate");
   const shotPath = join(dir, "frame.png");
 
   const job = {
-    id, account, request, dir, output, shotPath,
+    id, account, device, request, dir, output, shotPath,
     state: "working",
     stage: "read",
     line: "reading what Krate can do",
@@ -175,7 +181,7 @@ async function startBuild({ request, token, account }) {
       job.state = "done";
       // Only a build that produced a file counts against the free three.
       // A failure the person did not cause must never cost them one.
-      countTheMake(token).catch(() => {});
+      countTheMake(token, job.device).catch(() => {});
     } catch (err) {
       job.state = "failed";
       job.error = "The app was made but could not be read back.";
@@ -208,11 +214,11 @@ async function takeShot(bundle, shotPath) {
   });
 }
 
-async function countTheMake(token) {
+async function countTheMake(token, device) {
   await fetch(`${HUB}/plan/count`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-    body: JSON.stringify({}),
+    body: JSON.stringify({ device: device || "" }),
   });
 }
 
@@ -277,17 +283,18 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/build") {
       const body = await readBody(req);
       const request = String(body.request || "").trim();
+      const device = String(body.device || "").trim();
       if (!request) return send(res, 400, "Say what to make.");
       if (request.length > 2000) return send(res, 400, "That is longer than we can work from.");
 
-      const allowed = await allowedToBuild(token);
+      const allowed = await allowedToBuild(token, device);
       if (!allowed.ok) return send(res, allowed.wall ? 402 : 401, allowed.message);
 
       if (activeByAccount.has(allowed.account)) {
         return send(res, 429, "One app is already being made. It will be a few minutes.");
       }
 
-      const job = await startBuild({ request, token, account: allowed.account });
+      const job = await startBuild({ request, token, account: allowed.account, device });
       return json(res, 200, { id: job.id });
     }
 

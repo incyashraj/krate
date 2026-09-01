@@ -1567,14 +1567,29 @@ function planIsActiveSafe() {
 /// One painter for every place the plan shows: the title-bar chip, the
 /// plan sheet's Free row, and the settings row. They must never disagree
 /// about how many are left.
+/* FREE, FOR NOW (Yashraj, 2026-09-01).
+ *
+ * Krate is aimed at developers, and a developer evaluating a runtime who
+ * meets "3 free apps, then $12" reads it as a toy with a meter on it.
+ * Nobody bets their distribution on something that might price them out
+ * at app four. So the counter does not show and does not stop anyone.
+ *
+ * The machinery underneath is deliberately LEFT INTACT -- the account
+ * key, the device key, the two-key wall in the worker, its tests. The day
+ * we charge, the honest limit has to already work, and rebuilding it
+ * later costs more than leaving it dormant. What changes is that nothing
+ * displays it and nothing enforces it. See K-216.
+ */
+const CHARGING = false;
+
 function renderFreeCount() {
   const n = makesThisMonth();
   const left = Math.max(0, 3 - n);
   const chip = $("freeCount");
-  if (chip) {
-    // Three EVER, per account -- not three a month. The decision is
-    // Yashraj's (2026-09-01, K-216) and the words must not promise a
-    // monthly reset the wall will not honour.
+  if (chip && !CHARGING) {
+    // No count, no cap, no upsell dressed as a status.
+    chip.classList.add("hidden");
+  } else if (chip) {
     chip.textContent =
       planIsActiveSafe() ? "Studio plan"
       : n === 0 ? "3 free apps"
@@ -1615,7 +1630,11 @@ function limitAcked() {
 async function make(request, opts) {
   // The gate: at three, the sheet says what the deal is, once a month.
   // It never fires for revisions (the session already has a result).
-  let overCap = makesThisMonth() >= 3
+  // CHARGING is false while Krate is free (see renderFreeCount): the
+  // count still runs and still records, so the day this flips the numbers
+  // are already right. It simply does not stop anyone today.
+  let overCap = CHARGING
+    && makesThisMonth() >= 3
     && !(state.session && state.session.result)
     && !(opts && opts.pastLimit)
     && !planIsActive();

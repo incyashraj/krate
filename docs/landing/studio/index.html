@@ -536,55 +536,39 @@ try { var _r = location.search.match(/[?&]ref=([A-Za-z0-9]{4,16})/);
 
     <div class="price-card">
       <div class="price-top">
-        <h3>Free</h3>
-        <span class="price-badge">today and always</span>
+        <h3>The player</h3>
+        <span class="price-badge">open source</span>
       </div>
       <p class="price-num">$0</p>
-      <p class="price-for">For opening what people send you, and making a
-      few things of your own.</p>
+      <p class="price-for">The runtime your apps ship on. MIT and Apache
+      licensed, and you can build it yourself.</p>
       <ul class="price-list">
-        <li>Open any .krate, forever</li>
-        <li>Make three apps a month</li>
-        <li>Send as a card, a link, or a wrap for a friend without Krate</li>
-        <li>Every file carries its own source</li>
-        <li>Your own AI writes the code; Krate never holds its keys</li>
+        <li>Runs any .krate on Mac, Windows and Linux</li>
+        <li>Every capability an app asks for is enforced, not promised</li>
+        <li>No account, no telemetry you did not opt into</li>
+        <li>Read the source, fork it, ship it</li>
       </ul>
-      <a class="pill price-cta" href="#get">Download Studio</a>
-    </div>
-
-    <div class="price-card">
-      <div class="price-top">
-        <h3>Studio</h3>
-        <span class="price-badge">monthly or yearly</span>
-      </div>
-      <p class="price-num">$12<span> / month, or $96 a year</span></p>
-      <p class="price-for">For people who make something every week.</p>
-      <ul class="price-list">
-        <li>Everything in Free</li>
-        <li>No monthly cap -- make as many apps as you want</li>
-        <li>That is the whole difference, priced like it. Nothing you
-        already have moves behind this price.</li>
-      </ul>
-      <p class="price-note">Cancel anytime. The apps you made stay yours.</p>
-      <a class="pill price-cta" href="/login/?next=pay-monthly">Start Studio -- $12/month</a>
-      <a class="price-alt" href="/login/?next=pay-yearly">or $96 a year</a>
+      <a class="pill price-cta" href="https://github.com/incyashraj/krate">Read the source</a>
     </div>
 
     <div class="price-card price-hot">
       <div class="price-top">
-        <h3>Founding 200</h3>
-        <span class="price-badge badge-hot">200 seats</span>
+        <h3>Everything else</h3>
+        <span class="price-badge badge-hot">free, for now</span>
       </div>
-      <p class="price-num">$79<span> / year, locked</span></p>
-      <p class="price-for">For the first 200 people who want in before it
-      is polished.</p>
+      <p class="price-num">$0</p>
+      <p class="price-for">Making, shipping, hosting, the lot. No cap and
+      no meter.</p>
       <ul class="price-list">
-        <li>Everything in Studio, at $79 a year for as long as you stay</li>
-        <li>The price never rises while you keep the seat</li>
-        <li>A direct line while we build -- founding members get listened to</li>
-        <li>200 seats, first come</li>
+        <li>Make as many apps as you want</li>
+        <li>Ship them as a file, a link, or a card</li>
+        <li>Your toolchain and your code -- or our AI, if you would rather</li>
+        <li>Every app you make is a file that is yours forever</li>
       </ul>
-      <a class="pill pill-primary price-cta" href="/login/?next=pay-founding">Get founding -- $79/year</a>
+      <p class="price-note">We will charge one day, and we will say so long
+      before we do. Nobody should bet their distribution on a runtime that
+      might price them out at app four.</p>
+      <a class="pill pill-primary price-cta" href="#get">Get Krate</a>
     </div>
 
   </div>
@@ -594,7 +578,10 @@ try { var _r = location.search.match(/[?&]ref=([A-Za-z0-9]{4,16})/);
   .price-head { max-width: 560px; margin-bottom: 30px; }
   .price-head h2 { font-size: 28px; letter-spacing: -0.02em; }
   .price-head p { color: var(--muted); margin-top: 8px; line-height: 1.55; }
-  .price-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; align-items: stretch; }
+  /* Two cards now, and a max-width so a wide screen does not stretch
+     them into billboards. */
+  .price-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px;
+    align-items: stretch; max-width: 760px; }
   @media (max-width: 860px) { .price-row { grid-template-columns: 1fr; } }
   .price-card {
     display: flex; flex-direction: column;
@@ -630,17 +617,18 @@ try { var _r = location.search.match(/[?&]ref=([A-Za-z0-9]{4,16})/);
 <section class="get wrap" id="founding">
   <div class="get-grid">
     <div class="reveal">
-      <h2>The founding 200</h2>
-      <p>Studio costs $12 a month. The first 200 people who join here lock
-      it at <b>$79 a year</b> for as long as they stay -- and get listened
-      to while we build.</p>
+      <h2>Build with us</h2>
+      <p>Krate is free while we build it, and it gets better fastest when
+      the people using it are the ones telling us what breaks. If you are
+      porting something real -- or want to -- we want to hear about it,
+      and you get a direct line while we work.</p>
       <p style="margin-top:14px;"><a class="pill pill-primary"
-      href="/login/?next=pay-founding">Get founding -- $79/year</a></p>
+      href="https://github.com/incyashraj/krate">Read the source</a></p>
     </div>
     <div class="reveal">
-      <p style="font-size:13px; color:var(--quiet); margin-bottom:8px">Not
-      ready to pay? Leave an email and we will hold you a seat for a
-      while.</p>
+      <p style="font-size:13px; color:var(--quiet); margin-bottom:8px">Leave
+      an email and we will tell you when the things you are waiting on
+      land.</p>
       <form class="found-form" id="foundForm">
         <input type="email" id="foundEmail" placeholder="you@example.com" required />
         <button class="pill" type="submit" id="foundGo">Hold a seat</button>
@@ -678,11 +666,13 @@ try { var _r = location.search.match(/[?&]ref=([A-Za-z0-9]{4,16})/);
       </details>
       <details class="faq-item">
         <summary><span>How much does it cost?</span></summary>
-        <div class="faq-answer"><p>The player -- the part that opens apps -- is
-        free and open source, forever. Studio lets you make three apps a month
-        free; unlimited making is $12 a month, or $96 a year. Making apps uses
-        your own AI subscription, the one you already pay for; Krate never
-        holds its keys.</p></div>
+        <div class="faq-answer"><p>Nothing, right now. The player -- the part
+        that opens apps -- is free and open source, forever. Everything else
+        is free while we build it, with no cap and no meter. We will charge
+        one day and we will say so long before we do; nobody should bet their
+        distribution on a runtime that might price them out at app four. If
+        you use your own AI to write the code, that stays your subscription
+        and Krate never holds its keys.</p></div>
       </details>
       <details class="faq-item">
         <summary><span>How stable is it?</span></summary>
