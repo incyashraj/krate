@@ -237,10 +237,7 @@ fn looks_like_bundle_file(path: &Path) -> bool {
     // Find a ZIP local file header, then confirm the entry it names. Both
     // parts matter: the magic alone would claim any zip, and "manifest.toml"
     // alone would claim a text file that merely mentions it.
-    let Some(start) = head
-        .windows(4)
-        .position(|w| w == [0x50, 0x4B, 0x03, 0x04])
-    else {
+    let Some(start) = head.windows(4).position(|w| w == [0x50, 0x4B, 0x03, 0x04]) else {
         return false;
     };
     // The file name follows the 30-byte fixed local header. Look for
@@ -274,9 +271,9 @@ pub fn implied_url(target: &str) -> Option<String> {
     if !name.contains('.') {
         return None;
     }
-    let host_reads_as_dns = name
-        .split('.')
-        .all(|label| !label.is_empty() && label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'));
+    let host_reads_as_dns = name.split('.').all(|label| {
+        !label.is_empty() && label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+    });
     if !host_reads_as_dns {
         return None;
     }

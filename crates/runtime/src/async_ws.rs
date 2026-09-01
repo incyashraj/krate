@@ -98,9 +98,11 @@ impl AsyncWs {
     // handed a handle that never opens.
     #[cfg(target_arch = "wasm32")]
     pub fn open(&mut self, _url: String) -> Result<u64, String> {
-        Err("live connections need the app on your computer, which a browser \
+        Err(
+            "live connections need the app on your computer, which a browser \
              preview cannot do yet -- download it to use this part"
-            .to_string())
+                .to_string(),
+        )
     }
 
     #[cfg(not(target_arch = "wasm32"))]

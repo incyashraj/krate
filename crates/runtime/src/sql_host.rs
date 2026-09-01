@@ -246,7 +246,11 @@ impl AppDatabase {
         Err(SqlError::Unsupported)
     }
 
-    pub fn query(&mut self, statement: &str, _params: &[SqlValue]) -> Result<QueryResult, SqlError> {
+    pub fn query(
+        &mut self,
+        statement: &str,
+        _params: &[SqlValue],
+    ) -> Result<QueryResult, SqlError> {
         check_statement(statement)?;
         self.refuse()
     }

@@ -123,7 +123,10 @@ impl Report {
             let state = match iface.state() {
                 "works" => "**works**".to_string(),
                 "not implemented" => "**not implemented**".to_string(),
-                "partly" => format!("partly — {} of {} refuse", iface.refusing, iface.functions),
+                // " -- ", not an em dash: the committed page uses it, and this
+                // generator is the thing that has to agree with the page
+                // rather than the other way round.
+                "partly" => format!("partly -- {} of {} refuse", iface.refusing, iface.functions),
                 other => other.to_string(),
             };
             out.push_str(&format!("| `{name}` | {} | {state} |\n", iface.functions));

@@ -826,6 +826,11 @@ mod tests {
         assert_eq!(locale.current().bcp47, "nl-NL");
     }
 
+    // These two exercise timezone_from_localtime_link_target, which is
+    // #[cfg(unix)] -- as is the `Path` import it needs. Ungated, they broke
+    // the Windows test build with 17 unresolved-name errors while every
+    // other platform stayed green.
+    #[cfg(unix)]
     #[test]
     fn timezone_can_be_inferred_from_zoneinfo_symlink_target() {
         let tz =
@@ -840,6 +845,7 @@ mod tests {
         assert_eq!(tz, "America/Toronto");
     }
 
+    #[cfg(unix)]
     #[test]
     fn timezone_inference_rejects_non_zoneinfo_targets() {
         assert!(timezone_from_localtime_link_target(Path::new("/etc/localtime")).is_none());
@@ -850,6 +856,7 @@ mod tests {
         .is_none());
     }
 
+    #[cfg(unix)]
     #[test]
     fn timezone_can_be_inferred_from_etc_timezone_contents() {
         let tz = timezone_from_etc_timezone_contents("Asia/Singapore\n")
@@ -861,6 +868,7 @@ mod tests {
         assert_eq!(tz, "America/Toronto");
     }
 
+    #[cfg(unix)]
     #[test]
     fn timezone_etc_timezone_parser_rejects_invalid_shapes() {
         assert!(timezone_from_etc_timezone_contents("America/New York\n").is_none());
@@ -868,6 +876,7 @@ mod tests {
         assert!(timezone_from_etc_timezone_contents("\n# only comment\n").is_none());
     }
 
+    #[cfg(unix)]
     #[test]
     fn timezone_candidate_file_fallback_uses_first_valid_source() {
         let tz = timezone_from_candidate_files_with_reader(
@@ -887,6 +896,7 @@ mod tests {
         assert_eq!(tz, "Asia/Singapore");
     }
 
+    #[cfg(unix)]
     #[test]
     fn timezone_candidate_file_fallback_returns_none_when_all_invalid() {
         let tz =

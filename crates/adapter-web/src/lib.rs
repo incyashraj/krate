@@ -201,21 +201,34 @@ mod web {
         };
         let mut tree = WidgetTree::new(root).ok()?;
 
-        let mut add = |n: u64, kind: WidgetKind, label: Option<&str>, height: f32, value: Option<f32>| {
-            let mut node = WidgetNode::new(id(n).expect("non-zero"), kind);
-            node.parent = Some(id(1).expect("non-zero"));
-            node.label = label.map(|s| s.to_string());
-            node.value = value;
-            node.style = WidgetStyle {
-                width: None,
-                height: Some(height),
-                grow: 0.0,
-                padding: 0.0,
+        let mut add =
+            |n: u64, kind: WidgetKind, label: Option<&str>, height: f32, value: Option<f32>| {
+                let mut node = WidgetNode::new(id(n).expect("non-zero"), kind);
+                node.parent = Some(id(1).expect("non-zero"));
+                node.label = label.map(|s| s.to_string());
+                node.value = value;
+                node.style = WidgetStyle {
+                    width: None,
+                    height: Some(height),
+                    grow: 0.0,
+                    padding: 0.0,
+                };
+                let _ = tree.upsert(node);
             };
-            let _ = tree.upsert(node);
-        };
-        add(2, WidgetKind::Text, Some("Krate, running in a browser tab"), 30.0, None);
-        add(3, WidgetKind::Text, Some("Laid out and painted by the same code a Mac runs."), 24.0, None);
+        add(
+            2,
+            WidgetKind::Text,
+            Some("Krate, running in a browser tab"),
+            30.0,
+            None,
+        );
+        add(
+            3,
+            WidgetKind::Text,
+            Some("Laid out and painted by the same code a Mac runs."),
+            24.0,
+            None,
+        );
         add(4, WidgetKind::Button, Some("A button"), 38.0, None);
         add(5, WidgetKind::TextField, Some("A text field"), 34.0, None);
         add(6, WidgetKind::Progress, None, 16.0, Some(0.6));
@@ -228,10 +241,42 @@ mod web {
         let pad = 24.0;
         let w = width - pad * 2.0;
         vec![
-            placement(1, WidgetKind::Text, "Krate, running in a browser tab", pad, pad, w, 28.0),
-            placement(2, WidgetKind::Text, "Painted by the same shared painter a Mac uses.", pad, pad + 36.0, w, 22.0),
-            placement(3, WidgetKind::Button, "A button", pad, pad + 76.0, 160.0, 36.0),
-            placement(4, WidgetKind::TextField, "A text field", pad, pad + 124.0, w, 34.0),
+            placement(
+                1,
+                WidgetKind::Text,
+                "Krate, running in a browser tab",
+                pad,
+                pad,
+                w,
+                28.0,
+            ),
+            placement(
+                2,
+                WidgetKind::Text,
+                "Painted by the same shared painter a Mac uses.",
+                pad,
+                pad + 36.0,
+                w,
+                22.0,
+            ),
+            placement(
+                3,
+                WidgetKind::Button,
+                "A button",
+                pad,
+                pad + 76.0,
+                160.0,
+                36.0,
+            ),
+            placement(
+                4,
+                WidgetKind::TextField,
+                "A text field",
+                pad,
+                pad + 124.0,
+                w,
+                34.0,
+            ),
             placement(5, WidgetKind::Progress, "", pad, pad + 174.0, w, 14.0),
         ]
     }
@@ -248,9 +293,17 @@ mod web {
         WidgetPlacement {
             widget: WidgetId::new(id.into()).expect("demo ids are non-zero"),
             kind,
-            label: if label.is_empty() { None } else { Some(label.to_string()) },
+            label: if label.is_empty() {
+                None
+            } else {
+                Some(label.to_string())
+            },
             checked: None,
-            value: if matches!(kind, WidgetKind::Progress) { Some(0.6) } else { None },
+            value: if matches!(kind, WidgetKind::Progress) {
+                Some(0.6)
+            } else {
+                None
+            },
             selection: None,
             text_cursor: None,
             clip: None,
@@ -336,13 +389,23 @@ mod tests {
 
         let id = |n: u64| WidgetId::new(n).expect("non-zero");
         let mut root = WidgetNode::new(id(1), WidgetKind::Stack);
-        root.style = WidgetStyle { width: None, height: None, grow: 1.0, padding: 12.0 };
+        root.style = WidgetStyle {
+            width: None,
+            height: None,
+            grow: 1.0,
+            padding: 12.0,
+        };
         let mut tree = WidgetTree::new(root).expect("root");
 
         let mut child = WidgetNode::new(id(2), WidgetKind::Button);
         child.parent = Some(id(1));
         child.label = Some("Press".to_string());
-        child.style = WidgetStyle { width: None, height: Some(30.0), grow: 0.0, padding: 0.0 };
+        child.style = WidgetStyle {
+            width: None,
+            height: Some(30.0),
+            grow: 0.0,
+            padding: 0.0,
+        };
         tree.upsert(child).expect("child");
 
         let placements = lay_out(&tree, 300.0, 150.0);

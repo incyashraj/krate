@@ -70,7 +70,9 @@ struct ToolCall {
 fn resolve_in_app(app_dir: &Path, raw: &str) -> Result<PathBuf, String> {
     let candidate = Path::new(raw);
     if candidate.is_absolute() {
-        return Err(format!("{raw} is an absolute path; use a path inside the app"));
+        return Err(format!(
+            "{raw} is an absolute path; use a path inside the app"
+        ));
     }
     let joined = app_dir.join(candidate);
     // Compare against the app dir after normalising `..` lexically. The file

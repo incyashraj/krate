@@ -3850,7 +3850,10 @@ fn a_mac_gift_is_a_notarizable_app_with_the_payload_beside_it() {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mode = std::fs::metadata(&exe).expect("opener metadata").permissions().mode();
+        let mode = std::fs::metadata(&exe)
+            .expect("opener metadata")
+            .permissions()
+            .mode();
         assert!(mode & 0o111 != 0, "the opener must be executable");
     }
 
@@ -3917,7 +3920,10 @@ fn a_linux_wrap_is_one_file_that_is_still_a_bundle() {
     assert!(status.success(), "wrap should succeed");
 
     let bytes = std::fs::read(&out).expect("read wrap");
-    assert!(bytes.starts_with(b"#!/bin/sh"), "a wrap must run as a script");
+    assert!(
+        bytes.starts_with(b"#!/bin/sh"),
+        "a wrap must run as a script"
+    );
     assert!(
         bytes.windows(4).any(|w| w == b"PK\x03\x04"),
         "the bundle must still be in there behind the prefix",

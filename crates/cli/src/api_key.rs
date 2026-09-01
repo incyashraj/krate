@@ -136,11 +136,10 @@ pub fn save(vendor: ApiVendor, key: &str) -> Result<KeySource, String> {
         return Err("that key has a space or a line break in it".to_string());
     }
     if keychain_available() {
-        match keychain_write(vendor, key) {
-            Ok(()) => return Ok(KeySource::Keychain),
-            // A locked or unavailable keychain must not lose the key: fall
-            // through to the file rather than refusing to save at all.
-            Err(_) => {}
+        // A locked or unavailable keychain must not lose the key: fall
+        // through to the file rather than refusing to save at all.
+        if keychain_write(vendor, key).is_ok() {
+            return Ok(KeySource::Keychain);
         }
     }
     file_write(vendor, key)?;
@@ -180,7 +179,11 @@ fn keychain_read(vendor: ApiVendor) -> Option<String> {
         return None;
     }
     let key = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    if key.is_empty() { None } else { Some(key) }
+    if key.is_empty() {
+        None
+    } else {
+        Some(key)
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -291,7 +294,11 @@ fn file_read(vendor: ApiVendor) -> Option<String> {
     let stream = keystream(vendor, raw.len());
     let plain: Vec<u8> = raw.iter().zip(stream).map(|(b, k)| b ^ k).collect();
     let key = String::from_utf8(plain).ok()?.trim().to_string();
-    if key.is_empty() { None } else { Some(key) }
+    if key.is_empty() {
+        None
+    } else {
+        Some(key)
+    }
 }
 
 fn file_write(vendor: ApiVendor, key: &str) -> Result<(), String> {
@@ -301,7 +308,12 @@ fn file_write(vendor: ApiVendor, key: &str) -> Result<(), String> {
             .map_err(|err| format!("could not make the key directory: {err}"))?;
     }
     let stream = keystream(vendor, key.len());
-    let sealed: Vec<u8> = key.as_bytes().iter().zip(stream).map(|(b, k)| b ^ k).collect();
+    let sealed: Vec<u8> = key
+        .as_bytes()
+        .iter()
+        .zip(stream)
+        .map(|(b, k)| b ^ k)
+        .collect();
     std::fs::write(&path, &sealed).map_err(|err| format!("could not save the key: {err}"))?;
     #[cfg(unix)]
     {

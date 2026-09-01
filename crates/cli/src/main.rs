@@ -898,7 +898,11 @@ fn api_key_command(action: &str, vendor: Option<&str>) -> Result<u8> {
                 .read_line(&mut key)
                 .context("could not read the key from stdin")?;
             let where_it_went = api_key::save(vendor, &key).map_err(|err| anyhow::anyhow!(err))?;
-            println!("{} key saved, {}.", vendor.label(), where_it_went.describe());
+            println!(
+                "{} key saved, {}.",
+                vendor.label(),
+                where_it_went.describe()
+            );
             Ok(0)
         }
         "status" => {
@@ -1362,7 +1366,13 @@ fn run() -> Result<u8> {
             png_copy,
             settle_ms,
             shot,
-        } => card_bundle(&bundle, output.as_deref(), png_copy, settle_ms, shot.as_deref()),
+        } => card_bundle(
+            &bundle,
+            output.as_deref(),
+            png_copy,
+            settle_ms,
+            shot.as_deref(),
+        ),
         Command::Wrap {
             bundle,
             target,
@@ -4192,15 +4202,17 @@ fn wrap_bundle(bundle: &Path, target: WrapTarget, output: Option<&Path>) -> Resu
     let kb = (wrap_bytes.len() as f64 / 1024.0).ceil() as u64;
     println!("Wrap written: {} ({kb} KB)", out_path.display());
     println!("  for a friend on {friend} who does not have Krate yet.");
-    println!("  First open installs Krate once (a small verified download), then {app_name} opens.");
+    println!(
+        "  First open installs Krate once (a small verified download), then {app_name} opens."
+    );
     println!("  The player is planted, never bundled: their next .krate just opens too.");
     match target {
-        WrapTarget::Mac => println!(
-            "  Heads up: macOS may want one right-click -> Open on a downloaded script."
-        ),
-        WrapTarget::Windows => println!(
-            "  Heads up: SmartScreen may ask once -- More info, then Run anyway."
-        ),
+        WrapTarget::Mac => {
+            println!("  Heads up: macOS may want one right-click -> Open on a downloaded script.")
+        }
+        WrapTarget::Windows => {
+            println!("  Heads up: SmartScreen may ask once -- More info, then Run anyway.")
+        }
         WrapTarget::Linux => {}
     }
     Ok(0)
@@ -4410,7 +4422,10 @@ fn compose_card_face(
         trust.to_string()
     } else if let Some(body) = trust.strip_suffix(TAIL) {
         let tail_w = measure(TAIL, meta_size, plain);
-        format!("{}{TAIL}", elide(body, meta_size, plain, (avail - tail_w).max(0.0)))
+        format!(
+            "{}{TAIL}",
+            elide(body, meta_size, plain, (avail - tail_w).max(0.0))
+        )
     } else {
         elide(trust, meta_size, plain, avail)
     };
@@ -4506,7 +4521,8 @@ fn card_bundle(
             let parent = bundle.parent().unwrap_or_else(|| Path::new("."));
             let candidate = parent.join(format!("{stem}.krate"));
             // Carding RateCard.krate in place must not overwrite the input.
-            if candidate == bundle || fs::canonicalize(&candidate).ok() == fs::canonicalize(bundle).ok()
+            if candidate == bundle
+                || fs::canonicalize(&candidate).ok() == fs::canonicalize(bundle).ok()
             {
                 parent.join(format!("{stem}-card.krate"))
             } else {
@@ -4536,18 +4552,28 @@ fn card_bundle(
         "the card opened as a different app"
     );
     drop(reopened);
-    let face_check = read_png_rgba(&out_path)
-        .context("the card did not decode as a picture afterwards")?;
+    let face_check =
+        read_png_rgba(&out_path).context("the card did not decode as a picture afterwards")?;
 
     if png_copy {
         let png_path = out_path.with_extension("png");
         fs::write(&png_path, &card_bytes)
             .with_context(|| format!("could not write {}", png_path.display()))?;
-        println!("Also wrote {} -- the same bytes, for places that only take pictures.", png_path.display());
+        println!(
+            "Also wrote {} -- the same bytes, for places that only take pictures.",
+            png_path.display()
+        );
     }
 
-    println!("Card written: {} ({} KB)", out_path.display(), (card_bytes.len() as f64 / 1024.0).ceil() as u64);
-    println!("  the picture: {}x{} PNG -- opens in any image viewer", face_check.width, face_check.height);
+    println!(
+        "Card written: {} ({} KB)",
+        out_path.display(),
+        (card_bytes.len() as f64 / 1024.0).ceil() as u64
+    );
+    println!(
+        "  the picture: {}x{} PNG -- opens in any image viewer",
+        face_check.width, face_check.height
+    );
     println!("  the app:     {app_name}, {size_label} -- opens in Krate by double-click");
     println!("  it says:     {trust}");
     println!("Send it as a file (mail, AirDrop, a chat's paperclip). Sent as a \"photo\", chats re-encode the image and the app half is lost.");
@@ -4981,34 +5007,34 @@ fn report_command(session: &str, output: Option<&Path>) -> Result<u8> {
         }
         for dir in roots {
             let is_top = dir == top;
-        for name in [
-            ".agent-transcript.txt",
-            // Written by every Studio build (KRATE_TRACE), and it carries the
-            // timing spine: which phase, how long, what check-app said.
-            "trace.jsonl",
-            "src/lib.rs",
-            "Cargo.toml",
-            "manifest.toml",
-        ] {
-            if let Ok(bytes) = fs::read(dir.join(name)) {
-                // The transcript can be megabytes; the tail is where a
-                // stall shows itself.
-                let bytes = if bytes.len() > 2 * 1024 * 1024 {
-                    bytes[bytes.len() - 2 * 1024 * 1024..].to_vec()
-                } else {
-                    bytes
-                };
-                // Keep the subfolder in the name so two levels cannot
-                // collide, and so the reader can see where each file lived.
-                let label = match dir.file_name().and_then(|n| n.to_str()) {
-                    Some(sub) if !is_top => format!("workspace/{sub}/{name}"),
-                    _ => format!("workspace/{name}"),
-                };
-                if !files.iter().any(|(existing, _)| *existing == label) {
-                    files.push((label, bytes));
+            for name in [
+                ".agent-transcript.txt",
+                // Written by every Studio build (KRATE_TRACE), and it carries the
+                // timing spine: which phase, how long, what check-app said.
+                "trace.jsonl",
+                "src/lib.rs",
+                "Cargo.toml",
+                "manifest.toml",
+            ] {
+                if let Ok(bytes) = fs::read(dir.join(name)) {
+                    // The transcript can be megabytes; the tail is where a
+                    // stall shows itself.
+                    let bytes = if bytes.len() > 2 * 1024 * 1024 {
+                        bytes[bytes.len() - 2 * 1024 * 1024..].to_vec()
+                    } else {
+                        bytes
+                    };
+                    // Keep the subfolder in the name so two levels cannot
+                    // collide, and so the reader can see where each file lived.
+                    let label = match dir.file_name().and_then(|n| n.to_str()) {
+                        Some(sub) if !is_top => format!("workspace/{sub}/{name}"),
+                        _ => format!("workspace/{name}"),
+                    };
+                    if !files.iter().any(|(existing, _)| *existing == label) {
+                        files.push((label, bytes));
+                    }
                 }
             }
-        }
         }
     }
 
@@ -5181,27 +5207,31 @@ impl Wall {
     /// build something deserves a door, not a wall.
     fn plan(self) -> &'static str {
         match self {
-            Wall::ScreenCapture =>
+            Wall::ScreenCapture => {
                 "Krate cannot record or capture the screen: a sandboxed app is \
                  given its own window and no view of anything else, and there \
                  is no screen-capture permission to ask for. I can build the \
                  app around a recording you already have, or an app that works \
-                 on images you drop into it.",
-            Wall::OtherApps =>
+                 on images you drop into it."
+            }
+            Wall::OtherApps => {
                 "Krate cannot type into, click, or read other programs. That is \
                  the sandbox working rather than a missing feature: an app gets \
                  its own window and nothing outside it. I can build something \
                  that does the job inside its own window, and you copy the \
-                 result where you need it.",
-            Wall::Hardware =>
+                 result where you need it."
+            }
+            Wall::Hardware => {
                 "Krate has no capability for MIDI, Bluetooth, USB or serial \
                  devices, so an app cannot reach one. I can build the same idea \
-                 driven by the keyboard, the mouse, or a file you give it.",
-            Wall::Background =>
+                 driven by the keyboard, the mouse, or a file you give it."
+            }
+            Wall::Background => {
                 "A Krate app is one window and one run: it cannot keep working \
                  after you close it, and there is no background permission to \
                  ask for. I can build it to remember where you were and pick \
-                 up when you open it again.",
+                 up when you open it again."
+            }
         }
     }
 }
@@ -5217,34 +5247,76 @@ fn wall_in_request(request: &str) -> Option<Wall> {
     let any = |needles: &[&str]| needles.iter().any(|n| text.contains(n));
 
     // Screen capture: recording or grabbing the display itself.
-    if any(&["screen record", "screen-record", "record the screen",
-             "record my screen", "screen capture", "screen-capture",
-             "capture the screen", "screenshot of my screen",
-             "record the display"])
-    {
+    if any(&[
+        "screen record",
+        "screen-record",
+        "record the screen",
+        "record my screen",
+        "screen capture",
+        "screen-capture",
+        "capture the screen",
+        "screenshot of my screen",
+        "record the display",
+    ]) {
         return Some(Wall::ScreenCapture);
     }
 
     // Driving other programs. The action has to name another program or the
     // system; "type into a box" inside our own window is ordinary work.
-    if any(&["other apps", "other applications", "other programs",
-             "another app", "another application", "another program",
-             "whatever field", "whatever app", "whatever window",
-             "active window", "focused field", "focused window",
-             "any application", "control my computer", "control the os",
-             "automate my mac", "automate windows"])
-        && any(&["type", "click", "press", "send", "control", "read",
-                 "automate", "paste into", "fill"])
-    {
+    if any(&[
+        "other apps",
+        "other applications",
+        "other programs",
+        "another app",
+        "another application",
+        "another program",
+        "whatever field",
+        "whatever app",
+        "whatever window",
+        "active window",
+        "focused field",
+        "focused window",
+        "any application",
+        "control my computer",
+        "control the os",
+        "automate my mac",
+        "automate windows",
+    ]) && any(&[
+        "type",
+        "click",
+        "press",
+        "send",
+        "control",
+        "read",
+        "automate",
+        "paste into",
+        "fill",
+    ]) {
         return Some(Wall::OtherApps);
     }
 
     // Physical devices with no capability of any kind.
-    if any(&["midi", "bluetooth", " usb", "usb ", "serial port", "gamepad",
-             "game controller", "arduino"])
-        && any(&["connect", "connected", "my ", "read", "listen", "play",
-                 "device", "controller", "keyboard", "piano"])
-    {
+    if any(&[
+        "midi",
+        "bluetooth",
+        " usb",
+        "usb ",
+        "serial port",
+        "gamepad",
+        "game controller",
+        "arduino",
+    ]) && any(&[
+        "connect",
+        "connected",
+        "my ",
+        "read",
+        "listen",
+        "play",
+        "device",
+        "controller",
+        "keyboard",
+        "piano",
+    ]) {
         return Some(Wall::Hardware);
     }
 
@@ -5255,12 +5327,22 @@ fn wall_in_request(request: &str) -> Option<Wall> {
     // because the word satisfied both halves of the match by itself. The
     // wall is background *running*, so the word has to be next to a verb
     // about continuing, or the phrase has to be explicit on its own.
-    if any(&["after i close", "after closing", "even when closed",
-             "even after i close", "keeps running", "keep running",
-             "runs in the tray", "system tray", "menu bar app",
-             "background process", "background task", "background timer",
-             "in the background", "runs in background"])
-    {
+    if any(&[
+        "after i close",
+        "after closing",
+        "even when closed",
+        "even after i close",
+        "keeps running",
+        "keep running",
+        "runs in the tray",
+        "system tray",
+        "menu bar app",
+        "background process",
+        "background task",
+        "background timer",
+        "in the background",
+        "runs in background",
+    ]) {
         return Some(Wall::Background);
     }
 
@@ -7009,8 +7091,7 @@ fn run_provider_author(
             // So on macOS claude simply keeps the real HOME: the one
             // keychain token, refreshed in place, no fork to rotate dead.
             // Its own permission flags already govern what it may touch.
-            let claude_native_keychain =
-                cfg!(target_os = "macos") && provider.name() == "claude";
+            let claude_native_keychain = cfg!(target_os = "macos") && provider.name() == "claude";
             if !claude_native_keychain {
                 command.env("HOME", &agent_home);
             }
@@ -7449,10 +7530,9 @@ fn run_provider_author(
                     .collect::<Vec<_>>()
                     .join("\n");
                 let evidence = if tail.trim().is_empty() {
-                    format!(
-                        "It wrote nothing at all, which usually means the tool \
-                         failed to start rather than failed to work."
-                    )
+                    "It wrote nothing at all, which usually means the tool \
+                     failed to start rather than failed to work."
+                        .to_string()
                 } else {
                     format!("The last thing it wrote:\n\n{tail}")
                 };
@@ -7808,7 +7888,9 @@ fn agent_failure_reason_in(text: &str) -> Option<String> {
             //
             // Reading the prose too makes the answer independent of whether
             // the JSON survived the race.
-            if let Some(rest) = line.strip_prefix("Error:").or_else(|| line.strip_prefix("error:"))
+            if let Some(rest) = line
+                .strip_prefix("Error:")
+                .or_else(|| line.strip_prefix("error:"))
             {
                 let rest = rest.trim();
                 if !rest.is_empty() && plain.is_none() {
@@ -13725,8 +13807,7 @@ fn preflight_toolchain(assume_yes: bool, no_install: bool) -> Result<()> {
     for tool in &second {
         eprintln!("==> installing {}", tool.what);
         eprintln!("    {}", install_command_line(&tool.install_cmd));
-        run_install_command(&tool.install_cmd)
-            .with_context(|| format!("install {}", tool.what))?;
+        run_install_command(&tool.install_cmd).with_context(|| format!("install {}", tool.what))?;
     }
 
     // Re-check: only after two passes is "still missing" a real wall, and
@@ -14447,22 +14528,25 @@ mod card_tests {
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
         let stored = zip::write::SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Stored);
-        zip.start_file("manifest.toml", stored).expect("start manifest");
-        zip.write_all(manifest_toml.as_bytes()).expect("write manifest");
-        zip.start_file("code.wasm", stored).expect("start component");
+        zip.start_file("manifest.toml", stored)
+            .expect("start manifest");
+        zip.write_all(manifest_toml.as_bytes())
+            .expect("write manifest");
+        zip.start_file("code.wasm", stored)
+            .expect("start component");
         zip.write_all(b"\0asm\x01\0\0\0").expect("write component");
         let bundle_bytes = zip.finish().expect("finish zip").into_inner();
 
         // A real face over it, composed exactly as `krate card` composes one.
-        let shot = krate_adapter_common::ui::ImagePixels::new(
-            8,
-            8,
-            vec![0x80u8; 8 * 8 * 4],
+        let shot = krate_adapter_common::ui::ImagePixels::new(8, 8, vec![0x80u8; 8 * 8 * 4])
+            .expect("shot pixels");
+        let face = compose_card_face(
+            &shot,
+            "RateCard.krate",
+            "1 KB",
+            "can open a window · nothing else",
         )
-        .expect("shot pixels");
-        let face =
-            compose_card_face(&shot, "RateCard.krate", "1 KB", "can open a window · nothing else")
-                .expect("face composes");
+        .expect("face composes");
 
         let mut card = face.clone();
         card.extend_from_slice(&bundle_bytes);
@@ -14492,9 +14576,12 @@ mod wrap_tests {
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
         let stored = zip::write::SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Stored);
-        zip.start_file("manifest.toml", stored).expect("start manifest");
-        zip.write_all(manifest_toml.as_bytes()).expect("write manifest");
-        zip.start_file("code.wasm", stored).expect("start component");
+        zip.start_file("manifest.toml", stored)
+            .expect("start manifest");
+        zip.write_all(manifest_toml.as_bytes())
+            .expect("write manifest");
+        zip.start_file("code.wasm", stored)
+            .expect("start component");
         zip.write_all(b"\0asm\x01\0\0\0").expect("write component");
         zip.finish().expect("finish zip").into_inner()
     }
@@ -14505,9 +14592,11 @@ mod wrap_tests {
     fn a_unix_wrap_reads_as_script_and_bundle() {
         let mut wrap = wrap_prefix_unix("Rate card", "RateCard").into_bytes();
         wrap.extend_from_slice(&tiny_bundle());
-        assert!(wrap.starts_with(b"#!/bin/sh\n"), "the front is a shell script");
-        let opened =
-            krate_bundle::open_reader(Cursor::new(wrap)).expect("the back is a bundle");
+        assert!(
+            wrap.starts_with(b"#!/bin/sh\n"),
+            "the front is a shell script"
+        );
+        let opened = krate_bundle::open_reader(Cursor::new(wrap)).expect("the back is a bundle");
         assert_eq!(opened.manifest().app.name, "Rate card");
     }
 
@@ -14535,13 +14624,18 @@ mod wrap_tests {
     fn the_windows_prefix_is_crlf_and_exits_before_the_bundle() {
         let prefix = wrap_prefix_windows("Rate card", "RateCard");
         assert!(prefix.starts_with("@echo off\r\n"));
-        assert!(prefix.contains("exit /b %STATUS%\r\n"), "execution ends before the blob");
-        assert!(prefix.contains("install.ps1"), "it plants the player, never bundles it");
+        assert!(
+            prefix.contains("exit /b %STATUS%\r\n"),
+            "execution ends before the blob"
+        );
+        assert!(
+            prefix.contains("install.ps1"),
+            "it plants the player, never bundles it"
+        );
         assert!(!prefix.contains('\u{0}'), "text only; the app rides behind");
         let mut wrap = prefix.into_bytes();
         wrap.extend_from_slice(&tiny_bundle());
-        let opened =
-            krate_bundle::open_reader(Cursor::new(wrap)).expect("the back is a bundle");
+        let opened = krate_bundle::open_reader(Cursor::new(wrap)).expect("the back is a bundle");
         assert_eq!(opened.manifest().app.name, "Rate card");
     }
 }
@@ -14675,9 +14769,12 @@ mod refusal_tests {
         // codex exec --json, account out of credit. Real shape, captured
         // from `codex exec --json` on 2026-08-27.
         let refused = concat!(
-            r#"{"type":"thread.started","thread_id":"01a03f30"}"#, "\n",
-            r#"{"type":"turn.started"}"#, "\n",
-            r#"{"type":"error","message":"You've hit your usage limit."}"#, "\n",
+            r#"{"type":"thread.started","thread_id":"01a03f30"}"#,
+            "\n",
+            r#"{"type":"turn.started"}"#,
+            "\n",
+            r#"{"type":"error","message":"You've hit your usage limit."}"#,
+            "\n",
             r#"{"type":"turn.failed","error":{"message":"You've hit your usage limit."}}"#,
         );
         assert!(
@@ -14774,14 +14871,27 @@ mod wall_tests {
     fn a_request_for_something_krate_cannot_do_is_named_before_building() {
         let cases: &[(&str, Wall)] = &[
             ("a screen recorder that saves an mp4", Wall::ScreenCapture),
-            ("an app to record my screen while I talk", Wall::ScreenCapture),
-            ("an app that types my signature into whatever field is focused",
-             Wall::OtherApps),
-            ("something that clicks buttons in other apps for me", Wall::OtherApps),
-            ("a MIDI keyboard app that plays my connected piano", Wall::Hardware),
+            (
+                "an app to record my screen while I talk",
+                Wall::ScreenCapture,
+            ),
+            (
+                "an app that types my signature into whatever field is focused",
+                Wall::OtherApps,
+            ),
+            (
+                "something that clicks buttons in other apps for me",
+                Wall::OtherApps,
+            ),
+            (
+                "a MIDI keyboard app that plays my connected piano",
+                Wall::Hardware,
+            ),
             ("read my bluetooth heart rate device", Wall::Hardware),
-            ("a background timer that keeps running after I close the window",
-             Wall::Background),
+            (
+                "a background timer that keeps running after I close the window",
+                Wall::Background,
+            ),
         ];
         for (request, expected) in cases {
             assert_eq!(
