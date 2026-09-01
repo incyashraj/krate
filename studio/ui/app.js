@@ -2706,8 +2706,17 @@ function capWords(cap) {
  * session's workspace, and Studio never said so. For a developer the first
  * question after "it built" is "show me the code", and until now the only
  * answer was to go and find it. */
-function sourceDirOf(app) {
-  return (app && (app.source_dir || app.sourceDir)) || "";
+async function sourceDirOf(app) {
+  const direct = (app && (app.source_dir || app.sourceDir)) || "";
+  if (direct) return direct;
+  // Apps built before create_app reported this still have a workspace on
+  // disk, addressed by session id. Without this, Source did nothing at all
+  // for every app already in the library -- silently, which is worse than
+  // not offering it.
+  const id = state.session && state.session.id;
+  if (!id) return "";
+  try { return (await invoke("session_source_dir", { session: id })) || ""; }
+  catch (e) { return ""; }
 }
 
 /* The command that reproduces this build.
@@ -2731,7 +2740,7 @@ async function showInfo() {
   $("infoName").textContent = app.name || "Your app";
 
   // Source, and the command that made it.
-  const src = sourceDirOf(app);
+  const src = await sourceDirOf(app);
   const srcLine = $("infoSourcePath");
   if (srcLine) {
     srcLine.textContent = src || "No source folder for this app.";
@@ -4062,23 +4071,6 @@ async function stopBuild() {
 $("stopBtn").addEventListener("click", stopBuild);
 $("openBtn").addEventListener("click", openApp);
 $("shareBtn").addEventListener("click", openSendSheet);
-$("changeBtn").addEventListener("click", () => {
-  // Change is the composer, not a fourth mystery: put the cursor where the
-  // next sentence goes, and let the box answer visibly -- a focus alone
-  // read as "the button does nothing" (seen live).
-  const box = $("prompt");
-  if (!box) return;
-  box.disabled = false;
-  box.placeholder = "Say what to change - it becomes v2…";
-  box.focus();
-  box.scrollIntoView({ block: "end", behavior: "smooth" });
-  const shell = box.closest(".composer-box") || box.parentElement;
-  if (shell) {
-    shell.classList.remove("glow");
-    void shell.offsetWidth;
-    shell.classList.add("glow");
-  }
-});
 $("sendCardBtn").addEventListener("click", sendCard);
 $("sendLinkBtn").addEventListener("click", () => {
   $("sendSheet").classList.add("hidden");
@@ -4136,14 +4128,24 @@ $("pubIconPick").addEventListener("click", () => pickPublishImage("icon"));
    editor that is. */
 async function openSourceFolder() {
   const app = currentApp();
-  const dir = sourceDirOf(app);
-  if (!dir) return;
+  const btn = $("sourceBtn");
+  const dir = await sourceDirOf(app);
+  if (!dir) {
+    // Never fail silently: a button that does nothing when pressed is the
+    // thing this whole pass is meant to remove.
+    if (btn) {
+      const was = btn.textContent;
+      btn.textContent = "No source folder";
+      setTimeout(() => { btn.textContent = was; }, 1800);
+    }
+    return;
+  }
   try { await invoke("reveal", { path: dir }); } catch (e) {}
 }
 $("sourceBtn")?.addEventListener("click", openSourceFolder);
 $("infoOpenSource")?.addEventListener("click", openSourceFolder);
 $("infoCopySource")?.addEventListener("click", async () => {
-  const dir = sourceDirOf(currentApp());
+  const dir = await sourceDirOf(currentApp());
   const btn = $("infoCopySource");
   if (!dir || !btn) return;
   try { await navigator.clipboard.writeText(dir); btn.textContent = "Copied"; } catch (e) {}

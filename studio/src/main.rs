@@ -766,6 +766,35 @@ async fn api_key_forget(vendor: String) -> Result<(), String> {
     }
 }
 
+/// Where a session's source crate is, found on demand.
+///
+/// create_app reports this for new builds, but every app made before that
+/// has a session with no source_dir and a workspace sitting on disk all
+/// the same. Deriving it from the session id means Source works for the
+/// whole library rather than only for apps built from today.
+#[tauri::command]
+fn session_source_dir(session: String) -> Result<String, String> {
+    if !session
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-')
+    {
+        return Err("bad session id".to_string());
+    }
+    let work = studio_dir().join("builds").join(&session);
+    if work.join("Cargo.toml").is_file() {
+        return Ok(work.display().to_string());
+    }
+    let found = std::fs::read_dir(&work)
+        .map_err(|_| "no build workspace for this app".to_string())?
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| p.join("Cargo.toml").is_file());
+    match found {
+        Some(dir) => Ok(dir.display().to_string()),
+        None => Err("no source folder for this app".to_string()),
+    }
+}
+
 /// Which AIs this machine can author with, through `krate ai --json`.
 #[tauri::command]
 async fn agents() -> Result<Vec<AgentInfo>, String> {
@@ -3850,6 +3879,7 @@ fn main() {
             open_external,
             sign_in_agent,
             refresh_agents,
+            session_source_dir,
             api_keys,
             api_key_set,
             api_key_forget,
