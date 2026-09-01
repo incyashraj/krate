@@ -448,6 +448,13 @@
 
   <div class="view hidden" id="viewApps">
     <header class="titlebar">
+      <!-- A page with no way out is a trap. This one had neither a back
+           button nor the drawer toggle, so opening Your apps stranded you
+           there. Both, in the same places every other view puts them. -->
+      <button class="icon-btn side-toggle" id="appsSideToggle" title="Show your workspace" aria-expanded="false">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="10" rx="2" stroke="currentColor" stroke-width="1.35"/><path d="M6.2 3v10" stroke="currentColor" stroke-width="1.35"/></svg>
+      </button>
+      <button class="icon-btn" id="appsBackBtn" title="Back to home"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M9.8 3.2L5 8l4.8 4.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <div class="brand"><img src="krate-logo.png" alt="" /><span>KRATE</span></div>
       <div class="spacer"></div>
     </header>

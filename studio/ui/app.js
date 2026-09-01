@@ -410,8 +410,12 @@ function renderBuilding() {
   // Keyed on the building session alone, never on which view is showing:
   // opening another session used to smash the shared phase flag and make a
   // live build vanish from "making now" while it was still running.
+  // The shelf's first tile now carries the running build (see renderShelf),
+  // so this bar only shows where there is no shelf to carry it.
   const live = Boolean(state.buildingSession);
-  bar.classList.toggle("hidden", !live);
+  const shelfShowing = !$("viewHome")?.classList.contains("hidden");
+  bar.classList.toggle("hidden", !live || shelfShowing);
+  if (live) renderShelf();
   if (live) {
     $("buildingNowTitle").textContent = state.buildingSession.title;
     // Clear any reveal from-state left on this bar.
@@ -3803,6 +3807,24 @@ function autoGrow(el) {
   el.style.height = "auto";
   el.style.height = Math.min(el.scrollHeight, 132) + "px";
 }
+
+/* The send button goes live the moment there is something to send.
+ * A permanently identical button gives no sign the box heard anything;
+ * lighting it on the first character is the cheapest possible "ready". */
+function syncSendReady() {
+  const pairs = [
+    { field: $("homePrompt"), button: $("homeSend") },
+    { field: $("prompt"), button: $("send") },
+  ];
+  for (const { field, button } of pairs) {
+    if (!field || !button) continue;
+    button.classList.toggle("ready", field.value.trim().length > 0);
+  }
+}
+["prompt", "homePrompt"].forEach((id) => {
+  $(id)?.addEventListener("input", syncSendReady);
+});
+syncSendReady();
 ["prompt", "homePrompt"].forEach((id) => {
   const el = $(id);
   if (el) el.addEventListener("input", () => autoGrow(el));
@@ -3816,6 +3838,10 @@ $("backBtn").addEventListener("click", async () => {
   await persist();
   enterHome();
 });
+
+/* Your apps had no way out: no back button, no drawer toggle. Both now
+   behave exactly as they do on every other view. */
+$("appsBackBtn")?.addEventListener("click", () => enterHome());
 $("loginBrowserBtn").addEventListener("click", async () => {
   $("gateError").classList.add("hidden");
   try {
@@ -4707,6 +4733,28 @@ async function renderShelf() {
   if (room) room.removeAttribute("data-shelf");
 
   body.innerHTML = "";
+
+  /* A running build takes the first slot, as a tile that is visibly
+   * working. It used to be a separate bar above the shelf, which pushed
+   * the whole tray down and read as an alert about the app rather than as
+   * the app itself being made. This is the same object in the same row as
+   * everything else, just not finished yet. */
+  const live = state.buildingSession;
+  if (live && !files.some((f) => f.id === live.id)) {
+    const card = document.createElement("button");
+    card.className = "shelf-card building";
+    const label = (live.title || "New app")
+      .replace(/\.krate$/, "")
+      .replace(/[-_]+/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+    card.innerHTML =
+      `<span class="shot"><span class="shot-working" aria-hidden="true"></span></span>` +
+      `<b>${escapeHtml(label)}</b><small class="shelf-making">making…</small>`;
+    card.title = "Open this build";
+    card.addEventListener("click", () => openSession(live));
+    body.appendChild(card);
+  }
+
   for (const session of files.slice(0, 12)) {
     const card = document.createElement("button");
     card.className = "shelf-card";
@@ -4770,7 +4818,9 @@ async function renderShelf() {
 (function sidebar() {
   const side = $("side");
   const scrim = $("sideScrim");
-  const toggle = $("sideToggle");
+  // Each view carries its own panel button; they all open the same drawer.
+  const toggles = [...document.querySelectorAll(".side-toggle")];
+  const toggle = toggles[0];
   if (!side || !toggle) return;
 
   function setOpen(open) {
@@ -4778,12 +4828,18 @@ async function renderShelf() {
     // The body class is what lets the room step aside and take its rounded
     // corner, so the two panels read as one window with a seam.
     document.body.classList.toggle("side-open", open);
-    toggle.setAttribute("aria-expanded", open ? "true" : "false");
-    toggle.title = open ? "Hide your workspace" : "Show your workspace";
+    // Every view has its own toggle button and they all drive this one
+    // drawer, so they all have to agree about its state.
+    for (const t of toggles) {
+      t.setAttribute("aria-expanded", open ? "true" : "false");
+      t.title = open ? "Hide your workspace" : "Show your workspace";
+    }
     if (scrim) scrim.hidden = !open;
   }
 
-  toggle.addEventListener("click", () => setOpen(side.dataset.open !== "true"));
+  for (const t of toggles) {
+    t.addEventListener("click", () => setOpen(side.dataset.open !== "true"));
+  }
   scrim?.addEventListener("click", () => setOpen(false));
   // Escape closes it, the way it closes every other panel here. A drawer
   // the keyboard cannot back out of reads as a trap.
