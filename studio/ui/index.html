@@ -15,6 +15,76 @@
   <canvas class="stars" id="stars" aria-hidden="true"></canvas>
   <div class="grain" aria-hidden="true"></div>
 
+  <!-- The sidebar lives at the TOP LEVEL, not inside a view.
+       It used to sit inside #viewHome, so navigating to Your apps hid the
+       whole view and took the navigation with it: the drawer was open,
+       correct, and invisible. Chrome that persists across pages cannot
+       live inside one of those pages. -->
+  <aside class="side" id="side" aria-label="Your workspace" data-open="false">
+
+    <div class="side-top">
+      <button class="side-mark" id="sideHome" title="Krate">
+        <img src="krate-glyph-white.png" alt="" />
+        <span>KRATE</span>
+      </button>
+    </div>
+
+    <!-- Every row here goes somewhere different. The old list had eight
+         rows and five handlers: Recent and All apps opened the same page,
+         Discover and Examples opened the same page, and Search, Starred
+         and Sent to me only closed the drawer. A row that does nothing
+         teaches people not to trust the ones that do. -->
+    <nav class="side-nav" aria-label="Primary">
+      <button class="side-row on" data-side="home">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2.5 7L8 2.5L13.5 7v6a1 1 0 01-1 1h-9a1 1 0 01-1-1V7z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/></svg>
+        <span>Home</span>
+      </button>
+      <button class="side-row" data-side="all">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2.4" y="2.4" width="4.6" height="4.6" rx="1.1" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="2.4" width="4.6" height="4.6" rx="1.1" stroke="currentColor" stroke-width="1.3"/><rect x="2.4" y="9" width="4.6" height="4.6" rx="1.1" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="9" width="4.6" height="4.6" rx="1.1" stroke="currentColor" stroke-width="1.3"/></svg>
+        <span>Your apps</span>
+      </button>
+      <button class="side-row" data-side="discover">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.6" stroke="currentColor" stroke-width="1.35"/><path d="M10.3 5.7l-1.4 3.2-3.2 1.4 1.4-3.2 3.2-1.4z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+        <span>Gallery</span>
+      </button>
+    </nav>
+
+    <div class="side-foot">
+      <button class="side-card" id="sideShare">
+        <span class="card-text">
+          <b>Share Krate</b>
+          <small>Send it to someone who builds</small>
+        </span>
+        <span class="card-icon">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2.2" y="6.6" width="11.6" height="7.2" rx="1.2" stroke="currentColor" stroke-width="1.3"/><path d="M1.6 6.6h12.8v2.1H1.6zM8 6.6v7.2" stroke="currentColor" stroke-width="1.3"/><path d="M8 6.4C7.2 4.5 6.4 3.4 5.3 3.4a1.6 1.6 0 000 3.2M8 6.4c.8-1.9 1.6-3 2.7-3a1.6 1.6 0 010 3.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        </span>
+      </button>
+
+      <button class="side-card" id="sideDocs">
+        <span class="card-text">
+          <b>Docs</b>
+          <small>The API, the limits, porting</small>
+        </span>
+        <span class="card-icon">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3.4 2.6h6.2l3 3v7.8H3.4z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9.4 2.6v3.2h3.2M5.6 8.6h4.8M5.6 10.8h4.8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        </span>
+      </button>
+
+      <div class="side-me">
+        <button class="side-avatar" id="sideAccount" title="You">
+          <img id="sideAvatarImg" class="hidden" alt="" />
+          <span id="sideInitial">·</span>
+        </button>
+        <button class="side-bell" id="sideBell" title="What is new">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2.6a3.7 3.7 0 013.7 3.7c0 3 1 3.9 1 3.9H3.3s1-.9 1-3.9A3.7 3.7 0 018 2.6z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M6.6 12.6a1.5 1.5 0 002.8 0" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+          <span class="bell-dot hidden" id="sideBellDot"></span>
+        </button>
+      </div>
+    </div>
+  </aside>
+  <div class="side-scrim" id="sideScrim" hidden></div>
+
+
 
   <!-- Window controls we draw ourselves on Windows, where the native frame
        is removed (it stacked a second title bar over ours). Fixed to the
@@ -111,70 +181,8 @@
          drawer standing open on arrival competes with it. Everything a
          person needs on the way in is one click away, and nothing on the
          way in is in their way. -->
-    <aside class="side" id="side" aria-label="Your workspace" data-open="false">
 
-      <div class="side-top">
-        <button class="side-mark" id="sideHome" title="Krate">
-          <img src="krate-glyph-white.png" alt="" />
-          <span>KRATE</span>
-        </button>
-      </div>
 
-      <!-- Every row here goes somewhere different. The old list had eight
-           rows and five handlers: Recent and All apps opened the same page,
-           Discover and Examples opened the same page, and Search, Starred
-           and Sent to me only closed the drawer. A row that does nothing
-           teaches people not to trust the ones that do. -->
-      <nav class="side-nav" aria-label="Primary">
-        <button class="side-row on" data-side="home">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2.5 7L8 2.5L13.5 7v6a1 1 0 01-1 1h-9a1 1 0 01-1-1V7z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/></svg>
-          <span>Home</span>
-        </button>
-        <button class="side-row" data-side="all">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2.4" y="2.4" width="4.6" height="4.6" rx="1.1" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="2.4" width="4.6" height="4.6" rx="1.1" stroke="currentColor" stroke-width="1.3"/><rect x="2.4" y="9" width="4.6" height="4.6" rx="1.1" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="9" width="4.6" height="4.6" rx="1.1" stroke="currentColor" stroke-width="1.3"/></svg>
-          <span>Your apps</span>
-        </button>
-        <button class="side-row" data-side="discover">
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.6" stroke="currentColor" stroke-width="1.35"/><path d="M10.3 5.7l-1.4 3.2-3.2 1.4 1.4-3.2 3.2-1.4z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
-          <span>Gallery</span>
-        </button>
-      </nav>
-
-      <div class="side-foot">
-        <button class="side-card" id="sideShare">
-          <span class="card-text">
-            <b>Share Krate</b>
-            <small>Send it to someone who builds</small>
-          </span>
-          <span class="card-icon">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2.2" y="6.6" width="11.6" height="7.2" rx="1.2" stroke="currentColor" stroke-width="1.3"/><path d="M1.6 6.6h12.8v2.1H1.6zM8 6.6v7.2" stroke="currentColor" stroke-width="1.3"/><path d="M8 6.4C7.2 4.5 6.4 3.4 5.3 3.4a1.6 1.6 0 000 3.2M8 6.4c.8-1.9 1.6-3 2.7-3a1.6 1.6 0 010 3.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-          </span>
-        </button>
-
-        <button class="side-card" id="sideDocs">
-          <span class="card-text">
-            <b>Docs</b>
-            <small>The API, the limits, porting</small>
-          </span>
-          <span class="card-icon">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3.4 2.6h6.2l3 3v7.8H3.4z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9.4 2.6v3.2h3.2M5.6 8.6h4.8M5.6 10.8h4.8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-          </span>
-        </button>
-
-        <div class="side-me">
-          <button class="side-avatar" id="sideAccount" title="You">
-            <img id="sideAvatarImg" class="hidden" alt="" />
-            <span id="sideInitial">·</span>
-          </button>
-          <button class="side-bell" id="sideBell" title="What is new">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2.6a3.7 3.7 0 013.7 3.7c0 3 1 3.9 1 3.9H3.3s1-.9 1-3.9A3.7 3.7 0 018 2.6z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M6.6 12.6a1.5 1.5 0 002.8 0" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-            <span class="bell-dot hidden" id="sideBellDot"></span>
-          </button>
-        </div>
-      </div>
-    </aside>
-
-    <div class="side-scrim" id="sideScrim" hidden></div>
 
     <header class="titlebar">
       <button class="icon-btn side-toggle" id="sideToggle" title="Show your workspace" aria-expanded="false">

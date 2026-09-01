@@ -68,6 +68,12 @@ const invoke = (cmd, args) =>
  * Linux keeps its native frame but has no lights to clear. */
 (function () {
   const ua = navigator.userAgent;
+  // macOS is the only platform that overlays traffic lights on our
+  // content, so it is the only one that should give up the top-left
+  // corner for them. Marking it explicitly means the corner is reserved
+  // where the lights exist and reclaimed everywhere else, instead of
+  // every platform paying a macOS cost.
+  if (ua.includes("Mac")) document.body.classList.add("macos");
   if (ua.includes("Windows")) {
     document.body.classList.add("windows");
     $("winControls").classList.remove("hidden");
@@ -5505,9 +5511,12 @@ $("aiRefresh")?.addEventListener("click", async () => {
     const ry = buf.height * 0.92;
 
     // Two blades, each a wedge of angles around the dome's centre.
+    // Dimmer and narrower than the first pass. At full power these read as
+    // searchlights and pulled the eye away from the box, which is the one
+    // thing on the screen anyone came to use. Background is background.
     const blades = [
-      { at: -0.62, half: 0.20, r: 214, g: 206, b: 255, power: 1.0 },
-      { at: -2.35, half: 0.17, r: 122, g: 106, b: 250, power: 0.78 },
+      { at: -0.62, half: 0.15, r: 190, g: 182, b: 245, power: 0.42 },
+      { at: -2.35, half: 0.13, r: 112, g: 98, b: 226, power: 0.34 },
     ];
 
     for (let py = 0; py < buf.height; py += 1) {
@@ -5540,10 +5549,10 @@ $("aiRefresh")?.addEventListener("click", async () => {
         }
 
         // Compose: indigo body, blade colour laid over it.
-        let r = 46 * body + br * blade * 0.85;
-        let g = 34 * body + bg * blade * 0.85;
-        let b = 150 * body + bb * blade * 0.85;
-        let a = (body * 0.62 + blade * 0.72);
+        let r = 34 * body + br * blade * 0.6;
+        let g = 25 * body + bg * blade * 0.6;
+        let b = 112 * body + bb * blade * 0.6;
+        let a = (body * 0.42 + blade * 0.44);
 
         if (a <= 0.004) { d[i + 3] = 0; continue; }
 
@@ -5553,7 +5562,7 @@ $("aiRefresh")?.addEventListener("click", async () => {
         const n = hash(px, py);
         const lit = Math.min(1, a * 1.5);
         const edge = 4 * lit * (1 - lit);          // peaks at the falloff
-        const grain = (n - 0.5) * (34 + 92 * edge);
+        const grain = (n - 0.5) * (30 + 78 * edge);
         r += grain; g += grain; b += grain;
         a += (n - 0.5) * 0.09 * lit;
 

@@ -147,7 +147,9 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
   position: relative;
   height: var(--titlebar); flex: none;
   display: flex; align-items: center; gap: 12px;
-  padding: 0 16px 0 var(--lights);
+  /* Corner by default; macOS gives up the run its traffic lights sit
+     in, because they are drawn over our content there. */
+  padding: 0 16px 0 14px;
   border-bottom: 1px solid var(--line);
   -webkit-app-region: drag;
 }
@@ -189,7 +191,7 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
    hole, and it is what made the bar's content look shoved diagonally away
    from the corner. The brand starts at normal padding instead, and on
    Windows the right side clears our own window buttons. */
-body.windows .titlebar, body.linux .titlebar { padding-left: 18px; }
+body.macos .titlebar { padding-left: var(--lights); }
 body.windows .titlebar { padding-right: 150px; }
 
 .brand {
