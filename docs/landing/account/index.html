@@ -146,7 +146,7 @@ h1.page {
 <div class="brandbar">
   <a class="name" href="/"><img src="/krate-glyph-white.png" alt="" /> KRATE</a>
   <nav class="bnav" aria-label="Primary">
-    <a href="/#pricing">Pricing</a>
+    <a href="/#receipts">Why Krate</a>
     <a href="/docs/">Docs</a>
     <a href="#" class="here">Account</a>
     <a href="#" id="signout" class="hidden">Sign out</a>
@@ -168,23 +168,22 @@ h1.page {
 
     <div class="card">
       <div class="row">
-        <div class="grow"><h2 id="planName">Free plan</h2>
-          <p class="sub" id="planSub">Three apps a month. Every app you make is a file that is yours forever.</p></div>
-        <span class="tag" id="planTag">free</span>
+        <div class="grow"><h2 id="planName">Everything is free</h2>
+          <p class="sub" id="planSub">While we are building this, nothing costs anything.
+          Every app you make is a file that is yours forever.</p></div>
+        <span class="tag on" id="planTag">free</span>
       </div>
       <div class="row" style="margin-top:16px; flex-wrap: wrap" id="planActs"></div>
       <p class="note hidden" id="planNote"></p>
     </div>
 
     <div class="card">
-      <h2>Give a month, get a month</h2>
-      <p class="sub">Share your link. When three people join Krate through it,
-      you get a month of Studio on us -- every three, another month.</p>
+      <h2>Invite someone</h2>
+      <p class="sub">Share your link with someone who builds things.</p>
       <div class="refbox">
         <input id="refLink" readonly value="…" />
         <button class="btn" id="refCopy">Copy</button>
       </div>
-      <div class="meter" id="refMeter"></div>
       <p class="note" id="refNote"></p>
     </div>
 
@@ -214,7 +213,7 @@ h1.page {
   <span>© 2026 Krate Labs</span>
   <nav>
     <a href="/">Home</a>
-    <a href="/#pricing">Pricing</a>
+    <a href="/#receipts">Why Krate</a>
     <a href="/docs/">Docs</a>
     <a href="/cloud/">Gallery</a>
     <a href="/contact/">Contact</a>
@@ -252,46 +251,10 @@ h1.page {
     $("uemail").textContent = m.user.email || ("@" + m.user.login);
     if (m.user.avatar_url) $("avatar").src = m.user.avatar_url;
 
-    var acts = $("planActs");
-    if (m.plan.active) {
-      $("planName").textContent = m.plan.plan === "founding" ? "Founding 200" : "Studio plan";
-      $("planSub").textContent = "Unlimited apps. " +
-        (m.plan.via === "referral" ? "This month is on us -- you earned it." :
-          m.plan.until ? "Renews " + when(m.plan.until) + "." : "");
-      $("planTag").textContent = "active";
-      $("planTag").classList.add("on");
-      $("supPriority").classList.remove("hidden");
-      $("supSub").textContent = "A real person answers -- and your tickets go to the front of the queue.";
-      if (m.plan.portal) {
-        acts.innerHTML = '<button class="btn" id="managePlan">Manage subscription</button>';
-        $("managePlan").addEventListener("click", function () {
-          $("planNote").classList.remove("hidden");
-          $("planNote").textContent = "Opening the billing portal…";
-          api("/billing/portal", { method: "POST" }).then(function (r) {
-            if (r.url) location.href = r.url;
-          }).catch(function () { $("planNote").textContent = "Could not open the portal -- tell support and we fix it."; });
-        });
-      }
-    } else {
-      acts.innerHTML =
-        '<a class="btn primary" href="/login/?next=pay-monthly">Start Studio -- $12/month</a>' +
-        '<a class="btn" href="/login/?next=pay-yearly">$96/year</a>' +
-        '<a class="btn" href="/login/?next=pay-founding">Founding -- $79/year</a>';
-    }
-
     $("refLink").value = "https://krate.tech/login/?ref=" + m.referral.code;
-    var toward = m.referral.count % 3;
-    var meter = $("refMeter");
-    for (var i = 0; i < 3; i++) {
-      var s = document.createElement("span");
-      if (i < toward) s.className = "on";
-      meter.appendChild(s);
-    }
     $("refNote").textContent =
-      m.referral.count === 0 ? "Nobody yet -- send it to someone who'd like this."
-      : m.referral.count + " joined so far" +
-        (m.referral.awards ? " · " + m.referral.awards + (m.referral.awards === 1 ? " month" : " months") + " earned" : "")
-      + " · " + (3 - toward) + " more to the next free month.";
+      m.referral.count === 0 ? "Nobody yet."
+      : m.referral.count + (m.referral.count === 1 ? " person joined" : " people joined") + " through your link.";
   }).catch(function (e) {
     if (String(e).includes("signin")) { try { localStorage.removeItem("krate_tok"); } catch (x) {} }
     showLogin();
