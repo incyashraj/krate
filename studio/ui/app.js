@@ -3751,62 +3751,131 @@ $("homePlanBtn")?.addEventListener("click", planFromHome);
 /* Speak it. Browser speech recognition, which the webview provides, so
  * nothing is installed and no audio leaves the machine except through the
  * engine the OS already uses for dictation. The button was decorative. */
+/* ---- speaking instead of typing ---------------------------------------
+ *
+ * The webview provides webkitSpeechRecognition (probed in the running
+ * window: SpeechRecognition undefined, webkitSpeechRecognition a
+ * function). macOS still gates it behind two things the bundle has to
+ * declare -- NSSpeechRecognitionUsageDescription and the audio-input
+ * entitlement -- and the entitlement was false, so every attempt was
+ * denied before a prompt could appear.
+ *
+ * Rules this follows:
+ *   - what is already typed is never destroyed; speech appends
+ *   - interim words appear as they are heard, so it is obviously live
+ *   - pressing again stops it, and it stops itself on silence
+ *   - a refusal says which refusal it was, and the message clears
+ */
 (function voiceInput() {
   const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const buttons = [
-    { btn: $("homeVoiceBtn"), field: $("homePrompt") },
+  const pairs = [
+    { btn: $("homeVoiceBtn"), field: $("homePrompt"), hint: $("homeHint") },
   ].filter((x) => x.btn && x.field);
-  if (!buttons.length) return;
+  if (!pairs.length) return;
+
+  const say = (hint, text) => {
+    if (!hint) return;
+    if (hint.dataset.was === undefined) hint.dataset.was = hint.textContent;
+    hint.textContent = text;
+  };
+  const restore = (hint) => {
+    if (!hint || hint.dataset.was === undefined) return;
+    hint.textContent = hint.dataset.was;
+    delete hint.dataset.was;
+  };
+
   if (!Rec) {
-    // Say why, once, instead of failing silently on click.
-    for (const { btn } of buttons) {
+    for (const { btn, hint } of pairs) {
       btn.title = "Speech input is not available in this window";
       btn.addEventListener("click", () => {
-        const hint = $("homeHint") || $("composerHint");
-        if (hint) hint.textContent = "Speech input is not available here. Type it instead.";
+        say(hint, "Speech input is not available here. Type it instead.");
+        setTimeout(() => restore(hint), 4000);
       });
     }
     return;
   }
+
   let active = null;
-  for (const { btn, field } of buttons) {
+
+  for (const { btn, field, hint } of pairs) {
     btn.title = "Say it out loud";
+
     btn.addEventListener("click", () => {
-      if (active) { active.stop(); return; }
+      // Pressing again is stop. Without this the only way out was silence.
+      if (active) {
+        active.stop();
+        return;
+      }
+
       const rec = new Rec();
       rec.lang = navigator.language || "en-US";
       rec.interimResults = true;
       rec.continuous = false;
-      // What was already typed stays; speech appends to it.
-      const base = field.value;
-      rec.onresult = (e) => {
-        let text = "";
-        for (let i = e.resultIndex; i < e.results.length; i += 1) {
-          text += e.results[i][0].transcript;
-        }
-        field.value = (base ? base.trim() + " " : "") + text.trim();
-        field.dispatchEvent(new Event("input", { bubbles: true }));
-      };
-      const stop = () => {
+      rec.maxAlternatives = 1;
+
+      // Anything already typed is kept and spoken words are added to it.
+      const base = field.value.trim();
+      let heard = "";
+
+      const settle = () => {
         active = null;
         btn.classList.remove("listening");
+        btn.title = "Say it out loud";
+        restore(hint);
+        // Leave the caret where a person would expect to keep typing.
+        field.focus();
+        const end = field.value.length;
+        try { field.setSelectionRange(end, end); } catch (e) {}
       };
-      rec.onerror = (e) => {
-        stop();
-        if (e.error === "not-allowed" || e.error === "service-not-allowed") {
-          const hint = $("homeHint") || $("composerHint");
-          if (hint) hint.textContent = "Krate needs microphone permission to hear you.";
-        }
-      };
-      rec.onend = stop;
-      try {
-        rec.start();
+
+      rec.onstart = () => {
         active = rec;
         btn.classList.add("listening");
-      } catch (err) { stop(); }
+        btn.title = "Stop listening";
+        say(hint, "Listening. Press again to stop.");
+      };
+
+      rec.onresult = (event) => {
+        let finalText = "";
+        let interim = "";
+        for (let i = event.resultIndex; i < event.results.length; i += 1) {
+          const chunk = event.results[i][0].transcript;
+          if (event.results[i].isFinal) finalText += chunk;
+          else interim += chunk;
+        }
+        if (finalText) heard = (heard + " " + finalText).trim();
+        const shown = (heard + " " + interim).trim();
+        field.value = base ? `${base} ${shown}`.trim() : shown;
+        // Keep the box growing and the send button lighting up as it fills.
+        field.dispatchEvent(new Event("input", { bubbles: true }));
+      };
+
+      rec.onerror = (event) => {
+        const why = {
+          "not-allowed": "Krate needs microphone permission. Allow it in System Settings, Privacy and Security.",
+          "service-not-allowed": "macOS blocked speech recognition for this app.",
+          "no-speech": "Did not catch that. Press the microphone and try again.",
+          "audio-capture": "No microphone was found.",
+          "network": "Speech recognition needs a connection.",
+        }[event.error] || "Speech input stopped.";
+        settle();
+        say(hint, why);
+        setTimeout(() => restore(hint), 5000);
+      };
+
+      rec.onend = settle;
+
+      try {
+        rec.start();
+      } catch (err) {
+        settle();
+        say(hint, "Could not start listening.");
+        setTimeout(() => restore(hint), 4000);
+      }
     });
   }
 })();
+
 // Enter sends -- the way every chat on earth works. Shift+Enter keeps the
 // newline for anyone writing a longer brief.
 $("homePrompt").addEventListener("keydown", (e) => {
@@ -6036,4 +6105,5 @@ $("aiRefresh")?.addEventListener("click", async () => {
     try { localStorage.setItem(KEY, String(parseInt(getComputedStyle(side).width, 10))); } catch (x) { }
   });
 })();
+
 

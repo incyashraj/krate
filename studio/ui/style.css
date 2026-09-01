@@ -3507,3 +3507,31 @@ body.side-open .view .side-toggle { display: none; }
    into one: the toggle sits beside the mark. */
 body:not(.macos) .side-top { display: none; }
 body:not(.macos) .side-brandrow { height: var(--titlebar); margin-bottom: 10px; }
+
+/* ---- dictation ---------------------------------------------------------
+ * The microphone has two jobs while it runs: be obviously live, and be
+ * obviously stoppable. A pulsing red mark reads as recording in every app
+ * a person has used, so it does not need explaining. */
+.home-hint {
+  min-height: 1.2em; margin: 8px 0 0;
+  text-align: left; width: min(680px, 100%);
+  color: var(--faint); font-size: 12.5px;
+}
+.tool.wave.listening {
+  color: #ff6b6b;
+  background: rgba(255, 107, 107, 0.12);
+}
+.tool.wave.listening::after {
+  content: ""; position: absolute; inset: -3px;
+  border-radius: inherit;
+  border: 1px solid rgba(255, 107, 107, 0.5);
+  animation: micPulse 1.4s ease-out infinite;
+}
+.tool.wave { position: relative; }
+@keyframes micPulse {
+  from { opacity: 0.9; transform: scale(0.92); }
+  to   { opacity: 0;   transform: scale(1.25); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tool.wave.listening::after { animation: none; opacity: 0.7; }
+}

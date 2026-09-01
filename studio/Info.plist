@@ -10,6 +10,8 @@
 	     person reads in the system prompt. -->
 	<key>NSCameraUsageDescription</key>
 	<string>Krate uses the camera only for apps that request camera access and only after you allow it.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Krate turns what you say into text in the box you are typing in, so you can describe an app out loud.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Krate uses the microphone only for apps that request audio capture and only after you allow it.</string>
 	<key>CFBundleURLTypes</key>
