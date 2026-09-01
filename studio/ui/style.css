@@ -2905,12 +2905,17 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
   transition: background 0.15s;
 }
 .side-space:hover { background: rgba(255,255,255,0.05); }
+/* The workspace mark is the Krate glyph, not a letter in a coloured box.
+   An initial in a tile is what an app draws when it has no logo; drawing
+   one next to a product that HAS a logo reads as a placeholder nobody
+   replaced. The gradient stays as the tile behind it, so the row keeps its
+   colour. */
 .space-badge {
   width: 21px; height: 21px; flex: none; border-radius: 6px;
   display: grid; place-items: center;
-  background: linear-gradient(150deg, #ff8a3d, #ff5f6d);
-  color: #1a0d06; font-size: 11px; font-weight: 700;
+  background: linear-gradient(150deg, #a558fb, #4922e5);
 }
+.space-badge img { width: 12px; height: 12px; display: block; }
 .space-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-space .chev { color: var(--faint); flex: none; }
 
