@@ -22,7 +22,16 @@
        live inside one of those pages. -->
   <aside class="side" id="side" aria-label="Your workspace" data-open="false">
 
+    <!-- Two rows, because macOS draws its traffic lights over the first
+         one. The lights row carries only the panel toggle, sitting on the
+         lights' own line at the far side of them. The mark gets the row
+         underneath, clear of anything the system draws. -->
     <div class="side-top">
+      <button class="icon-btn side-toggle" id="sideCloseToggle" title="Hide your workspace" aria-expanded="true">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="10" rx="2" stroke="currentColor" stroke-width="1.35"/><path d="M6.2 3v10" stroke="currentColor" stroke-width="1.35"/></svg>
+      </button>
+    </div>
+    <div class="side-brandrow">
       <button class="side-mark" id="sideHome" title="Krate">
         <img src="krate-logo.png" alt="" />
         <span>KRATE</span>

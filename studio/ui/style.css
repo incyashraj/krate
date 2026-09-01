@@ -207,10 +207,16 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
 body.macos .titlebar { padding-left: 84px; }
 body.macos.side-open .titlebar { padding-left: 12px; }
 /* The drawer's top strip clears the traffic lights the same way. */
-/* The drawer's own strip clears the lights horizontally. Vertically both
-   strips are --titlebar tall and centre their content, which lands on the
-   lights' centre line (they sit at y:24, 12px tall, in a 60px bar). */
+/* macOS only: the traffic lights are drawn over the drawer's first row.
+   That row is left EMPTY for them -- the panel toggle sits at its right,
+   on the lights' own line -- and the Krate mark moves to its own row
+   underneath, where nothing is drawn over it. Trying to fit the mark
+   beside the lights on one row is what kept it looking half a line off:
+   a 22px logo and three 12px dots do not share a baseline. */
 body.macos .side-top { padding-left: 78px; }
+body.macos .side-mark {
+  padding-left: 10px;
+}
 body.windows .titlebar { padding-right: 150px; }
 
 .brand {
@@ -2959,8 +2965,8 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
   height: var(--titlebar); flex: none;
   display: flex; align-items: center;
   /* On macOS the traffic lights are drawn over this strip at x:20..74.
-     The mark starts after them, so the drawer's own content never sits
-     underneath the close/minimise/zoom buttons. Set per platform below. */
+     The mark sits immediately after them on the SAME row, at the same
+     height, so the drawer's top line reads as one row of controls. */
   padding: 0 2px; margin-bottom: 10px;
 }
 /* The drawer's mark is a 30px button (it has a hover state and a click
@@ -3341,11 +3347,18 @@ body.side-open .shelf { left: 240px; }
  * A hit area wider than the line it draws: a 1px target is a coin flip
  * with a mouse, and the line is the only part anyone should see. */
 .side-grip {
-  position: absolute; top: 0; right: -3px; bottom: 0; width: 7px;
-  cursor: col-resize; z-index: 2;
+  /* Pinned to the drawer's right edge and taken OUT of the flex flow.
+     As the column's last child it was being laid out by flex, which gave
+     it a computed box of 0x0 -- present in the DOM, impossible to grab,
+     which is why dragging never did anything. `flex: none` plus explicit
+     offsets is what makes an absolutely positioned child of a flex
+     container actually take its own size. */
+  position: absolute; top: 0; bottom: 0; right: -4px;
+  width: 9px; flex: none;
+  cursor: col-resize; z-index: 70;
 }
 .side-grip::after {
-  content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 1px;
+  content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 1px;
   background: transparent; transition: background 0.15s;
 }
 .side-grip:hover::after,
@@ -3400,3 +3413,25 @@ body.side-resizing .side-grip { pointer-events: auto; }
  * text competes with it. */
 body.session-view .stars { opacity: 0.3; }
 body.session-view .horizon { opacity: 0.35; }
+
+/* The drawer's two top rows.
+ *
+ * Row one is the system's: macOS paints its traffic lights across it, so
+ * nothing of ours goes under them -- only the panel toggle, pushed to the
+ * far side of the lights and centred on their line.
+ *
+ * Row two is ours: the Krate mark, on a clean line where no system chrome
+ * is drawn. This is what ChatGPT does, and it is why its logo never looks
+ * a few pixels out: it is not trying to share a row with three round
+ * buttons of a different size.
+ */
+.side-brandrow {
+  flex: none; display: flex; align-items: center;
+  height: 38px; padding: 0 2px; margin-bottom: 8px;
+}
+.side-top { justify-content: flex-end; }
+.side-top .side-toggle { margin-right: 2px; }
+/* Off macOS there are no lights to dodge, so the two rows collapse back
+   into one: the toggle sits beside the mark. */
+body:not(.macos) .side-top { display: none; }
+body:not(.macos) .side-brandrow { height: var(--titlebar); margin-bottom: 10px; }
