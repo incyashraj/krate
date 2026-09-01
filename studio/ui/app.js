@@ -3706,6 +3706,90 @@ function submitInSession() {
 
 $("loginBtn").addEventListener("click", login);
 $("homeSend").addEventListener("click", startFromHome);
+
+/* Plan: talk it through before anything builds.
+ *
+ * The conversation gate already runs on a first message, so this button's
+ * job is to force it -- including for a change to an app that already
+ * works, which normally goes straight to the build. It was in the markup
+ * with no handler at all, which is worse than not being there: a control
+ * that does nothing teaches people the others might not either. */
+function planFromHome() {
+  const text = $("homePrompt").value.trim();
+  if (!text) {
+    $("homePrompt").focus();
+    return;
+  }
+  newSession(text);
+  $("railTitle").textContent = state.session.title;
+  $("thread").innerHTML = "";
+  show("idle");
+  showView("session");
+  $("homePrompt").value = "";
+  say("YOU", text);
+  startPlanning(text, []);
+}
+$("homePlanBtn")?.addEventListener("click", planFromHome);
+
+/* Speak it. Browser speech recognition, which the webview provides, so
+ * nothing is installed and no audio leaves the machine except through the
+ * engine the OS already uses for dictation. The button was decorative. */
+(function voiceInput() {
+  const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const buttons = [
+    { btn: $("homeVoiceBtn"), field: $("homePrompt") },
+  ].filter((x) => x.btn && x.field);
+  if (!buttons.length) return;
+  if (!Rec) {
+    // Say why, once, instead of failing silently on click.
+    for (const { btn } of buttons) {
+      btn.title = "Speech input is not available in this window";
+      btn.addEventListener("click", () => {
+        const hint = $("homeHint") || $("composerHint");
+        if (hint) hint.textContent = "Speech input is not available here. Type it instead.";
+      });
+    }
+    return;
+  }
+  let active = null;
+  for (const { btn, field } of buttons) {
+    btn.title = "Say it out loud";
+    btn.addEventListener("click", () => {
+      if (active) { active.stop(); return; }
+      const rec = new Rec();
+      rec.lang = navigator.language || "en-US";
+      rec.interimResults = true;
+      rec.continuous = false;
+      // What was already typed stays; speech appends to it.
+      const base = field.value;
+      rec.onresult = (e) => {
+        let text = "";
+        for (let i = e.resultIndex; i < e.results.length; i += 1) {
+          text += e.results[i][0].transcript;
+        }
+        field.value = (base ? base.trim() + " " : "") + text.trim();
+        field.dispatchEvent(new Event("input", { bubbles: true }));
+      };
+      const stop = () => {
+        active = null;
+        btn.classList.remove("listening");
+      };
+      rec.onerror = (e) => {
+        stop();
+        if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+          const hint = $("homeHint") || $("composerHint");
+          if (hint) hint.textContent = "Krate needs microphone permission to hear you.";
+        }
+      };
+      rec.onend = stop;
+      try {
+        rec.start();
+        active = rec;
+        btn.classList.add("listening");
+      } catch (err) { stop(); }
+    });
+  }
+})();
 // Enter sends -- the way every chat on earth works. Shift+Enter keeps the
 // newline for anyone writing a longer brief.
 $("homePrompt").addEventListener("keydown", (e) => {
@@ -5155,6 +5239,29 @@ function paintGreeting() {
   if (greet) {
     const first = (name.split(/\s+/)[0] || "").replace(/[<>]/g, "");
     greet.textContent = first ? `Hi ${first}` : "Hi";
+  }
+  // The drawer's avatar comes from the same name. Nothing filled it before,
+  // so it sat as a permanent grey middle dot -- a button that looks broken
+  // is worse than no button, and this one opens the account sheet.
+  const avatarInitial = $("sideInitial");
+  const avatarImg = $("sideAvatarImg");
+  const picture = (state.account && (state.account.avatar || state.account.avatar_url)) || "";
+  if (avatarImg) {
+    if (picture) {
+      avatarImg.src = picture;
+      avatarImg.classList.remove("hidden");
+    } else {
+      avatarImg.classList.add("hidden");
+      avatarImg.removeAttribute("src");
+    }
+  }
+  if (avatarInitial) {
+    avatarInitial.textContent = initial || "·";
+    avatarInitial.classList.toggle("hidden", Boolean(picture));
+  }
+  const avatarBtn = $("sideAccount");
+  if (avatarBtn) {
+    avatarBtn.title = name ? `Signed in as ${name}` : "Your account";
   }
   // The question itself is static markup and is never rewritten here.
 }

@@ -146,7 +146,10 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
 .titlebar {
   position: relative;
   height: var(--titlebar); flex: none;
-  display: flex; align-items: center; gap: 12px;
+  display: flex; align-items: center;
+  /* The nav starts below the header's line, not against it. At 2px the
+     first tile's rounded corner and its hover fill touched the seam, so
+     hovering Home read as the tile bleeding into the title bar. */ gap: 12px;
   /* The corner belongs to us on every platform. */
   padding: 0 16px 0 12px;
   border-bottom: 1px solid var(--line);
@@ -2953,7 +2956,7 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
   /* No side padding of its own: the mark carries 6px and the nav rows
      carry 8px, so an extra 4px here put the logo 2px right of every row
      under it -- visible as a wobble down the drawer's left edge. */
-  padding: 0 2px; margin-bottom: 2px;
+  padding: 0 2px; margin-bottom: 10px;
 }
 /* The drawer's mark is a 30px button (it has a hover state and a click
    target); the room's brand is a bare 21px row. Bottom-aligning two boxes
