@@ -368,8 +368,12 @@ fn silent_cmd(program: impl AsRef<std::ffi::OsStr>) -> Command {
     // this for the authoring child; every other command was still starting
     // at `/` (K-219).
     let work = studio_dir().join("work");
-    let _ = std::fs::create_dir_all(&work);
-    cmd.current_dir(work);
+    if work.is_absolute() && std::fs::create_dir_all(&work).is_ok() {
+        cmd.current_dir(work);
+    } else {
+        // Never leave a child at the launcher's cwd; temp is always real.
+        cmd.current_dir(std::env::temp_dir());
+    }
     cmd
 }
 
@@ -3708,9 +3712,22 @@ fn main() {
     // is unjustifiable (K-219, and K-179 before it for the agent's half).
     //
     // Our own directory is always readable and never guarded by TCC.
+    // dirs_home() falls back to "." when USERPROFILE/HOME is unset, and at
+    // this moment "." IS the filesystem root -- so a naive set_current_dir
+    // would resolve back to `/` and quietly undo this. Only move if the
+    // directory is real and absolute, and fall back to the OS temp dir,
+    // which always is.
     let home_work = studio_dir().join("work");
-    let _ = std::fs::create_dir_all(&home_work);
-    let _ = std::env::set_current_dir(&home_work);
+    let target = if home_work.is_absolute() {
+        home_work
+    } else {
+        std::env::temp_dir().join("krate-studio")
+    };
+    if std::fs::create_dir_all(&target).is_ok() {
+        let _ = std::env::set_current_dir(&target);
+    } else {
+        let _ = std::env::set_current_dir(std::env::temp_dir());
+    }
 
     // Register the file type and the krate:// scheme BEFORE the early
     // returns below, not after.
