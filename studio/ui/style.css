@@ -204,7 +204,19 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
    corner. */
 /* The drawer owns the corner when it is open, so the room's bar starts
    after it; when it is closed the room's own bar clears the lights. */
+/* The room's title bar rides 8px below the traffic lights, and the
+   drawer's strip does not -- both are --titlebar tall and both centre, so
+   the difference comes from what wraps them, not from the rows.
+   
+   Measured off screen captures of the running window, twice, stable:
+     drawer toggle  centre 122.0 vs dots 171.5 -> +0.25 CSS px  (aligned)
+     room toggle    centre 187.5 vs dots 171.5 -> +8.00 CSS px  (low)
+   
+   So only the room's bar is corrected, by exactly what was measured. The
+   bar keeps its height -- the room below depends on it -- and only its
+   controls move onto the lights' line. */
 body.macos .titlebar { padding-left: 84px; }
+body.macos .titlebar > * { position: relative; top: -8px; }
 body.macos.side-open .titlebar { padding-left: 12px; }
 /* The drawer's top strip clears the traffic lights the same way. */
 /* macOS only: the traffic lights are drawn over the drawer's first row.
