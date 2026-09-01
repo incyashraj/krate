@@ -301,9 +301,12 @@ img { max-width: 100%; display: block; }
 }
 
 /* ----------------------------------------------------- section: works */
+/* Sized to what it holds, not to the window. `min-height: 100vh` forced a
+   whole screen of black for one paragraph and a graphic, and on a tall
+   display that reads as a page that failed to load rather than as air. */
 .works {
-  position: relative; z-index: 30; width: 100%; min-height: 100vh;
-  background: #000; padding: 110px 24px;
+  position: relative; z-index: 30; width: 100%;
+  background: #000; padding: 96px 24px;
   display: flex; align-items: center; justify-content: center;
 }
 .worksGrid {
@@ -510,10 +513,13 @@ img { max-width: 100%; display: block; }
 .price .note a { color: #a1a1aa; text-decoration: underline; }
 
 /* -------------------------------------------------------- section: cta */
+/* Same reasoning as .works above: the closing card and the footer do not
+   need a full screen reserved for them. */
 .ctaSec {
-  position: relative; z-index: 30; width: 100%; min-height: 100vh;
-  background: #000; padding: 90px 24px 40px;
+  position: relative; z-index: 30; width: 100%;
+  background: #000; padding: 96px 24px 40px;
   display: flex; flex-direction: column; justify-content: space-between; align-items: center;
+  gap: 64px;
 }
 .ctaCard {
   position: relative; width: 100%; max-width: 1024px; margin: auto 0;
