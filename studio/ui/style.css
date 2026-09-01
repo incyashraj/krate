@@ -284,7 +284,18 @@ body.windows .titlebar { padding-right: 150px; }
   padding: 0 32px var(--dock-clear);
 }
 .home-hero { width: 100%; display: flex; flex-direction: column; align-items: center; padding: 0; }
-.home-title { text-align: center; }
+
+/* The hail: the mark and the person's name, small, above the question.
+   Left-aligned with the composer rather than centred, so the eye starts
+   at the same x as the box it is about to type in. */
+.home-hail {
+  width: min(680px, 100%);
+  display: flex; align-items: center; gap: 9px;
+  font-size: 15px; color: var(--muted); margin-bottom: 6px;
+}
+.home-hail img { width: 19px; height: 19px; display: block; flex: none; }
+
+.home-title { text-align: left; width: min(680px, 100%); }
 .home-sub { color: var(--muted); font-size: 15px; margin: 14px 0 34px; text-align: center; }
 
 .composer-shell { width: min(600px, 100%); }
@@ -1791,33 +1802,62 @@ img.cloud-icon { object-fit: cover; }
  * field, every layer a soft radial so the colors melt into each other and
  * into the black with no edge anywhere. The dome is highest at center and
  * falls away toward the sides. */
+/* The ground under everything: a wide dome of colour rising from the
+   bottom, stars inside it, and grain over the whole window.
+   The colour reaches further up and further out than a tidy arc would.
+   A gradient that stops in a clean line reads as a shape someone drew;
+   this one dissolves, which is why the blur is large and the widest wash
+   carries faint light past the middle of the screen. */
 .horizon {
-  position: fixed; left: -22vw; right: -22vw; bottom: -12vh; height: 84vh;
+  position: fixed; left: -30vw; right: -30vw; bottom: -18vh; height: 118vh;
   pointer-events: none; z-index: 0;
   transition: opacity 0.5s ease;
-  filter: blur(30px);
+  filter: blur(46px);
   background:
-    /* the luminous heart, lowest and brightest */
-    radial-gradient(58% 40% at 50% 104%, rgba(190, 164, 255, 0.68), transparent 72%),
-    /* a rose band breathing around it */
-    radial-gradient(95% 58% at 50% 108%, rgba(190, 116, 212, 0.32), transparent 74%),
-    /* the periwinkle strip */
-    radial-gradient(135% 80% at 50% 112%, rgba(110, 98, 250, 0.48), transparent 78%),
-    /* the deep indigo strip above it */
-    radial-gradient(175% 104% at 50% 118%, rgba(58, 50, 176, 0.55), transparent 84%),
-    /* and the widest wash, carrying the light up past half the window */
+    /* the pale heart, lowest and brightest, slightly left of centre so the
+       field is not a symmetrical dome */
+    radial-gradient(42% 30% at 44% 104%, rgba(214, 206, 255, 0.42), transparent 70%),
+    /* the cold blue lobe on the right, the reference's strongest colour */
+    radial-gradient(46% 34% at 74% 106%, rgba(64, 96, 240, 0.44), transparent 72%),
+    /* violet filling the middle */
+    radial-gradient(70% 42% at 50% 110%, rgba(126, 96, 234, 0.34), transparent 74%),
+    /* a deep indigo shoulder reaching left */
+    radial-gradient(84% 54% at 26% 112%, rgba(58, 44, 168, 0.34), transparent 78%),
+    /* and the widest wash, carrying light past the middle of the window */
     linear-gradient(to top,
-      rgba(44, 38, 130, 0.42),
-      rgba(44, 38, 130, 0.20) 52%,
-      rgba(44, 38, 130, 0.06) 74%,
-      transparent 92%);
+      rgba(40, 34, 122, 0.40),
+      rgba(40, 34, 122, 0.22) 44%,
+      rgba(40, 34, 122, 0.08) 68%,
+      transparent 90%);
 }
+
+/* The starfield sits between the colour and the grain, so grain lands on
+   the stars too and they read as part of the image rather than dots on
+   top of it. */
+.stars {
+  position: fixed; inset: 0; width: 100%; height: 100%;
+  pointer-events: none; z-index: 0; display: block;
+  transition: opacity 0.5s ease;
+}
+
+/* Heavier and coarser than before. The reference is visibly grainy, and
+   grain is also what keeps a big soft gradient from banding on a cheap
+   panel. Two layers: fine noise over the whole window, and a coarser one
+   that only shows where the colour is. */
 .grain {
-  position: fixed; inset: 0; pointer-events: none; z-index: 0;
-  opacity: 0.55; mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='4' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='120' height='120' filter='url(%23n)' opacity='.42'/></svg>");
+  position: fixed; inset: 0; pointer-events: none; z-index: 1;
+  opacity: 0.78; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='4' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='140' height='140' filter='url(%23n)' opacity='.58'/></svg>");
+}
+.grain::after {
+  content: ""; position: absolute; inset: 0;
+  opacity: 0.5; mix-blend-mode: soft-light;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='90' height='90'><filter id='m'><feTurbulence type='fractalNoise' baseFrequency='.34' numOctaves='3' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='90' height='90' filter='url(%23m)' opacity='.5'/></svg>");
+  -webkit-mask-image: linear-gradient(to top, #000 0%, rgba(0,0,0,.55) 40%, transparent 78%);
+          mask-image: linear-gradient(to top, #000 0%, rgba(0,0,0,.55) 40%, transparent 78%);
 }
 body.scrolled .horizon { opacity: 0.45; }
+body.scrolled .stars { opacity: 0.45; }
 
 /* ---- the dock ----------------------------------------------------------
  * One element for the whole app, outside every view, so switching pages
@@ -2985,18 +3025,16 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
 .titlebar .side-toggle { margin-right: 2px; }
 
 /* ---- the title -----------------------------------------------------------
- * Two lines, because the sentence has two halves and breaking it where the
- * meaning breaks is what makes it read as one thought rather than a
- * paragraph that happened to wrap. Balanced and centred, and the second
- * line is the quieter half. */
+ * One question, left-aligned on the same edge as the box below it, with
+ * the mark and the person's name small above. The eye starts where the
+ * typing starts. A centred headline over a left-aligned box gives the
+ * column two different left edges and neither looks deliberate. */
 .home-title.display {
-  display: flex; flex-direction: column; align-items: center;
-  gap: 2px; text-align: center;
-  font-size: clamp(27px, 3.3vw, 40px);
+  display: block; text-align: left;
+  font-size: clamp(28px, 3.4vw, 41px);
   font-weight: 600; letter-spacing: -0.032em; line-height: 1.12;
-  margin-bottom: 30px;
+  margin-bottom: 22px;
 }
-.home-title.display span:last-child { color: rgba(255,255,255,0.62); }
 
 /* ---- the box -------------------------------------------------------------
  * Wider and taller than before, with the controls on one row underneath and
