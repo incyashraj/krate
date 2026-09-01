@@ -955,6 +955,17 @@
         <button class="btn" id="aiRefresh">Refresh</button>
         <span class="ai-refresh-note" id="aiRefreshNote"></span>
       </div>
+
+      <!-- No CLI, just a key. This is the shortest path in for a developer
+           who already pays for the API and does not want another tool
+           installed and signed in first. -->
+      <div class="ai-keys" id="aiKeys">
+        <h3>Use an API key instead</h3>
+        <p class="ai-keys-sub">Paste a key and Krate calls the model directly.
+        Nothing else to install.</p>
+        <div id="aiKeyRows"></div>
+        <p class="ai-keys-note" id="aiKeyNote"></p>
+      </div>
       <details class="sheet-foot-fold"><summary>Using something else?</summary>
       <p class="sheet-foot">Any tool that can edit files can author Krate apps -
       run <code>krate create --help</code> and see <code>--author-cmd</code>.</p></details>

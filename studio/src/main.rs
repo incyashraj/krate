@@ -667,6 +667,105 @@ async fn refresh_agents() -> Result<Vec<AgentInfo>, String> {
     agents().await
 }
 
+/// Whether an API key is stored, per vendor, and where it lives.
+///
+/// Never returns the key itself. The UI only needs to know that one is set
+/// and where it is kept, and a credential that never crosses the bridge
+/// cannot leak through a webview.
+#[derive(serde::Serialize)]
+struct ApiKeyInfo {
+    vendor: String,
+    label: String,
+    set: bool,
+    /// "in your keychain", "encrypted on this machine", "from the environment"
+    where_kept: String,
+    /// Set from the environment, so Studio must not offer to change it.
+    from_env: bool,
+}
+
+#[tauri::command]
+async fn api_keys() -> Result<Vec<ApiKeyInfo>, String> {
+    let engine = engine()?;
+    let out = silent_cmd(&engine)
+        .args(["api-key", "status"])
+        .output()
+        .map_err(|err| format!("could not run the Krate engine: {err}"))?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut infos = Vec::new();
+    for (vendor, label) in [("anthropic", "Anthropic"), ("openai", "OpenAI")] {
+        let line = text
+            .lines()
+            .find(|l| l.trim_start().starts_with(vendor))
+            .unwrap_or("");
+        let set = line.contains(" set,");
+        let from_env = line.contains("from the environment");
+        let where_kept = if !set {
+            String::new()
+        } else if from_env {
+            "from the environment".to_string()
+        } else if line.contains("keychain") {
+            "in your keychain".to_string()
+        } else {
+            "encrypted on this machine".to_string()
+        };
+        infos.push(ApiKeyInfo {
+            vendor: vendor.to_string(),
+            label: label.to_string(),
+            set,
+            where_kept,
+            from_env,
+        });
+    }
+    Ok(infos)
+}
+
+/// Save an API key. The key goes in on stdin, never as an argument: an
+/// argument is visible in the process list to every other program running
+/// as this user.
+#[tauri::command]
+async fn api_key_set(vendor: String, key: String) -> Result<String, String> {
+    use std::io::Write;
+    let engine = engine()?;
+    let mut child = silent_cmd(&engine)
+        .args(["api-key", "set", &vendor])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|err| format!("could not run the Krate engine: {err}"))?;
+    child
+        .stdin
+        .as_mut()
+        .ok_or("could not write the key")?
+        .write_all(format!("{}\n", key.trim()).as_bytes())
+        .map_err(|err| format!("could not write the key: {err}"))?;
+    let out = child
+        .wait_with_output()
+        .map_err(|err| format!("the engine did not finish: {err}"))?;
+    if out.status.success() {
+        Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr)
+            .trim()
+            .trim_start_matches("error: ")
+            .to_string())
+    }
+}
+
+#[tauri::command]
+async fn api_key_forget(vendor: String) -> Result<(), String> {
+    let engine = engine()?;
+    let out = silent_cmd(&engine)
+        .args(["api-key", "forget", &vendor])
+        .output()
+        .map_err(|err| format!("could not run the Krate engine: {err}"))?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+    }
+}
+
 /// Which AIs this machine can author with, through `krate ai --json`.
 #[tauri::command]
 async fn agents() -> Result<Vec<AgentInfo>, String> {
@@ -3722,6 +3821,9 @@ fn main() {
             open_external,
             sign_in_agent,
             refresh_agents,
+            api_keys,
+            api_key_set,
+            api_key_forget,
             terminal_status,
             #[cfg(target_os = "macos")]
             link_terminal_tool,

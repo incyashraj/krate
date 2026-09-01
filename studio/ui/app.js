@@ -2286,6 +2286,9 @@ const AGENT_ORDER = [
   { name: "gemini", label: "Gemini" },
   { name: "copilot", label: "Copilot" },
   { name: "grok", label: "Grok" },
+  // Not CLIs: an API key is the readiness, and these need nothing installed.
+  { name: "anthropic", label: "Anthropic API" },
+  { name: "openai", label: "OpenAI API" },
 ];
 
 async function refreshAgents() {
@@ -2348,9 +2351,93 @@ function setChips(dot, text, title) {
   if (sv) sv.textContent = agentLabel();
 }
 
+/* ---- API keys: authoring without installing a CLI ---------------------
+ *
+ * The five CLI providers all require installing a tool and signing in to it
+ * before Krate can do anything. A developer who already pays for the API
+ * and just wants to try this has, until now, had no way in at all (K-218).
+ *
+ * The key never comes back across this bridge: api_keys() reports only
+ * whether one is set and where it is kept. A key set in the environment is
+ * shown and NOT editable here, because Studio overwriting what CI set would
+ * be a surprise in the wrong direction.
+ */
+async function paintApiKeys() {
+  const rows = $("aiKeyRows");
+  if (!rows) return;
+  let keys = [];
+  try {
+    keys = await invoke("api_keys");
+  } catch (e) {
+    rows.innerHTML = `<p class="ai-keys-note">Could not check for API keys.</p>`;
+    return;
+  }
+  rows.innerHTML = keys
+    .map((k) => {
+      if (k.set) {
+        return `<div class="ai-key-row" data-vendor="${k.vendor}">
+          <span class="ai-key-name">${k.label}</span>
+          <span class="ai-key-state ok">${k.where_kept}</span>
+          ${k.from_env
+            ? '<span class="ai-key-env">set outside Krate</span>'
+            : `<button class="btn btn-ghost ai-key-forget" data-forget="${k.vendor}">Remove</button>`}
+        </div>`;
+      }
+      return `<div class="ai-key-row" data-vendor="${k.vendor}">
+        <span class="ai-key-name">${k.label}</span>
+        <input class="ai-key-input" type="password" autocomplete="off"
+               spellcheck="false" placeholder="Paste a key" data-key="${k.vendor}" />
+        <button class="btn ai-key-save" data-save="${k.vendor}">Save</button>
+      </div>`;
+    })
+    .join("");
+
+  rows.querySelectorAll("[data-save]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const vendor = button.dataset.save;
+      const input = rows.querySelector(`[data-key="${vendor}"]`);
+      const note = $("aiKeyNote");
+      const value = (input && input.value) || "";
+      if (!value.trim()) {
+        if (note) note.textContent = "Paste a key first.";
+        return;
+      }
+      button.disabled = true;
+      button.textContent = "Saving";
+      try {
+        const said = await invoke("api_key_set", { vendor, key: value.trim() });
+        if (input) input.value = "";
+        if (note) note.textContent = said || "Saved.";
+        await paintApiKeys();
+        // A key is a new way to author, so the picker has to know about it.
+        await refreshAgents();
+      } catch (err) {
+        if (note) note.textContent = String(err);
+        button.disabled = false;
+        button.textContent = "Save";
+      }
+    });
+  });
+
+  rows.querySelectorAll("[data-forget]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const note = $("aiKeyNote");
+      try {
+        await invoke("api_key_forget", { vendor: button.dataset.forget });
+        if (note) note.textContent = "Removed.";
+        await paintApiKeys();
+        await refreshAgents();
+      } catch (err) {
+        if (note) note.textContent = String(err);
+      }
+    });
+  });
+}
+
 function openAiSheet() {
   const list = $("aiList");
   list.innerHTML = "";
+  paintApiKeys();
   if (state.agentsError && !state.agents.length) {
     const p = document.createElement("p");
     p.className = "ai-error";
@@ -5121,7 +5208,11 @@ async function obLoadAgents() {
           ? "ready"
           : a.state === "not-ready"
             ? "needs signing in"
-            : "not installed";
+            // An API vendor is never "not installed": there is nothing to
+            // install, only a key to paste.
+            : a.kind === "api"
+              ? "needs a key"
+              : "not installed";
         return `<button class="ob-agent${ok ? "" : " off"}" data-agent="${a.name}" ${ok ? "" : "disabled"}>
           <span class="ob-agent-mark">${aiLogo(a.name)}</span>
           <span class="ob-agent-name">${a.label}</span>
@@ -5143,6 +5234,16 @@ async function obLoadAgents() {
         // being the tool they use.
         button.disabled = false;
         button.classList.remove("off");
+        // An API vendor has nothing to install and no terminal sign-in;
+        // it needs a key, which is pasted in Settings. Sending it down the
+        // install path would run npm for a thing that is not a package.
+        if (info.kind === "api") {
+          button.addEventListener("click", () => {
+            openAiSheet();
+            $("aiSheet")?.classList.remove("hidden");
+          });
+          return;
+        }
         button.addEventListener("click", async () => {
           const label = button.querySelector(".ob-agent-state");
           if (label) label.textContent = "installing";

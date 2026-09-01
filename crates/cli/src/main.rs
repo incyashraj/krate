@@ -18,6 +18,8 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 mod agent_provider;
+mod api_author;
+mod api_key;
 mod authoring_context;
 mod github_auth;
 mod krate_mode;
@@ -291,6 +293,18 @@ enum Command {
         /// welcome to.
         #[arg(long)]
         json: bool,
+    },
+
+    /// Store, check or remove an API key, for authoring without a CLI.
+    ///
+    /// `krate api-key set anthropic` reads the key from stdin so it never
+    /// lands in shell history. The key goes to the OS keychain on macOS,
+    /// and to a machine-encrypted file elsewhere.
+    ApiKey {
+        /// set, status, or forget.
+        action: String,
+        /// anthropic or openai.
+        vendor: Option<String>,
     },
 
     /// Set up Claude Desktop or Cursor to build Krate apps for you.
@@ -862,6 +876,86 @@ fn agent_author_command(provider: &dyn agent_provider::AgentProvider) -> String 
     format!("{} author-agent {}", shell_quote(&exe), provider.name())
 }
 
+/// `krate api-key <action> [vendor]`.
+///
+/// The key is read from STDIN for `set`, never from an argument: an
+/// argument lands in shell history and in the process list, where a
+/// credential does not belong.
+fn api_key_command(action: &str, vendor: Option<&str>) -> Result<u8> {
+    use api_key::ApiVendor;
+
+    let parse_vendor = |name: Option<&str>| -> Result<ApiVendor> {
+        let name = name.unwrap_or("anthropic");
+        ApiVendor::parse(name)
+            .ok_or_else(|| anyhow::anyhow!("unknown vendor \"{name}\". Use anthropic or openai."))
+    };
+
+    match action {
+        "set" => {
+            let vendor = parse_vendor(vendor)?;
+            let mut key = String::new();
+            io::stdin()
+                .read_line(&mut key)
+                .context("could not read the key from stdin")?;
+            let where_it_went = api_key::save(vendor, &key).map_err(|err| anyhow::anyhow!(err))?;
+            println!("{} key saved, {}.", vendor.label(), where_it_went.describe());
+            Ok(0)
+        }
+        "status" => {
+            // Built as one string and written once: a println! loop panics
+            // on a closed pipe (`krate api-key status | head -1`), and a
+            // panic is not an acceptable answer to a closed pipe.
+            let mut out = String::new();
+            let mut any = false;
+            for vendor in [ApiVendor::Anthropic, ApiVendor::OpenAi] {
+                if let Some((key, source)) = api_key::load(vendor) {
+                    any = true;
+                    // Never print the key. The last four characters are
+                    // enough to tell two keys apart.
+                    let tail: String = {
+                        let mut last: Vec<char> = key.chars().rev().take(4).collect();
+                        last.reverse();
+                        last.into_iter().collect()
+                    };
+                    out.push_str(&format!(
+                        "{:<10} set, {} (...{tail})\n",
+                        vendor.name(),
+                        source.describe()
+                    ));
+                } else {
+                    out.push_str(&format!("{:<10} not set\n", vendor.name()));
+                }
+            }
+            if !any {
+                out.push_str("\nAdd one with: krate api-key set anthropic\n");
+            }
+            let _ = io::stdout().write_all(out.as_bytes());
+            Ok(0)
+        }
+        "forget" => {
+            let vendor = parse_vendor(vendor)?;
+            api_key::forget(vendor).map_err(|err| anyhow::anyhow!(err))?;
+            println!("{} key removed.", vendor.label());
+            Ok(0)
+        }
+        other => {
+            anyhow::bail!("unknown action \"{other}\". Use set, status, or forget.")
+        }
+    }
+}
+
+/// The `--author-cmd` string for a model API, which has no CLI to resolve.
+///
+/// Same self-invocation as [`agent_author_command`]: the prompt stays
+/// versioned with the binary rather than living in a script.
+fn api_vendor_author_command(vendor: &str) -> String {
+    let exe = std::env::current_exe()
+        .ok()
+        .and_then(|path| path.to_str().map(str::to_string))
+        .unwrap_or_else(|| "krate".to_string());
+    format!("{} author-agent {}", shell_quote(&exe), vendor)
+}
+
 /// Whether the given work dir is an existing app's source that a change
 /// should be authored directly inside -- as opposed to a plain workspace
 /// that gets a fresh named subdirectory.
@@ -1354,6 +1448,11 @@ fn run() -> Result<u8> {
                 // is reported before any authoring work begins.
                 author_cmd: match (author_cmd, agent) {
                     (Some(command), _) => Some(command),
+                    // An API vendor has no CLI to resolve; it self-invokes the
+                    // same hidden subcommand, and api_author takes it there.
+                    (None, Some(name)) if api_key::ApiVendor::parse(&name).is_some() => {
+                        Some(api_vendor_author_command(&name))
+                    }
                     (None, Some(name)) => Some(agent_author_command(resolve_agent(&name)?)),
                     (None, None) => None,
                 },
@@ -1416,6 +1515,7 @@ fn run() -> Result<u8> {
         Command::Doctor => doctor(),
         Command::Account { action, json } => account_command(action, json),
         Command::Ai { json } => ai_status(json),
+        Command::ApiKey { action, vendor } => api_key_command(&action, vendor.as_deref()),
         Command::Connect { app, yes, dry_run } => connect(app.as_deref(), yes, dry_run),
         Command::CheckApp {
             dir,
@@ -2958,7 +3058,7 @@ fn set_progress_sink(sink: Option<std::sync::Arc<progress::Progress>>) {
 /// Put a line of detail under the current stage, without changing the stage.
 ///
 /// Returns false when nothing is drawing, so the caller can print instead.
-fn report_progress_note(text: &str) -> bool {
+pub(crate) fn report_progress_note(text: &str) -> bool {
     if let Some(progress) = progress_sink() {
         progress.note(text.to_string());
         return true;
@@ -6167,6 +6267,14 @@ fn run_author_agent(agent: &str) -> Result<u8> {
     let request =
         std::env::var("KRATE_REQUEST").unwrap_or_else(|_| "a small useful app".to_string());
 
+    // An API vendor is not a program on PATH, so it never reaches
+    // resolve_agent: it runs the loop in api_author instead, which drives
+    // the same authoring prompt over HTTP. Everything downstream (the
+    // workspace, check-app, packing) is identical.
+    if let Some(vendor) = api_key::ApiVendor::parse(agent) {
+        return api_author::run(vendor, &app_dir, &request);
+    }
+
     run_provider_author(resolve_agent(agent)?, &app_dir, &request)
 }
 
@@ -6275,7 +6383,7 @@ fn claude_author_prompt(app_dir: &str, request: &str, krate_bin: &str) -> String
     claude_author_prompt_with(app_dir, request, krate_bin, false)
 }
 
-fn claude_author_prompt_with(
+pub(crate) fn claude_author_prompt_with(
     app_dir: &str,
     request: &str,
     krate_bin: &str,
@@ -8080,6 +8188,33 @@ fn ai_status_json() -> Result<u8> {
             .filter_map(|handle| handle.join().ok())
             .collect()
     });
+    // A stored API key is a way to author, so it belongs in the same list
+    // the picker reads. No probe: having the key IS the readiness, and a
+    // round trip to the vendor to prove it would cost money on every open
+    // of the settings sheet (K-218).
+    let mut rows = rows;
+    for vendor in [api_key::ApiVendor::Anthropic, api_key::ApiVendor::OpenAi] {
+        let held = api_key::load(vendor);
+        let (state, detail) = match &held {
+            Some((_, source)) => ("working", format!("API key, {}", source.describe())),
+            None => (
+                "missing",
+                format!("needs an API key, or set {}", vendor.env_var()),
+            ),
+        };
+        rows.push(serde_json::json!({
+            "name": vendor.name(),
+            "label": vendor.label(),
+            "state": state,
+            "detail": detail,
+            "remedy": if held.is_some() {
+                serde_json::Value::Null
+            } else {
+                serde_json::Value::String(format!("krate api-key set {}", vendor.name()))
+            },
+            "kind": "api",
+        }));
+    }
     println!("{}", serde_json::to_string_pretty(&rows)?);
     Ok(0)
 }
@@ -14024,7 +14159,7 @@ fn author_shell() -> String {
     "bash".to_string()
 }
 
-fn krate_home() -> PathBuf {
+pub(crate) fn krate_home() -> PathBuf {
     home_dir()
         .map(|home| home.join(".krate"))
         .unwrap_or_else(|| PathBuf::from(".krate"))
@@ -14125,7 +14260,7 @@ fn shared_hub_url() -> String {
 /// user's home directory. That is weaker, and deliberately not silent about
 /// being a fallback -- it keeps an app working rather than failing to start,
 /// which is the right trade for storage that is already local.
-fn machine_key() -> Vec<u8> {
+pub(crate) fn machine_key() -> Vec<u8> {
     let path = krate_home().join("machine.key");
     if let Ok(existing) = fs::read(&path) {
         if existing.len() >= 32 {

@@ -3179,3 +3179,24 @@ body.side-open .shelf { left: 240px; }
   body.side-open #viewHome { margin-left: 0; }
   body.side-open .shelf { left: 0; }
 }
+
+/* API keys: the no-CLI way in. Sits under the tool list because a tool
+   that is already signed in is the shorter path when it exists; this is
+   for when it does not. */
+.ai-keys { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.ai-keys h3 { font-size: 13px; font-weight: 600; margin-bottom: 3px; }
+.ai-keys-sub { font-size: 12.5px; color: var(--faint); margin-bottom: 12px; }
+.ai-key-row {
+  display: flex; align-items: center; gap: 9px; padding: 7px 0;
+}
+.ai-key-name { flex: none; width: 84px; font-size: 13px; }
+.ai-key-input {
+  flex: 1; min-width: 0; padding: 7px 10px; border-radius: 9px;
+  border: 1px solid var(--line); background: rgba(0,0,0,0.35);
+  color: var(--text); font-family: var(--mono); font-size: 12px;
+}
+.ai-key-input:focus { outline: none; border-color: rgba(255,255,255,0.28); }
+.ai-key-state { flex: 1; font-size: 12.5px; color: var(--faint); }
+.ai-key-state.ok { color: #7ee2a8; }
+.ai-key-env { flex: none; font-size: 11.5px; color: var(--ghost); }
+.ai-keys-note { margin-top: 8px; font-size: 12px; color: var(--faint); min-height: 1em; }
