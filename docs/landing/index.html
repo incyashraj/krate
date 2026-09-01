@@ -512,6 +512,22 @@ img { max-width: 100%; display: block; }
 .price.in .note { opacity: 1; }
 .price .note a { color: #a1a1aa; text-decoration: underline; }
 
+/* The reveal is decoration; the words are not.
+ *
+ * A section whose heading never fades in is a screen of empty black, and
+ * that is a far worse outcome than a missing animation. These sections
+ * therefore start VISIBLE, and the scroll reveal (which still runs) only
+ * has to move them, not to grant them existence.
+ *
+ * Written after chasing exactly that bug: the observer never fired for a
+ * newly added section, its text sat at opacity 0 forever, and the page
+ * looked broken on a tall display.
+ */
+.price h2, .price .lead, .price .note, .price .plan,
+.how h2, .how .lead, .how .step {
+  opacity: 1; filter: none; transform: none;
+}
+
 /* -------------------------------------------------------- section: cta */
 /* Same reasoning as .works above: the closing card and the footer do not
    need a full screen reserved for them. */
@@ -1134,15 +1150,39 @@ fetch("https://api.github.com/repos/incyashraj/krate/releases/latest")
   }).catch(function () {});
 
 /* -------------------------------------------------- section reveals */
+/* Reveal on scroll, with a floor under it.
+ *
+ * The observer alone was not enough: a section can sit fully on screen and
+ * still report nothing, and when that happens its text stays at opacity 0
+ * forever and the page shows a screen of empty black. That is not a
+ * trade worth taking for an animation, so anything still hidden after a
+ * moment is simply shown.
+ */
 var io = new IntersectionObserver(function (entries) {
   entries.forEach(function (en) {
     if (en.isIntersecting) { en.target.classList.add("in"); io.unobserve(en.target); }
   });
-}, { threshold: 0.25 });
-io.observe($("works"));
-io.observe($("how"));
-io.observe($("pricing"));
-io.observe($("ctaSec"));
+}, { threshold: 0.15, rootMargin: "0px 0px -10% 0px" });
+
+function revealIfOnScreen() {
+  ["works", "how", "receipts", "pricing", "ctaSec"].forEach(function (id) {
+    var el = $(id);
+    if (!el || el.classList.contains("in")) return;
+    var b = el.getBoundingClientRect();
+    if (b.top < innerHeight * 0.9 && b.bottom > 0) el.classList.add("in");
+  });
+}
+addEventListener("scroll", revealIfOnScreen, { passive: true });
+addEventListener("resize", revealIfOnScreen, { passive: true });
+setTimeout(revealIfOnScreen, 400);
+// Every section that has revealable children must be observed. A section
+// left off this list keeps its text at opacity 0 forever and reads as a
+// screen of empty black -- which is exactly what the receipts section did
+// when it was added and this line was not updated.
+["works", "how", "receipts", "pricing", "ctaSec"].forEach(function (id) {
+  var el = $(id);
+  if (el) io.observe(el);
+});
 // The free plan's button just walks back up to the hero download.
 document.querySelectorAll(".jsTop").forEach(function (b) {
   b.addEventListener("click", function () { scrollTo({ top: 0, behavior: "smooth" }); });
