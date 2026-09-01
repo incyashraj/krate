@@ -1602,25 +1602,34 @@ function renderFreeCount() {
       !planIsActiveSafe() && Boolean(state.billing && state.billing.live),
     );
   }
-  const used = planIsActiveSafe()
-    ? `${n} made this month`
-    : n === 0 ? "none used yet"
-    : n <= 3 ? `${n} of 3 used this month`
-    : `${n} made this month`;
+  // While CHARGING is false there is no allowance to report, so nothing
+  // shows a count. The count itself keeps running underneath (K-216).
+  const used = CHARGING
+    ? (planIsActiveSafe()
+        ? `${n} made this month`
+        : n === 0 ? "none used yet"
+        : n <= 3 ? `${n} of 3 used this month`
+        : `${n} made this month`)
+    : "free";
   const sheetTag = $("planUsed");
   if (sheetTag) sheetTag.textContent = used;
   const setVal = $("setPlanUsed");
-  if (setVal) setVal.textContent = used;
+  if (setVal) {
+    setVal.textContent = used;
+    setVal.classList.toggle("hidden", !CHARGING);
+  }
   const setName = $("setPlanName");
   if (setName) {
     const active = planIsActiveSafe();
-    setName.textContent = active
-      ? (state.billing.plan === "founding" ? "Founding 200" : "Studio")
+    setName.textContent = !CHARGING ? "Free"
+      : active ? (state.billing.plan === "founding" ? "Founding 200" : "Studio")
       : "Free";
     const hint = $("setPlanHint");
-    if (hint) hint.textContent = active
-      ? "Unlimited apps. Every one is a file that is yours forever."
-      : "Three apps a month. Changes to an app and failed builds never count.";
+    if (hint) hint.textContent = !CHARGING
+      ? "Everything is free while we build Krate. Nothing is metered."
+      : active
+        ? "Unlimited apps. Every one is a file that is yours forever."
+        : "Three apps a month. Changes to an app and failed builds never count.";
   }
 }
 function limitAcked() {
@@ -3752,16 +3761,19 @@ $("limitGo").addEventListener("click", () => {
   state.pendingMake = null;
   if (p) make(p.request, { ...(p.opts || {}), pastLimit: true });
 });
-$("limitFounding").addEventListener("click", () => {
+$("limitFounding")?.addEventListener("click", () => {
   invoke("open_external", { url: "https://krate.tech/studio/#founding" }).catch(() => {});
 });
-// The plan sheet: the title-bar chip and the settings row both open it.
-// It is a store, not a notice -- the buy buttons live here so nobody has
-// to hit the three-app wall to subscribe.
+// The plan sheet. While CHARGING is false it is a one-line statement that
+// nothing costs anything; the tier rows and their checkout buttons are not
+// in the markup at all. The paid dressing below is kept for the day the
+// rows come back (K-216) and is unreachable until then.
 function dressPlanSheet() {
+  if (!CHARGING) return;
   const b = state.billing || {};
   const studio = $("planStudioAct");
   const founding = $("planFoundingAct");
+  if (!studio || !founding) return;
   document.querySelectorAll("#planSheet .plan-row").forEach((r) => {
     r.classList.remove("current", "hidden");
   });
@@ -3817,12 +3829,9 @@ async function fillReferral() {
     const r = me && me.referral;
     if (!r || !r.code) return;
     $("refLink").value = `https://krate.tech/login/?ref=${r.code}`;
-    const toward = r.count % 3;
     $("refStat").textContent =
-      r.count === 0 ? "Nobody yet -- send it to someone who'd like this."
-      : `${r.count} joined so far` +
-        (r.awards ? ` · ${r.awards} ${r.awards === 1 ? "month" : "months"} earned` : "") +
-        ` · ${3 - toward} more to the next free month.`;
+      r.count === 0 ? "Nobody yet."
+      : `${r.count} ${r.count === 1 ? "person has" : "people have"} joined through your link.`;
     $("refBlock").classList.remove("hidden");
   } catch (e) { /* not signed in: the block stays hidden */ }
 }
@@ -3963,10 +3972,14 @@ function openLimitSheet() {
   });
   const live = state.billing && state.billing.live;
   $("limitNote").textContent = "";
-  if (live) {
+  // Only dress this as a paywall once we actually charge. Until then the
+  // markup's own copy stands: nothing is metered, so reaching here is a
+  // bug on our side rather than a limit the person hit.
+  if (CHARGING && live) {
     $("limitTitle").textContent = "That's your three for this month";
     $("limitSub").textContent =
       "The free plan is three apps a month -- changes to an app and failed builds never count. Unlimited making is the Studio plan.";
+    $("limitSub2").classList.remove("hidden");
     $("limitSub2").textContent = state.billing.founding
       ? "The founding 200 lock it at $79 a year instead of $96."
       : "";
@@ -4546,6 +4559,10 @@ async function renderShelf() {
 
   $("sideAccount")?.addEventListener("click", () => { setOpen(false); openAccount(); });
   $("sideUpgrade")?.addEventListener("click", () => { setOpen(false); openPlanSheet(); });
+  $("sideDocs")?.addEventListener("click", () => {
+    setOpen(false);
+    invoke("open_external", { url: "https://krate.tech/docs/" }).catch(() => {});
+  });
   $("sideShare")?.addEventListener("click", () => { setOpen(false); openPlanSheet(); });
   $("sideSpace")?.addEventListener("click", () => { setOpen(false); openAccount(); });
   $("sideHome")?.addEventListener("click", () => setOpen(false));
@@ -4964,8 +4981,8 @@ function paintGreeting() {
   if (greet) {
     const first = (name.split(/\s+/)[0] || "").replace(/[<>]/g, "");
     greet.textContent = first
-      ? `What's in your mind, ${first},`
-      : "What's in your mind,";
+      ? `What are you building, ${first},`
+      : "What are you building,";
   }
   // The title is two lines of markup, not a string: setting textContent
   // here would flatten it back into one and lose the break where the

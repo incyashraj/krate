@@ -33,13 +33,14 @@
     <div class="gate-body">
       <div class="gate-card">
         <img class="gate-mark reveal" src="krate-glyph-white.png" alt="" />
-        <h1 class="reveal">Make an app by describing it</h1>
-        <p class="gate-sub reveal">An AI writes it. You get one small file that runs on
-        Mac, Windows and Linux - and that you can send to anyone.</p>
+        <h1 class="reveal">Build a desktop app, ship one file</h1>
+        <p class="gate-sub reveal">Describe it or bring your own code. You get a
+        single file that runs on Mac, Windows and Linux, with no installer,
+        no per-OS build and no signing queue.</p>
 
         <div id="gateStart" class="reveal">
           <button class="btn btn-primary btn-big" id="loginBrowserBtn">Sign in with krate.tech</button>
-          <button class="btn btn-ghost" id="gateSkip">Skip. I just want to make an app</button>
+          <button class="btn btn-ghost" id="gateSkip">Skip, I just want to build</button>
           <button class="btn btn-ghost hidden" id="loginBtn">Use a code instead</button>
           <p class="gate-hint">Opens your browser; you're back here signed in.
           Krate never sees your password - GitHub asks you directly.</p>
@@ -77,13 +78,13 @@
           <img class="fan-card" src="cards/card4.jpg" alt="" />
           <img class="fan-card" src="cards/card5.jpg" alt="" />
         </div>
-        <h1 class="ob-h">People made these by describing them</h1>
+        <h1 class="ob-h">Built with Krate</h1>
         <button class="ob-cta" data-go="2">Start<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8h9M8.4 4.2L12.2 8l-3.8 3.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       </section>
 
       <section class="ob-scene" data-step="2">
-        <h1 class="ob-h">Who writes it?</h1>
-        <p class="ob-p">Krate hands your words to an AI you already have.</p>
+        <h1 class="ob-h">Which agent writes the code?</h1>
+        <p class="ob-p">Krate drives the coding agent you already pay for. Your key, your account, your model.</p>
         <div class="ob-agents" id="obAgents"></div>
         <button class="ob-cta" data-go="3" id="obAgentNext">Continue<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8h9M8.4 4.2L12.2 8l-3.8 3.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       </section>
@@ -91,7 +92,7 @@
       <section class="ob-scene" data-step="3">
         <h1 class="ob-h">What should we call you?</h1>
         <input class="ob-input" id="obName" type="text" placeholder="First name" autocomplete="given-name" maxlength="40" />
-        <button class="ob-cta" id="obFinish">Make my first app<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8h9M8.4 4.2L12.2 8l-3.8 3.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button class="ob-cta" id="obFinish">Build my first app<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8h9M8.4 4.2L12.2 8l-3.8 3.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <button class="ob-quiet" id="obSignIn">Sign in to publish later</button>
       </section>
 
@@ -166,20 +167,20 @@
         <button class="side-card" id="sideShare">
           <span class="card-text">
             <b>Share Krate</b>
-            <small>Give a month, get a month</small>
+            <small>Send it to someone who builds</small>
           </span>
           <span class="card-icon">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2.2" y="6.6" width="11.6" height="7.2" rx="1.2" stroke="currentColor" stroke-width="1.3"/><path d="M1.6 6.6h12.8v2.1H1.6zM8 6.6v7.2" stroke="currentColor" stroke-width="1.3"/><path d="M8 6.4C7.2 4.5 6.4 3.4 5.3 3.4a1.6 1.6 0 000 3.2M8 6.4c.8-1.9 1.6-3 2.7-3a1.6 1.6 0 010 3.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
           </span>
         </button>
 
-        <button class="side-card upsell" id="sideUpgrade">
+        <button class="side-card" id="sideDocs">
           <span class="card-text">
-            <b>Upgrade to Studio</b>
-            <small id="sideUpgradeSub">Unlimited apps</small>
+            <b>Docs</b>
+            <small>The API, the limits, porting</small>
           </span>
-          <span class="card-icon bolt">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8.9 1.8L3.6 9h3.3l-.8 5.2L12.4 7H9.1l-.2-5.2z" fill="currentColor"/></svg>
+          <span class="card-icon">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3.4 2.6h6.2l3 3v7.8H3.4z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9.4 2.6v3.2h3.2M5.6 8.6h4.8M5.6 10.8h4.8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
           </span>
         </button>
 
@@ -216,8 +217,8 @@
 
       <div class="home-hero">
         <h1 class="display home-title reveal" id="homeTitle">
-          <span id="homeGreet">What's in your mind,</span>
-          <span>lets turn that into a Krate app</span>
+          <span id="homeGreet">What are you building,</span>
+          <span>describe it or bring your code</span>
         </h1>
         <div class="composer-shell reveal">
           <div class="bigbar">
@@ -461,8 +462,8 @@
         <div class="set-group">
           <h2>Your plan</h2>
           <div class="set-row">
-            <div><div class="lab" id="setPlanName">Free</div><div class="hint" id="setPlanHint">Three apps a month. Changes to an app and failed builds never count.</div></div>
-            <div class="ctl"><span class="set-val" id="setPlanUsed">…</span><button class="set-mini" id="setPlanBtn">See plans</button></div>
+            <div><div class="lab" id="setPlanName">Free</div><div class="hint" id="setPlanHint">Everything is free while we build Krate. Nothing is metered.</div></div>
+            <div class="ctl"><span class="set-val hidden" id="setPlanUsed"></span><button class="set-mini" id="setPlanBtn">Details</button></div>
           </div>
         </div>
 
@@ -737,30 +738,20 @@
 
   <div class="sheet-wrap hidden" id="planSheet">
     <div class="sheet">
-      <h2>Your plan</h2>
-      <p class="sheet-sub" id="planSub">Every app you make is a file that is
-      yours forever, whatever happens to your plan.</p>
+      <h2>Everything is free</h2>
+      <p class="sheet-sub" id="planSub">While we are building this, nothing
+      costs anything and nothing is metered. Every app you make is a file
+      that is yours forever, whatever we do later.</p>
       <div class="plan-list">
-        <div class="plan-row" id="planRowFree">
-          <div><b>Free</b><span>Three apps a month. Changes to an app and
-          failed builds never count.</span></div>
-          <span class="plan-tag" id="planUsed"></span>
-        </div>
-        <div class="plan-row" id="planRowStudio">
-          <div><b>Studio</b><span>Unlimited apps -- $12 a month, or $96 a
-          year.</span></div>
-          <span class="plan-actions" id="planStudioAct"></span>
-        </div>
-        <div class="plan-row founding" id="planRowFounding">
-          <div><b>Founding 200</b><span>$79 a year, locked in for as long as
-          you stay -- for the first 200 people.</span></div>
-          <span class="plan-actions" id="planFoundingAct"></span>
+        <div class="plan-row current" id="planRowFree">
+          <div><b>Everything</b><span>Make as many apps as you want. Publish
+          them. Send them to anyone.</span></div>
+          <span class="plan-tag" id="planUsed">free</span>
         </div>
       </div>
       <div class="ref-block hidden" id="refBlock">
-        <b>Give a month, get a month</b>
-        <span>When three people join Krate through your link, you get a
-        month of Studio on us -- every three, another month.</span>
+        <b>Share Krate</b>
+        <span>Send this to someone who builds things.</span>
         <div class="ref-box">
           <input id="refLink" readonly />
           <button class="btn" id="refCopy">Copy</button>
@@ -776,15 +767,13 @@
 
   <div class="sheet-wrap hidden" id="limitSheet">
     <div class="sheet">
-      <h2 id="limitTitle">That's three this month</h2>
-      <p class="sheet-sub" id="limitSub">The free plan is three apps a month -- failed
-      builds and changes to an app never count. Unlimited making is the
-      Studio plan, $12 a month.</p>
-      <p class="sheet-sub" id="limitSub2" style="margin-top:8px">The first 200 people
-      lock it at $79 a year instead.</p>
+      <h2 id="limitTitle">Making is paused</h2>
+      <p class="sheet-sub" id="limitSub">Krate is free and unmetered while we
+      build it. If you are seeing this, something went wrong on our side
+      rather than with your account.</p>
+      <p class="sheet-sub hidden" id="limitSub2" style="margin-top:8px"></p>
       <div class="detail-actions" id="limitActions">
         <button class="btn btn-primary" id="limitGo">Keep making</button>
-        <button class="btn" id="limitFounding">Join the founding 200</button>
       </div>
       <p class="detail-note" id="limitNote"></p>
     </div>
