@@ -413,10 +413,11 @@
               <p class="done-sub"><span id="doneSize"></span> · runs on Mac, Windows and Linux</p>
               <ul class="asks" id="asks"></ul>
               <div class="done-actions">
-                <button class="btn btn-primary" id="openBtn">Open it</button>
-                <button class="btn" id="shareBtn">Send</button>
+                <button class="btn btn-primary" id="openBtn">Run it</button>
+                <button class="btn" id="sourceBtn" title="Open the Cargo project this was built from">Source</button>
+                <button class="btn" id="shareBtn">Ship it</button>
                 <button class="btn" id="changeBtn">Change</button>
-                <button class="btn btn-ghost" id="infoBtn">More info</button>
+                <button class="btn btn-ghost" id="infoBtn">Details</button>
               </div>
               <div class="share-result hidden" id="shareResult">
                 <p class="share-head" id="shareHead">Here's your link -- send it to anyone</p>
@@ -840,24 +841,24 @@
 
   <div class="sheet-wrap hidden" id="sendSheet">
     <div class="sheet sheet-send">
-      <h2>Send it</h2>
-      <p class="sheet-sub">One small file. It opens on Mac, Windows and Linux.</p>
+      <h2>Ship it</h2>
+      <p class="sheet-sub">One file, three platforms, no installer.</p>
       <div class="send-opts">
         <button class="send-opt" id="sendCardBtn" type="button">
-          <b>Send the file</b>
-          <span>Makes a card: a picture of your app running that is also the
-          app. Drag it into mail, AirDrop, or a chat&rsquo;s paperclip.</span>
+          <b>The file</b>
+          <span>A .krate carrying its own source. Wrapped as a card -- a PNG
+          of the app that IS the app -- so it survives clients that strip
+          unknown attachments.</span>
         </button>
         <button class="send-opt" id="sendLinkBtn" type="button">
-          <b>Send a link</b>
-          <span>A URL anyone with it can open. For when you cannot drop a
-          file. Needs a sign-in.</span>
+          <b>A link</b>
+          <span>Published to the hub and opened by URL. Republishing replaces
+          it in place, so the link in your README stays good.</span>
         </button>
         <button class="send-opt send-opt-quiet" id="sendWrapBtn" type="button">
-          <b>For a friend without Krate</b>
-          <span>A double-clickable for their system that installs Krate once
-          (a small download), then opens this app. Their next .krate just
-          opens.</span>
+          <b>For someone without the runtime</b>
+          <span>A double-clickable that fetches the player once, then opens
+          this app. Every .krate they get after that just opens.</span>
         </button>
         <div class="send-wrap-os hidden" id="sendWrapOs">
           <button class="btn" data-wrap="mac" type="button">Mac</button>
@@ -868,7 +869,7 @@
       <div class="send-done hidden" id="sendCardDone">
         <img id="sendCardImg" alt="The card: your app's picture with the app inside" />
         <p id="sendCardNote"></p>
-        <button class="send-quiet-link" id="sendRawBtn" type="button">Reveal the plain .krate instead</button>
+        <button class="send-quiet-link" id="sendRawBtn" type="button">Show the raw .krate</button>
       </div>
       <div class="detail-actions">
         <button class="btn btn-ghost sheet-close" data-close="sendSheet">Close</button>
@@ -879,7 +880,7 @@
 
   <div class="sheet-wrap hidden" id="publishSheet">
     <div class="sheet sheet-publish">
-      <h2>Send a link</h2>
+      <h2>Publish</h2>
       <div class="pub-signin hidden" id="pubSignin">
         <p class="pub-sub" id="pubSigninWhy">Publishing puts your name on the
         app, so it needs a quick sign-in. One click -- your browser approves
@@ -941,22 +942,40 @@
       <p class="info-trust" id="infoTrust"></p>
       <p class="sheet-sub" id="infoMeta"></p>
       <details class="info-fold" open>
-        <summary>This file asked for</summary>
+        <summary>Capabilities</summary>
         <ul id="infoAsks"></ul>
-        <p class="info-note">Krate enforces this list. The app cannot do
-        anything that is not on it, whatever its code says.</p>
+        <p class="info-note">The manifest declares these and the runtime
+        enforces them. Check any app with
+        <code>krate run app.krate --dump-caps</code>.</p>
       </details>
       <details class="info-fold">
-        <summary>Player APIs it may touch</summary>
+        <summary>Imported interfaces</summary>
         <ul id="infoCaps"></ul>
-        <p class="info-note">The player's standard surface -- drawing,
-        sound, time, text. Every Krate app sees these; none of them reach
-        your files or the network.</p>
+        <p class="info-note">The <code>krate:*</code> WIT world the component
+        imports. A build that reaches <code>wasi:*</code> is rejected before
+        it packs.</p>
+      </details>
+      <!-- The source is a real Cargo crate on disk, and Studio used to keep
+           that to itself. Open it, or take the path. -->
+      <details class="info-fold" open>
+        <summary>Source</summary>
+        <p class="info-note" id="infoSourcePath">No source folder for this app.</p>
+        <div class="info-actions">
+          <button class="btn btn-ghost" id="infoOpenSource">Open the folder</button>
+          <button class="btn btn-ghost" id="infoCopySource">Copy the path</button>
+        </div>
+      </details>
+      <!-- What you just did, as a command. Developers automate what they do
+           twice, and this is the shortest route from Studio to CI. -->
+      <details class="info-fold">
+        <summary>Build it from the terminal</summary>
+        <pre class="info-cmd" id="infoCmd"></pre>
+        <button class="btn btn-ghost" id="infoCopyCmd">Copy the command</button>
       </details>
       <details class="info-fold">
         <summary>File details</summary>
         <dl class="info-rows" id="infoRows"></dl>
-        <button class="btn btn-ghost" id="infoCopyPath">Copy the path</button>
+        <button class="btn btn-ghost" id="infoCopyPath">Copy the file path</button>
       </details>
       <button class="btn btn-ghost sheet-close" data-close="infoSheet">Close</button>
     </div>
@@ -986,7 +1005,7 @@
         <div id="aiKeyRows"></div>
         <p class="ai-keys-note" id="aiKeyNote"></p>
       </div>
-      <details class="sheet-foot-fold"><summary>Using something else?</summary>
+      <details class="sheet-foot-fold"><summary>A different agent</summary>
       <p class="sheet-foot">Any tool that can edit files can author Krate apps -
       run <code>krate create --help</code> and see <code>--author-cmd</code>.</p></details>
       <button class="btn btn-ghost sheet-close" data-close="aiSheet">Close</button>

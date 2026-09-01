@@ -3535,3 +3535,24 @@ body:not(.macos) .side-brandrow { height: var(--titlebar); margin-bottom: 10px; 
 @media (prefers-reduced-motion: reduce) {
   .tool.wave.listening::after { animation: none; opacity: 0.7; }
 }
+
+/* ---- the details sheet, for developers ---------------------------------
+ * The command that reproduces a build, and the paths behind it. Monospace
+ * because these are things to copy, not to read. */
+.info-cmd {
+  margin: 6px 0 10px; padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.45); border: 1px solid var(--line);
+  border-radius: 9px;
+  font: 11.5px/1.6 var(--mono); color: #c9cfda;
+  white-space: pre-wrap; word-break: break-all;
+  user-select: text;
+}
+.info-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+#infoSourcePath {
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+  word-break: break-all; user-select: text;
+}
+.info-note code {
+  font-family: var(--mono); font-size: 11px;
+  background: rgba(255,255,255,0.06); border-radius: 4px; padding: 1px 5px;
+}

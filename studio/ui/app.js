@@ -2262,7 +2262,20 @@ function plainWords(err) {
   if (/\b401\b|\b403\b|unauthorized|sign ?in|\bauth(?!or)|logged/i.test(text))
     return "Your AI is not signed in, or its sign-in expired. Click its name at the top for the fix.";
   if (/network|offline|dns|connect/i.test(text)) return "The internet connection dropped mid-build.";
-  return "Something in the build went wrong. Trying again usually works; your words are kept.";
+  // Named failures, in the engine's own vocabulary. "Trying again usually
+  // works" tells a developer nothing: they want the stage that failed so
+  // they know whether to read compiler output, a capability refusal, or the
+  // agent's transcript.
+  if (/error\[E\d+\]|cannot find|mismatched types|borrow|does not live long enough/i.test(text))
+    return "The generated code did not compile. Press Details for the compiler output.";
+  if (/wasi:/i.test(text))
+    return "The app reached a wasi: import, which the capability wall rejects. Details has the failing import.";
+  if (/check-app|component|componentize/i.test(text))
+    return "check-app rejected the build. Details has the verdict.";
+  if (/timed out|did not finish/i.test(text))
+    return "The agent ran out of time. Details shows how far it got; a retry resumes from the code already written.";
+  // The last resort still says where to look rather than to shrug.
+  return "The build failed. Press Details for the engine output; your request is kept and a retry resumes from it.";
 }
 
 /* ---- agents ----------------------------------------------------------- */
@@ -2687,11 +2700,46 @@ function capWords(cap) {
   return words ? `${words} (${resource})` : cap;
 }
 
+/* The app's source, as a real Cargo crate on disk.
+ *
+ * Every build leaves Cargo.toml, manifest.toml and src/lib.rs in the
+ * session's workspace, and Studio never said so. For a developer the first
+ * question after "it built" is "show me the code", and until now the only
+ * answer was to go and find it. */
+function sourceDirOf(app) {
+  return (app && (app.source_dir || app.sourceDir)) || "";
+}
+
+/* The command that reproduces this build.
+ *
+ * Whatever someone does twice in a UI they will want in a script. This is
+ * the shortest path from Studio to a Makefile or a CI job. */
+function buildCommandFor(session, app) {
+  const request = ((session && session.title) || "an app")
+    .replace(/\s+/g, " ")
+    .replace(/"/g, '\\"')
+    .trim();
+  const agent = (state.agent || "claude").trim();
+  const out = (app && app.name) || "app.krate";
+  return `krate create "${request}" --agent ${agent} --output ${out}`;
+}
+
 async function showInfo() {
   const app = currentApp();
   if (!app) return;
   const sheet = $("infoSheet");
   $("infoName").textContent = app.name || "Your app";
+
+  // Source, and the command that made it.
+  const src = sourceDirOf(app);
+  const srcLine = $("infoSourcePath");
+  if (srcLine) {
+    srcLine.textContent = src || "No source folder for this app.";
+  }
+  $("infoOpenSource")?.classList.toggle("hidden", !src);
+  $("infoCopySource")?.classList.toggle("hidden", !src);
+  const cmd = $("infoCmd");
+  if (cmd) cmd.textContent = buildCommandFor(state.session, app);
   $("infoTrust").textContent = "Reading the app…";
   $("infoMeta").textContent = "";
   $("infoRows").innerHTML = "";
@@ -2745,7 +2793,7 @@ async function showInfo() {
     if (copy) {
       copy.onclick = async () => {
         try { await navigator.clipboard.writeText(info.path); copy.textContent = "Copied"; } catch (e) {}
-        setTimeout(() => { copy.textContent = "Copy the path"; }, 1400);
+        setTimeout(() => { copy.textContent = "Copy the file path"; }, 1400);
       };
     }
   } catch (err) {
@@ -4082,6 +4130,33 @@ document.querySelector('[data-close="publishSheet"]').addEventListener("click", 
 });
 $("pubShotPick").addEventListener("click", () => pickPublishImage("shot"));
 $("pubIconPick").addEventListener("click", () => pickPublishImage("icon"));
+/* Source, from the card and from the sheet. `reveal` shows the folder in
+   Finder or Explorer, which is where a developer wants to be: their own
+   editor is one keystroke from there, and we do not have to guess which
+   editor that is. */
+async function openSourceFolder() {
+  const app = currentApp();
+  const dir = sourceDirOf(app);
+  if (!dir) return;
+  try { await invoke("reveal", { path: dir }); } catch (e) {}
+}
+$("sourceBtn")?.addEventListener("click", openSourceFolder);
+$("infoOpenSource")?.addEventListener("click", openSourceFolder);
+$("infoCopySource")?.addEventListener("click", async () => {
+  const dir = sourceDirOf(currentApp());
+  const btn = $("infoCopySource");
+  if (!dir || !btn) return;
+  try { await navigator.clipboard.writeText(dir); btn.textContent = "Copied"; } catch (e) {}
+  setTimeout(() => { btn.textContent = "Copy the path"; }, 1400);
+});
+$("infoCopyCmd")?.addEventListener("click", async () => {
+  const btn = $("infoCopyCmd");
+  const cmd = $("infoCmd")?.textContent || "";
+  if (!cmd || !btn) return;
+  try { await navigator.clipboard.writeText(cmd); btn.textContent = "Copied"; } catch (e) {}
+  setTimeout(() => { btn.textContent = "Copy the command"; }, 1400);
+});
+
 $("infoBtn").addEventListener("click", showInfo);
 $("limitGo").addEventListener("click", () => {
   try { localStorage.setItem("krateLimitAck", monthKey()); } catch (e) {}

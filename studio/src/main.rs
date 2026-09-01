@@ -884,6 +884,14 @@ struct CreateResult {
     size: String,
     asks: Vec<String>,
     shot: String,
+    /// Where the app's Cargo project lives, so the UI can offer it.
+    ///
+    /// Every build leaves a real crate on disk -- Cargo.toml, manifest.toml,
+    /// src/lib.rs -- and Studio never mentioned it existed. For a developer
+    /// "show me the code" is the first thing after "it built", and the code
+    /// was always right there.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    source_dir: String,
 }
 
 #[tauri::command]
@@ -1435,6 +1443,8 @@ fn run_author(
 
     // The agent's own test frames, streamed to the UI as they appear.
     let shots_stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    // Kept, because the finished result reports where the source landed.
+    let workspace = watch_dir.clone();
     if let Some(dir) = watch_dir {
         watch_build_shots(app.clone(), dir, shots_stop.clone());
     }
@@ -1521,6 +1531,24 @@ fn run_author(
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| "your app".to_string()),
     );
+    // The crate the agent wrote sits one level inside the workspace, named
+    // after the app. Find it by its Cargo.toml rather than guessing at the
+    // name, which the agent chooses.
+    let source_dir = workspace
+        .as_ref()
+        .and_then(|work| {
+            if work.join("Cargo.toml").is_file() {
+                return Some(work.clone());
+            }
+            std::fs::read_dir(work).ok().and_then(|entries| {
+                entries
+                    .flatten()
+                    .map(|e| e.path())
+                    .find(|p| p.join("Cargo.toml").is_file())
+            })
+        })
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
     Ok(CreateResult {
         path: out_path.display().to_string(),
         name: out_path
@@ -1530,6 +1558,7 @@ fn run_author(
         size: human_size(bytes),
         asks,
         shot: shoot(engine, out_path).unwrap_or_default(),
+        source_dir,
     })
 }
 
