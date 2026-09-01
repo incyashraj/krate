@@ -1802,33 +1802,63 @@ img.cloud-icon { object-fit: cover; }
  * field, every layer a soft radial so the colors melt into each other and
  * into the black with no edge anywhere. The dome is highest at center and
  * falls away toward the sides. */
-/* The ground under everything: a wide dome of colour rising from the
-   bottom, stars inside it, and grain over the whole window.
-   The colour reaches further up and further out than a tidy arc would.
-   A gradient that stops in a clean line reads as a shape someone drew;
-   this one dissolves, which is why the blur is large and the widest wash
-   carries faint light past the middle of the screen. */
+/* The ground under everything.
+ *
+ * The look is a printed poster, not a lens flare: hard-edged sheets of
+ * violet light crossing a dark field, with heavy crisp grain sitting ON
+ * the colour. That is what makes it read as sharp. The old version blurred
+ * everything 46px, which is the opposite -- a soft glow has no edges to be
+ * sharp, and grain over a blur just looks like noise.
+ *
+ * So: the colour forms keep their edges (conic and steep linear stops,
+ * blurred only enough to avoid a jagged line), and the grain is dense,
+ * high-contrast, and masked to where the colour is.
+ */
 .horizon {
-  position: fixed; left: -30vw; right: -30vw; bottom: -18vh; height: 118vh;
+  /* Anchored to the window, not spilling far outside it: the wedges below
+     are angular slices, and when the element is much larger than the
+     screen those slices land mostly off it. This is why the field read as
+     almost black -- the colour was there, just not on screen. */
+  position: fixed; left: 0; right: 0; bottom: 0; height: 76vh;
   pointer-events: none; z-index: 0;
   transition: opacity 0.5s ease;
-  filter: blur(46px);
+  /* Small blur: enough to soften the raster, not enough to lose the edge. */
+  filter: blur(10px) saturate(1.2);
   background:
-    /* the pale heart, lowest and brightest, slightly left of centre so the
-       field is not a symmetrical dome */
-    radial-gradient(42% 30% at 44% 104%, rgba(214, 206, 255, 0.42), transparent 70%),
-    /* the cold blue lobe on the right, the reference's strongest colour */
-    radial-gradient(46% 34% at 74% 106%, rgba(64, 96, 240, 0.44), transparent 72%),
-    /* violet filling the middle */
-    radial-gradient(70% 42% at 50% 110%, rgba(126, 96, 234, 0.34), transparent 74%),
-    /* a deep indigo shoulder reaching left */
-    radial-gradient(84% 54% at 26% 112%, rgba(58, 44, 168, 0.34), transparent 78%),
-    /* and the widest wash, carrying light past the middle of the window */
+    /* the bright blade, sweeping up and left from the lower right */
+    conic-gradient(from 188deg at 78% 96%,
+      transparent 0deg,
+      rgba(214, 206, 255, 0.72) 9deg,
+      rgba(168, 148, 255, 0.52) 17deg,
+      rgba(126, 106, 246, 0.24) 26deg,
+      transparent 36deg),
+    /* the colder blade crossing it from the lower left */
+    conic-gradient(from 292deg at 16% 100%,
+      transparent 0deg,
+      rgba(118, 104, 246, 0.60) 11deg,
+      rgba(76, 58, 210, 0.34) 21deg,
+      transparent 34deg),
+    /* the violet body the blades cut through */
+    radial-gradient(66% 52% at 50% 100%, rgba(134, 106, 248, 0.52), transparent 70%),
+    /* deep indigo shoulder, keeping the corners off flat black */
+    radial-gradient(100% 66% at 32% 106%, rgba(58, 42, 172, 0.42), transparent 76%),
+    /* the widest wash, carrying light up past the middle */
     linear-gradient(to top,
-      rgba(40, 34, 122, 0.40),
-      rgba(40, 34, 122, 0.22) 44%,
-      rgba(40, 34, 122, 0.08) 68%,
-      transparent 90%);
+      rgba(42, 34, 128, 0.52),
+      rgba(42, 34, 128, 0.26) 44%,
+      rgba(42, 34, 128, 0.08) 70%,
+      transparent 92%);
+}
+
+/* Fine curved lines across the field, like the poster's hairlines. They
+   are what stop a gradient from reading as a screensaver: something in
+   the image was drawn deliberately. */
+.horizon::after {
+  content: ""; position: absolute; inset: 0;
+  opacity: 0.5;
+  background:
+    radial-gradient(60% 44% at 42% 96%, transparent 61.4%, rgba(255,255,255,0.16) 61.7%, transparent 62.1%),
+    radial-gradient(84% 56% at 62% 104%, transparent 55.5%, rgba(255,255,255,0.10) 55.8%, transparent 56.2%);
 }
 
 /* The starfield sits between the colour and the grain, so grain lands on
@@ -1840,21 +1870,24 @@ img.cloud-icon { object-fit: cover; }
   transition: opacity 0.5s ease;
 }
 
-/* Heavier and coarser than before. The reference is visibly grainy, and
-   grain is also what keeps a big soft gradient from banding on a cheap
-   panel. Two layers: fine noise over the whole window, and a coarser one
-   that only shows where the colour is. */
+/* The grain, which is the point.
+ *
+ * Two passes at different scales. The fine one covers the whole window so
+ * even the black has tooth; the coarse one is masked to the lower field
+ * where the colour lives, which is what gives the poster's speckled edge
+ * where light meets dark. High baseFrequency and low octaves keep each
+ * grain a hard dot rather than a smudge. */
 .grain {
   position: fixed; inset: 0; pointer-events: none; z-index: 1;
-  opacity: 0.78; mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='4' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='140' height='140' filter='url(%23n)' opacity='.58'/></svg>");
+  opacity: 0.9; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/><feComponentTransfer><feFuncA type='discrete' tableValues='0 .35 .7 1'/></feComponentTransfer></filter><rect width='160' height='160' filter='url(%23n)' opacity='.62'/></svg>");
 }
 .grain::after {
   content: ""; position: absolute; inset: 0;
-  opacity: 0.5; mix-blend-mode: soft-light;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='90' height='90'><filter id='m'><feTurbulence type='fractalNoise' baseFrequency='.34' numOctaves='3' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='90' height='90' filter='url(%23m)' opacity='.5'/></svg>");
-  -webkit-mask-image: linear-gradient(to top, #000 0%, rgba(0,0,0,.55) 40%, transparent 78%);
-          mask-image: linear-gradient(to top, #000 0%, rgba(0,0,0,.55) 40%, transparent 78%);
+  opacity: 0.72; mix-blend-mode: soft-light;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='110' height='110'><filter id='m'><feTurbulence type='fractalNoise' baseFrequency='.55' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/><feComponentTransfer><feFuncA type='discrete' tableValues='0 .5 1'/></feComponentTransfer></filter><rect width='110' height='110' filter='url(%23m)' opacity='.66'/></svg>");
+  -webkit-mask-image: linear-gradient(to top, #000 0%, rgba(0,0,0,.6) 44%, transparent 80%);
+          mask-image: linear-gradient(to top, #000 0%, rgba(0,0,0,.6) 44%, transparent 80%);
 }
 body.scrolled .horizon { opacity: 0.45; }
 body.scrolled .stars { opacity: 0.45; }
@@ -2257,7 +2290,7 @@ body.light .btn.btn-primary { color: #ffffff; }
  * One rule, at the end, after the consolidation above. The 52px display
  * scale belongs to a landing page; an app window wants something that
  * does not fill a third of the screen. */
-.home-title.display { font-size: clamp(30px, 3.5vw, 42px); letter-spacing: -0.04em; }
+.home-title.display { font-size: clamp(22px, 2.1vw, 27px); letter-spacing: -0.012em; }
 .home-sub { font-size: 14.5px; margin: 12px 0 32px; }
 
 /* ---- light theme, done as a real palette ------------------------------
@@ -2951,11 +2984,14 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
    replaced. The gradient stays as the tile behind it, so the row keeps its
    colour. */
 .space-badge {
-  width: 21px; height: 21px; flex: none; border-radius: 6px;
+  width: 24px; height: 24px; flex: none; border-radius: 7px;
   display: grid; place-items: center;
-  background: linear-gradient(150deg, #a558fb, #4922e5);
+  background: linear-gradient(155deg, #7c4dff, #5b21e8);
 }
-.space-badge img { width: 12px; height: 12px; display: block; }
+/* The glyph sits INSIDE the tile with air around it, the way an app icon
+   does. Filling the tile edge to edge reads as a cropped image rather
+   than a mark. */
+.space-badge img { width: 11px; height: 11px; display: block; }
 .space-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-space .chev { color: var(--faint); flex: none; }
 
@@ -3031,9 +3067,13 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
  * column two different left edges and neither looks deliberate. */
 .home-title.display {
   display: block; text-align: left;
-  font-size: clamp(28px, 3.4vw, 41px);
-  font-weight: 600; letter-spacing: -0.032em; line-height: 1.12;
-  margin-bottom: 22px;
+  /* The reference sets this at around 26px in a regular weight, not a
+     display weight. At 600 and 40px it shouted; the question is a quiet
+     line above the box, and the box is the subject of the screen. */
+  font-size: clamp(22px, 2.1vw, 27px);
+  font-weight: 400; letter-spacing: -0.012em; line-height: 1.25;
+  color: #fff;
+  margin-bottom: 20px;
 }
 
 /* ---- the box -------------------------------------------------------------

@@ -5507,19 +5507,13 @@ $("aiRefresh")?.addEventListener("click", async () => {
       const twinkle = calm.matches ? 1 : 0.74 + 0.26 * Math.sin(t * s.speed + s.phase);
       const alpha = s.a * fade * twinkle;
       if (alpha <= 0.012) continue;
-      const rad = 0.45 + s.r * 1.15;
-      ctx.beginPath();
-      ctx.arc(px, py, rad, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(${(214 + s.r * 41) | 0},${(210 + s.r * 45) | 0},255,${alpha})`;
-      ctx.fill();
-      // A halo on the brightest few, so the field has depth instead of
-      // reading as uniform noise.
-      if (s.r > 0.94) {
-        ctx.beginPath();
-        ctx.arc(px, py, rad * 3.6, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(186,170,255,${alpha * 0.15})`;
-        ctx.fill();
-      }
+      // Hard little squares, not soft discs. A 1px rect on the device grid
+      // stays a crisp point at any DPR; an arc of radius under 1 gets
+      // antialiased into a grey smudge, which is what made the field read
+      // as haze rather than as stars.
+      const size = s.r > 0.82 ? 2 : 1;
+      ctx.fillStyle = `rgba(${(222 + s.r * 33) | 0},${(218 + s.r * 37) | 0},255,${alpha})`;
+      ctx.fillRect(Math.round(px), Math.round(py), size, size);
     }
   }
 
