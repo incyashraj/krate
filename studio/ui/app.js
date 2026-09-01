@@ -5436,50 +5436,148 @@ $("aiRefresh")?.addEventListener("click", async () => {
   btn.textContent = "Refresh";
 });
 
-/* ---- the starfield ----------------------------------------------------
+/* ---- the field ---------------------------------------------------------
  *
- * A dome of stars rising from the bottom of the window, inside the
- * horizon's colour. Canvas rather than CSS: points of light need to be
- * points, and several hundred box-shadows cost the compositor far more
- * than one 2D context. Measured at 0.84ms a frame for 900 stars against a
- * 16.7ms budget, so it has roughly twenty times the headroom it needs.
+ * The background: a rough dome of violet light sitting low in the window,
+ * with hard-edged blades cutting through it, stars inside it, and grain
+ * computed per pixel.
  *
- * Star positions are normalised (0..1 across, 0..1 up the dome) and seeded
- * once, so a window resize re-lays the same sky instead of shuffling it --
- * a field that reshuffles while you drag the window edge looks like a bug.
+ * Drawn rather than stacked out of CSS gradients because the look needs a
+ * real edge AND grain sitting on that edge. A CSS gradient gives one or
+ * the other: leave it unblurred and the bands stair-step, blur it and
+ * there is no longer an edge for noise to ride. Here the wedge boundaries
+ * are computed per pixel with a narrow smoothstep, and the noise is scaled
+ * by local brightness, so the speckle is heaviest exactly where the light
+ * falls off -- which is what makes a poster read as sharp.
  *
- * It stops itself when the window is hidden or the person asked for
- * reduced motion. A background animation that keeps running behind a
- * minimised window is a battery cost with nobody watching.
+ * Cost: the field is painted ONCE into an offscreen buffer and blitted
+ * each frame. Per-pixel work over a full window is far too slow to do at
+ * 60fps, and it does not need to be: only the stars move. The buffer is
+ * repainted on resize and nowhere else.
  */
-(function starfield() {
+(function field() {
   const canvas = $("stars");
   if (!canvas) return;
   const ctx = canvas.getContext("2d", { alpha: true });
   if (!ctx) return;
 
-  const COUNT = 620;
-  const DOME = 0.72;      // how far up the window the dome reaches
+  const STARS = 520;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  let W = 0, H = 0, stars = [], running = false, frame = 0;
+  let W = 0, H = 0, stars = [], sheet = null, running = false, frame = 0;
 
   const calm = window.matchMedia
     ? window.matchMedia("(prefers-reduced-motion: reduce)")
     : { matches: false };
 
+  // A cheap value-noise: deterministic, no allocation, good enough for
+  // film grain. Math.random per pixel would re-roll every repaint and
+  // make the grain crawl when the window resizes.
+  function hash(x, y) {
+    let h = x * 374761393 + y * 668265263;
+    h = (h ^ (h >> 13)) * 1274126177;
+    return ((h ^ (h >> 16)) >>> 0) / 4294967295;
+  }
+
+  function smoothstep(a, b, t) {
+    if (b === a) return t < a ? 0 : 1;
+    const x = Math.max(0, Math.min(1, (t - a) / (b - a)));
+    return x * x * (3 - 2 * x);
+  }
+
+  /* Paint the static field into an offscreen buffer, one pixel at a time. */
+  function paintSheet() {
+    if (W <= 0 || H <= 0) return null;
+    const buf = document.createElement("canvas");
+    buf.width = Math.max(1, Math.round(W * dpr));
+    buf.height = Math.max(1, Math.round(H * dpr));
+    const bctx = buf.getContext("2d");
+    if (!bctx) return null;
+    const img = bctx.createImageData(buf.width, buf.height);
+    const d = img.data;
+
+    // The dome sits low and is WIDER than it is tall, so it reads as a
+    // rough semicircle standing on the floor rather than a half-screen
+    // wash. Its centre is below the bottom edge, which is what keeps the
+    // curve shallow across the window.
+    const cx = buf.width * 0.5;
+    const cy = buf.height * 1.16;
+    const rx = buf.width * 0.78;
+    const ry = buf.height * 0.92;
+
+    // Two blades, each a wedge of angles around the dome's centre.
+    const blades = [
+      { at: -0.62, half: 0.20, r: 214, g: 206, b: 255, power: 1.0 },
+      { at: -2.35, half: 0.17, r: 122, g: 106, b: 250, power: 0.78 },
+    ];
+
+    for (let py = 0; py < buf.height; py += 1) {
+      for (let px = 0; px < buf.width; px += 1) {
+        const i = (py * buf.width + px) * 4;
+
+        // Distance in dome space: 0 at the centre, 1 at its rim.
+        const nx = (px - cx) / rx;
+        const ny = (py - cy) / ry;
+        const dist = Math.sqrt(nx * nx + ny * ny);
+
+        // The body of the dome. Dense through the middle, falling away
+        // near the rim so the top corners go dark on their own.
+        let body = 1 - smoothstep(0.42, 1.02, dist);
+
+        // The blades: a hard-edged wedge, brightest along its spine.
+        let blade = 0;
+        let br = 0, bg = 0, bb = 0;
+        const ang = Math.atan2(py - cy, px - cx);
+        for (const w of blades) {
+          let da = ang - w.at;
+          while (da > Math.PI) da -= Math.PI * 2;
+          while (da < -Math.PI) da += Math.PI * 2;
+          // Narrow smoothstep = a real edge, two or three pixels wide,
+          // instead of a gradient's slow ramp or a hard line's stair step.
+          const across = 1 - smoothstep(w.half * 0.55, w.half, Math.abs(da));
+          const along = 1 - smoothstep(0.15, 1.05, dist);
+          const v = across * along * w.power;
+          if (v > blade) { blade = v; br = w.r; bg = w.g; bb = w.b; }
+        }
+
+        // Compose: indigo body, blade colour laid over it.
+        let r = 46 * body + br * blade * 0.85;
+        let g = 34 * body + bg * blade * 0.85;
+        let b = 150 * body + bb * blade * 0.85;
+        let a = (body * 0.62 + blade * 0.72);
+
+        if (a <= 0.004) { d[i + 3] = 0; continue; }
+
+        // Grain, scaled by how lit this pixel is. Heaviest where light
+        // meets dark, which is the poster's signature and the opposite of
+        // a flat noise layer laid over the top.
+        const n = hash(px, py);
+        const lit = Math.min(1, a * 1.5);
+        const edge = 4 * lit * (1 - lit);          // peaks at the falloff
+        const grain = (n - 0.5) * (34 + 92 * edge);
+        r += grain; g += grain; b += grain;
+        a += (n - 0.5) * 0.09 * lit;
+
+        d[i]     = r < 0 ? 0 : r > 255 ? 255 : r;
+        d[i + 1] = g < 0 ? 0 : g > 255 ? 255 : g;
+        d[i + 2] = b < 0 ? 0 : b > 255 ? 255 : b;
+        d[i + 3] = a <= 0 ? 0 : a >= 1 ? 255 : a * 255;
+      }
+    }
+    bctx.putImageData(img, 0, 0);
+    return buf;
+  }
+
   function seed() {
     stars = [];
-    for (let i = 0; i < COUNT; i += 1) {
-      // Biased toward the horizon: most of the field sits low, thinning
-      // as it rises, which is what makes it read as a dome rather than a
-      // rectangle of dots.
-      const t = Math.pow(Math.random(), 1.9);
-      const spread = 0.5 + t * 0.78;
+    for (let i = 0; i < STARS; i += 1) {
+      // Biased low and wide, matching the dome underneath.
+      const t = Math.pow(Math.random(), 1.75);
+      const spread = 0.52 + t * 0.72;
       stars.push({
         x: 0.5 + (Math.random() - 0.5) * 2 * spread,
         t,
         r: Math.random(),
-        a: 0.22 + Math.random() * 0.7,
+        a: 0.24 + Math.random() * 0.7,
         phase: Math.random() * Math.PI * 2,
         speed: 0.35 + Math.random() * 0.8,
       });
@@ -5491,30 +5589,31 @@ $("aiRefresh")?.addEventListener("click", async () => {
     H = window.innerHeight;
     canvas.width = Math.round(W * dpr);
     canvas.height = Math.round(H * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    if (W > 0 && H > 0) sheet = paintSheet();
     return W > 0 && H > 0;
   }
 
   function paint(now) {
-    ctx.clearRect(0, 0, W, H);
-    const domeH = H * DOME;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (sheet) ctx.drawImage(sheet, 0, 0);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const domeH = H * 0.66;
     const t = now / 1000;
     for (const s of stars) {
       const px = s.x * W;
       const py = H - s.t * domeH;
       if (px < -4 || px > W + 4 || py < -4) continue;
-      // Fade with height so the dome dissolves into the dark rather than
-      // ending on a visible edge.
-      const fade = 1 - s.t * 0.86;
+      const fade = 1 - s.t * 0.88;
       const twinkle = calm.matches ? 1 : 0.74 + 0.26 * Math.sin(t * s.speed + s.phase);
       const alpha = s.a * fade * twinkle;
       if (alpha <= 0.012) continue;
-      // Hard little squares, not soft discs. A 1px rect on the device grid
-      // stays a crisp point at any DPR; an arc of radius under 1 gets
-      // antialiased into a grey smudge, which is what made the field read
-      // as haze rather than as stars.
-      const size = s.r > 0.82 ? 2 : 1;
-      ctx.fillStyle = `rgba(${(222 + s.r * 33) | 0},${(218 + s.r * 37) | 0},255,${alpha})`;
+      // Hard little rects on the device grid: an arc of radius under 1
+      // antialiases into a grey smudge, which reads as haze not stars.
+      const size = s.r > 0.85 ? 2 : 1;
+      ctx.fillStyle = `rgba(${(226 + s.r * 29) | 0},${(222 + s.r * 33) | 0},255,${alpha})`;
       ctx.fillRect(Math.round(px), Math.round(py), size, size);
     }
   }
@@ -5522,7 +5621,7 @@ $("aiRefresh")?.addEventListener("click", async () => {
   function tick(now) {
     if (!running) return;
     // A window that reports zero size at startup (hidden, restoring, or
-    // mid-launch on Windows) must not leave the sky permanently blank:
+    // mid-launch on Windows) must not leave the field permanently blank:
     // re-measure until it is real, then carry on.
     if (W <= 0 || H <= 0) {
       if (resize()) seed();
@@ -5544,9 +5643,6 @@ $("aiRefresh")?.addEventListener("click", async () => {
 
   const sized = resize();
   seed();
-  // Reduced motion still gets the sky, just not the twinkle: one frame,
-  // then nothing moves. If the window has no size yet, run the loop
-  // anyway -- tick() re-measures and settles as soon as it does.
   if (calm.matches && sized) paint(0); else start();
 
   let resizeTimer = null;
@@ -5554,7 +5650,7 @@ $("aiRefresh")?.addEventListener("click", async () => {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
       if (resize() && calm.matches) paint(0);
-    }, 120);
+    }, 140);
   });
 
   document.addEventListener("visibilitychange", () => {

@@ -54,7 +54,7 @@
   /* The traffic lights are placed at x:20 vertically centred in the bar
      (tauri.conf trafficLightPosition), so the brand clears them by
      construction and sits on the SAME row -- not diagonally under them. */
-  --lights: 90px;
+  --lights: 78px;
   --rail: 320px;
   /* The dock's own height plus the air under and over it. Every scrolling
      page reserves exactly this, so content stops in the same place on all
@@ -197,8 +197,8 @@ body.windows .titlebar { padding-right: 150px; }
   /* Optical, not mathematical: the wordmark's letter-spacing adds a trailing
      gap of its own, so matching the lights' spacing exactly reads as too far
      right. */
-  margin-left: -2px;
-  font-size: 12px; font-weight: 500; letter-spacing: 0.16em;
+  margin-left: -6px;
+  font-size: 12.5px; font-weight: 500; letter-spacing: 0.15em;
   color: var(--text);
   -webkit-app-region: drag;
 }
@@ -206,7 +206,9 @@ body.windows .titlebar { padding-right: 150px; }
    the line box's true middle. `align-items: center` therefore leaves the glyph
    looking low next to it. The nudge is optical, which is why it is not a round
    number. */
-.brand img { width: 17px; height: 17px; opacity: 0.9; margin-top: -1.5px; }
+/* Full opacity and bigger: at 17px and 0.9 the mark was a grey smudge
+   next to the wordmark rather than a logo anyone could read. */
+.brand img { width: 22px; height: 22px; opacity: 1; margin-top: -1px; }
 .crumb {
   font-size: 13px; color: var(--muted);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 42ch;
@@ -1825,93 +1827,38 @@ img.cloud-icon { object-fit: cover; }
  * blurred only enough to avoid a jagged line), and the grain is dense,
  * high-contrast, and masked to where the colour is.
  */
+/* The field is drawn on a canvas now, not stacked out of gradients.
+ *
+ * The look wanted is a printed poster: hard-edged sheets of light with
+ * grain riding the boundary between light and dark. CSS gradients cannot
+ * do that -- a gradient's edge is either a hard band with visible stair
+ * steps, or it is blurred, and a blur has no edge for grain to sit on.
+ * Drawing it per pixel gives both: a real edge, and noise computed
+ * against the local brightness so the speckle is heaviest exactly where
+ * the light falls off.
+ *
+ * .horizon is kept as the ground colour under the canvas, so the window
+ * is never bare black for the frame before the first paint. */
 .horizon {
-  /* A dome: one wide semicircle sitting on the floor of the window, dense
-     through its body and fading out at the top corners. Anchored to the
-     window rather than spilling far outside it -- the wedges are angular
-     slices, and an oversized element throws most of them off screen. */
-  position: fixed; left: 0; right: 0; bottom: 0; height: 82vh;
+  position: fixed; left: 0; right: 0; bottom: 0; height: 74vh;
   pointer-events: none; z-index: 0;
   transition: opacity 0.5s ease;
-  filter: blur(9px) saturate(1.22);
-  /* The dome's own shape. Everything inside is clipped to this, so the
-     colour ends on a curve instead of at the window's square edges, and
-     the corners go dark on their own. */
-  -webkit-mask-image: radial-gradient(112% 100% at 50% 100%,
-    #000 40%, rgba(0,0,0,0.85) 62%, rgba(0,0,0,0.35) 82%, transparent 97%);
-          mask-image: radial-gradient(112% 100% at 50% 100%,
-    #000 40%, rgba(0,0,0,0.85) 62%, rgba(0,0,0,0.35) 82%, transparent 97%);
-  background:
-    /* the bright blade, sweeping up and left from the lower right */
-    conic-gradient(from 188deg at 76% 98%,
-      transparent 0deg,
-      rgba(218, 210, 255, 0.78) 9deg,
-      rgba(172, 152, 255, 0.56) 18deg,
-      rgba(128, 108, 248, 0.26) 27deg,
-      transparent 37deg),
-    /* the colder blade crossing it from the lower left */
-    conic-gradient(from 292deg at 18% 100%,
-      transparent 0deg,
-      rgba(122, 108, 248, 0.64) 11deg,
-      rgba(78, 60, 214, 0.36) 21deg,
-      transparent 34deg),
-    /* the violet body the blades cut through, filling most of the dome */
-    radial-gradient(74% 62% at 50% 100%, rgba(138, 110, 250, 0.56), transparent 72%),
-    /* deep indigo, keeping the lower field off flat black */
-    radial-gradient(104% 74% at 40% 104%, rgba(60, 44, 178, 0.46), transparent 78%),
-    /* the widest wash */
-    linear-gradient(to top,
-      rgba(44, 36, 132, 0.54),
-      rgba(44, 36, 132, 0.26) 46%,
-      rgba(44, 36, 132, 0.07) 72%,
-      transparent 94%);
+  background: radial-gradient(80% 100% at 50% 100%,
+    rgba(38, 30, 116, 0.55), transparent 74%);
 }
 
-/* Fine curved lines across the field, like the poster's hairlines. They
-   are what stop a gradient from reading as a screensaver: something in
-   the image was drawn deliberately. */
-.horizon::after {
-  content: ""; position: absolute; inset: 0;
-  opacity: 0.5;
-  background:
-    radial-gradient(60% 44% at 42% 96%, transparent 61.4%, rgba(255,255,255,0.16) 61.7%, transparent 62.1%),
-    radial-gradient(84% 56% at 62% 104%, transparent 55.5%, rgba(255,255,255,0.10) 55.8%, transparent 56.2%);
-}
-
-/* The starfield sits between the colour and the grain, so grain lands on
-   the stars too and they read as part of the image rather than dots on
-   top of it. */
+/* One canvas for the whole field: colour, edges and grain together. */
 .stars {
   position: fixed; inset: 0; width: 100%; height: 100%;
   pointer-events: none; z-index: 0; display: block;
   transition: opacity 0.5s ease;
-  /* The same dome the colour uses, a little wider, so the field thins at
-     the top corners instead of ending on the window's square edge. */
-  -webkit-mask-image: radial-gradient(120% 104% at 50% 100%,
-    #000 44%, rgba(0,0,0,0.8) 66%, rgba(0,0,0,0.3) 85%, transparent 98%);
-          mask-image: radial-gradient(120% 104% at 50% 100%,
-    #000 44%, rgba(0,0,0,0.8) 66%, rgba(0,0,0,0.3) 85%, transparent 98%);
 }
 
-/* The grain, which is the point.
- *
- * Two passes at different scales. The fine one covers the whole window so
- * even the black has tooth; the coarse one is masked to the lower field
- * where the colour lives, which is what gives the poster's speckled edge
- * where light meets dark. High baseFrequency and low octaves keep each
- * grain a hard dot rather than a smudge. */
-.grain {
-  position: fixed; inset: 0; pointer-events: none; z-index: 1;
-  opacity: 0.9; mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/><feComponentTransfer><feFuncA type='discrete' tableValues='0 .35 .7 1'/></feComponentTransfer></filter><rect width='160' height='160' filter='url(%23n)' opacity='.62'/></svg>");
-}
-.grain::after {
-  content: ""; position: absolute; inset: 0;
-  opacity: 0.72; mix-blend-mode: soft-light;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='110' height='110'><filter id='m'><feTurbulence type='fractalNoise' baseFrequency='.55' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/><feComponentTransfer><feFuncA type='discrete' tableValues='0 .5 1'/></feComponentTransfer></filter><rect width='110' height='110' filter='url(%23m)' opacity='.66'/></svg>");
-  -webkit-mask-image: linear-gradient(to top, #000 0%, rgba(0,0,0,.6) 44%, transparent 80%);
-          mask-image: linear-gradient(to top, #000 0%, rgba(0,0,0,.6) 44%, transparent 80%);
-}
+/* The canvas draws its own grain per pixel, so the old CSS noise layers
+   are gone: two tiled SVG turbulence images over the whole window cost
+   more and could only sit ON TOP of the colour rather than inside it. */
+.grain { display: none; }
+
 body.scrolled .horizon { opacity: 0.45; }
 body.scrolled .stars { opacity: 0.45; }
 
@@ -2989,7 +2936,7 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
   border-radius: 8px; transition: background 0.15s;
 }
 .side-mark:hover { background: rgba(255,255,255,0.05); }
-.side-mark img { width: 20px; height: 20px; opacity: 1; flex: none; }
+.side-mark img { width: 22px; height: 22px; opacity: 1; flex: none; }
 .side-mark span {
   font-size: 13px; font-weight: 600; letter-spacing: 0.08em;
   color: var(--text);
