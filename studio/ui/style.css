@@ -227,6 +227,18 @@ body.macos .side-top {
   height: 60px; padding-left: 78px;
   align-items: center;
 }
+/* The panel toggle sits on the same line as the traffic lights -- measured
+   from a screen capture, the two centres are 0.4 CSS px apart, so this is
+   not a position problem.
+   
+   It LOOKED low because of weight, not placement: three solid saturated
+   circles beside a 1.35px grey stroke at 32% opacity, and the eye reads
+   the lighter mark as smaller and lower. Brought up to a legible weight
+   so it holds the line as their peer. */
+body.macos .side-top .side-toggle,
+body.macos .titlebar .side-toggle { color: rgba(255,255,255,0.62); }
+body.macos .side-top .side-toggle:hover,
+body.macos .titlebar .side-toggle:hover { color: #fff; }
 body.macos .side-mark {
   padding-left: 10px;
 }
