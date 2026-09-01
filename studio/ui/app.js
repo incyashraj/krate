@@ -3958,6 +3958,12 @@ $("backBtn").addEventListener("click", async () => {
 /* Your apps had no way out: no back button, no drawer toggle. Both now
    behave exactly as they do on every other view. */
 $("appsBackBtn")?.addEventListener("click", () => enterHome());
+/* Settings had no way out either: no back, no panel button. */
+$("setBackBtn")?.addEventListener("click", () => enterHome());
+$("profBackBtn")?.addEventListener("click", () => enterHome());
+$("setOpenDocs")?.addEventListener("click", () => {
+  invoke("open_external", { url: "https://krate.tech/docs/" }).catch(() => {});
+});
 $("loginBrowserBtn").addEventListener("click", async () => {
   $("gateError").classList.add("hidden");
   try {

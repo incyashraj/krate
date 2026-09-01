@@ -131,16 +131,17 @@
       <div class="gate-card">
         <img class="gate-mark reveal" src="krate-logo.png" alt="" />
         <h1 class="reveal">Build a desktop app, ship one file</h1>
-        <p class="gate-sub reveal">Describe it or bring your own code. You get a
-        single file that runs on Mac, Windows and Linux, with no installer,
-        no per-OS build and no signing queue.</p>
+        <p class="gate-sub reveal">Rust compiled to a WebAssembly component,
+        packed with its own source into one file that runs on Mac, Windows
+        and Linux. No installer, no per-OS build, no signing queue, and it
+        reaches nothing it did not declare.</p>
 
         <div id="gateStart" class="reveal">
           <button class="btn btn-primary btn-big" id="loginBrowserBtn">Sign in with krate.tech</button>
           <button class="btn btn-ghost" id="gateSkip">Skip, I just want to build</button>
           <button class="btn btn-ghost hidden" id="loginBtn">Use a code instead</button>
-          <p class="gate-hint">Opens your browser; you're back here signed in.
-          Krate never sees your password - GitHub asks you directly.</p>
+          <p class="gate-hint">GitHub device flow in your browser. Krate never
+          sees your password, and signing in is only needed to publish.</p>
         </div>
 
         <div id="gateCode" class="hidden">
@@ -181,7 +182,7 @@
 
       <section class="ob-scene" data-step="2">
         <h1 class="ob-h">Which agent writes the code?</h1>
-        <p class="ob-p">Krate drives the coding agent you already pay for. Your key, your account, your model.</p>
+        <p class="ob-p">Krate drives a coding agent you already have, or calls a model API with your own key. Nothing runs on our machines.</p>
         <div class="ob-agents" id="obAgents"></div>
         <button class="ob-cta" data-go="3" id="obAgentNext">Continue<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 8h9M8.4 4.2L12.2 8l-3.8 3.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       </section>
@@ -489,6 +490,10 @@
 
   <div class="view hidden" id="viewSettings">
     <header class="titlebar">
+      <button class="icon-btn side-toggle" id="setSideToggle" title="Show your workspace" aria-expanded="false">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="10" rx="2" stroke="currentColor" stroke-width="1.35"/><path d="M6.2 3v10" stroke="currentColor" stroke-width="1.35"/></svg>
+      </button>
+      <button class="icon-btn" id="setBackBtn" title="Back to home"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M9.8 3.2L5 8l4.8 4.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <div class="spacer"></div>
     </header>
     <div class="page-scroll" data-scroller>
@@ -496,7 +501,8 @@
         <div class="page-head">
           <div>
             <h1>Settings</h1>
-            <p>How Krate builds, and where it puts what it makes.</p>
+            <p>Which agent builds, where the output lands, and how to drive
+            all of it from a terminal.</p>
           </div>
         </div>
 
@@ -511,16 +517,16 @@
         <div class="set-group">
           <h2>Support</h2>
           <div class="set-row">
-            <div><div class="lab">Talk to a person</div><div class="hint">Ask anything; replies land right here in this window</div></div>
+            <div><div class="lab">Report a problem</div><div class="hint">Goes to us with the session log attached; replies land in this window</div></div>
             <div class="ctl"><button class="set-mini" id="supportBtn">Contact support</button></div>
           </div>
         </div>
 
         <div class="set-group">
-          <h2>Made by others</h2>
+          <h2>Gallery</h2>
           <div class="set-row">
-            <div><div class="nm">The shared gallery</div><div class="sub">Apps people have published, each one a file you can run.</div></div>
-            <button class="btn btn-ghost" id="galleryBtn">See what others made</button>
+            <div><div class="nm">Published apps</div><div class="sub">What other people have shipped. Every one is a file you can download and inspect.</div></div>
+            <button class="btn btn-ghost" id="galleryBtn">Open the gallery</button>
           </div>
         </div>
 
@@ -546,21 +552,21 @@
         </div>
 
         <div class="set-group">
-          <h2>Who writes your apps</h2>
+          <h2>Agent</h2>
           <div class="set-row">
-            <div><div class="lab">AI assistant</div><div class="hint">The tool that writes and tests the code</div></div>
+            <div><div class="lab">Coding agent</div><div class="hint">Drives the build loop: writes the code, runs check-app, fixes what it reports</div></div>
             <div class="ctl"><span class="set-val" id="setAgent">…</span><button class="set-mini" id="setAgentBtn">Change</button></div>
           </div>
           <div class="set-row soon">
-            <div><div class="lab">Ask before building</div><div class="hint">Krate checks the plan with you first</div></div>
+            <div><div class="lab">Confirm the plan first</div><div class="hint">Review what will be built before the agent starts</div></div>
             <div class="ctl"><span class="soon-tag">soon</span><button class="sw on" id="swPlan" data-soon aria-label="Ask before building" disabled></button></div>
           </div>
         </div>
 
         <div class="set-group">
-          <h2>Where apps are saved</h2>
+          <h2>Output</h2>
           <div class="set-row">
-            <div><div class="lab">Folder</div><div class="hint">Finished .krate files land here</div></div>
+            <div><div class="lab">Output folder</div><div class="hint">Where packed .krate files are written</div></div>
             <div class="ctl"><span class="set-val" id="setOutDir">…</span><button class="set-mini" id="setOutBtn">Choose</button></div>
           </div>
         </div>
@@ -571,12 +577,29 @@
             <div><div class="lab">The <code>krate</code> command</div><div class="hint" id="setTermHint">…</div></div>
             <div class="ctl"><button class="set-mini" id="setTermBtn">Set up</button></div>
           </div>
+          <!-- Everything Studio does, Studio does by calling these. Worth
+               saying plainly: the GUI is not the product's only surface, and
+               anyone who wants this in CI needs the commands, not a tour. -->
+          <div class="set-cmds">
+            <p class="set-cmds-lede">Studio drives the same commands you can:</p>
+            <dl class="cmd-list">
+              <dt><code>krate create "a regex tester" --agent claude</code></dt>
+              <dd>Author, build, check and pack in one step.</dd>
+              <dt><code>krate port ./my-project</code></dt>
+              <dd>Read an existing project and report what porting it takes.</dd>
+              <dt><code>krate run app.krate --dump-caps</code></dt>
+              <dd>Show exactly what a file may touch, without running it.</dd>
+              <dt><code>krate check-app .</code></dt>
+              <dd>The oracle: builds, checks imports, runs, paints a frame.</dd>
+            </dl>
+            <button class="set-mini" id="setOpenDocs">Read the docs</button>
+          </div>
         </div>
 
         <div class="set-group">
           <h2>Privacy</h2>
           <div class="set-row soon">
-            <div><div class="lab">Anonymous usage counting</div><div class="hint">A random id and which action happened. Nothing else.</div></div>
+            <div><div class="lab">Anonymous usage counting</div><div class="hint">A random id and which action happened. No prompts, no code, no file names.</div></div>
             <div class="ctl"><span class="soon-tag">soon</span><button class="sw on" id="swUsage" data-soon aria-label="Usage counting" disabled></button></div>
           </div>
         </div>
@@ -586,6 +609,10 @@
 
   <div class="view hidden" id="viewProfile">
     <header class="titlebar">
+      <button class="icon-btn side-toggle" id="profSideToggle" title="Show your workspace" aria-expanded="false">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="10" rx="2" stroke="currentColor" stroke-width="1.35"/><path d="M6.2 3v10" stroke="currentColor" stroke-width="1.35"/></svg>
+      </button>
+      <button class="icon-btn" id="profBackBtn" title="Back to home"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M9.8 3.2L5 8l4.8 4.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <div class="spacer"></div>
     </header>
     <div class="page-scroll" data-scroller>
