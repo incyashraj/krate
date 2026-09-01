@@ -3144,15 +3144,26 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
   padding: 14px 2px 6px; font-size: 13px; color: var(--faint);
 }
 
+/* An empty shelf is a slab with a tab bar on it and nothing underneath: on
+   first run that is the largest object on the screen, and it says the
+   product is empty rather than that it is ready. So with nothing in it the
+   shelf collapses to its head, and the room stops reserving a shelf's worth
+   of floor for it. */
+.shelf[data-empty="true"] { padding-bottom: 12px; }
+.shelf[data-empty="true"] .shelf-body { display: none; }
+
 /* The room has to leave space for the shelf, and the old dock goes: the
    shelf does its job better and two navigations at one edge is one too
-   many. */
-.home { position: relative; padding-bottom: 200px; }
+   many. The reserve matches what is actually down there: a head plus a row
+   of cards, or just a head when the shelf is empty. */
+.home { position: relative; padding-bottom: 232px; }
+.home[data-shelf="empty"] { padding-bottom: 108px; }
 .dockwrap { display: none !important; }
 
 @media (max-width: 700px) {
   .shelf { width: 100%; border-radius: 14px 14px 0 0; padding: 10px 12px 16px; }
-  .home { padding-bottom: 176px; }
+  .home { padding-bottom: 208px; }
+  .home[data-shelf="empty"] { padding-bottom: 96px; }
 }
 
 /* When the drawer is open, the room gets the reference's rounded top-left

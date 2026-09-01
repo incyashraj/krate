@@ -4602,10 +4602,19 @@ async function renderShelf() {
     }
   }
 
+  // The shelf marks itself empty so the CSS can collapse it to its head and
+  // the room can stop reserving a shelf's worth of floor. An empty slab is
+  // the biggest thing on a first run otherwise.
+  const shelf = $("shelf");
+  const room = document.querySelector(".home");
   if (!files.length) {
-    body.innerHTML = `<p class="shelf-empty">Nothing here yet. The box above is where it starts.</p>`;
+    body.innerHTML = "";
+    if (shelf) shelf.dataset.empty = "true";
+    if (room) room.dataset.shelf = "empty";
     return;
   }
+  if (shelf) shelf.dataset.empty = "false";
+  if (room) room.removeAttribute("data-shelf");
 
   body.innerHTML = "";
   for (const session of files.slice(0, 12)) {
