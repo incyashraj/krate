@@ -3505,8 +3505,22 @@ body.session-view .horizon { opacity: 0.35; }
 body.side-open .view .side-toggle { display: none; }
 /* Off macOS there are no lights to dodge, so the two rows collapse back
    into one: the toggle sits beside the mark. */
-body:not(.macos) .side-top { display: none; }
-body:not(.macos) .side-brandrow { height: var(--titlebar); margin-bottom: 10px; }
+/* Off macOS there are no traffic lights to dodge, so the lights row is not
+   needed -- but it HOLDS the drawer's close button, and the room's toggle
+   hides whenever the drawer is open. Hiding the row outright therefore left
+   Windows and Linux with an open drawer and nothing to close it.
+   The row collapses to nothing and its toggle moves into the brand row,
+   which is where a single-row drawer wants it anyway. */
+body:not(.macos) .side-top {
+  height: 0; margin: 0; padding: 0; overflow: visible;
+}
+body:not(.macos) .side-brandrow {
+  height: var(--titlebar); margin-bottom: 10px;
+  justify-content: space-between;
+}
+body:not(.macos) .side-top .side-toggle {
+  position: absolute; top: 15px; right: 12px; z-index: 3;
+}
 
 /* ---- dictation ---------------------------------------------------------
  * The microphone has two jobs while it runs: be obviously live, and be
