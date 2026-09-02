@@ -2518,7 +2518,14 @@ body.scrolled.light .dock-solo {
    moment its idle state became a pale chip: white arrow, white chip. */
 body.light .btn.btn-primary { background: var(--text); color: #ffffff; border-color: var(--text); }
 body.light .set-mini.go { color: #ffffff; }
-body.light .titlebar { background: rgba(255, 255, 255, 0.72); border-bottom-color: var(--line); }
+/* The title bar stays transparent in light mode too.
+ *
+ * It was painted white at 72% over a #eef1f6 page, which drew a bright strip
+ * across the top of every view and a rule under it -- exactly the header the
+ * base rule refuses to draw ("The window is one surface: a line here draws a
+ * header that is not really there"). Dark mode has no background on it at
+ * all; light mode should not either. The controls in the bar carry their own
+ * ink, so nothing needs a plate behind it. */
 body.light .tchip, body.light .agent-chip, body.light .aichip {
   background: #ffffff; border-color: var(--line);
 }
