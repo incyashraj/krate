@@ -31,9 +31,15 @@
   --line: #1f2228;
   --line-strong: #2e323a;
   --text: #ffffff;
-  --muted: rgba(255, 255, 255, 0.56);
-  --faint: rgba(255, 255, 255, 0.32);
-  --ghost: rgba(255, 255, 255, 0.18);
+  /* Each step still reads. Auditing the light theme turned up the same
+     problem here, which is easy to miss on a good screen in a dark room and
+     obvious on a laptop in daylight: --faint measured 2.8:1 and --ghost
+     1.6:1 against the panels they sit on, under the 3:1 floor for text.
+     Both carry real words -- hints, placeholders, capability labels, the
+     sub-line under every settings row. */
+  --muted: rgba(255, 255, 255, 0.62);
+  --faint: rgba(255, 255, 255, 0.42);
+  --ghost: rgba(255, 255, 255, 0.36);
   --blue: #6291ff;
   --blue-soft: #a9c2ff;
   --cyan: #6cf4d7;
@@ -127,7 +133,7 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
 .btn-primary:hover { background: var(--blue-soft); border-color: var(--blue-soft); }
 
 .btn-ghost { border-color: transparent; color: var(--muted); }
-.btn-ghost:hover { color: var(--text); border-color: transparent; background: rgba(255,255,255,0.04); }
+.btn-ghost:hover { color: var(--text); border-color: transparent; background: var(--film); }
 .btn-big { padding: 12px 28px; font-size: 14.5px; }
 
 .icon-btn {
@@ -139,7 +145,7 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
   cursor: pointer;
   transition: color 0.15s, background 0.15s;
 }
-.icon-btn:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+.icon-btn:hover { color: var(--text); background: var(--film); }
 
 /* ---- titlebar --------------------------------------------------------- */
 
@@ -251,6 +257,13 @@ body.macos .side-top .side-toggle,
 body.macos .titlebar .side-toggle { color: rgba(255,255,255,0.62); }
 body.macos .side-top .side-toggle:hover,
 body.macos .titlebar .side-toggle:hover { color: #fff; }
+/* The same weight in ink. Without this the rule above wins in light mode
+   too and the drawer button is white on paper -- measured 1.02:1, which is
+   invisible, in five different views. */
+body.macos.light .side-top .side-toggle,
+body.macos.light .titlebar .side-toggle { color: rgba(13, 16, 21, 0.70); }
+body.macos.light .side-top .side-toggle:hover,
+body.macos.light .titlebar .side-toggle:hover { color: #0d1015; }
 body.macos .side-mark {
   padding-left: 10px;
 }
@@ -552,7 +565,7 @@ body.windows.light .titlebar .side-toggle:hover { color: #000; }
 
 /* The app's own latest test frame, updating as the AI works. Small on
    purpose -- a preview riding above the stages, not the finished-app stage. */
-.build-shot { position: relative; margin: 10px 0 14px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.02); min-height: 190px; }
+.build-shot { position: relative; margin: 10px 0 14px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: var(--film); min-height: 190px; }
 .build-shot img { display: block; width: 100%; max-height: 240px; object-fit: cover; object-position: top; }
 
 /* The forming skeleton: a ghost of a window, breathing, until the AI's
@@ -593,7 +606,7 @@ body.windows.light .titlebar .side-toggle:hover { color: #000; }
    read as a dead gap. */
 .build-track {
   height: 4px; border-radius: 4px; margin: 12px 0 10px;
-  background: rgba(255, 255, 255, 0.12); overflow: hidden;
+  background: var(--film-strong); overflow: hidden;
 }
 .build-track i {
   display: block; height: 100%; border-radius: 3px;
@@ -923,7 +936,7 @@ body.light ::-webkit-scrollbar-thumb:hover { background: rgba(12, 16, 23, 0.34);
 .progress {
   height: 3px;
   border-radius: var(--radius-pill);
-  background: rgba(255,255,255,0.07);
+  background: var(--film-strong);
   overflow: hidden;
 }
 .progress .fill {
@@ -986,7 +999,7 @@ body.light ::-webkit-scrollbar-thumb:hover { background: rgba(12, 16, 23, 0.34);
 .attach-chip .kind {
   font-size: 9px; font-weight: 500; letter-spacing: 0.06em;
   color: var(--faint);
-  background: rgba(255,255,255,0.06);
+  background: var(--film);
   border-radius: 4px;
   padding: 1px 5px;
   text-transform: uppercase;
@@ -1010,7 +1023,7 @@ body.light ::-webkit-scrollbar-thumb:hover { background: rgba(12, 16, 23, 0.34);
 .build-detail-toggle:hover { color: var(--text); border-color: rgba(255,255,255,0.22); }
 .build-detail-toggle[aria-pressed="true"] {
   color: var(--text); border-color: rgba(255,255,255,0.28);
-  background: rgba(255,255,255,0.06);
+  background: var(--film);
 }
 
 /* Fills the forming frame's rectangle exactly, so switching views never
@@ -1031,7 +1044,7 @@ body.light ::-webkit-scrollbar-thumb:hover { background: rgba(12, 16, 23, 0.34);
   color: var(--faint); font-family: var(--sans); font-size: 11px;
   padding: 2px 6px; border-radius: 6px;
 }
-.term-copy:hover { color: var(--text); background: rgba(255,255,255,0.07); }
+.term-copy:hover { color: var(--text); background: var(--film-strong); }
 .term-log {
   flex: 1; margin: 0; padding: 9px 11px 11px; overflow-y: auto;
   font: 11px/1.65 var(--mono); color: #b9bfc9;
@@ -1039,7 +1052,7 @@ body.light ::-webkit-scrollbar-thumb:hover { background: rgba(12, 16, 23, 0.34);
 }
 .term-log::-webkit-scrollbar { width: 8px; }
 .term-log::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.12); border-radius: 4px;
+  background: var(--film-strong); border-radius: 4px;
 }
 /* The terminal is the tall view: a log at 190px is a keyhole. */
 .build-shot.showing-term { min-height: 320px; }
@@ -1690,7 +1703,7 @@ img.cloud-icon { object-fit: cover; }
   border: 0; padding: 5px 9px; gap: 6px; font-size: 12px;
   border-radius: 9px; margin-left: 2px;
 }
-.bigbar-row .aichip:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+.bigbar-row .aichip:hover { background: var(--film); color: var(--text); }
 .bigbar-row .aichip .dot { width: 5px; height: 5px; }
 .bigbar-row .aichip .chev { font-size: 11px; }
 
@@ -2093,11 +2106,11 @@ body.scrolled .dock-solo {
 .set-row .ctl { margin-left: auto; display: flex; align-items: center; gap: 9px; }
 .set-val {
   font-family: var(--mono); font-size: 11.5px; color: var(--muted);
-  background: rgba(255, 255, 255, 0.04); border: 1px solid var(--line);
+  background: var(--film); border: 1px solid var(--line);
   border-radius: 7px; padding: 5px 9px;
 }
 .set-mini {
-  font-size: 12.5px; color: var(--muted); background: rgba(255, 255, 255, 0.04);
+  font-size: 12.5px; color: var(--muted); background: var(--film);
   border: 1px solid var(--line); border-radius: var(--radius-pill);
   padding: 6px 12px; cursor: pointer; font-family: var(--sans);
   transition: color 0.15s, border-color 0.15s, background 0.15s;
@@ -2132,7 +2145,7 @@ body.scrolled .dock-solo {
 .upd-top { display: flex; align-items: center; gap: 13px; }
 .upd-ic {
   width: 38px; height: 38px; border-radius: 11px; flex: none;
-  display: grid; place-items: center; background: rgba(255, 255, 255, 0.05);
+  display: grid; place-items: center; background: var(--film);
   border: 1px solid var(--line); transition: background 0.3s, border-color 0.3s;
 }
 .upd.ready .upd-ic { background: rgba(124, 108, 255, 0.12); border-color: rgba(124, 108, 255, 0.3); }
@@ -2141,7 +2154,7 @@ body.scrolled .dock-solo {
 .upd-s { font-size: 12.5px; color: var(--muted); margin-top: 3px; }
 .upd-act { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 .upd-bar {
-  height: 4px; border-radius: var(--radius-pill); background: rgba(255, 255, 255, 0.07);
+  height: 4px; border-radius: var(--radius-pill); background: var(--film-strong);
   margin-top: 15px; overflow: hidden; display: none;
 }
 .upd.working .upd-bar { display: block; }
@@ -2194,7 +2207,10 @@ body.scrolled .dock-solo {
 .conn-row:hover { border-color: var(--line-strong); }
 .conn-row .lg {
   width: 34px; height: 34px; border-radius: 9px; flex: none; display: grid; place-items: center;
-  background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line);
+  /* A white film over a dark panel, which on paper was white on white. The
+     marks inside are currentColor now, so the badge carries their ink. */
+  background: var(--film); border: 1px solid var(--line);
+  color: var(--text);
 }
 .conn-row .nm { font-size: 13.5px; }
 .conn-row .sub { font-size: 12px; color: var(--faint); margin-top: 2px; }
@@ -2219,7 +2235,7 @@ body.scrolled .dock-solo {
   border-radius: 11px; padding: 11px 13px; cursor: pointer; text-align: left;
   transition: background 0.16s, color 0.16s;
 }
-.sugg-list button:hover { background: rgba(255, 255, 255, 0.05); color: var(--text); }
+.sugg-list button:hover { background: var(--film); color: var(--text); }
 .sugg-list .ic {
   width: 24px; height: 24px; border-radius: 7px; border: 1px solid rgba(255, 255, 255, 0.1);
   display: grid; place-items: center; flex: none;
@@ -2345,19 +2361,16 @@ body > .horizon, body > .grain { position: fixed; z-index: 0; }
  * Not an inversion: the dark room is the design, so the light one keeps
  * the same structure and swaps the ground for paper, with the blue kept
  * as the one warm-cold accent so the horizon still reads. */
-body.light {
-  --bg: #f7f8fa;
-  --panel: #ffffff;
-  --panel-raised: #f1f3f6;
-  --line: #e3e6ec;
-  --line-strong: #cdd3dd;
-  --text: #0d1015;
-  --muted: rgba(13, 16, 21, 0.62);
-  --faint: rgba(13, 16, 21, 0.42);
-  --ghost: rgba(13, 16, 21, 0.18);
+/* (The real light palette is the `body.light` block further down, near the
+   end of the file -- it lands last and is the one that wins. Everything
+   theme-related belongs there, not here.) */
+
+/* Dark keeps the values the rules were written with, so the fallbacks in
+   `var(--x, …)` never have to carry the design. */
+body:not(.light) {
+  --film: rgba(255, 255, 255, 0.05);
+  --film-strong: rgba(255, 255, 255, 0.10);
 }
-body.light .horizon { opacity: 0.40; }
-body.light .grain { opacity: 0.16; mix-blend-mode: multiply; }
 body.light .dock {
   background: rgba(255, 255, 255, 0.78);
   border-color: rgba(13, 16, 21, 0.1);
@@ -2379,7 +2392,6 @@ body.light .set-row, body.light .conn-row, body.light .prof-head,
 body.light .upd, body.light .skel-card {
   background: rgba(255, 255, 255, 0.9);
 }
-body.light .send { color: #ffffff; }
 body.light .btn.btn-primary { color: #ffffff; }
 
 /* ---- the hero, sized once ---------------------------------------------
@@ -2403,16 +2415,69 @@ body.light {
   --line: #dde2ea;
   --line-strong: #c2cad8;
   --text: #0c1017;
-  --muted: rgba(12, 16, 23, 0.6);
-  --faint: rgba(12, 16, 23, 0.4);
-  --ghost: rgba(12, 16, 23, 0.16);
+  /* Weightier than a straight flip of the dark values.
+     Ink on paper needs more of it than light on black to read as the same
+     strength. At 0.6 / 0.4 / 0.16 the secondary lines measured 2.6:1 and
+     the faintest 1.4:1 against their own backgrounds -- under the 3:1 floor
+     for text anyone is expected to read, across all nine views. */
+  --muted: rgba(12, 16, 23, 0.72);
+  --faint: rgba(12, 16, 23, 0.56);
+  /* --ghost is the faintest step, but it still carries TEXT -- the
+     composer's placeholder, the hint under it, capability labels. It has to
+     clear 3:1 like anything else meant to be read, which on paper is about
+     0.48, not the 0.16 a straight inversion suggests. */
+  --ghost: rgba(12, 16, 23, 0.48);
   --blue: #3f6fe0;
   --blue-soft: #2b52ac;
+
+  /* The two big panels, both hardcoded before: #0F0F10 for the drawer and
+     #131315 for the shelf. On paper they stayed black slabs -- 240px of
+     drawer down the side and the whole floor of the room. White here,
+     because on a light ground a surface reads as RAISED by being lighter
+     than the room, the exact inverse of dark mode. */
+  --side-bg: #ffffff;
+  --shelf-bg: #ffffff;
+
+  /* The send button: quiet until there is something to send, then bright.
+     Every value was a hardcoded white, so on paper it was a white circle
+     with a white arrow in it -- the control this whole screen exists for.
+     "Bright" in light mode means ink. */
+  --send-idle-bg: rgba(12, 16, 23, 0.07);
+  --send-idle-fg: rgba(12, 16, 23, 0.55);
+  --send-hover-bg: rgba(12, 16, 23, 0.12);
+  --send-hover-fg: #0c1017;
+  --send-ready-bg: #0c1017;
+  --send-ready-fg: #ffffff;
+  --send-ready-hover: #232833;
+
+  /* A white film over a dark ground has to become a dark film over a light
+     one, or the hover states and raised strips simply are not there. */
+  --film: rgba(12, 16, 23, 0.05);
+  --film-strong: rgba(12, 16, 23, 0.09);
 }
 
 /* The horizon is the product's signature, so it survives the theme --
- * lighter, but still blue light coming up from under the page. */
-/* light-theme horizon handled by the shared rim/glow rules above */
+ * lighter, but still blue light coming up from under the page.
+ *
+ * It is a DARK indigo glow, which is light against black and mud against
+ * paper: at 40% it greyed the lower half of the window and took every word
+ * on it down too. Light mode gets its own gradient rather than a dimmed
+ * copy of the dark one -- same colour, far weaker, so the accent is a tint
+ * instead of a haze. */
+body.light .horizon {
+  opacity: 1;
+  background: radial-gradient(80% 100% at 50% 100%,
+    rgba(99, 91, 214, 0.13), transparent 68%);
+}
+
+/* The field canvas is a violet dome painted for a black room: it composes
+ * at up to ~0.5 alpha, which on paper is a purple wash over the whole
+ * window. The painting code has no idea which theme is on -- it is one code
+ * path by design -- so the theme is applied here rather than forking the
+ * renderer. `multiply` keeps it a tint of the page, not a film over it. */
+body.light .stars { opacity: 0.16; mix-blend-mode: multiply; }
+body.scrolled.light .stars { opacity: 0.10; }
+
 body.light .grain { opacity: 0.1; mix-blend-mode: multiply; }
 
 /* Surfaces: white cards on the tinted ground, with a real border. */
@@ -2448,8 +2513,9 @@ body.scrolled.light .dock-solo {
   box-shadow: 0 12px 34px rgba(12, 16, 23, 0.13);
 }
 
-/* Controls that were white-on-dark need the opposite ink. */
-body.light .send { color: #ffffff; }
+/* The send button's ink comes from --send-*-fg now. These two rules forced
+   #fff, which was right when the button was a blue disc and wrong the
+   moment its idle state became a pale chip: white arrow, white chip. */
 body.light .btn.btn-primary { background: var(--text); color: #ffffff; border-color: var(--text); }
 body.light .set-mini.go { color: #ffffff; }
 body.light .titlebar { background: rgba(255, 255, 255, 0.72); border-bottom-color: var(--line); }
@@ -2999,7 +3065,7 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
   margin-left: auto; padding: 2px 8px; border-radius: 6px;
   color: var(--quiet, rgba(255,255,255,0.35)); font-size: 15px; line-height: 1;
 }
-.apps-finish .apps-x:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+.apps-finish .apps-x:hover { color: var(--text); background: var(--film); }
 
 /* Support threads inside the sheet. */
 #supTickets { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; max-height: 300px; overflow-y: auto; }
@@ -3040,8 +3106,10 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
      to the drawer follows without a second source of truth. */
   width: var(--side-w, 240px); flex: none;
   display: flex; flex-direction: column;
-  background: #0F0F10;
-  border-right: 1px solid rgba(255,255,255,0.07);
+  /* Token, not #0F0F10: the drawer is 240px of the window, and hardcoded it
+     was a black column standing beside a white page. */
+  background: var(--side-bg, #0F0F10);
+  border-right: 1px solid var(--line);
   /* No top padding: the mark sits in the window's corner, level with the
      title bar, the way every desktop app puts its identity. The rows keep
      their own side padding. */
@@ -3093,7 +3161,7 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
   padding: 0 6px; background: none; border: 0; cursor: pointer;
   border-radius: 8px; transition: background 0.15s;
 }
-.side-mark:hover { background: rgba(255,255,255,0.05); }
+.side-mark:hover { background: var(--film); }
 .side-mark img { width: 22px; height: 22px; opacity: 1; flex: none; }
 .side-mark span {
   font-size: 13px; font-weight: 600; letter-spacing: 0.08em;
@@ -3115,10 +3183,10 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
   transition: background 0.15s, color 0.15s;
 }
 .side-row svg { flex: none; opacity: 0.85; }
-.side-row:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+.side-row:hover { background: var(--film); color: var(--text); }
 /* Selected is a fill, not a brick: the reference marks the current page
    with a lighter panel, and the text goes white with it. */
-.side-row.on { background: rgba(255,255,255,0.08); color: var(--text); }
+.side-row.on { background: var(--film-strong); color: var(--text); }
 
 .side-label {
   margin: 18px 0 6px; padding: 0 9px;
@@ -3130,12 +3198,12 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
 .side-card {
   display: flex; align-items: center; gap: 10px;
   width: 100%; padding: 11px 12px;
-  background: rgba(255,255,255,0.04);
+  background: var(--film);
   border: 1px solid rgba(255,255,255,0.07); border-radius: 11px;
   color: var(--text); font-family: var(--sans); cursor: pointer; text-align: left;
   transition: background 0.15s, border-color 0.15s;
 }
-.side-card:hover { background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.13); }
+.side-card:hover { background: var(--film-strong); border-color: rgba(255,255,255,0.13); }
 .card-text { flex: 1; min-width: 0; }
 .card-text b { display: block; font-size: 13px; font-weight: 500; }
 .card-text small { display: block; font-size: 11.5px; color: var(--faint); margin-top: 1px; }
@@ -3161,7 +3229,7 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
   background: none; border: 0; color: var(--faint); cursor: pointer;
   transition: color 0.15s, background 0.15s;
 }
-.side-bell:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+.side-bell:hover { color: var(--text); background: var(--film); }
 .bell-dot {
   position: absolute; top: 5px; right: 6px;
   width: 6px; height: 6px; border-radius: 50%; background: #ff6b6b;
@@ -3182,7 +3250,9 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
      line above the box, and the box is the subject of the screen. */
   font-size: clamp(22px, 2.1vw, 27px);
   font-weight: 400; letter-spacing: -0.012em; line-height: 1.25;
-  color: #fff;
+  /* --text, not #fff. This is the biggest line on the home screen and in
+     light mode it was white on paper: the page's own headline, invisible. */
+  color: var(--text);
   margin-bottom: 20px;
 }
 
@@ -3224,7 +3294,7 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
   color: var(--muted); background: none; border: 0;
   transition: background 0.15s, color 0.15s;
 }
-.bigbar-row .tool.plus:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+.bigbar-row .tool.plus:hover { background: var(--film-strong); color: var(--text); }
 
 /* "Plan": a word, not a button. It is an alternative to sending, and
    dressing it as a control would make the send arrow look like one of two
@@ -3235,7 +3305,7 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
   font-family: var(--sans); font-size: 13.5px; cursor: pointer;
   transition: color 0.15s, background 0.15s;
 }
-.bar-btn:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+.bar-btn:hover { color: var(--text); background: var(--film); }
 
 .bigbar-row .tool.wave {
   width: 30px; height: 30px; padding: 0; border-radius: 8px;
@@ -3243,20 +3313,33 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
   color: var(--muted); background: none; border: 0;
   transition: background 0.15s, color 0.15s;
 }
-.bigbar-row .tool.wave:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+.bigbar-row .tool.wave:hover { background: var(--film-strong); color: var(--text); }
 
 /* The send: a filled circle, the one solid thing in the box. */
+/* Quiet until there is something to send, then bright.
+ *
+ * Every value here was a hardcoded white, which on paper meant a white
+ * circle with a white arrow inside it -- the button you press to do the
+ * one thing this screen is for, invisible. The tokens carry ink in light
+ * mode and the same whites in dark. */
 .bigbar-row .send {
   width: 32px; height: 32px; flex: none;
   border-radius: 50%; border: 0;
   display: grid; place-items: center;
-  background: rgba(255,255,255,0.16); color: rgba(255,255,255,0.62);
+  background: var(--send-idle-bg, rgba(255,255,255,0.16));
+  color: var(--send-idle-fg, rgba(255,255,255,0.62));
   transition: background 0.2s, color 0.2s, transform 0.12s;
 }
-.bigbar-row .send:hover { background: rgba(255,255,255,0.24); color: #fff; }
+.bigbar-row .send:hover {
+  background: var(--send-hover-bg, rgba(255,255,255,0.24));
+  color: var(--send-hover-fg, #fff);
+}
 /* Awake the moment there is something to send. */
-.bigbar-row .send.ready { background: #F2F2F2; color: #111; }
-.bigbar-row .send.ready:hover { background: #fff; }
+.bigbar-row .send.ready {
+  background: var(--send-ready-bg, #F2F2F2);
+  color: var(--send-ready-fg, #111);
+}
+.bigbar-row .send.ready:hover { background: var(--send-ready-hover, #fff); }
 .bigbar-row .send:active { transform: scale(0.93); }
 
 /* ---- the shelf -----------------------------------------------------------
@@ -3275,8 +3358,10 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
   position: fixed; left: 0; right: 0; bottom: 0;
   width: min(900px, calc(100vw - 56px));
   margin: 0 auto;
-  background: #131315;
-  border: 1px solid rgba(255,255,255,0.08);
+  /* Through the token, not #131315: hardcoded, this stayed a black slab
+     across the bottom of a paper-white page. */
+  background: var(--shelf-bg, #131315);
+  border: 1px solid var(--line);
   border-bottom: 0;
   border-radius: 16px 16px 0 0;
   padding: 12px 16px 20px;
@@ -3300,7 +3385,7 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
   color: var(--muted); cursor: pointer;
   transition: color 0.15s, background 0.15s;
 }
-.shelf-grip:hover { color: var(--text); background: rgba(255, 255, 255, 0.06); }
+.shelf-grip:hover { color: var(--text); background: var(--film); }
 .shelf-grip .chev { transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1); }
 /* Open: the chevron points down, towards the shelf it will fold away. */
 .shelf-grip .chev { transform: rotate(0deg); }
@@ -3321,7 +3406,7 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
    wins -- same specificity means source order decides.) */
 .shelf-tabs {
   display: flex; gap: 3px; padding: 3px;
-  background: rgba(255,255,255,0.05); border-radius: 10px;
+  background: var(--film); border-radius: 10px;
 }
 .shelf-tab {
   height: 28px; padding: 0 13px; border-radius: 8px;
@@ -3330,7 +3415,7 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
   transition: background 0.15s, color 0.15s;
 }
 .shelf-tab:hover { color: var(--text); }
-.shelf-tab.on { background: rgba(255,255,255,0.10); color: var(--text); }
+.shelf-tab.on { background: var(--film-strong); color: var(--text); }
 .shelf-all {
   margin-left: auto;
   display: inline-flex; align-items: center; gap: 7px;
@@ -3476,7 +3561,7 @@ body.side-resizing .shelf { transition: none; }
 }
 .side-sessions::-webkit-scrollbar { width: 6px; }
 .side-sessions::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.10); border-radius: 3px;
+  background: var(--film-strong); border-radius: 3px;
 }
 .sess-row {
   display: flex; align-items: center; gap: 8px;
@@ -3486,8 +3571,8 @@ body.side-resizing .shelf { transition: none; }
   cursor: pointer; text-align: left;
   transition: background 0.14s, color 0.14s;
 }
-.sess-row:hover { background: rgba(255,255,255,0.05); color: var(--text); }
-.sess-row.on { background: rgba(255,255,255,0.08); color: var(--text); }
+.sess-row:hover { background: var(--film); color: var(--text); }
+.sess-row.on { background: var(--film-strong); color: var(--text); }
 .sess-name {
   flex: 1; min-width: 0; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap;
@@ -3505,7 +3590,7 @@ body.side-resizing .shelf { transition: none; }
   color: var(--faint); padding: 2px 3px; border-radius: 5px; line-height: 0;
 }
 .sess-row:hover .sess-kebab { opacity: 1; }
-.sess-kebab:hover { color: var(--text); background: rgba(255,255,255,0.09); }
+.sess-kebab:hover { color: var(--text); background: var(--film-strong); }
 .side-sessions .side-empty {
   padding: 6px 9px; font-size: 12px; color: var(--ghost);
 }
@@ -3689,6 +3774,6 @@ body:not(.macos).light .side-top .side-toggle:hover { color: #000; }
 }
 .info-note code {
   font-family: var(--mono); font-size: 11px;
-  background: rgba(255,255,255,0.06); border-radius: 4px; padding: 1px 5px;
+  background: var(--film); border-radius: 4px; padding: 1px 5px;
 }
 

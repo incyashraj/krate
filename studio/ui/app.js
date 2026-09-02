@@ -2103,7 +2103,7 @@ async function buildNow(request, files, revising, planSession, starterShape) {
         ? "changes are quicker - the AI reads your app first"
         : localStorage.getItem("krateMadeOnce")
           ? "a minute or two, sometimes more"
-          : "first time on this Mac - a few minutes",
+          : "first time on this computer - a few minutes",
     );
   } catch (err) {
     console.warn("beginBuild failed, building anyway:", err);
