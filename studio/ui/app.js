@@ -2927,10 +2927,29 @@ async function openCloud() {
   $("cloudCount").textContent = "";
   showCloudSkeleton();
   try {
-    const payload = JSON.parse(await invoke("cloud_apps"));
+    const q = ($("cloudSearch").value || "").trim();
+    const cat = state.cloudCat && state.cloudCat !== "all" ? state.cloudCat : "";
+    const payload = JSON.parse(await invoke("cloud_apps", { q, cat }));
     state.cloud = (payload.apps || []).map((app) => ({ ...app, cats: catOf(app) }));
+    state.cloudCats = payload.cats || null;
     renderCloudCats();
-    filterCloud();
+    if (payload.shelves && !q && !cat) {
+      // The landing view: rows the hub chose, not everything it holds.
+      $("cloudCount").textContent = payload.total
+        ? `${payload.total} app${payload.total === 1 ? "" : "s"} shared`
+        : "";
+      renderCloudShelves(payload.shelves);
+    } else if (payload.results) {
+      // The hub did the filtering, so the client must not filter again --
+      // it only holds what came back.
+      $("cloudCount").textContent = payload.results.length
+        ? `${payload.results.length} app${payload.results.length === 1 ? "" : "s"}`
+        : "";
+      renderCloud(state.cloud, Boolean(q || cat));
+    } else {
+      // An older hub: a flat list, filtered here as before.
+      filterCloud();
+    }
   } catch (err) {
     $("cloudError").textContent = String(err);
     $("cloudError").classList.remove("hidden");
@@ -2943,18 +2962,25 @@ function renderCloudCats() {
   const box = $("cloudCats");
   box.innerHTML = "";
   for (const cat of CLOUD_CATS) {
-    // A category nobody has published to is noise, so it is not drawn.
-    const count = cat.id === "all"
-      ? state.cloud.length
-      : state.cloud.filter((a) => a.cats.includes(cat.id)).length;
-    if (!count) continue;
+    // Which categories exist is the HUB's answer now, not something counted
+    // from what is on screen: state.cloud used to be the whole gallery and is
+    // now only the shelves, so counting from it would hide a category with
+    // plenty of apps just because none of them made this week's rows.
+    // state.cloudCats comes back with the payload; without it (an older hub)
+    // fall back to counting, which is right for a flat list.
+    const known = state.cloudCats;
+    const present = known
+      ? cat.id === "all" || known.includes(cat.id)
+      : cat.id === "all" || state.cloud.some((a) => a.cats.includes(cat.id));
+    if (!present) continue;
     const chip = document.createElement("button");
     chip.className = "cat" + (state.cloudCat === cat.id ? " on" : "");
     chip.textContent = cat.label;
     chip.addEventListener("click", () => {
       state.cloudCat = cat.id;
-      renderCloudCats();
-      filterCloud();
+      // Ask the hub for that category rather than filtering what is on
+      // screen: the client only holds the shelves, not the whole gallery.
+      loadCloud();
     });
     box.appendChild(chip);
   }
@@ -3226,9 +3252,59 @@ function filterCloud() {
   renderCloud(shown, Boolean(q) || state.cloudCat !== "all");
 }
 
+/* The gallery, as SHELVES rather than one endless grid.
+ *
+ * A grid of everything is fine at twenty apps and useless at a thousand:
+ * nobody scrolls a gallery hoping to find something good. So the landing
+ * view is a few short rows -- new, most opened, then the busiest categories
+ * -- and everything else is reached by searching, which is a question rather
+ * than a scroll. The hub sends the rows already chosen and capped, so the
+ * window never holds more than a few dozen cards.
+ *
+ * `shelves` is what a current hub returns. A hub that has not been deployed
+ * yet still sends a flat `apps`, and that path still works. */
+function renderCloudShelves(shelves) {
+  const grid = $("cloudGrid");
+  grid.innerHTML = "";
+  grid.className = "cloud-shelves";
+  $("cloudError").classList.add("hidden");
+  for (const shelf of shelves) {
+    if (!shelf.apps || !shelf.apps.length) continue;
+    const row = document.createElement("section");
+    row.className = "shelf-row";
+
+    const head = document.createElement("div");
+    head.className = "shelf-row-head";
+    const h = document.createElement("h2");
+    h.textContent = catLabel(shelf.id) === shelf.id ? shelf.label : catLabel(shelf.id);
+    head.appendChild(h);
+    // A category shelf shows twelve of however many there are; the link is
+    // how you see the rest without the page trying to hold them all.
+    if (shelf.id !== "new" && shelf.id !== "opened") {
+      const more = document.createElement("button");
+      more.className = "shelf-row-more";
+      more.textContent = "See all →";
+      more.addEventListener("click", () => {
+        state.cloudCat = shelf.id;
+        $("cloudSearch").value = "";
+        loadCloud();
+      });
+      head.appendChild(more);
+    }
+    row.appendChild(head);
+
+    const strip = document.createElement("div");
+    strip.className = "shelf-strip";
+    for (const app of shelf.apps) strip.appendChild(cloudCard(app));
+    row.appendChild(strip);
+    grid.appendChild(row);
+  }
+}
+
 function renderCloud(apps, filtered) {
   const grid = $("cloudGrid");
   grid.innerHTML = "";
+  grid.className = "cloud-grid";
   $("cloudError").classList.add("hidden");
   if (!apps.length) {
     $("cloudError").textContent = filtered
@@ -3237,7 +3313,13 @@ function renderCloud(apps, filtered) {
     $("cloudError").classList.remove("hidden");
     return;
   }
-  for (const app of apps) {
+  for (const app of apps) grid.appendChild(cloudCard(app));
+}
+
+/* One card. Shared by the shelves and the search results, so a card looks
+   the same wherever it is drawn. */
+function cloudCard(app) {
+  {
     const meta = app.meta || {};
     const card = document.createElement("button");
     card.className = "cloud-card";
@@ -3318,7 +3400,7 @@ function renderCloud(apps, filtered) {
     card.appendChild(foot);
 
     card.addEventListener("click", () => showCloudApp(app));
-    grid.appendChild(card);
+    return card;
   }
 }
 
@@ -4057,7 +4139,18 @@ $("openKrateBtn").addEventListener("click", () => invoke("open_krate").catch(() 
 $("cloudBtn").addEventListener("click", openCloud);
 $("cloudBackBtn").addEventListener("click", enterHome);
 $("cloudRefresh").addEventListener("click", openCloud);
-$("cloudSearch").addEventListener("input", filterCloud);
+/* Searching asks the HUB, because the client no longer holds every app --
+ * it holds the few dozen on the shelves. Debounced so typing a word is one
+ * request rather than one per keystroke. */
+let cloudSearchTimer = null;
+$("cloudSearch").addEventListener("input", () => {
+  clearTimeout(cloudSearchTimer);
+  cloudSearchTimer = setTimeout(() => {
+    // Clearing the box goes back to the shelves rather than to an empty grid.
+    if (!$("cloudSearch").value.trim()) state.cloudCat = "all";
+    loadCloud();
+  }, 220);
+});
 $("appBackBtn").addEventListener("click", () => showView("cloud"));
 $("detailRun").addEventListener("click", async () => {
   const app = state.cloudApp;

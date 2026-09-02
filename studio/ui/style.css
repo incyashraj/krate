@@ -40,6 +40,11 @@
   --muted: rgba(255, 255, 255, 0.62);
   --faint: rgba(255, 255, 255, 0.42);
   --ghost: rgba(255, 255, 255, 0.36);
+  /* Eight rules say `var(--quiet, rgba(255,255,255,0.35))` and the token was
+     never actually defined, so all eight took the white fallback -- correct
+     in the dark and invisible on paper. Defining it here and in the light
+     palette fixes every one of them at once. */
+  --quiet: rgba(255, 255, 255, 0.42);
   --blue: #6291ff;
   --blue-soft: #a9c2ff;
   --cyan: #6cf4d7;
@@ -1272,6 +1277,43 @@ body.resizing .divider { background: var(--blue); }
   display: grid; gap: 12px; max-width: 1000px; margin: 0 auto;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
 }
+
+/* ---- the gallery as shelves -------------------------------------------
+ * A grid of everything works at twenty apps and fails at a thousand. The
+ * landing view is a few short rows instead -- new, most opened, then the
+ * busiest categories -- each scrolling sideways, with search for the rest.
+ * A row that scrolls says "there is more this way" in a way a wrapped grid
+ * of five hundred cards does not. */
+/* min-width:0 on the rows, or the strips inside them refuse to be narrower
+   than their content: a grid item's default min-width is auto, so twelve
+   240px cards made the row 3012px wide and nothing ever scrolled. */
+.cloud-shelves { max-width: 1000px; margin: 0 auto; display: grid; gap: 30px; }
+.cloud-shelves > .shelf-row { min-width: 0; }
+.shelf-row-head {
+  display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px;
+}
+.shelf-row-head h2 {
+  font-size: 15px; font-weight: 500; letter-spacing: -0.01em; color: var(--text);
+  text-transform: capitalize;
+}
+.shelf-row-more {
+  margin-left: auto; background: none; border: 0; cursor: pointer;
+  font-family: var(--sans); font-size: 12.5px; color: var(--faint);
+  transition: color 0.15s;
+}
+.shelf-row-more:hover { color: var(--text); }
+.shelf-strip {
+  display: flex; gap: 12px; overflow-x: auto; padding-bottom: 4px;
+  scroll-snap-type: x proximity;
+  /* No bar under each row. Three shelves would mean three horizontal rules
+     across the page, which is louder than the cards they belong to -- and
+     the row already says it scrolls by cutting a card off at the edge. */
+  scrollbar-width: none;
+}
+.shelf-strip::-webkit-scrollbar { height: 0; display: none; }
+.shelf-strip .cloud-card {
+  flex: none; width: 240px; scroll-snap-align: start;
+}
 .cloud-card {
   display: flex; flex-direction: column; gap: 10px; text-align: left;
   padding: 16px; border-radius: 12px;
@@ -1328,7 +1370,11 @@ body.resizing .divider { background: var(--blue); }
   transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
 .cat:hover { color: var(--text); border-color: var(--line-strong); }
-.cat.on { color: #0a0a0a; background: var(--text); border-color: var(--text); }
+/* The selected chip inverts: the app's ink becomes the background and the
+   page becomes the text. #0a0a0a was hardcoded for the dark theme, where
+   --text is white; in light mode --text is nearly black and the label was
+   black on black at 1.04:1. --bg tracks the theme, so it reads either way. */
+.cat.on { color: var(--bg); background: var(--text); border-color: var(--text); }
 
 .cloud-count {
   max-width: 1000px; margin: 0 auto 12px;
@@ -1764,7 +1810,10 @@ img.cloud-icon { object-fit: cover; }
 .vchip b { color: var(--text); font-weight: 560; }
 .vchip .vm { font-family: var(--mono); font-size: 10.5px; color: var(--ghost); }
 .vchip .vact {
-  background: var(--text); color: #0a0a0a; border: none; cursor: pointer;
+  /* --bg, not #0a0a0a: this inverts against --text, so the label has to be
+     the page colour or it is black on black in light mode. Same bug the
+     category chip had. */
+  background: var(--text); color: var(--bg); border: none; cursor: pointer;
   border-radius: 99px; padding: 4px 12px; font-size: 11.5px; font-weight: 500;
 }
 .vchip .vact.vg { background: none; color: var(--faint); font-weight: 400; }
@@ -2442,6 +2491,7 @@ body.light {
      clear 3:1 like anything else meant to be read, which on paper is about
      0.48, not the 0.16 a straight inversion suggests. */
   --ghost: rgba(12, 16, 23, 0.48);
+  --quiet: rgba(12, 16, 23, 0.56);
   --blue: #3f6fe0;
   --blue-soft: #2b52ac;
 

@@ -138,7 +138,7 @@ export default {
         return cors(await stats(env));
       }
       if (request.method === "GET" && pathname === "/apps") {
-        return cors(await list(env));
+        return cors(await list(env, url));
       }
       if (request.method === "GET" && pathname.startsWith("/meta/")) {
         // One app's public face, by hash or short alias -- name, size,
@@ -813,32 +813,139 @@ async function meta(hash, env) {
   });
 }
 
-async function list(env) {
-  const listing = await env.APPS.list({ prefix: "app:", limit: 200 });
-  const apps = [];
-  for (const key of listing.keys) {
-    const raw = await env.APPS.get(key.name);
-    if (!raw) continue;
-    // Unlisted apps have working links and no gallery row.
-    try {
-      if (JSON.parse(raw).unlisted) continue;
-    } catch (_) {
-      // An unreadable record should still not hide a listed app.
-    }
-    const hash = key.name.slice("app:".length);
-    const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
-    const shot = await env.BUNDLES.head(`shot:${hash}`);
-    const icon = await env.BUNDLES.head(`icon:${hash}`);
-    apps.push({
-      id: hash,
-      url: `${base}/a/${hash}`,
-      shot: shot ? `${base}/shot/${hash}` : null,
-      icon: icon ? `${base}/icon/${hash}` : null,
-      meta: JSON.parse(raw),
+/// The gallery.
+///
+/// Returns SHELVES, not one flat list. A grid of everything works at twenty
+/// apps and fails at a thousand: nobody scrolls a gallery looking for
+/// something good, they arrive with intent or they want to be shown a
+/// shortlist. So the landing payload is a handful of short rows -- new, most
+/// opened, and the busiest categories -- and everything else is reached by
+/// searching, which is a query rather than a scroll.
+///
+/// `?q=` searches and returns matches instead of shelves. `?cat=` returns one
+/// category. Both are capped, so no response is ever a thousand rows.
+async function list(env, url) {
+  const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
+  const q = (url?.searchParams.get("q") || "").trim().toLowerCase().slice(0, 64);
+  const cat = (url?.searchParams.get("cat") || "").trim().slice(0, 24);
+
+  // Read every listed record. The KV gets are unavoidable -- the metadata IS
+  // the value -- but they go out together rather than one at a time.
+  const listing = await env.APPS.list({ prefix: "app:", limit: 1000 });
+  const records = await Promise.all(
+    listing.keys.map(async (key) => {
+      const raw = await env.APPS.get(key.name);
+      if (!raw) return null;
+      let meta;
+      try {
+        meta = JSON.parse(raw);
+      } catch (_) {
+        return null;
+      }
+      // Unlisted apps have working links and no gallery row.
+      if (meta.unlisted) return null;
+      return { id: key.name.slice("app:".length), meta };
+    }),
+  );
+
+  let apps = records.filter(Boolean);
+
+  // Search and category filtering happen HERE, before any R2 work, so a
+  // search for one app does not cost a thousand head requests.
+  if (q) {
+    apps = apps.filter((a) => {
+      const m = a.meta;
+      return `${m.name || ""} ${m.description || ""} ${m.author || ""}`
+        .toLowerCase()
+        .includes(q);
     });
   }
-  apps.sort((a, b) => (b.meta.published || 0) - (a.meta.published || 0));
-  return json({ apps });
+  if (cat) apps = apps.filter((a) => (a.meta.category || "apps") === cat);
+
+  const opens = await openCounts(env);
+  const byNew = [...apps].sort((a, b) => (b.meta.published || 0) - (a.meta.published || 0));
+  const byOpens = [...apps].sort(
+    (a, b) => (opens.get(b.id) || 0) - (opens.get(a.id) || 0)
+      || (b.meta.published || 0) - (a.meta.published || 0),
+  );
+
+  // Which apps actually need their images resolved. Only the ones about to
+  // be sent -- this is what turns 2000 R2 head requests into a few dozen.
+  const SHELF = 12;
+  const chosen = new Map();
+  const take = (arr, n) => arr.slice(0, n).map((a) => (chosen.set(a.id, a), a.id));
+
+  let payload;
+  if (q || cat) {
+    // A query wants results, not shelves.
+    payload = { query: q || null, category: cat || null, results: take(byNew, 60) };
+  } else {
+    const cats = {};
+    for (const a of apps) {
+      const c = a.meta.category || "apps";
+      (cats[c] ||= []).push(a);
+    }
+    const shelves = [
+      { id: "new", label: "New this week", apps: take(byNew, SHELF) },
+    ];
+    // Only when there is something to rank. Before any opens are recorded,
+    // "most opened" would be an arbitrary order wearing a confident label.
+    if (opens.size) {
+      shelves.push({ id: "opened", label: "Most opened", apps: take(byOpens, SHELF) });
+    }
+    for (const [id, list_] of Object.entries(cats)) {
+      if (list_.length < 3) continue;   // a shelf of one is not a shelf
+      list_.sort((a, b) => (b.meta.published || 0) - (a.meta.published || 0));
+      shelves.push({ id, label: id, apps: take(list_, SHELF) });
+    }
+    payload = { shelves, total: apps.length };
+  }
+
+  // Which categories have anything in them, so the client can offer exactly
+  // those chips. It cannot work this out itself any more: it only receives
+  // the shelves, and a category with fifty apps might have none of them on
+  // this week's rows.
+  payload.cats = [...new Set(apps.map((a) => a.meta.category || "apps"))];
+
+  // Now, and only now, ask R2 what pictures exist -- for the few dozen apps
+  // being returned rather than for everything published.
+  const ids = [...chosen.keys()];
+  const images = new Map(
+    await Promise.all(
+      ids.map(async (id) => {
+        const [shot, icon] = await Promise.all([
+          env.BUNDLES.head(`shot:${id}`),
+          env.BUNDLES.head(`icon:${id}`),
+        ]);
+        return [id, {
+          shot: shot ? `${base}/shot/${id}` : null,
+          icon: icon ? `${base}/icon/${id}` : null,
+        }];
+      }),
+    ),
+  );
+
+  const hydrate = (id) => {
+    const a = chosen.get(id);
+    return {
+      id,
+      url: `${base}/a/${id}`,
+      ...images.get(id),
+      opens: opens.get(id) || 0,
+      meta: a.meta,
+    };
+  };
+
+  if (payload.results) payload.results = payload.results.map(hydrate);
+  else for (const s of payload.shelves) s.apps = s.apps.map(hydrate);
+
+  // `apps` stays for older Studios, which read a flat list and know nothing
+  // about shelves. Dropping it would break every copy already installed.
+  // De-duplicated by id, because one app can sit on both "new" and its
+  // category shelf and an old client would draw it twice.
+  payload.apps = payload.results
+    || [...new Map(payload.shelves.flatMap((s) => s.apps).map((a) => [a.id, a])).values()];
+  return json(payload);
 }
 
 // --------------------------------------------------------------------- usage
@@ -991,12 +1098,51 @@ async function usage(request, env) {
         event.ai === true ? "by-ai" : "direct",
         day,
         why,
+        // Which published app was opened, when it was one from the gallery.
+        // A hash, never a name, and only for apps that are public already --
+        // it says "this listing was opened", which is the same fact the
+        // listing itself makes public. Absent for everything else, so
+        // opening a file somebody sent you privately is not counted here.
+        String(event.app || "").match(/^[0-9a-f]{6,64}$/) ? event.app : "-",
       ],
       doubles: [1],
       indexes: [id],
     });
   }
   return text("ok");
+}
+
+/// How often each published app was opened, for the gallery's shelves.
+///
+/// Analytics Engine, not KV, and that is not a preference: the first version
+/// of `usage` did a read-modify-write per ping and one busy day exhausted the
+/// free tier's puts, which took publishing down with it because they share a
+/// namespace (see the note in `usage`). A counter that can break the product
+/// is worse than no counter.
+///
+/// Returns a Map of app id -> opens in the window. Empty on any failure --
+/// the gallery must still render when the analytics API is unreachable, and
+/// a shelf that quietly falls back to "newest" is better than an error page.
+async function openCounts(env, days = 30) {
+  if (!env.ACCOUNT_ID || !env.ANALYTICS_TOKEN) return new Map();
+  const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
+  // blob1 is the action and blob8 is the app id; see writeDataPoint above.
+  const sql = `
+    SELECT blob8 AS app, SUM(_sample_interval) AS opens
+    FROM krate_usage
+    WHERE blob1 = 'open' AND blob8 != '-' AND timestamp >= toDateTime('${since} 00:00:00')
+    GROUP BY app ORDER BY opens DESC LIMIT 200`;
+  try {
+    const r = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${env.ACCOUNT_ID}/analytics_engine/sql`,
+      { method: "POST", headers: { Authorization: `Bearer ${env.ANALYTICS_TOKEN}` }, body: sql },
+    );
+    if (!r.ok) return new Map();
+    const out = await r.json();
+    return new Map((out.data || []).map((row) => [row.app, Number(row.opens) || 0]));
+  } catch (_) {
+    return new Map();
+  }
 }
 
 

@@ -2442,14 +2442,49 @@ async fn make_for_me(
     .map_err(|err| err.to_string())?
 }
 
-/// Everything published to Krate Cloud, newest first.
+/// The gallery.
 ///
 /// Fetched here rather than from the webview so the page keeps its locked-down
 /// CSP: the UI never talks to the network itself.
+///
+/// `q` searches and `cat` picks one category; with neither, the hub returns
+/// its landing shelves rather than every app it holds -- which is what keeps
+/// this answer a few dozen rows instead of a thousand.
 #[tauri::command]
-async fn cloud_apps() -> Result<String, String> {
+async fn cloud_apps(q: Option<String>, cat: Option<String>) -> Result<String, String> {
+    /// Percent-encode a query value.
+    ///
+    /// Hand-rolled rather than pulling in a crate for eight lines. Everything
+    /// outside the unreserved set is escaped, so a search containing `&`, `=`
+    /// or a space cannot become a second parameter -- the hub caps and
+    /// validates its side too, but a client should not send a malformed URL
+    /// and hope.
+    fn esc(s: &str) -> String {
+        let mut out = String::with_capacity(s.len());
+        for b in s.bytes() {
+            match b {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                    out.push(b as char)
+                }
+                _ => out.push_str(&format!("%{b:02X}")),
+            }
+        }
+        out
+    }
+
     tauri::async_runtime::spawn_blocking(move || {
-        let url = format!("{}/apps", hub_url());
+        let mut url = format!("{}/apps", hub_url());
+        let mut parts: Vec<String> = Vec::new();
+        if let Some(q) = q.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            parts.push(format!("q={}", esc(q)));
+        }
+        if let Some(cat) = cat.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            parts.push(format!("cat={}", esc(cat)));
+        }
+        if !parts.is_empty() {
+            url.push('?');
+            url.push_str(&parts.join("&"));
+        }
         let response = ureq::get(&url)
             .timeout(std::time::Duration::from_secs(20))
             .call()
