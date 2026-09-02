@@ -75,17 +75,34 @@ fn is_invisible(color: u32) -> bool {
 ///
 /// `origin` is a baseline, not a corner. Ascent and descent are taken as
 /// fractions of the font size rather than measured through the font, which
-/// keeps this free of a font handle. They are deliberately a little tight:
-/// a box wider than the truth would invent collisions, and a false report
-/// costs more than a missed one.
-fn text_box(origin: (f32, f32), font_size: f32, letter_spacing: f32, text: &str) -> Option<Box2> {
+/// keeps this free of a font handle.
+///
+/// The WIDTH has to be measured, though. It used to be `chars * 0.52em`, an
+/// average advance, and that is roughly twice too wide for punctuation: a
+/// comma is about 0.26em and a colon 0.28em. So every `"value",` in a JSON
+/// view reported the comma sitting on top of the string before it, at "100%
+/// of the smaller one" -- Probe and Query were both flagged for a dozen of
+/// these while their pixels were perfect. An estimator that cannot tell a
+/// comma from an `m` cannot be used to accuse an app of overlapping text.
+///
+/// `measure` is the host's own text measurement, the same one the app calls
+/// to lay the string out. When it is unavailable the average is used, which
+/// keeps this usable in tests and off the GUI path.
+fn text_box(
+    origin: (f32, f32),
+    font_size: f32,
+    letter_spacing: f32,
+    text: &str,
+    measure: Option<&dyn Fn(&str, f32) -> f32>,
+) -> Option<Box2> {
     let chars = text.chars().count();
     if chars == 0 || font_size <= 0.0 {
         return None;
     }
-    // 0.52em per character is close to the average advance of the sans face
-    // at text sizes; the exact value only shifts where the threshold bites.
-    let width = chars as f32 * (font_size * 0.52 + letter_spacing);
+    let width = match measure {
+        Some(m) => m(text, font_size) + chars as f32 * letter_spacing,
+        None => chars as f32 * (font_size * 0.52 + letter_spacing),
+    };
     let ascent = font_size * 0.72;
     let descent = font_size * 0.20;
     Some(Box2 {
@@ -98,7 +115,21 @@ fn text_box(origin: (f32, f32), font_size: f32, letter_spacing: f32, text: &str)
 
 /// Every pair of strings in one frame that share enough space to read as a
 /// mistake, worst first.
+///
+/// Uses the average-advance estimate for widths. Prefer [`find_measured`]
+/// wherever the host's own text measurement is reachable: the estimate is
+/// about twice too wide for punctuation and invents collisions between a
+/// value and the comma after it.
 pub fn find(ops: &[CanvasOp]) -> Vec<Collision> {
+    find_measured(ops, None)
+}
+
+/// As [`find`], but with the host's text measurement, so a comma is a comma
+/// wide rather than an average character wide.
+pub fn find_measured(
+    ops: &[CanvasOp],
+    measure: Option<&dyn Fn(&str, f32) -> f32>,
+) -> Vec<Collision> {
     let mut strings: Vec<(Box2, &str)> = Vec::new();
     for op in ops {
         if let CanvasOp::Text {
@@ -113,7 +144,7 @@ pub fn find(ops: &[CanvasOp]) -> Vec<Collision> {
             if is_invisible(*color) || text.trim().is_empty() {
                 continue;
             }
-            if let Some(b) = text_box(*origin, *font_size, *letter_spacing, text) {
+            if let Some(b) = text_box(*origin, *font_size, *letter_spacing, text, measure) {
                 strings.push((b, text.as_str()));
             }
         }
@@ -366,5 +397,57 @@ mod tests {
             text_at(340.0, 560.0, 26.0, "2"),
         ];
         assert!(find(&ops).is_empty());
+    }
+
+    #[test]
+    fn punctuation_after_a_value_is_not_a_collision() {
+        // A syntax-highlighted JSON line, drawn as separate coloured tokens
+        // laid end to end -- which is how Probe and Query render a response.
+        //
+        // With the average-advance estimate this reported `"list"` and `,`
+        // sharing "100% of the smaller one": a comma is about 0.26em and the
+        // estimate calls every character 0.52em, so the comma's box was twice
+        // its real width and reached back over the string before it. Twelve
+        // of these were reported against apps whose pixels were perfect.
+        //
+        // Measured, the tokens abut and nothing overlaps.
+        let size = 13.0;
+        // Real advances for this face, as fractions of the em.
+        let advance = |s: &str, size: f32| -> f32 {
+            s.chars()
+                .map(|c| match c {
+                    ',' => 0.26,
+                    ':' => 0.28,
+                    ' ' => 0.26,
+                    '"' => 0.35,
+                    _ => 0.55,
+                })
+                .sum::<f32>()
+                * size
+        };
+        let mut x = 100.0;
+        let mut ops = Vec::new();
+        for tok in ["\"object\"", ": ", "\"list\"", ","] {
+            ops.push(text_at(x, 300.0, size, tok));
+            x += advance(tok, size);
+        }
+        let measure: &dyn Fn(&str, f32) -> f32 = &advance;
+        assert!(
+            find_measured(&ops, Some(measure)).is_empty(),
+            "tokens laid end to end must not report as overlapping"
+        );
+    }
+
+    #[test]
+    fn a_real_overlap_is_still_caught_when_measuring() {
+        // The measurement must not make the check toothless: two strings at
+        // the same origin are still one on top of the other.
+        let advance = |s: &str, size: f32| s.chars().count() as f32 * size * 0.55;
+        let measure: &dyn Fn(&str, f32) -> f32 = &advance;
+        let ops = vec![
+            text_at(100.0, 300.0, 16.0, "New round"),
+            text_at(104.0, 302.0, 16.0, "Draws"),
+        ];
+        assert!(!find_measured(&ops, Some(measure)).is_empty());
     }
 }

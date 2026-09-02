@@ -1847,7 +1847,18 @@ impl Phase3GuiHost {
             return;
         }
         let ops = self.inspected_ops.borrow();
-        let hits = crate::text_overlap::find(&ops);
+        // Measure through a real surface rather than letting the checker
+        // guess an average character width. The guess is about twice too
+        // wide for punctuation, which made every `"value",` in a JSON view
+        // look like the comma was drawn on top of the string before it.
+        let canvases = self.canvases.borrow();
+        let hits = match canvases.values().next() {
+            Some((_, _, surface)) => {
+                let measure = |text: &str, size: f32| surface.measure_text(text, size).width;
+                crate::text_overlap::find_measured(&ops, Some(&measure))
+            }
+            None => crate::text_overlap::find(&ops),
+        };
         let mut lines: Vec<String> = Vec::new();
         if hits.is_empty() {
             lines.push("layout: no text drawn over other text".to_string());
