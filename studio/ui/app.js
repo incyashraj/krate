@@ -5567,32 +5567,107 @@ function showCloudSkeleton() {
 
 
 /* ---- theme ------------------------------------------------------------
- * The sun in the titlebar looked like a theme switch and did nothing.
- * Now it is one: it flips the app between the dark room it was designed
- * in and a light one, and remembers the choice. */
+ *
+ * THREE states, not two: dark, light, and "whatever this computer is set
+ * to", which is the state a fresh install starts in.
+ *
+ * The app used to open dark for everybody. On a machine set to light that
+ * is a window that does not belong to the desktop it is sitting on -- and
+ * the person has already answered this question once, in their system
+ * settings, so asking again with a default that ignores their answer is
+ * the wrong first impression.
+ *
+ * "System" is a real stored state rather than the absence of one. Somebody
+ * who flips to light and back to system is choosing to follow the OS, and
+ * that has to survive a restart the same way an explicit choice does; if
+ * it were just "no key saved" the app could not tell it apart from a first
+ * run and could never let them return to it.
+ *
+ * The button cycles system -> light -> dark -> system. Three clicks is the
+ * whole model, and its tooltip always names what the next click does.
+ */
 (function themeToggle() {
   const button = document.getElementById("themeBtn");
   if (!button) return;
-  const saved = localStorage.getItem("krate-theme");
-  if (saved === "light") document.body.classList.add("light");
-  paintThemeIcon();
+
+  const KEY = "krate-theme";
+  const MODES = ["system", "light", "dark"];
+  const systemPrefersLight = () =>
+    window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches;
+
+  // "dark" and "light" are what older versions wrote, and they still mean
+  // exactly what they used to -- an explicit choice. Anything else, including
+  // nothing at all, is a fresh install, which follows the computer.
+  const stored = localStorage.getItem(KEY);
+  let mode = MODES.includes(stored) ? stored : "system";
+
+  function effective() {
+    return mode === "system" ? (systemPrefersLight() ? "light" : "dark") : mode;
+  }
+
+  /* Where the next click goes. ONE definition, used by both the handler and
+   * the tooltip, so the label cannot promise something the button does not
+   * do.
+   *
+   * follow the computer -> the opposite of what that gives -> the same as
+   * what that gives -> back to following.
+   *
+   * Ordered by appearance rather than by a fixed list, because a fixed list
+   * gets one machine wrong either way: system -> light -> dark means the
+   * first press changes nothing visible on a light machine, and going to the
+   * opposite first means "light" is never reachable there at all. This
+   * visits all three on both, and only the last step -- the one whose
+   * tooltip says it is returning to the computer's setting -- can look
+   * unchanged. */
+  function nextMode() {
+    const os = systemPrefersLight() ? "light" : "dark";
+    const away = os === "light" ? "dark" : "light";
+    return mode === "system" ? away : mode === away ? os : "system";
+  }
+
+  const ICONS = {
+    // A sun with a small dot inside: "this follows the machine" rather than
+    // a third unrelated glyph nobody can guess the meaning of.
+    system:
+      '<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2.2" y="3.2" width="11.6" height="8" rx="1.6" stroke="currentColor" stroke-width="1.3"/><path d="M6 13.4h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>',
+    light:
+      '<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="3.1" stroke="currentColor" stroke-width="1.35"/><path d="M8 1.4v1.7M8 12.9v1.7M1.4 8h1.7M12.9 8h1.7M3.4 3.4l1.2 1.2M11.4 11.4l1.2 1.2M12.6 3.4l-1.2 1.2M4.6 11.4l-1.2 1.2" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>',
+    dark:
+      '<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M13.4 9.4A5.6 5.6 0 016.6 2.6a5.6 5.6 0 106.8 6.8z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/></svg>',
+  };
+
+  function apply() {
+    document.body.classList.toggle("light", effective() === "light");
+    // Name the state, then what the next click really does -- from
+    // nextMode(), the same rule the handler uses, so the label cannot
+    // promise one thing and the button do another.
+    const label = (m) => (m === "system" ? "your computer's setting" : m);
+    const here =
+      mode === "system"
+        ? `Matching your computer (${effective()})`
+        : `${mode[0].toUpperCase()}${mode.slice(1)}`;
+    button.title = `${here}. Click for ${label(nextMode())}.`;
+    button.innerHTML = ICONS[mode];
+    button.dataset.themeMode = mode;
+  }
 
   button.addEventListener("click", () => {
-    document.body.classList.toggle("light");
-    localStorage.setItem(
-      "krate-theme",
-      document.body.classList.contains("light") ? "light" : "dark"
-    );
-    paintThemeIcon();
+    mode = nextMode();
+    localStorage.setItem(KEY, mode);
+    apply();
   });
 
-  function paintThemeIcon() {
-    const light = document.body.classList.contains("light");
-    button.title = light ? "Switch to dark" : "Switch to light";
-    button.innerHTML = light
-      ? '<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M13.4 9.4A5.6 5.6 0 016.6 2.6a5.6 5.6 0 106.8 6.8z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/></svg>'
-      : '<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="3.1" stroke="currentColor" stroke-width="1.35"/><path d="M8 1.4v1.7M8 12.9v1.7M1.4 8h1.7M12.9 8h1.7M3.4 3.4l1.2 1.2M11.4 11.4l1.2 1.2M12.6 3.4l-1.2 1.2M4.6 11.4l-1.2 1.2" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/></svg>';
+  // Follow the machine while it is being followed. Somebody on a schedule
+  // that turns their desktop light at sunrise expects this window to come
+  // with it, without restarting the app.
+  if (window.matchMedia) {
+    const mq = matchMedia("(prefers-color-scheme: light)");
+    const onChange = () => { if (mode === "system") apply(); };
+    if (mq.addEventListener) mq.addEventListener("change", onChange);
+    else if (mq.addListener) mq.addListener(onChange);   // older webviews
   }
+
+  apply();
 })();
 
 /* =======================================================================
