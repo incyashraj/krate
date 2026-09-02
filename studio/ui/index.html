@@ -283,8 +283,15 @@
            its place by answering the question a person asks second --
            "where did my last one go?" -- without competing with the box,
            which answers the first. -->
-      <section class="shelf" id="shelf">
+      <!-- Collapsed on arrival. Open, the shelf is 232px of the window, and
+           the page's whole job is the box in the middle -- on a short screen
+           the third suggestion ran under it. The head stays put as a handle,
+           so the apps are one click away and the choice is remembered. -->
+      <section class="shelf shut" id="shelf">
         <div class="shelf-head">
+          <button class="shelf-grip" id="shelfGrip" aria-expanded="false" aria-controls="shelfBody" title="Show your apps">
+            <svg class="chev" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 6.2L8 10.2l4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
           <div class="shelf-tabs" role="tablist">
             <button class="shelf-tab on" id="tabMine" role="tab" aria-selected="true">My apps</button>
             <button class="shelf-tab" id="tabExamples" role="tab" aria-selected="false">Examples</button>

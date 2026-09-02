@@ -4935,11 +4935,49 @@ async function renderShelf() {
   }
 }
 
+/* The shelf is shut on arrival and remembers being opened.
+ *
+ * Open it is 232px -- a third of the window on a 672px work area, given to
+ * something the person did not ask for, and enough to push the last
+ * suggestion underneath it. Shut, its head stays as a handle, so the apps
+ * are one click away rather than gone.
+ *
+ * Shut is the DEFAULT, not the stored state: only an explicit "1" opens it,
+ * so a first run and a browser with storage disabled both start shut. */
+const SHELF_KEY = "krateShelfOpen";
+
+function shelfIsOpen() {
+  try { return localStorage.getItem(SHELF_KEY) === "1"; } catch (e) { return false; }
+}
+
+function setShelfOpen(open) {
+  const shelf = $("shelf");
+  const room = document.querySelector(".home");
+  const grip = $("shelfGrip");
+  if (shelf) shelf.classList.toggle("shut", !open);
+  if (room) room.dataset.shelfOpen = open ? "1" : "0";
+  if (grip) {
+    grip.setAttribute("aria-expanded", open ? "true" : "false");
+    grip.title = open ? "Hide your apps" : "Show your apps";
+  }
+  try { localStorage.setItem(SHELF_KEY, open ? "1" : "0"); } catch (e) {}
+}
+
 (function shelfControls() {
+  setShelfOpen(shelfIsOpen());
+  $("shelfGrip")?.addEventListener("click", () => setShelfOpen(!shelfIsOpen()));
+  // The head is the handle, but the tabs and Browse all inside it are not:
+  // clicking a tab should switch tabs, not fold the shelf away.
+  document.querySelector(".shelf-head")?.addEventListener("click", (ev) => {
+    if (ev.target.closest(".shelf-tab, .shelf-all, .shelf-grip")) return;
+    setShelfOpen(!shelfIsOpen());
+  });
   $("shelfAll")?.addEventListener("click", () => { showView("apps"); loadAppsPage(); });
   $("tabMine")?.addEventListener("click", () => {
     $("tabMine").classList.add("on");
     $("tabExamples").classList.remove("on");
+    // Picking a tab means you want to look at it.
+    if (!shelfIsOpen()) setShelfOpen(true);
     renderShelf();
   });
   $("tabExamples")?.addEventListener("click", () => {

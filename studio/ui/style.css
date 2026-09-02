@@ -3283,6 +3283,42 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
   z-index: 3;
 }
 .shelf-head { display: flex; align-items: center; gap: 8px; }
+
+/* ---- the shelf opens and shuts ----------------------------------------
+ * Shut by default. Open it is 232px, and on a 672px-tall work area that is
+ * a third of the window given to something the person did not ask for --
+ * the third suggestion ran underneath it. The head stays as a handle, so
+ * the apps are one click away, and the choice is remembered.
+ *
+ * Height, not display: a transition needs something to animate between,
+ * and the body's height is known (a card plus its title). */
+.shelf-grip {
+  display: grid; place-items: center;
+  width: 26px; height: 26px; flex: none;
+  margin-left: -4px;
+  background: none; border: 0; border-radius: 7px;
+  color: var(--muted); cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.shelf-grip:hover { color: var(--text); background: rgba(255, 255, 255, 0.06); }
+.shelf-grip .chev { transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1); }
+/* Open: the chevron points down, towards the shelf it will fold away. */
+.shelf-grip .chev { transform: rotate(0deg); }
+.shelf.shut .shelf-grip .chev { transform: rotate(-90deg); }
+
+.shelf .shelf-body {
+  /* 115px of card plus the 12px top margin the body already carries. */
+  max-height: 140px;
+  transition: max-height 0.24s cubic-bezier(0.2, 0.8, 0.2, 1),
+              opacity 0.18s ease, margin-top 0.24s ease;
+}
+.shelf.shut .shelf-body {
+  max-height: 0; opacity: 0; margin-top: 0;
+  overflow: hidden; pointer-events: none;
+}
+/* (The room's matching padding lives beside the other .home rules further
+   down, so it lands after `.home { padding-bottom: 232px }` and actually
+   wins -- same specificity means source order decides.) */
 .shelf-tabs {
   display: flex; gap: 3px; padding: 3px;
   background: rgba(255,255,255,0.05); border-radius: 10px;
@@ -3355,12 +3391,17 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
    of cards, or just a head when the shelf is empty. */
 .home { position: relative; padding-bottom: 232px; }
 .home[data-shelf="empty"] { padding-bottom: 108px; }
+/* Shut, the shelf is only its head, so the room gets the rest back. Same
+   reserve as the empty case, because what is down there is the same thing:
+   a head and nothing else. */
+.home[data-shelf-open="0"] { padding-bottom: 108px; }
 .dockwrap { display: none !important; }
 
 @media (max-width: 700px) {
   .shelf { width: 100%; border-radius: 14px 14px 0 0; padding: 10px 12px 16px; }
   .home { padding-bottom: 208px; }
   .home[data-shelf="empty"] { padding-bottom: 96px; }
+  .home[data-shelf-open="0"] { padding-bottom: 96px; }
 }
 
 /* When the drawer is open, the room gets the reference's rounded top-left
