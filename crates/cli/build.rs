@@ -15,6 +15,40 @@ fn main() {
 
     embed_icon();
     embed_sdk();
+    stage_installer_payload();
+}
+
+/// Stage the binaries `krate-setup.exe` carries.
+///
+/// The Windows Player installer embeds the runtime it installs, so the bytes
+/// have to exist at compile time. They come from `KRATE_SETUP_PAYLOAD`, a
+/// directory the release job fills with an already-built `krate.exe`,
+/// `krate-open.exe` and `KrateDoc.ico`.
+///
+/// When that variable is unset -- every ordinary `cargo build`, on any
+/// platform -- empty files are written instead. `include_bytes!` needs its
+/// path to exist whatever happens, and an installer with an empty payload
+/// refuses to run and says why. The alternative, failing the build, would mean
+/// nobody could compile the workspace without first building it, which is
+/// circular.
+fn stage_installer_payload() {
+    println!("cargo:rerun-if-env-changed=KRATE_SETUP_PAYLOAD");
+
+    let out = PathBuf::from(env("OUT_DIR")).join("payload");
+    fs::create_dir_all(&out).expect("create payload dir");
+
+    let source = std::env::var_os("KRATE_SETUP_PAYLOAD").map(PathBuf::from);
+    for name in ["krate.exe", "krate-open.exe", "KrateDoc.ico"] {
+        let bytes = source
+            .as_ref()
+            .map(|dir| dir.join(name))
+            .and_then(|path| {
+                println!("cargo:rerun-if-changed={}", path.display());
+                fs::read(&path).ok()
+            })
+            .unwrap_or_default();
+        fs::write(out.join(name), bytes).unwrap_or_else(|e| panic!("stage {name}: {e}"));
+    }
 }
 
 /// Give krate.exe the Krate icon. Without a resource section the binary

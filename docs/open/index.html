@@ -253,38 +253,58 @@ document.querySelectorAll("[data-copy]").forEach(function (b) {
   // click time from the releases API rather than hard-coded here and going
   // stale on the next tag. If the API is unreachable we fall back to the
   // releases page, which is where we were sending everyone anyway.
-  // Mac gets the Player: krate-app-*.zip IS a double-clickable Krate
-  // Player.app. Windows and Linux have no Player installer yet -- their
-  // Player artifact is a zip of loose binaries that registers nothing
-  // (K-214) -- so they get the Studio installer, which does register the
-  // file type and can also open a received app. It is a bigger download
-  // than a receiver strictly needs, and the note below says so rather than
-  // quietly handing them the wrong product.
+  // Mac and Windows both get the Player, which is the smallest thing that
+  // opens a received file: krate-app-*.zip IS a double-clickable Krate
+  // Player.app, and krate-player-*-setup.exe installs the runtime and
+  // registers .krate without a terminal (K-214).
+  //
+  // Each OS lists its candidates best-first. Windows prefers the Player
+  // installer and falls back to the Studio one, so this page keeps working
+  // against a release published before the Player installer existed rather
+  // than showing a dead button.
+  //
+  // Linux still has no Player artifact -- its zip is loose binaries that
+  // register nothing -- so it gets the Studio AppImage, which does register
+  // the file type. Bigger than a receiver needs, and the note below says so
+  // rather than quietly handing them the wrong product.
   var WANT = {
-    mac: function (n) { return /^krate-app-.*\.zip$/.test(n); },
-    win: function (n) { return /^krate-studio-.*-windows-x64-setup\.exe$/.test(n); },
-    linux: function (n) { return /^krate-studio-.*\.AppImage$/.test(n); }
+    mac: [function (n) { return /^krate-app-.*\.zip$/.test(n); }],
+    win: [
+      function (n) { return /^krate-player-.*-windows-.*-setup\.exe$/.test(n); },
+      function (n) { return /^krate-studio-.*-windows-x64-setup\.exe$/.test(n); }
+    ],
+    linux: [function (n) { return /^krate-studio-.*\.AppImage$/.test(n); }]
   };
-  if (os === "win" || os === "linux") {
+  if (os === "linux") {
     note.textContent = "This installs Krate Studio, which opens files people "
       + "send you and also lets you make your own. A smaller open-only "
-      + "player for " + (os === "win" ? "Windows" : "Linux") + " is coming.";
+      + "player for Linux is coming.";
   }
   if (!WANT[os]) return;
   fetch("https://api.github.com/repos/incyashraj/krate/releases/latest")
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (rel) {
       if (!rel || !rel.assets) return;
-      // On a Mac the player ships per-architecture. navigator tells us
-      // almost nothing trustworthy about Apple Silicon vs Intel, so prefer
-      // the arm64 build (every Mac sold since 2020) and let the Intel
-      // owner take the other from the releases page.
-      var hits = rel.assets.filter(function (a) { return WANT[os](a.name); });
+      // Walk the candidates in order and take the first kind that this
+      // release actually published, so a release cut before the Player
+      // installer existed still resolves to something that works.
+      var hits = [];
+      for (var i = 0; i < WANT[os].length && !hits.length; i++) {
+        hits = rel.assets.filter(function (a) { return WANT[os][i](a.name); });
+      }
       if (!hits.length) return;
       var pick = hits[0];
+      // Both Mac and Windows ship per-architecture. navigator tells us almost
+      // nothing trustworthy about Apple Silicon vs Intel, or about ARM
+      // Windows, so prefer the majority build and let the minority owner
+      // take the other from the releases page: arm64 on Mac (every one sold
+      // since 2020), x86_64 on Windows.
       if (os === "mac") {
         var arm = hits.filter(function (a) { return /aarch64/.test(a.name); });
         if (arm.length) pick = arm[0];
+      } else if (os === "win") {
+        var x64 = hits.filter(function (a) { return /x86_64/.test(a.name); });
+        if (x64.length) pick = x64[0];
       }
       btn.href = pick.browser_download_url;
       // The size comes from the asset we are actually linking, never from a

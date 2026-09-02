@@ -20,6 +20,15 @@ path = "src/main.rs"
 name = "krate-open"
 path = "src/bin/krate-open.rs"
 
+# The Windows Player installer. Windows was the only platform with no artifact
+# a person who was SENT an app could use -- macOS has Krate Player.app, and the
+# Windows archive was a zip of loose binaries that registers nothing (K-214).
+# Same "windows" subsystem as the opener above, for the same reason: an
+# installer that flashes a console is not one a non-developer trusts.
+[[bin]]
+name = "krate-setup"
+path = "src/bin/krate-setup.rs"
+
 [features]
 # Speech is OPT-IN, and released binaries turn it on explicitly.
 #

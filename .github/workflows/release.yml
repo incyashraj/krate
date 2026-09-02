@@ -188,6 +188,50 @@ jobs:
           KRATE_VERSION: ${{ inputs.tag || github.ref_name }}
         run: scripts/package.sh "${{ matrix.target }}" "${{ matrix.ext }}"
 
+      # Krate Player for Windows: the double-click entry point, the counterpart
+      # of Krate.app on macOS.
+      #
+      # Windows was the one platform with no artifact a receiver could use. The
+      # archive above is a zip of loose binaries that registers nothing, so
+      # somebody who was SENT an app had to unzip it somewhere permanent, find
+      # a terminal, and run a PowerShell script by hand before a double-click
+      # worked. /open pointed them at the Studio installer instead -- the wrong
+      # product, and four times the size they needed (K-214).
+      #
+      # Player only: krate.exe and the opener, NOT cargo-component. That is 12
+      # of the archive's 47 MB and it is a tool for BUILDING apps, which a
+      # receiver never does. Same line macOS draws for Krate Player.app.
+      #
+      # Built after Package because it embeds what Package produced.
+      - name: Build the Windows Player installer
+        if: contains(matrix.target, 'windows')
+        shell: bash
+        env:
+          KRATE_VERSION: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -eu
+          version="${KRATE_VERSION#v}"
+          release="target/${{ matrix.target }}/release"
+          payload="$PWD/dist/setup-payload"
+
+          rm -rf "$payload" && mkdir -p "$payload"
+          cp "$release/krate.exe"      "$payload/krate.exe"
+          cp "$release/krate-open.exe" "$payload/krate-open.exe"
+          # The document icon Package generated, if Pillow produced one. The
+          # installer treats it as optional; a blank Explorer icon is ugly, not
+          # broken.
+          find dist -name KrateDoc.ico -exec cp {} "$payload/KrateDoc.ico" \; -quit || true
+          touch "$payload/KrateDoc.ico"
+
+          # A second build of just this binary. It has to come after the
+          # payload exists, because build.rs reads the directory at compile
+          # time and include_bytes! bakes the result in.
+          KRATE_SETUP_PAYLOAD="$payload"             cargo build --release --target "${{ matrix.target }}" -p krate-cli --bin krate-setup
+
+          mkdir -p dist
+          cp "$release/krate-setup.exe"             "dist/krate-player-${version}-${{ matrix.target }}-setup.exe"
+          ls -la "dist/krate-player-${version}-${{ matrix.target }}-setup.exe"
+
       - name: Assemble Krate.app (macOS double-click entry point)
         if: contains(matrix.target, 'apple-darwin')
         shell: bash
@@ -712,6 +756,7 @@ jobs:
           path: |
             dist/krate-*.${{ matrix.ext }}
             dist/krate-app-*.zip
+            dist/krate-player-*-setup.exe
             dist/krate-studio-*.dmg
             dist/krate-studio-*.exe
             dist/krate-studio-*.AppImage
@@ -927,6 +972,38 @@ jobs:
             || { echo "::error::KrateDoc.ico missing -- .krate files get no icon"; exit 1; }
           ls "$dir" | grep -i 'krate-open.exe' \
             || { echo "::error::krate-open.exe missing -- double-click flashes a console"; exit 1; }
+
+      # The Player installer is the receiver's whole path on Windows, so the
+      # failure mode is a person who was sent an app and cannot open it. The
+      # size check is the one that matters: an installer built without its
+      # payload still compiles, still runs, and still shows a dialog -- it just
+      # says "built without its payload" instead of installing anything. That
+      # is a few hundred KB, so a floor of 8 MB separates a real installer from
+      # a hollow one without pinning an exact number that drifts.
+      - name: The Windows Player installer carries a runtime (K-214)
+        if: contains(matrix.target, 'windows')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          cd verify
+          version="${TAG#v}"
+          setup="krate-player-${version}-${{ matrix.target }}-setup.exe"
+          gh release download "$TAG" -R "${{ github.repository }}" -p "$setup"
+
+          bytes=$(python3 -c "import os,sys; print(os.path.getsize(sys.argv[1]))" "$setup")
+          echo "$setup is $((bytes / 1048576)) MB"
+          if [ "$bytes" -lt 8388608 ]; then
+            echo "::error::$setup is only $((bytes / 1048576)) MB -- it was built"
+            echo "::error::without its payload and would install nothing."
+            exit 1
+          fi
+
+          # It must also be in SHA256SUMS, or nobody can verify what they ran.
+          grep -q " $setup\$" SHA256SUMS \
+            || { echo "::error::$setup has no checksum line"; exit 1; }
 
       - name: macOS signing, entitlements, and Gatekeeper (K-063, K-068)
         if: contains(matrix.target, 'apple')
