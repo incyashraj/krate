@@ -13,8 +13,8 @@
         "title": "Krate",
         "width": 1240,
         "height": 800,
-        "minWidth": 980,
-        "minHeight": 620,
+        "minWidth": 860,
+        "minHeight": 560,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "trafficLightPosition": {

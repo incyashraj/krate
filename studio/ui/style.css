@@ -256,6 +256,36 @@ body.macos .side-mark {
 }
 body.windows .titlebar { padding-right: 150px; }
 
+/* Windows: our controls share the caption buttons' line.
+ *
+ * The caption buttons are 34px tall pinned at top:0, so their centre is at
+ * y=17. The titlebar is 60px and centres its own children, putting them at
+ * y=30 -- thirteen pixels low, which reads as two rows that were meant to be
+ * one. Every app people compare this to (ChatGPT, VS Code, Explorer) keeps
+ * the window's own buttons and the app's chrome on a single line.
+ *
+ * Aligning to the top and pushing down by (34-30)/2 lands our 30px buttons
+ * on exactly the caption buttons' centre line. */
+body.windows .titlebar { align-items: flex-start; }
+body.windows .titlebar > * { margin-top: 2px; }
+body.windows .titlebar .spacer { margin-top: 0; }
+
+/* And they have to be VISIBLE.
+ *
+ * --faint is deliberately quiet, which works beside a macOS traffic light
+ * but not beside Windows' own caption glyphs: those are drawn at full
+ * contrast by the system, so a 1.35px stroke at --faint next to them looks
+ * like a rendering fault rather than a button. macOS already got this
+ * treatment (the .side-toggle rules above); Windows never did. */
+body.windows .titlebar .icon-btn,
+body.windows .titlebar .side-toggle { color: rgba(255, 255, 255, 0.72); }
+body.windows .titlebar .icon-btn:hover,
+body.windows .titlebar .side-toggle:hover { color: #fff; }
+body.windows.light .titlebar .icon-btn,
+body.windows.light .titlebar .side-toggle { color: rgba(12, 16, 23, 0.75); }
+body.windows.light .titlebar .icon-btn:hover,
+body.windows.light .titlebar .side-toggle:hover { color: #000; }
+
 .brand {
   display: flex; align-items: center; gap: 9px;
   /* Optical, not mathematical: the wordmark's letter-spacing adds a trailing
@@ -830,10 +860,40 @@ body.light .share-row { background: rgba(0, 0, 0, 0.04); }
 
 /* ---- scrollbars ------------------------------------------------------- */
 
-::-webkit-scrollbar { width: 11px; height: 11px; }
-::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 6px; border: 3px solid transparent; background-clip: content-box; }
-::-webkit-scrollbar-thumb:hover { background: #3a3f47; background-clip: content-box; }
+/* Thin and translucent, the way every app people compare this to draws them.
+ *
+ * macOS hides scrollbars until you scroll, so an 11px bar with a solid
+ * --line-strong thumb was invisible there and looked like a heavy grey slab
+ * on Windows, where the bar is always on. Windows also draws its own default
+ * bar over any element that does not opt out -- the recent-sessions list in
+ * the drawer got exactly that -- so this has to cover the whole app, not
+ * just the panels somebody remembered.
+ *
+ * A translucent thumb over a transparent track means the bar tints whatever
+ * is behind it instead of introducing a second surface colour, which is what
+ * makes it read as subtle in both themes without a per-theme rule. */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.3); background-clip: content-box; }
 ::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-corner { background: transparent; }
+body.light ::-webkit-scrollbar-thumb { background: rgba(12, 16, 23, 0.2); background-clip: content-box; }
+body.light ::-webkit-scrollbar-thumb:hover { background: rgba(12, 16, 23, 0.34); background-clip: content-box; }
+/* Firefox and any engine with no ::-webkit- support.
+ *
+ * Guarded, because where BOTH are understood the standard property wins the
+ * width and its "thin" is 11px -- wider than the 8px above, so declaring it
+ * unconditionally silently undid the ::-webkit- rule. `@supports not` hands
+ * the width to whichever mechanism the engine actually has. */
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.16) transparent; }
+  body.light * { scrollbar-color: rgba(12, 16, 23, 0.2) transparent; }
+}
 
 /* ---- bloom: light from the object, not shadow under it ---------------- */
 
@@ -2468,13 +2528,25 @@ body.light .thumb-well { background: var(--panel-raised); }
 }
 .ob-skip:hover { color: var(--text); }
 
+/* Centred when it fits, scrollable when it does not.
+ *
+ * The agent step is the tall one -- seven rows, a heading, a subhead and a
+ * button -- and a plain centred flex box CLIPS what does not fit, at both
+ * ends at once. On a short window that meant the heading was cut off at the
+ * top and Continue was somewhere below the bottom edge, with no way to reach
+ * either. `auto` margins centre the child while still letting the box
+ * scroll; `align-items: center` does not. */
 .ob-stage {
   position: relative; z-index: 1; height: 100%;
-  display: flex; align-items: center; justify-content: center; padding: 0 32px;
+  display: flex; justify-content: center;
+  overflow-y: auto;
+  padding: 32px;
 }
-
 .ob-scene { display: none; width: min(620px, 100%); text-align: center; }
-.ob-scene.on { display: block; }
+/* `margin: auto 0` is what centres this inside a SCROLLABLE parent. The
+   stage cannot use align-items for that, because centring a flex child
+   taller than its box clips it at both ends instead of letting it scroll. */
+.ob-scene.on { display: block; margin: auto 0; }
 
 .ob-h {
   font-family: var(--sans); font-weight: 500;
@@ -3518,9 +3590,17 @@ body:not(.macos) .side-brandrow {
   height: var(--titlebar); margin-bottom: 10px;
   justify-content: space-between;
 }
+/* top:2px, not 15px: this button has to land on the same line as the window's
+   own caption buttons, which are 34px tall at top:0. At 15 it centred at y=30
+   while they centre at y=17, so opening the drawer moved the toggle down a
+   row. Same reasoning as the titlebar rule above. */
 body:not(.macos) .side-top .side-toggle {
-  position: absolute; top: 15px; right: 12px; z-index: 3;
+  position: absolute; top: 2px; right: 12px; z-index: 3;
+  color: rgba(255, 255, 255, 0.72);
 }
+body:not(.macos) .side-top .side-toggle:hover { color: #fff; }
+body:not(.macos).light .side-top .side-toggle { color: rgba(12, 16, 23, 0.75); }
+body:not(.macos).light .side-top .side-toggle:hover { color: #000; }
 
 /* ---- dictation ---------------------------------------------------------
  * The microphone has two jobs while it runs: be obviously live, and be

@@ -3114,6 +3114,18 @@ fn first_run_setup() {
 #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
 fn first_run_setup() {}
 
+/// Write one line to the KRATE_STUDIO_DEBUG log, if one was asked for.
+///
+/// The same channel the engine's output uses, for facts about the shell
+/// itself. Silent unless the variable is set, so it costs nothing in normal
+/// use and is the only way to see decisions -- like the window clamp -- that
+/// happen before any UI exists to show them.
+fn studio_debug(line: &str) {
+    if let Some(path) = std::env::var_os("KRATE_STUDIO_DEBUG") {
+        append_line(Path::new(&path), line);
+    }
+}
+
 fn append_line(path: &Path, line: &str) {
     use std::io::Write as _;
     if let Ok(mut f) = std::fs::OpenOptions::new()
@@ -3793,6 +3805,56 @@ fn main() {
             #[cfg(windows)]
             if let Some(win) = _app.get_webview_window("main") {
                 let _ = win.set_decorations(false);
+            }
+
+            // Never open bigger than the screen.
+            //
+            // tauri.conf asks for 1240x800 because that is a good size on a
+            // large display. On anything smaller the window is created at that
+            // size anyway, so its bottom and right run off the desktop: the
+            // onboarding heading was cut off at the top edge and the Continue
+            // button sat below the taskbar, with no way to reach either. The
+            // runtime's app windows learned this (K-167); Studio's own window
+            // never did, so the tool that makes the apps was the one window
+            // that could not fit.
+            //
+            // The work area, not the full screen: on Windows that excludes the
+            // taskbar, which is the difference between "fits" and "the button
+            // is behind the taskbar".
+            if let Some(win) = _app.get_webview_window("main") {
+                if let Ok(Some(monitor)) = win.current_monitor() {
+                    let scale = monitor.scale_factor();
+                    let area = monitor.work_area().size.to_logical::<f64>(scale);
+                    if let Ok(size) = win.outer_size() {
+                        let cur = size.to_logical::<f64>(scale);
+                        // A small margin so the window is visibly inside the
+                        // desktop rather than flush against two edges.
+                        let max_w = (area.width - 40.0).max(640.0);
+                        let max_h = (area.height - 40.0).max(480.0);
+                        let clamped = cur.width > max_w || cur.height > max_h;
+                        if clamped {
+                            let _ = win.set_size(tauri::LogicalSize::new(
+                                cur.width.min(max_w),
+                                cur.height.min(max_h),
+                            ));
+                            let _ = win.center();
+                        }
+                        // Say what it decided. A window that opens off-screen
+                        // cannot be measured from another session -- window
+                        // enumeration is per-desktop -- so the only way to
+                        // check this remotely, or from a support report, is
+                        // for the window to report its own geometry.
+                        studio_debug(&format!(
+                            "window: asked {}x{}, work area {}x{} @{}x, clamped={}",
+                            cur.width as i32,
+                            cur.height as i32,
+                            area.width as i32,
+                            area.height as i32,
+                            scale,
+                            clamped
+                        ));
+                    }
+                }
             }
             Ok(())
         })
