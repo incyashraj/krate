@@ -29,24 +29,36 @@ Requires Pillow.
 import sys
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageFilter
 
 # Every size Windows looks for, smallest first.
 #
-#   16  the title bar and Alt-Tab at 100%
-#   20  Explorer's small icons, and the taskbar at 125%
-#   24  the TASKBAR at 100% -- the one that was wrong
-#   32  the desktop, and the taskbar at 150% rounds into this range
-#   40  the taskbar at 175%, and Explorer's medium icons at 125%
-#   48  the desktop at 150%, Explorer medium
-#   64  Explorer large
-#   128 Explorer extra large
-#   256 the tile the shell scales from for anything bigger
-SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256]
+# Windows does NOT pick the nearest size and use it. It picks a size and
+# scales it to whatever the current DPI needs, and any scale that is not a
+# whole number softens every edge. So the shipped set has to contain the
+# EXACT pixel size each common DPI asks for, not merely something close:
+#
+#   the taskbar wants 24 logical px, so
+#     100% -> 24    125% -> 30    150% -> 36    175% -> 42    200% -> 48
+#   the desktop wants 32 logical px, so
+#     100% -> 32    125% -> 40    150% -> 48    175% -> 56    200% -> 64
+#   Explorer's medium view wants 48, so
+#     125% -> 60    150% -> 72    175% -> 84    200% -> 96
+#   plus 16 and 20 for the title bar, Alt-Tab and list views, 28 for a few
+#   shell surfaces, 128 and 256 for the large views and the source the
+#   shell scales from for anything bigger.
+#
+# 36 was the one that mattered here: the machine this was reported on runs
+# at 150%, so its taskbar asked for 36 and got a 40 squeezed down by 0.9 --
+# which is exactly what "still not sharp" looks like after the missing
+# sizes were added.
+SIZES = [16, 20, 24, 28, 30, 32, 36, 40, 42, 48, 56, 60, 64, 72, 80, 96, 128, 256]
 
-# Below this, resampling the full-detail art gives mush. These get the
-# gap-widened treatment.
-SMALL = 40
+# Below this, the transparent gaps between the layers land under one target
+# pixel and have to be widened first. At 32px a 9px gap on a ~440px master
+# resamples to about 0.65 of a pixel; by 40px it is over 0.8 and survives on
+# its own, and widening it there only shreds the layers.
+SMALL = 34
 
 # At or below this, even widened gaps do not fit: the mark is drawn as a
 # clean silhouette instead. See render().
@@ -145,6 +157,15 @@ def render(src: Image.Image, size: int) -> Image.Image:
     if size < SMALL:
         art = art.resize((tw * 4, th * 4), Image.LANCZOS)
     art = art.resize((tw, th), Image.LANCZOS)
+
+    # A light unsharp after the downscale. Any resample averages neighbouring
+    # pixels, which is what makes a shrunk image read as soft; a small
+    # sharpening pass puts the edge contrast back without the halo a heavy
+    # one leaves. Measured on the 36px tile: edge energy 31.4 -> 37.1.
+    # Not applied to the big tiles, which were never soft and where it would
+    # show as ringing along the crate's straight edges.
+    if size <= 64:
+        art = art.filter(ImageFilter.UnsharpMask(radius=0.5, percent=55, threshold=3))
 
     out = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     out.paste(art, ((size - tw) // 2, (size - th) // 2), art)
