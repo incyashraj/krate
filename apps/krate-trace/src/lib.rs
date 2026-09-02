@@ -132,7 +132,7 @@ const ROWS: [Line; 12] = [
     Line { stamp: "14:32:09.203", level: LV_I, service: "api-gateway", message: "POST /v1/checkout 201 142ms", context: &[] },
     Line { stamp: "14:32:11.664", level: LV_E, service: "checkout", message: "upstream timeout after 5000ms", context: &ORDER_CTX },
     Line { stamp: "14:32:12.010", level: LV_I, service: "api-gateway", message: "GET /v1/health 200 3ms", context: &[] },
-    Line { stamp: "14:32:12.774", level: LV_W, service: "api-gateway", message: "rate limit exceeded for key sk_live_4Kf9...", context: &[] },
+    Line { stamp: "14:32:12.774", level: LV_W, service: "api-gateway", message: "rate limit exceeded for key sk_test_4Kf9...", context: &[] },
     Line { stamp: "14:32:13.126", level: LV_I, service: "orders", message: "PATCH /v1/orders/8821 200 31ms", context: &[] },
     Line { stamp: "14:32:13.905", level: LV_E, service: "payments", message: "charge declined: card_expired (tok_1P9x)", context: &[] },
     Line { stamp: "14:32:14.338", level: LV_D, service: "orders", message: "flushed 24 events to analytics buffer", context: &[] },

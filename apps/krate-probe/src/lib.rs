@@ -295,7 +295,7 @@ const REQUESTS: [Request; REQ_COUNT] = [
 /// every header a client would send: the response is the hero and the rows
 /// above it are there to establish what a request is, not to be exhaustive.
 const HEADERS: [(&str, &str); 3] = [
-    ("Authorization", "Bearer sk_live_51QbT7mZa1kPx9Rd"),
+    ("Authorization", "Bearer sk_test_51QbT7mZa1kPx9Rd"),
     ("Content-Type", "application/json"),
     ("Stripe-Version", "2026-08-27"),
 ];
