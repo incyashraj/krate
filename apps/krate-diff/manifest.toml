@@ -1,0 +1,33 @@
+[app]
+id = "dev.krate.diff"
+name = "Diff"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_diff.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the diff window"
+required = true
+
+# No fs capability, deliberately.
+#
+# The obvious thing was `fs.read:review/**`, and check-app refused it: the
+# code never imports the fs interface, so the manifest was asking for
+# something it could not even attempt. That refusal is the product working --
+# a capability nobody calls is a permission the person grants for nothing.
+#
+# A real reviewer's version would not add fs.read either. It would use
+# `ui.dialog:open-folder`, where the pick IS the grant and the app reaches
+# files through picked/<token>/... -- so the app never names a path and the
+# person never grants one.
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Report state on exit for automated runs"
+required = false
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read the quick-run flag used by automated checks"
+required = false
