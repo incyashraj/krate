@@ -150,6 +150,51 @@ const state = {
   builds: new Map(),    // sessionId -> { lines, stageIndex, nowLine, title, expect, startedAt }
 };
 
+/* ---- the profile picture, which is allowed to not load -------------------
+ *
+ * Every avatar is a REMOTE image on githubusercontent.com, and there are
+ * ordinary reasons it never arrives: the machine is offline, a corporate
+ * network blocks that host, the person deleted their photo, GitHub is rate
+ * limiting. In all of those the <img> stays in the layout as a broken box,
+ * and because the code hid the initial the moment it set a src, there was
+ * nothing behind it -- an empty square where a face should be. That is the
+ * "broken profile picture" people were seeing, and it was in four places.
+ *
+ * The rule: the initial is the truth and the photo is an enhancement. Show
+ * the initial, ask for the photo, and only swap once it has actually
+ * decoded. If it never does, nothing changes and nobody sees a failure.
+ */
+function setAvatar(img, initialEl, url) {
+  const showInitial = () => {
+    if (img) {
+      img.classList.add("hidden");
+      img.removeAttribute("src");
+    }
+    if (initialEl) initialEl.classList.remove("hidden");
+  };
+
+  if (!img || !url) {
+    showInitial();
+    return;
+  }
+
+  // Start from the initial, not from a blank box: if the photo takes two
+  // seconds the button should read as a person for those two seconds.
+  showInitial();
+
+  const probe = new Image();
+  probe.onload = () => {
+    // naturalWidth guards the case where a host answers 200 with an error
+    // page -- onload fires, but there are no pixels.
+    if (!probe.naturalWidth) return;
+    img.src = url;
+    img.classList.remove("hidden");
+    if (initialEl) initialEl.classList.add("hidden");
+  };
+  probe.onerror = showInitial;   // stay as we are
+  probe.src = url;
+}
+
 /* The progress record for a session, created on demand. */
 function buildRecord(id) {
   if (!id) return null;
@@ -448,13 +493,11 @@ function renderBuilding() {
 function renderAccount() {
   const a = state.account;
   if (!a) return;
-  if (a.avatar_url) {
-    $("avatar").src = a.avatar_url;
-    $("avatar").classList.remove("hidden");
-    $("accountInitial").textContent = "";
-  } else {
-    $("accountInitial").textContent = (a.login || "?")[0].toUpperCase();
-  }
+  // The letter is written whatever happens. It used to be blanked to ""
+  // whenever there was an avatar_url, so a photo that did not load left the
+  // button completely empty.
+  $("accountInitial").textContent = (a.login || "?")[0].toUpperCase();
+  setAvatar($("avatar"), $("accountInitial"), a.avatar_url);
 }
 
 function renderSessions(sessions) {
@@ -3569,9 +3612,10 @@ function openAccount() {
   const a = state.account || {};
   $("accountName").textContent = a.name || a.login || "Signed in";
   $("accountLogin").textContent = a.login ? "@" + a.login : "";
-  const img = $("accountAvatar");
-  if (a.avatar_url) { img.src = a.avatar_url; img.classList.remove("hidden"); }
-  else { img.classList.add("hidden"); }
+  // No initial to fall back to in this sheet, so the image simply stays
+  // hidden unless it really loads -- better a name with no photo than a
+  // broken box beside it.
+  setAvatar($("accountAvatar"), null, a.avatar_url);
   $("accountSheet").classList.remove("hidden");
 }
 
@@ -4782,13 +4826,13 @@ async function seedDockAvatar() {
     const account = await invoke("account_status");
     const name = account?.name || account?.login || "";
     if (!name) return;
-    const solo = $("dockProfile");
-    if (account.avatar_url && solo) {
-      solo.innerHTML = `<img src="${account.avatar_url}" alt="" />`;
-    } else {
-      const initial = $("dockInitial");
-      if (initial) initial.textContent = name.trim().charAt(0).toUpperCase();
-    }
+    // The initial is set ALWAYS, not only when there is no photo. It used to
+    // live in the else branch, so an account with an avatar_url never got
+    // one -- and if that photo failed to load the button fell back to the
+    // placeholder dot rather than to the person's letter.
+    const initial = $("dockInitial");
+    if (initial) initial.textContent = name.trim().charAt(0).toUpperCase();
+    setAvatar($("dockAvImg"), initial, account.avatar_url);
   } catch (e) { /* signed out: the dot is the honest answer */ }
 }
 seedDockAvatar();
@@ -5305,11 +5349,8 @@ async function loadProfilePage() {
     $("profInitial").textContent = initial;
     const dockInitial = $("dockInitial");
     if (dockInitial) dockInitial.textContent = initial;
-    if (account?.avatar_url) {
-      $("profAv").innerHTML = `<img src="${account.avatar_url}" alt="" />`;
-      const solo = $("dockProfile");
-      if (solo) solo.innerHTML = `<img src="${account.avatar_url}" alt="" />`;
-    }
+    setAvatar($("profAvImg"), $("profInitial"), account?.avatar_url);
+    setAvatar($("dockAvImg"), dockInitial, account?.avatar_url);
     // GitHub is how publishing is authorised, so it is connected by
     // definition once somebody is signed in.
     $("connGhSub").textContent = account?.login
@@ -5522,19 +5563,11 @@ function paintGreeting() {
   const avatarInitial = $("sideInitial");
   const avatarImg = $("sideAvatarImg");
   const picture = (state.account && (state.account.avatar || state.account.avatar_url)) || "";
-  if (avatarImg) {
-    if (picture) {
-      avatarImg.src = picture;
-      avatarImg.classList.remove("hidden");
-    } else {
-      avatarImg.classList.add("hidden");
-      avatarImg.removeAttribute("src");
-    }
-  }
-  if (avatarInitial) {
-    avatarInitial.textContent = initial || "·";
-    avatarInitial.classList.toggle("hidden", Boolean(picture));
-  }
+  if (avatarInitial) avatarInitial.textContent = initial || "·";
+  // The initial stays until the photo has really loaded. Hiding it the
+  // moment a src was set is what left a broken box on any machine the
+  // avatar could not reach.
+  setAvatar(avatarImg, avatarInitial, picture);
   const avatarBtn = $("sideAccount");
   if (avatarBtn) {
     avatarBtn.title = name ? `Signed in as ${name}` : "Your account";

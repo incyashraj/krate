@@ -609,7 +609,13 @@
     <div class="page-scroll" data-scroller>
       <div class="page-inner set-col">
         <div class="prof-head">
-          <div class="prof-av" id="profAv"><span id="profInitial">·</span></div>
+          <!-- The photo sits BESIDE the initial rather than replacing it.
+               Writing the img in with innerHTML deleted the initial, so a
+               photo that never loaded left an empty circle. -->
+          <div class="prof-av" id="profAv">
+            <img id="profAvImg" class="hidden" alt="" />
+            <span id="profInitial">·</span>
+          </div>
           <div>
             <div class="prof-name" id="profName">Signed in</div>
             <div class="prof-mail" id="profMail"></div>
@@ -1069,7 +1075,7 @@
       <button data-page="apps">Your apps</button>
       <button data-page="settings">Settings<span class="badge" id="dockBadge"></span></button>
     </nav>
-    <button class="dock-solo" id="dockProfile" aria-label="Profile"><span class="in" id="dockInitial">·</span></button>
+    <button class="dock-solo" id="dockProfile" aria-label="Profile"><img id="dockAvImg" class="hidden" alt="" /><span class="in" id="dockInitial">·</span></button>
   </div>
 
   <script src="app.js"></script>
