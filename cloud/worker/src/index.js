@@ -295,6 +295,29 @@ async function publish(request, env) {
     avatar_url: identity.avatar_url || "",
     published: Math.floor(Date.now() / 1000),
     size: body.length,
+    // What the app declares it needs, so its page can show the permissions
+    // BEFORE anyone downloads it. This is the one thing a Krate listing has
+    // that an app store listing does not, and it was not being stored at
+    // all -- the gallery could say an app was 36 KB but not that it asks for
+    // nothing beyond a window.
+    //
+    // Sent by the CLI as a compact JSON array; capped and validated here
+    // because it arrives in a header and a header is not to be trusted.
+    capabilities: (() => {
+      const raw = header(request, "x-krate-capabilities") || "";
+      if (!raw) return [];
+      try {
+        const list = JSON.parse(raw);
+        if (!Array.isArray(list)) return [];
+        return list.slice(0, 24).map((c) => ({
+          cap: String(c.cap || "").slice(0, 96),
+          rationale: String(c.rationale || "").slice(0, 200),
+          required: c.required === true,
+        }));
+      } catch (_) {
+        return [];
+      }
+    })(),
   };
 
   // Keyed so KV's own lexicographic listing comes back newest-first when
@@ -809,7 +832,19 @@ async function meta(hash, env) {
     id: hash,
     url: `${base}/a/${hash}`,
     shot: shot ? `${base}/shot/${hash}` : null,
-    meta: { name: m.name, description: m.description, author: m.author, size: m.size },
+    meta: {
+      name: m.name,
+      description: m.description,
+      author: m.author,
+      avatar_url: m.avatar_url || "",
+      size: m.size,
+      published: m.published,
+      // The permissions, so /app/?a=<hash> can list them before anyone
+      // downloads anything. Empty for apps published before this shipped,
+      // and the page says "not recorded" rather than "asks for nothing" --
+      // an absent list and an empty one mean very different things.
+      capabilities: Array.isArray(m.capabilities) ? m.capabilities : null,
+    },
   });
 }
 

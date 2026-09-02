@@ -4671,6 +4671,31 @@ fn publish_bundle(
         "X-Krate-Category",
         classify_app(&app_name, description.unwrap_or("")),
     );
+    // What the app declares it needs, so its page on the hub can show the
+    // permissions BEFORE anyone downloads it. That listing is the one thing
+    // a Krate gallery has that an app store does not, and until now the
+    // capabilities never left this machine -- the hub could say an app was
+    // 36 KB but not that it asks for nothing beyond a window.
+    //
+    // Read from the bundle rather than passed in, so it is the manifest the
+    // runtime will actually enforce and not something a caller typed.
+    if let Some(caps) = krate_bundle::open(bundle).ok().and_then(|opened| {
+        let list: Vec<serde_json::Value> = opened
+            .manifest()
+            .capabilities
+            .iter()
+            .map(|c| {
+                serde_json::json!({
+                    "cap": c.cap,
+                    "rationale": c.rationale,
+                    "required": c.required,
+                })
+            })
+            .collect();
+        serde_json::to_string(&list).ok()
+    }) {
+        request = request.set("X-Krate-Capabilities", &caps);
+    }
     if let Some(identity) = &identity {
         // The hub verifies this against GitHub rather than trusting a name in
         // a header, so the author shown on an app's page is a real account.
