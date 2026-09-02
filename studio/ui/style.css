@@ -279,9 +279,24 @@ body.windows .titlebar { padding-right: 150px; }
  *
  * Aligning to the top and pushing down by (34-30)/2 lands our 30px buttons
  * on exactly the caption buttons' centre line. */
-body.windows .titlebar { align-items: flex-start; }
-body.windows .titlebar > * { margin-top: 2px; }
-body.windows .titlebar .spacer { margin-top: 0; }
+/* Centre everything in a SHORTER bar rather than top-aligning it.
+ *
+ * The first version used flex-start with a 2px nudge on each child, which
+ * lines up things that are all the same height and skews everything else:
+ * a 30px button landed on centre 17 while the "Shared" text, being 20px
+ * tall, landed on 12 -- five pixels high, and visible.
+ *
+ * The caption buttons are 34px at top:0, so their centre is 17. A 34px row
+ * that centres its children puts EVERY child on 17 whatever its height. */
+body.windows .titlebar {
+  align-items: center;
+  /* The row is 34px so its children centre on the caption buttons' line,
+     and the rest of the 60px is padding so the content below still starts
+     where it did. Shrinking the whole bar moved every page up by 26px. */
+  height: var(--titlebar);
+  padding-bottom: calc(var(--titlebar) - 34px);
+}
+body.windows .titlebar .spacer { height: 34px; }
 
 /* And they have to be VISIBLE.
  *

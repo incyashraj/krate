@@ -1036,15 +1036,29 @@ function restoreBuild(sessionId) {
     const ghost = $("formingGhost");
     const tag = $("buildShotTag");
     if (shotImg) {
-      if (rec.shot) {
-        shotImg.src = rec.shot;
-        shotImg.classList.remove("hidden");
-        if (ghost) ghost.classList.add("hidden");
-        if (tag) tag.textContent = "your app so far";
-      } else {
+      const showGhost = () => {
         shotImg.classList.add("hidden");
+        shotImg.removeAttribute("src");
         if (ghost) ghost.classList.remove("hidden");
         if (tag) tag.textContent = "taking shape…";
+      };
+      if (rec.shot) {
+        // The shimmer stays until the picture has really decoded. Revealing
+        // on assignment left a broken frame whenever the shot could not be
+        // read -- and there IS a placeholder here, so falling back to it
+        // costs nothing (K-225).
+        const probe = new Image();
+        probe.onload = () => {
+          if (!probe.naturalWidth) return;
+          shotImg.src = rec.shot;
+          shotImg.classList.remove("hidden");
+          if (ghost) ghost.classList.add("hidden");
+          if (tag) tag.textContent = "your app so far";
+        };
+        probe.onerror = showGhost;
+        probe.src = rec.shot;
+      } else {
+        showGhost();
       }
     }
     const track = $("buildTrack");
@@ -3000,6 +3014,10 @@ function showCloudApp(app) {
     bed.className = "shot-bed";
     bed.src = app.shot;
     bed.alt = "";
+    // Decorative: it is the blurred backdrop behind the real picture, so a
+    // failure should take it out of the layout rather than leave a broken
+    // box filling the stage.
+    bed.onerror = () => bed.remove();
     bed.setAttribute("aria-hidden", "true");
 
     const img = document.createElement("img");
@@ -3445,13 +3463,26 @@ function openPublishSheet() {
   const firstAsk = (state.session.messages.find((m) => m.who === "YOU") || {}).body || "";
   $("pubDesc").value = firstAsk.replace(/\s+/g, " ").trim().slice(0, 140);
   const shotImg = $("pubShotImg");
-  if (app.shot) {
-    shotImg.src = app.shot;
-    shotImg.classList.remove("hidden");
-    $("pubShotNone").classList.add("hidden");
-  } else {
+  const noShot = () => {
     shotImg.classList.add("hidden");
+    shotImg.removeAttribute("src");
     $("pubShotNone").classList.remove("hidden");
+  };
+  if (app.shot) {
+    // "No screenshot" is already designed for; a broken frame is not. Wait
+    // for the picture to decode before claiming there is one (K-225).
+    const probe = new Image();
+    probe.onload = () => {
+      if (!probe.naturalWidth) return;
+      shotImg.src = app.shot;
+      shotImg.classList.remove("hidden");
+      $("pubShotNone").classList.add("hidden");
+    };
+    probe.onerror = noShot;
+    probe.src = app.shot;
+    noShot();          // until it arrives
+  } else {
+    noShot();
   }
   $("pubIconImg").classList.add("hidden");
   $("pubIconNone").classList.remove("hidden");
