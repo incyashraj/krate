@@ -3739,11 +3739,19 @@ body:not(.macos).light .side-top .side-toggle:hover { color: #000; }
  * The microphone has two jobs while it runs: be obviously live, and be
  * obviously stoppable. A pulsing red mark reads as recording in every app
  * a person has used, so it does not need explaining. */
+/* Empty almost always -- it carries dictation status and refusals, and
+ * those clear themselves after a few seconds. Reserving a line for it
+ * permanently cost 23px (8px margin + a 1.2em min-height) of dead space
+ * between the box and the suggestions on every screen, for a message that
+ * is hardly ever there. `:empty` collapses it completely and it takes its
+ * line back the moment it has something to say. */
 .home-hint {
-  min-height: 1.2em; margin: 8px 0 0;
+  margin: 8px 0 0;
   text-align: left; width: min(680px, 100%);
   color: var(--faint); font-size: 12.5px;
+  min-height: 1.2em;
 }
+.home-hint:empty { min-height: 0; margin: 0; }
 .tool.wave.listening {
   color: #ff6b6b;
   background: rgba(255, 107, 107, 0.12);
