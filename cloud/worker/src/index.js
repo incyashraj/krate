@@ -196,6 +196,22 @@ export default {
       if (request.method === "GET" && pathname === "/my/apps") {
         return cors(await myApps(request, env));
       }
+      // Build sessions, kept against the account rather than the machine.
+      //
+      // Somebody makes an app in the browser, downloads Studio, signs in,
+      // and the conversation they were having is there -- editable, not a
+      // read-only receipt. Without this the browser's sessions die in
+      // localStorage and the desktop's die on one disk, and the hand-off
+      // between the two surfaces is a dead end.
+      if (request.method === "GET" && pathname === "/sessions") {
+        return cors(await sessionsList(request, env));
+      }
+      if (request.method === "POST" && pathname === "/sessions") {
+        return cors(await sessionsPut(request, env));
+      }
+      if (request.method === "DELETE" && pathname.startsWith("/sessions/")) {
+        return cors(await sessionsDelete(request, pathname.slice(10), env));
+      }
       if (request.method === "POST" && pathname === "/referral/claim") {
         return cors(await referralClaim(request, env));
       }
@@ -2085,6 +2101,122 @@ async function meProfile(request, env) {
     },
     referral: { code: await getOrMakeRefCode(env, user), count: refs.length, awards },
   });
+}
+
+/* ---- build sessions, per account ---------------------------------------
+ *
+ * A session is the conversation that made an app: what was asked for, what
+ * the agent said back, what came out. Studio already keeps them -- as files
+ * on the desktop, in localStorage in the browser -- and neither was tied to
+ * an account, so a person who started in a tab and then downloaded Studio
+ * arrived to an empty room.
+ *
+ * The record is stored opaquely. Studio's own Session struct carries a
+ * `#[serde(flatten)]` catch-all precisely because whitelisting its fields
+ * silently dropped everything else (K-203), and a hub that re-shaped the
+ * JSON here would reintroduce that bug from the other side. So: validate the
+ * envelope, cap the size, store the body untouched.
+ */
+
+/// Keys are `sess:<user>:<id>`. One KV entry per session rather than one
+/// bucket per account: a bucket means every save rewrites every session, and
+/// two machines saving at once lose one of them.
+const SESSION_MAX_BYTES = 256 * 1024;
+const SESSION_MAX_PER_USER = 100;
+
+function sessionOwner(user) {
+  // The account id first, and only then the login.
+  //
+  // Not login-first: a Krate account with no GitHub gets its login derived
+  // from the local part of an email, so two people at different domains --
+  // sam@a.com and sam@b.io -- would land on the same prefix and read each
+  // other's sessions. The id is minted per account and cannot collide.
+  //
+  // Never the email itself: that would put an address into a key name, which
+  // shows up in listings and logs.
+  const key = String(user.id || user.login || "");
+  return /^[A-Za-z0-9_.-]{1,64}$/.test(key) ? key : "";
+}
+
+async function sessionsList(request, env) {
+  const user = await authedUser(request, env);
+  if (!user) return text("Sign in first.", 401);
+  const owner = sessionOwner(user);
+  if (!owner) return json({ sessions: [] });
+
+  const listing = await env.APPS.list({ prefix: `sess:${owner}:`, limit: 200 });
+  const sessions = [];
+  for (const key of listing.keys) {
+    const raw = await env.APPS.get(key.name);
+    if (!raw) continue;
+    try {
+      sessions.push(JSON.parse(raw));
+    } catch (_) {
+      // A single unreadable record must not take the whole list down: the
+      // person's other sessions are still theirs.
+    }
+  }
+  // Newest first, the order Studio's own list expects.
+  sessions.sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  return json({ sessions });
+}
+
+async function sessionsPut(request, env) {
+  const user = await authedUser(request, env);
+  if (!user) return text("Sign in first.", 401);
+  const owner = sessionOwner(user);
+  if (!owner) return text("no account", 401);
+
+  let session;
+  try {
+    session = await request.json();
+  } catch (_) {
+    return text("bad request", 400);
+  }
+  const id = String(session && session.id ? session.id : "");
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) {
+    return text("a session needs an id", 400);
+  }
+  const body = JSON.stringify(session);
+  if (body.length > SESSION_MAX_BYTES) {
+    // A refusal that names the number, because the caller can act on it:
+    // the transcript is what grows, and Studio can trim it.
+    return text(`session too large (${SESSION_MAX_BYTES} bytes max)`, 413);
+  }
+
+  // Last write wins, but only if it is actually later. Two machines editing
+  // one session should not let a stale save from the slower one overwrite
+  // the newer work -- the same rule store.shared uses for its keys.
+  const existing = await env.APPS.get(`sess:${owner}:${id}`);
+  if (existing) {
+    try {
+      const prev = JSON.parse(existing);
+      if ((prev.updated || 0) > (session.updated || 0)) {
+        return json({ ok: true, kept: "newer", session: prev });
+      }
+    } catch (_) {
+      // Unreadable previous value: the new one is strictly better.
+    }
+  } else {
+    // Only count on create, and only enough to stop a runaway client from
+    // filling the namespace publishes and sign-ins share.
+    const listing = await env.APPS.list({ prefix: `sess:${owner}:`, limit: SESSION_MAX_PER_USER + 1 });
+    if (listing.keys.length >= SESSION_MAX_PER_USER) {
+      return text(`too many sessions (${SESSION_MAX_PER_USER} max)`, 409);
+    }
+  }
+
+  await env.APPS.put(`sess:${owner}:${id}`, body);
+  return json({ ok: true });
+}
+
+async function sessionsDelete(request, id, env) {
+  const user = await authedUser(request, env);
+  if (!user) return text("Sign in first.", 401);
+  const owner = sessionOwner(user);
+  if (!owner || !/^[A-Za-z0-9_-]{1,64}$/.test(id)) return text("not found", 404);
+  await env.APPS.delete(`sess:${owner}:${id}`);
+  return json({ ok: true });
 }
 
 async function myApps(request, env) {

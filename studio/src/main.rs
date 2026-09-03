@@ -519,6 +519,59 @@ fn sessions_list() -> Vec<Session> {
     sessions
 }
 
+/// Pull the account's sessions from the hub and merge them into the local
+/// ones, newest write per id winning.
+///
+/// This is the other half of the browser hand-off: somebody makes an app at
+/// krate.tech/app, downloads Studio, signs in, and the conversation is here
+/// -- a real session they can carry on editing, not a receipt. Without it
+/// the browser's work dies in localStorage and the desktop starts empty.
+///
+/// Best-effort by design. Signed out, offline, or a hub that answers badly
+/// all mean "no remote sessions", never an error the person has to dismiss:
+/// their local work is unaffected either way.
+#[tauri::command]
+async fn sessions_pull() -> Result<usize, String> {
+    let Some(token) = hub_token() else {
+        return Ok(0);
+    };
+    let url = format!("{}/sessions", hub_url());
+    let pulled = tauri::async_runtime::spawn_blocking(move || {
+        let response = ureq::get(&url)
+            .set("Authorization", &format!("Bearer {token}"))
+            .timeout(std::time::Duration::from_secs(20))
+            .call()
+            .ok()?;
+        let body: serde_json::Value = response.into_json().ok()?;
+        let list = body.get("sessions")?.as_array()?.clone();
+        Some(list)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+    .unwrap_or_default();
+
+    let mut merged = 0usize;
+    for value in pulled {
+        let Ok(remote) = serde_json::from_value::<Session>(value) else {
+            // One unreadable record must not stop the rest arriving.
+            continue;
+        };
+        // Only take it when it is genuinely newer. A stale copy from the hub
+        // overwriting work done here since is the one way this could lose
+        // something, so it is the one case explicitly ruled out.
+        let local_is_newer = sessions_list()
+            .iter()
+            .any(|s| s.id == remote.id && s.updated >= remote.updated);
+        if local_is_newer {
+            continue;
+        }
+        if session_save(remote).is_ok() {
+            merged += 1;
+        }
+    }
+    Ok(merged)
+}
+
 #[tauri::command]
 fn session_save(mut session: Session) -> Result<(), String> {
     // The id is ours (a timestamp), but never trust a path component you did
@@ -553,11 +606,38 @@ fn session_save(mut session: Session) -> Result<(), String> {
     let path = studio_dir()
         .join("sessions")
         .join(format!("{}.json", session.id));
-    std::fs::write(
-        path,
-        serde_json::to_string_pretty(&session).map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| e.to_string())
+    let body = serde_json::to_string_pretty(&session).map_err(|e| e.to_string())?;
+    std::fs::write(path, &body).map_err(|e| e.to_string())?;
+
+    // Then push it to the account, so the same conversation is there in a
+    // browser tab and on a second machine.
+    //
+    // Disk first and never conditional on the network: losing what somebody
+    // just typed because a request did not land is the one outcome worth
+    // ruling out entirely. Signed out or offline, this is simply skipped and
+    // the local file is the whole truth.
+    session_push(body);
+    Ok(())
+}
+
+/// Send one already-saved session to the hub, in the background.
+///
+/// Detached on purpose: `session_save` is called on every edit and must stay
+/// instant. A failure here is not worth telling anyone about -- the next
+/// successful save or pull reconciles it, and the local copy was never at
+/// risk.
+fn session_push(body: String) {
+    let Some(token) = hub_token() else {
+        return;
+    };
+    let url = format!("{}/sessions", hub_url());
+    std::thread::spawn(move || {
+        let _ = ureq::post(&url)
+            .set("Authorization", &format!("Bearer {token}"))
+            .set("Content-Type", "application/json")
+            .timeout(std::time::Duration::from_secs(15))
+            .send_string(&body);
+    });
 }
 
 /// One session's screenshot as a data URL, read on demand. The grid asks for
@@ -3999,6 +4079,7 @@ fn main() {
             support_list,
             support_reply,
             sessions_list,
+            sessions_pull,
             session_save,
             session_shot,
             session_delete,

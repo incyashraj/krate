@@ -191,10 +191,42 @@ const COMMANDS = {
       await COMMANDS.login_browser();
       return new Promise(() => {});  // the page is navigating away
     }
-    const started = await builder("/build", {
-      method: "POST",
-      body: JSON.stringify({ request, device: deviceId() }),
-    });
+    // The session is saved BEFORE the build starts, so the wall below has
+    // something true to point at. Being told "your session is waiting in
+    // Studio" and then finding nothing there is worse than no wall at all.
+    const sessionId = `web-${Date.now()}`;
+    await COMMANDS.session_save({
+      session: {
+        id: sessionId,
+        title: (request || "").slice(0, 80),
+        created: Date.now(),
+        updated: Date.now(),
+        messages: [{ who: "YOU", body: request || "" }],
+        result: null,
+      },
+    }).catch(() => {});
+
+    let started;
+    try {
+      started = await builder("/build", {
+        method: "POST",
+        body: JSON.stringify({ request, device: deviceId() }),
+      });
+    } catch (err) {
+      // The one-app wall. The builder answers with `download: true` when the
+      // right next step is the desktop rather than a payment, and Studio's UI
+      // reads `err.download` to offer that instead of a plain failure card.
+      const text = String((err && err.message) || err || "");
+      let parsed = null;
+      try { parsed = JSON.parse(text); } catch (_) {}
+      if (parsed && parsed.wall) {
+        const wall = new Error(parsed.message || "You have made your app.");
+        wall.wall = true;
+        wall.download = Boolean(parsed.download);
+        throw wall;
+      }
+      throw err;
+    }
     bridge.job = started.id;
     bridge.jobResult = null;
 
@@ -247,18 +279,59 @@ const COMMANDS = {
 
   /* ---- their work ------------------------------------------------------- */
 
+  /* Sessions live on the hub when there is an account, and in localStorage
+   * when there is not.
+   *
+   * The point of the hub copy is the hand-off: somebody makes an app here,
+   * downloads Studio, signs in, and the conversation is waiting -- editable,
+   * not a read-only receipt. localStorage cannot do that, and it is also
+   * one cleared cache away from losing the work.
+   *
+   * Local stays as the cache and the signed-out path, and the two are merged
+   * on read by `updated` so a session made before signing in is not lost the
+   * moment an account appears.
+   */
   async sessions_list() {
-    return localSessions();
+    const local = localSessions();
+    if (!bridge.token) return local;
+    let remote = [];
+    try {
+      remote = (await hub("/sessions")).sessions || [];
+    } catch (e) {
+      // Offline, or the hub is down. Their local copy is still their work.
+      return local;
+    }
+    const byId = new Map();
+    for (const s of [...local, ...remote]) {
+      const seen = byId.get(s.id);
+      if (!seen || (s.updated || 0) > (seen.updated || 0)) byId.set(s.id, s);
+    }
+    const merged = [...byId.values()].sort((a, b) => (b.updated || 0) - (a.updated || 0));
+    saveLocalSessions(merged);
+    return merged;
   },
 
   async session_save({ session } = {}) {
+    // Local first, always. The hub write can fail -- no signal, expired
+    // token -- and losing what somebody just typed because a network call
+    // did not land is the one outcome worth ruling out entirely.
     const list = localSessions().filter((s) => s.id !== session.id);
     list.unshift(session);
     saveLocalSessions(list);
+    if (!bridge.token) return;
+    try {
+      await hub("/sessions", { method: "POST", body: JSON.stringify(session) });
+    } catch (e) {
+      // Kept locally; the next successful list merges it up.
+    }
   },
 
   async session_delete({ id } = {}) {
     saveLocalSessions(localSessions().filter((s) => s.id !== id));
+    if (!bridge.token) return;
+    try {
+      await hub(`/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
+    } catch (e) {}
   },
 
   async session_shot({ id } = {}) {

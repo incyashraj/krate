@@ -73,10 +73,33 @@ async function allowedToBuild(token, device) {
       body: JSON.stringify({ device: device || "" }),
     });
     const made = count.ok ? (await count.json()).n || 0 : 0;
-    // FREE, FOR NOW (Yashraj, 2026-09-01). The count is still taken and
-    // still recorded, so the day KRATE_CHARGING is set the numbers are
-    // already right and the wall works on real history rather than
-    // starting everyone at zero. Today it does not refuse anyone.
+
+    // ONE app in the browser, then the desktop.
+    //
+    // Not a paywall -- Studio is free and unlimited, and the point of this
+    // wall is to move somebody onto it rather than to charge them. Every
+    // browser build costs real compute here, and the second one buys
+    // nothing a download would not do better.
+    //
+    // The refusal names where their work went, because the session is
+    // already on their account: signing into Studio brings the conversation
+    // with it, editable. A wall that just says no would throw that away.
+    const BROWSER_FREE_BUILDS = 1;
+    if (made >= BROWSER_FREE_BUILDS) {
+      return {
+        ok: false,
+        wall: true,
+        download: true,
+        message:
+          "You have made your app. Krate Studio is free and unlimited, and " +
+          "this session is waiting in it -- sign in and carry on editing.",
+      };
+    }
+
+    // The old three-a-month paywall stays switched off. The count is still
+    // taken and recorded, so the day KRATE_CHARGING is set the numbers are
+    // already right and any future wall works on real history rather than
+    // starting everyone at zero.
     if (process.env.KRATE_CHARGING === "1" && made >= 3) {
       return {
         ok: false,
@@ -288,7 +311,22 @@ const server = createServer(async (req, res) => {
       if (request.length > 2000) return send(res, 400, "That is longer than we can work from.");
 
       const allowed = await allowedToBuild(token, device);
-      if (!allowed.ok) return send(res, allowed.wall ? 402 : 401, allowed.message);
+      if (!allowed.ok) {
+        // JSON for a wall, plain text for everything else.
+        //
+        // The browser needs the `download` flag, not just a sentence: it
+        // decides whether the card offers "Download Studio" or a plain
+        // failure, and a message alone cannot carry that. Text stays for
+        // real errors, which have nothing structured to say.
+        if (allowed.wall) {
+          return json(res, 402, {
+            wall: true,
+            download: Boolean(allowed.download),
+            message: allowed.message,
+          });
+        }
+        return send(res, 401, allowed.message);
+      }
 
       if (activeByAccount.has(allowed.account)) {
         return send(res, 429, "One app is already being made. It will be a few minutes.");
