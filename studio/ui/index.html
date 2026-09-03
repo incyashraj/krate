@@ -146,10 +146,16 @@
         reaches nothing it did not declare.</p>
 
         <div id="gateStart" class="reveal">
-          <button class="btn btn-primary btn-big" id="loginBrowserBtn">Sign in with krate.tech</button>
+          <button class="btn btn-primary btn-big" id="loginBrowserBtn">Sign in with GitHub or Google</button>
           <button class="btn btn-ghost" id="gateSkip">Skip, I just want to build</button>
           <button class="btn btn-ghost hidden" id="loginBtn">Use a code instead</button>
-          <p class="gate-hint">GitHub device flow in your browser. Krate never
+          <!-- Name both providers. The button has always opened a page that
+               offers GitHub, Google and email, but the label said
+               "krate.tech" and the hint said "GitHub device flow" -- so
+               somebody without a GitHub account read this screen as a wall
+               and had no reason to click. The mechanism was never the
+               problem; the words were. -->
+          <p class="gate-hint">Opens krate.tech in your browser. Krate never
           sees your password, and signing in is only needed to publish.</p>
         </div>
 
@@ -911,7 +917,7 @@
         app, so it needs a quick sign-in. One click -- your browser approves
         it and the publish finishes by itself.</p>
         <div class="sheet-actions">
-          <button class="btn btn-primary" id="pubSigninGo">Sign in with krate.tech</button>
+          <button class="btn btn-primary" id="pubSigninGo">Sign in with GitHub or Google</button>
           <button class="btn btn-ghost" id="pubSigninCode">Use a code instead</button>
         </div>
         <div class="pub-code hidden" id="pubCodeWrap">

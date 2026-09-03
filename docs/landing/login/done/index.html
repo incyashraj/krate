@@ -115,6 +115,13 @@
       location.href = "/app/";
       return;
     }
+    // The publish page, which drives GitHub's device flow itself and so has
+    // no Google path of its own. It reads the session token this page just
+    // stored, the same one the gallery and the account page use.
+    if (next === "publish") {
+      location.href = "/publish/";
+      return;
+    }
     if (next === "admin") {
       location.href = "https://hub.krate.tech/admin#token=" + encodeURIComponent(tok);
       return;

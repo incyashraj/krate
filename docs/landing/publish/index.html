@@ -195,6 +195,21 @@
       <h2><span class="n">1</span>Sign in</h2>
       <div id="auth-idle">
         <button class="primary" id="signin">Sign in with GitHub</button>
+        <!-- Google goes through /login/, not GitHub's device flow.
+             This page was GitHub-only because it drives that flow directly:
+             a code you type on github.com. Google has no equivalent, so the
+             second button hands off to the site's own sign-in page and comes
+             back with a session -- the same one the gallery and account page
+             already use. -->
+        <!-- Same size and shape as the GitHub button, one step quieter.
+             Two sign-in options should read as two options, not a button
+             and an afterthought; a link beside a solid button says the
+             second one is somehow lesser. -->
+        <a id="signin-google" href="/login/?next=publish"
+           style="display:inline-flex;align-items:center;justify-content:center;
+                  height:48px;padding:0 1.1rem;margin-left:.6rem;border-radius:12px;
+                  font:inherit;font-weight:500;color:var(--text);
+                  box-shadow:inset 0 0 0 1px var(--line-strong)">Sign in with Google</a>
         <p class="note" style="margin-top:.8rem">
           So the app carries your name. Krate asks for read-only access to your
           public profile and nothing else.
@@ -296,6 +311,33 @@
       const saved = localStorage.getItem("krate-identity");
       if (saved) { identity = JSON.parse(saved); showIdentity(); }
     } catch (_) {}
+
+    // Or a session from /login/ -- which is how anyone signing in with
+    // Google arrives here, since GitHub's device flow above has no Google
+    // equivalent. The hub answers /me for either kind of token, so the rest
+    // of this page does not care which door was used.
+    (async () => {
+      if (identity) return;
+      let tok = null;
+      try { tok = localStorage.getItem("krate_tok"); } catch (_) {}
+      if (!tok) return;
+      try {
+        const me = await fetch(HUB + "/me", {
+          headers: { authorization: "Bearer " + tok },
+        }).then((r) => (r.ok ? r.json() : null));
+        if (!me || !me.user) return;
+        identity = {
+          login: me.user.login,
+          name: me.user.name || me.user.login,
+          avatar_url: me.user.avatar_url || "",
+          token: tok,
+        };
+        localStorage.setItem("krate-identity", JSON.stringify(identity));
+        showIdentity();
+      } catch (_) {
+        // No session, or the hub is unreachable: the GitHub button still works.
+      }
+    })();
 
     $("signin").addEventListener("click", async () => {
       $("auth-idle").hidden = true;
