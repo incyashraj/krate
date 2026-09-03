@@ -23,6 +23,25 @@ primary_region = "iad"
   KRATE_ORIGIN = "https://krate.tech"
   KRATE_BUILD_TIMEOUT_MS = "900000"
 
+  # Opus, chosen by building the same app on all three and looking at what
+  # came out. Same request, same engine, same machine:
+  #
+  #   haiku-4-5   92 rounds  847s  broken layout -- overlapping controls,
+  #                                a clipped category chip, dead space
+  #   sonnet-5    10 rounds  224s  good
+  #   opus-5       7 rounds  304s  best, and the FEWEST rounds of the three
+  #
+  # Haiku was not cheap, it was slow and wrong: it passed every automated
+  # check and produced an app a stranger would judge broken. The rounds
+  # column is the tell -- capability shows up as less flailing.
+  KRATE_ANTHROPIC_MODEL = "claude-opus-5"
+
+  # What one app may cost before the loop stops. A typical Opus build is
+  # about $0.76; the 40 rounds the loop allows would run to roughly $7.72,
+  # and until now nothing was watching. This is four times a normal build --
+  # unreachable by an honest one, firm on a runaway.
+  KRATE_BUILD_BUDGET_USD = "3.50"
+
 [http_service]
   internal_port = 8080
   force_https = true

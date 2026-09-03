@@ -297,10 +297,22 @@ function plainFailure(tail) {
   if (/oauth|session expired|not signed in|no api key|unauthor|rate limit|quota|could not write the app/i.test(tail)) {
     return "Our AI could not be reached just now. This one is on us -- try again in a minute.";
   }
+  // The spend ceiling stopped a build that was not converging. Not a fault
+  // and not a refusal: the request was simply bigger than one build can
+  // carry, and the useful next move is a smaller one. Said without mentioning
+  // money, because the ceiling is ours and a person asking for an app should
+  // not have to think about our bill.
+  if (/more work than we allow|ceiling/i.test(tail)) {
+    return "That one grew bigger than a single build can carry. Try asking for the smaller version first -- you can add to it in Studio.";
+  }
   // The permission wall refusing a request is a different thing entirely:
   // the person asked for something Krate will not do, and saying so is the
   // wall working rather than a failure.
-  if (/refus|cannot do|will not/i.test(tail)) {
+  // "cannot build that" is the engine's actual wording; matching only
+  // "cannot do" meant a real refusal fell through to the generic sentence,
+  // so the one failure that HAS an actionable next step was the one that
+  // did not offer it.
+  if (/refus|cannot build|cannot do|will not/i.test(tail)) {
     return "That asks for something Krate cannot do yet. Try describing it another way.";
   }
   if (/timed out|timeout/i.test(tail)) {

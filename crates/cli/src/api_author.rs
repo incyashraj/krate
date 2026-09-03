@@ -32,6 +32,97 @@ use crate::api_key::{self, ApiVendor};
 /// and a runaway loop against a paid API is the person's money.
 const MAX_ROUNDS: usize = 40;
 
+/// The most one app may cost before the loop stops, in US dollars.
+///
+/// Rounds alone were never a spending limit, only a proxy for one, and a bad
+/// proxy: measured on this machine, the same request converged in 7 rounds on
+/// Opus and took 92 on Haiku. Priced out on Opus with the pack cached, the 40
+/// rounds allowed here run to about $7.72 -- an order of magnitude above the
+/// $0.76 a normal build costs. Nothing was watching that.
+///
+/// So the ceiling is the thing actually being protected: money. It is checked
+/// against the token counts the API itself returns, not an estimate, and a
+/// build that reaches it stops with a sentence the person can read.
+///
+/// The number is chosen to be unreachable by honest builds and firm on
+/// runaways: roughly four times a typical Opus build, and about the point
+/// where a loop is clearly not converging rather than merely having a hard
+/// day. `KRATE_BUILD_BUDGET_USD` overrides it.
+const DEFAULT_BUDGET_USD: f64 = 3.50;
+
+/// What a model charges, per million tokens: (input, output, cache write,
+/// cache read).
+///
+/// Only used to decide when to stop. An unknown model gets Opus's prices --
+/// the most expensive of the family -- because guessing low on a model we do
+/// not recognise would quietly raise the ceiling on exactly the runs we
+/// understand least.
+fn prices(model: &str) -> (f64, f64, f64, f64) {
+    if model.contains("haiku") {
+        (1.00, 5.00, 1.25, 0.10)
+    } else if model.contains("sonnet-5") {
+        (2.00, 10.00, 2.50, 0.20)
+    } else if model.contains("sonnet") {
+        (3.00, 15.00, 3.75, 0.30)
+    } else if model.contains("gpt-4o") {
+        (2.50, 10.00, 2.50, 1.25)
+    } else {
+        (5.00, 25.00, 6.25, 0.50)
+    }
+}
+
+/// What the run has cost so far, in dollars, from the API's own counts.
+#[derive(Default)]
+struct Spend {
+    input: u64,
+    output: u64,
+    cache_write: u64,
+    cache_read: u64,
+}
+
+impl Spend {
+    /// Add one reply's usage. Both vendors report the same four numbers under
+    /// different names; a field that is missing counts as zero rather than
+    /// failing the build, because a billing detail must never be the reason
+    /// somebody's app does not get made.
+    fn add(&mut self, vendor: ApiVendor, reply: &serde_json::Value) {
+        let usage = match vendor {
+            ApiVendor::Anthropic => &reply["usage"],
+            ApiVendor::OpenAi => &reply["usage"],
+        };
+        let n = |key: &str| usage.get(key).and_then(|v| v.as_u64()).unwrap_or(0);
+        match vendor {
+            ApiVendor::Anthropic => {
+                self.input += n("input_tokens");
+                self.output += n("output_tokens");
+                self.cache_write += n("cache_creation_input_tokens");
+                self.cache_read += n("cache_read_input_tokens");
+            }
+            ApiVendor::OpenAi => {
+                self.input += n("prompt_tokens");
+                self.output += n("completion_tokens");
+            }
+        }
+    }
+
+    fn dollars(&self, model: &str) -> f64 {
+        let (inp, out, cw, cr) = prices(model);
+        (self.input as f64 * inp
+            + self.output as f64 * out
+            + self.cache_write as f64 * cw
+            + self.cache_read as f64 * cr)
+            / 1_000_000.0
+    }
+}
+
+fn budget_usd() -> f64 {
+    std::env::var("KRATE_BUILD_BUDGET_USD")
+        .ok()
+        .and_then(|v| v.trim().parse::<f64>().ok())
+        .filter(|v| *v > 0.0)
+        .unwrap_or(DEFAULT_BUDGET_USD)
+}
+
 /// Cap on what a read_file tool call returns, so one enormous file cannot
 /// eat the whole context window.
 const MAX_READ_BYTES: usize = 60_000;
@@ -395,8 +486,29 @@ pub fn run(vendor: ApiVendor, app_dir: &str, request: &str) -> Result<u8> {
         )
     })];
 
+    let budget = budget_usd();
+    let mut spend = Spend::default();
+
     for round in 0..MAX_ROUNDS {
         let reply = call_api(vendor, &key, &model, &messages, &system)?;
+        spend.add(vendor, &reply);
+
+        // Checked after the call that was already paid for, not before the
+        // next one: the ceiling is about not STARTING more work once the
+        // build has clearly stopped converging. Overshooting by one round is
+        // the honest reading of a budget; refusing to admit the round just
+        // spent would not be.
+        let so_far = spend.dollars(&model);
+        if so_far >= budget {
+            anyhow::bail!(
+                "this app has taken more work than we allow for one build \
+                 (${so_far:.2} of a ${budget:.2} ceiling, {n} rounds). It is \
+                 usually a sign the request needs to be smaller or clearer. \
+                 Nothing further was spent.",
+                n = round + 1
+            );
+        }
+
         let (text, calls, stop) = parse_reply(vendor, &reply);
 
         if !text.trim().is_empty() {
@@ -568,5 +680,53 @@ mod tests {
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].name, "write_file");
         assert_eq!(calls[0].input["path"], "src/lib.rs");
+    }
+
+    #[test]
+    fn spend_is_read_from_the_api_not_guessed() {
+        // The four numbers Anthropic returns, including both cache fields --
+        // a build that only counted input and output would under-report and
+        // the ceiling would sit higher than it says.
+        let reply = serde_json::json!({
+            "usage": {
+                "input_tokens": 1_000,
+                "output_tokens": 2_000,
+                "cache_creation_input_tokens": 21_000,
+                "cache_read_input_tokens": 100_000,
+            }
+        });
+        let mut spend = Spend::default();
+        spend.add(ApiVendor::Anthropic, &reply);
+        spend.add(ApiVendor::Anthropic, &reply);
+
+        // Opus prices, doubled for two replies:
+        //   input  2,000 * $5.00   = $0.010
+        //   output 4,000 * $25.00  = $0.100
+        //   write 42,000 * $6.25   = $0.2625
+        //   read 200,000 * $0.50   = $0.100
+        let dollars = spend.dollars("claude-opus-5");
+        assert!(
+            (dollars - 0.4725).abs() < 1e-6,
+            "expected $0.4725, got ${dollars}"
+        );
+
+        // A cheaper model costs less for the very same tokens.
+        assert!(spend.dollars("claude-haiku-4-5") < dollars);
+    }
+
+    #[test]
+    fn an_unknown_model_is_priced_as_the_dearest_one() {
+        // Guessing low on a model we do not recognise would quietly raise the
+        // real ceiling on exactly the runs we understand least.
+        assert_eq!(prices("something-new-we-have-not-seen"), prices("claude-opus-5"));
+    }
+
+    #[test]
+    fn missing_usage_counts_as_zero_rather_than_failing() {
+        // A billing field we did not expect must never be the reason
+        // somebody's app does not get made.
+        let mut spend = Spend::default();
+        spend.add(ApiVendor::Anthropic, &serde_json::json!({}));
+        assert_eq!(spend.dollars("claude-opus-5"), 0.0);
     }
 }
