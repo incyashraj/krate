@@ -233,7 +233,27 @@ fn call_api(
             serde_json::json!({
                 "model": model,
                 "max_tokens": 8192,
-                "system": system,
+                // The authoring pack, marked cacheable.
+                //
+                // It is ~21,000 tokens and it is byte-identical on every
+                // round of the fix-it loop, so without this it is bought at
+                // full price eight or more times to build one app. Written
+                // once on the first round and read at a tenth of the price
+                // after that, which is close to half the cost of a build --
+                // on any model, with nothing given up, because the bytes the
+                // model sees do not change.
+                //
+                // This helps the FIRST person too, which is the part that is
+                // easy to get wrong: the saving is within one build, not
+                // across builds. Round 1 writes the cache and rounds 2..n
+                // read it. Cross-build reuse would need another build inside
+                // the five-minute window, which is not the common case and is
+                // not what this is for.
+                "system": [{
+                    "type": "text",
+                    "text": system,
+                    "cache_control": { "type": "ephemeral" }
+                }],
                 "tools": tool_schema(vendor),
                 "messages": messages,
             }),
