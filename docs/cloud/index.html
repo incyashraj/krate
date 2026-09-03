@@ -137,14 +137,16 @@ h1.page { font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
     if (!apps.length) { grid.innerHTML = '<p style="color:#71717a">Nothing here yet.</p>'; return; }
     grid.innerHTML = apps.map(function (a, i) {
       var m = a.meta;
-      // The app's own page, NOT /a/<hash>.
+      // The app's own page under /cloud/, NOT /app/ and NOT /a/<hash>.
       //
-      // A desktop browser asking for /a/<hash> gets redirected to the receive
-      // page -- "someone sent you an app", install Krate, here is how it
-      // opens. That is right for a link somebody was actually sent and wrong
-      // for a card in a gallery: nobody sent them anything, they clicked a
-      // picture and wanted to know what it was.
-      return '<a class="appc" style="animation-delay:' + (i * 0.05) + 's" href="/app/?a=' + esc(a.id) + '">'
+      // /a/<hash> is wrong because a desktop browser asking for it gets the
+      // receive page -- "someone sent you an app" -- which is right for a
+      // link somebody was sent and wrong for a card in a gallery.
+      //
+      // /app/ is wrong because Studio-in-a-tab lives there: linking a card
+      // to it opened the Studio editor in the browser instead of the app's
+      // page, which is what this comment is here to stop happening again.
+      return '<a class="appc" style="animation-delay:' + (i * 0.05) + 's" href="/cloud/app/?id=' + esc(a.id) + '">'
         + '<div class="shot"><img loading="lazy" src="' + esc(a.shot) + '" alt="" onerror="this.remove()" /></div>'
         + '<div class="b"><div class="nm">' + esc(m.name) + '</div>'
         + '<div class="by">' + (m.avatar_url ? '<img src="' + esc(m.avatar_url) + '" alt="" />' : '')
