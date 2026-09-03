@@ -1,0 +1,70 @@
+# The build box on Fly.
+#
+# Sized and configured around one fact: a build is a quarter of an hour of
+# solid CPU, and most of the day nobody is building at all. So the machine
+# stops when it is idle and starts again on the next request, and the money
+# only moves while a build is actually running.
+
+app = "krate-builder"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  KRATE_BIN = "/usr/local/bin/krate"
+  # The API loop, not a coding CLI. `--agent claude` would need the `claude`
+  # binary installed AND interactively signed in, which no server can do.
+  # `anthropic` drives the same authoring prompt over HTTP with a key from
+  # the environment -- the one authoring path that is honest on a headless
+  # machine.
+  KRATE_AGENT = "anthropic"
+  KRATE_HUB = "https://hub.krate.tech"
+  KRATE_ORIGIN = "https://krate.tech"
+  KRATE_BUILD_TIMEOUT_MS = "900000"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+
+  # Off when idle, on when someone builds. The wake is a few seconds, which
+  # lands inside the "reading what Krate can do" stage the page already
+  # shows, so nobody sees a spinner that means nothing.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+
+  # Zero, not one. A machine kept warm is a machine billed all night for
+  # nobody. The first build of the day pays a few seconds for the wake.
+  min_machines_running = 0
+
+  # One box, one build. The service already refuses a second build per
+  # account; this is the same guarantee at the machine level, and it is what
+  # keeps a queue of strangers from turning into a queue of AI bills.
+  [http_service.concurrency]
+    type = "requests"
+    hard_limit = 25
+    soft_limit = 20
+
+  # A build runs for minutes with nothing to say on the socket. The default
+  # health check would call the machine dead halfway through and kill a
+  # person's app mid-compile.
+  [[http_service.checks]]
+    grace_period = "30s"
+    interval = "30s"
+    timeout = "10s"
+    method = "GET"
+    path = "/health"
+
+# Two shared CPUs and 4 GB. A Rust build is not parallel enough to use more,
+# and rustc's peak on a small guest app measured well under this.
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "4gb"
+
+# The warm cache, and the reason a second build is faster than the first.
+# Everything under /work -- the cargo registry, the compiled dependency
+# cache, the scratch build directories -- lives here and survives the
+# machine stopping. Without it every wake re-downloads crates.io.
+[[mounts]]
+  source = "krate_build_cache"
+  destination = "/work"

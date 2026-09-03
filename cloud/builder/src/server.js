@@ -47,6 +47,30 @@ const STAGE_RULES = [
 ];
 const STAGE_ORDER = ["read", "write", "test", "done"];
 
+/* Whether this box can author at all.
+ *
+ * The service can be deployed with no AI key -- and is, deliberately, so the
+ * machine and its DNS can go live and be checked before a single build is
+ * paid for. What must not happen is accepting the request anyway: `krate
+ * create` would start, spend a minute setting up, and die with the engine's
+ * own error, which the person reads as "this product is broken" rather than
+ * "this is switched off".
+ *
+ * So the refusal happens at the door, before a process is spawned, and it
+ * says which of the two it is.
+ *
+ * A CLI provider needs no key here: it carries its own sign-in. Only the API
+ * vendors spend a key that has to be present in this environment.
+ */
+const API_AGENTS = { anthropic: "ANTHROPIC_API_KEY", openai: "OPENAI_API_KEY" };
+
+function authoringOff() {
+  const needs = API_AGENTS[AGENT];
+  if (!needs) return null;
+  if (process.env[needs]) return null;
+  return "Making apps in the browser is not switched on yet. Krate Studio is free, and it makes apps on your own machine.";
+}
+
 /* ---- the wall ------------------------------------------------------------
  * Asked of the hub, never of the browser. A counter the page owns is a
  * counter anyone can edit, and this one costs us money to be wrong about.
@@ -220,7 +244,19 @@ async function startBuild({ request, token, account, device }) {
  * is swallowed rather than allowed to fail the job. */
 async function takeShot(bundle, shotPath) {
   return new Promise((resolve) => {
-    const proc = spawn(KRATE, ["run", bundle, "--shoot", shotPath, "--consent"], {
+    // --auto-grant, NOT --consent. `--consent` opens a native permission
+    // window on macOS and falls back to a TERMINAL PROMPT everywhere else --
+    // so on the Linux build box any app that asked for a capability (a
+    // checklist asking to save its items is enough) stopped dead waiting for
+    // an answer from a terminal that does not exist, and exited 5. The
+    // failure was invisible: this function swallows errors by design, so the
+    // app still shipped, just with no picture, and nothing said why.
+    //
+    // Granting everything is right here and only here: this is Krate running
+    // an app it just built itself, for one headless second, to photograph it.
+    // Nobody is being asked to trust anything -- the consent that matters
+    // happens on the person's own machine when they open the file.
+    const proc = spawn(KRATE, ["run", bundle, "--shoot", shotPath, "--auto-grant"], {
       env: { ...process.env, KRATE_SHOOT_AFTER_MS: "1200" },
     });
     const give = setTimeout(() => { try { proc.kill("SIGKILL"); } catch (e) {} }, 45000);
@@ -300,7 +336,15 @@ const server = createServer(async (req, res) => {
 
   try {
     if (req.method === "GET" && url.pathname === "/health") {
-      return json(res, 200, { ok: true, building: activeByAccount.size });
+      // `authoring` is the answer to "is this box switched on", which is
+      // otherwise only discoverable by starting a build. It reports whether
+      // a key is present, never anything about the key itself.
+      return json(res, 200, {
+        ok: true,
+        building: activeByAccount.size,
+        authoring: authoringOff() ? "off" : "on",
+        agent: AGENT,
+      });
     }
 
     if (req.method === "POST" && url.pathname === "/build") {
@@ -309,6 +353,15 @@ const server = createServer(async (req, res) => {
       const device = String(body.device || "").trim();
       if (!request) return send(res, 400, "Say what to make.");
       if (request.length > 2000) return send(res, 400, "That is longer than we can work from.");
+
+      // Before the wall, and before any process: a box with no key cannot
+      // make anything, and saying so costs nothing. Sent as the same shape
+      // the wall uses, so the page already knows how to offer the download
+      // instead of showing a bare failure.
+      const off = authoringOff();
+      if (off) {
+        return json(res, 503, { wall: true, download: true, message: off });
+      }
 
       const allowed = await allowedToBuild(token, device);
       if (!allowed.ok) {
@@ -412,3 +465,33 @@ function send(res, status, body) {
 server.listen(PORT, () => {
   console.log(`krate builder on :${PORT} (engine: ${KRATE}, agent: ${AGENT})`);
 });
+
+/* Shut down when told to.
+ *
+ * This process is PID 1 in its container, and PID 1 does NOT get the default
+ * signal handlers -- an unhandled SIGTERM is simply ignored, so the host
+ * waits out its whole grace period and then kills the machine. Every deploy
+ * would stall, and any build running at the time would die at the hard kill
+ * instead of the polite one.
+ *
+ * Handling it explicitly turns that into a real shutdown: stop taking new
+ * work, end the builds in flight (their compilers are children and would
+ * otherwise be orphaned), and go.
+ */
+let leaving = false;
+for (const signal of ["SIGTERM", "SIGINT"]) {
+  process.on(signal, () => {
+    if (leaving) return;
+    leaving = true;
+    server.close();
+    for (const job of jobs.values()) {
+      if (job.proc && job.state === "working") {
+        job.state = "stopped";
+        try { job.proc.kill("SIGTERM"); } catch (e) {}
+      }
+    }
+    // A moment for the children to go, then leave regardless. Waiting on
+    // them forever would recreate the hang this handler exists to prevent.
+    setTimeout(() => process.exit(0), 2000).unref();
+  });
+}
