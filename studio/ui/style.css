@@ -58,6 +58,36 @@
   --radius-card: 14px;
   --radius-pill: 999px;
 
+  /* ---- glass ----------------------------------------------------------
+   * One material, defined once, worn by the rail, the composer, the dock
+   * and the cards. Four properties make it read as glass rather than as a
+   * grey box with see-through turned on:
+   *
+   *   tint       barely there. Glass is mostly what is behind it.
+   *   blur       enough to smear text underneath into colour, not shapes.
+   *   saturate   what a real lens does: colour behind it comes back richer,
+   *              and without this the blur greys everything and looks like
+   *              fog on a window rather than glass.
+   *   highlight  a 1px inner line along the TOP edge only, which is the
+   *              lit rim of a pane catching light from above. This is the
+   *              single detail that separates Apple's material from a flat
+   *              translucent panel, and it is why their inputs look
+   *              physical at any size.
+   *
+   * Two strengths, because chrome and content want different things. The
+   * chrome (rail, dock, composer) is thinner and blurs harder -- it floats
+   * over the work. Cards are denser: they hold text that has to stay
+   * crisply readable, and a card you can see through is a card with no
+   * hierarchy. That is why the references reserve heavy glass for chrome.
+   */
+  --glass-chrome: rgba(255, 255, 255, 0.045);
+  --glass-card: rgba(255, 255, 255, 0.028);
+  --glass-blur: blur(24px) saturate(1.7);
+  --glass-blur-soft: blur(16px) saturate(1.4);
+  --glass-edge: rgba(255, 255, 255, 0.085);
+  --glass-edge-soft: rgba(255, 255, 255, 0.055);
+  --glass-lit: rgba(255, 255, 255, 0.09);
+
   /* macOS overlays its traffic lights on our content; a fixed strip height
      and a reserved run mean the top of the window is aligned by
      construction, not by a per-screen padding guess. */
@@ -450,8 +480,22 @@ body.windows.light .titlebar .side-toggle:hover { color: #000; }
 .app-card {
   position: relative;
   text-align: left;
-  background: var(--panel);
-  border: 1px solid var(--line);
+  /* Card glass is DENSER than chrome glass, deliberately. A card holds a
+     name and a line of description that have to stay crisply readable, and
+     a card you can see through is a card with no hierarchy -- which is why
+     the references reserve heavy blur for chrome and keep cards nearly
+     solid. This is the lighter blur and a thinner tint over the panel: it
+     picks up a hint of what is behind it at the edges without ever letting
+     the page compete with the label. */
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.032),
+    rgba(255, 255, 255, 0.012)
+  ), var(--panel);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  border: 1px solid var(--glass-edge-soft);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
   border-radius: var(--radius-card);
   overflow: hidden;
   cursor: pointer;
@@ -526,13 +570,34 @@ body.windows.light .titlebar .side-toggle:hover { color: #000; }
 
 .composer-box {
   display: flex; align-items: flex-end; gap: 8px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  /* The lozenge. This is the one control the person actually touches, so
+     it gets the full material: a barely-there tint, a real blur, and the
+     lit top rim that makes it sit forward of the page.
+     Radius is larger than the card radius on purpose -- the references all
+     use a soft, almost pill-like input, and a 12px corner on a 48px-tall
+     field reads as a text box while an 18px one reads as a surface. */
+  background: var(--glass-chrome);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-edge);
+  border-radius: 18px;
+  box-shadow:
+    inset 0 1px 0 var(--glass-lit),
+    0 8px 28px rgba(0, 0, 0, 0.34);
   padding: 10px 10px 10px 14px;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
 }
-.composer-box:focus-within { border-color: var(--line-strong); }
+/* Focus lifts the glass rather than drawing a ring around it: the rim
+   brightens and the shadow deepens, the way a pane tilts into the light.
+   A coloured outline would be the one loud thing on an otherwise quiet
+   screen. */
+.composer-box:focus-within {
+  background: rgba(255, 255, 255, 0.062);
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.13),
+    0 10px 34px rgba(0, 0, 0, 0.42);
+}
 .composer-box textarea {
   flex: 1; background: none; border: none; outline: none; resize: none;
   color: var(--text); font: 400 14px/1.55 var(--sans);
@@ -2012,58 +2077,20 @@ img.cloud-icon { object-fit: cover; }
  * Blue, because the product is blue. It sits behind everything on the
  * home view and dims when a page is scrolled, so content stays readable
  * over it. */
-/* The horizon: an aurora dome rising from the bottom of the window --
- * Lovable's layered warmth translated to night. A bright periwinkle heart
- * low at center, a rose halo around it, an indigo body, and a wide deep
- * field, every layer a soft radial so the colors melt into each other and
- * into the black with no edge anywhere. The dome is highest at center and
- * falls away toward the sides. */
-/* The ground under everything.
+/* Nothing behind the app.
  *
- * The look is a printed poster, not a lens flare: hard-edged sheets of
- * violet light crossing a dark field, with heavy crisp grain sitting ON
- * the colour. That is what makes it read as sharp. The old version blurred
- * everything 46px, which is the opposite -- a soft glow has no edges to be
- * sharp, and grain over a blur just looks like noise.
+ * There used to be a violet dome here with hard-edged blades, a starfield
+ * and per-pixel grain -- drawn on a canvas because CSS could not give both
+ * a real edge and grain riding it. It was the most interesting code in the
+ * UI and the wrong thing to look at: the app someone is building is the
+ * subject, and a lit poster behind it competes for the same attention.
  *
- * So: the colour forms keep their edges (conic and steep linear stops,
- * blurred only enough to avoid a jagged line), and the grain is dense,
- * high-contrast, and masked to where the colour is.
+ * The ground is now the panel colour and nothing else. What gives the
+ * window depth instead is the GLASS -- the rail, the composer, the dock and
+ * the cards are translucent and blur what passes behind them, so depth
+ * comes from the app's own surfaces rather than from a picture underneath.
  */
-/* The field is drawn on a canvas now, not stacked out of gradients.
- *
- * The look wanted is a printed poster: hard-edged sheets of light with
- * grain riding the boundary between light and dark. CSS gradients cannot
- * do that -- a gradient's edge is either a hard band with visible stair
- * steps, or it is blurred, and a blur has no edge for grain to sit on.
- * Drawing it per pixel gives both: a real edge, and noise computed
- * against the local brightness so the speckle is heaviest exactly where
- * the light falls off.
- *
- * .horizon is kept as the ground colour under the canvas, so the window
- * is never bare black for the frame before the first paint. */
-.horizon {
-  position: fixed; left: 0; right: 0; bottom: 0; height: 74vh;
-  pointer-events: none; z-index: 0;
-  transition: opacity 0.5s ease;
-  background: radial-gradient(80% 100% at 50% 100%,
-    rgba(38, 30, 116, 0.55), transparent 74%);
-}
-
-/* One canvas for the whole field: colour, edges and grain together. */
-.stars {
-  position: fixed; inset: 0; width: 100%; height: 100%;
-  pointer-events: none; z-index: 0; display: block;
-  transition: opacity 0.5s ease;
-}
-
-/* The canvas draws its own grain per pixel, so the old CSS noise layers
-   are gone: two tiled SVG turbulence images over the whole window cost
-   more and could only sit ON TOP of the colour rather than inside it. */
-.grain { display: none; }
-
-body.scrolled .horizon { opacity: 0.45; }
-body.scrolled .stars { opacity: 0.45; }
+.horizon, .stars, .grain { display: none; }
 
 /* ---- the dock ----------------------------------------------------------
  * One element for the whole app, outside every view, so switching pages
@@ -2083,12 +2110,19 @@ body.scrolled .dockwrap { bottom: 13px; }
 
 .dock {
   display: flex; align-items: center; gap: 2px; padding: 5px;
-  background: rgba(14, 16, 19, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  /* The same material as the rail, the composer and the cards -- through
+     the tokens, so there is one definition of glass in the app and not
+     four that drift apart. The lit top rim is new: the dock had the blur
+     and the tint but not the highlight, which is why it read as a dark
+     pill rather than as a pane. */
+  background: rgba(14, 16, 19, 0.58);
+  border: 1px solid var(--glass-edge);
   border-radius: var(--radius-pill); position: relative;
-  backdrop-filter: blur(26px) saturate(1.3);
-  -webkit-backdrop-filter: blur(26px) saturate(1.3);
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.5);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow:
+    inset 0 1px 0 var(--glass-lit),
+    0 14px 40px rgba(0, 0, 0, 0.5);
   transition: background 0.35s ease, border-color 0.35s ease, box-shadow 0.35s ease;
 }
 body.scrolled .dock {
@@ -2451,6 +2485,30 @@ body.light .dock-solo,
 body.scrolled.light .dock-solo {
   background: rgba(255, 255, 255, 0.9); border-color: rgba(13, 16, 21, 0.1);
 }
+
+/* The composer on paper. The dark theme's focus state brightens a white
+   tint and a white rim, both of which are invisible here, so the same
+   gesture is expressed the other way: the pane whitens toward solid and
+   its shadow deepens, which is what a card lifting off paper does. */
+body.light .composer-box {
+  box-shadow:
+    inset 0 1px 0 var(--glass-lit),
+    0 6px 20px rgba(12, 16, 23, 0.07);
+}
+body.light .composer-box:focus-within {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(12, 16, 23, 0.18);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 8px 26px rgba(12, 16, 23, 0.12);
+}
+/* Cards on paper: a plain white face with an ink hairline. The dark
+   theme's white-on-white gradient would be invisible. */
+body.light .app-card {
+  background: var(--panel);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
 body.light .composer-shell .bigbar,
 body.light .set-row, body.light .conn-row, body.light .prof-head,
 body.light .upd, body.light .skel-card {
@@ -2479,6 +2537,21 @@ body.light {
   --line: #dde2ea;
   --line-strong: #c2cad8;
   --text: #0c1017;
+
+  /* Glass has to be INVERTED on paper, not merely dimmed.
+     Every value in the dark palette is white at a low alpha: a lit rim, a
+     pale tint, a bright hairline. On a white page all three vanish -- white
+     on white is nothing -- so the composer lost its edge entirely and read
+     as a hole rather than a surface.
+     On paper the same physics point the other way: a pane over white casts
+     a faint shade, and its edge is DARKER than what surrounds it. So the
+     tint goes slightly dark, the rim becomes a soft shadow rather than a
+     highlight, and the borders are ink at low alpha. */
+  --glass-chrome: rgba(255, 255, 255, 0.62);
+  --glass-card: rgba(255, 255, 255, 0.52);
+  --glass-edge: rgba(12, 16, 23, 0.10);
+  --glass-edge-soft: rgba(12, 16, 23, 0.07);
+  --glass-lit: rgba(255, 255, 255, 0.85);
   /* Weightier than a straight flip of the dark values.
      Ink on paper needs more of it than light on black to read as the same
      strength. At 0.6 / 0.4 / 0.16 the secondary lines measured 2.6:1 and
@@ -2540,8 +2613,6 @@ body.light .horizon {
  * window. The painting code has no idea which theme is on -- it is one code
  * path by design -- so the theme is applied here rather than forking the
  * renderer. `multiply` keeps it a tint of the page, not a film over it. */
-body.light .stars { opacity: 0.16; mix-blend-mode: multiply; }
-body.scrolled.light .stars { opacity: 0.10; }
 
 body.light .grain { opacity: 0.1; mix-blend-mode: multiply; }
 
@@ -2651,12 +2722,13 @@ body.light .thumb-well { background: var(--panel-raised); }
 #viewOnboard { position: relative; overflow: hidden; }
 
 /* A wash behind the cards so they sit in a space rather than on a wall. */
-.ob-sky {
-  position: absolute; inset: 0; pointer-events: none; z-index: 0;
-  background:
-    radial-gradient(80% 55% at 50% 34%, rgba(124, 108, 255, 0.16), transparent 70%),
-    radial-gradient(70% 50% at 50% 108%, rgba(74, 70, 216, 0.4), transparent 66%);
-}
+/* Onboarding is the first thing anybody sees, so it has to be the same
+   product as the rest of the app. It had its own violet sky -- two big
+   radial washes -- which survived the field's removal and would have left
+   the welcome screen glowing while every screen after it was calm. The
+   fan of real apps is the colour on this screen now, which is the right
+   thing to be looking at anyway. */
+.ob-sky { display: none; }
 
 .ob-skip {
   position: absolute; top: 20px; right: 22px; z-index: 20;
@@ -3178,10 +3250,20 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
      to the drawer follows without a second source of truth. */
   width: var(--side-w, 240px); flex: none;
   display: flex; flex-direction: column;
-  /* Token, not #0F0F10: the drawer is 240px of the window, and hardcoded it
-     was a black column standing beside a white page. */
-  background: var(--side-bg, #0F0F10);
-  border-right: 1px solid var(--line);
+  /* Glass, not a panel. The rail sits OVER the page rather than beside it,
+     so it should carry what is behind it -- the page's own content sliding
+     under the rail is what makes the edge read as a pane of glass instead
+     of a black column parked on top.
+     The tint still has to be dense enough to keep the rows legible over
+     whatever scrolls under them, so this is heavier than the chrome token:
+     a rail you can read the page through is a rail nobody can read. */
+  background: color-mix(in srgb, var(--side-bg, #0F0F10) 72%, transparent);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-right: 1px solid var(--glass-edge-soft);
+  /* The lit rim, down the inner edge rather than the top: this pane is
+     vertical, and the light in the window comes from the content side. */
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.03);
   /* No top padding: the mark sits in the window's corner, level with the
      title bar, the way every desktop app puts its identity. The rows keep
      their own side padding. */
@@ -3432,10 +3514,15 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
   margin: 0 auto;
   /* Through the token, not #131315: hardcoded, this stayed a black slab
      across the bottom of a paper-white page. */
-  background: var(--shelf-bg, #131315);
-  border: 1px solid var(--line);
+  /* Glass, so the page scrolling underneath shows through the floor of
+     the window rather than disappearing behind an opaque slab. */
+  background: color-mix(in srgb, var(--shelf-bg, #131315) 74%, transparent);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-edge-soft);
   border-bottom: 0;
   border-radius: 16px 16px 0 0;
+  box-shadow: inset 0 1px 0 var(--glass-lit);
   padding: 12px 16px 20px;
   z-index: 3;
 }
@@ -3740,8 +3827,6 @@ body.side-resizing .side-grip { pointer-events: auto; }
  * Dimmer here than on the home screen. Home is a room you are standing in;
  * a session is work you are reading, and the same field behind a wall of
  * text competes with it. */
-body.session-view .stars { opacity: 0.3; }
-body.session-view .horizon { opacity: 0.35; }
 
 /* The drawer's two top rows.
  *
