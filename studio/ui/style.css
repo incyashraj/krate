@@ -1777,9 +1777,36 @@ img.cloud-icon { object-fit: cover; }
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.4);
   transition: border-color 0.15s, box-shadow 0.15s;
 }
+/* Focus: the pane lifts, it does not light up.
+ *
+ * This was a violet ring -- a 3px halo in a colour the app no longer uses
+ * anywhere, left behind by the palette that went with the starfield. On a
+ * screen whose whole point is calm, a glowing outline is the loudest thing
+ * in the window, and Krate focuses this box on launch, so that glow would
+ * have been the FIRST thing anybody saw.
+ *
+ * Instead the rim brightens and the shadow deepens: the same gesture the
+ * session composer uses, and what a real pane tilting into the light does.
+ * Enough to say "the cursor is here", not enough to be a decoration. */
 .bigbar:focus-within {
-  border-color: rgba(124, 108, 255, 0.55);
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.4), 0 0 0 3px rgba(124, 108, 255, 0.12);
+  background: rgba(255, 255, 255, 0.062);
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.13),
+    0 30px 66px -30px rgba(0, 0, 0, 0.9);
+}
+body.light .bigbar {
+  background: var(--glass-chrome);
+  box-shadow:
+    inset 0 1px 0 var(--glass-lit),
+    0 20px 50px -28px rgba(12, 16, 23, 0.35);
+}
+body.light .bigbar:focus-within {
+  background: rgba(255, 255, 255, 0.94);
+  border-color: rgba(12, 16, 23, 0.18);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 22px 54px -28px rgba(12, 16, 23, 0.45);
 }
 .bigbar textarea {
   width: 100%; border: none; background: none; outline: none; resize: none;
@@ -3500,12 +3527,20 @@ body.light .side-key { background: rgba(12, 16, 23, 0.05); border-color: rgba(12
  * came here to use. */
 .composer-shell { width: min(680px, 100%); }
 .bigbar {
-  background: #1A1A1C;
-  border: 1px solid rgba(255,255,255,0.08);
+  /* The same glass as every other surface. This is the one control the
+     whole home screen exists to point at, and it was the only chrome still
+     wearing a hardcoded opaque panel -- so it read as a box sitting on the
+     page while the rail and the dock read as panes over it. */
+  background: var(--glass-chrome);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-edge);
   border-radius: 20px;
   padding: 18px 20px 0;
-  box-shadow: 0 26px 60px -30px rgba(0,0,0,0.85);
-  transition: border-color 0.2s, box-shadow 0.3s;
+  box-shadow:
+    inset 0 1px 0 var(--glass-lit),
+    0 26px 60px -30px rgba(0, 0, 0, 0.85);
+  transition: border-color 0.2s, box-shadow 0.3s, background 0.2s;
 }
 .bigbar:focus-within {
   border-color: rgba(255,255,255,0.17);

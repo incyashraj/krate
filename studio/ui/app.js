@@ -457,6 +457,29 @@ async function enterHome() {
   renderShelf();
   renderBuilding();
   refreshAgents();
+
+  /* Land in the box.
+   *
+   * Home asks a question -- "What are we building?" -- and the answer is
+   * typed into the field right under it, so the cursor should already be
+   * there. It was not: onboarding focused the box on its last step, but a
+   * normal launch put focus nowhere, and the first keystroke of every
+   * session went into the void.
+   *
+   * Deferred a frame because showView has just swapped which view is
+   * visible, and focusing an element that is still display:none silently
+   * does nothing.
+   *
+   * Skipped when something else already has focus -- a person who reopened
+   * the window mid-search should not have the caret yanked out of it.
+   */
+  requestAnimationFrame(() => {
+    const box = $("homePrompt");
+    if (!box || box.offsetParent === null) return;
+    const busy = document.activeElement;
+    if (busy && (busy.tagName === "INPUT" || busy.tagName === "TEXTAREA" || busy.isContentEditable)) return;
+    box.focus({ preventScroll: true });
+  });
 }
 
 /* A build keeps running while you browse. Without this the home screen looked
@@ -635,6 +658,9 @@ function newSession(firstRequest) {
     messages: [],
     result: null,
   };
+  // Same reason as openSession: starting fresh moves which session is
+  // current, and the rail is showing the old one until it is told.
+  if (window.__paintDrawerSessions) window.__paintDrawerSessions();
 }
 
 function openSession(s) {
@@ -662,6 +688,11 @@ function openSession(s) {
   state.planning = null;
   state.session = building ? state.buildingSession : s;
   state.attachments = [];
+  // The rail marks the session you are IN, so it has to be told when that
+  // changes. It was not: the mark stayed on whichever row was current when
+  // the drawer last painted, so opening a second session left the first one
+  // still looking selected -- the rail quietly disagreeing with the screen.
+  if (window.__paintDrawerSessions) window.__paintDrawerSessions();
   $("railTitle").textContent = state.session.title;
   $("thread").innerHTML = "";
   const msgs = state.session.messages;
@@ -6335,5 +6366,6 @@ $("aiRefresh")?.addEventListener("click", async () => {
     try { localStorage.setItem(KEY, String(parseInt(getComputedStyle(side).width, 10))); } catch (x) { }
   });
 })();
+
 
 
