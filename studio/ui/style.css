@@ -3222,15 +3222,27 @@ body.resizing .divider::after { background: var(--blue); }
 .divider:hover, .divider.dragging, body.resizing .divider { background: transparent; }
 
 /* The AI picker's note and Refresh row (K-194). */
-.ai-note {
-  color: var(--faint); font-size: 12px; line-height: 1.55;
-  margin: -6px 0 14px;
-}
+/* The old rule here pulled this paragraph UP with margin-top: -6px, back
+   when it sat directly under the intro text. It now follows the refresh
+   button, so the negative margin dragged it into the button's own line --
+   the collision. Styled once, below, with real space above it. */
+/* Refresh, its result, and the standing hint -- three things that were
+ * laid out as two.
+ *
+ * The note sat inline beside the button and the hint paragraph sat directly
+ * under both, so a refresh result appeared mid-air between them and the
+ * three lines read as one run-on sentence. The note belongs on its own
+ * line under the button, and the hint needs air above it to be a separate
+ * thought rather than a continuation. */
 .ai-actions {
-  display: flex; align-items: center; gap: 12px;
-  margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line);
+  display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+  margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--glass-edge-soft);
 }
-.ai-refresh-note { color: var(--faint); font-size: 12px; }
+.ai-refresh-note { color: var(--faint); font-size: 12px; line-height: 1.5; }
+.ai-note {
+  margin-top: 14px;
+  color: var(--quiet); font-size: 12px; line-height: 1.6;
+}
 
 /* ------------------------------------------------------------- send sheet */
 /* Three ways to send, the card first. Buttons read as choices, not a form. */

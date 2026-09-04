@@ -2594,7 +2594,17 @@ function openAiSheet() {
     p.textContent = state.agentsError;
     list.appendChild(p);
   }
+  /* Installed tools only.
+   *
+   * `krate ai --json` lists the API vendors alongside the CLIs, which is
+   * right for the engine -- they are both ways to author. It is wrong for
+   * this pane: "Anthropic - needs an API key" under a heading that says
+   * INSTALLED TOOLS reads as a tool you failed to install, and the fix for
+   * it is the pane next door. They appear there, with a field to paste the
+   * key into, which is the only place a key can actually be given. */
+  const API_VENDORS = new Set(["anthropic", "openai"]);
   for (const a of state.agents) {
+    if (API_VENDORS.has(a.name)) continue;
     const row = document.createElement("div");
     row.className = "ai-row";
     const dot = a.state === "working" ? "ok" : a.state === "not-ready" ? "warn" : "bad";
@@ -6647,6 +6657,7 @@ $("aiRefresh")?.addEventListener("click", async () => {
     try { localStorage.setItem(KEY, String(parseInt(getComputedStyle(side).width, 10))); } catch (x) { }
   });
 })();
+
 
 
 
