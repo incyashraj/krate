@@ -4830,8 +4830,18 @@ $("logoutBtn").addEventListener("click", async () => {
   clearTimeout(state.gateFallback);
   state.gateFallback = setTimeout(() => $("loginBtn").classList.remove("hidden"), 15000);
 });
-document.querySelectorAll(".sheet-close").forEach((b) =>
-  b.addEventListener("click", () => $(b.dataset.close).classList.add("hidden")),
+/* Every close button, by what it DOES rather than what it looks like.
+ *
+ * This bound to .sheet-close, which is a styling class -- so when the AI
+ * dialog was rebuilt with the settings dialog's .set-close button, it kept
+ * the data-close attribute that says which panel to shut and lost the
+ * listener that reads it. The button was correct and inert.
+ *
+ * Selecting on [data-close] fixes that permanently: the attribute is the
+ * contract, and any button that carries it closes what it names no matter
+ * which class it wears. */
+document.querySelectorAll("[data-close]").forEach((b) =>
+  b.addEventListener("click", () => $(b.dataset.close)?.classList.add("hidden")),
 );
 document.querySelectorAll(".sheet-wrap").forEach((w) =>
   w.addEventListener("click", (e) => { if (e.target === w) w.classList.add("hidden"); }),
@@ -6657,6 +6667,8 @@ $("aiRefresh")?.addEventListener("click", async () => {
     try { localStorage.setItem(KEY, String(parseInt(getComputedStyle(side).width, 10))); } catch (x) { }
   });
 })();
+
+
 
 
 

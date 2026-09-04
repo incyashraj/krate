@@ -2588,7 +2588,16 @@ body.light .set-side { background: rgba(12, 16, 23, 0.03); }
   position: relative; z-index: 1;
 }
 .home-v2 .display { text-align: center; text-wrap: balance; }
-.sugg-list { width: min(660px, 100%); margin-top: 14px; }
+/* The same width as the box above, because they are one column.
+ *
+ * The list was min(660px, 100%) against the composer's min(620px, 86vw) --
+ * 40px wider, invisible while the rows were transparent and obvious the
+ * moment one is hovered: the highlight sticks out past the prompt box on
+ * both sides and the column stops looking aligned.
+ *
+ * Written the same way rather than as 620px, so the two cannot drift apart
+ * again the next time one of them is adjusted. */
+.sugg-list { width: min(620px, 86vw); margin-top: 14px; }
 .sugg-list button {
   width: 100%; display: flex; align-items: center; gap: 11px; font-family: var(--sans);
   font-size: 13.5px; color: var(--muted); background: transparent; border: 0;
