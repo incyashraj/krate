@@ -5322,7 +5322,84 @@ async function loadAppsPage() {
 }
 
 /* ---- settings page ----------------------------------------------------- */
+/* Give each settings section one panel and a nav entry.
+ *
+ * Done in code rather than in the markup because the alternative is a
+ * hand-written list of section names beside the sections themselves --
+ * two things to keep in step, and the copy that goes stale is always the
+ * one nobody is looking at. Reading the <h2>s means a section added to the
+ * HTML appears in the nav by existing.
+ *
+ * Idempotent: settings can be opened many times in one run, and wrapping
+ * the rows twice would nest panels inside panels.
+ */
+/* Wrap each section's rows in one panel. Shared by settings and profile,
+ * which are the same shape and were drifting apart by being styled twice. */
+function dressGroups(scope) {
+  for (const group of document.querySelectorAll(`${scope} .set-group`)) {
+    const heading = group.querySelector("h2");
+    if (!heading) continue;
+    if (group.querySelector(":scope > .set-panel")) continue;
+    const rows = [...group.children].filter((el) => el !== heading);
+    if (!rows.length) continue;
+    const panel = document.createElement("div");
+    panel.className = "set-panel";
+    heading.after(panel);
+    panel.append(...rows);
+  }
+}
+
+function dressSettings() {
+  dressGroups("#viewSettings");
+  const nav = $("setNav");
+  if (!nav) return;
+  nav.innerHTML = "";
+
+  const groups = [...document.querySelectorAll("#viewSettings .set-group")];
+  const buttons = [];
+
+  for (const group of groups) {
+    const heading = group.querySelector("h2");
+    if (!heading) continue;
+
+    // An id to jump to, derived from the heading rather than invented.
+    if (!group.id) {
+      group.id = "set-" + heading.textContent.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    }
+
+    // A hidden section (the terminal group on a machine that has the
+    // command already) must not appear in the nav pointing at nothing.
+    if (group.classList.contains("hidden")) continue;
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = heading.textContent.trim();
+    button.dataset.target = group.id;
+    button.addEventListener("click", () => {
+      group.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    nav.appendChild(button);
+    buttons.push({ button, group });
+  }
+
+  // Mark whichever section is on screen. An observer rather than a scroll
+  // handler: the browser already knows what is visible, and recomputing it
+  // on every scroll frame is work for an answer that is already available.
+  if (buttons.length && "IntersectionObserver" in window) {
+    const seen = new Map();
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) seen.set(entry.target, entry.isIntersecting);
+      const current = buttons.find(({ group }) => seen.get(group));
+      for (const { button, group } of buttons) {
+        button.classList.toggle("on", !!current && group === current.group);
+      }
+    }, { rootMargin: "-12% 0px -70% 0px" });
+    for (const { group } of buttons) observer.observe(group);
+  }
+}
+
 async function loadSettingsPage() {
+  dressSettings();
   try {
     const settings = await invoke("settings_get");
     const dir = $("setOutDir");
@@ -5495,6 +5572,10 @@ async function runUpdate(latest) {
 
 /* ---- profile page ------------------------------------------------------ */
 async function loadProfilePage() {
+  // The same grouping settings gets: one panel per section, rows divided by
+  // hairlines. No nav here -- three sections fit on a screen, and a nav
+  // pointing at what is already visible is furniture.
+  dressGroups("#viewProfile");
   try {
     const account = await invoke("account_status");
     const name = account?.name || account?.login || "Signed in";
@@ -5514,16 +5595,16 @@ async function loadProfilePage() {
     // Connected, and a way back out. Sign-out used to live only in the
     // account sheet, which nothing opens now that the avatar goes to this
     // page -- so it moves here, beside the account it signs out of.
+    // Connected, and nothing else. This row used to carry a Sign out button
+    // too -- with the SAME id as the one in Your account below, so the page
+    // had two elements sharing an id and offered the same destructive action
+    // twice, eight rows apart. Sign out belongs in Your account: it is about
+    // the account, not about GitHub, it has room for the sentence that says
+    // the apps stay on this computer, and it is still there when no provider
+    // is connected at all.
     $("connGhAct").innerHTML = account?.login
       ? '<span class="linked"><svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5.2l2 2L8 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Connected</span>'
-        + '<button class="set-mini" id="profSignOut">Sign out</button>'
       : '<button class="set-mini" data-connect="github">Connect</button>';
-    $("profSignOut")?.addEventListener("click", async () => {
-      try { await invoke("account_logout"); } catch (e) {}
-      state.account = null;
-      loadProfilePage();
-      paintGreeting();
-    });
   } catch (e) { /* signed out; the page still renders */ }
 
   // The numbers are the person's own work, read from what the app already
@@ -5568,9 +5649,23 @@ document.querySelectorAll("button[data-connect]").forEach((button) => {
   });
 });
 
+/* Sign out, bound ONCE.
+ *
+ * There were two handlers on this button and they disagreed: one repainted
+ * the profile page, the other jumped to the sign-in gate. The first was
+ * attached inside loadProfilePage, so every visit to the page added another
+ * copy -- open profile five times and one click ran five logouts and both
+ * destinations. Bound here, at the top level, on the element that is in the
+ * markup and never replaced.
+ *
+ * Staying on the profile page is the right end: signing out is not leaving
+ * the app, and the page has something true to show afterwards -- the apps
+ * are still on this computer, which is exactly what the row promises. */
 $("profSignOut")?.addEventListener("click", async () => {
   try { await invoke("account_logout"); } catch (e) {}
-  showView("gate");
+  state.account = null;
+  loadProfilePage();
+  paintGreeting();
 });
 
 function escapeHtml(text) {
@@ -6366,6 +6461,7 @@ $("aiRefresh")?.addEventListener("click", async () => {
     try { localStorage.setItem(KEY, String(parseInt(getComputedStyle(side).width, 10))); } catch (x) { }
   });
 })();
+
 
 
 

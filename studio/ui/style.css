@@ -2218,14 +2218,90 @@ body.scrolled .dock-solo {
   font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.14em;
   text-transform: uppercase; color: var(--faint); margin: 0 0 11px; font-weight: 400;
 }
+/* A section is ONE panel, and the rows inside it are divided by hairlines.
+ *
+ * Every row used to be its own floating card with its own border, its own
+ * blur and 8px of space under it -- nine sections and fourteen little
+ * rectangles stacked down a narrow column. That is the shape that reads as
+ * unfinished: nothing is grouped, so nothing has a hierarchy, and the eye
+ * has to re-establish where it is at every row.
+ *
+ * The references all do the same thing instead: one bordered surface per
+ * section, rows separated by a line inside it. Same information, and the
+ * page suddenly has structure. */
+.set-group > .set-row {
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--glass-edge-soft);
+  border-radius: 0;
+  margin-bottom: 0;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+/* The first row in a panel has the panel's own top edge above it. */
+.set-group > .set-row:first-of-type { border-top: 0; }
+
+/* The panel itself carries the glass, once, for the whole section. */
+.set-group .set-panel,
+.set-group.panel {
+  background: var(--glass-card);
+  border: 1px solid var(--glass-edge-soft);
+  border-radius: var(--radius-card);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+}
+
 .set-row {
   display: flex; align-items: center; gap: 14px; padding: 14px 16px;
   background: rgba(16, 18, 21, 0.7); border: 1px solid var(--line);
   border-radius: var(--radius); margin-bottom: 8px;
   backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-  transition: border-color 0.2s;
+  transition: background 0.15s;
 }
-.set-row:hover { border-color: var(--line-strong); }
+/* Hover lifts the ROW inside the panel rather than lighting its border --
+   there is no longer a per-row border to light. */
+.set-group > .set-row:hover { background: rgba(255, 255, 255, 0.022); }
+
+/* Profile's connection rows live in the same panels, so they lose their
+   own borders for the same reason the settings rows did. */
+.set-panel > .conn-row {
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--glass-edge-soft);
+  border-radius: 0;
+  margin: 0;
+}
+.set-panel > .conn-row:first-child { border-top: 0; }
+.set-panel > .conn-row:hover { background: rgba(255, 255, 255, 0.022); }
+/* The "More ways to sign in" fold sits inside the panel too, so its rows
+   line up with the ones above rather than starting a new stack. */
+.set-panel > .conn-more { border-top: 1px solid var(--glass-edge-soft); }
+.set-panel > .conn-more > summary { padding: 11px 16px; }
+
+/* ---- the section nav ---------------------------------------------------
+ * Sticky, so it is reachable from anywhere in a long page. Horizontal
+ * rather than a second sidebar: Studio already has a rail on the left, and
+ * two vertical navigations side by side is how a settings page starts
+ * feeling like a control panel. */
+.set-nav {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; flex-wrap: wrap; gap: 4px;
+  margin: 0 0 22px; padding: 8px 0 10px;
+  background: linear-gradient(var(--bg) 72%, transparent);
+}
+.set-nav button {
+  padding: 5px 11px; border: 0; border-radius: var(--radius-pill);
+  background: none; color: var(--faint);
+  font: 400 12.5px var(--sans); cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.set-nav button:hover { background: var(--film); color: var(--text); }
+.set-nav button.on {
+  background: var(--film-strong); color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--glass-edge-soft);
+}
 .set-row .lab { font-size: 13.5px; }
 .set-row .hint { font-size: 12px; color: var(--faint); margin-top: 2px; }
 .set-row .ctl { margin-left: auto; display: flex; align-items: center; gap: 9px; }
