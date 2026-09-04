@@ -2295,6 +2295,48 @@ body.scrolled .dock-solo {
  * modal that something else can cover is not a modal. */
 #setSheet { z-index: 80; }
 
+/* A text field inside a settings row. */
+.set-input {
+  width: 190px; padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--glass-edge-soft);
+  border-radius: 8px;
+  color: var(--text); font: 400 13px var(--sans);
+  outline: none; transition: border-color 0.15s, background 0.15s;
+}
+.set-input:focus {
+  background: rgba(0, 0, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+body.light .set-input { background: rgba(12, 16, 23, 0.04); }
+body.light .set-input:focus { background: rgba(12, 16, 23, 0.06); }
+
+/* Three choices as one control: a theme is one of a small closed set, and
+   a segmented control says that in its shape. A dropdown for three options
+   hides two of them behind a click. */
+.seg {
+  display: flex; gap: 2px; padding: 2px;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--glass-edge-soft);
+  border-radius: 9px;
+}
+.seg button {
+  padding: 4px 11px; border: 0; border-radius: 7px;
+  background: none; color: var(--faint);
+  font: 400 12.5px var(--sans); cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.seg button:hover { color: var(--text); }
+.seg button.on {
+  background: var(--film-strong); color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--glass-edge-soft);
+}
+body.light .seg { background: rgba(12, 16, 23, 0.04); }
+
+/* The profile header inside the dialog: the stats sit under the name
+   rather than beside it, because the panel is narrower than the page was. */
+#setSheet .prof-head { margin-bottom: 18px; }
+
 /* ---- the settings modal ------------------------------------------------
  * Two panes: the sections on the left, the one you picked on the right.
  * The same shape every desktop app uses for settings, and the reason it is

@@ -610,21 +610,11 @@
             <div class="ctl"><span class="soon-tag">soon</span><button class="sw on" id="swUsage" data-soon aria-label="Usage counting" disabled></button></div>
           </div>
         </div>
-        </div>
-      </div>
-    </div>
-  </div>
-  <div class="view hidden" id="viewProfile">
-    <header class="titlebar">
-      <button class="icon-btn side-toggle" id="profSideToggle" title="Show your workspace" aria-expanded="false">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="10" rx="2" stroke="currentColor" stroke-width="1.35"/><path d="M6.2 3v10" stroke="currentColor" stroke-width="1.35"/></svg>
-      </button>
-      <button class="icon-btn" id="profBackBtn" title="Back to home"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M9.8 3.2L5 8l4.8 4.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-      <div class="spacer"></div>
-    </header>
-    <div class="page-scroll" data-scroller>
-      <div class="page-inner set-col">
-        <div class="prof-head">
+
+        <div class="set-group">
+          <h2>Profile</h2>
+          <p class="set-sub">Who Krate has you as, and what you have made with it.</p>
+          <div class="prof-head">
           <!-- The photo sits BESIDE the initial rather than replacing it.
                Writing the img in with innerHTML deleted the initial, so a
                photo that never loaded left an empty circle. -->
@@ -641,6 +631,43 @@
             <!-- "this computer", not "this Mac": the same string ships on
                  Windows and Linux, where it is simply wrong. -->
             <div><div class="n" id="profSize">…</div><div class="l">all together, on this computer</div></div>
+            <!-- The count the code was already computing. `profPub` has been
+                 filled by loadProfilePage all along with nowhere to land, so
+                 the one number that answers "what have I actually shared"
+                 was measured and thrown away every time the page opened. -->
+            <div><div class="n" id="profPub">0</div><div class="l">published</div></div>
+          </div>
+        </div>
+          <div class="set-panel">
+            <div class="set-row">
+              <div><div class="lab">What we call you</div><div class="hint">The name in the greeting on Home</div></div>
+              <div class="ctl"><input class="set-input" id="profNick" type="text" placeholder="Your name" autocomplete="off" spellcheck="false" /></div>
+            </div>
+            <div class="set-row">
+              <div><div class="lab">Where your apps are</div><div class="hint">Every .krate you have made lands here</div></div>
+              <div class="ctl"><span class="set-val" id="profOutDir">…</span><button class="set-mini" id="profOutBtn">Open</button></div>
+            </div>
+            <div class="set-row">
+              <div><div class="lab">Sign out</div><div class="hint">Your apps stay on this computer</div></div>
+              <div class="ctl"><button class="set-mini" id="profSignOut">Sign out</button></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="set-group">
+          <h2>Appearance</h2>
+          <p class="set-sub">How Krate looks on this computer.</p>
+          <div class="set-panel">
+            <div class="set-row">
+              <div><div class="lab">Theme</div><div class="hint">The button in the title bar changes this too</div></div>
+              <div class="ctl">
+                <div class="seg" id="profTheme" role="group" aria-label="Theme">
+                  <button type="button" data-theme="light">Light</button>
+                  <button type="button" data-theme="dark">Dark</button>
+                  <button type="button" data-theme="system">Auto</button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -665,18 +692,13 @@
           </div>
           </details>
         </div>
-
-        <div class="set-group">
-          <h2>Your account</h2>
-          <div class="set-row">
-            <div><div class="lab">Sign out</div><div class="hint">Your apps stay on this computer</div></div>
-            <div class="ctl"><button class="set-mini" id="profSignOut">Sign out</button></div>
-          </div>
         </div>
       </div>
     </div>
   </div>
-
+  <!-- Profile lives in the settings dialog now, under ACCOUNT: it is the
+       same kind of thing (something about you and your setup) and two
+       overlays that look and behave identically is one too many. -->
   <div class="view hidden" id="viewCloud">
     <header class="titlebar">
       <button class="icon-btn" id="cloudBackBtn" title="Back"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M9.8 3.2L5 8l4.8 4.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>

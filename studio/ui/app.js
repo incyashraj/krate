@@ -233,14 +233,14 @@ function showView(name) {
   if (name === "home") resetShelfTab();
   for (const id of [
     "viewGate", "viewHome", "viewSession", "viewCloud", "viewApp",
-    "viewApps", "viewProfile", "viewOnboard",
+    "viewApps", "viewOnboard",
   ]) {
     $(id).classList.add("hidden");
   }
   const view = $({
     gate: "viewGate", home: "viewHome", session: "viewSession",
     cloud: "viewCloud", appDetail: "viewApp", apps: "viewApps",
-    profile: "viewProfile", onboard: "viewOnboard",
+    onboard: "viewOnboard",
   }[name]);
   view.classList.remove("hidden");
   revealIn(view);
@@ -268,7 +268,6 @@ function syncRail(view) {
   for (const row of rows) row.classList.toggle("on", row.dataset.side === wanted);
   // Settings and Profile are rows in the drawer's foot, not the nav list.
   $("sideSettings")?.classList.toggle("on", view === "settings");
-  $("sideAccount")?.classList.toggle("on", view === "profile");
 }
 
 /* ---- the dock ----------------------------------------------------------
@@ -5029,10 +5028,7 @@ document.querySelectorAll("#dock button[data-page]").forEach((button) => {
   });
 });
 
-$("dockProfile")?.addEventListener("click", () => {
-  showView("profile");
-  loadProfilePage();
-});
+$("dockProfile")?.addEventListener("click", () => openSettings("Profile"));
 
 /* Scrolling drops the dock lower and makes it solid, then it settles back.
  * Bound per scroller because each page owns its own scroll container. */
@@ -5312,10 +5308,7 @@ function setShelfOpen(open) {
      has what someone actually wants -- how many apps, how much they weigh,
      which account publishes them -- and the sheet was a dead end whose only
      action was to sign out. */
-  $("sideAccount")?.addEventListener("click", () => {
-    showView("profile");
-    loadProfilePage();
-  });
+  $("sideAccount")?.addEventListener("click", () => openSettings("Profile"));
   $("sideSettings")?.addEventListener("click", openSettings);
   /* The bell looked live and did nothing. It opens the place that actually
      answers "what is new": the Updates block in Settings, which carries the
@@ -5449,12 +5442,77 @@ function dressSettings() {
   if (entries.length) show(entries[0].group);
 }
 
+/* The account options: the name in the greeting, the theme, the folder.
+ *
+ * All three already existed in Studio and none of them had a home. The name
+ * was captured once by onboarding and never editable again, so a typo there
+ * was permanent. The theme lived only on a title-bar icon that cycles three
+ * states, discoverable by pressing it repeatedly and watching. The folder
+ * was reachable but not from the place a person looks for their own things.
+ */
+function wireAccountOptions() {
+  /* What we call you. Same key onboarding writes, so this edits the value
+     that is already there rather than introducing a second name that
+     disagrees with the greeting. Saved as you type -- a Save button for one
+     text field is a button that exists to be forgotten. */
+  const nick = $("profNick");
+  if (nick && !nick.dataset.wired) {
+    nick.dataset.wired = "1";
+    try { nick.value = localStorage.getItem("krate-name") || ""; } catch (e) {}
+    nick.addEventListener("input", () => {
+      const value = nick.value.trim();
+      try {
+        if (value) localStorage.setItem("krate-name", value);
+        else localStorage.removeItem("krate-name");
+      } catch (e) {}
+      paintGreeting();
+    });
+  }
+
+  /* Theme, as three labelled choices rather than a cycling icon.
+     Reads and writes krate-theme -- the same key the title-bar button uses
+     -- so the two can never drift apart, and pressing either updates both. */
+  const seg = $("profTheme");
+  if (seg && !seg.dataset.wired) {
+    seg.dataset.wired = "1";
+    seg.addEventListener("click", (e) => {
+      const button = e.target.closest("button[data-theme]");
+      if (!button) return;
+      // Through the owner, never around it: it holds the current mode in a
+      // closure, so writing the key behind its back would leave the
+      // title-bar icon showing a theme that is no longer set.
+      window.__setTheme?.(button.dataset.theme);
+      paintThemeChoice();
+    });
+  }
+  paintThemeChoice();
+}
+
+function paintThemeChoice() {
+  const seg = $("profTheme");
+  if (!seg) return;
+  let mode = "system";
+  try { mode = localStorage.getItem("krate-theme") || "system"; } catch (e) {}
+  for (const button of seg.querySelectorAll("button[data-theme]")) {
+    button.classList.toggle("on", button.dataset.theme === mode);
+  }
+}
+
 /* Open and close, and the ways out a person expects from an overlay. */
-function openSettings() {
+function openSettings(section) {
   const sheet = $("setSheet");
   if (!sheet) return;
   sheet.classList.remove("hidden");
   loadSettingsPage();
+  loadProfilePage();
+  // Opened from the avatar, the person means their account -- not whatever
+  // section happens to be first. Named rather than indexed, so reordering
+  // the sections cannot silently point this somewhere else.
+  if (section) {
+    const nav = $("setNav");
+    const button = [...(nav?.children || [])].find((b) => b.textContent.trim() === section);
+    button?.click();
+  }
 }
 
 function closeSettings() {
@@ -5648,10 +5706,27 @@ async function runUpdate(latest) {
 
 /* ---- profile page ------------------------------------------------------ */
 async function loadProfilePage() {
-  // The same grouping settings gets: one panel per section, rows divided by
-  // hairlines. No nav here -- three sections fit on a screen, and a nav
-  // pointing at what is already visible is furniture.
-  dressGroups("#viewProfile");
+  wireAccountOptions();
+  // The folder, shown and openable from the account section too. Read from
+  // settings rather than remembered separately, so changing it under Output
+  // is reflected here without a second source of truth.
+  try {
+    const settings = await invoke("settings_get");
+    const out = $("profOutDir");
+    if (out) out.textContent = (settings.out_dir || "").replace(/^\/Users\/[^/]+/, "~");
+    const button = $("profOutBtn");
+    if (button && !button.dataset.wired) {
+      button.dataset.wired = "1";
+      button.addEventListener("click", async () => {
+        try { await invoke("reveal", { path: settings.out_dir }); } catch (e) {}
+      });
+    }
+  } catch (e) {}
+  // Profile's sections live in the settings dialog now, and dressSettings
+  // already panels everything in there. Grouping them again from here would
+  // be a second owner of the same job -- and the scope it used to name
+  // (#viewProfile) no longer exists, so it had quietly stopped doing
+  // anything at all.
   try {
     const account = await invoke("account_status");
     const name = account?.name || account?.login || "Signed in";
@@ -5858,6 +5933,20 @@ function showCloudSkeleton() {
     localStorage.setItem(KEY, mode);
     apply();
   });
+
+  /* The same switch, for the Appearance section in settings.
+   *
+   * A setter rather than letting that code write the key and repaint the
+   * body itself: `mode` is a closure variable here, so an outside writer
+   * would change what is stored while this module still believed the old
+   * value -- the title-bar icon would keep showing the previous theme until
+   * the next click. One owner, two ways in. */
+  window.__setTheme = (next) => {
+    if (!MODES.includes(next)) return;
+    mode = next;
+    localStorage.setItem(KEY, mode);
+    apply();
+  };
 
   // Follow the machine while it is being followed. Somebody on a schedule
   // that turns their desktop light at sunrise expects this window to come
@@ -6537,6 +6626,7 @@ $("aiRefresh")?.addEventListener("click", async () => {
     try { localStorage.setItem(KEY, String(parseInt(getComputedStyle(side).width, 10))); } catch (x) { }
   });
 })();
+
 
 
 
