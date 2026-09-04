@@ -2280,6 +2280,13 @@ body.scrolled .dock-solo {
 .set-panel > .conn-more { border-top: 1px solid var(--glass-edge-soft); }
 .set-panel > .conn-more > summary { padding: 11px 16px; }
 
+/* The avatar marks the profile page with a ring rather than a fill: it is
+   a picture, and a rectangle behind a round photo reads as a mistake. */
+.side-avatar.on img,
+.side-avatar.on .side-initial {
+  box-shadow: 0 0 0 2px var(--blue);
+}
+
 /* ---- the section nav ---------------------------------------------------
  * Sticky, so it is reachable from anywhere in a long page. Horizontal
  * rather than a second sidebar: Studio already has a rail on the left, and
@@ -3375,6 +3382,12 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
   transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .side[data-open="true"] { transform: none; }
+/* The restored rail must not slide in on launch. It was already open when
+   the window closed, so animating it into place shows the person a piece
+   of furniture arriving that, as far as they are concerned, never left. */
+body.side-restoring .side,
+body.side-restoring .view,
+body.side-restoring .shelf { transition: none !important; }
 @media (prefers-reduced-motion: reduce) { .side { transition: none; } }
 
 /* The drawer sits over the room rather than pushing it. Pushing would

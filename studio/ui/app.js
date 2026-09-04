@@ -245,6 +245,30 @@ function showView(name) {
   view.classList.remove("hidden");
   revealIn(view);
   syncDock(name);
+  syncRail(name);
+}
+
+/* Mark the rail row for the page actually showing.
+ *
+ * The rail used to mark itself on click and nowhere else, so every other
+ * way into a page left it lying: the dock, the back button, a card in the
+ * shelf, opening Settings from the bell. With the drawer closing on every
+ * click that was invisible; keeping it open puts a wrong highlight on
+ * screen the whole time you are reading the page it is wrong about.
+ *
+ * Driven from showView for the same reason syncDock is -- one place decides
+ * which page is current, and both navigations read it rather than each
+ * keeping its own idea. */
+const RAIL_PAGES = { home: "home", apps: "all", cloud: "discover" };
+
+function syncRail(view) {
+  const rows = document.querySelectorAll("#side .side-row");
+  if (!rows.length) return;
+  const wanted = RAIL_PAGES[view];
+  for (const row of rows) row.classList.toggle("on", row.dataset.side === wanted);
+  // Settings and Profile are rows in the drawer's foot, not the nav list.
+  $("sideSettings")?.classList.toggle("on", view === "settings");
+  $("sideAccount")?.classList.toggle("on", view === "profile");
 }
 
 /* ---- the dock ----------------------------------------------------------
@@ -5202,8 +5226,18 @@ function setShelfOpen(open) {
   const toggle = toggles[0];
   if (!side || !toggle) return;
 
-  function setOpen(open) {
+  /* Whether the rail was open last time.
+   *
+   * A sidebar that has to be reopened on every launch is not navigation,
+   * it is a menu -- and the whole point of keeping it open while you work
+   * is that it stays where you put it. Remembered per machine. */
+  const OPEN_KEY = "krateSideOpen";
+
+  function setOpen(open, remember = true) {
     side.dataset.open = open ? "true" : "false";
+    if (remember) {
+      try { localStorage.setItem(OPEN_KEY, open ? "1" : "0"); } catch (e) {}
+    }
     // The body class is what lets the room step aside and take its rounded
     // corner, so the two panels read as one window with a seam.
     document.body.classList.toggle("side-open", open);
@@ -5213,8 +5247,26 @@ function setShelfOpen(open) {
       t.setAttribute("aria-expanded", open ? "true" : "false");
       t.title = open ? "Hide your workspace" : "Show your workspace";
     }
-    if (scrim) scrim.hidden = !open;
+    // The scrim dims the page behind a drawer that COVERS it. This one no
+    // longer covers anything -- the views inset by its width -- so a dark
+    // sheet over the page you are working in would be dimming the app for
+    // no reason. Kept in the markup, never shown.
+    if (scrim) scrim.hidden = true;
   }
+
+  // Restore it before anything paints, so the window does not open closed
+  // and then visibly slide the rail in.
+  try {
+    if (localStorage.getItem(OPEN_KEY) === "1") {
+      document.body.classList.add("side-restoring");
+      setOpen(true, false);
+      // One frame with transitions off, then hand animation back for every
+      // toggle the person actually makes.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => document.body.classList.remove("side-restoring"));
+      });
+    }
+  } catch (e) {}
 
   for (const t of toggles) {
     t.addEventListener("click", () => setOpen(side.dataset.open !== "true"));
@@ -5226,28 +5278,30 @@ function setShelfOpen(open) {
     if ((e.key === "Escape" || e.key === "Esc") && side.dataset.open === "true") setOpen(false);
   });
 
-  // The rows that already have a home elsewhere in Studio go there; the
-  // rest are honest about not being built yet rather than doing nothing.
-  // The drawer stays open when you navigate with it. Closing on every
-  // click meant clicking "Your apps" made the sidebar vanish, which reads
-  // as the app losing its navigation rather than as a page change. It
-  // closes when you pick something that leaves this window (a sheet, an
-  // external link) and when you press the panel button again.
-  // Navigating closes the drawer. It overlays the room rather than pushing
-  // it, so leaving it open after a click leaves the page you asked for
-  // half covered by the menu you asked it from.
+  // The drawer STAYS OPEN when you navigate with it.
+  //
+  // Two comments used to sit here saying opposite things -- one that the
+  // drawer stays open, one that navigating closes it -- and the code did
+  // the second. So every click made the navigation disappear, and no page
+  // in Studio could ever be seen next to its own sidebar. That is the
+  // layout every real settings screen uses, and Studio could not reach it.
+  //
+  // The old reasoning was that the drawer overlays the room and would cover
+  // the page you just asked for. That stopped being true: body.side-open
+  // insets the views by the rail's width, so the page steps aside instead
+  // of hiding under it. Nothing is covered, and the app keeps its
+  // navigation while you use it.
   const goes = {
-    home: () => { setOpen(false); showView("home"); },
-    all: () => { setOpen(false); showView("apps"); loadAppsPage(); },
-    discover: () => { setOpen(false); openCloud(); },
+    home: () => showView("home"),
+    all: () => { showView("apps"); loadAppsPage(); },
+    discover: () => openCloud(),
   };
   document.querySelectorAll("#side .side-row").forEach((row) => {
     row.addEventListener("click", () => {
-      document.querySelectorAll("#side .side-row").forEach((r) => r.classList.remove("on"));
-      row.classList.add("on");
+      // No marking here: showView owns which row is lit, so a click and a
+      // dock press and a back button all end up saying the same thing.
       const go = goes[row.dataset.side];
       if (go) go();
-      else setOpen(false);
     });
   });
 
@@ -5256,12 +5310,10 @@ function setShelfOpen(open) {
      which account publishes them -- and the sheet was a dead end whose only
      action was to sign out. */
   $("sideAccount")?.addEventListener("click", () => {
-    setOpen(false);
     showView("profile");
     loadProfilePage();
   });
   $("sideSettings")?.addEventListener("click", () => {
-    setOpen(false);
     showView("settings");
     loadSettingsPage();
   });
@@ -6461,6 +6513,7 @@ $("aiRefresh")?.addEventListener("click", async () => {
     try { localStorage.setItem(KEY, String(parseInt(getComputedStyle(side).width, 10))); } catch (x) { }
   });
 })();
+
 
 
 
