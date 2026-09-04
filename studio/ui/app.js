@@ -233,14 +233,14 @@ function showView(name) {
   if (name === "home") resetShelfTab();
   for (const id of [
     "viewGate", "viewHome", "viewSession", "viewCloud", "viewApp",
-    "viewApps", "viewSettings", "viewProfile", "viewOnboard",
+    "viewApps", "viewProfile", "viewOnboard",
   ]) {
     $(id).classList.add("hidden");
   }
   const view = $({
     gate: "viewGate", home: "viewHome", session: "viewSession",
     cloud: "viewCloud", appDetail: "viewApp", apps: "viewApps",
-    settings: "viewSettings", profile: "viewProfile", onboard: "viewOnboard",
+    profile: "viewProfile", onboard: "viewOnboard",
   }[name]);
   view.classList.remove("hidden");
   revealIn(view);
@@ -279,7 +279,10 @@ function syncRail(view) {
  * The sliding pill is measured, not guessed: a label's width changes with
  * its text, so the highlight reads offsetLeft/offsetWidth of whatever is
  * selected rather than assuming equal buttons. */
-const DOCK_PAGES = { home: "home", apps: "apps", cloud: "cloud", settings: "settings" };
+/* Settings left this list when it became an overlay: the dock highlights
+   the page you are ON, and an overlay does not change that -- the page
+   behind it is still where you are. */
+const DOCK_PAGES = { home: "home", apps: "apps", cloud: "cloud" };
 
 function syncDock(view) {
   const wrap = $("dockwrap");
@@ -5021,7 +5024,7 @@ document.querySelectorAll("#dock button[data-page]").forEach((button) => {
     const page = button.dataset.page;
     if (page === "apps") { showView("apps"); loadAppsPage(); return; }
     if (page === "cloud") { openCloud(); return; }
-    if (page === "settings") { showView("settings"); loadSettingsPage(); return; }
+    if (page === "settings") { openSettings(); return; }
     showView("home");
   });
 });
@@ -5313,21 +5316,19 @@ function setShelfOpen(open) {
     showView("profile");
     loadProfilePage();
   });
-  $("sideSettings")?.addEventListener("click", () => {
-    showView("settings");
-    loadSettingsPage();
-  });
+  $("sideSettings")?.addEventListener("click", openSettings);
   /* The bell looked live and did nothing. It opens the place that actually
      answers "what is new": the Updates block in Settings, which carries the
      version and the release notes. */
   $("sideBell")?.addEventListener("click", () => {
-    setOpen(false);
-    showView("settings");
-    loadSettingsPage();
-    // Land on the notes rather than the top of a long page.
+    openSettings();
+    // Straight to Updates. Sections are switched rather than scrolled past
+    // now, so this picks the section instead of hunting for a y position.
     setTimeout(() => {
-      $("upd")?.scrollIntoView({ block: "center", behavior: "smooth" });
-    }, 120);
+      const nav = $("setNav");
+      const button = [...(nav?.children || [])].find((b) => b.textContent.trim() === "Updates");
+      button?.click();
+    }, 60);
     // Clear the unread mark once it has been looked at.
     $("sideBellDot")?.classList.add("hidden");
   });
@@ -5402,53 +5403,76 @@ function dressGroups(scope) {
 }
 
 function dressSettings() {
-  dressGroups("#viewSettings");
+  dressGroups("#setSheet");
   const nav = $("setNav");
   if (!nav) return;
   nav.innerHTML = "";
 
-  const groups = [...document.querySelectorAll("#viewSettings .set-group")];
-  const buttons = [];
+  const groups = [...document.querySelectorAll("#setSheet .set-group")];
+  const entries = [];
 
   for (const group of groups) {
     const heading = group.querySelector("h2");
     if (!heading) continue;
 
-    // An id to jump to, derived from the heading rather than invented.
     if (!group.id) {
       group.id = "set-" + heading.textContent.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-");
     }
-
-    // A hidden section (the terminal group on a machine that has the
-    // command already) must not appear in the nav pointing at nothing.
+    // A hidden section (the terminal group on a machine that already has
+    // the command) must not appear in the list pointing at nothing.
     if (group.classList.contains("hidden")) continue;
 
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = heading.textContent.trim();
-    button.dataset.target = group.id;
-    button.addEventListener("click", () => {
-      group.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
+    button.addEventListener("click", () => show(group));
     nav.appendChild(button);
-    buttons.push({ button, group });
+    entries.push({ button, group });
   }
 
-  // Mark whichever section is on screen. An observer rather than a scroll
-  // handler: the browser already knows what is visible, and recomputing it
-  // on every scroll frame is work for an answer that is already available.
-  if (buttons.length && "IntersectionObserver" in window) {
-    const seen = new Map();
-    const observer = new IntersectionObserver((entries) => {
-      for (const entry of entries) seen.set(entry.target, entry.isIntersecting);
-      const current = buttons.find(({ group }) => seen.get(group));
-      for (const { button, group } of buttons) {
-        button.classList.toggle("on", !!current && group === current.group);
-      }
-    }, { rootMargin: "-12% 0px -70% 0px" });
-    for (const { group } of buttons) observer.observe(group);
+  /* One section showing at a time.
+   *
+   * The left rail exists so the right side shows what you picked. Keeping
+   * every section rendered and scrolling to one would be the same long
+   * column this replaced, with a table of contents bolted on. */
+  function show(group) {
+    for (const entry of entries) {
+      const on = entry.group === group;
+      entry.button.classList.toggle("on", on);
+      entry.group.classList.toggle("showing", on);
+    }
+    const scroll = document.querySelector("#setSheet .set-scroll");
+    if (scroll) scroll.scrollTop = 0;
   }
+
+  // Land on the first section rather than on nothing.
+  if (entries.length) show(entries[0].group);
 }
+
+/* Open and close, and the ways out a person expects from an overlay. */
+function openSettings() {
+  const sheet = $("setSheet");
+  if (!sheet) return;
+  sheet.classList.remove("hidden");
+  loadSettingsPage();
+}
+
+function closeSettings() {
+  $("setSheet")?.classList.add("hidden");
+}
+
+$("setClose")?.addEventListener("click", closeSettings);
+// Clicking the dimmed area behind the panel closes it; clicking INSIDE the
+// panel must not, which is why this tests the target rather than trusting
+// the bubble.
+$("setSheet")?.addEventListener("click", (e) => {
+  if (e.target === $("setSheet")) closeSettings();
+});
+document.addEventListener("keydown", (e) => {
+  if ((e.key === "Escape" || e.key === "Esc") && !$("setSheet")?.classList.contains("hidden")) {
+    closeSettings();
+  }
+});
 
 async function loadSettingsPage() {
   dressSettings();
@@ -6513,6 +6537,7 @@ $("aiRefresh")?.addEventListener("click", async () => {
     try { localStorage.setItem(KEY, String(parseInt(getComputedStyle(side).width, 10))); } catch (x) { }
   });
 })();
+
 
 
 

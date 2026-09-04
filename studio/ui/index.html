@@ -521,32 +521,24 @@
     </div>
   </div>
 
-  <div class="view hidden" id="viewSettings">
-    <header class="titlebar">
-      <button class="icon-btn side-toggle" id="setSideToggle" title="Show your workspace" aria-expanded="false">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="10" rx="2" stroke="currentColor" stroke-width="1.35"/><path d="M6.2 3v10" stroke="currentColor" stroke-width="1.35"/></svg>
-      </button>
-      <button class="icon-btn" id="setBackBtn" title="Back to home"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M9.8 3.2L5 8l4.8 4.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-      <div class="spacer"></div>
-    </header>
-    <div class="page-scroll" data-scroller>
-      <div class="page-inner set-col">
-        <div class="page-head">
-          <div>
-            <h1>Settings</h1>
-            <p>Which agent builds, where the output lands, and how to drive
-            all of it from a terminal.</p>
-          </div>
-        </div>
-
-        <!-- Nine sections in one scrolling column meant Privacy was four
-             screens below Agent and nothing said it existed. The nav is
-             built from the sections themselves at load, so a section added
-             in the markup appears here without a second list to keep in
-             step -- the kind of duplication that goes stale in a month. -->
+  <!-- Settings is a place you visit and leave, not a page you navigate to.
+       As a full view it was a narrow column adrift in a wide window, and it
+       took over the whole app to change one folder. As an overlay it keeps
+       the app behind it -- you can see where you came back to -- and it
+       gets the room for its own two-pane layout: sections on the left, the
+       section you picked on the right. -->
+  <div class="sheet-wrap hidden" id="setSheet">
+    <div class="set-modal" role="dialog" aria-modal="true" aria-label="Settings">
+      <aside class="set-side">
+        <div class="set-side-head">Settings</div>
         <nav class="set-nav" id="setNav" aria-label="Settings sections"></nav>
-
-        <div class="set-group">
+      </aside>
+      <div class="set-main">
+        <button class="set-close" id="setClose" aria-label="Close settings">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+        <div class="set-scroll" data-scroller>
+<div class="set-group">
           <h2>Agent</h2>
           <div class="set-row">
             <div><div class="lab">Coding agent</div><div class="hint">Drives the build loop: writes the code, runs check-app, fixes what it reports</div></div>
@@ -618,10 +610,10 @@
             <div class="ctl"><span class="soon-tag">soon</span><button class="sw on" id="swUsage" data-soon aria-label="Usage counting" disabled></button></div>
           </div>
         </div>
+        </div>
       </div>
     </div>
   </div>
-
   <div class="view hidden" id="viewProfile">
     <header class="titlebar">
       <button class="icon-btn side-toggle" id="profSideToggle" title="Show your workspace" aria-expanded="false">

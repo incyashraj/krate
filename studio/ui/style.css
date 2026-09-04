@@ -2287,21 +2287,76 @@ body.scrolled .dock-solo {
   box-shadow: 0 0 0 2px var(--blue);
 }
 
-/* ---- the section nav ---------------------------------------------------
- * Sticky, so it is reachable from anywhere in a long page. Horizontal
- * rather than a second sidebar: Studio already has a rail on the left, and
- * two vertical navigations side by side is how a settings page starts
- * feeling like a control panel. */
-.set-nav {
-  position: sticky; top: 0; z-index: 5;
-  display: flex; flex-wrap: wrap; gap: 4px;
-  margin: 0 0 22px; padding: 8px 0 10px;
-  background: linear-gradient(var(--bg) 72%, transparent);
+/* The settings overlay sits above EVERYTHING, the app rail included.
+ *
+ * .sheet-wrap is z-index 40 and the rail is 60, so the rail drew straight
+ * over the modal's own section list -- the left third of the dialog was
+ * simply gone, and the panel looked like it had lost its navigation. A
+ * modal that something else can cover is not a modal. */
+#setSheet { z-index: 80; }
+
+/* ---- the settings modal ------------------------------------------------
+ * Two panes: the sections on the left, the one you picked on the right.
+ * The same shape every desktop app uses for settings, and the reason it is
+ * a shape at all -- a settings screen is a list of areas, and a list of
+ * areas wants a list.
+ *
+ * Sized in viewport units with a ceiling: big enough that a section is not
+ * a letterbox, never so big it stops reading as a window over the app.
+ */
+.set-modal {
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr);
+  width: min(920px, 92vw);
+  height: min(660px, 86vh);
+  background: var(--panel);
+  border: 1px solid var(--glass-edge);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow:
+    inset 0 1px 0 var(--glass-lit),
+    0 40px 120px rgba(0, 0, 0, 0.6);
+  animation: sheetIn 0.28s ease;
 }
+
+/* The modal's own rail. Deliberately flat rather than glass: it is inside
+   a panel, not over the page, and glass on glass reads as fog. */
+.set-side {
+  display: flex; flex-direction: column;
+  padding: 18px 10px 14px;
+  background: rgba(0, 0, 0, 0.18);
+  border-right: 1px solid var(--glass-edge-soft);
+  overflow-y: auto;
+}
+.set-side-head {
+  padding: 0 10px 12px;
+  font-size: 15px; font-weight: 500; color: var(--text);
+}
+
+.set-main { position: relative; min-width: 0; display: flex; flex-direction: column; }
+.set-scroll { flex: 1; overflow-y: auto; padding: 26px 28px 30px; }
+
+/* Close sits in the panel's own corner, out of the content's way. */
+.set-close {
+  position: absolute; top: 14px; right: 14px; z-index: 2;
+  display: grid; place-items: center;
+  width: 28px; height: 28px;
+  border: 0; border-radius: 8px; background: none;
+  color: var(--faint); cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.set-close:hover { background: var(--film); color: var(--text); }
+
+/* ---- the section list --------------------------------------------------
+ * A vertical list now that it has a rail to live in, rather than the
+ * horizontal strip it was when settings was a full page. */
+.set-nav { display: flex; flex-direction: column; gap: 1px; }
 .set-nav button {
-  padding: 5px 11px; border: 0; border-radius: var(--radius-pill);
-  background: none; color: var(--faint);
-  font: 400 12.5px var(--sans); cursor: pointer;
+  display: flex; align-items: center; gap: 9px;
+  width: 100%; padding: 7px 10px;
+  border: 0; border-radius: 8px;
+  background: none; color: var(--muted);
+  font: 400 13px var(--sans); text-align: left; cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
 .set-nav button:hover { background: var(--film); color: var(--text); }
@@ -2309,6 +2364,22 @@ body.scrolled .dock-solo {
   background: var(--film-strong); color: var(--text);
   box-shadow: inset 0 0 0 1px var(--glass-edge-soft);
 }
+
+/* One section at a time. The whole point of the left rail is that the
+   right side shows what you picked; scrolling past six other sections to
+   reach Privacy is the page this was meant to replace. */
+.set-scroll .set-group { display: none; }
+.set-scroll .set-group.showing { display: block; }
+.set-scroll .set-group > h2 {
+  font-family: var(--sans); font-size: 16px; font-weight: 500;
+  letter-spacing: 0; text-transform: none; color: var(--text);
+  margin: 0 0 4px;
+}
+.set-sub {
+  margin: 0 0 18px; color: var(--faint); font-size: 13px;
+}
+
+body.light .set-side { background: rgba(12, 16, 23, 0.03); }
 .set-row .lab { font-size: 13.5px; }
 .set-row .hint { font-size: 12px; color: var(--faint); margin-top: 2px; }
 .set-row .ctl { margin-left: auto; display: flex; align-items: center; gap: 9px; }
