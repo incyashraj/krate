@@ -6109,10 +6109,27 @@ $("aiRefresh")?.addEventListener("click", async () => {
       row.dataset.id = session.id;
       if (state.session && state.session.id === session.id) row.classList.add("on");
 
+      // A dot ONLY where it says something.
+      //
+      // The first cut gave every row one: green for built, grey for a
+      // draft. Then the data was checked -- 21 sessions on this machine,
+      // 21 of them built, none a draft. A signal that is the same on every
+      // row is not a signal, it is decoration wearing a signal's clothes,
+      // and a rail full of green dots is exactly the "colour everywhere"
+      // that reads as noise.
+      //
+      // So the dot marks the one row that is genuinely different: the
+      // session open right now. One mark, one meaning.
+      const here = !!(state.session && state.session.id === session.id);
+      const dot = document.createElement("span");
+      dot.className = here ? "sess-dot here" : "sess-dot";
+      dot.setAttribute("aria-hidden", "true");
+
       const name = document.createElement("span");
       name.className = "sess-name";
       name.textContent = clean(session.title) || "Untitled";
-      name.title = name.textContent;
+      const built = !!(session.result && (session.result.path || session.result.name));
+      name.title = (built ? "Built - " : "Draft - ") + name.textContent;
 
       const rename = document.createElement("button");
       rename.className = "sess-kebab";
@@ -6123,7 +6140,7 @@ $("aiRefresh")?.addEventListener("click", async () => {
         '<path d="M11.2 2.9l1.9 1.9-7.2 7.2-2.4.5.5-2.4 7.2-7.2z" ' +
         'stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>';
 
-      row.append(name, rename);
+      row.append(dot, name, rename);
       list.appendChild(row);
 
       // Open the session. Guarded so a click while renaming does not
@@ -6201,6 +6218,65 @@ $("aiRefresh")?.addEventListener("click", async () => {
   }
   paint();
   window.__paintDrawerSessions = paint;
+
+  /* Search, over the rows that are already here.
+   *
+   * Filtering the DOM rather than asking the backend: every session in this
+   * list is already loaded, so a round trip would add latency to something
+   * that should feel instant. Repainting re-runs the filter so a session
+   * saved while a query is typed does not appear out of nowhere.
+   */
+  const search = document.getElementById("sideSearch");
+  if (search) {
+    const applyFilter = () => {
+      const q = search.value.trim().toLowerCase();
+      let shown = 0;
+      for (const row of list.querySelectorAll(".sess-row")) {
+        const name = row.querySelector(".sess-name");
+        const hit = !q || (name && name.textContent.toLowerCase().includes(q));
+        row.classList.toggle("hidden", !hit);
+        if (hit) shown++;
+      }
+      // A query that matches nothing should say so rather than showing an
+      // empty space that reads as a bug.
+      let none = list.querySelector(".side-noresult");
+      if (q && !shown) {
+        if (!none) {
+          none = document.createElement("p");
+          none.className = "side-empty side-noresult";
+          list.appendChild(none);
+        }
+        none.textContent = `Nothing matches "${search.value.trim()}".`;
+      } else if (none) {
+        none.remove();
+      }
+    };
+    search.addEventListener("input", applyFilter);
+    // Escape clears rather than closing the drawer: the drawer is not what
+    // the person is finished with, the query is.
+    search.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && search.value) {
+        e.stopPropagation();
+        search.value = "";
+        applyFilter();
+      }
+    });
+    const paintThenFilter = async () => { await paint(); applyFilter(); };
+    window.__paintDrawerSessions = paintThenFilter;
+
+    /* `/` focuses it, the way the hint in the field promises -- but never
+       while the person is already typing somewhere else, or the key would
+       be stolen out of the prompt box mid-sentence. */
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = document.activeElement;
+      const typing = el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+      if (typing) return;
+      if (side.dataset.open !== "true") return;
+      e.preventDefault();
+      search.focus();
+    });
+  }
 })();
 
 /* The drawer's width, dragged and remembered.

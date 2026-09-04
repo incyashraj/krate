@@ -3336,15 +3336,98 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
   cursor: pointer; text-align: left;
   transition: background 0.15s, color 0.15s;
 }
-.side-row svg { flex: none; opacity: 0.85; }
+/* Icons sit back until their row matters. An outline at 0.72 reads as a
+   label; the same glyph at full strength reads as a destination, and the
+   difference between the two is what makes a list scannable. */
+.side-row svg { flex: none; opacity: 0.72; transition: opacity 0.15s; }
 .side-row:hover { background: var(--film); color: var(--text); }
-/* Selected is a fill, not a brick: the reference marks the current page
-   with a lighter panel, and the text goes white with it. */
-.side-row.on { background: var(--film-strong); color: var(--text); }
+.side-row:hover svg { opacity: 0.95; }
 
+/* The selected row is a RAISED pane, not a lighter rectangle.
+   A flat fill says "this one is a bit different"; a hairline plus a
+   shadow says "you are here", because that is what a lifted surface
+   means everywhere else in the window. The three together -- fill, edge,
+   shadow -- are what the reference does and what a plain fill cannot. */
+.side-row.on {
+  background: var(--film-strong);
+  color: var(--text);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 1px 3px rgba(0, 0, 0, 0.28);
+  /* The border would otherwise add 2px and nudge every row below it. */
+  padding: 0 7px;
+}
+.side-row.on svg { opacity: 1; }
+
+/* The one piece of colour in the rail, and it is on the current page only.
+   A thin blue bar down the left edge of the selected row -- the same blue
+   the product already uses, in the one place a person is looking to answer
+   "where am I". Colouring all six icons differently would be prettier for
+   a second and useless after that: when everything is marked, nothing is.
+   This is the accent doing a job. */
+.side-row.on::before {
+  content: "";
+  position: absolute; left: 0; top: 50%;
+  width: 2.5px; height: 15px; margin-top: -7.5px;
+  border-radius: 0 2px 2px 0;
+  background: var(--blue);
+}
+.side-row { position: relative; }
+
+/* ---- the search field --------------------------------------------------
+ * Glass, like every other input, but quieter: it sits inside the rail
+ * rather than on the page, so it should read as part of the furniture
+ * rather than as the thing being asked of you. */
+.side-search {
+  display: flex; align-items: center; gap: 8px;
+  margin: 4px 2px 10px; padding: 0 9px;
+  height: 34px;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--glass-edge-soft);
+  border-radius: 9px;
+  color: var(--faint);
+  transition: border-color 0.15s, background 0.15s;
+}
+.side-search:focus-within {
+  background: rgba(0, 0, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+.side-search svg { flex: none; }
+.side-search input {
+  flex: 1; min-width: 0;
+  background: none; border: 0; outline: none;
+  color: var(--text); font: 400 13px var(--sans);
+}
+.side-search input::placeholder { color: var(--ghost); }
+/* The shortcut, shown rather than remembered. */
+.side-key {
+  flex: none; display: grid; place-items: center;
+  min-width: 17px; height: 17px; padding: 0 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  color: var(--faint); font: 400 10.5px var(--mono);
+}
+body.light .side-search { background: rgba(12, 16, 23, 0.04); }
+body.light .side-search:focus-within { background: rgba(12, 16, 23, 0.06); }
+body.light .side-key { background: rgba(12, 16, 23, 0.05); border-color: rgba(12, 16, 23, 0.1); }
+
+/* Section headings, with a rule above them.
+ *
+ * The reference separates its blocks; Studio ran nav straight into Recent
+ * with nothing but a gap, so eleven session rows read as a continuation of
+ * the navigation rather than as a different kind of thing. A hairline and
+ * a little more air is the whole fix.
+ *
+ * Uppercase and tracked, because a heading that looks like the rows under
+ * it is not doing a heading's job. */
 .side-label {
-  margin: 18px 0 6px; padding: 0 9px;
-  font-size: 11.5px; color: var(--faint); font-weight: 400;
+  margin: 16px 0 6px; padding: 12px 9px 0;
+  border-top: 1px solid var(--glass-edge-soft);
+  font-size: 10.5px; font-weight: 500;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--quiet);
 }
 
 /* The bottom of the drawer: two offers and the person themself. */
@@ -3732,6 +3815,28 @@ body.side-resizing .shelf { transition: none; }
 }
 .sess-row:hover { background: var(--film); color: var(--text); }
 .sess-row.on { background: var(--film-strong); color: var(--text); }
+
+/* The open session, in 5px.
+ *
+ * Deliberately the ONLY coloured mark in this list. A dot on every row --
+ * the first version of this -- looked like information and was not: all 21
+ * sessions on this machine are built, so every dot was green and the
+ * column said nothing. One green dot on the row you are actually in says
+ * something every time you look at it.
+ *
+ * The reserved space is what keeps it calm: every row leaves room for the
+ * dot, so the titles stay on one left edge and nothing shifts when the
+ * mark moves. */
+.sess-dot {
+  flex: none; width: 5px; height: 5px; border-radius: 50%;
+  background: none;
+  transition: background 0.15s;
+}
+.sess-dot.here { background: #4ade80; }
+body.light .sess-dot.here { background: #16a34a; }
+
+/* A row that the search has ruled out. */
+.sess-row.hidden { display: none; }
 .sess-name {
   flex: 1; min-width: 0; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap;

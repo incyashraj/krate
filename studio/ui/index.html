@@ -35,6 +35,20 @@
       </button>
     </div>
 
+    <!-- Search over the sessions already in the rail. There are eleven of
+         them on this machine and they are all one grey; finding the one you
+         want by reading eleven truncated sentences is the slowest thing in
+         the drawer. The `/` hint is there because that is the key, and a
+         shortcut nobody can see is a shortcut nobody uses. -->
+    <div class="side-search">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <circle cx="7.2" cy="7.2" r="4.4" stroke="currentColor" stroke-width="1.35"/>
+        <path d="M10.6 10.6L13.5 13.5" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/>
+      </svg>
+      <input id="sideSearch" type="text" placeholder="Search" aria-label="Search your sessions" autocomplete="off" spellcheck="false" />
+      <kbd class="side-key">/</kbd>
+    </div>
+
     <!-- Every row here goes somewhere different. The old list had eight
          rows and five handlers: Recent and All apps opened the same page,
          Discover and Examples opened the same page, and Search, Starred
