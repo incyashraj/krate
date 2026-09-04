@@ -1044,34 +1044,73 @@
     </div>
   </div>
 
+  <!-- Picking an AI is three separate decisions -- which installed tool to
+       use, or a key instead of a tool, or something else entirely -- and
+       they were stacked down one narrow column with the third folded away
+       at the bottom. Same dialog shape as settings: the choices on the
+       left, the one you are making on the right. -->
   <div class="sheet-wrap hidden" id="aiSheet">
-    <div class="sheet">
-      <h2>Your AI</h2>
-      <p class="sheet-sub">Krate works with the AI you already have. Pick one that's
-      ready, or follow its one-line fix. Your AI's sign-in stays with that tool - Krate never holds its keys.</p>
-      <p class="ai-note">The buttons here do the work. Prefer a terminal?
-      Each fix's exact command is under its Terminal fold. Just signed in
-      somewhere else? Press Refresh.</p>
-      <div id="aiList"></div>
-      <div class="ai-actions">
-        <button class="btn" id="aiRefresh">Refresh</button>
-        <span class="ai-refresh-note" id="aiRefreshNote"></span>
-      </div>
+    <div class="set-modal" role="dialog" aria-modal="true" aria-label="Your AI">
+      <aside class="set-side">
+        <div class="set-side-head">Your AI</div>
+        <nav class="set-nav" id="aiNav" aria-label="Ways to connect an AI">
+          <button type="button" class="on" data-ai="tools">Installed tools</button>
+          <button type="button" data-ai="keys">API key</button>
+          <button type="button" data-ai="other">Something else</button>
+        </nav>
+      </aside>
+      <div class="set-main">
+        <button class="set-close" data-close="aiSheet" aria-label="Close">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+        <div class="set-scroll" data-scroller>
 
-      <!-- No CLI, just a key. This is the shortest path in for a developer
-           who already pays for the API and does not want another tool
-           installed and signed in first. -->
-      <div class="ai-keys" id="aiKeys">
-        <h3>Use an API key instead</h3>
-        <p class="ai-keys-sub">Paste a key and Krate calls the model directly.
-        Nothing else to install.</p>
-        <div id="aiKeyRows"></div>
-        <p class="ai-keys-note" id="aiKeyNote"></p>
+          <div class="ai-pane showing" data-ai="tools">
+            <h2>Installed tools</h2>
+            <p class="set-sub">Krate works with the AI you already have. Pick one
+            that is ready, or follow its one-line fix -- its sign-in stays with
+            that tool, and Krate never holds its keys.</p>
+            <div id="aiList"></div>
+            <div class="ai-actions">
+              <button class="btn" id="aiRefresh">Refresh</button>
+              <span class="ai-refresh-note" id="aiRefreshNote"></span>
+            </div>
+            <p class="ai-note">Signed in somewhere else just now? Press Refresh.
+            Prefer a terminal? Each fix's exact command is under its Terminal fold.</p>
+          </div>
+
+          <!-- No CLI, just a key. The shortest path in for a developer who
+               already pays for the API and does not want another tool
+               installed and signed in first. It was folded away at the
+               bottom of the old sheet, which is the wrong place for the
+               fastest route. -->
+          <div class="ai-pane" data-ai="keys">
+            <h2>API key</h2>
+            <p class="set-sub">Paste a key and Krate calls the model directly.
+            Nothing else to install.</p>
+            <div class="ai-keys" id="aiKeys">
+              <div id="aiKeyRows"></div>
+              <p class="ai-keys-note" id="aiKeyNote"></p>
+            </div>
+          </div>
+
+          <div class="ai-pane" data-ai="other">
+            <h2>Something else</h2>
+            <p class="set-sub">Any tool that can edit files can author Krate apps.</p>
+            <div class="set-panel">
+              <div class="set-row">
+                <div>
+                  <div class="lab">Your own command</div>
+                  <div class="hint">Run <code>krate create --help</code> and see
+                  <code>--author-cmd</code>: Krate hands it the app directory,
+                  the name and the request, and it writes the code.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
       </div>
-      <details class="sheet-foot-fold"><summary>A different agent</summary>
-      <p class="sheet-foot">Any tool that can edit files can author Krate apps -
-      run <code>krate create --help</code> and see <code>--author-cmd</code>.</p></details>
-      <button class="btn btn-ghost sheet-close" data-close="aiSheet">Close</button>
     </div>
   </div>
 

@@ -5498,6 +5498,27 @@ function paintThemeChoice() {
   }
 }
 
+/* The AI picker's three panes. Same rule as the settings sections: the
+ * left list says what you can do, the right side shows the one you picked.
+ * Bound once, at the top level, on markup that is never replaced. */
+(function aiPanes() {
+  const nav = document.getElementById("aiNav");
+  if (!nav) return;
+  nav.addEventListener("click", (e) => {
+    const button = e.target.closest("button[data-ai]");
+    if (!button) return;
+    const wanted = button.dataset.ai;
+    for (const b of nav.querySelectorAll("button[data-ai]")) {
+      b.classList.toggle("on", b === button);
+    }
+    for (const pane of document.querySelectorAll("#aiSheet .ai-pane")) {
+      pane.classList.toggle("showing", pane.dataset.ai === wanted);
+    }
+    const scroll = document.querySelector("#aiSheet .set-scroll");
+    if (scroll) scroll.scrollTop = 0;
+  });
+})();
+
 /* Open and close, and the ways out a person expects from an overlay. */
 function openSettings(section) {
   const sheet = $("setSheet");
@@ -6626,6 +6647,7 @@ $("aiRefresh")?.addEventListener("click", async () => {
     try { localStorage.setItem(KEY, String(parseInt(getComputedStyle(side).width, 10))); } catch (x) { }
   });
 })();
+
 
 
 
