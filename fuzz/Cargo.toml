@@ -9,9 +9,9 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-krate-adapter-common = { path = "../crates/adapter-common", version = "0.1.0-dev" }
-krate-manifest = { path = "../crates/manifest", version = "0.1.0-dev" }
-krate-policy = { path = "../crates/policy", version = "0.1.0-dev" }
+krate-adapter-common = { path = "../crates/adapter-common" }
+krate-manifest = { path = "../crates/manifest" }
+krate-policy = { path = "../crates/policy" }
 
 [workspace]
 members = ["."]

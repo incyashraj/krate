@@ -32,7 +32,7 @@ jobs:
        || contains(inputs.target, 'darwin') && 'macos-latest'
        || 'ubuntu-latest' }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Install the target
         shell: bash
@@ -82,7 +82,7 @@ jobs:
       # Anything that reaches a user goes through the release workflow, which
       # signs and notarizes.
       - name: Upload
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: krate-test-${{ inputs.target }}
           path: out/*
