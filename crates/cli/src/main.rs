@@ -363,6 +363,57 @@ enum Command {
         json: bool,
     },
 
+    /// Record a person's own verdict on an app, bound to the exact build.
+    ///
+    /// Some things a machine cannot settle: whether the spacing looks right,
+    /// whether the app is the one you pictured. This writes that answer down
+    /// beside the machine's, against the digest of the bytes you looked at --
+    /// so an approval of one build is never read as covering the next one.
+    ///
+    /// It will not let a sign-off stand in for a failure. A preference is
+    /// yours to waive; something the app does not do, a permission failure or
+    /// a platform it does not work on are not, and asking to waive one is
+    /// refused rather than recorded.
+    Accept {
+        /// The .krate file being accepted. Its bytes are what the verdict is
+        /// bound to.
+        bundle: PathBuf,
+
+        /// Who looked.
+        #[arg(long, value_name = "NAME")]
+        reviewer: String,
+
+        /// What they were doing: developer, designer, the person who asked.
+        #[arg(long, value_name = "ROLE", default_value = "developer")]
+        role: String,
+
+        /// The verdict: accept or reject.
+        #[arg(long)]
+        reject: bool,
+
+        /// What you want the next reader to know.
+        #[arg(long, value_name = "TEXT", default_value = "")]
+        notes: String,
+
+        /// Waive a preference, as `id:reason`. Repeatable. Only a preference
+        /// can be waived -- anything else is refused.
+        #[arg(long = "waive-preference", value_name = "ID:REASON")]
+        waive_preference: Vec<String>,
+
+        /// The requirement ids in force, comma-separated. Defaults to the ones
+        /// in the transcript beside the bundle, when there is one.
+        #[arg(long, value_name = "IDS")]
+        requirements: Option<String>,
+
+        /// Where to write the record. Defaults to <bundle>.accept.json.
+        #[arg(long, value_name = "FILE")]
+        output: Option<PathBuf>,
+
+        /// Print the record as JSON on stdout instead of human lines.
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Write the authoring context pack (KRATE_AUTHORING.md) for an app dir.
     ///
     /// This is the file an AI author reads before writing code: the SDK API
@@ -1542,6 +1593,27 @@ fn run() -> Result<u8> {
             no_run,
             json,
         } => check_app(&dir, shoot.as_deref(), no_run, json),
+        Command::Accept {
+            bundle,
+            reviewer,
+            role,
+            reject,
+            notes,
+            waive_preference,
+            requirements,
+            output,
+            json,
+        } => accept_command(
+            &bundle,
+            &reviewer,
+            &role,
+            reject,
+            &notes,
+            &waive_preference,
+            requirements.as_deref(),
+            output.as_deref(),
+            json,
+        ),
         Command::AuthoringContext { dir, output } => {
             let pack = authoring_context::generate(&dir);
             match output {
@@ -2415,6 +2487,157 @@ fn complete_port(
          user journeys before sharing this app."
     );
     Ok(())
+}
+
+/// Record a person's verdict on a built app.
+///
+/// The whole value of this is that it refuses. A record that says "approved"
+/// when a functional check failed is worse than no record, because someone
+/// will later read it and believe it -- so a waiver over anything but a
+/// preference stops here with a message saying what to do instead.
+#[allow(clippy::too_many_arguments)]
+fn accept_command(
+    bundle: &Path,
+    reviewer: &str,
+    role: &str,
+    reject: bool,
+    notes: &str,
+    waive_preference: &[String],
+    requirements: Option<&str>,
+    output: Option<&Path>,
+    json: bool,
+) -> Result<u8> {
+    use krate_author::human::{self, Concern, Decision, Waiver};
+
+    if !bundle.is_file() {
+        anyhow::bail!(
+            "there is no file at {}. Accept the .krate you actually looked at.",
+            bundle.display()
+        );
+    }
+    // The bytes are the subject of the verdict, so they are what gets hashed.
+    let digest = format!("sha256:{}", sha256_file(bundle)?);
+
+    // The requirements this was judged against. Naming them explicitly wins;
+    // otherwise take them from the transcript beside the bundle, which is what
+    // `krate create --transcript` writes, so the two records line up.
+    let (request, reqs) = match requirements {
+        Some(list) => (
+            String::new(),
+            list.split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>(),
+        ),
+        None => read_requirements_beside(bundle),
+    };
+
+    let mut waivers = Vec::new();
+    for raw in waive_preference {
+        // `id:reason`. Split once, so a reason may contain colons.
+        let (id, reason) = raw.split_once(':').unwrap_or((raw.as_str(), ""));
+        waivers.push(Waiver {
+            id: id.trim().to_string(),
+            kind: Concern::Preference,
+            reason: reason.trim().to_string(),
+        });
+    }
+
+    let decision = if reject {
+        Decision::Rejected
+    } else if waivers.is_empty() {
+        Decision::Accepted
+    } else {
+        Decision::AcceptedWithWaiver
+    };
+
+    let today = current_date_string();
+    let record = human::record(
+        &digest, &request, reqs, reviewer, role, &today, decision, notes, waivers, 1,
+    )
+    .map_err(|refusal| anyhow::anyhow!("{refusal}"))?;
+
+    let path = match output {
+        Some(path) => path.to_path_buf(),
+        None => bundle.with_extension("accept.json"),
+    };
+    fs::write(&path, serde_json::to_string_pretty(&record)? + "\n")
+        .with_context(|| format!("write {}", path.display()))?;
+
+    if json {
+        println!("{}", serde_json::to_string(&record)?);
+        return Ok(if record.is_green() { 0 } else { 6 });
+    }
+
+    println!();
+    match record.decision {
+        Decision::Rejected => {
+            println!("Recorded: {reviewer} rejected this build.");
+        }
+        Decision::Accepted => {
+            println!("Recorded: {reviewer} accepted this build.");
+        }
+        Decision::AcceptedWithWaiver => {
+            println!("Recorded: {reviewer} accepted this build, with a waiver.");
+            for waiver in &record.waivers {
+                println!("  waived {}: {}", waiver.id, waiver.reason);
+            }
+        }
+    }
+    println!("  build:  {digest}");
+    println!("  record: {}", path.display());
+    println!();
+    println!("This covers these exact bytes. A rebuilt app needs a new verdict.");
+    Ok(if record.is_green() { 0 } else { 6 })
+}
+
+/// The request and requirement ids from the transcript beside a bundle.
+///
+/// `krate create --transcript` writes one; when it is there, an acceptance can
+/// name the same requirements the machine judged, so the two records are about
+/// the same list rather than two people's idea of it.
+fn read_requirements_beside(bundle: &Path) -> (String, Vec<String>) {
+    let transcript = bundle.with_extension("transcript.json");
+    let Ok(text) = fs::read_to_string(&transcript) else {
+        return (String::new(), Vec::new());
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return (String::new(), Vec::new());
+    };
+    let request = value["request"].as_str().unwrap_or_default().to_string();
+    let ids = value["verdicts"]["request"]["requirements"]
+        .as_array()
+        .map(|reqs| {
+            reqs.iter()
+                .filter_map(|r| r["id"].as_str())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    (request, ids)
+}
+
+/// Today, as an ISO date, without pulling in a date library for one line.
+fn current_date_string() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or_default();
+    let days = secs / 86_400;
+    // Civil-from-days, the standard algorithm, shifted to an era starting
+    // 0000-03-01 so leap years fall at the end of the cycle.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{y:04}-{m:02}-{d:02}")
 }
 
 fn sha256_file(path: &Path) -> Result<String> {

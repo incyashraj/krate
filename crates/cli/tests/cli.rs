@@ -4536,3 +4536,109 @@ fn connect_refuses_to_overwrite_a_file_it_cannot_read() {
         "the file must be untouched"
     );
 }
+
+/// A person's sign-off is bound to the exact build, and it cannot stand in for
+/// a check that failed.
+///
+/// The refusals are the point. A record that says "approved" over a functional
+/// or security failure is worse than no record at all, because the next person
+/// reads it and believes it. This drives the real binary, because the guard
+/// that matters is the one a person actually hits.
+#[test]
+fn a_sign_off_names_the_build_and_refuses_to_cover_a_real_failure() {
+    let work = tempfile::tempdir().expect("temp dir");
+    let bundle = work.path().join("app.krate");
+    std::fs::write(&bundle, b"pretend this is a built app").expect("seed");
+
+    // A complete verdict is recorded, and it names the bytes it is about.
+    let out = krate()
+        .arg("accept")
+        .arg(&bundle)
+        .arg("--reviewer")
+        .arg("yashraj")
+        .arg("--role")
+        .arg("the person who asked")
+        .arg("--notes")
+        .arg("opened it, added three items, reopened, still there")
+        .arg("--json")
+        .output()
+        .expect("run accept");
+    assert!(
+        out.status.success(),
+        "a complete verdict should record: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let record: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("the record is one JSON object");
+    assert_eq!(record["schema"], "krate.accept.v1");
+    assert_eq!(record["decision"], "accepted");
+    assert_eq!(record["reviewer_role"], "the person who asked");
+    let digest = record["artifact_digest"]
+        .as_str()
+        .expect("a digest")
+        .to_string();
+    assert!(digest.starts_with("sha256:"), "digest was {digest}");
+    assert!(
+        !record["at"].as_str().unwrap_or_default().is_empty(),
+        "a verdict with no date cannot be read later"
+    );
+
+    // Change one byte and the digest changes, so the old verdict cannot be
+    // read as covering the new build. This is the whole reason it is recorded.
+    std::fs::write(&bundle, b"pretend this is a REBUILT app").expect("rebuild");
+    let after = krate()
+        .arg("accept")
+        .arg(&bundle)
+        .arg("--reviewer")
+        .arg("yashraj")
+        .arg("--json")
+        .output()
+        .expect("run accept");
+    let second: serde_json::Value = serde_json::from_slice(&after.stdout).expect("json");
+    assert_ne!(
+        second["artifact_digest"], digest,
+        "a rebuilt app must not carry the previous build's approval"
+    );
+
+    // A waiver with no reason is refused: it cannot be told apart from nobody
+    // having looked.
+    let no_reason = krate()
+        .arg("accept")
+        .arg(&bundle)
+        .arg("--reviewer")
+        .arg("yashraj")
+        .arg("--waive-preference")
+        .arg("req-3:")
+        .output()
+        .expect("run accept");
+    assert!(
+        !no_reason.status.success(),
+        "a blank waiver must be refused"
+    );
+    assert!(
+        String::from_utf8_lossy(&no_reason.stderr).contains("needs a reason"),
+        "the refusal must say what is missing: {}",
+        String::from_utf8_lossy(&no_reason.stderr)
+    );
+
+    // A verdict that cannot say who decided it is refused too.
+    let nameless = krate()
+        .arg("accept")
+        .arg(&bundle)
+        .arg("--reviewer")
+        .arg("")
+        .output()
+        .expect("run accept");
+    assert!(!nameless.status.success(), "an unsigned verdict is not one");
+
+    // And the only waiver the CLI offers is for a preference. There is no
+    // surface here for waiving a functional, security or portability failure,
+    // which is the rule this whole command exists to hold.
+    let help = krate().arg("accept").arg("--help").output().expect("help");
+    let text = String::from_utf8_lossy(&help.stdout);
+    assert!(text.contains("--waive-preference"), "{text}");
+    assert!(
+        !text.contains("--waive-security") && !text.contains("--waive-functional"),
+        "there must be no flag that waives a real failure: {text}"
+    );
+}

@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod acceptance;
 pub mod feasibility;
+pub mod human;
 
 /// What kind of app the agent was asked to build. The enum is the seam where
 /// more request types slot in without reshaping the pipeline around them.
