@@ -68,8 +68,9 @@ window.fetch = async function (input, init = {}) {
   if (path === "/build" && method === "POST") {
     // Flip this to walk the wall instead of a build.
     if (new URLSearchParams(location.search).get("wall") === "1") {
-      // Three EVER, per account -- not three a month (K-216).
-      return reply("You have made your three free apps. Studio is unlimited.", 402);
+      // One funded first working app per account (Master Plan CP0; closes
+      // the policy half of K-216). After it, Studio with their own AI.
+      return reply("Your first app was on us. Keep making in Studio with your own AI.", 402);
     }
     const id = "job_" + Math.random().toString(36).slice(2, 9);
     jobs.set(id, { started: Date.now() });

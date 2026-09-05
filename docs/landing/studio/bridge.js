@@ -60,14 +60,13 @@ async function builder(path, opts = {}) {
  *
  * A browser has no hardware id, and must not be given a fingerprint: a
  * canvas or font probe would identify people across the whole web, which
- * is a far bigger thing than counting three free apps and not a trade we
- * are willing to make.
+ * is a far bigger thing than counting a funded first app and not a trade
+ * we are willing to make.
  *
  * So this is a plain random id, stored once. A determined person can clear
  * it, and that is accepted. What it stops is the ordinary case -- a second
- * email address for three more apps -- because the id survives signing out
- * and signing in as someone else. The account key catches the rest, and
- * the real backstop is that abuse costs more effort than $12.
+ * email address for another funded app -- because the id survives signing
+ * out and signing in as someone else. The account key catches the rest.
  */
 function deviceId() {
   try {
@@ -181,8 +180,8 @@ const COMMANDS = {
    */
 
   async create_app({ request } = {}) {
-    // Nobody makes an app without an account: it is how the three free
-    // ones are counted, and how the work belongs to someone. But the
+    // Nobody makes an app without an account: it is how the funded first
+    // app is counted, and how the work belongs to someone. But the
     // sentence they just typed must survive the round trip -- being asked
     // to remember and retype it is the moment a person decides the
     // product is careless.

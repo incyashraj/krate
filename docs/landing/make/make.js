@@ -55,7 +55,11 @@ async function hub(path, opts = {}) {
   if (state.token) headers.authorization = `Bearer ${state.token}`;
   if (opts.body && !headers["content-type"]) headers["content-type"] = "application/json";
   const res = await fetch(HUB + path, { ...opts, headers });
-  if (!res.ok) throw new Error(await res.text().catch(() => res.statusText));
+  if (!res.ok) {
+    const err = new Error(await res.text().catch(() => res.statusText));
+    err.status = res.status;
+    throw err;
+  }
   const type = res.headers.get("content-type") || "";
   return type.includes("json") ? res.json() : res.text();
 }
@@ -149,7 +153,12 @@ async function startMake() {
     poll();
   } catch (err) {
     const message = String(err.message || err);
-    if (/three|limit|plan|subscri/i.test(message)) return hitTheWall(message);
+    // 402 is the hub saying the funded first app is used up. The word
+    // sniff stays as a fallback for older hub deployments whose 402
+    // bodies predate err.status being carried through.
+    if (err.status === 402 || /funded|first app|three|limit|plan|subscri/i.test(message)) {
+      return hitTheWall(message);
+    }
     failed(message);
   }
 }
@@ -283,12 +292,12 @@ function sheet(html) {
 function askToSignIn() {
   const wrap = sheet(`
     <h3>One quick sign-in</h3>
-    <p>So your apps are yours, and so we know which three are free.</p>
+    <p>So your apps are yours, and so your first one is on us.</p>
     <div class="rows">
       <button class="row" id="signGh"><b>Continue with GitHub</b></button>
       <button class="row" id="signGoogle"><b>Continue with Google</b></button>
     </div>
-    <p class="note">Krate never sees your password. Three apps free, then $12 a month.</p>
+    <p class="note">Krate never sees your password.</p>
     <button class="close" data-close>Not now</button>`);
   wrap.querySelector("#signGh").onclick = () => signIn("/login/start");
   wrap.querySelector("#signGoogle").onclick = () => signIn("/login/google/start");
@@ -305,20 +314,16 @@ function hitTheWall(message) {
   show("viewAsk");
   const plan = (state.me && state.me.plan) || {};
   const wrap = sheet(`
-    <h3>That's the three free ones</h3>
+    <h3>Your first app was on us</h3>
     <p>${escapeHtml(message || "Every app you have made is yours to keep, whatever happens next.")}</p>
     <div class="rows">
       <button class="row" id="goStudio">
-        <span><b>Studio, $12 a month</b><small>Unlimited apps. Or $96 for the year.</small></span>
-      </button>
-      <button class="row" id="goFounding">
-        <span><b>Founding 200, $79 a year</b><small>Locked in for as long as you stay.</small></span>
+        <span><b>Keep making in Studio</b><small>Free. Your own Claude or Codex does the writing, on your machine.</small></span>
       </button>
     </div>
-    <p class="note">${plan.active ? "" : "Changes to an app and builds that fail never count."}</p>
+    <p class="note">${plan.active ? "" : "Changes to your app and builds that fail never counted against you."}</p>
     <button class="close" data-close>Not now</button>`);
-  wrap.querySelector("#goStudio").onclick = () => checkout("monthly");
-  wrap.querySelector("#goFounding").onclick = () => checkout("founding");
+  wrap.querySelector("#goStudio").onclick = () => { location.href = "/studio"; };
   wrap.querySelector("[data-close]").onclick = () => wrap.remove();
 }
 
