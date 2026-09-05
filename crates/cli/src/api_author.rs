@@ -718,7 +718,10 @@ mod tests {
     fn an_unknown_model_is_priced_as_the_dearest_one() {
         // Guessing low on a model we do not recognise would quietly raise the
         // real ceiling on exactly the runs we understand least.
-        assert_eq!(prices("something-new-we-have-not-seen"), prices("claude-opus-5"));
+        assert_eq!(
+            prices("something-new-we-have-not-seen"),
+            prices("claude-opus-5")
+        );
     }
 
     #[test]

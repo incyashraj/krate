@@ -17,6 +17,14 @@
 
 use krate_adapter_common::canvas_list::CanvasOp;
 
+/// The host's text measurement: a string and a font size in, a width out.
+///
+/// Named rather than written inline because clippy is right that the bare
+/// `Option<&dyn Fn(&str, f32) -> f32>` is hard to read at a call site, and
+/// because there is only ever one thing this can be: the same measurement
+/// the app itself used to lay the string out.
+type Measure<'a> = dyn Fn(&str, f32) -> f32 + 'a;
+
 /// A box in canvas coordinates: left, top, right, bottom.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Box2 {
@@ -93,7 +101,7 @@ fn text_box(
     font_size: f32,
     letter_spacing: f32,
     text: &str,
-    measure: Option<&dyn Fn(&str, f32) -> f32>,
+    measure: Option<&Measure<'_>>,
 ) -> Option<Box2> {
     let chars = text.chars().count();
     if chars == 0 || font_size <= 0.0 {
@@ -126,10 +134,7 @@ pub fn find(ops: &[CanvasOp]) -> Vec<Collision> {
 
 /// As [`find`], but with the host's text measurement, so a comma is a comma
 /// wide rather than an average character wide.
-pub fn find_measured(
-    ops: &[CanvasOp],
-    measure: Option<&dyn Fn(&str, f32) -> f32>,
-) -> Vec<Collision> {
+pub fn find_measured(ops: &[CanvasOp], measure: Option<&Measure<'_>>) -> Vec<Collision> {
     let mut strings: Vec<(Box2, &str)> = Vec::new();
     for op in ops {
         if let CanvasOp::Text {

@@ -68,7 +68,7 @@ wasmtime.workspace = true
 # is the next real piece of work for running a guest in a tab, and it is
 # tracked as such rather than papered over -- so `load_component` is
 # gated off for wasm32 until those symbols exist.
-wasmtime = { version = "46.0.2", default-features = false, features = ["component-model", "runtime", "pulley", "gc", "gc-drc", "std", "custom-virtual-memory"] }
+wasmtime = { version = "46.0.3", default-features = false, features = ["component-model", "runtime", "pulley", "gc", "gc-drc", "std", "custom-virtual-memory"] }
 
 [dependencies]
 sha2 = "0.10.9"
