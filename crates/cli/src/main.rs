@@ -4002,6 +4002,14 @@ exec "$krate_bin" run "$app" --consent
 /// An `.app` is a shape Apple will notarize, so this one can be signed in
 /// CI and trusted on arrival.
 fn wrap_mac_folder(bundle: &Path, app_name: &str, stem: &str, output: Option<&Path>) -> Result<u8> {
+    // Both of these are filesystem names, so both come from the safe form.
+    //
+    // `stem` was already alphanumeric-only, but `app_name` was not, and the
+    // opener below put it straight into a path -- which is how a manifest
+    // called `../../../ESCAPED` wrote outside the working directory and then
+    // had `remove_dir_all` called on it (IC-217).
+    let stem = safe_path_name(stem);
+    let safe_name = safe_path_name(app_name);
     let out_dir = match output {
         Some(path) => path.to_path_buf(),
         None => bundle
@@ -4009,13 +4017,26 @@ fn wrap_mac_folder(bundle: &Path, app_name: &str, stem: &str, output: Option<&Pa
             .unwrap_or_else(|| Path::new("."))
             .join(format!("{stem}-for-Mac")),
     };
+    // Prove the final path is where we meant to put it before deleting
+    // anything. A name is only untrusted input; the check is what makes it
+    // safe, and a check after the delete would be an apology.
+    if output.is_none() {
+        let root = bundle.parent().unwrap_or_else(|| Path::new("."));
+        let expected = root.join(format!("{stem}-for-Mac"));
+        if out_dir != expected {
+            anyhow::bail!(
+                "refusing to write outside {}: the app's name does not make a safe folder name",
+                root.display()
+            );
+        }
+    }
     if out_dir.exists() {
         fs::remove_dir_all(&out_dir)
             .with_context(|| format!("could not replace {}", out_dir.display()))?;
     }
 
     let app_file = format!("{stem}.krate");
-    let opener = out_dir.join(format!("Open {app_name}.app"));
+    let opener = out_dir.join(format!("Open {safe_name}.app"));
 
     // Prefer the opener the release notarized. A gift is made on a sender's
     // laptop, where there is no certificate and no notary account, so an
@@ -4045,14 +4066,22 @@ fn wrap_mac_folder(bundle: &Path, app_name: &str, stem: &str, output: Option<&Pa
     fs::create_dir_all(&macos_dir)
         .with_context(|| format!("could not create {}", macos_dir.display()))?;
 
+    // The name goes into XML here, so it is escaped rather than merely
+    // path-safe: a manifest containing `</string>` would otherwise close the
+    // element and write its own plist keys. Same untrusted-metadata class as
+    // the path escape above (IC-217).
+    let plist_name = app_name
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
     fs::write(
         opener.join("Contents/Info.plist"),
         format!(
             r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>CFBundleName</key><string>Open {app_name}</string>
-  <key>CFBundleDisplayName</key><string>Open {app_name}</string>
+  <key>CFBundleName</key><string>Open {plist_name}</string>
+  <key>CFBundleDisplayName</key><string>Open {plist_name}</string>
   <key>CFBundleIdentifier</key><string>tech.krate.gift</string>
   <key>CFBundleExecutable</key><string>open</string>
   <key>CFBundlePackageType</key><string>APPL</string>
@@ -4246,6 +4275,56 @@ fn card_trust_line(manifest: &krate_manifest::Manifest) -> String {
         return "asks for nothing beyond the basics".to_string();
     }
     format!("can {} · nothing else", labels.join(" · "))
+}
+
+/// The app's name, made safe to put in a path (IC-217).
+///
+/// `app.name` is DISPLAY metadata written by whoever packed the bundle. It
+/// reached the filesystem unchanged, and a name of `../../../ESCAPED` wrote
+/// the gift folder outside the directory the command was run in -- then a
+/// second wrap called `remove_dir_all` on that same escaped path and deleted
+/// a real file. Reproduced before this fix, on this machine.
+///
+/// So: keep the true name for anything a person reads, and use this for
+/// anything a filesystem reads. Separators and parent references cannot
+/// survive it, because the result has no path structure left to escape with
+/// -- every character that could build one is gone rather than replaced.
+///
+/// Deliberately not a blacklist of dangerous strings. `..` is only one
+/// spelling of the problem; a blacklist has to be right about every other
+/// one, and this has to be right about the alphabet.
+fn safe_path_name(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == ' ' || c == '-' || c == '_' {
+                c
+            } else {
+                ' '
+            }
+        })
+        .collect();
+    // Collapse the runs the replacement leaves behind, so "a///b" does not
+    // become "a   b".
+    let joined = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+    // A name that is only leading dots is still a hidden file, and an empty
+    // one is a path that means "this directory".
+    let trimmed = joined.trim_matches(['.', '-'].as_slice()).trim();
+    if trimmed.is_empty() {
+        "App".to_string()
+    } else {
+        // A long name is a different problem -- some filesystems cap a single
+        // component at 255 bytes -- and truncating on a char boundary keeps
+        // this from panicking on multibyte text.
+        let mut out = String::new();
+        for ch in trimmed.chars() {
+            if out.len() + ch.len_utf8() > 120 {
+                break;
+            }
+            out.push(ch);
+        }
+        out
+    }
 }
 
 /// The card's default file stem: the app's name with the spaces closed up
@@ -16291,5 +16370,66 @@ mod check_app_tests {
             "\n[[capabilities]]\ncap = \"io.stdout\"\nrationale = \"t\"\nrequired = true\n",
         );
         assert!(!manifest_is_gui(&cli));
+    }
+}
+
+#[cfg(test)]
+mod safe_path_name_tests {
+    use super::safe_path_name;
+
+    /// IC-217. A manifest name of `../../../ESCAPED` wrote the gift folder
+    /// outside the working directory, and a second wrap then called
+    /// `remove_dir_all` on that escaped path and deleted a real file.
+    /// Reproduced on this machine before the fix.
+    #[test]
+    fn traversal_cannot_survive_a_safe_name() {
+        for hostile in [
+            "../../../ESCAPED",
+            "..",
+            "../..",
+            "a/../../b",
+            "/etc/passwd",
+            r"..\..\windows",
+            "....//....//x",
+        ] {
+            let safe = safe_path_name(hostile);
+            assert!(
+                !safe.contains('/') && !safe.contains('\\'),
+                "{hostile:?} kept a separator: {safe:?}"
+            );
+            assert!(
+                !safe.contains(".."),
+                "{hostile:?} kept a parent reference: {safe:?}"
+            );
+            assert!(!safe.is_empty(), "{hostile:?} produced an empty name");
+        }
+    }
+
+    /// A name that is only punctuation would otherwise leave an empty string,
+    /// and an empty path component means "this directory".
+    #[test]
+    fn a_name_with_nothing_usable_becomes_app() {
+        for empty in ["", "...", "///", "..", "   ", "---"] {
+            assert_eq!(safe_path_name(empty), "App", "{empty:?}");
+        }
+    }
+
+    /// The safe form is for paths only. An ordinary name has to survive it
+    /// recognisably, or every gift folder would be called "App".
+    #[test]
+    fn an_ordinary_name_is_left_alone() {
+        assert_eq!(safe_path_name("Tip Calculator"), "Tip Calculator");
+        assert_eq!(safe_path_name("rate-card"), "rate-card");
+        assert_eq!(safe_path_name("Notes_2026"), "Notes_2026");
+    }
+
+    /// Some filesystems cap one component at 255 bytes, and truncation has to
+    /// happen on a character boundary or this panics on multibyte text.
+    #[test]
+    fn a_very_long_name_is_cut_without_panicking() {
+        let long = "ハローワールド".repeat(40);
+        let safe = safe_path_name(&long);
+        assert!(safe.len() <= 120, "{} bytes", safe.len());
+        assert!(!safe.is_empty());
     }
 }
