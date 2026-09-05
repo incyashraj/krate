@@ -16,6 +16,18 @@ on:
         description: The existing tag to build and publish, e.g. v0.1.0
         required: true
         type: string
+      emergency:
+        description: >-
+          Release without green CI on this commit. Only for a broken runner or
+          an outage with no way through. It is recorded in the run summary and
+          it narrows what this release can claim.
+        required: false
+        default: false
+        type: boolean
+      emergency_reason:
+        description: Why the gate is being bypassed. Required when emergency is set.
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -30,7 +42,133 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
+  # Nothing used to stand between a tag and a published release. Tagging a
+  # commit whose tests were red shipped it, and so did tagging a commit whose
+  # full suite had never run at all -- the heavy jobs only run on a schedule or
+  # when a commit message carries [full-ci], and a release tag carries neither.
+  #
+  # So this job looks up what CI actually concluded for the exact commit being
+  # released, and refuses when that answer is anything but success. It checks
+  # the commit, not the branch: a green run on an older SHA says nothing about
+  # this one. A stable release additionally needs the full suite to have run on
+  # that commit, since the fast suite skips the platform and cold-install work
+  # that a stable release is precisely the thing at risk from.
+  #
+  # An emergency exception exists, because a release blocked on a broken runner
+  # with no way through is its own kind of failure -- but it has to be typed
+  # deliberately and it is recorded in the run.
+  gate:
+    name: Require green CI on this exact commit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Resolve the commit being released
+        id: commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          sha=$(gh api "repos/${{ github.repository }}/commits/${TAG}" --jq .sha)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Releasing $TAG at $sha"
+
+      - name: Check CI on that commit
+        if: ${{ inputs.emergency != true }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.commit.outputs.sha }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          # Every CI run for this exact commit, newest first. A rerun that is
+          # still going, or one that was cancelled, is not a pass.
+          #
+          # Each field is asked for on its own rather than pulling the run
+          # objects into a variable and re-parsing them: a commit message with
+          # a newline in it -- which every commit here has -- makes that
+          # variable something jq will not read back.
+          api="repos/${{ github.repository }}/actions/runs?head_sha=${SHA}&per_page=100"
+          count=$(gh api "$api" --jq '[.workflow_runs[] | select(.name == "CI")] | length')
+          if [ "$count" -eq 0 ]; then
+            echo "::error::No CI run exists for $SHA. A release must be built from a commit CI has actually tested."
+            exit 1
+          fi
+
+          status=$(gh api "$api" --jq '[.workflow_runs[] | select(.name == "CI")][0].status')
+          conclusion=$(gh api "$api" --jq '[.workflow_runs[] | select(.name == "CI")][0].conclusion // "none"')
+          url=$(gh api "$api" --jq '[.workflow_runs[] | select(.name == "CI")][0].html_url')
+          run_id=$(gh api "$api" --jq '[.workflow_runs[] | select(.name == "CI")][0].id')
+          echo "Newest CI run for $SHA: status=$status conclusion=$conclusion"
+          echo "$url"
+          if [ "$status" != "completed" ]; then
+            echo "::error::CI for $SHA is still $status. Wait for it rather than releasing on an unknown result."
+            exit 1
+          fi
+          if [ "$conclusion" != "success" ]; then
+            echo "::error::CI for $SHA concluded '$conclusion'. A release is not built from a commit whose tests did not pass."
+            exit 1
+          fi
+
+          # A release candidate ships on the fast suite. A stable release does
+          # not: the jobs that only run under [full-ci] are the platform and
+          # cold-install ones, which is exactly what a stable release exposes
+          # to people who are not us.
+          case "$TAG" in
+            *-rc*|*-alpha*|*-beta*)
+              echo "Pre-release $TAG: the fast suite is the bar."
+              ;;
+            *)
+              # Did the heavy jobs actually run here? Whether they passed is
+              # already settled -- the run's own conclusion is checked above,
+              # and a failed job makes that conclusion a failure. What is asked
+              # here is only whether they were present at all, because a run
+              # that skipped them is green on a narrower claim than a stable
+              # release makes. A skipped job is not a job that ran.
+              full=$(gh api "repos/${{ github.repository }}/actions/runs/${run_id}/jobs?per_page=100" \
+                --jq '[.jobs[]
+                       | select(.name | test("cold install|full test"; "i"))
+                       | select(.conclusion != "skipped")] | length')
+              if [ "$full" -eq 0 ]; then
+                echo "::error::CI passed on $SHA but the full suite never ran there -- only the fast jobs did, and a stable release is exactly what the platform and cold-install jobs exist to check. Push the release commit with [full-ci] in its message, or dispatch CI with full=true on $SHA, then tag."
+                exit 1
+              fi
+              echo "Full suite ran on $SHA: $full of its jobs were executed."
+              ;;
+          esac
+
+      - name: Record the emergency exception
+        if: ${{ inputs.emergency == true }}
+        env:
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          set -euo pipefail
+          # An exception with no stated reason is just a bypass. Refuse it, so
+          # the record is always worth something to whoever reads it later.
+          reason='${{ inputs.emergency_reason }}'
+          if [ -z "${reason// }" ]; then
+            echo "::error::An emergency release needs a reason. Set emergency_reason and dispatch again."
+            exit 1
+          fi
+          # Not a silent bypass. It names who did it and on what, in the run
+          # log and in the summary, so the release carries its own record.
+          echo "::warning::EMERGENCY RELEASE: CI gate bypassed for $SHA by ${{ github.actor }}. Reason: $reason"
+          {
+            echo "## Emergency release"
+            echo ""
+            echo "The CI gate was bypassed for this release."
+            echo ""
+            echo "- commit: \`$SHA\`"
+            echo "- by: @${{ github.actor }}"
+            echo "- reason: $reason"
+            echo ""
+            echo "The claims this release can make are narrowed accordingly: its tests were not verified green on this commit."
+          } >> "$GITHUB_STEP_SUMMARY"
+
   build:
+    needs: gate
     name: Build (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.optional == true }}
