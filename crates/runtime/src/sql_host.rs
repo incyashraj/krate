@@ -134,6 +134,7 @@ impl AppDatabase {
                      PRAGMA journal_mode = WAL;",
                 )
                 .map_err(|e| SqlError::Io(e.to_string()))?;
+            install_authorizer(&connection);
             self.connection = Some(connection);
         }
         Ok(self.connection.as_ref().expect("connection"))
@@ -268,6 +269,42 @@ impl AppDatabase {
     }
 }
 
+/// Let SQLite itself decide what an app may do (IC-248).
+///
+/// The text filter below is a second line, not the first one. It could not be
+/// the first: it matched the literal string `vacuum into`, and SQL does not
+/// care how many spaces sit between two keywords. `VACUUM` + newline + `INTO`
+/// went straight past it and wrote a copy of the database wherever it was
+/// told -- reproduced before this fix.
+///
+/// That is the shape of every text filter. It has to be right about all the
+/// ways a statement can be spelled, while an attacker only has to find one
+/// spelling it missed: a tab, two spaces, a comment between the words, a
+/// different case. So the decision moves to the one component that has
+/// already parsed the statement and knows what it actually does.
+///
+/// The authorizer runs during prepare, before any row is touched, and sees
+/// typed actions rather than text. Whitespace, comments and casing are gone
+/// by then -- an `Attach` is an `Attach` however it was written.
+fn install_authorizer(connection: &Connection) {
+    use rusqlite::hooks::{AuthAction, Authorization};
+    connection.authorizer(Some(|context: rusqlite::hooks::AuthContext<'_>| {
+        match context.action {
+            // A second database at any path on disk. The escape that matters
+            // most, and the reason this exists.
+            AuthAction::Attach { .. } | AuthAction::Detach { .. } => Authorization::Deny,
+            // A pragma can load an extension or point the journal at a file.
+            // The ones Krate itself needs are set on the connection above,
+            // before this is installed, so refusing all of them here costs
+            // the app nothing it is entitled to.
+            AuthAction::Pragma { .. } => Authorization::Deny,
+            // Everything else is ordinary table work inside the app's own
+            // database, which is exactly what store.sql is for.
+            _ => Authorization::Allow,
+        }
+    }));
+}
+
 /// Refuse the statements that would reach outside the app's own database.
 ///
 /// SQLite is a capable engine, and some of that capability is filesystem
@@ -277,7 +314,19 @@ impl AppDatabase {
 /// data, and every one of them is a way around the capability boundary, so they
 /// are refused before the statement reaches SQLite.
 fn check_statement(statement: &str) -> Result<(), SqlError> {
-    let lowered = statement.to_lowercase();
+    // Collapse every run of whitespace to one space before matching.
+    //
+    // Without this, `vacuum into` only matched a single space, and SQL does
+    // not care: `VACUUM` + newline + `INTO` wrote a copy of the database to
+    // any path and returned success (IC-248). A tab or two spaces did the
+    // same. The authorizer installed on the connection is the real defence
+    // now, but this stays as a second line and has to at least be right
+    // about the spelling it claims to catch.
+    let lowered = statement
+        .to_lowercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     for (needle, reason) in [
         ("attach", "attaching another database"),
         ("detach", "detaching a database"),
@@ -423,6 +472,47 @@ mod tests {
         let mut db = AppDatabase::new(path, true);
         let result = db.query("SELECT a FROM t", &[]).expect("query");
         assert_eq!(result.rows, vec![vec![SqlValue::Text("kept".into())]]);
+    }
+
+    /// IC-248. The filter matched the literal string `vacuum into`, and SQL
+    /// does not care how much whitespace sits between two keywords. Every
+    /// spelling below went straight past it and wrote a copy of the database
+    /// wherever it was told; each was reproduced before the fix.
+    #[test]
+    fn whitespace_cannot_smuggle_a_vacuum_past_the_filter() {
+        let (mut db, dir) = database(true);
+        let escape = dir.path().join("stolen.db");
+        for spelling in [
+            format!("VACUUM\nINTO '{}'", escape.display()),
+            format!("VACUUM\tINTO '{}'", escape.display()),
+            format!("VACUUM  INTO '{}'", escape.display()),
+            format!("vacuum\r\ninto '{}'", escape.display()),
+        ] {
+            let refused = db.execute(&spelling, &[]).is_err();
+            assert!(refused, "not refused: {spelling:?}");
+            assert!(
+                !escape.exists(),
+                "a copy of the database was written despite the refusal: {spelling:?}"
+            );
+        }
+    }
+
+    /// The authorizer is the real defence, so it must hold even for a
+    /// statement the text filter never looks at. SQLite decides during
+    /// prepare, from its own parse, so casing and spacing are already gone.
+    #[test]
+    fn the_authorizer_refuses_attach_however_it_is_written() {
+        let (mut db, _dir) = database(true);
+        for spelling in [
+            "attach database '/etc/passwd' as leak",
+            "ATTACH\nDATABASE '/etc/passwd' AS leak",
+            "AtTaCh   DaTaBaSe '/etc/passwd' As leak",
+        ] {
+            assert!(
+                db.execute(spelling, &[]).is_err(),
+                "not refused: {spelling}"
+            );
+        }
     }
 
     #[test]
