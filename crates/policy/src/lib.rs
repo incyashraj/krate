@@ -22,6 +22,42 @@ impl SessionPolicy {
         Self { grants: resolved }
     }
 
+    /// What an app may have when Krate is only taking its picture (IC-219,
+    /// IC-221, IC-341).
+    ///
+    /// Several paths ran a bundle with `--auto-grant` -- every capability the
+    /// manifest declared -- purely to get a frame out of it: the card, the
+    /// publish preview, the TUI's "open an app", port verification, MCP. A
+    /// microphone, a camera, the network and the user's files were all
+    /// granted with nobody asked, in order to produce a thumbnail.
+    ///
+    /// Nothing in the list below can reach past the app's own window. The
+    /// ambient defaults come free from `from_grants`; on top of them this
+    /// allows only the two declared capabilities an app legitimately needs to
+    /// paint a representative first frame:
+    ///
+    /// - `random.bytes`, because an app that shuffles or picks a colour on
+    ///   startup otherwise refuses to run at all.
+    /// - `store.kv` and `store.sql`, because an app draws its saved state,
+    ///   and a screenshot of an app that could not read its own data is a
+    ///   screenshot of an empty app.
+    ///
+    /// Everything else -- net, fs, media, secrets, shared state -- is refused.
+    /// The app still starts and still paints; it simply cannot use the moment
+    /// to reach the world. An app that genuinely cannot draw without the
+    /// network gets no picture, which is the honest outcome: Krate should not
+    /// silently spend the recipient's authority to make its own preview
+    /// prettier.
+    pub fn for_screenshot(manifest: &Manifest) -> Result<Self> {
+        const SAFE_FOR_A_PICTURE: [&str; 3] = ["random.bytes", "store.kv", "store.sql"];
+        let declared = manifest.declared_capabilities()?;
+        let kept = declared.into_iter().filter(|cap| {
+            let named = format!("{}.{}", cap.module(), cap.action());
+            SAFE_FOR_A_PICTURE.contains(&named.as_str())
+        });
+        Ok(Self::from_grants(kept))
+    }
+
     pub fn allow_all_declared(manifest: &Manifest) -> Result<Self> {
         Ok(Self::from_grants(manifest.declared_capabilities()?))
     }
@@ -248,6 +284,64 @@ pub type Result<T> = std::result::Result<T, PolicyError>;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn manifest_declaring(caps: &[&str]) -> Manifest {
+        let mut source = String::from(
+            "[app]\nid = \"dev.krate.test\"\nname = \"Test\"\nversion = \"1.0.0\"\n\
+             entry = \"app.wasm\"\nworld = \"krate:app/gui@0.2.0\"\n\n",
+        );
+        for cap in caps {
+            source.push_str(&format!(
+                "[[capabilities]]\ncap = \"{cap}\"\nrationale = \"test\"\nrequired = true\n\n"
+            ));
+        }
+        Manifest::parse(&source).expect("manifest")
+    }
+
+    /// IC-219/IC-221. Several paths ran a bundle with every capability it
+    /// declared, purely to take its picture -- microphone, camera, network
+    /// and the user's files granted so Krate could make a thumbnail. A
+    /// screenshot never needs any of them.
+    #[test]
+    fn a_screenshot_run_cannot_reach_the_world() {
+        let manifest = manifest_declaring(&[
+            "net.connect:example.com:443",
+            "fs.read:documents/**",
+            "audio.capture",
+            "store.kv",
+            "random.bytes",
+        ]);
+        let policy = SessionPolicy::for_screenshot(&manifest).expect("policy");
+
+        for refused in [
+            "net.connect:example.com:443",
+            "fs.read:documents/**",
+            "audio.capture",
+        ] {
+            let cap: Capability = refused.parse().expect("cap");
+            assert!(
+                !policy.allows(&cap),
+                "a screenshot run must not be granted {refused}"
+            );
+        }
+        // An app draws its saved state, and a picture of an app that could
+        // not read its own data is a picture of an empty app.
+        for allowed in ["store.kv", "random.bytes"] {
+            let cap: Capability = allowed.parse().expect("cap");
+            assert!(policy.allows(&cap), "a screenshot run needs {allowed}");
+        }
+    }
+
+    /// The screenshot policy must still be narrower than auto-grant even
+    /// when the manifest declares nothing sensitive -- otherwise the two
+    /// would quietly converge and the distinction would stop being real.
+    #[test]
+    fn a_screenshot_run_is_never_wider_than_what_was_declared() {
+        let manifest = manifest_declaring(&["store.kv"]);
+        let policy = SessionPolicy::for_screenshot(&manifest).expect("policy");
+        let undeclared: Capability = "net.connect:example.com:443".parse().expect("cap");
+        assert!(!policy.allows(&undeclared));
+    }
 
     /// K-086: the default-granted dialog wildcard silently covered the
     /// privileged dialogs, so promoting file-open/file-save to explicit

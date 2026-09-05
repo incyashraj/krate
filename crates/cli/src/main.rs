@@ -174,6 +174,14 @@ enum Command {
         #[arg(long)]
         auto_grant: bool,
 
+        /// Run with only what an app needs to paint a frame, for taking its
+        /// picture. Grants the ambient defaults plus saved-data and random
+        /// bytes; refuses network, filesystem, media and secrets whatever the
+        /// manifest declares. Krate uses this wherever it photographs an app
+        /// it was not asked to run (IC-219, IC-221).
+        #[arg(long)]
+        for_screenshot: bool,
+
         /// Ask before granting missing capabilities declared by the manifest.
         #[arg(long)]
         prompt: bool,
@@ -1287,6 +1295,7 @@ fn run() -> Result<u8> {
             manifest,
             grant,
             auto_grant,
+            for_screenshot,
             prompt,
             consent,
             native_window,
@@ -1324,6 +1333,7 @@ fn run() -> Result<u8> {
             manifest_path: manifest,
             grants: grant,
             auto_grant,
+            for_screenshot,
             prompt,
             consent,
             // A screenshot is a headless render by definition: there is no way
@@ -2927,6 +2937,8 @@ struct RunRequest {
     manifest_path: Option<PathBuf>,
     grants: Vec<String>,
     auto_grant: bool,
+    /// Only what is needed to paint a frame. See `SessionPolicy::for_screenshot`.
+    for_screenshot: bool,
     prompt: bool,
     consent: bool,
     /// How this run should present a GUI: a real window, headless, or a
@@ -3625,7 +3637,19 @@ pub(crate) fn run_bundle_for_tui(bundle: &Path) -> Result<()> {
     let output = std::process::Command::new(exe)
         .arg("run")
         .arg(bundle)
-        .arg("--auto-grant")
+        // No --auto-grant here (IC-219).
+        //
+        // This is the menu's "open an app", and it takes any path a person
+        // types -- including a file somebody just sent them. Auto-granting
+        // handed every declared capability to that file without asking:
+        // microphone, camera, network, the user's documents. The person was
+        // choosing to OPEN an app, which is not the same as agreeing to what
+        // it may do.
+        //
+        // Dropping the flag is the whole fix. The consent path below already
+        // fires whenever stdin is a terminal, and the menu always is one, so
+        // the person is asked -- in the terminal they are already looking at.
+        .arg("--prompt")
         // The menu has already said which app is opening and how to get back,
         // so the runtime's own "krate: opened window ..." line is a second
         // copy of that in blunter words.
@@ -3682,6 +3706,7 @@ pub(crate) fn run_bundle_inline(bundle: &Path) -> Result<()> {
         manifest_path: None,
         grants: Vec::new(),
         auto_grant: true,
+        for_screenshot: false,
         prompt: false,
         consent: false,
         ui_mode: krate_runtime::phase3_ui::Phase3HostUiMode::NativeWithHeadlessFallback,
@@ -4571,7 +4596,10 @@ fn card_bundle(
                 .arg(bundle)
                 .arg("--shoot")
                 .arg(&dest)
-                .arg("--auto-grant")
+                // Not --auto-grant. Making a card is Krate photographing a
+                // file, not the recipient deciding to run it, so the app gets
+                // only what it needs to paint (IC-221).
+                .arg("--for-screenshot")
                 .env("KRATE_SHOOT_AFTER_MS", settle_ms.to_string())
                 // The app's own prints belong to the app, not to the card
                 // summary. Errors still come through on stderr.
@@ -4843,7 +4871,10 @@ fn publish_bundle(
             .arg(bundle)
             .args(["--shoot"])
             .arg(&shot)
-            .args(["--auto-grant", "--", "quick"])
+            // Publishing takes a preview picture. That is Krate looking at
+            // the app, not a person running it, so the app gets only what it
+            // needs to paint (IC-221).
+            .args(["--for-screenshot", "--", "quick"])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status()
@@ -9992,7 +10023,14 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
     }
 
     let manifest = loaded_manifest.as_ref().map(|loaded| &loaded.manifest);
-    let mut policy = resolve_session_policy(manifest, &request.grants, request.auto_grant)?;
+    // The screenshot policy wins over auto-grant when both are asked for.
+    // A caller that wants a picture is saying "I am not the recipient and
+    // nobody consented to anything", and that is the narrower claim, so it
+    // is the one that holds (IC-219, IC-221).
+    let mut policy = match (manifest, request.for_screenshot) {
+        (Some(manifest), true) => SessionPolicy::for_screenshot(manifest)?,
+        _ => resolve_session_policy(manifest, &request.grants, request.auto_grant)?,
+    };
 
     // Before the wall, not after it: --dump-caps answers "what would this app
     // ask for?" without running a single instruction, and it is the safe way to
@@ -11140,6 +11178,7 @@ fn open_app(direct: Option<PathBuf>) -> Result<u8> {
         manifest_path: None,
         grants: Vec::new(),
         auto_grant: false,
+        for_screenshot: false,
         prompt: false,
         consent: true,
         ui_mode: krate_runtime::phase3_ui::Phase3HostUiMode::NativePrototype,

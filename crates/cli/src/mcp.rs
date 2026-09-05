@@ -147,16 +147,12 @@ fn execution_tools() -> Vec<Value> {
                     },
                     "manifest_path": {
                         "type": "string",
-                        "description": "Path to the app's manifest.toml. Required for auto_grant and denial reporting."
+                        "description": "Path to the app's manifest.toml. Used for denial reporting."
                     },
                     "grants": {
                         "type": "array",
                         "items": { "type": "string" },
                         "description": "Capability strings to grant, e.g. \"fs.read:data/**\"."
-                    },
-                    "auto_grant": {
-                        "type": "boolean",
-                        "description": "Grant everything the manifest declares."
                     },
                     "app_args": {
                         "type": "array",
@@ -283,10 +279,24 @@ fn run_component_tool(arguments: &Value) -> Result<Value> {
             arguments.get("manifest_path").and_then(Value::as_str),
         ),
     };
-    let auto_grant = arguments
-        .get("auto_grant")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
+    // A model cannot grant an application real-world authority (IC-341).
+    //
+    // This tool used to take `auto_grant`, so the thing being asked to write
+    // the code also decided what the finished app was allowed to do:
+    // microphone, camera, network, the person's files. Those are two
+    // different permissions -- "edit this project" and "let this app reach
+    // the world" -- and joining them meant nobody with standing to consent
+    // was ever asked.
+    //
+    // Removed from the schema, and refused here rather than ignored: a
+    // caller that still sends it is working from an older idea of this tool,
+    // and silently doing something narrower than it asked for is how a
+    // security boundary becomes a surprise.
+    if arguments.get("auto_grant").is_some() {
+        anyhow::bail!(
+            "auto_grant is not available: an AI may ask for a capability but cannot approve one.              Pass explicit `grants`, or run the app yourself and answer the permission screen."
+        );
+    }
     let grants: Vec<String> = string_list(arguments.get("grants"))?;
     let app_args: Vec<String> = string_list(arguments.get("app_args"))?;
 
@@ -299,20 +309,9 @@ fn run_component_tool(arguments: &Value) -> Result<Value> {
         None => None,
     };
 
-    let mut policy = SessionPolicy::from_cli_grants(&grants).context("parse grants")?;
-    if auto_grant {
-        if let Some(manifest) = &manifest {
-            let declared = SessionPolicy::allow_all_declared(manifest)
-                .context("grant declared capabilities")?;
-            policy = SessionPolicy::from_grants(
-                policy
-                    .grants()
-                    .iter()
-                    .cloned()
-                    .chain(declared.grants().iter().cloned()),
-            );
-        }
-    }
+    // Only what the caller named explicitly. The branch that folded in every
+    // declared capability is gone with the argument that reached it.
+    let policy = SessionPolicy::from_cli_grants(&grants).context("parse grants")?;
 
     let app = manifest.as_ref().map(|manifest| {
         json!({
