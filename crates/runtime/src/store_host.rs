@@ -54,6 +54,9 @@ pub struct AppStore {
     /// False when the app did not receive `store.kv`. Every operation checks
     /// this first, so a denied app cannot read or write a byte.
     granted: bool,
+    /// Set when a store file exists but could not be read. Every operation
+    /// then answers with an error rather than behaving like a new app.
+    unreadable: Option<String>,
 }
 
 impl AppStore {
@@ -61,15 +64,45 @@ impl AppStore {
     ///
     /// `granted` comes from the session policy, not from the app.
     pub fn open(path: PathBuf, granted: bool) -> Self {
-        let entries = if granted {
-            load(&path).unwrap_or_default()
+        // A store that exists but cannot be read is NOT an empty store
+        // (IC-877).
+        //
+        // This used to be `load(&path).unwrap_or_default()`, so a corrupt
+        // file and a brand-new app produced exactly the same thing: an empty
+        // map. The app then saw no data, saved something, and overwrote the
+        // only copy of what was there -- silent, permanent loss, reported to
+        // nobody. E8 reproduced it on the KV, secret and shared stores alike.
+        //
+        // The failure is carried instead, so every later call answers with a
+        // typed error rather than a plausible lie. Reads say what happened;
+        // writes refuse, because writing over data we could not read is the
+        // step that turns a recoverable file into a lost one.
+        let (entries, unreadable) = if granted {
+            match load(&path) {
+                Ok(Some(entries)) => (entries, None),
+                Ok(None) => (BTreeMap::new(), None),
+                Err(err) => (BTreeMap::new(), Some(err.to_string())),
+            }
         } else {
-            BTreeMap::new()
+            (BTreeMap::new(), None)
         };
         Self {
             path,
             entries,
             granted,
+            unreadable,
+        }
+    }
+
+    /// Refuse when the store on disk could not be read.
+    fn require_readable(&self) -> Result<(), StoreError> {
+        match &self.unreadable {
+            None => Ok(()),
+            Some(why) => Err(StoreError::Io(format!(
+                "this app's saved data could not be read ({why}). It has not been changed; \
+                 the file is at {}",
+                self.path.display()
+            ))),
         }
     }
 
@@ -83,12 +116,14 @@ impl AppStore {
 
     pub fn get(&self, key: &str) -> Result<Option<Vec<u8>>, StoreError> {
         self.require_grant()?;
+        self.require_readable()?;
         validate_key(key)?;
         Ok(self.entries.get(key).cloned())
     }
 
     pub fn set(&mut self, key: &str, value: Vec<u8>) -> Result<(), StoreError> {
         self.require_grant()?;
+        self.require_readable()?;
         validate_key(key)?;
         if value.len() > MAX_VALUE_BYTES {
             return Err(StoreError::TooLarge);
@@ -107,6 +142,7 @@ impl AppStore {
 
     pub fn delete(&mut self, key: &str) -> Result<(), StoreError> {
         self.require_grant()?;
+        self.require_readable()?;
         validate_key(key)?;
         // Deleting something absent is a success: the caller wanted it gone.
         if self.entries.remove(key).is_some() {
@@ -117,6 +153,7 @@ impl AppStore {
 
     pub fn keys(&self) -> Result<Vec<String>, StoreError> {
         self.require_grant()?;
+        self.require_readable()?;
         // BTreeMap iterates sorted, so a listing is stable run to run and host
         // to host -- an app can rely on the order without sorting again.
         Ok(self.entries.keys().cloned().collect())
@@ -124,6 +161,7 @@ impl AppStore {
 
     pub fn clear(&mut self) -> Result<(), StoreError> {
         self.require_grant()?;
+        self.require_readable()?;
         self.entries.clear();
         self.flush()
     }
@@ -187,8 +225,18 @@ fn encode(entries: &BTreeMap<String, Vec<u8>>) -> Vec<u8> {
     out.into_bytes()
 }
 
-fn load(path: &Path) -> Option<BTreeMap<String, Vec<u8>>> {
-    let text = std::fs::read_to_string(path).ok()?;
+/// Read the store from disk.
+///
+/// `Ok(None)` means there is no store yet -- a new app, which is ordinary.
+/// `Err` means a store exists and could not be read, which is not ordinary
+/// and must never be reported as "empty" (IC-877).
+fn load(path: &Path) -> std::io::Result<Option<BTreeMap<String, Vec<u8>>>> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        // The only benign failure: nothing has been saved yet.
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(err),
+    };
     let mut entries = BTreeMap::new();
     for line in text.lines() {
         let Some((key, encoded)) = line.split_once('\t') else {
@@ -203,7 +251,7 @@ fn load(path: &Path) -> Option<BTreeMap<String, Vec<u8>>> {
             entries.insert(key.to_string(), value);
         }
     }
-    Some(entries)
+    Ok(Some(entries))
 }
 
 const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -269,6 +317,61 @@ mod tests {
         assert_eq!(store.keys(), Err(StoreError::Denied));
         assert_eq!(store.delete("a"), Err(StoreError::Denied));
         assert_eq!(store.clear(), Err(StoreError::Denied));
+    }
+
+    /// IC-877. A corrupt store used to reopen as an empty one, which an app
+    /// cannot tell from a new install: it sees nothing, saves something, and
+    /// overwrites the only copy of what was there. Silent, permanent, and
+    /// reported to nobody. E8 reproduced it on the KV, secret and shared
+    /// stores alike.
+    #[test]
+    fn an_unreadable_store_reports_itself_instead_of_looking_empty() {
+        let dir = tempfile::tempdir().expect("dir");
+        let path = dir.path().join("store.kv");
+
+        // Something real is in there first, so "empty" would be a lie rather
+        // than merely unhelpful.
+        {
+            let mut store = AppStore::open(path.clone(), true);
+            store.set("greeting", b"hello".to_vec()).expect("set");
+            store.flush().expect("flush");
+        }
+        // Make it unreadable in a way that is not "missing": a directory
+        // where a file belongs fails the read without being NotFound.
+        std::fs::remove_file(&path).expect("remove");
+        std::fs::create_dir(&path).expect("dir in place of file");
+
+        let mut store = AppStore::open(path.clone(), true);
+
+        // A read says what happened rather than answering None.
+        match store.get("greeting") {
+            Err(StoreError::Io(message)) => {
+                assert!(
+                    message.contains("could not be read"),
+                    "unhelpful message: {message}"
+                );
+            }
+            other => panic!("an unreadable store must report itself, got {other:?}"),
+        }
+
+        // And a write refuses, because writing over data we could not read is
+        // the step that turns a recoverable file into a lost one.
+        assert!(
+            store.set("greeting", b"overwritten".to_vec()).is_err(),
+            "an unreadable store must not accept a write"
+        );
+    }
+
+    /// The other half: a store that simply does not exist yet is ordinary,
+    /// and must keep behaving like a new app rather than an error.
+    #[test]
+    fn a_store_that_was_never_written_is_still_just_empty() {
+        let dir = tempfile::tempdir().expect("dir");
+        let store = AppStore::open(dir.path().join("nothing-here.kv"), true);
+        assert_eq!(
+            store.get("anything").expect("a new store reads cleanly"),
+            None
+        );
     }
 
     #[test]

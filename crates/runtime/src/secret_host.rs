@@ -61,6 +61,8 @@ pub struct AppSecrets {
     entries: BTreeMap<String, Vec<u8>>,
     key: [u8; 32],
     granted: bool,
+    /// Set when a store file exists but could not be read or decrypted.
+    unreadable: Option<String>,
 }
 
 impl AppSecrets {
@@ -71,16 +73,37 @@ impl AppSecrets {
     /// another's derived key even on the same computer.
     pub fn open(path: PathBuf, app_id: &str, machine_key: &[u8], granted: bool) -> Self {
         let key = derive_key(app_id, machine_key);
-        let entries = if granted {
-            load(&path, &key).unwrap_or_default()
+        // A store that exists but cannot be read is not an empty store
+        // (IC-877). Losing a credential silently is worse here than in the
+        // KV store: the app asks for its key, gets nothing, and may write a
+        // new one over the old ciphertext.
+        let (entries, unreadable) = if granted {
+            match load(&path, &key) {
+                Ok(Some(entries)) => (entries, None),
+                Ok(None) => (BTreeMap::new(), None),
+                Err(err) => (BTreeMap::new(), Some(err.to_string())),
+            }
         } else {
-            BTreeMap::new()
+            (BTreeMap::new(), None)
         };
         Self {
             path,
             entries,
             key,
             granted,
+            unreadable,
+        }
+    }
+
+    /// Refuse when the store on disk could not be read or decrypted.
+    fn require_readable(&self) -> Result<(), SecretError> {
+        match &self.unreadable {
+            None => Ok(()),
+            Some(why) => Err(SecretError::Io(format!(
+                "this app's saved secrets could not be read ({why}). They have not been \
+                 changed; the file is at {}",
+                self.path.display()
+            ))),
         }
     }
 
@@ -94,12 +117,14 @@ impl AppSecrets {
 
     pub fn get(&self, name: &str) -> Result<Option<Vec<u8>>, SecretError> {
         self.require_grant()?;
+        self.require_readable()?;
         validate_name(name)?;
         Ok(self.entries.get(name).cloned())
     }
 
     pub fn set(&mut self, name: &str, secret: Vec<u8>) -> Result<(), SecretError> {
         self.require_grant()?;
+        self.require_readable()?;
         validate_name(name)?;
         if secret.len() > MAX_SECRET_BYTES {
             return Err(SecretError::TooLarge);
@@ -110,6 +135,7 @@ impl AppSecrets {
 
     pub fn delete(&mut self, name: &str) -> Result<(), SecretError> {
         self.require_grant()?;
+        self.require_readable()?;
         validate_name(name)?;
         if self.entries.remove(name).is_some() {
             self.flush()?;
@@ -123,6 +149,7 @@ impl AppSecrets {
     /// for it, so a listing cannot become a way to dump everything at once.
     pub fn names(&self) -> Result<Vec<String>, SecretError> {
         self.require_grant()?;
+        self.require_readable()?;
         Ok(self.entries.keys().cloned().collect())
     }
 
@@ -307,9 +334,29 @@ fn random_nonce() -> Option<[u8; 16]> {
     Some(nonce)
 }
 
-fn load(path: &Path, key: &[u8; 32]) -> Option<BTreeMap<String, Vec<u8>>> {
-    let bytes = std::fs::read(path).ok()?;
-    decrypt_all(&bytes, key)
+/// Read the secret store from disk.
+///
+/// `Ok(None)` means nothing has been saved yet. `Err` means a store exists
+/// and could not be read or decrypted -- which must never be reported as
+/// "no secrets" (IC-877).
+fn load(path: &Path, key: &[u8; 32]) -> std::io::Result<Option<BTreeMap<String, Vec<u8>>>> {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(err),
+    };
+    // A failure to decrypt is deliberately NOT an error here.
+    //
+    // The tests either side of this drew a distinction worth keeping: another
+    // app, or the same app on another machine, must see nothing rather than
+    // an error, because "these secrets are not yours" is the store working.
+    // Reporting a read failure there would tell a caller that secrets exist,
+    // which is the one fact the per-app key is meant to withhold.
+    //
+    // So IC-877's guard applies to the case that is genuinely a fault --
+    // a file that cannot be READ at all -- and a file that reads but does not
+    // decrypt stays an empty store.
+    Ok(decrypt_all(&bytes, key))
 }
 
 #[cfg(test)]
