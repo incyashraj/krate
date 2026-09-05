@@ -6406,6 +6406,24 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
         }));
     }
 
+    // Step 6: does the app actually do what was asked?
+    //
+    // Everything above is mechanical, and every bit of it is true of an app
+    // that has nothing to do with the request. Asking for "a chess game that
+    // enforces legal moves and detects checkmate" built a checklist, and this
+    // transcript called it "a working, permission-gated .krate" -- true of the
+    // checklist, and not an answer to the request.
+    //
+    // So the request verdict is separate and has to be earned. It reads the
+    // source that was actually built and looks for evidence of what the
+    // request named. A missing verdict is not a pass.
+    let app_source = read_app_source(&app_dir);
+    let acceptance = krate_author::acceptance::judge(&req.request, &name, &app_source);
+    steps.push(serde_json::json!({
+        "step": "serves-request",
+        "detail": acceptance.summary.clone(),
+    }));
+
     // The transcript: request, app, requested permissions, verification.
     let requested: Vec<String> = manifest
         .capabilities
@@ -6420,6 +6438,19 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
         krate_author::feasibility::Verdict::Caveat(c) => Some(c.note.clone()),
         _ => None,
     };
+    // The verdicts are kept apart, because they are different claims and only
+    // one of them was ever being checked. "It builds" is not "it is what you
+    // asked for", and reporting the first as though it were the second is how
+    // a checklist got shipped as a chess game.
+    let verdicts = serde_json::json!({
+        "build": "the app compiles and imports only krate:*",
+        "run": "runs with its grants, refuses without the gating one",
+        "request": {
+            "accepted": acceptance.accepted,
+            "summary": acceptance.summary,
+            "requirements": acceptance.requirements,
+        },
+    });
     let transcript = serde_json::json!({
         "schema": "krate.author.v1",
         "request": req.request,
@@ -6430,7 +6461,15 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
         "output": req.output.to_string_lossy(),
         "krate_bytes": size,
         "steps": steps,
-        "verdict": "authored a working, permission-gated .krate: runs with its grants, refuses without the gating one",
+        "verdicts": verdicts,
+        "verdict": if acceptance.accepted {
+            "authored a working, permission-gated .krate that serves the request".to_string()
+        } else {
+            format!(
+                "built a working, permission-gated .krate, but it does not serve the request: {}",
+                acceptance.summary
+            )
+        },
     });
     // The transcript sidecar is opt-in: written only when --transcript names a
     // path, so a normal user's folder is not littered with a JSON file they did
@@ -6441,15 +6480,38 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     }
 
     if req.json {
-        // One machine-readable object on stdout, and nothing else.
+        // One machine-readable object on stdout, and nothing else. `ok` is
+        // the field an agent branches on, so it carries the whole result:
+        // an app that builds but does not serve the request is not ok.
         let mut out = transcript;
-        out["ok"] = serde_json::Value::Bool(true);
+        out["ok"] = serde_json::Value::Bool(acceptance.accepted);
         println!("{}", serde_json::to_string(&out)?);
-        return Ok(0);
+        // The file is still on disk and still real -- the exit code says the
+        // request was not served, not that nothing was produced.
+        keeper.disarm();
+        return Ok(if acceptance.accepted { 0 } else { 6 });
     }
 
     println!();
-    println!("Created {}", req.output.display());
+    if acceptance.accepted {
+        println!("Created {}", req.output.display());
+    } else {
+        // The app exists and works. What it does not do is the thing that was
+        // asked for, and that is the first thing to say -- not a footnote
+        // under a "Created" line that reads as success.
+        println!(
+            "Built {}, but it is not what you asked for.",
+            req.output.display()
+        );
+        println!();
+        for failure in acceptance.failures() {
+            println!("  asked for: {}", failure.text.trim());
+            println!("  but       {}", failure.detail);
+        }
+        println!();
+        println!("  The file is there and it runs. Try again with more detail about");
+        println!("  what it should do, or open it to see what was built.");
+    }
     if let Some(note) = &caveat {
         // Printed with the success, not instead of it: the app was built and
         // works, and this is the part of the request it could not make real.
@@ -6463,13 +6525,48 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     for cap in &requested {
         println!("    - {cap}");
     }
-    println!();
-    println!(
-        "Send {} to someone; they can double-click it to open it.",
-        req.output.display()
-    );
+    if acceptance.accepted {
+        println!();
+        println!(
+            "Send {} to someone; they can double-click it to open it.",
+            req.output.display()
+        );
+    }
     keeper.disarm();
-    Ok(0)
+    // Exit 6 says the same thing the text does: this built, and it is not what
+    // was asked for. A script that treated the old exit 0 as "done" would
+    // otherwise publish it.
+    Ok(if acceptance.accepted { 0 } else { 6 })
+}
+
+/// Every line of Rust the authoring step wrote, concatenated.
+///
+/// This is what the request verdict is judged against: the app's own code,
+/// not its bindings and not its manifest. `bindings.rs` is generated from the
+/// WIT and is identical in every app, so including it would let any app match
+/// terms it never implements.
+fn read_app_source(app_dir: &Path) -> String {
+    let mut source = String::new();
+    let src = app_dir.join("src");
+    let Ok(entries) = fs::read_dir(&src) else {
+        return source;
+    };
+    let mut paths: Vec<PathBuf> = entries
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|ext| ext == "rs"))
+        .filter(|p| p.file_name().is_some_and(|n| n != "bindings.rs"))
+        .collect();
+    // Sorted so the same app always produces the same text, which keeps the
+    // verdict reproducible.
+    paths.sort();
+    for path in paths {
+        if let Ok(text) = fs::read_to_string(&path) {
+            source.push_str(&text);
+            source.push('\n');
+        }
+    }
+    source
 }
 
 /// The relative path from the app dir to the SDK root, for the generated

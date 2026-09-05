@@ -19,6 +19,7 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod acceptance;
 pub mod feasibility;
 
 /// What kind of app the agent was asked to build. The enum is the seam where

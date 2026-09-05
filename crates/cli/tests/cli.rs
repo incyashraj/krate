@@ -3308,13 +3308,17 @@ fn sample_manifest(app: &str) -> PathBuf {
 }
 
 #[test]
-fn create_with_an_agent_seam_scaffolds_a_building_skeleton_and_the_pack() {
+fn create_with_an_agent_seam_builds_the_skeleton_and_refuses_to_call_it_authored() {
     // The agent path drops a minimal skeleton + KRATE_AUTHORING.md, then builds
     // it. Drive it with a no-op author command (`true`), so this exercises the
     // scaffolding and the full build/pack/verify pipeline on the blank
     // skeleton -- without needing an AI. The skeleton must be a valid app on its
-    // own, or an agent that starts from it starts from a broken base. Skipped
-    // where the build toolchain is absent.
+    // own, or an agent that starts from it starts from a broken base.
+    //
+    // And because the author command did nothing, the app that comes out is
+    // the untouched starter. It builds, packs and runs, and it is not the
+    // dashboard that was asked for -- so the pipeline must say so instead of
+    // reporting an authored app. Skipped where the build toolchain is absent.
     if !has_cargo_component() {
         eprintln!("skipping: cargo-component not installed");
         return;
@@ -3336,11 +3340,28 @@ fn create_with_an_agent_seam_scaffolds_a_building_skeleton_and_the_pack() {
         .output()
         .expect("run create");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        output.status.success(),
-        "create should build the skeleton into a .krate: {stderr}"
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // The scaffolding and the whole build/pack/verify pipeline must work on
+    // the blank skeleton -- and the result must NOT be reported as an authored
+    // app. A no-op author command leaves the starter untouched, so the app
+    // that comes out says "Replace" and has nothing to do with a dashboard.
+    // That is exit 6: it built, and it is not what was asked for. Reporting
+    // this as success is the false positive the request verdict exists to
+    // stop, so the test pins the refusal rather than the old exit 0.
+    assert_eq!(
+        output.status.code(),
+        Some(6),
+        "a no-op author command leaves the starter unchanged, which must not \
+         pass as an authored app: {stderr}{stdout}"
     );
-    assert!(out.is_file(), "the .krate was written");
+    assert!(
+        stdout.contains("not what you asked for"),
+        "the person must be told the app does not serve the request: {stdout}"
+    );
+    assert!(
+        out.is_file(),
+        "the .krate is still written -- it built, it is just not the app asked for"
+    );
     // The work dir holds exactly one app directory; find it rather than
     // predicting the name-derivation. The pack and a real skeleton lib.rs were
     // dropped for the agent.
