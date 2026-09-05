@@ -1998,6 +1998,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-notification",
+ "tempfile",
  "ureq",
  "url",
  "windows-sys 0.59.0",

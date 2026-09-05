@@ -1,3 +1,60 @@
+/* Is `a` a newer release than `b`? (IC-865)
+ *
+ * This was `localeCompare(..., {numeric: true})`, which is string ordering
+ * with the digits grouped -- close enough to look right and wrong in three
+ * ways that were each reproduced:
+ *
+ *   0.3.0-rc.1  vs  0.3.0        said the candidate was newer than the final
+ *   0.3.0       vs  0.3.0-rc.1   said the final was NOT newer than the rc
+ *   1.0.0+build.2 vs 1.0.0+build.1  ranked build metadata, which SemVer says
+ *                                   must not affect precedence
+ *
+ * The middle one is the one that hurts: somebody on a release candidate is
+ * never offered the finished release, and never finds out why.
+ *
+ * So this follows the SemVer rule instead: compare the numbers, and a
+ * version WITH a pre-release is older than the same version without one.
+ * Build metadata is ignored entirely, because the specification says so.
+ */
+function isNewerVersion(a, b) {
+  const parse = (text) => {
+    // Build metadata after `+` never affects precedence.
+    const [core, pre] = String(text).replace(/\+.*$/, "").split("-", 2);
+    const numbers = core.split(".").map((n) => parseInt(n, 10) || 0);
+    while (numbers.length < 3) numbers.push(0);
+    return { numbers, pre: pre || null };
+  };
+  const left = parse(a);
+  const right = parse(b);
+
+  for (let i = 0; i < 3; i++) {
+    if (left.numbers[i] !== right.numbers[i]) return left.numbers[i] > right.numbers[i];
+  }
+
+  // Same numbers. A pre-release is older than the release it precedes.
+  if (left.pre === null && right.pre !== null) return true;
+  if (left.pre !== null && right.pre === null) return false;
+  if (left.pre === null && right.pre === null) return false;
+
+  // Both pre-releases: compare dot-separated identifiers, numbers
+  // numerically and anything else as text, per the specification.
+  const lp = left.pre.split(".");
+  const rp = right.pre.split(".");
+  for (let i = 0; i < Math.max(lp.length, rp.length); i++) {
+    const x = lp[i];
+    const y = rp[i];
+    if (x === undefined) return false;
+    if (y === undefined) return true;
+    const bothNumeric = /^\d+$/.test(x) && /^\d+$/.test(y);
+    if (bothNumeric) {
+      if (+x !== +y) return +x > +y;
+    } else if (x !== y) {
+      return x > y;
+    }
+  }
+  return false;
+}
+
 /* Krate Studio, the front of it.
  *
  * Three views -- gate, home, session -- and one build state machine:
@@ -44,7 +101,7 @@ const invoke = (cmd, args) =>
     const rel = await r.json();
     const latest = String(rel.tag_name || "").replace(/^v/, "");
     if (!latest || latest === mine) return;
-    const newer = latest.localeCompare(mine, undefined, { numeric: true }) > 0;
+    const newer = isNewerVersion(latest, mine);
     if (!newer) return;
     const ua = navigator.userAgent;
     const file = ua.includes("Windows")
@@ -5650,7 +5707,7 @@ async function checkForUpdate() {
     const rel = await invoke("latest_release");
     const latest = String(rel.tag || "").replace(/^v/, "");
     const newer = latest && mine
-      && latest.localeCompare(mine, undefined, { numeric: true }) > 0;
+      && isNewerVersion(latest, mine);
 
     if (!newer) {
       updIcon("done");

@@ -25,7 +25,10 @@ use tauri::{Emitter, Manager};
 /// whole tree -- the agent CLI and cargo underneath it -- not just the
 /// parent, which would leave an orphan burning the person's AI quota after
 /// they pressed Stop.
-struct Running(Mutex<Option<u32>>, std::sync::Arc<std::sync::atomic::AtomicBool>);
+struct Running(
+    Mutex<Option<u32>>,
+    std::sync::Arc<std::sync::atomic::AtomicBool>,
+);
 
 impl Running {
     fn fresh() -> Self {
@@ -215,16 +218,10 @@ fn probe_speaks_plan(engine: &Path) -> bool {
 /// preference the agent re-derives. The asymmetry decides the design.
 fn strip_personal_paths(value: &mut serde_json::Value, home: &Path) {
     let home_prefix = home.to_string_lossy().to_string();
-    let looks_personal = |s: &str| {
-        s.starts_with(&home_prefix) || s.starts_with("~/")
-    };
+    let looks_personal = |s: &str| s.starts_with(&home_prefix) || s.starts_with("~/");
     match value {
         serde_json::Value::Object(map) => {
-            let doomed: Vec<String> = map
-                .keys()
-                .filter(|k| looks_personal(k))
-                .cloned()
-                .collect();
+            let doomed: Vec<String> = map.keys().filter(|k| looks_personal(k)).cloned().collect();
             for key in doomed {
                 map.remove(&key);
             }
@@ -1094,7 +1091,10 @@ async fn create_app(
     if out.is_err() {
         // A failure after minutes of waiting deserves the same reach as a
         // success: the person tabbed away either way.
-        notify(&notify_app, "That build didn't come together. Come see why.");
+        notify(
+            &notify_app,
+            "That build didn't come together. Come see why.",
+        );
     }
     out
 }
@@ -1216,8 +1216,7 @@ fn pid_alive(pid: u32) -> bool {
 fn kill_tree_native(pid: u32) {
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::Diagnostics::ToolHelp::{
-        CreateToolhelp32Snapshot, Process32First, Process32Next, PROCESSENTRY32,
-        TH32CS_SNAPPROCESS,
+        CreateToolhelp32Snapshot, Process32First, Process32Next, PROCESSENTRY32, TH32CS_SNAPPROCESS,
     };
     use windows_sys::Win32::System::Threading::{OpenProcess, TerminateProcess, PROCESS_TERMINATE};
 
@@ -1335,7 +1334,9 @@ fn watch_build_shots(
             let mut pngs: Vec<PathBuf> = Vec::new();
             let mut stack = vec![dir.clone()];
             while let Some(d) = stack.pop() {
-                let Ok(entries) = std::fs::read_dir(&d) else { continue };
+                let Ok(entries) = std::fs::read_dir(&d) else {
+                    continue;
+                };
                 for entry in entries.filter_map(|e| e.ok()) {
                     let path = entry.path();
                     let name = entry.file_name();
@@ -1352,7 +1353,9 @@ fn watch_build_shots(
                 }
             }
             for png in pngs {
-                let Ok(meta) = std::fs::metadata(&png) else { continue };
+                let Ok(meta) = std::fs::metadata(&png) else {
+                    continue;
+                };
                 let mtime = meta
                     .modified()
                     .ok()
@@ -1531,7 +1534,10 @@ fn run_author(
         let running = app.state::<Running>();
         let mut guard = running.0.lock().map_err(|_| "poisoned")?;
         if let Some(pid) = *guard {
-            eprintln!("[run_author] slot holds pid {pid}, alive={}", pid_alive(pid));
+            eprintln!(
+                "[run_author] slot holds pid {pid}, alive={}",
+                pid_alive(pid)
+            );
             // A recorded pid is only a live build if the process still
             // exists. A build that died without our code seeing it -- the
             // engine crashing, the machine sleeping, a kill from outside --
@@ -1540,7 +1546,7 @@ fn run_author(
             // (K-128). Verify, then either refuse honestly or clear it.
             if pid_alive(pid) {
                 return Err(
-                    "one app is already being made -- wait for it, or press Stop".to_string()
+                    "one app is already being made -- wait for it, or press Stop".to_string(),
                 );
             }
             *guard = None;
@@ -1710,7 +1716,10 @@ fn notify(app: &tauri::AppHandle, body: &str) {
 }
 
 fn notify_ready(app: &tauri::AppHandle, name: &str) {
-    notify(app, &format!("{name} is ready. Open it, or tell Krate what to change."));
+    notify(
+        app,
+        &format!("{name} is ready. Open it, or tell Krate what to change."),
+    );
 }
 
 /// Render the finished app's real first frame, as a data URL.
@@ -1856,11 +1865,7 @@ async fn report_collect(session: String) -> Result<serde_json::Value, String> {
 /// Send a collected report to support. Only ever called after the person
 /// has read what is in it and pressed send.
 #[tauri::command]
-async fn report_send(
-    path: String,
-    session: String,
-    note: String,
-) -> Result<String, String> {
+async fn report_send(path: String, session: String, note: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let engine = engine()?;
         // The engine owns the upload: it already holds the sign-in and the
@@ -1914,9 +1919,16 @@ async fn diagnose_app(path: String) -> Result<String, String> {
             Ok("ok".to_string())
         } else {
             // The tail is where runtimes put the reason.
-            let tail: Vec<&str> = text.lines().rev().filter(|l| !l.trim().is_empty()).take(6).collect();
-            Ok(tail.into_iter().rev().collect::<Vec<_>>().join("
-"))
+            let tail: Vec<&str> = text
+                .lines()
+                .rev()
+                .filter(|l| !l.trim().is_empty())
+                .take(6)
+                .collect();
+            Ok(tail.into_iter().rev().collect::<Vec<_>>().join(
+                "
+",
+            ))
         }
     })
     .await
@@ -2010,8 +2022,7 @@ async fn publish(
         if unlisted.unwrap_or(false) {
             cmd.arg("--unlisted");
         }
-        let out = cmd.output()
-            .map_err(|err| err.to_string())?;
+        let out = cmd.output().map_err(|err| err.to_string())?;
         let text = format!(
             "{}\n{}",
             String::from_utf8_lossy(&out.stdout),
@@ -2370,17 +2381,21 @@ fn hub_token() -> Option<String> {
         .map(|s| s.to_string())
 }
 
-fn hub_post(path: &str, token: Option<&str>, body: serde_json::Value) -> Result<serde_json::Value, String> {
-    let mut req = ureq::post(&format!("{}{path}", hub_url()))
-        .timeout(std::time::Duration::from_secs(20));
+fn hub_post(
+    path: &str,
+    token: Option<&str>,
+    body: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let mut req =
+        ureq::post(&format!("{}{path}", hub_url())).timeout(std::time::Duration::from_secs(20));
     if let Some(t) = token {
         req = req.set("authorization", &format!("Bearer {t}"));
     }
     match req.send_json(body) {
         Ok(resp) => resp.into_json().map_err(|e| e.to_string()),
-        Err(ureq::Error::Status(_, resp)) => {
-            Err(resp.into_string().unwrap_or_else(|_| "the hub said no".into()))
-        }
+        Err(ureq::Error::Status(_, resp)) => Err(resp
+            .into_string()
+            .unwrap_or_else(|_| "the hub said no".into())),
         Err(_) => Err("could not reach krate.tech - check your connection".into()),
     }
 }
@@ -2422,7 +2437,11 @@ async fn billing_info() -> serde_json::Value {
 async fn billing_checkout(plan: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let token = hub_token().ok_or("Sign in first - the plan needs an account to land on.")?;
-        let out = hub_post("/billing/checkout", Some(&token), serde_json::json!({ "plan": plan }))?;
+        let out = hub_post(
+            "/billing/checkout",
+            Some(&token),
+            serde_json::json!({ "plan": plan }),
+        )?;
         out["url"]
             .as_str()
             .map(|s| s.to_string())
@@ -2453,7 +2472,11 @@ async fn me_info() -> Result<serde_json::Value, String> {
 /* ---- support: real conversations with a person ------------------------ */
 
 #[tauri::command]
-async fn support_new(subject: String, message: String, email: String) -> Result<serde_json::Value, String> {
+async fn support_new(
+    subject: String,
+    message: String,
+    email: String,
+) -> Result<serde_json::Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
         hub_post(
             "/support/new",
@@ -2468,14 +2491,22 @@ async fn support_new(subject: String, message: String, email: String) -> Result<
 #[tauri::command]
 async fn support_list(keys: serde_json::Value) -> Result<serde_json::Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        hub_post("/support/list", hub_token().as_deref(), serde_json::json!({ "keys": keys }))
+        hub_post(
+            "/support/list",
+            hub_token().as_deref(),
+            serde_json::json!({ "keys": keys }),
+        )
     })
     .await
     .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-async fn support_reply(id: String, key: String, message: String) -> Result<serde_json::Value, String> {
+async fn support_reply(
+    id: String,
+    key: String,
+    message: String,
+) -> Result<serde_json::Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
         hub_post(
             "/support/reply",
@@ -2701,9 +2732,8 @@ async fn make_wrap(path: String, target: String) -> Result<String, String> {
             line.strip_prefix("Gift written: ")
                 .map(|rest| rest.trim().to_string())
                 .or_else(|| {
-                    line.strip_prefix("Wrap written: ").and_then(|rest| {
-                        rest.rsplit_once(" (").map(|(path, _)| path.to_string())
-                    })
+                    line.strip_prefix("Wrap written: ")
+                        .and_then(|rest| rest.rsplit_once(" (").map(|(path, _)| path.to_string()))
                 })
         })
         .ok_or_else(|| "the engine did not say where the wrap landed".to_string())
@@ -2743,15 +2773,10 @@ fn share_file(window: tauri::WebviewWindow, path: String) -> Result<(), String> 
                     return;
                 };
                 let url = unsafe { NSURL::fileURLWithPath(&NSString::from_str(&path)) };
-                let item: Retained<AnyObject> =
-                    Retained::into_super(Retained::into_super(url));
-                let items: Retained<NSArray<AnyObject>> =
-                    NSArray::from_retained_slice(&[item]);
+                let item: Retained<AnyObject> = Retained::into_super(Retained::into_super(url));
+                let items: Retained<NSArray<AnyObject>> = NSArray::from_retained_slice(&[item]);
                 let picker = unsafe {
-                    NSSharingServicePicker::initWithItems(
-                        NSSharingServicePicker::alloc(),
-                        &items,
-                    )
+                    NSSharingServicePicker::initWithItems(NSSharingServicePicker::alloc(), &items)
                 };
                 // Anchored to a small rect at the window's center-bottom:
                 // the sheet needs somewhere to point, and the Send sheet
@@ -2892,7 +2917,9 @@ fn link_krate_onto_path(engine: &Path) -> bool {
         // it alone; overwriting a person's tools is never ours to do.
         return true;
     }
-    let Some(dir) = link.parent() else { return false };
+    let Some(dir) = link.parent() else {
+        return false;
+    };
     if !dir.is_dir() || !writable(dir) {
         return false;
     }
@@ -3136,7 +3163,11 @@ fn first_run_setup() {
                 .unwrap_or_default();
             let existing = current
                 .lines()
-                .find_map(|line| line.split("REG_EXPAND_SZ").nth(1).or(line.split("REG_SZ").nth(1)))
+                .find_map(|line| {
+                    line.split("REG_EXPAND_SZ")
+                        .nth(1)
+                        .or(line.split("REG_SZ").nth(1))
+                })
                 .map(str::trim)
                 .unwrap_or("");
             // Only append when it is not already there -- as a real
@@ -3146,7 +3177,10 @@ fn first_run_setup() {
             // and skips, or misses it over nothing but a case difference and
             // appends the same dir on every launch.
             let already_there = existing.split(';').any(|element| {
-                element.trim().trim_end_matches('\\').eq_ignore_ascii_case(&bin)
+                element
+                    .trim()
+                    .trim_end_matches('\\')
+                    .eq_ignore_ascii_case(&bin)
             });
             if !already_there {
                 let joined = if existing.is_empty() {
@@ -3154,7 +3188,17 @@ fn first_run_setup() {
                 } else {
                     format!("{};{bin}", existing.trim_end_matches(';'))
                 };
-                run(&["add", r"HKCU\Environment", "/v", "Path", "/t", "REG_EXPAND_SZ", "/d", &joined, "/f"]);
+                run(&[
+                    "add",
+                    r"HKCU\Environment",
+                    "/v",
+                    "Path",
+                    "/t",
+                    "REG_EXPAND_SZ",
+                    "/d",
+                    &joined,
+                    "/f",
+                ]);
             }
         }
 
@@ -3601,7 +3645,70 @@ fn install_update(version: String) -> Result<String, String> {
     std::fs::create_dir_all(&staged).map_err(|e| e.to_string())?;
     let path = staged.join(&file);
     std::fs::write(&path, &body).map_err(|e| format!("could not save the update: {e}"))?;
+
+    // Write down WHICH file passed, and what it hashed to (IC-866).
+    //
+    // The checksum above is only worth something if the thing that gets
+    // opened later is the thing that passed it. `restart_for_update` used to
+    // pick whichever file in this directory had the newest modification
+    // time, which is not the same question -- a controlled test showed it
+    // choosing an unrelated newer text file over the verified DMG. So the
+    // verified name and digest are recorded here and re-checked at
+    // activation, and the file being newest has nothing to do with it.
+    let receipt = staged.join("verified.json");
+    let record = format!(
+        "{{\n  \"file\": {},\n  \"sha256\": {}\n}}\n",
+        serde_json::to_string(&file).unwrap_or_default(),
+        serde_json::to_string(&got).unwrap_or_default()
+    );
+    std::fs::write(&receipt, record)
+        .map_err(|e| format!("could not record the verified update: {e}"))?;
+
     Ok(path.display().to_string())
+}
+
+/// The staged update that actually passed verification.
+///
+/// Returns the path only when the receipt written at download names a file
+/// that is still present and still hashes to the digest that was accepted.
+/// Anything else is a refusal: an update Studio cannot vouch for is not one
+/// it should be installing.
+fn verified_update(staged: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    let receipt = staged.join("verified.json");
+    let text = std::fs::read_to_string(&receipt)
+        .map_err(|_| "nothing has been downloaded yet".to_string())?;
+    let record: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|_| "the record of the downloaded update could not be read".to_string())?;
+    let file = record
+        .get("file")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "the record of the downloaded update is incomplete".to_string())?;
+    let expected = record
+        .get("sha256")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "the record of the downloaded update is incomplete".to_string())?;
+
+    // A name from a file on disk must not be able to name a path elsewhere.
+    if file.contains('/') || file.contains('\\') || file.contains("..") {
+        return Err("the recorded update name is not a plain file name".to_string());
+    }
+
+    let path = staged.join(file);
+    let bytes =
+        std::fs::read(&path).map_err(|_| "the downloaded update is no longer there".to_string())?;
+    let got = {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(&bytes);
+        format!("{:x}", hasher.finalize())
+    };
+    if got != expected {
+        return Err(
+            "the downloaded update has changed since it was checked, so it will not be installed"
+                .to_string(),
+        );
+    }
+    Ok(path)
 }
 
 /// Open the staged update and step aside.
@@ -3613,26 +3720,30 @@ fn install_update(version: String) -> Result<String, String> {
 #[tauri::command]
 fn restart_for_update(app: tauri::AppHandle) -> Result<(), String> {
     let staged = studio_dir().join("updates");
-    let newest = std::fs::read_dir(&staged)
-        .map_err(|_| "nothing has been downloaded yet".to_string())?
-        .filter_map(|e| e.ok())
-        .max_by_key(|e| {
-            e.metadata()
-                .and_then(|m| m.modified())
-                .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
-        })
-        .ok_or_else(|| "nothing has been downloaded yet".to_string())?
-        .path();
+
+    // Open the file that was VERIFIED, not the file that is newest (IC-866).
+    //
+    // This used to take whichever entry in the directory had the latest
+    // modification time. That is a different question from "which one passed
+    // its checksum", and a controlled test showed the two disagreeing: an
+    // unrelated newer text file was selected over the verified DMG. Anything
+    // that can drop a file into this directory could decide what Studio
+    // installs.
+    //
+    // The download recorded the name and digest it accepted. Both are read
+    // back here, and the bytes on disk are hashed again -- because a file
+    // that passed at download time can still have been replaced since.
+    let verified = verified_update(&staged)?;
 
     #[cfg(target_os = "macos")]
-    let opened = Command::new("/usr/bin/open").arg(&newest).status();
+    let opened = Command::new("/usr/bin/open").arg(&verified).status();
     #[cfg(windows)]
     let opened = Command::new("cmd")
         .args(["/C", "start", ""])
-        .arg(&newest)
+        .arg(&verified)
         .status();
     #[cfg(target_os = "linux")]
-    let opened = Command::new("xdg-open").arg(&newest).status();
+    let opened = Command::new("xdg-open").arg(&verified).status();
 
     opened.map_err(|e| format!("could not open the update: {e}"))?;
     // Give the installer a moment to take over before this process ends,
@@ -3743,7 +3854,10 @@ async fn sign_in_agent(name: String) -> Result<(), String> {
         serde_json::from_slice(&listed.stdout).map_err(|err| err.to_string())?;
     let known = rows
         .as_array()
-        .map(|rows| rows.iter().any(|row| row["name"] == serde_json::json!(name)))
+        .map(|rows| {
+            rows.iter()
+                .any(|row| row["name"] == serde_json::json!(name))
+        })
         .unwrap_or(false);
     if !known {
         return Err("Krate does not know that tool".to_string());
@@ -3754,9 +3868,8 @@ async fn sign_in_agent(name: String) -> Result<(), String> {
         // osascript rather than `open -a Terminal`: it runs the command in a
         // new window AND brings Terminal forward, which is what a person
         // expects to happen when they click "Sign in".
-        let script = format!(
-            "tell application \"Terminal\"\nactivate\ndo script \"{name}\"\nend tell"
-        );
+        let script =
+            format!("tell application \"Terminal\"\nactivate\ndo script \"{name}\"\nend tell");
         Command::new("/usr/bin/osascript")
             .args(["-e", &script])
             .status()
@@ -4202,7 +4315,6 @@ fn main() {
                 }
             }
 
-
             // Cmd-Q and Dock > Quit close no window, so the window handler
             // above never sees them. Same question, same three answers.
             if let tauri::RunEvent::ExitRequested { api, .. } = &event {
@@ -4304,8 +4416,7 @@ mod tests {
         std::fs::create_dir_all(from.join("sessions")).expect("make source");
         std::fs::write(from.join("auth.json"), "{\"token\":\"secret\"}").expect("auth");
         std::fs::write(from.join("config.toml"), "x = 1").expect("config");
-        std::fs::write(from.join("sessions").join("yesterday.jsonl"), "private")
-            .expect("history");
+        std::fs::write(from.join("sessions").join("yesterday.jsonl"), "private").expect("history");
 
         let to = base.join("agent-home").join(".codex");
         copy_dir_shallow(&from, &to).expect("copy");
@@ -4463,5 +4574,80 @@ mod tests {
             "pomodoro-timer"
         );
         assert_eq!(slugify("make"), "my-app");
+    }
+}
+
+#[cfg(test)]
+mod verified_update_tests {
+    use super::verified_update;
+
+    fn record(dir: &std::path::Path, file: &str, sha: &str) {
+        std::fs::write(
+            dir.join("verified.json"),
+            format!("{{\"file\": \"{file}\", \"sha256\": \"{sha}\"}}"),
+        )
+        .expect("write receipt");
+    }
+
+    fn sha_of(bytes: &[u8]) -> String {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(bytes);
+        format!("{:x}", hasher.finalize())
+    }
+
+    /// IC-866. Activation used to pick whichever file in the staging
+    /// directory had the newest modification time, which is a different
+    /// question from "which one passed its checksum". A controlled test
+    /// showed the two disagreeing: an unrelated newer text file was chosen
+    /// over the verified installer.
+    #[test]
+    fn a_newer_unrelated_file_does_not_displace_the_verified_one() {
+        let dir = tempfile::tempdir().expect("dir");
+        let installer = b"the real installer bytes";
+        std::fs::write(dir.path().join("Krate.dmg"), installer).expect("write");
+        record(dir.path(), "Krate.dmg", &sha_of(installer));
+
+        // Something written afterwards, so it is unambiguously newer.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(dir.path().join("zzz-notes.txt"), b"not an installer").expect("write");
+
+        let chosen = verified_update(dir.path()).expect("must resolve");
+        assert!(
+            chosen.ends_with("Krate.dmg"),
+            "chose {chosen:?} instead of the verified installer"
+        );
+    }
+
+    /// A file that passed at download time can still be replaced afterwards,
+    /// so the bytes are hashed again rather than trusted by name.
+    #[test]
+    fn a_swapped_file_is_refused_even_though_it_is_named_correctly() {
+        let dir = tempfile::tempdir().expect("dir");
+        let original = b"the real installer bytes";
+        std::fs::write(dir.path().join("Krate.dmg"), original).expect("write");
+        record(dir.path(), "Krate.dmg", &sha_of(original));
+
+        std::fs::write(dir.path().join("Krate.dmg"), b"something else entirely").expect("swap");
+
+        let err = verified_update(dir.path()).expect_err("must refuse");
+        assert!(err.contains("changed"), "unhelpful message: {err}");
+    }
+
+    /// The name comes out of a file on disk, so it must not be able to point
+    /// somewhere else.
+    #[test]
+    fn a_recorded_name_cannot_escape_the_staging_directory() {
+        let dir = tempfile::tempdir().expect("dir");
+        record(dir.path(), "../../Applications/Evil.app", "00");
+        assert!(verified_update(dir.path()).is_err());
+    }
+
+    /// No download yet is an ordinary state, not a fault.
+    #[test]
+    fn nothing_downloaded_says_so() {
+        let dir = tempfile::tempdir().expect("dir");
+        let err = verified_update(dir.path()).expect_err("must refuse");
+        assert!(err.contains("nothing has been downloaded"), "{err}");
     }
 }
