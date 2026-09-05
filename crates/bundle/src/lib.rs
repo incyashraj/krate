@@ -348,7 +348,61 @@ pub fn pack_with_sdk(
 
     let component = fs::read(component_path).map_err(|err| io_err(component_path, err))?;
 
-    let file = File::create(output_path).map_err(|err| io_err(output_path, err))?;
+    // Write beside the destination, then move it into place (IC-861).
+    //
+    // This used to create the output first and write into it as it went, so
+    // any failure after that point left a stripped file where the
+    // developer's previous bundle had been. E8 reproduced the worst shape:
+    // a good 109,247-byte editable bundle replaced by a 12,018-byte
+    // manifest-and-component-only archive, with the source gone. A symlink
+    // in the source tree is enough to trigger it, because that refusal
+    // happens after the file has already been truncated.
+    //
+    // A sibling temp file rather than the system temp directory: a rename
+    // is only atomic within one filesystem, and /tmp is frequently a
+    // different one. Falling back to a copy would reintroduce exactly the
+    // partial-write window this exists to close.
+    let staging = staging_path_for(output_path);
+    // A leftover from an earlier interrupted run must never be appended to.
+    let _ = fs::remove_file(&staging);
+
+    // Everything that can fail happens inside here, so one place removes the
+    // half-written file on the way out. A staging file left behind is not a
+    // destroyed bundle, but it is litter beside the developer's work that
+    // looks enough like a bundle to be confusing.
+    let outcome = write_bundle_into(
+        &staging,
+        &manifest_text,
+        &component,
+        assets_dir,
+        source_dir,
+        sdk_dir,
+    );
+    if let Err(err) = outcome {
+        let _ = fs::remove_file(&staging);
+        return Err(err);
+    }
+
+    let size = fs::metadata(&staging)
+        .map_err(|err| io_err(&staging, err))?
+        .len();
+    fs::rename(&staging, output_path).map_err(|err| io_err(output_path, err))?;
+    Ok(size)
+}
+
+/// Assemble the archive at `staging`. Split out so `pack_with_sdk` has one
+/// place to clean up from, whichever step fails.
+#[allow(clippy::too_many_arguments)]
+fn write_bundle_into(
+    staging: &Path,
+    manifest_text: &str,
+    component: &[u8],
+    assets_dir: Option<&Path>,
+    source_dir: Option<&Path>,
+    sdk_dir: Option<&Path>,
+) -> Result<()> {
+    let output_path = staging;
+    let file = File::create(staging).map_err(|err| io_err(staging, err))?;
     let mut zip = ZipWriter::new(file);
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
 
@@ -356,7 +410,7 @@ pub fn pack_with_sdk(
     zip.write_all(manifest_text.as_bytes())
         .map_err(|err| io_err(output_path, err))?;
     zip.start_file(COMPONENT_ENTRY, options)?;
-    zip.write_all(&component)
+    zip.write_all(component)
         .map_err(|err| io_err(output_path, err))?;
     if let Some(assets_dir) = assets_dir.filter(|path| path.is_dir()) {
         for (entry_name, source) in collect_assets(assets_dir)? {
@@ -392,11 +446,21 @@ pub fn pack_with_sdk(
         }
     }
     zip.finish()?;
+    Ok(())
+}
 
-    let size = fs::metadata(output_path)
-        .map_err(|err| io_err(output_path, err))?
-        .len();
-    Ok(size)
+/// Where a bundle is assembled before it replaces anything.
+///
+/// Beside the destination, so the rename that commits it stays within one
+/// filesystem and is therefore atomic. The name carries the process id so two
+/// packs running at once cannot write into each other's staging file.
+fn staging_path_for(output_path: &Path) -> PathBuf {
+    let name = output_path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "bundle.krate".to_string());
+    let parent = output_path.parent().unwrap_or_else(|| Path::new("."));
+    parent.join(format!(".{name}.{}.partial", std::process::id()))
 }
 
 /// A bundle unpacked into a temporary directory.
@@ -1020,6 +1084,66 @@ cap = "io.stdout"
 rationale = "print"
 required = true
 "#;
+
+    /// IC-861. Packing created the output file first and wrote into it as it
+    /// went, so any failure partway through left a stripped file where the
+    /// developer's previous bundle had been. E8 reproduced the worst shape of
+    /// this: a good 109,247-byte editable bundle replaced by a 12,018-byte
+    /// manifest-and-component-only archive, with the source gone.
+    #[test]
+    fn a_failed_pack_leaves_the_previous_bundle_untouched() {
+        let dir = tempfile::tempdir().expect("dir");
+        let output = dir.path().join("app.krate");
+        fs::write(&output, b"THE DEVELOPER'S PREVIOUS GOOD BUNDLE").expect("seed");
+        let before = fs::read(&output).expect("read before");
+
+        let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
+        let component = write_temp(dir.path(), "code.wasm", b"\0asm\x01\0\0\0");
+
+        // A source directory naming a file that cannot be opened. The failure
+        // lands after the manifest and component have already been written,
+        // which is exactly the window that used to destroy the output.
+        let source = dir.path().join("source");
+        fs::create_dir_all(&source).expect("source dir");
+        let missing = source.join("gone.rs");
+        fs::write(&missing, b"fn main() {}").expect("write");
+        fs::remove_file(&missing).ok();
+        // Leave a real file so the directory is not skipped as empty.
+        fs::write(source.join("lib.rs"), b"fn main() {}").expect("write");
+
+        // Whether this particular run fails or succeeds is not the point --
+        // the point is that the previous bundle is never a casualty.
+        // A symlink in the source tree is refused by collect_source -- and
+        // that refusal happens AFTER File::create has already truncated the
+        // output. This is the exact shape E8 reproduced.
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("/etc/hosts", source.join("link.rs")).expect("symlink");
+
+        let result = pack_with_sdk(&manifest, &component, None, Some(&source), None, &output);
+        assert!(result.is_err(), "the symlink must be refused");
+
+        // The pack failed, so the developer's previous bundle must be exactly
+        // as it was -- not truncated, not replaced by a smaller archive that
+        // happens to still parse.
+        let after = fs::read(&output).expect("read after");
+        assert_eq!(
+            before,
+            after,
+            "a failed pack destroyed the previous bundle ({} bytes -> {} bytes)",
+            before.len(),
+            after.len()
+        );
+
+        // Nor may it leave its half-written staging file behind for someone
+        // to find and mistake for a bundle.
+        let litter: Vec<_> = fs::read_dir(dir.path())
+            .expect("list")
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|name| name.ends_with(".partial"))
+            .collect();
+        assert!(litter.is_empty(), "left staging files behind: {litter:?}");
+    }
 
     fn write_temp(dir: &Path, name: &str, contents: &[u8]) -> PathBuf {
         let path = dir.join(name);
