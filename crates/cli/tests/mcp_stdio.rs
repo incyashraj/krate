@@ -368,11 +368,21 @@ fn a_client_can_drive_a_build_from_start_to_a_finished_krate_file() {
 
     // And the app must really run: hand it to the execution half of the same
     // server, which is the strongest evidence the file works.
+    //
+    // The grants are the permissions the package step just reported, passed
+    // back verbatim. A model cannot approve a capability for itself, so there
+    // is no auto_grant to lean on -- and asking this way proves the reported
+    // list is the same list the runtime actually accepts.
     let ran = client.call_tool(
         "run_component",
-        json!({ "bundle": path, "auto_grant": true, "app_args": ["quick"] }),
+        json!({ "bundle": path, "grants": permissions, "app_args": ["quick"] }),
     );
     assert_eq!(ran["structuredContent"]["schema"], "krate.run.v1");
+    assert_eq!(
+        ran["structuredContent"]["exit"]["class"], "success",
+        "the app the server just built must run under the permissions the \
+         server itself reported: {ran}"
+    );
 
     client.shutdown();
 }

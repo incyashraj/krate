@@ -1116,23 +1116,36 @@ required = true
         // A symlink in the source tree is refused by collect_source -- and
         // that refusal happens AFTER File::create has already truncated the
         // output. This is the exact shape E8 reproduced.
+        //
+        // Unix always allows an unprivileged symlink. Windows only allows one
+        // with Developer Mode or admin rights, so there the creation itself
+        // may fail; when it does there is no refusal to assert, but the
+        // untouched-output check below still runs and still means something.
+        let link = source.join("link.rs");
         #[cfg(unix)]
-        std::os::unix::fs::symlink("/etc/hosts", source.join("link.rs")).expect("symlink");
+        let linked = std::os::unix::fs::symlink("/etc/hosts", &link).is_ok();
+        #[cfg(windows)]
+        let linked = std::os::windows::fs::symlink_file(&component, &link).is_ok();
 
         let result = pack_with_sdk(&manifest, &component, None, Some(&source), None, &output);
-        assert!(result.is_err(), "the symlink must be refused");
+        if linked {
+            assert!(result.is_err(), "the symlink must be refused");
+        }
 
         // The pack failed, so the developer's previous bundle must be exactly
         // as it was -- not truncated, not replaced by a smaller archive that
-        // happens to still parse.
+        // happens to still parse. (A pack that succeeded is entitled to
+        // replace it, so only a failure is held to this.)
         let after = fs::read(&output).expect("read after");
-        assert_eq!(
-            before,
-            after,
-            "a failed pack destroyed the previous bundle ({} bytes -> {} bytes)",
-            before.len(),
-            after.len()
-        );
+        if result.is_err() {
+            assert_eq!(
+                before,
+                after,
+                "a failed pack destroyed the previous bundle ({} bytes -> {} bytes)",
+                before.len(),
+                after.len()
+            );
+        }
 
         // Nor may it leave its half-written staging file behind for someone
         // to find and mistake for a bundle.
