@@ -14,7 +14,7 @@
 //!    same place and the same way as every other Krate capability. Storage is
 //!    not a convenience that slips past the wall.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 /// Longest key an app may use. Long enough for a namespaced name like
@@ -57,6 +57,10 @@ pub struct AppStore {
     /// Set when a store file exists but could not be read. Every operation
     /// then answers with an error rather than behaving like a new app.
     unreadable: Option<String>,
+    /// Keys this handle has deleted. Needed because flush merges with the
+    /// file on disk, and without it a delete would be undone by whatever
+    /// was still written there (IC-247).
+    deleted: BTreeSet<String>,
 }
 
 impl AppStore {
@@ -91,6 +95,7 @@ impl AppStore {
             entries,
             granted,
             unreadable,
+            deleted: BTreeSet::new(),
         }
     }
 
@@ -146,6 +151,7 @@ impl AppStore {
         validate_key(key)?;
         // Deleting something absent is a success: the caller wanted it gone.
         if self.entries.remove(key).is_some() {
+            self.deleted.insert(key.to_string());
             self.flush()?;
         }
         Ok(())
@@ -176,12 +182,47 @@ impl AppStore {
     /// contents intact rather than a truncated file. Losing yesterday's settings
     /// because today's write was interrupted is exactly the kind of failure that
     /// makes software feel unreliable.
+    /// Write the store back, keeping whatever another writer saved meanwhile
+    /// (IC-247).
+    ///
+    /// This used to encode the in-memory map and rename it over the file, so
+    /// two open handles on the same store raced and the second rename simply
+    /// erased the first writer's accepted `set`. Two windows of one app, or
+    /// an app and a tool, were enough. It also used one fixed `.tmp` name,
+    /// so both writers could be writing the same scratch file at once.
+    ///
+    /// Two changes. The file on disk is re-read and merged under this
+    /// instance's own changes, so a key this handle never touched survives
+    /// someone else having written it. And the scratch file carries the
+    /// process id, so two writers cannot collide inside it.
+    ///
+    /// This is last-writer-wins PER KEY rather than per file, which is the
+    /// weakest thing that stops the loss reported. It is deliberately not a
+    /// general concurrency story: real ordering needs the versioned,
+    /// transactional store CP2 specifies, and pretending otherwise here
+    /// would be a worse lie than the one being fixed.
     fn flush(&self) -> Result<(), StoreError> {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| StoreError::Io(e.to_string()))?;
         }
-        let encoded = encode(&self.entries);
-        let temp = self.path.with_extension("tmp");
+
+        // Whatever is on disk now, plus this instance's own entries on top.
+        // A read failure here is not fatal: the caller's data still needs
+        // saving, and refusing would lose the write we were asked to make.
+        let mut merged = match load(&self.path) {
+            Ok(Some(existing)) => existing,
+            _ => BTreeMap::new(),
+        };
+        // Keys this handle deleted must not come back from disk.
+        merged.retain(|key, _| !self.deleted.contains(key));
+        for (key, value) in &self.entries {
+            merged.insert(key.clone(), value.clone());
+        }
+
+        let encoded = encode(&merged);
+        let temp = self
+            .path
+            .with_extension(format!("{}.tmp", std::process::id()));
         std::fs::write(&temp, &encoded).map_err(|e| StoreError::Io(e.to_string()))?;
         std::fs::rename(&temp, &self.path).map_err(|e| StoreError::Io(e.to_string()))?;
         Ok(())
@@ -317,6 +358,64 @@ mod tests {
         assert_eq!(store.keys(), Err(StoreError::Denied));
         assert_eq!(store.delete("a"), Err(StoreError::Denied));
         assert_eq!(store.clear(), Err(StoreError::Denied));
+    }
+
+    /// IC-247. Every flush rewrote the whole file through one fixed `.tmp`
+    /// name with no lock, so two open instances of the same store raced: the
+    /// second rename won and the first writer's successful `set` was gone.
+    /// A shared temp name also means two writers can be writing the same
+    /// scratch file at the same moment.
+    #[test]
+    fn a_second_writer_does_not_erase_the_first() {
+        let dir = tempfile::tempdir().expect("dir");
+        let path = dir.path().join("store.kv");
+
+        // Two handles on the same store, as two windows of one app would be.
+        let mut first = AppStore::open(path.clone(), true);
+        let mut second = AppStore::open(path.clone(), true);
+
+        first.set("from_first", b"1".to_vec()).expect("set");
+        first.flush().expect("flush first");
+
+        // `second` was opened before that write, so it does not know about it.
+        second.set("from_second", b"2".to_vec()).expect("set");
+        second.flush().expect("flush second");
+
+        // Both writes were accepted, so both must survive.
+        let reopened = AppStore::open(path, true);
+        assert_eq!(
+            reopened.get("from_first").expect("read"),
+            Some(b"1".to_vec()),
+            "the first writer's value was erased by the second"
+        );
+        assert_eq!(
+            reopened.get("from_second").expect("read"),
+            Some(b"2".to_vec())
+        );
+    }
+
+    /// The merge must not resurrect a deleted key. Flush now reads the file
+    /// back and lays this handle's entries on top, so without tracking the
+    /// deletion the old value on disk would simply return.
+    #[test]
+    fn a_deleted_key_stays_deleted_through_a_merge() {
+        let dir = tempfile::tempdir().expect("dir");
+        let path = dir.path().join("store.kv");
+
+        let mut store = AppStore::open(path.clone(), true);
+        store.set("keep", b"yes".to_vec()).expect("set");
+        store.set("remove", b"no".to_vec()).expect("set");
+        store.flush().expect("flush");
+
+        store.delete("remove").expect("delete");
+
+        let reopened = AppStore::open(path, true);
+        assert_eq!(reopened.get("keep").expect("read"), Some(b"yes".to_vec()));
+        assert_eq!(
+            reopened.get("remove").expect("read"),
+            None,
+            "the merge brought a deleted key back"
+        );
     }
 
     /// IC-877. A corrupt store used to reopen as an empty one, which an app
