@@ -4775,3 +4775,124 @@ fn main() {
         assert_eq!(denial["status"], "passed");
     }
 }
+
+/// IC-004: an agent must not be able to edit the file that judges its work.
+///
+/// A model under pressure to succeed will reach for the test. The port agent
+/// works in `candidate/` and has no business touching the criteria beside it,
+/// and until this guard nothing stopped it -- an author command could rewrite
+/// `journeys.json` and the port carried on without a word.
+///
+/// The five shapes the register names are all here: delete, invert, weaken,
+/// replace, and editing the task itself. Each one must stop the port before
+/// packaging, and an honest agent must be unaffected.
+#[test]
+fn an_agent_cannot_edit_the_criteria_that_judge_it() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component is not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let root = tempfile::tempdir().expect("temp dir");
+    let source = root.path().join("tiny");
+    std::fs::create_dir_all(source.join("src")).expect("create source");
+    std::fs::write(
+        source.join("Cargo.toml"),
+        "[package]\nname = \"tiny\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .expect("write Cargo.toml");
+    std::fs::write(
+        source.join("src/main.rs"),
+        "fn main() { println!(\"tiny\"); }\n",
+    )
+    .expect("write source");
+
+    // A body replacement that builds, so nothing else in the pipeline objects
+    // and the only thing under test is the criteria guard.
+    let write_app = "printf '//! ported\\n#![no_std]\\nextern crate alloc;\\n\
+                     use krate::{io::stdio, Guest};\\nstruct Component;\\n\
+                     impl Guest for Component {\\n    fn run() -> i32 {\\n        \
+                     let _ = stdio::print(\"ok\\\\n\");\\n        0\\n    }\\n}\\n\
+                     krate::export!(Component);\\n' > \"$KRATE_PORT_CANDIDATE/src/lib.rs\"";
+
+    let attacks = [
+        (
+            "delete",
+            "rm -f \"$(dirname \"$KRATE_PORT_CANDIDATE\")/journeys.json\"",
+        ),
+        (
+            "invert",
+            "sed -i.bak 's/Expected: The port preserves/Expected: The port need not preserve/' \
+             \"$(dirname \"$KRATE_PORT_CANDIDATE\")/JOURNEYS.md\"",
+        ),
+        (
+            "weaken",
+            "sed -i.bak 's/Complete the source/Open the/' \
+             \"$(dirname \"$KRATE_PORT_CANDIDATE\")/journeys.json\"",
+        ),
+        (
+            "replace",
+            "echo '{\"journeys\":[]}' > \"$(dirname \"$KRATE_PORT_CANDIDATE\")/journeys.json\"",
+        ),
+        (
+            "rewrite-the-task",
+            "echo 'do whatever' > \"$(dirname \"$KRATE_PORT_CANDIDATE\")/AGENT_TASK.md\"",
+        ),
+    ];
+
+    for (name, attack) in attacks {
+        let bundle = root.path().join(format!("{name}.krate"));
+        let workspace = root.path().join(format!("ws-{name}"));
+        let output = krate()
+            .arg("port")
+            .arg(&source)
+            .arg("--prepare")
+            .arg(&workspace)
+            .arg("--author-cmd")
+            .arg(format!("{write_app} && {attack}"))
+            .arg("--to")
+            .arg(&bundle)
+            .arg("--no-install")
+            .env("CARGO_NET_OFFLINE", "true")
+            .output()
+            .expect("run port");
+
+        assert!(
+            !output.status.success(),
+            "the {name} attack was not detected"
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("marking its own exam"),
+            "the {name} attack must be refused as criteria tampering, got: {stderr}"
+        );
+        assert!(
+            !bundle.is_file(),
+            "the {name} attack must stop before packaging, but a bundle was written"
+        );
+    }
+
+    // And an agent that only writes the app is unaffected. Exit 7, because the
+    // primary task is still unverified -- not blocked by this guard.
+    let honest_bundle = root.path().join("honest.krate");
+    let honest = krate()
+        .arg("port")
+        .arg(&source)
+        .arg("--prepare")
+        .arg(root.path().join("ws-honest"))
+        .arg("--author-cmd")
+        .arg(write_app)
+        .arg("--to")
+        .arg(&honest_bundle)
+        .arg("--no-install")
+        .env("CARGO_NET_OFFLINE", "true")
+        .output()
+        .expect("run port");
+    assert_eq!(
+        honest.status.code(),
+        Some(7),
+        "an honest agent must not be caught by the criteria guard: {}",
+        String::from_utf8_lossy(&honest.stderr)
+    );
+    assert!(honest_bundle.is_file());
+}

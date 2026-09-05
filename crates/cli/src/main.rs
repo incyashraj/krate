@@ -2203,6 +2203,10 @@ fn complete_port(
     // 4,863-line markdown viewer "ported with zero repairs" as the checklist
     // starter. The exit code cannot catch that; comparing the code can.
     let scaffold_lib = fs::read_to_string(candidate.join("src/lib.rs")).unwrap_or_default();
+    // The criteria as they stand before anyone touches them. An agent that can
+    // edit the file describing what it must do can pass its own exam, and
+    // nothing was stopping it.
+    let criteria = AcceptanceCriteria::capture(workspace)?;
     let author_name = match author {
         PortAuthor::Claude => {
             run_claude_port(workspace, &source_snapshot, &candidate, &task_path)?;
@@ -2221,6 +2225,11 @@ fn complete_port(
             "external-command"
         }
     };
+
+    // Before anything else: did the agent change what it was being judged by?
+    // This is checked first because every check after it is only worth what
+    // the criteria are worth.
+    criteria.ensure_unchanged(workspace)?;
 
     // The agent receives read access to the source in order to understand it,
     // but it must edit only the isolated candidate. Re-analyze the source and
@@ -2280,6 +2289,9 @@ fn complete_port(
                     },
                 )?;
                 ensure_original_source_unchanged(original_plan, original_source)?;
+                // A repair is the place the register names: a test edit
+                // hidden inside a code fix. Re-check after every attempt.
+                criteria.ensure_unchanged(workspace)?;
             }
             Err(error) => {
                 // The port is over. Before the error goes to the terminal and
@@ -2348,6 +2360,9 @@ fn complete_port(
                     },
                 )?;
                 ensure_original_source_unchanged(original_plan, original_source)?;
+                // A repair is the place the register names: a test edit
+                // hidden inside a code fix. Re-check after every attempt.
+                criteria.ensure_unchanged(workspace)?;
                 // The repair changed the source, so rebuild and repack before
                 // asking again -- otherwise the next attempt verifies the same
                 // bundle and fails identically.
@@ -2937,6 +2952,75 @@ fn first_error_line(error: &str) -> &str {
         .lines()
         .find(|line| !line.trim().is_empty())
         .unwrap_or("candidate validation failed")
+}
+
+/// The files that say what a port must do, and their digests when written.
+///
+/// An agent that can edit these can pass its own exam. It works on `candidate/`
+/// and has no business touching the criteria beside it -- but nothing stopped
+/// it, and a test that judges the work is exactly what a model under pressure
+/// to succeed will reach for. So they are hashed when written and re-checked
+/// after the agent runs.
+struct AcceptanceCriteria {
+    digests: Vec<(PathBuf, String)>,
+}
+
+impl AcceptanceCriteria {
+    /// Hash every criteria file in a prepared workspace.
+    ///
+    /// A file that is not there is recorded as absent, so deleting one is a
+    /// change like any other -- deletion is the simplest way to weaken a test.
+    fn capture(workspace: &Path) -> Result<Self> {
+        const CRITERIA: [&str; 4] = [
+            "journeys.json",
+            "JOURNEYS.md",
+            "port-plan.json",
+            "AGENT_TASK.md",
+        ];
+        let mut digests = Vec::new();
+        for name in CRITERIA {
+            let path = workspace.join(name);
+            let digest = if path.is_file() {
+                sha256_file(&path)?
+            } else {
+                "absent".to_string()
+            };
+            digests.push((path, digest));
+        }
+        Ok(Self { digests })
+    }
+
+    /// Refuse when any of them changed while the agent was running.
+    ///
+    /// The message names the file and says what the honest route is, because
+    /// a criterion sometimes genuinely is wrong -- and then it gets changed in
+    /// the open, before the run, not inside a repair where nobody sees it.
+    fn ensure_unchanged(&self, workspace: &Path) -> Result<()> {
+        for (path, before) in &self.digests {
+            let after = if path.is_file() {
+                sha256_file(path)?
+            } else {
+                "absent".to_string()
+            };
+            if &after != before {
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| path.display().to_string());
+                anyhow::bail!(
+                    "{name} changed while the port agent was running. That file \
+                     says what this port has to do, so an agent editing it is \
+                     an agent marking its own exam -- Krate stopped before \
+                     packaging.\n\n\
+                     If the requirement really is wrong, change it in {}, then \
+                     start the port again. A criterion is changed in the open, \
+                     before the run, never inside a repair.",
+                    workspace.display()
+                );
+            }
+        }
+        Ok(())
+    }
 }
 
 fn ensure_original_source_unchanged(
