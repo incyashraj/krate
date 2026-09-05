@@ -1216,9 +1216,8 @@ fn friendly_error(err: &anyhow::Error) -> String {
             return format!(
                 "this app and this copy of Krate were built against different \
                  versions of the app interface, so it cannot start.\n\n  \
-                 If somebody sent you this app recently, update Krate:\n    \
-                 curl -fsSL https://krate.tech/install.sh | sh\n    \
-                 (on Windows: irm https://krate.tech/install.ps1 | iex)\n\n  \
+                 If somebody sent you this app recently, update Krate from\n    \
+                 https://krate.tech/open\n\n  \
                  If it is an app you made a while ago, it predates a change to \
                  the interface. Open it with `krate` and choose \"Make a \
                  change\" -- rebuilding it against this version is the fix.\n\n\
@@ -3876,7 +3875,48 @@ enum WrapTarget {
 ///
 /// Everything below the final `exit` is the app's own bytes; the shell
 /// reads a script line by line as it executes, so it never parses them.
+/// A manifest string, safe to sit inside a generated script (IC-380).
+///
+/// `app.name` is display metadata written by whoever packed the bundle, and
+/// the wrappers dropped it straight into shell and batch text as a comment.
+/// A name containing a newline ends the comment, and the next line is an
+/// executable statement -- reproduced here with
+/// `"Friendly app\necho INJECTED_COMMAND_RAN\n#"`, which printed
+/// INJECTED_COMMAND_RAN before any permission screen appeared.
+///
+/// Everything that could end a line or start a new statement is removed.
+/// Nothing is escaped, because escaping is a promise about how a particular
+/// shell parses text and these strings go into three different ones.
+fn script_safe_text(text: &str) -> String {
+    let cleaned: String = text
+        .chars()
+        .map(|c| {
+            if c.is_control()
+                || matches!(
+                    c,
+                    '`' | '$' | '\\' | '"' | '\'' | '%' | '&' | '|' | ';' | '<' | '>'
+                )
+            {
+                ' '
+            } else {
+                c
+            }
+        })
+        .collect();
+    let joined = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+    if joined.trim().is_empty() {
+        "A Krate app".to_string()
+    } else {
+        joined.chars().take(80).collect()
+    }
+}
+
 fn wrap_prefix_unix(app_name: &str, stem: &str) -> String {
+    // The name is display metadata from the bundle and this is
+    // executable text, so it is cleaned before it goes anywhere near
+    // the template (IC-380).
+    let app_name = script_safe_text(app_name);
+    let stem = script_safe_text(stem);
     format!(
         r#"#!/bin/sh
 # {app_name} -- a Krate app, wrapped for a friend.
@@ -3899,16 +3939,19 @@ find_krate() {{
 }}
 krate_bin="$(find_krate || true)"
 if [ -z "$krate_bin" ]; then
-  echo "This app runs on Krate, a small free player. Installing it once..."
-  curl -fsSL https://krate.tech/install.sh | sh || {{
-    echo "Krate did not install. The friendly instructions live at krate.tech/open"
-    exit 1
-  }}
-  krate_bin="$(find_krate || true)"
-  if [ -z "$krate_bin" ]; then
-    echo "Krate installed somewhere this script cannot see; open krate.tech/open"
-    exit 1
-  fi
+  # This used to run `curl -fsSL https://krate.tech/install.sh | sh`
+  # (IC-381). Piping a remote script into a shell executes whatever the
+  # server returns, with no signature and nothing to check it against --
+  # and the wrapper's own text claimed "checksums verified", which was not
+  # true of this path. A person cannot inspect what they are running when
+  # it is never written down.
+  #
+  # So it asks instead of installing. Until there is a signed,
+  # digest-bound bootstrap (CP3), the honest move is to send someone to the
+  # signed installer rather than fetch and execute code on their behalf.
+  echo "This app runs on Krate, a small free player."
+  echo "Install it once from https://krate.tech/open -- then open this file again."
+  exit 1
 fi
 tmp="${{TMPDIR:-/tmp}}/{stem}-$$.krate"
 cp "$0" "$tmp"
@@ -3927,6 +3970,10 @@ exit $status
 /// install the new PATH entry is invisible to the already-running cmd, so
 /// the installer's default landing spot is checked explicitly.
 fn wrap_prefix_windows(app_name: &str, stem: &str) -> String {
+    // Same reason as the unix prefix: this is executable text and the
+    // name is untrusted metadata (IC-380).
+    let app_name = script_safe_text(app_name);
+    let stem = script_safe_text(stem);
     let script = format!(
         r#"@echo off
 rem {app_name} -- a Krate app, wrapped for a friend. Double-click me.
@@ -3935,15 +3982,17 @@ setlocal
 set "KRATE_BIN=krate"
 where krate >nul 2>nul
 if %ERRORLEVEL%==0 goto run
-echo This app runs on Krate, a small free player. Installing it once...
-"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -Command "irm https://krate.tech/install.ps1 | iex"
-where krate >nul 2>nul
-if %ERRORLEVEL%==0 goto run
+rem This used to run `irm https://krate.tech/install.ps1 | iex` with
+rem -ExecutionPolicy Bypass (IC-381) -- fetching a remote script and
+rem executing it while deliberately switching off the protection PowerShell
+rem has for exactly that. Nothing verified what came back.
 if exist "%LOCALAPPDATA%\Krate\bin\krate.exe" (
   set "KRATE_BIN=%LOCALAPPDATA%\Krate\bin\krate.exe"
   goto run
 )
-echo Krate did not install. The friendly instructions live at krate.tech/open
+echo This app runs on Krate, a small free player.
+echo Install it once from https://krate.tech/open -- then open this file again.
+start "" "https://krate.tech/open"
 pause
 exit /b 1
 :run
@@ -3993,15 +4042,15 @@ krate_bin="$(find_krate || true)"
 if [ -z "$krate_bin" ]; then
   # No player yet. Say so in a window -- there is no console behind a
   # double-clicked .app, so a printed line would go nowhere.
-  osascript -e 'display dialog "This app runs on Krate, a small free player (about 24 MB).\n\nInstall it once, and every Krate app anyone sends you from now on just opens." buttons {"Not now","Install once"} default button "Install once" with title "Krate"' \
-    | grep -q "Install once" || exit 0
-  curl -fsSL https://krate.tech/install.sh | sh >/dev/null 2>&1
-  krate_bin="$(find_krate || true)"
-  if [ -z "$krate_bin" ]; then
-    osascript -e 'display dialog "Krate could not install itself.\n\nThe steps are at krate.tech/open" buttons {"OK"} with title "Krate"' >/dev/null 2>&1
-    open "https://krate.tech/open"
-    exit 1
-  fi
+  # This offered to install Krate by piping a remote script into a shell
+  # (IC-381). Whatever the server returned would have run, unsigned and
+  # unseen. Sending someone to the signed installer is slower by one click
+  # and is the difference between "install this" and "run whatever this
+  # server says today".
+  osascript -e 'display dialog "This app runs on Krate, a small free player (about 24 MB).\n\nInstall it once from krate.tech, then open this file again." buttons {"Not now","Get Krate"} default button "Get Krate" with title "Krate"' \
+    | grep -q "Get Krate" || exit 0
+  open "https://krate.tech/open"
+  exit 0
 fi
 if [ ! -f "$app" ]; then
   osascript -e 'display dialog "The app file is missing.\n\nKeep this opener and the .krate file together in the same folder." buttons {"OK"} with title "Krate"' >/dev/null 2>&1
@@ -16470,5 +16519,109 @@ mod safe_path_name_tests {
         let safe = safe_path_name(&long);
         assert!(safe.len() <= 120, "{} bytes", safe.len());
         assert!(!safe.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod script_safety_tests {
+    use super::{script_safe_text, wrap_prefix_unix, wrap_prefix_windows};
+
+    /// IC-380. The wrappers put `app.name` into shell and batch text as a
+    /// comment. A name containing a newline ends that comment and the next
+    /// line executes. Reproduced with
+    /// `"Friendly app\necho INJECTED_COMMAND_RAN\n#"`, which printed
+    /// INJECTED_COMMAND_RAN before any permission screen appeared.
+    #[test]
+    fn a_manifest_name_cannot_add_a_line_to_a_wrapper() {
+        let hostile = "Friendly app\necho INJECTED_COMMAND_RAN\n#";
+        for script in [
+            wrap_prefix_unix(hostile, "App"),
+            wrap_prefix_windows(hostile, "App"),
+        ] {
+            // The injected command must not appear on a line of its own --
+            // which is the only way it becomes a statement rather than text.
+            for line in script.lines() {
+                let trimmed = line.trim_start();
+                assert!(
+                    !trimmed.starts_with("echo INJECTED_COMMAND_RAN"),
+                    "the name produced an executable line: {line:?}"
+                );
+            }
+        }
+    }
+
+    /// Every character that could end a line or begin a new statement is
+    /// removed rather than escaped, because escaping is a promise about how
+    /// one particular shell parses text and these strings reach three.
+    #[test]
+    fn shell_metacharacters_do_not_survive() {
+        for hostile in [
+            "app`whoami`",
+            "app$(id)",
+            "app; rm -rf /",
+            "app && curl evil.example.com",
+            "app | sh",
+            "app%PATH%",
+            "app\r\nnet user",
+        ] {
+            let safe = script_safe_text(hostile);
+            for bad in ['`', '$', ';', '&', '|', '%', '\n', '\r', '<', '>'] {
+                assert!(!safe.contains(bad), "{hostile:?} kept {bad:?}: {safe:?}");
+            }
+        }
+    }
+
+    /// IC-381. The wrappers fetched a remote script and piped it into a
+    /// shell -- `curl | sh` on unix, `irm | iex` with -ExecutionPolicy
+    /// Bypass on Windows -- so whatever the server returned would run,
+    /// unsigned and unseen. The wrapper's own text claimed "checksums
+    /// verified", which was not true of that path.
+    ///
+    /// A generated wrapper must never contain a way to execute code it
+    /// downloaded. Until a signed digest-bound bootstrap exists (CP3), the
+    /// honest move is to send someone to the signed installer.
+    #[test]
+    fn no_wrapper_pipes_the_internet_into_a_shell() {
+        for script in [
+            wrap_prefix_unix("Tip Calculator", "TipCalculator"),
+            wrap_prefix_windows("Tip Calculator", "TipCalculator"),
+        ] {
+            // Ignore the comments that explain why these are gone.
+            let live: String = script
+                .lines()
+                .filter(|l| {
+                    let t = l.trim_start();
+                    !t.starts_with('#') && !t.to_ascii_lowercase().starts_with("rem ")
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            for forbidden in [
+                "| sh",
+                "| iex",
+                "|iex",
+                "ExecutionPolicy Bypass",
+                "Invoke-Expression",
+            ] {
+                assert!(
+                    !live.contains(forbidden),
+                    "a wrapper can still run downloaded code: {forbidden:?}"
+                );
+            }
+        }
+    }
+
+    /// An ordinary name must still read as itself, or every wrapper would be
+    /// called "A Krate app".
+    #[test]
+    fn an_ordinary_name_is_left_readable() {
+        assert_eq!(script_safe_text("Tip Calculator"), "Tip Calculator");
+        assert_eq!(script_safe_text("Rate-Card 2"), "Rate-Card 2");
+    }
+
+    /// A name with nothing usable left still has to say something.
+    #[test]
+    fn a_name_of_only_punctuation_gets_a_fallback() {
+        assert_eq!(script_safe_text("$$$"), "A Krate app");
+        assert_eq!(script_safe_text("   "), "A Krate app");
     }
 }

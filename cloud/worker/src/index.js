@@ -1807,7 +1807,26 @@ export class Room {
 // tell. Everything is gated on the Stripe secrets existing, so this whole
 // surface is dormant until they are set and the studio's limit stays soft.
 
+// Personal pricing is frozen (IC-640, IC-402).
+//
+// The founder's decision is that individual use stays free during adoption,
+// and that no price is set before buyer, usage and cost are measured. The
+// live surface said otherwise: `/billing/config` returned live:true with
+// $12/month, $96/year and $79/year, and a checkout that took money for them.
+// A policy that the product contradicts is not a policy.
+//
+// So this is an explicit switch rather than deleted code. The Stripe
+// integration is real work and will be needed when a price is actually
+// decided -- CP8 revisits it with measured data. Removing it would mean
+// rebuilding it; leaving it live would mean charging people against the
+// stated policy. `KRATE_BILLING_UNFROZEN` is the deliberate act that turns
+// it back on, and it is not set anywhere.
+function billingFrozen(env) {
+  return env.KRATE_BILLING_UNFROZEN !== "1";
+}
+
 function billingLive(env) {
+  if (billingFrozen(env)) return false;
   return Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_PRICE_MONTHLY && env.STRIPE_PRICE_YEARLY);
 }
 
@@ -1818,6 +1837,12 @@ async function foundingSold(env) {
 }
 
 async function billingConfig(env) {
+  // While frozen, say so plainly and quote no price. A page that renders
+  // "$12/month" next to a button that cannot charge is worse than a page
+  // with no prices on it.
+  if (billingFrozen(env)) {
+    return json({ live: false, founding: false, frozen: true, prices: {} });
+  }
   const sold = await foundingSold(env);
   return json({
     live: billingLive(env),
@@ -1980,8 +2005,22 @@ async function billingWebhook(request, env) {
     return text("bad payload", 400);
   }
   // Stripe retries; process each event once.
+  //
+  // The marker is written AFTER the work, not before it (IC-409).
+  //
+  // It used to be written here, first. If the entitlement write then failed,
+  // Stripe's retry found the event already marked processed and returned
+  // success -- so Stripe believed delivery had worked while a paying
+  // customer never received access, permanently and silently. Reproduced in
+  // a controlled test before this change.
+  //
+  // Marking afterwards means a crash mid-way leaves the event unmarked and
+  // Stripe retries it. That can process an event twice, which is the safe
+  // direction: every write below is idempotent -- entitlements are derived
+  // from the subscription's current state, not incremented -- so a repeat
+  // lands on the same answer. Losing a payment is not recoverable; repeating
+  // one is.
   if (await env.APPS.get(`evt:${event.id}`)) return json({ ok: true });
-  await env.APPS.put(`evt:${event.id}`, "1", { expirationTtl: 7 * 24 * 3600 });
 
   const obj = event.data && event.data.object;
   if (event.type === "checkout.session.completed" && obj) {
@@ -2014,6 +2053,10 @@ async function billingWebhook(request, env) {
       }),
     );
   }
+
+  // Only now: the work above completed without throwing, so this event is
+  // genuinely done and Stripe need not send it again.
+  await env.APPS.put(`evt:${event.id}`, "1", { expirationTtl: 7 * 24 * 3600 });
   return json({ ok: true });
 }
 
