@@ -393,13 +393,23 @@ fn port_author_command_builds_packages_and_permission_tests_a_candidate() {
         .output()
         .expect("run port pipeline");
 
-    assert!(
-        output.status.success(),
-        "port pipeline failed\nstdout:\n{}\nstderr:\n{}",
+    // Exit 7, not 0. Everything mechanical passed -- it built, it imports only
+    // krate:*, it runs, it refuses without its capability -- and nobody has
+    // compared it against the original, which this test does not do either.
+    // The pipeline says so instead of calling four green checks a port.
+    assert_eq!(
+        output.status.code(),
+        Some(7),
+        "a port whose primary task was never compared is not finished\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(bundle.is_file());
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("not a finished port"),
+        "the person must be told what is missing: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(bundle.is_file(), "the bundle is still written -- it built");
     assert_eq!(
         std::fs::read_to_string(source.join("src/main.rs")).expect("read original"),
         original
@@ -485,9 +495,14 @@ fn port_repairs_a_failed_candidate_with_the_exact_build_error() {
         .output()
         .expect("run repairing port pipeline");
 
-    assert!(
-        output.status.success(),
-        "repairing port pipeline failed\nstdout:\n{}\nstderr:\n{}",
+    // Exit 7: the repair worked and the candidate builds, which is what this
+    // test is about. The port is still not established, because nothing here
+    // compared it against the original -- so the pipeline says so, exactly as
+    // it does for a candidate that needed no repair.
+    assert_eq!(
+        output.status.code(),
+        Some(7),
+        "the repair should succeed and the port should still be unverified\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -4641,4 +4656,122 @@ fn a_sign_off_names_the_build_and_refuses_to_cover_a_real_failure() {
         !text.contains("--waive-security") && !text.contains("--waive-functional"),
         "there must be no flag that waives a real failure: {text}"
     );
+}
+
+/// Test 1691, the E5 case: an invoice application ported into something else
+/// must not pass, however clean the build was.
+///
+/// The original reads quantities from a file, multiplies their sum by a unit
+/// price of 10, and prints `total=100`. The candidate here is a real, working,
+/// compiling Krate app -- and it counts lines. It builds, imports only
+/// `krate:*`, runs, and refuses without its capability. Four mechanical checks,
+/// all green, on an app that is not the one that was ported.
+///
+/// That combination is what E5 caught being reported as a finished port, while
+/// the same command's own journey record said `primary-task: not-verified`. A
+/// permission-denial pass is not a primary-task pass (test 1697), so the
+/// pipeline now reads its own record before deciding.
+#[test]
+fn a_port_that_does_something_else_is_not_a_finished_port() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component is not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let root = tempfile::tempdir().expect("temp dir");
+
+    // The E5 invoice fixture, exactly: 2 + 3 + 5, times 10, is 100.
+    let source = root.path().join("invoice");
+    std::fs::create_dir_all(source.join("src")).expect("create source");
+    std::fs::write(
+        source.join("Cargo.toml"),
+        "[package]\nname = \"invoice\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .expect("write Cargo.toml");
+    std::fs::write(
+        source.join("src/main.rs"),
+        r#"use std::{env, fs};
+fn main() {
+    let path = env::args().nth(1).unwrap_or_else(|| "qty.txt".to_string());
+    let text = fs::read_to_string(&path).expect("read quantities");
+    let sum: i64 = text.split_whitespace().filter_map(|w| w.parse::<i64>().ok()).sum();
+    println!("total={}", sum * 10);
+}
+"#,
+    )
+    .expect("write source");
+    std::fs::write(source.join("qty.txt"), "2\n3\n5\n").expect("write fixture input");
+
+    let bundle = root.path().join("ported.krate");
+    let workspace = root.path().join("port-work");
+
+    // An author command that replaces the body with a different working app.
+    // Deliberately not a no-op and not a comment-only edit: those are already
+    // refused, and refusing them is not the same as checking behaviour.
+    let author = "printf '//! A line counter.\\n#![no_std]\\nextern crate alloc;\\n\
+                  use krate::{io::stdio, Guest};\\nstruct Component;\\n\
+                  impl Guest for Component {\\n    fn run() -> i32 {\\n        \
+                  let _ = stdio::print(\"lines=3\\\\n\");\\n        0\\n    }\\n}\\n\
+                  krate::export!(Component);\\n' > \"$KRATE_PORT_CANDIDATE/src/lib.rs\"";
+
+    let output = krate()
+        .arg("port")
+        .arg(&source)
+        .arg("--prepare")
+        .arg(&workspace)
+        .arg("--author-cmd")
+        .arg(author)
+        .arg("--to")
+        .arg(&bundle)
+        .arg("--no-install")
+        .env("CARGO_NET_OFFLINE", "true")
+        .output()
+        .expect("run port pipeline");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(
+        output.status.code(),
+        Some(7),
+        "a line counter must not pass as a port of an invoice app\nstdout:\n{stdout}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // And the refusal has to be about behaviour, not a build failure -- the
+    // whole point is that everything mechanical passed.
+    assert!(
+        stdout.contains("primary-task"),
+        "the unfinished journey must be named: {stdout}"
+    );
+    assert!(
+        bundle.is_file(),
+        "the bundle is still written: it built and runs, it is just not proven \
+         to be the same app"
+    );
+
+    // The record and the verdict must agree. Before this, the record said
+    // not-verified and the verdict said success in the same breath.
+    let results: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(workspace.join("journey-results.json")).expect("journey results"),
+    )
+    .expect("parse");
+    let primary = results["results"]
+        .as_array()
+        .expect("results")
+        .iter()
+        .find(|r| r["id"] == "primary-task")
+        .expect("a primary-task journey");
+    assert_eq!(
+        primary["status"], "not-verified",
+        "the record must still say what it always said"
+    );
+
+    // Permission denial passing is exactly what must NOT stand in for it.
+    let denial = results["results"]
+        .as_array()
+        .expect("results")
+        .iter()
+        .find(|r| r["id"] == "permission-denial");
+    if let Some(denial) = denial {
+        assert_eq!(denial["status"], "passed");
+    }
 }

@@ -1755,14 +1755,17 @@ fn port_project(req: PortRequest) -> Result<u8> {
             (None, Some(command)) => PortAuthor::Command(command),
             _ => anyhow::bail!("choose exactly one of --agent or --author-cmd"),
         };
-        complete_port(
+        // The port's own exit code, not a blanket 0: a bundle that was never
+        // compared against the original is not a finished port, and saying so
+        // in the exit status is what stops a script shipping it.
+        return complete_port(
             &report,
             workspace,
             output,
             command,
             req.transcript.as_deref(),
             req.repair_attempts,
-        )?;
+        );
     }
 
     Ok(0)
@@ -2170,7 +2173,7 @@ fn complete_port(
     author: PortAuthor<'_>,
     transcript_path: Option<&Path>,
     repair_attempts: u8,
-) -> Result<()> {
+) -> Result<u8> {
     if original_plan.verdict == krate_port::Verdict::Unsupported {
         anyhow::bail!(
             "this source has blocking behavior; review {} before attempting a port",
@@ -2472,6 +2475,28 @@ fn complete_port(
         fs::write(path, &transcript_json).with_context(|| format!("write {}", path.display()))?;
     }
 
+    // The journeys this run did not settle. They are already written down
+    // above, honestly, as `not-verified` -- what was missing is the pipeline
+    // reading its own record before declaring the port done.
+    //
+    // E5: an invoice application printing `total=100` was ported into an app
+    // printing a word-frequency table. It built, imported only krate:*, ran,
+    // refused without its capability, and was reported as a finished port with
+    // four passed checks, while `primary-task` sat at `not-verified` in the
+    // same output. A permission-denial pass is not a primary-task pass, and
+    // treating four green mechanical checks as a port is how the wrong app
+    // gets shipped under the right name.
+    let unverified: Vec<&str> = journey_results["results"]
+        .as_array()
+        .map(|results| {
+            results
+                .iter()
+                .filter(|r| r["status"] == "not-verified")
+                .filter_map(|r| r["id"].as_str())
+                .collect()
+        })
+        .unwrap_or_default();
+
     println!();
     println!("Created {}", output.display());
     println!("  source unchanged: yes");
@@ -2482,11 +2507,42 @@ fn complete_port(
         println!("    - {permission}");
     }
     println!();
+
+    if unverified.is_empty() {
+        println!("Every journey passed. This is a port.");
+        return Ok(0);
+    }
+
+    println!("This is not a finished port yet.");
+    println!();
+    println!("  passed:       the app builds, runs, and refuses without its access");
+    println!("  NOT checked:  whether it does what the original did");
+    println!();
+    println!("  still to check:");
+    for id in &unverified {
+        // Name them, so this is a list of work rather than a warning to skim.
+        match *id {
+            "primary-task" => println!(
+                "    - primary-task: run the original and the port on the same \
+                 input and compare what they print"
+            ),
+            "same-bundle-three-systems" => println!(
+                "    - same-bundle-three-systems: open this exact .krate on \
+                 macOS, Windows and Linux"
+            ),
+            other => println!("    - {other}"),
+        }
+    }
+    println!();
     println!(
-        "Build and permission checks passed. Compare the original and ported \
-         user journeys before sharing this app."
+        "  Record what you find with `krate accept {}`.",
+        output.display()
     );
-    Ok(())
+    // Exit 7: the bundle exists and is real, and the port is not established.
+    // Not an error -- nothing went wrong and the file is on disk -- but not a
+    // success either, so a script that treated the old exit 0 as "ported"
+    // stops here instead of shipping it.
+    Ok(7)
 }
 
 /// Record a person's verdict on a built app.
