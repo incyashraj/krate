@@ -37,7 +37,10 @@ if ! flyctl auth whoami >/dev/null 2>&1; then
 fi
 
 echo "==> the app"
-if flyctl apps list 2>/dev/null | grep -qE "^${APP}[[:space:]]"; then
+# Anchored to the whole word, not the start of the line: flyctl prints its
+# table with a leading space and a box-drawing separator, so "^krate-builder"
+# never matched and every rerun tried to create an app that already existed.
+if flyctl apps list 2>/dev/null | grep -qE "(^|[[:space:]])${APP}([[:space:]]|$)"; then
   echo "    ${APP} is already there"
 else
   flyctl apps create "$APP" --yes
