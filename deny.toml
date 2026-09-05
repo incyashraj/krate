@@ -48,6 +48,19 @@ unused-allowed-license = "allow"
 multiple-versions = "warn"
 # Deny wildcard dependencies (e.g. `dep = "*"`).
 wildcards = "deny"
+# ...but not the workspace's own crates depending on each other by path.
+#
+# A path dependency with no version reads as `*` to this check, and every one
+# of the 53 in this workspace is that shape. They are not a supply-chain risk:
+# the path names a directory in this repository, so what gets built is whatever
+# is checked out beside it -- there is no registry resolution for a wildcard to
+# widen, and every one of these crates is publish = false. Writing a version
+# beside each path would satisfy the check by adding a number nothing reads,
+# and one that goes stale the next time the workspace version moves.
+#
+# What this does NOT relax is a real `dep = "*"` from crates.io, which is the
+# risk the rule is for and is still denied.
+allow-wildcard-paths = true
 # List of crates that are never allowed.
 deny = []
 

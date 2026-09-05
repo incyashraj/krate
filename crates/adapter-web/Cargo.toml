@@ -3,6 +3,7 @@ name = "krate-adapter-web"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
 publish = false
 
 # The browser adapter: a Krate app painting into a canvas in a tab.

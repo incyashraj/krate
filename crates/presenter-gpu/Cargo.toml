@@ -3,6 +3,9 @@ name = "krate-presenter-gpu"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# Like every other crate in this workspace. It was the one that did not say so,
+# and it depends on a sibling by path, so it could not be published anyway.
+publish = false
 
 # The GPU presenter (Plan/GPU-Presenter.md): the shared placement contract
 # rendered by vello on wgpu, so a Krate app on Windows feels like the same

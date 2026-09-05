@@ -3968,4 +3968,126 @@ mod tests {
             "a link out of the picked folder must be refused"
         );
     }
+
+    /// RUSTSEC-2026-0269 is a filesystem sandbox escape through a trailing
+    /// slash. Wasmtime 46.0.3 patches it there; this checks the same thing one
+    /// layer up, in our own path handling, so the containment does not rest on
+    /// the engine alone.
+    ///
+    /// The trailing slash matters because it makes a path read as a directory,
+    /// and a final component that is only checked for being a symlink when it
+    /// is a *file* can then be followed. So the case that means something is a
+    /// symlink pointing out of the sandbox, reached by every spelling that
+    /// differs only in its separators. All of them must be refused.
+    ///
+    /// What this pins, established by disabling each check in turn rather than
+    /// by reading the code: there are two independent layers here, and either
+    /// one alone still holds. `ensure_no_symlink_segments` refuses the link
+    /// before any host I/O; if that is lost, canonicalizing resolves the link
+    /// and `ensure_path_in_sandbox` catches the result outside the root. The
+    /// escape only happens when both are gone. A regression that removes one
+    /// will not show up here -- it will show up in
+    /// `local_fs_adapter_rejects_symlinked_segments_inside_sandbox`, which
+    /// depends on the first layer alone. This test is the backstop for losing
+    /// both, which is the shape the advisory describes.
+    ///
+    /// Writing this as ".." forms instead would have proved nothing. Those are
+    /// refused by parent-traversal, not by anything to do with trailing
+    /// slashes -- a first version of this test passed even with the trailing
+    /// slash deliberately stripped before parsing, which is exactly the bug it
+    /// was supposed to catch.
+    #[cfg(feature = "phase2-bindings")]
+    #[test]
+    fn a_trailing_slash_does_not_follow_a_symlink_out_of_the_sandbox() {
+        let sandbox = tempfile::tempdir().expect("sandbox");
+        let outside = tempfile::tempdir().expect("outside");
+        std::fs::write(outside.path().join("secret.txt"), b"host data").expect("seed");
+        // A link to a directory outside the sandbox: the trailing-slash form
+        // is the one that reads as "walk into this directory".
+        std::os::unix::fs::symlink(outside.path(), sandbox.path().join("link")).expect("symlink");
+
+        let adapter = LocalPhase2Adapter::new(
+            Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
+            None,
+            None,
+            Vec::new(),
+            1024,
+            sandbox.path().to_path_buf(),
+            Default::default(),
+        );
+
+        // Reading the file through the link must be refused however the path
+        // is spelled -- and it must be refused by the symlink guard, so the
+        // error is asserted exactly rather than accepting any failure. An
+        // is_err() here would pass on a missing permission and prove nothing
+        // about paths at all.
+        for path in [
+            "link/secret.txt",
+            "link//secret.txt",
+            "link/./secret.txt",
+            "./link/secret.txt",
+        ] {
+            assert_eq!(
+                adapter.open(path, OpenMode::Read),
+                Err(AdapterError::PermissionDenied),
+                "{path:?} followed a symlink out of the sandbox and reached the host's file"
+            );
+        }
+
+        // The host's file is still exactly as it was: nothing was read, and
+        // nothing wrote through the link either.
+        assert_eq!(
+            std::fs::read(outside.path().join("secret.txt")).expect("host file"),
+            b"host data"
+        );
+
+        // And the plain parent-traversal forms stay refused before any host
+        // I/O happens, however the trailing component is written.
+        for path in ["..", "../", "a/../secret.txt", "a/./../secret.txt"] {
+            assert_eq!(
+                normalize_fs_path(path),
+                Err(AdapterError::InvalidPath),
+                "{path:?} must be refused before it reaches the host"
+            );
+        }
+    }
+
+    /// An absolute path is not an escape here: paths are sandbox-relative by
+    /// design, so "/etc/passwd" names a file under the sandbox root and not
+    /// the host's. That is the rule working, and this pins it -- if it ever
+    /// started resolving to the real /etc, this test is what says so.
+    #[cfg(feature = "phase2-bindings")]
+    #[test]
+    fn an_absolute_path_stays_inside_the_sandbox() {
+        let sandbox = tempfile::tempdir().expect("sandbox");
+        let adapter = LocalPhase2Adapter::new(
+            Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
+            None,
+            None,
+            Vec::new(),
+            1024,
+            sandbox.path().to_path_buf(),
+            Default::default(),
+        );
+
+        // Writing to what looks like a system path must create a file under
+        // the sandbox, and the host's own /etc must be untouched.
+        let handle = FsAdapter::open(&adapter, "/etc/passwd", OpenMode::Write)
+            .expect("an absolute path resolves under the sandbox root");
+        FsAdapter::write(&adapter, &handle, b"sandboxed").expect("write");
+
+        let inside = sandbox.path().join("etc/passwd");
+        assert!(
+            inside.is_file(),
+            "the write must land under the sandbox at {}",
+            inside.display()
+        );
+        assert_eq!(
+            std::fs::read(&inside).expect("read back"),
+            b"sandboxed",
+            "and it must be our bytes, not the host's file"
+        );
+    }
 }
