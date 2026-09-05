@@ -3996,7 +3996,10 @@ mod tests {
     /// slashes -- a first version of this test passed even with the trailing
     /// slash deliberately stripped before parsing, which is exactly the bug it
     /// was supposed to catch.
-    #[cfg(feature = "phase2-bindings")]
+    // Unix-only for the same reason the other symlink tests here are: an
+    // unprivileged symlink is always available here and needs Developer Mode
+    // on Windows, so this cannot set up its own fixture there.
+    #[cfg(all(feature = "phase2-bindings", unix))]
     #[test]
     fn a_trailing_slash_does_not_follow_a_symlink_out_of_the_sandbox() {
         let sandbox = tempfile::tempdir().expect("sandbox");
