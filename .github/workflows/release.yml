@@ -1379,7 +1379,29 @@ jobs:
     runs-on: ubuntu-latest
     needs: verify
     if: ${{ !contains(inputs.tag || github.ref_name, '-rc') }}
+    # One promotion at a time, repository-wide. Two releases finishing together
+    # would both call `gh release edit --latest` and the channel would be
+    # whichever happened to run second -- a coin toss deciding what the public
+    # downloads. This queues them instead, and deliberately does NOT cancel the
+    # one in progress: a half-finished promotion is worse than a slow one.
+    concurrency:
+      group: krate-stable-channel
+      cancel-in-progress: false
+    permissions:
+      contents: write
     steps:
+      # Without this the job runs in an empty directory, so the `[ -f CHANNEL ]`
+      # below was always false and the pin was never read. The K-192 fix has
+      # been in the file since 2026-08-27 and has never once run.
+      #
+      # The checkout is deliberately of the DEFAULT branch, not the tag: a pin
+      # is a decision made now, and the tag was cut before it. Checking out the
+      # tag would read the CHANNEL as it stood when the release was built,
+      # which is exactly the stale view this is meant to prevent.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
       - name: Mark this release as the one the public gets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -1393,6 +1415,18 @@ jobs:
           # after one, while the fix for the very bug was compiling (K-192).
           # A rollback matters most exactly when a release is in flight, so
           # the pipeline has to be able to see it.
+          # Read the pin as it stands NOW, from the default branch, not as it
+          # stood when this release was tagged. A rollback is made during a
+          # release far more often than before one -- that is what a rollback
+          # is for -- so the view that matters is the current one. The checkout
+          # step above is what makes this file exist at all.
+          #
+          # `git fetch` first, because the checkout happened before `verify`
+          # ran and a rollback may have landed since. The whole failure being
+          # fixed is a decision made mid-flight being missed.
+          git fetch --quiet origin "${{ github.event.repository.default_branch }}"
+          git checkout --quiet "origin/${{ github.event.repository.default_branch }}" -- CHANNEL 2>/dev/null || true
+
           pin=""
           if [ -f CHANNEL ]; then
             pin="$(grep -v '^[[:space:]]*#' CHANNEL | tr -d '[:space:]' | head -1)"
@@ -1400,8 +1434,41 @@ jobs:
           if [ -n "$pin" ] && [ "$pin" != "$TAG" ]; then
             echo "::warning::CHANNEL pins the website to $pin, so $TAG stays a pre-release."
             echo "$TAG published but NOT promoted; the channel remains $pin"
+            {
+              echo "## Not promoted"
+              echo ""
+              echo "\`$TAG\` was published but the stable channel stays at \`$pin\`."
+              echo ""
+              echo "\`CHANNEL\` pins it. Clear that file to let a build promote itself again."
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
+
+          # What the channel was before this changed it, so the audit line says
+          # what moved rather than only where it landed.
+          before="$(gh release list -R "${{ github.repository }}" --limit 50 \
+            --json tagName,isLatest --jq '[.[] | select(.isLatest)][0].tagName // "none"')"
+
           gh release edit "$TAG" -R "${{ github.repository }}" \
             --prerelease=false --latest
-          echo "$TAG is now the stable channel"
+
+          # Read it back. `gh release edit` reporting success is not the same
+          # as the channel being what we asked for, and this job's whole
+          # subject is the channel being something nobody decided.
+          after="$(gh release list -R "${{ github.repository }}" --limit 50 \
+            --json tagName,isLatest --jq '[.[] | select(.isLatest)][0].tagName // "none"')"
+          if [ "$after" != "$TAG" ]; then
+            echo "::error::asked for $TAG to be the stable channel and it is $after. Something else moved it during this job."
+            exit 1
+          fi
+
+          echo "$TAG is now the stable channel (was $before)"
+          {
+            echo "## Stable channel moved"
+            echo ""
+            echo "- from: \`$before\`"
+            echo "- to:   \`$TAG\`"
+            echo "- by:   @${{ github.actor }}"
+            echo ""
+            echo "To roll this back, put the tag you want in \`CHANNEL\` on the default branch."
+          } >> "$GITHUB_STEP_SUMMARY"
