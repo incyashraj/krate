@@ -76,6 +76,28 @@ pub fn check_url(url: &str) -> Result<&str, LaunchError> {
         ));
     }
 
+    // A second line behind the typed handoff, for the characters a command
+    // interpreter acts on that have no business in a URL anyway.
+    //
+    // It is deliberately narrow. `&` runs commands in cmd, but it also
+    // separates every query parameter on the web, and `%` starts a cmd
+    // variable but is how a URL encodes anything at all -- rejecting either
+    // would break ordinary links to guard a path the URL no longer takes.
+    // What is left is the set that is both dangerous to a shell and never
+    // valid unencoded in a URL, so refusing it costs nothing.
+    //
+    // This exists because the first line is platform code that cannot be
+    // exercised from a Mac or a Linux runner, and a rule that only holds on
+    // the platform nobody tests on is the kind that quietly stops holding.
+    const SHELL_META: [char; 4] = ['|', '^', '"', '`'];
+    if let Some(bad) = url.chars().find(|c| SHELL_META.contains(c)) {
+        return Err(LaunchError::InvalidUrl(format!(
+            "the link contained `{bad}`, which some systems read as part of a \
+             command. Percent-encode it (%7C for |, %5E for ^, %22 for \", \
+             %60 for `) and it will open."
+        )));
+    }
+
     let lowered = url.to_ascii_lowercase();
     if lowered.starts_with("https://") {
         // A scheme alone is not a URL. Requiring a host stops `https://` and
@@ -119,14 +141,83 @@ pub fn open_url(url: &str, granted: bool) -> Result<(), LaunchError> {
     }
     let url = check_url(url)?;
 
-    // The URL is passed as one argument, never through a shell, so nothing in
-    // it can be read as a command.
+    open_checked_url(url)
+}
+
+/// Hand a URL that has already passed [`check_url`] to the operating system.
+///
+/// Split out so the platform choice is one place, and so the Windows path can
+/// say plainly that it does not use a shell -- which the previous version
+/// claimed while spawning `cmd`.
+#[cfg(target_os = "windows")]
+fn open_checked_url(url: &str) -> Result<(), LaunchError> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+    // This used to be `cmd /C start "" <url>`, with a comment above it saying
+    // the URL never goes through a shell. `cmd` IS a shell, and every
+    // character that means something to it -- & | ^ % " -- is legal in an
+    // https URL, so `https://example.com/a&calc` was two commands.
+    //
+    // ShellExecuteW takes the URL as a typed UTF-16 string and hands it to the
+    // registered handler. There is no command line for anything in the URL to
+    // break out of.
+    let wide = |s: &str| -> Vec<u16> {
+        std::ffi::OsStr::new(s)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect()
+    };
+    let verb = wide("open");
+    let target = wide(url);
+
+    // SAFETY: both strings are NUL-terminated UTF-16 that outlive the call,
+    // and the remaining pointers are null, which ShellExecuteW documents as
+    // "no parameters, default directory, no parent window".
+    let result = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            verb.as_ptr(),
+            target.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    };
+
+    // ShellExecuteW returns a fake HINSTANCE: anything above 32 is success,
+    // and the values at or below it are error codes. This is the documented
+    // (and unusual) contract, not a magic number.
+    let code = result as isize;
+    if code > 32 {
+        return Ok(());
+    }
+    // Tell the two cases apart, because they mean different things to the
+    // person: nothing is registered for this kind of link, versus the system
+    // refused to open it.
+    const SE_ERR_NOASSOC: isize = 31;
+    const SE_ERR_ACCESSDENIED: isize = 5;
+    match code {
+        SE_ERR_NOASSOC => Err(LaunchError::Unavailable(
+            "this computer has nothing set up to open that kind of link".to_string(),
+        )),
+        SE_ERR_ACCESSDENIED => Err(LaunchError::Denied),
+        other => Err(LaunchError::Unavailable(format!(
+            "this computer could not open the link (error {other})"
+        ))),
+    }
+}
+
+/// The same handoff on macOS and Linux.
+///
+/// `open` and `xdg-open` take the URL as one argument and are executed
+/// directly, not through a shell, so nothing in it can be read as a command.
+/// Unlike Windows there is no interpreter in the path to begin with.
+#[cfg(not(target_os = "windows"))]
+fn open_checked_url(url: &str) -> Result<(), LaunchError> {
     let result = if cfg!(target_os = "macos") {
         Command::new("open").arg(url).spawn()
-    } else if cfg!(target_os = "windows") {
-        // `start` is a shell builtin, so `cmd /C start` needs an empty title
-        // argument first or a quoted URL is taken as the window title.
-        Command::new("cmd").args(["/C", "start", "", url]).spawn()
     } else {
         Command::new("xdg-open").arg(url).spawn()
     };
@@ -293,6 +384,52 @@ mod tests {
     fn control_characters_cannot_hide_a_destination() {
         assert!(check_url("https://example.com\nrm -rf /").is_err());
         assert!(check_url("https://example.com\r\nX").is_err());
+    }
+
+    /// A link cannot carry text that a command interpreter would act on.
+    ///
+    /// Opening used to be `cmd /C start "" <url>` on Windows, under a comment
+    /// saying the URL never goes through a shell. `cmd` is a shell, and every
+    /// character that means something to it is legal in an https URL, so
+    /// `https://example.com/a&calc` was two commands. The handoff is now
+    /// ShellExecuteW, which takes a typed string and has no command line to
+    /// break out of; this is the check behind it, because that platform code
+    /// cannot be run from the machines this test suite runs on.
+    #[test]
+    fn a_link_cannot_carry_a_command() {
+        for url in [
+            "https://example.com/?x=1|whoami",
+            "https://example.com/^a",
+            "https://example.com/a\"b",
+            "https://example.com/a`b",
+            "mailto:a@b.c?subject=x|y",
+        ] {
+            assert!(
+                check_url(url).is_err(),
+                "{url:?} reached the operating system with shell text in it"
+            );
+        }
+    }
+
+    /// And the ordinary web still opens. A rule that refuses real links to
+    /// guard a path the URL no longer takes is a worse bug than the one it
+    /// replaced, so the two characters that matter here are pinned: `&`
+    /// separates every query parameter on the web, and `%` is how a URL
+    /// encodes anything at all -- including the characters refused above.
+    #[test]
+    fn ordinary_links_still_open() {
+        for url in [
+            "https://example.com",
+            "https://example.com/path?a=1&b=2",
+            "https://example.com/search?q=hello%20world",
+            "https://example.com/a%7Cb",
+            "https://example.com/%E2%9C%93",
+            "https://exämple.com/ünïcode",
+            "mailto:someone@example.com",
+            "mailto:a@b.c?subject=hi&body=there",
+        ] {
+            assert!(check_url(url).is_ok(), "{url:?} should open, and did not");
+        }
     }
 
     #[test]

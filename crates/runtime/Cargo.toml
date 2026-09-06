@@ -117,6 +117,16 @@ block2 = "0.6.2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 krate-adapter-windows = { path = "../adapter-windows" }
+# ShellExecuteW, so opening a link does not go through a command interpreter.
+# `cmd /C start` was passing app-controlled URL text to the shell, and every
+# metacharacter that means something to cmd -- & | ^ % " -- is legal in an
+# https URL. Already in the dependency tree at this version, so this is a
+# direct edge to a crate that was being built anyway, not new surface.
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
 # Camera capture through Media Foundation. macOS has its own AVFoundation
 # backend because it needs the platform permission dance; Windows and Linux do
 # not, and nokhwa wraps both their native APIs behind one interface, so one

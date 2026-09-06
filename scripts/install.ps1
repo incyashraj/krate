@@ -189,6 +189,20 @@ try {
         Copy-Item -Path $tooling.FullName -Destination (Join-Path $dir $tooling.Name) -Force
     }
 
+    # The double-click opener. It has been in the Windows archive all along and
+    # this installer never copied it out, while install-krate-desktop.ps1 wrote
+    # the file association pointing at it anyway -- so the registry named a
+    # path that did not exist and double-clicking a .krate did nothing at all.
+    #
+    # krate-open.exe is the handler rather than krate.exe because krate.exe is
+    # a console binary: Explorer running it flashes a black window beside the
+    # app. The opener is built for the Windows subsystem, so there is none.
+    $opener = Get-ChildItem -Path $tmp -Recurse -File `
+        -Filter 'krate-open.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($opener) {
+        Copy-Item -Path $opener.FullName -Destination (Join-Path $dir $opener.Name) -Force
+    }
+
     # Being on PATH is what makes the next command work, so fix it rather than
     # leaving the person to discover the problem themselves.
     #

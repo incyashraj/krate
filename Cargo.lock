@@ -2452,6 +2452,7 @@ dependencies = [
  "ureq",
  "wasmtime",
  "whisper-rs",
+ "windows-sys 0.61.2",
  "wit-parser 0.244.0",
 ]
 
