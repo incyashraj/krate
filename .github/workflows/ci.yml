@@ -674,15 +674,24 @@ jobs:
             bin=target/debug/krate.exe
           fi
           set +e
-          "$bin" run \
+          # --headless, which this step's own name has always claimed. A GUI
+          # app opens a window by default, so without the flag the runner's
+          # missing display made window::create fail and the app returned 30
+          # -- its "could not open a window" code -- rather than taking the
+          # headless path this is meant to exercise.
+          "$bin" run --headless \
             --auto-grant \
             --manifest apps/krate-hello-gui/manifest.toml \
             apps/krate-hello-gui/target/wasm32-wasip1/release/krate_hello_gui.wasm \
             -- quick
           code=$?
           set -e
-          if [ "$code" != "1" ]; then
-            echo "expected headless clean exit 1 from the GUI component on $RUNNER_OS, got $code" >&2
+          # 0 or 1: the app finishes its bounded quick path either by running
+          # out of rounds or by the host closing the window under it. Both are
+          # a clean bounded exit; what this rules out is 30 and 31, which mean
+          # it never got a window at all.
+          if [ "$code" != "0" ] && [ "$code" != "1" ]; then
+            echo "expected headless clean exit 0 or 1 from the GUI component on $RUNNER_OS, got $code" >&2
             exit 1
           fi
           echo "same GUI artifact ran headless on $RUNNER_OS (clean bounded exit)"
