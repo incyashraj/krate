@@ -576,7 +576,12 @@ jobs:
           # what is asserted is what it reports and that it leaves nothing
           # behind -- there is no file to stat, and that is the improvement: a
           # checklist needs no access to anyone's directories.
-          saved="$( cd "$out" && "$bin" run checklist.krate --auto-grant -- quick \
+          # --headless, which the comment above always said this was: the
+          # generated checklist is a GUI app, and window::create fails on a
+          # runner with no display, so the app returned 30 before it could
+          # save anything. This step only ever ran under `full=true`, so the
+          # gap sat unseen until a full run was actually dispatched.
+          saved="$( cd "$out" && "$bin" run --headless checklist.krate --auto-grant -- quick \
             | sed -n 's/^items://p' )"
           if [ -z "$saved" ] || [ "$saved" -lt 1 ]; then
             echo "checklist should have saved its items after a granted run" >&2
@@ -588,7 +593,11 @@ jobs:
           fi
           echo "checklist.krate opened, ran, and saved on $RUNNER_OS"
           set +e
-          ( cd "$out" && "$bin" run checklist.krate \
+          # --headless here too. The wall fires before the window either way,
+          # so this passed by luck; without it a display-less runner could
+          # produce exit 30 and the test would read a window failure as a
+          # permission refusal.
+          ( cd "$out" && "$bin" run --headless checklist.krate \
               --grant ui.window:create --grant io.stdout --grant io.args \
               -- quick ) >/dev/null 2>&1
           denied=$?
