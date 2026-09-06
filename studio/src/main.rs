@@ -1734,13 +1734,22 @@ fn shoot(engine: &PathBuf, krate_path: &Path) -> Option<String> {
     // silent_cmd: the engine is a console-subsystem binary, and this runs at
     // the end of every build to photograph the finished app -- as a plain
     // Command it flashed a console right at the moment of success (K-159).
+    //
+    // --for-screenshot, not --auto-grant. This is Krate looking at the app,
+    // not a person running it, and taking a picture is not consent (IC-841,
+    // the same rule the CLI's card and publish previews already follow). An
+    // AI-authored app declaring the microphone or a network destination was
+    // being granted both here, at the end of every Studio build, purely so
+    // the timeline could show a thumbnail. Under the screenshot profile it
+    // gets only what painting needs; an app that cannot draw without real
+    // authority gets no picture, and the caller already handles None.
     let ok = silent_cmd(engine)
         .current_dir(&work)
         .arg("run")
         .arg(krate_path)
         .args(["--shoot"])
         .arg(&png)
-        .args(["--auto-grant", "--", "quick"])
+        .args(["--for-screenshot", "--", "quick"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
@@ -1900,12 +1909,19 @@ async fn diagnose_app(path: String) -> Result<String, String> {
         let path = existing(&path)?;
         let engine = engine()?;
         let shot = std::env::temp_dir().join(format!("krate-diagnose-{}.png", std::process::id()));
+        // --for-screenshot, not --auto-grant: a diagnosis is an automated run,
+        // and an automated run is not consent (IC-841). This used to grant a
+        // file someone could not open every capability it declared -- mic,
+        // camera, network -- just to ask it why. Under the screenshot profile
+        // an app that needs real authority refuses with the permission
+        // message, and "it needs permissions you have not granted" is a
+        // correct diagnosis of "it won't open", not a worse one.
         let out = silent_cmd(&engine)
             .arg("run")
             .arg(&path)
             .arg("--shoot")
             .arg(&shot)
-            .args(["--auto-grant", "--", "quick"])
+            .args(["--for-screenshot", "--", "quick"])
             .output()
             .map_err(|err| err.to_string())?;
         let _ = std::fs::remove_file(&shot);
