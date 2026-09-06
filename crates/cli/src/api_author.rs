@@ -227,6 +227,24 @@ fn looks_like_unknown_model(code: u16, detail: &str, model: &str) -> bool {
     code == 404 || (code == 400 && detail.contains(model))
 }
 
+/// Did this batch of tool calls end in a state the check has verified?
+///
+/// Each event is (tool name, was it a passing check_app). The rule is the
+/// acceptance-order rule (IC-767): only a check that comes after the final
+/// mutation says anything about what is on disk. A passing check followed by
+/// a write is a verdict about a tree that no longer exists.
+fn batch_ends_verified(events: &[(String, bool)]) -> bool {
+    let mut verified = false;
+    for (name, passing_check) in events {
+        if *passing_check {
+            verified = true;
+        } else if name == "write_file" {
+            verified = false;
+        }
+    }
+    verified
+}
+
 /// A tool call the model asked for.
 struct ToolCall {
     id: String,
@@ -783,16 +801,24 @@ pub fn run(vendor: ApiVendor, app_dir: &str, request: &str) -> Result<u8> {
         }
 
         let mut results = Vec::new();
-        let mut passed = false;
+        let mut events = Vec::new();
         for call in &calls {
             let output = run_tool(&app_path, &krate_bin, call);
-            if call.name == "check_app" && output.starts_with("check-app PASSED") {
-                passed = true;
-            }
+            events.push((
+                call.name.clone(),
+                call.name == "check_app" && output.starts_with("check-app PASSED"),
+            ));
             results.push((call.id.clone(), output));
         }
 
-        if passed {
+        // A pass only counts if nothing wrote after it (IC-767). The model
+        // may batch its tool calls in any order it likes, and a reply of
+        // [check_app, write_file] used to run the check, see it pass, run
+        // the write -- mutating the tree the check had approved -- and
+        // return success on code no check ever saw. Whether that ordering is
+        // confusion or intent, the answer is the same: the verdict belongs
+        // to the bytes on disk, and a later write takes it back.
+        if batch_ends_verified(&events) {
             return Ok(0);
         }
 
@@ -995,6 +1021,41 @@ mod tests {
             "server error",
             "claude-opus-5"
         ));
+    }
+
+    /// Test 1630's shape: a reply that batches a passing check with a later
+    /// write cannot conclude the run (IC-767). Whether the ordering is model
+    /// confusion or intent, a verdict about a tree that a later write
+    /// replaced is not a verdict about the app.
+    #[test]
+    fn a_pass_followed_by_a_write_does_not_conclude_the_run() {
+        let ev = |name: &str, pass: bool| (name.to_string(), pass);
+
+        // The attack/confusion shape: check passes, then a write lands.
+        assert!(!batch_ends_verified(&[
+            ev("check_app", true),
+            ev("write_file", false)
+        ]));
+        // Write first, then the check: the check saw the final tree.
+        assert!(batch_ends_verified(&[
+            ev("write_file", false),
+            ev("check_app", true)
+        ]));
+        // A pass with a later read is fine -- reads mutate nothing.
+        assert!(batch_ends_verified(&[
+            ev("check_app", true),
+            ev("read_file", false)
+        ]));
+        // Pass, write, pass again: the second check re-verified the tree.
+        assert!(batch_ends_verified(&[
+            ev("check_app", true),
+            ev("write_file", false),
+            ev("check_app", true),
+        ]));
+        // A failing check concludes nothing, and neither does no check.
+        assert!(!batch_ends_verified(&[ev("check_app", false)]));
+        assert!(!batch_ends_verified(&[ev("write_file", false)]));
+        assert!(!batch_ends_verified(&[]));
     }
 
     /// Each vendor wants a different tool envelope; sending Anthropic's
