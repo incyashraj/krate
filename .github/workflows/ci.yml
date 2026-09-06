@@ -469,7 +469,14 @@ jobs:
     # lane, not sit at GitHub's 6-hour default. Ubuntu/macOS finish in ~25 min,
     # but the Windows lane legitimately takes ~53 (slower runner + cache save),
     # so 75 leaves margin while still catching a real hang.
-    timeout-minutes: 75
+    # 120, raised from 75. The job used to fail at early steps and never see
+    # its own full length; once everything passed, the ubuntu and windows
+    # lanes ran straight into the 75-minute wall and the whole run concluded
+    # "cancelled" -- which blocked a release for a reason that was neither a
+    # failure nor anyone's decision. macOS completes in ~40; the other two
+    # need over 75 now that the checklist, voice-prompter and authoring-loop
+    # steps all execute instead of stopping short.
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
