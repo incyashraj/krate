@@ -30,14 +30,9 @@ set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 
-# Put rustup's cargo (and cargo-component) on PATH the way the sample build
-# scripts do, so the generated crate finds the pinned wasm target.
-if command -v rustup >/dev/null 2>&1; then
-  RUSTUP_CARGO="$(rustup which cargo 2>/dev/null || true)"
-  if [ -n "$RUSTUP_CARGO" ]; then
-    PATH="$(dirname -- "$RUSTUP_CARGO"):$HOME/.cargo/bin:$PATH"
-  fi
-fi
+# Shared toolchain preflight: the Rust rust-toolchain.toml declares, put
+# first on PATH and verified, or one repair line and stop (IC-683).
+. "$ROOT/scripts/rust-env.sh"
 
 # ---- arguments -------------------------------------------------------------
 

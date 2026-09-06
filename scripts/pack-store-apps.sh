@@ -26,15 +26,13 @@ if [ ! -x "$KRATE" ]; then
   KRATE="target/release/krate"
 fi
 
-# The rustup toolchain, so cargo-component builds against the wasm target even
-# when a Homebrew cargo shadows rustup on PATH (the documented trap).
-RUSTUP_BIN="$(rustup which cargo 2>/dev/null | xargs -r dirname || true)"
+# Shared toolchain preflight: the Rust rust-toolchain.toml declares, put
+# first on PATH and verified, or one repair line and stop (IC-683).
+. "$ROOT/scripts/rust-env.sh"
 build_env() {
-  if [ -n "$RUSTUP_BIN" ]; then
-    env -u RUSTC -u RUSTDOC PATH="$RUSTUP_BIN:$HOME/.cargo/bin:$PATH" "$@"
-  else
-    "$@"
-  fi
+  # A stray RUSTC/RUSTDOC pointing at another compiler outranks PATH, so
+  # both are unset for the build; the verified PATH does the rest.
+  env -u RUSTC -u RUSTDOC "$@"
 }
 
 # The curated set. Excluded on purpose: hello-gui (a demo), spriteproof (a

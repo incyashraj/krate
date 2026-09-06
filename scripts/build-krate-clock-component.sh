@@ -2,17 +2,11 @@
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-RUSTUP_CARGO=""
-
-if command -v rustup >/dev/null 2>&1; then
-  RUSTUP_CARGO="$(rustup which cargo 2>/dev/null || true)"
-fi
-
-if [ -n "$RUSTUP_CARGO" ]; then
-  PATH="$(dirname -- "$RUSTUP_CARGO"):$HOME/.cargo/bin:$PATH"
-elif [ -d "$HOME/.cargo/bin" ]; then
-  PATH="$HOME/.cargo/bin:$PATH"
-fi
+# One shared toolchain preflight: resolve the Rust rust-toolchain.toml
+# declares, verify that is really what `cargo` now runs, and stop with a
+# repair line otherwise (IC-683). Every script used to carry its own copy of
+# this dance, asked from the wrong directory and verified by nobody.
+. "$ROOT/scripts/rust-env.sh"
 
 cd "$ROOT/apps/krate-clock"
 cargo-component build --release --locked

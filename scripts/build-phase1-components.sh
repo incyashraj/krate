@@ -3,10 +3,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
-CARGO_HOME="${CARGO_HOME:-${HOME}/.cargo}"
-RUSTUP_CARGO="$(rustup which cargo)"
-
-export PATH="$(dirname "${RUSTUP_CARGO}"):${CARGO_HOME}/bin:${PATH}"
+# Shared toolchain preflight: the Rust rust-toolchain.toml declares, put
+# first on PATH and verified, or one repair line and stop (IC-683).
+ROOT="${REPO_ROOT}"
+. "${ROOT}/scripts/rust-env.sh"
 
 for fixture in hello-world print-loop; do
   (
