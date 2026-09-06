@@ -525,7 +525,7 @@ impl Runtime {
         output: OutputMode,
         world: RuntimeWorld,
     ) -> Result<RunOutcome> {
-        match world {
+        let outcome = match world {
             RuntimeWorld::Auto => self.run_component_auto(component, config, output),
             #[cfg(feature = "phase2-bindings")]
             RuntimeWorld::Cli => self.run_phase2_component(component, config, output),
@@ -535,6 +535,21 @@ impl Runtime {
             RuntimeWorld::Cli | RuntimeWorld::Gui => Err(RuntimeError::Instantiate(
                 "the runtime was built without current Krate world bindings".to_string(),
             )),
+        };
+
+        // Every world path converges here, which is why the check is here and
+        // not in one of them. Running out of fuel while the component is being
+        // instantiated -- before the guest's own code starts -- surfaces as an
+        // Instantiate error with the trap already rendered into its text, so
+        // the downcast in classify_limit_error misses it and the run was
+        // reported as a generic failure. `krate run --fuel 1` exited 1 instead
+        // of 4: the limit worked exactly as intended and the exit code said
+        // something else had gone wrong.
+        match outcome {
+            Err(RuntimeError::Instantiate(message)) if message.contains("all fuel consumed") => {
+                Ok(RunOutcome::LimitExceeded("fuel exhausted".to_string()))
+            }
+            other => other,
         }
     }
 
@@ -547,6 +562,13 @@ impl Runtime {
         match self.run_phase1_component(component, config, output.clone()) {
             Ok(outcome) => Ok(outcome),
             Err(err) => {
+                // A component that ran out of fuel is not a component in the
+                // wrong world: retrying it in two more worlds only burns the
+                // same empty budget again. The caller classifies it, so this
+                // just must not swallow it first.
+                if matches!(&err, RuntimeError::Instantiate(m) if m.contains("all fuel consumed")) {
+                    return Err(err);
+                }
                 #[cfg(feature = "phase2-bindings")]
                 if matches!(err, RuntimeError::Instantiate(_)) {
                     return match self.run_phase2_component(component, config, output.clone()) {
@@ -2711,7 +2733,25 @@ fn classify_limit_error(err: &wasmtime::Error) -> Option<String> {
         return Some("fuel exhausted".to_string());
     }
 
+    // The same trap, wrapped. Running out of fuel during instantiation --
+    // before the guest's own code starts -- arrives as an Instantiate error
+    // with the trap underneath, so the downcast above misses it and the run
+    // was reported as a generic failure (exit 1) instead of limit-exceeded
+    // (exit 4). `krate run --fuel 1` hit exactly that: the limit worked, and
+    // the exit code said something else had gone wrong.
+    if err
+        .chain()
+        .any(|cause| cause.downcast_ref::<Trap>() == Some(&Trap::OutOfFuel))
+    {
+        return Some("fuel exhausted".to_string());
+    }
+
     let message = err.to_string();
+    // And by text, for the shape where the trap is not in the chain at all
+    // but wasmtime has already rendered it into the message.
+    if message.contains("all fuel consumed") {
+        return Some("fuel exhausted".to_string());
+    }
     if message.contains("memory limit exceeded") {
         Some(message)
     } else {
