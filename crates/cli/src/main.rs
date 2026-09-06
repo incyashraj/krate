@@ -3592,8 +3592,21 @@ pub(crate) fn bundle_source_dir(bundle: &Path) -> Result<Option<PathBuf>> {
     };
     // The opened bundle deletes its temp directory on drop, so the source is
     // copied somewhere that outlives this call.
-    let target = std::env::temp_dir().join(format!("krate-edit-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&target);
+    //
+    // Somewhere UNIQUE (IC-328). This used to be `krate-edit-<pid>`, cleared
+    // with remove_dir_all on entry -- so the second revision in the same
+    // process (Studio's every-message-after-the-first, the TUI loop) deleted
+    // the first one's working tree, mid-build if they overlapped. The
+    // transaction directory is now private to this call: a random name,
+    // never pre-cleared, holding the working copy and its SDK side by side.
+    // It is deliberately kept on failure -- the workspace note create prints
+    // points here, and evidence is not cleanup's business.
+    let txn = tempfile::Builder::new()
+        .prefix("krate-edit-")
+        .tempdir()
+        .context("create a private working copy for the change")?
+        .keep();
+    let target = txn.join("app");
     copy_tree(source, &target)?;
 
     // The bundle carries {KRATE_SDK} where this machine's SDK path goes, so
@@ -3606,8 +3619,16 @@ pub(crate) fn bundle_source_dir(bundle: &Path) -> Result<Option<PathBuf>> {
             // written against, so it compiles where the current one may not.
             let sdk = match opened.sdk_path() {
                 Some(bundled) => {
-                    let kept = target.join("..").join("krate-sdk");
-                    let _ = fs::remove_dir_all(&kept);
+                    // A sibling of the app inside this call's own transaction
+                    // directory. This used to be `target/../krate-sdk` --
+                    // which, with the PID-named target, resolved to the ONE
+                    // shared /tmp/krate-sdk for every revision on the
+                    // machine: two concurrent changes with different bundled
+                    // SDKs overwrote each other's compiler-facing code
+                    // mid-build (IC-328). A sibling rather than a child so
+                    // packing the app never sweeps the SDK into the bundle's
+                    // source.
+                    let kept = txn.join("krate-sdk");
                     copy_tree(bundled, &kept)?;
                     kept
                 }
@@ -17202,5 +17223,110 @@ mod script_safety_tests {
     fn a_name_of_only_punctuation_gets_a_fallback() {
         assert_eq!(script_safe_text("$$$"), "A Krate app");
         assert_eq!(script_safe_text("   "), "A Krate app");
+    }
+}
+
+#[cfg(test)]
+mod revise_transaction_tests {
+    use super::*;
+
+    /// Two revisions in one process each get their own private working copy
+    /// (IC-328). The old path was `krate-edit-<pid>`, cleared with
+    /// remove_dir_all on entry -- so Studio's second message deleted the
+    /// working tree its first message was still building in, and every
+    /// revision on the machine shared one /tmp/krate-sdk that concurrent
+    /// changes overwrote under each other mid-build.
+    #[test]
+    fn a_second_revision_does_not_destroy_the_first_ones_working_copy() {
+        let dir = tempfile::tempdir().expect("dir");
+        let manifest = dir.path().join("manifest.toml");
+        fs::write(
+            &manifest,
+            "[app]\nid = \"dev.krate.txn\"\nname = \"Txn\"\nversion = \"0.1.0\"\n\
+             entry = \"code.wasm\"\nworld = \"krate:app/gui@0.2.0\"\n",
+        )
+        .expect("manifest");
+        let component = dir.path().join("code.wasm");
+        fs::write(&component, b"\0asm\x01\0\0\0").expect("component");
+
+        // A source tree whose Cargo.toml points at the SDK placeholder, and a
+        // tiny bundled SDK, so the sibling-SDK path is exercised too.
+        let source = dir.path().join("source");
+        fs::create_dir_all(source.join("src")).expect("source dir");
+        fs::write(
+            source.join("Cargo.toml"),
+            format!(
+                "[package]\nname = \"txn\"\nversion = \"0.1.0\"\n\n\
+                 [dependencies]\nkrate = {{ path = \"{}/bindings-rust\" }}\n",
+                krate_bundle::SDK_PLACEHOLDER
+            ),
+        )
+        .expect("cargo toml");
+        fs::write(source.join("src/lib.rs"), "// the app's own code\n").expect("lib");
+        let sdk = dir.path().join("sdk");
+        fs::create_dir_all(sdk.join("bindings-rust")).expect("sdk dir");
+        fs::write(sdk.join("bindings-rust/MARKER"), b"sdk").expect("marker");
+
+        let bundle = dir.path().join("txn.krate");
+        krate_bundle::pack_with_sdk(
+            &manifest,
+            &component,
+            None,
+            Some(&source),
+            Some(&sdk),
+            &bundle,
+        )
+        .expect("pack");
+
+        // First revision opens its working copy and starts working.
+        let first = bundle_source_dir(&bundle)
+            .expect("first working copy")
+            .expect("bundle carries source");
+        fs::write(first.join("in-progress.rs"), "// half-written change\n")
+            .expect("work in the first copy");
+
+        // Second revision, same process, same PID -- the exact collision.
+        let second = bundle_source_dir(&bundle)
+            .expect("second working copy")
+            .expect("bundle carries source");
+
+        assert_ne!(
+            first, second,
+            "each revision must get its own private working copy"
+        );
+        assert!(
+            first.join("in-progress.rs").is_file(),
+            "the second revision destroyed the first one's working tree"
+        );
+        assert!(
+            first.join("src/lib.rs").is_file() && second.join("src/lib.rs").is_file(),
+            "both copies carry the app's source"
+        );
+
+        // The bundled SDK went beside each copy inside its own transaction --
+        // not to one shared path every revision on the machine fights over.
+        for copy in [&first, &second] {
+            let toml = fs::read_to_string(copy.join("Cargo.toml")).expect("resolved toml");
+            assert!(
+                !toml.contains(krate_bundle::SDK_PLACEHOLDER),
+                "the placeholder must be resolved"
+            );
+            let txn_parent = copy.parent().expect("transaction dir");
+            assert!(
+                toml.contains(&txn_parent.to_string_lossy().replace('\\', "/")),
+                "the SDK must live inside this revision's own transaction \
+                 directory, not a shared path: {toml}"
+            );
+            assert!(
+                txn_parent.join("krate-sdk/bindings-rust/MARKER").is_file(),
+                "the bundled SDK is copied beside the app"
+            );
+        }
+
+        for cleanup in [&first, &second] {
+            if let Some(parent) = cleanup.parent() {
+                let _ = fs::remove_dir_all(parent);
+            }
+        }
     }
 }
