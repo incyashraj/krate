@@ -3213,75 +3213,27 @@ explain in chat. Make the smallest complete repair.",
 }
 
 fn verify_packed_app(output: &Path, manifest: &krate_manifest::Manifest) -> Result<String> {
-    let gating = gating_capability(manifest);
     let verify_dir = tempfile::tempdir().context("create port verification dir")?;
     let verify_arg =
         prepare_verify_dir(verify_dir.path(), manifest)?.unwrap_or_else(|| "quick".to_string());
     let bundle = absolute_output_path(output)?;
-
     let bundle_str = bundle.to_str().context("bundle path is not valid UTF-8")?;
-    let run_with = |arg: &str| -> Result<i32> {
-        run_self(
-            verify_dir.path(),
-            // Headless: verification is an automated run, not a windowed
-            // session. A GUI app opened windowed in this non-interactive
-            // context traps; headless runs the same code without a window.
-            &[
-                "run",
-                bundle_str,
-                "--untrusted",
-                "--auto-grant",
-                "--headless",
-                "--",
-                arg,
-            ],
-        )
-    };
 
     // The contract asks a ported app to accept both a file path and the bare
     // word `quick`, so either one working is proof the app runs. Trying only
     // the path failed two real ports that were working correctly: a duplicate
     // finder that takes directories and a database CLI that takes subcommands,
     // both handed `input/sample.txt` because they declared an `fs.read` grant.
-    let allow_exit = match run_with(&verify_arg)? {
-        0 => 0,
-        _ if verify_arg != "quick" => run_with("quick")?,
-        other => other,
-    };
-    if allow_exit != 0 {
-        anyhow::bail!(
-            "the ported app failed with all grants (exit {allow_exit}); \
-             it was run with `{verify_arg}` and then with `quick`"
-        );
-    }
-
-    // Nothing suitable to withhold: the app asks only for what every app gets
-    // plus its own window. Say so rather than inventing a capability it never
-    // requested and calling the result a failure.
-    let Some(gating) = gating else {
-        return Ok(
-            "(nothing to withhold: the app asks only for defaults and its window)".to_string(),
-        );
-    };
-
-    let mut deny_args = vec!["run".to_string(), bundle.to_string_lossy().into_owned()];
-    for capability in &manifest.capabilities {
-        if capability.cap == gating {
-            continue;
-        }
-        deny_args.push("--grant".to_string());
-        deny_args.push(capability.cap.clone());
-    }
-    deny_args.push("--".to_string());
-    deny_args.push(verify_arg);
-    let deny_refs: Vec<&str> = deny_args.iter().map(String::as_str).collect();
-    let deny_exit = run_self(verify_dir.path(), &deny_refs)?;
-    if deny_exit != 5 {
-        anyhow::bail!(
-            "withholding {gating} should refuse the ported app with exit 5, got {deny_exit}"
-        );
-    }
-    Ok(gating)
+    let evidence =
+        match verify_permission_wall(verify_dir.path(), bundle_str, manifest, &verify_arg) {
+            Ok(evidence) => evidence,
+            Err(first) if verify_arg != "quick" => {
+                verify_permission_wall(verify_dir.path(), bundle_str, manifest, "quick")
+                    .map_err(|_| first)?
+            }
+            Err(err) => return Err(err),
+        };
+    Ok(evidence.summary())
 }
 
 struct RunRequest {
@@ -6687,7 +6639,6 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
         report_progress("checking it runs and paints a frame");
         println!("==> verifying the permission wall");
     }
-    let gating = gating_capability(&manifest);
     let verify_dir = tempfile::tempdir().context("verify dir")?;
     // The verify arg is a seeded fixture path for read-gated apps (the
     // word-frequency kind needs a real file to read), else a plain task word
@@ -6703,71 +6654,25 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     // if the current directory itself is unreadable.
     let bundle_abs = absolute_output_path(&req.output)?;
 
-    // Run the freshly authored app as untrusted during verification: it gets a
-    // finite fuel budget, so a generated runaway or infinite loop fails here
-    // (limit-exceeded) instead of hanging create.
-    let allow_exit = run_self(
+    // The wall check, without spending anyone's real authority (IC-364).
+    // This used to be `--auto-grant`: the freshly authored app was handed
+    // everything it declared -- the real microphone, the real network -- as
+    // the last step of create, and exactly one chosen capability was tested
+    // for denial. Now the run gets only what stays inside the verify sandbox,
+    // every required capability's denial is proven by name, and anything that
+    // needed a person's hardware is recorded as not exercised rather than
+    // implied to have passed.
+    let wall = verify_permission_wall(
         verify_dir.path(),
-        &[
-            "run",
-            bundle_abs.to_str().unwrap(),
-            "--untrusted",
-            "--auto-grant",
-            // Headless: verification is an automated check that the app runs
-            // and honors its permission wall, not a play session. A GUI app run
-            // windowed here tries to open a real window in a non-interactive
-            // context and traps -- which failed `krate create` at the last step
-            // for a checklist that in fact runs perfectly. Headless runs the
-            // same code without a window.
-            "--headless",
-            "--",
-            &verify_arg,
-        ],
+        bundle_abs.to_str().unwrap(),
+        &manifest,
+        &verify_arg,
     )?;
-    if allow_exit != 0 {
-        anyhow::bail!(
-            "the packed app failed to run with all grants (exit {allow_exit}); \
-             exit 4 means it exhausted its fuel budget -- either a runaway loop, \
-             or honest work that is too expensive per frame (hoist per-pixel \
-             math out of inner loops, and draw fewer `quick` frames)"
-        );
-    }
-
-    // An app that asks only for the defaults and its own window has no
-    // capability whose absence would stop it, so there is nothing to withhold.
-    // Record that honestly instead of testing against a capability it never
-    // requested -- which is what made a ported GUI app fail after building,
-    // packing, and passing its import check.
-    if let Some(gating) = gating.as_deref() {
-        let mut deny_args = vec!["run".to_string(), bundle_abs.to_string_lossy().into_owned()];
-        for cap in manifest.capabilities.iter() {
-            let name = cap.cap.clone();
-            if name == gating {
-                continue;
-            }
-            deny_args.push("--grant".to_string());
-            deny_args.push(name);
-        }
-        // Headless for the same reason as the allow run: this is an automated
-        // permission-wall check, not a windowed session.
-        deny_args.push("--headless".to_string());
-        deny_args.push("--".to_string());
-        deny_args.push(verify_arg.clone());
-        let deny_arg_refs: Vec<&str> = deny_args.iter().map(String::as_str).collect();
-        let deny_exit = run_self(verify_dir.path(), &deny_arg_refs)?;
-        if deny_exit != 5 {
-            anyhow::bail!("withholding {gating} should refuse with exit 5, got {deny_exit}");
-        }
-        steps.push(serde_json::json!({
-            "step": "verify",
-            "detail": format!("runs with all grants (exit 0), refuses without {gating} (exit 5)")
-        }));
-    } else {
-        steps.push(serde_json::json!({
-            "step": "verify",
-            "detail": "runs with all grants (exit 0); asks only for defaults and its own window, so there is no capability to withhold"
-        }));
-    }
+    let gating = wall.denied_checked.first().cloned();
+    steps.push(serde_json::json!({
+        "step": "verify",
+        "detail": wall.summary(),
+    }));
 
     // Step 6: does the app actually do what was asked?
     //
@@ -6807,7 +6712,11 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     // a checklist got shipped as a chess game.
     let verdicts = serde_json::json!({
         "build": "the app compiles and imports only krate:*",
-        "run": "runs with its grants, refuses without the gating one",
+        // The wall's own words, not a slogan: what ran, what refused, and
+        // what an automated check may not exercise (IC-364).
+        "run": wall.summary(),
+        "exercised_with": wall.granted,
+        "not_exercised": wall.withheld,
         "request": {
             "accepted": acceptance.accepted,
             "summary": acceptance.summary,
@@ -10108,45 +10017,30 @@ fn build_component_captured(app_dir: &Path) -> std::result::Result<PathBuf, Stri
 /// never touches a file was then tested by withholding a capability it had
 /// never asked for, which of course did not refuse it, and the port failed at
 /// the last step after building and packaging correctly.
-fn gating_capability(manifest: &krate_manifest::Manifest) -> Option<String> {
-    let required: Vec<String> = manifest
-        .capabilities
-        .iter()
-        .filter(|c| c.required)
-        .map(|c| c.cap.clone())
-        .collect();
-    // Filesystem access first: it is the clearest thing for a person reading
-    // the evidence to understand being withheld.
-    for prefer in ["fs.write", "fs.read"] {
-        if let Some(cap) = required.iter().find(|c| c.starts_with(prefer)) {
-            return Some(cap.clone());
-        }
+/// Can withholding this capability prove the permission wall?
+///
+/// Two kinds cannot, and both once threw away finished work. Withholding the
+/// window just closes the app rather than refusing it. And withholding a
+/// capability the runtime grants to every app changes nothing -- a
+/// screensaver declared `gfx.gpu:basic` as required, the wall check withheld
+/// it, the app ran fine, and "should refuse with exit 5, got 0" discarded an
+/// edit that had already built and packed. "Granted by default" has to be
+/// asked of the registry, not guessed from a name prefix: the old prefix
+/// check excluded `io.` and let `gfx.gpu:basic` straight through.
+fn capability_gates_the_wall(cap: &str) -> bool {
+    if cap.starts_with("ui.window") {
+        return false;
     }
-    // Otherwise any capability whose absence would actually stop the app.
-    //
-    // "Not granted by default" has to be asked of the registry, not guessed
-    // from a prefix. The old check excluded `io.` and `ui.window` by name and
-    // let `gfx.gpu:basic` through -- which the runtime grants to every app, so
-    // withholding it changes nothing, the app runs fine, and the wall check
-    // reports "should refuse with exit 5, got 0" and throws the work away.
-    // That is what killed a finished edit after it had already built and
-    // packed.
-    let granted_anyway: std::collections::BTreeSet<String> =
-        krate_manifest::supported_capability_specs()
-            .iter()
-            .filter(|spec| spec.default_granted())
-            .map(|spec| spec.name())
-            .collect();
-    required.into_iter().find(|c| {
-        // Withholding the window just closes the app rather than refusing it.
-        if c.starts_with("ui.window") {
-            return false;
-        }
-        // Scoped names arrive as `module.action:scope`; the registry knows
-        // them by `module.action`.
-        let base = c.split(':').next().unwrap_or(c);
-        !granted_anyway.contains(base) && !granted_anyway.contains(c.as_str())
-    })
+    // Scoped names arrive as `module.action:scope`; the registry knows them
+    // by `module.action`.
+    let base = cap.split(':').next().unwrap_or(cap);
+    !krate_manifest::supported_capability_specs()
+        .iter()
+        .filter(|spec| spec.default_granted())
+        .any(|spec| {
+            let name = spec.name();
+            name == base || name == cap
+        })
 }
 
 /// Create the data directories the app expects under the verify dir, so a
@@ -10257,6 +10151,234 @@ fn absolute_output_path(output: &Path) -> Result<PathBuf> {
             Ok(cwd.join(file))
         }
     }
+}
+
+/// Like [`run_self`], but hand back the child's stdout too.
+///
+/// The denial half of verification needs more than an exit code: withholding
+/// one capability from an app that lacks several produces the same exit 5
+/// regardless of which one did it, so the check reads the run's own JSON and
+/// asserts the withheld capability is in the denied list by name.
+fn run_self_json(dir: &Path, args: &[&str]) -> Result<(i32, String)> {
+    let exe = std::env::current_exe().context("locate self")?;
+    let output = std::process::Command::new(exe)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .current_dir(dir)
+        .output()
+        .context("re-invoke krate for verification")?;
+    Ok((
+        output.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+    ))
+}
+
+/// What automated verification established about an app's permission wall,
+/// and -- just as important -- what it did not (IC-364).
+struct WallEvidence {
+    /// The declared capabilities the run was allowed to exercise: the ones
+    /// whose effects stay inside the verification sandbox.
+    granted: Vec<String>,
+    /// The declared capabilities that reach the person or the world, which an
+    /// automated run may not grant. Only a person can.
+    withheld: Vec<String>,
+    /// Each required capability whose denial was proven: withholding it made
+    /// the run refuse with exit 5 and the refusal named it.
+    denied_checked: Vec<String>,
+    /// True when the app could be run at all: no required capability was
+    /// withheld, so the allow-run exercised the app and it exited 0.
+    ran: bool,
+}
+
+impl WallEvidence {
+    /// One sentence for a transcript, saying what really happened.
+    fn summary(&self) -> String {
+        let denials = if self.denied_checked.is_empty() {
+            "nothing to withhold: the app asks only for defaults and its window".to_string()
+        } else {
+            format!(
+                "refused without each of: {} (exit 5, each named in the refusal)",
+                self.denied_checked.join(", ")
+            )
+        };
+        if self.ran {
+            if self.withheld.is_empty() {
+                format!("runs with its grants (exit 0); {denials}")
+            } else {
+                format!(
+                    "runs with its sandbox-contained grants (exit 0); {denials}; \
+                     NOT exercised automatically: {} -- real hardware or network, \
+                     which needs a person's approval",
+                    self.withheld.join(", ")
+                )
+            }
+        } else {
+            format!(
+                "NOT run automatically: it requires {} -- real hardware or network, \
+                 which needs a person's approval; {denials}",
+                self.withheld.join(", ")
+            )
+        }
+    }
+}
+
+/// Prove an app's permission wall without spending anyone's real authority.
+///
+/// This used to be `--auto-grant`: the freshly built app was handed every
+/// capability it declared -- the real microphone, the real network -- as the
+/// last step of create and port, and the denial half withheld exactly one
+/// chosen capability. Founder rule, non-negotiable: an automated run gets no
+/// real-world authority, every required capability's denial is tested, and
+/// what was not exercised is written down rather than implied to have passed.
+fn verify_permission_wall(
+    verify_dir: &Path,
+    bundle: &str,
+    manifest: &krate_manifest::Manifest,
+    verify_arg: &str,
+) -> Result<WallEvidence> {
+    let mut granted: Vec<String> = Vec::new();
+    let mut withheld: Vec<String> = Vec::new();
+    for request in &manifest.capabilities {
+        let parsed: krate_manifest::Capability = request
+            .cap
+            .parse()
+            .with_context(|| format!("parse declared capability {}", request.cap))?;
+        if krate_policy::reaches_outside_the_run(&parsed) {
+            withheld.push(request.cap.clone());
+        } else {
+            granted.push(request.cap.clone());
+        }
+    }
+    let required_withheld: Vec<&String> = withheld
+        .iter()
+        .filter(|cap| {
+            manifest
+                .capabilities
+                .iter()
+                .any(|request| request.required && &&request.cap == cap)
+        })
+        .collect();
+
+    // The allow half: run with everything that stays inside the sandbox.
+    let mut allow_args: Vec<String> = vec![
+        "run".into(),
+        bundle.into(),
+        "--untrusted".into(),
+        "--headless".into(),
+    ];
+    for cap in &granted {
+        allow_args.push("--grant".into());
+        allow_args.push(cap.clone());
+    }
+    allow_args.push("--".into());
+    allow_args.push(verify_arg.into());
+    let allow_refs: Vec<&str> = allow_args.iter().map(String::as_str).collect();
+    let allow_exit = run_self(verify_dir, &allow_refs)?;
+
+    let ran = if required_withheld.is_empty() {
+        if allow_exit != 0 {
+            anyhow::bail!(
+                "the app failed to run with its grants (exit {allow_exit}); \
+                 exit 4 means it exhausted its fuel budget -- either a runaway \
+                 loop, or honest work that is too expensive per frame"
+            );
+        }
+        true
+    } else {
+        // The app requires real hardware or the network, which this run may
+        // not grant. The wall must refuse it -- and that refusal is evidence
+        // of the wall working, not of the app being verified.
+        if allow_exit != 5 {
+            anyhow::bail!(
+                "the app requires {} and was not granted it, so the wall \
+                 should refuse with exit 5 -- it exited {allow_exit} instead, \
+                 which means the requirement was not enforced",
+                required_withheld
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+        false
+    };
+
+    // The denial half: every required capability, not one chosen stand-in.
+    // Withholding each in turn must refuse the run, and because several may
+    // be missing at once, the refusal has to name the withheld one -- the
+    // exit code alone cannot say which absence did it.
+    //
+    // The loop walks the manifest's *normalized* required capabilities, and
+    // the withheld-from-grants and named-in-the-refusal comparisons are both
+    // semantic rather than textual. The manifest is allowed to say
+    // `fs.read:./input/**` where the runtime's refusal says
+    // `fs.read:input/**`; a string comparison here read that as "the refusal
+    // did not name it" and failed a working port on spelling.
+    let mut denied_checked = Vec::new();
+    for target in manifest.required_capabilities()? {
+        let target_name = target.to_string();
+        if !capability_gates_the_wall(&target_name) {
+            continue;
+        }
+
+        let mut deny_args: Vec<String> = vec![
+            "run".into(),
+            bundle.into(),
+            "--json".into(),
+            "--headless".into(),
+        ];
+        for cap in &granted {
+            // Withhold every grant that would satisfy the target, however it
+            // is spelled.
+            let parsed: krate_manifest::Capability = cap
+                .parse()
+                .with_context(|| format!("parse declared capability {cap}"))?;
+            if SessionPolicy::from_grants([parsed]).allows(&target) {
+                continue;
+            }
+            deny_args.push("--grant".into());
+            deny_args.push(cap.clone());
+        }
+        deny_args.push("--".into());
+        deny_args.push(verify_arg.into());
+        let deny_refs: Vec<&str> = deny_args.iter().map(String::as_str).collect();
+        let (deny_exit, deny_out) = run_self_json(verify_dir, &deny_refs)?;
+        if deny_exit != 5 {
+            anyhow::bail!(
+                "withholding {target_name} should refuse the app with exit 5, got {deny_exit}"
+            );
+        }
+        let named = serde_json::from_str::<serde_json::Value>(deny_out.trim())
+            .ok()
+            .and_then(|report| {
+                report["capabilities"]["denied"].as_array().map(|denied| {
+                    denied
+                        .iter()
+                        .filter_map(|value| value.as_str())
+                        .filter_map(|value| value.parse::<krate_manifest::Capability>().ok())
+                        .any(|cap| {
+                            SessionPolicy::from_grants([cap.clone()]).allows(&target)
+                                || SessionPolicy::from_grants([target.clone()]).allows(&cap)
+                        })
+                })
+            })
+            .unwrap_or(false);
+        if !named {
+            anyhow::bail!(
+                "withholding {target_name} refused the app, but the refusal did not \
+                 name it -- the exit 5 may belong to a different missing capability, \
+                 which would make this check prove nothing"
+            );
+        }
+        denied_checked.push(target_name);
+    }
+
+    Ok(WallEvidence {
+        granted,
+        withheld,
+        denied_checked,
+        ran,
+    })
 }
 
 fn run_self(dir: &Path, args: &[&str]) -> Result<i32> {
@@ -15298,20 +15420,7 @@ mod wrap_tests {
 
 #[cfg(test)]
 mod gating_tests {
-    use super::gating_capability;
-
-    fn manifest_with(caps: &[(&str, bool)]) -> krate_manifest::Manifest {
-        let mut toml = String::from(
-            "[app]\nid = \"dev.krate.t\"\nname = \"T\"\nversion = \"0.1.0\"\n\
-             entry = \"a.wasm\"\nworld = \"krate:app/gui@0.2.0\"\n",
-        );
-        for (cap, required) in caps {
-            toml.push_str(&format!(
-                "\n[[capabilities]]\ncap = \"{cap}\"\nrationale = \"t\"\nrequired = {required}\n"
-            ));
-        }
-        krate_manifest::Manifest::parse(&toml).expect("manifest parses")
-    }
+    use super::capability_gates_the_wall;
 
     /// The bug that threw away a finished edit.
     ///
@@ -15319,39 +15428,39 @@ mod gating_tests {
     /// granted to every app by default, so withholding it changes nothing --
     /// the app ran fine and exited 0, and the permission-wall check reported
     /// "withholding gfx.gpu:basic should refuse with exit 5, got 0" and
-    /// discarded work that had already built and packed.
+    /// discarded work that had already built and packed. Same for the window:
+    /// withholding it closes the app rather than refusing it.
     #[test]
-    fn a_capability_granted_to_everyone_is_never_the_gate() {
-        let manifest = manifest_with(&[
-            ("ui.window:create", true),
-            ("gfx.gpu:basic", true),
-            ("io.stdout", true),
-        ]);
-        assert_eq!(
-            gating_capability(&manifest),
-            None,
-            "nothing here can be withheld, so there is no wall to test"
-        );
+    fn a_capability_granted_to_everyone_never_gates_the_wall() {
+        for cap in [
+            "gfx.gpu:basic",
+            "io.stdout",
+            "ui.window:create",
+            "time.clock",
+        ] {
+            assert!(
+                !capability_gates_the_wall(cap),
+                "{cap} cannot be withheld in a way that proves anything"
+            );
+        }
     }
 
+    /// And the capabilities whose absence really stops an app all gate it --
+    /// every one of them, because the denial loop now tests each required
+    /// capability rather than electing a single stand-in (IC-364).
     #[test]
-    fn a_real_capability_is_still_chosen() {
-        let manifest = manifest_with(&[
-            ("ui.window:create", true),
-            ("gfx.gpu:basic", true),
-            ("store.kv", true),
-        ]);
-        assert_eq!(gating_capability(&manifest), Some("store.kv".to_string()));
-    }
-
-    #[test]
-    fn filesystem_access_is_preferred_when_present() {
-        let manifest = manifest_with(&[("store.kv", true), ("fs.write:notes/**", true)]);
-        assert_eq!(
-            gating_capability(&manifest),
-            Some("fs.write:notes/**".to_string()),
-            "the clearest thing to show being withheld"
-        );
+    fn every_real_capability_gates_the_wall() {
+        for cap in [
+            "store.kv",
+            "fs.write:notes/**",
+            "fs.read:input/**",
+            "audio.capture",
+        ] {
+            assert!(
+                capability_gates_the_wall(cap),
+                "withholding {cap} must refuse the app, so it belongs in the denial loop"
+            );
+        }
     }
 }
 
@@ -15754,6 +15863,18 @@ mod create_tests {
             format!("\n[[capabilities]]\ncap = \"{cap}\"\nrationale = \"t\"\nrequired = true\n")
         }
 
+        // What the denial loop will actually test for a manifest: its
+        // required capabilities, minus the ones whose absence proves nothing.
+        fn gates_of(manifest: &krate_manifest::Manifest) -> Vec<String> {
+            manifest
+                .required_capabilities()
+                .expect("required capabilities")
+                .into_iter()
+                .map(|cap| cap.to_string())
+                .filter(|cap| super::capability_gates_the_wall(cap))
+                .collect()
+        }
+
         // A ported GUI app: a window and its own output, nothing else. This
         // used to fall back to `fs.write`, so the permission wall was proven by
         // withholding something the app had never requested -- which of course
@@ -15766,21 +15887,22 @@ mod create_tests {
             entry("io.args")
         ));
         assert_eq!(
-            super::gating_capability(&gui),
-            None,
+            gates_of(&gui),
+            Vec::<String>::new(),
             "an app asking only for defaults and its window has nothing to withhold"
         );
 
-        // An app that does touch files still gets a real gate.
+        // An app that does touch files is tested on that -- and the name the
+        // loop tests is the manifest's normalized one, which is also the name
+        // the runtime's refusal uses. Comparing the raw `./data/**` spelling
+        // against the refusal is the exact mismatch that once failed a
+        // working port.
         let writer = manifest(&format!(
             "{}{}",
             entry("ui.window:create"),
             entry("fs.write:./data/**")
         ));
-        assert_eq!(
-            super::gating_capability(&writer).as_deref(),
-            Some("fs.write:./data/**")
-        );
+        assert_eq!(gates_of(&writer), vec!["fs.write:data/**".to_string()]);
 
         // And so does one whose only real ask is storage.
         let saver = manifest(&format!(
@@ -15788,10 +15910,7 @@ mod create_tests {
             entry("ui.window:create"),
             entry("store.kv")
         ));
-        assert_eq!(
-            super::gating_capability(&saver).as_deref(),
-            Some("store.kv")
-        );
+        assert_eq!(gates_of(&saver), vec!["store.kv".to_string()]);
     }
 
     #[test]

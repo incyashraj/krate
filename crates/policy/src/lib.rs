@@ -62,6 +62,33 @@ impl SessionPolicy {
         Ok(Self::from_grants(manifest.declared_capabilities()?))
     }
 
+    /// What an automated verification run may have, and what it may not
+    /// (IC-364, the founder rule: no automatic real-world authority).
+    ///
+    /// Verification proves two things -- the app runs with its grants, and
+    /// refuses without them -- and it used to prove the first by handing the
+    /// app everything it declared. A freshly AI-authored app naming the
+    /// microphone or a network destination was given the real microphone and
+    /// the real network, automatically, as the last step of `krate create`.
+    ///
+    /// The split is by where the effect lands. A capability whose effects stay
+    /// inside the run is granted: the filesystem is sandboxed to the verify
+    /// directory, the stores are app-scoped files, a headless window is no
+    /// window. A capability that reaches the person or the world is withheld:
+    /// their microphone, camera, clipboard, browser, notifications, and every
+    /// network path. Withheld is not denied-and-hidden -- the caller records
+    /// exactly what was not exercised, so "verified" never quietly means
+    /// "verified except the part that needed your hardware".
+    ///
+    /// Returns the policy and the declared capabilities it withheld.
+    pub fn for_verification(manifest: &Manifest) -> Result<(Self, Vec<Capability>)> {
+        let declared = manifest.declared_capabilities()?;
+        let (kept, withheld): (Vec<_>, Vec<_>) = declared
+            .into_iter()
+            .partition(|cap| !reaches_outside_the_run(cap));
+        Ok((Self::from_grants(kept), withheld))
+    }
+
     pub fn from_cli_grants(grants: &[String]) -> Result<Self> {
         let parsed = grants
             .iter()
@@ -104,6 +131,46 @@ impl Default for SessionPolicy {
     fn default() -> Self {
         Self::from_grants([])
     }
+}
+
+/// Does exercising this capability affect anything beyond the run itself?
+///
+/// The question an automated run has to ask before granting anything: if the
+/// answer is yes, only a person may say so (IC-364). "Beyond the run" means
+/// the person's hardware, their data outside the sandbox, or the network --
+/// not the size of the capability. `fs.write` is powerful but lands inside
+/// the verification directory the run was started in; `ui.notify` is tiny
+/// and pops a real notification on someone's desktop.
+///
+/// The names are checked against the registry by a test, so a renamed
+/// capability breaks the build here instead of silently becoming grantable.
+pub fn reaches_outside_the_run(cap: &Capability) -> bool {
+    const REACHES_OUTSIDE: &[&str] = &[
+        // The network, in every form it exists.
+        "net.connect",
+        "store.shared",
+        // The person's hardware.
+        "audio.capture",
+        "camera.capture",
+        // The person's attention, data, and machine outside the sandbox.
+        "ui.notify",
+        "ui.open-url",
+        "ui.clipboard",
+        // Real file pickers: they open the person's disk, and they block on a
+        // click nobody in an automated run can make.
+        "ui.dialog:file-open",
+        "ui.dialog:file-save",
+        "ui.dialog:open-folder",
+        "ui.dialog:*",
+    ];
+    let name = format!("{}.{}", cap.module(), cap.action());
+    let with_resource = match cap.resource() {
+        Some(resource) => format!("{name}:{resource}"),
+        None => name.clone(),
+    };
+    REACHES_OUTSIDE
+        .iter()
+        .any(|entry| *entry == name || *entry == with_resource)
 }
 
 pub fn resolve_session_policy(
@@ -437,6 +504,114 @@ mod tests {
         assert!(policy.allows(&ui_window));
         assert!(policy.allows(&gfx_basic));
         assert!(!policy.allows(&fs_read));
+    }
+
+    /// The verification split, on the shapes that matter (IC-364).
+    ///
+    /// Withheld: everything that reaches the person or the world. Granted:
+    /// everything whose effects land inside the run. The voice prompter is
+    /// the live case -- it requires the real microphone, so an automated
+    /// verify must withhold it and say so rather than open the mic.
+    #[test]
+    fn verification_withholds_the_world_and_keeps_the_sandbox() {
+        for outside in [
+            "net.connect:api.example.com:443",
+            "store.shared",
+            "audio.capture",
+            "camera.capture",
+            "ui.notify",
+            "ui.open-url",
+            "ui.clipboard:read",
+            "ui.clipboard:write",
+            "ui.dialog:file-open",
+        ] {
+            let cap = outside.parse().expect("parse capability");
+            assert!(
+                reaches_outside_the_run(&cap),
+                "{outside} reaches the person or the network and must be withheld"
+            );
+        }
+        for contained in [
+            "fs.read:notes/**",
+            "fs.write:notes/**",
+            "store.kv",
+            "store.sql",
+            "store.secret",
+            "random.bytes",
+            "ui.window:create",
+            "ui.dialog:message",
+            "audio.playback",
+            "gfx.gpu:basic",
+        ] {
+            let cap = contained.parse().expect("parse capability");
+            assert!(
+                !reaches_outside_the_run(&cap),
+                "{contained} stays inside the run and must remain grantable"
+            );
+        }
+    }
+
+    /// Every name on the withheld list must exist in the capability registry,
+    /// so a renamed capability breaks this test instead of silently becoming
+    /// grantable to automated runs.
+    #[test]
+    fn the_withheld_list_stays_in_step_with_the_registry() {
+        let known: std::collections::BTreeSet<String> =
+            krate_manifest::supported_capability_specs()
+                .iter()
+                .map(|spec| spec.name())
+                .collect();
+        for entry in [
+            "net.connect",
+            "store.shared",
+            "audio.capture",
+            "camera.capture",
+            "ui.notify",
+            "ui.open-url",
+            "ui.clipboard",
+            "ui.dialog",
+        ] {
+            assert!(
+                known.contains(entry),
+                "{entry} is on the withheld list but not in the registry -- \
+                 renamed there and orphaned here"
+            );
+        }
+    }
+
+    /// The split itself: a manifest declaring both kinds gets the contained
+    /// capability granted and the real-world one withheld and reported.
+    #[test]
+    fn for_verification_splits_a_mixed_manifest() {
+        let manifest = Manifest::parse(
+            r#"
+[app]
+id = "dev.test.mixed"
+name = "Mixed"
+version = "0.0.1"
+entry = "code.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "fs.read:input/**"
+required = true
+rationale = "reads its input"
+
+[[capabilities]]
+cap = "audio.capture"
+required = true
+rationale = "listens"
+"#,
+        )
+        .expect("parse manifest");
+        let (policy, withheld) =
+            SessionPolicy::for_verification(&manifest).expect("verification split");
+        let fs_read = "fs.read:input/sample.txt".parse().expect("parse");
+        let mic = "audio.capture".parse().expect("parse");
+        assert!(policy.allows(&fs_read), "sandboxed fs stays granted");
+        assert!(!policy.allows(&mic), "the microphone is never granted");
+        assert_eq!(withheld.len(), 1);
+        assert_eq!(withheld[0].to_string(), "audio.capture");
     }
 
     #[test]
