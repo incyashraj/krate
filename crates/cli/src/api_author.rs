@@ -50,25 +50,44 @@ const MAX_ROUNDS: usize = 40;
 /// day. `KRATE_BUILD_BUDGET_USD` overrides it.
 const DEFAULT_BUDGET_USD: f64 = 3.50;
 
-/// What a model charges, per million tokens: (input, output, cache write,
-/// cache read).
+/// The rate card: what each model charges per million tokens, and since when
+/// (IC-636, IC-764).
 ///
-/// Only used to decide when to stop. An unknown model gets Opus's prices --
-/// the most expensive of the family -- because guessing low on a model we do
-/// not recognise would quietly raise the ceiling on exactly the runs we
-/// understand least.
-fn prices(model: &str) -> (f64, f64, f64, f64) {
-    if model.contains("haiku") {
-        (1.00, 5.00, 1.25, 0.10)
-    } else if model.contains("sonnet-5") {
-        (2.00, 10.00, 2.50, 0.20)
-    } else if model.contains("sonnet") {
-        (3.00, 15.00, 3.75, 0.30)
-    } else if model.contains("gpt-4o") {
-        (2.50, 10.00, 2.50, 1.25)
-    } else {
-        (5.00, 25.00, 6.25, 0.50)
+/// Each row is (name fragment, effective-from, input, output, cache write,
+/// cache read). The dates are the point: the old table was a bare
+/// string-match, and when Anthropic changed Sonnet 5's rates on 2026-09-01
+/// the compiled numbers kept pricing calls at the old 2/10 -- every build's
+/// spend understated, and the budget ceiling firing late because of it. A
+/// dated row can be checked against the vendor's published change; an undated
+/// number can only be trusted.
+///
+/// Order matters: first fragment match wins, so the more specific name goes
+/// first.
+const RATE_CARD: &[(&str, &str, f64, f64, f64, f64)] = &[
+    ("haiku", "2025-10-01", 1.00, 5.00, 1.25, 0.10),
+    // Anthropic's 2026-09-01 change: 3/15, five-minute cache writes 3.75,
+    // cache reads 0.30. The stale 2/10 row this replaces is the exact
+    // understatement IC-636 records.
+    ("sonnet-5", "2026-09-01", 3.00, 15.00, 3.75, 0.30),
+    ("sonnet", "2025-05-01", 3.00, 15.00, 3.75, 0.30),
+    ("gpt-4o", "2024-08-01", 2.50, 10.00, 2.50, 1.25),
+    ("opus", "2025-05-01", 5.00, 25.00, 6.25, 0.50),
+];
+
+/// A model's rates, and whether they came from its own row.
+///
+/// An unknown model gets Opus's prices -- the most expensive of the family --
+/// because guessing low on a model we do not recognise would quietly raise
+/// the ceiling on exactly the runs we understand least. The caller is told it
+/// is a guess, so the evidence can say "priced as unknown" rather than
+/// presenting the guess as the vendor's rate.
+fn prices(model: &str) -> ((f64, f64, f64, f64), bool) {
+    for (fragment, _, inp, out, cw, cr) in RATE_CARD {
+        if model.contains(fragment) {
+            return ((*inp, *out, *cw, *cr), true);
+        }
     }
+    ((5.00, 25.00, 6.25, 0.50), false)
 }
 
 /// What the run has cost so far, in dollars, from the API's own counts.
@@ -81,15 +100,20 @@ struct Spend {
 }
 
 impl Spend {
-    /// Add one reply's usage. Both vendors report the same four numbers under
-    /// different names; a field that is missing counts as zero rather than
-    /// failing the build, because a billing detail must never be the reason
-    /// somebody's app does not get made.
-    fn add(&mut self, vendor: ApiVendor, reply: &serde_json::Value) {
-        let usage = match vendor {
-            ApiVendor::Anthropic => &reply["usage"],
-            ApiVendor::OpenAi => &reply["usage"],
-        };
+    /// Add one reply's usage, and say whether there was any to add.
+    ///
+    /// This used to count a missing field as zero, on the theory that a
+    /// billing detail must never stop somebody's app being made. That theory
+    /// is the hole IC-764 names: a vendor change that drops or renames the
+    /// usage block makes every subsequent call cost $0.00 in our arithmetic,
+    /// and the ceiling never fires while real money leaves. A reply that
+    /// cannot be priced has to stop the loop BEFORE the next call -- the
+    /// caller does that; this reports the fact.
+    fn add(&mut self, vendor: ApiVendor, reply: &serde_json::Value) -> bool {
+        let usage = &reply["usage"];
+        if !usage.is_object() {
+            return false;
+        }
         let n = |key: &str| usage.get(key).and_then(|v| v.as_u64()).unwrap_or(0);
         match vendor {
             ApiVendor::Anthropic => {
@@ -97,21 +121,41 @@ impl Spend {
                 self.output += n("output_tokens");
                 self.cache_write += n("cache_creation_input_tokens");
                 self.cache_read += n("cache_read_input_tokens");
+                // Zero input AND zero output is not a real reply's usage;
+                // it is the shape of a renamed field.
+                usage.get("input_tokens").is_some() || usage.get("output_tokens").is_some()
             }
             ApiVendor::OpenAi => {
                 self.input += n("prompt_tokens");
                 self.output += n("completion_tokens");
+                usage.get("prompt_tokens").is_some() || usage.get("completion_tokens").is_some()
             }
         }
     }
 
     fn dollars(&self, model: &str) -> f64 {
-        let (inp, out, cw, cr) = prices(model);
+        let ((inp, out, cw, cr), _known) = prices(model);
         (self.input as f64 * inp
             + self.output as f64 * out
             + self.cache_write as f64 * cw
             + self.cache_read as f64 * cr)
             / 1_000_000.0
+    }
+
+    /// The most the NEXT call could add, in dollars, overstated on purpose.
+    ///
+    /// The ceiling used to be checked only after a call had been paid for,
+    /// which reads honestly for small rounds and stops reading at all when
+    /// one round is expensive: a long conversation resent uncached is input
+    /// tokens alone worth dollars. Before each call the worst case is
+    /// reserved against the budget -- the request's bytes at a deliberately
+    /// low 3 bytes per token (fewer bytes per token means MORE tokens, so
+    /// this overstates), plus the full output allowance -- and a call whose
+    /// worst case cannot fit does not start.
+    fn worst_next_call(&self, model: &str, request_bytes: usize, max_tokens: u64) -> f64 {
+        let ((inp, out, _cw, _cr), _known) = prices(model);
+        let est_input_tokens = (request_bytes as f64) / 3.0;
+        (est_input_tokens * inp + max_tokens as f64 * out) / 1_000_000.0
     }
 }
 
@@ -641,14 +685,44 @@ pub fn run(vendor: ApiVendor, app_dir: &str, request: &str) -> Result<u8> {
     let mut spend = Spend::default();
 
     for round in 0..MAX_ROUNDS {
-        let reply = call_api(vendor, &key, &model, &messages, &system)?;
-        spend.add(vendor, &reply);
+        // Reserve the worst the next call could cost BEFORE making it
+        // (IC-636). The after-the-call check below is still the accounting of
+        // record; this stops a call whose worst case cannot fit the budget
+        // from starting at all -- a long conversation resent uncached is
+        // dollars of input alone, and "overshoot by one round" stops being an
+        // honest reading when one round is that round.
+        let request_bytes = serde_json::to_string(&messages)
+            .map(|body| body.len())
+            .unwrap_or(0)
+            + system.len();
+        let worst = spend.worst_next_call(&model, request_bytes, 8192);
+        let so_far = spend.dollars(&model);
+        if so_far + worst > budget {
+            anyhow::bail!(
+                "the next round could cost up to ${worst:.2} on top of the \
+                 ${so_far:.2} already spent, which would pass the ${budget:.2} \
+                 ceiling -- stopping before spending it. The request likely \
+                 needs to be smaller or clearer.",
+            );
+        }
 
-        // Checked after the call that was already paid for, not before the
-        // next one: the ceiling is about not STARTING more work once the
-        // build has clearly stopped converging. Overshooting by one round is
-        // the honest reading of a budget; refusing to admit the round just
-        // spent would not be.
+        let reply = call_api(vendor, &key, &model, &messages, &system)?;
+        if !spend.add(vendor, &reply) {
+            // A reply with no usage numbers cannot be priced, and pricing is
+            // the only guard on the money. Stop before the next call rather
+            // than count it as free (IC-764).
+            anyhow::bail!(
+                "{} returned a reply without usage counts, so this run can no \
+                 longer be priced. Stopping before another call is made; \
+                 ${:.2} was spent up to this point.",
+                vendor.label(),
+                spend.dollars(&model)
+            );
+        }
+
+        // Checked after the call that was already paid for as well: the
+        // ceiling is about not STARTING more work once the build has clearly
+        // stopped converging, and the round just spent must be admitted.
         let so_far = spend.dollars(&model);
         if so_far >= budget {
             anyhow::bail!(
@@ -887,12 +961,12 @@ mod tests {
             );
         }
         assert_eq!(default_model(ApiVendor::Anthropic), "claude-opus-5");
-        // Opus pricing, not a generic guess: the else-branch of prices() IS
-        // the Opus row, so this pins that the default lands on it knowingly.
-        assert_eq!(
-            prices(default_model(ApiVendor::Anthropic)),
-            (5.00, 25.00, 6.25, 0.50)
-        );
+        // The default is priced from its own rate-card row, not through the
+        // unknown-model fallback: a default whose price is a guess would mean
+        // the budget ceiling runs on guessed numbers for every ordinary run.
+        let (rates, known) = prices(default_model(ApiVendor::Anthropic));
+        assert!(known, "the default model must have its own rate-card row");
+        assert_eq!(rates, (5.00, 25.00, 6.25, 0.50));
     }
 
     /// Test 1612's shape: a simulated retirement is told apart from other API
@@ -1019,19 +1093,61 @@ mod tests {
     #[test]
     fn an_unknown_model_is_priced_as_the_dearest_one() {
         // Guessing low on a model we do not recognise would quietly raise the
-        // real ceiling on exactly the runs we understand least.
-        assert_eq!(
-            prices("something-new-we-have-not-seen"),
-            prices("claude-opus-5")
-        );
+        // real ceiling on exactly the runs we understand least -- and the
+        // caller is told it was a guess, so evidence never presents the
+        // fallback as the vendor's own rate.
+        let (unknown_rates, known) = prices("something-new-we-have-not-seen");
+        assert!(!known, "an unrecognised model must be reported as a guess");
+        let (opus_rates, opus_known) = prices("claude-opus-5");
+        assert!(opus_known);
+        assert_eq!(unknown_rates, opus_rates);
     }
 
+    /// A reply that cannot be priced must say so, not count as free
+    /// (IC-764). The old behaviour treated missing usage as zero, which
+    /// meant a vendor renaming the usage block made every later call cost
+    /// $0.00 in our arithmetic while real money left -- the ceiling never
+    /// fires on numbers that never move.
     #[test]
-    fn missing_usage_counts_as_zero_rather_than_failing() {
-        // A billing field we did not expect must never be the reason
-        // somebody's app does not get made.
+    fn a_reply_without_usage_is_unpriceable_not_free() {
         let mut spend = Spend::default();
-        spend.add(ApiVendor::Anthropic, &serde_json::json!({}));
-        assert_eq!(spend.dollars("claude-opus-5"), 0.0);
+        assert!(
+            !spend.add(ApiVendor::Anthropic, &serde_json::json!({})),
+            "no usage block at all must be reported unpriceable"
+        );
+        assert!(
+            !spend.add(
+                ApiVendor::Anthropic,
+                &serde_json::json!({"usage": {"renamed_tokens": 5}})
+            ),
+            "a usage block with none of the known fields is the renamed-field shape"
+        );
+        // And a real reply still prices.
+        assert!(spend.add(
+            ApiVendor::Anthropic,
+            &serde_json::json!({"usage": {"input_tokens": 10, "output_tokens": 5}})
+        ));
+        assert!(spend.dollars("claude-opus-5") > 0.0);
+    }
+
+    /// The reservation stops a call whose worst case cannot fit the budget,
+    /// and overstates on purpose: a long conversation resent uncached is
+    /// dollars of input alone (IC-636).
+    #[test]
+    fn the_worst_case_of_the_next_call_is_reserved_before_it() {
+        let spend = Spend::default();
+        // A 3 MB conversation at 3 bytes/token is ~1M input tokens: $5 on
+        // Opus input alone, plus the full output allowance.
+        let worst = spend.worst_next_call("claude-opus-5", 3_000_000, 8192);
+        assert!(
+            worst > 5.0,
+            "a huge request must reserve past the default ceiling, got ${worst:.2}"
+        );
+        // A small first round fits comfortably.
+        let small = spend.worst_next_call("claude-opus-5", 30_000, 8192);
+        assert!(
+            small < 1.0,
+            "an ordinary round must not be blocked by the reservation, got ${small:.2}"
+        );
     }
 }
