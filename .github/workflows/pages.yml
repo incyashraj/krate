@@ -179,11 +179,21 @@ jobs:
           # The app the installer tells a new person to open. Served from the
           # domain so the first command is short: krate.tech/notes.krate
           #
-          # Always the published release, never a local copy: a stale file here
-          # is the first thing a new person would run, and an old bundle fails
-          # to instantiate against the current runtime.
-          curl -fsSL -o _site/notes.krate \
-            https://github.com/incyashraj/krate/releases/download/notes-v0.1.0/notes.krate
+          # This used to be pinned to the notes-v0.1.0 release, downloaded fresh
+          # on every deploy. The comment said a stale file here is the first
+          # thing a new person would run -- and then a pinned tag made it
+          # permanently stale. That release was cut 2026-07-22; the fix for the
+          # app returning 2 when its window closes normally (K-181) landed
+          # 2026-08-26, and the pin meant no deploy could ever pick it up. The
+          # cold-install job caught it every night: the app printed the right
+          # answer and exited 2, so the very first thing a stranger runs looked
+          # like a failure to any script around it.
+          #
+          # It is now the same committed bundle the store serves, which is
+          # rebuilt from source by scripts/pack-store-apps.sh and replayed on
+          # all three systems nightly -- a file known to work, rather than one
+          # built once and frozen.
+          cp evidence/store/krate-notes.krate _site/notes.krate
           # Every other app, straight from the repository, so `krate run
           # krate.tech/cubes.krate` works the same way notes does. These are the
           # same bundles the nightly replay runs on all three systems, so a file

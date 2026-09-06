@@ -27,7 +27,7 @@ dependencies = [
 
 [[package]]
 name = "krate"
-version = "0.1.28"
+version = "0.3.0"
 dependencies = [
  "dlmalloc",
  "wit-bindgen-rt",
