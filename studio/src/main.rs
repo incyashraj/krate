@@ -3639,28 +3639,73 @@ fn install_update(version: String) -> Result<String, String> {
         .ok_or_else(|| "this release has no checksum for this platform".to_string())?
         .to_lowercase();
 
-    let mut body = Vec::new();
-    ureq::get(&format!("{base}/{file}"))
-        .call()
-        .map_err(|e| format!("the download failed: {e}"))?
-        .into_reader()
-        .read_to_end(&mut body)
-        .map_err(|e| format!("the download was cut short: {e}"))?;
+    let staged = studio_dir().join("updates");
+    std::fs::create_dir_all(&staged).map_err(|e| e.to_string())?;
 
-    let got = {
+    // Stream under a bound into a unique temp file on the SAME volume, then
+    // hash and rename into place (IC-454). The old path buffered the whole
+    // installer into memory with no ceiling -- a truncated or hostile
+    // response could grow it without limit -- and then wrote directly to the
+    // final name, so a crash mid-write left a half-file that later looked
+    // installable. A same-volume sibling means the finalizing rename is
+    // atomic; a temp elsewhere would fall back to a copy and lose that.
+    //
+    // 400 MiB: comfortably above any real Studio installer (the DMG is tens
+    // of MiB), well below anything that should be streamed to disk unasked.
+    const MAX_UPDATE_BYTES: u64 = 400 * 1024 * 1024;
+
+    let partial = staged.join(format!(".{file}.{}.partial", std::process::id()));
+    let hex = {
         use sha2::{Digest, Sha256};
+        use std::io::Write as _;
+        let mut reader = ureq::get(&format!("{base}/{file}"))
+            .call()
+            .map_err(|e| format!("the download failed: {e}"))?
+            .into_reader();
+        let mut out = std::fs::File::create(&partial)
+            .map_err(|e| format!("could not open a staging file: {e}"))?;
         let mut hasher = Sha256::new();
-        hasher.update(&body);
+        let mut buf = [0u8; 64 * 1024];
+        let mut total: u64 = 0;
+        loop {
+            let n = match reader.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => n,
+                Err(e) => {
+                    let _ = std::fs::remove_file(&partial);
+                    return Err(format!("the download was cut short: {e}"));
+                }
+            };
+            total += n as u64;
+            if total > MAX_UPDATE_BYTES {
+                let _ = std::fs::remove_file(&partial);
+                return Err("the update is larger than Krate will download".to_string());
+            }
+            hasher.update(&buf[..n]);
+            if let Err(e) = out.write_all(&buf[..n]) {
+                let _ = std::fs::remove_file(&partial);
+                return Err(format!("could not save the update: {e}"));
+            }
+        }
+        // Get the bytes onto the disk before the rename promotes them.
+        if let Err(e) = out.sync_all() {
+            let _ = std::fs::remove_file(&partial);
+            return Err(format!("could not flush the update to disk: {e}"));
+        }
         format!("{:x}", hasher.finalize())
     };
+    let got = hex;
+
     if got != expected {
+        let _ = std::fs::remove_file(&partial);
         return Err("the downloaded file did not match its checksum".to_string());
     }
 
-    let staged = studio_dir().join("updates");
-    std::fs::create_dir_all(&staged).map_err(|e| e.to_string())?;
     let path = staged.join(&file);
-    std::fs::write(&path, &body).map_err(|e| format!("could not save the update: {e}"))?;
+    std::fs::rename(&partial, &path).map_err(|e| {
+        let _ = std::fs::remove_file(&partial);
+        format!("could not finalize the update: {e}")
+    })?;
 
     // Write down WHICH file passed, and what it hashed to (IC-866).
     //
