@@ -127,9 +127,39 @@ fn budget_usd() -> f64 {
 /// eat the whole context window.
 const MAX_READ_BYTES: usize = 60_000;
 
-/// The model each vendor uses. Deliberately the strong coding model rather
-/// than the cheap one: the loop's cost is dominated by rounds, and a weaker
-/// model spends more of them.
+/// The model each vendor defaults to, with the date somebody last confirmed
+/// it against the live API (IC-762).
+///
+/// The previous default here was `claude-sonnet-4-20250514`, which Anthropic
+/// retired on 2026-06-15 -- so `krate create --agent anthropic` failed with a
+/// raw 404 for everyone who had not set the env var, for months, and nothing
+/// in this file could say why. A default that names a dated snapshot retires
+/// with it; these entries carry a validated-on date so the next person can
+/// see how stale the claim is, and the retirement error below says what to do
+/// instead of handing back the API's JSON.
+///
+/// Deliberately the strong coding model rather than the cheap one, per the
+/// founder's quality-over-spend call: the loop's cost is dominated by rounds,
+/// a weaker model spends more of them (measured: 7 rounds on Opus vs 92 on
+/// Haiku for the same app), and the budget ceiling above is the real limit.
+const MODEL_DEFAULTS: &[(ApiVendor, &str, &str)] = &[
+    (
+        ApiVendor::Anthropic,
+        "claude-opus-5",
+        "validated 2026-09-06",
+    ),
+    (ApiVendor::OpenAi, "gpt-4o", "validated 2026-09-06"),
+];
+
+/// The catalog default for a vendor, before any env override.
+fn default_model(vendor: ApiVendor) -> &'static str {
+    MODEL_DEFAULTS
+        .iter()
+        .find(|(v, _, _)| *v == vendor)
+        .map(|(_, model, _)| *model)
+        .unwrap_or("")
+}
+
 fn model_for(vendor: ApiVendor) -> String {
     let env = match vendor {
         ApiVendor::Anthropic => "KRATE_ANTHROPIC_MODEL",
@@ -140,10 +170,17 @@ fn model_for(vendor: ApiVendor) -> String {
             return name.trim().to_string();
         }
     }
-    match vendor {
-        ApiVendor::Anthropic => "claude-sonnet-4-20250514".to_string(),
-        ApiVendor::OpenAi => "gpt-4o".to_string(),
-    }
+    default_model(vendor).to_string()
+}
+
+/// Is this API error the model itself not existing -- retired, or misspelled?
+///
+/// A 404 from either vendor's messages endpoint means the model, not the
+/// route: the URL is fixed and correct. A 400 whose body names the model is
+/// the other spelling of the same fact (Anthropic uses it for some invalid
+/// model strings).
+fn looks_like_unknown_model(code: u16, detail: &str, model: &str) -> bool {
+    code == 404 || (code == 400 && detail.contains(model))
 }
 
 /// A tool call the model asked for.
@@ -495,6 +532,27 @@ fn call_api(
             if code == 429 {
                 anyhow::bail!("{} is rate limiting this key right now.", vendor.label());
             }
+            // A model that no longer exists -- retired, or misspelled in the
+            // env var -- comes back as a 404 (or a 400 naming the model), and
+            // the raw body reads like the request was malformed. This exact
+            // failure shipped: the old default model was retired on
+            // 2026-06-15 and every run without the env var died here with an
+            // unexplained JSON blob (IC-762). Say what happened and what to
+            // do. Never substitute a different model silently: which model
+            // wrote an app is part of the app's evidence.
+            let model = model_for(vendor);
+            if looks_like_unknown_model(code, &detail, &model) {
+                anyhow::bail!(
+                    "{} does not serve the model `{model}` (it may have been \
+                     retired). Set {} to a current model and try again, or \
+                     update Krate for a newer default.",
+                    vendor.label(),
+                    match vendor {
+                        ApiVendor::Anthropic => "KRATE_ANTHROPIC_MODEL",
+                        ApiVendor::OpenAi => "KRATE_OPENAI_MODEL",
+                    }
+                );
+            }
             anyhow::bail!("{} returned {code}: {detail}", vendor.label())
         }
         Err(err) => Err(anyhow::anyhow!("could not reach {}: {err}", vendor.label())),
@@ -808,6 +866,61 @@ mod tests {
             .filter(|name| name.ends_with(".tmp"))
             .collect();
         assert!(litter.is_empty(), "staging litter left behind: {litter:?}");
+    }
+
+    /// Test 1611's shape: the defaults come from the reviewed catalog, and
+    /// every default has its own row in the price table -- an unknown-model
+    /// fallback price on the default itself would mean the budget ceiling is
+    /// enforced against guessed numbers on every ordinary run.
+    #[test]
+    fn the_default_models_are_current_and_priced() {
+        // The retired default this replaces. If it ever comes back, the exact
+        // failure IC-762 records comes back with it: months of raw 404s.
+        for (_, model, validated) in MODEL_DEFAULTS {
+            assert_ne!(
+                *model, "claude-sonnet-4-20250514",
+                "the retired default returned"
+            );
+            assert!(
+                validated.starts_with("validated 20"),
+                "{model} has no validation date -- nobody can tell how stale it is"
+            );
+        }
+        assert_eq!(default_model(ApiVendor::Anthropic), "claude-opus-5");
+        // Opus pricing, not a generic guess: the else-branch of prices() IS
+        // the Opus row, so this pins that the default lands on it knowingly.
+        assert_eq!(
+            prices(default_model(ApiVendor::Anthropic)),
+            (5.00, 25.00, 6.25, 0.50)
+        );
+    }
+
+    /// Test 1612's shape: a simulated retirement is told apart from other API
+    /// failures, in both spellings the vendors use, and ordinary errors are
+    /// not misread as one.
+    #[test]
+    fn a_retired_model_is_recognised_not_guessed_at() {
+        assert!(looks_like_unknown_model(
+            404,
+            "not_found_error",
+            "claude-opus-5"
+        ));
+        assert!(looks_like_unknown_model(
+            400,
+            r#"{"error":{"message":"model: claude-opus-5 is not a valid model"}}"#,
+            "claude-opus-5"
+        ));
+        // A 400 about something else entirely is not a retirement.
+        assert!(!looks_like_unknown_model(
+            400,
+            r#"{"error":{"message":"max_tokens is too large"}}"#,
+            "claude-opus-5"
+        ));
+        assert!(!looks_like_unknown_model(
+            500,
+            "server error",
+            "claude-opus-5"
+        ));
     }
 
     /// Each vendor wants a different tool envelope; sending Anthropic's
