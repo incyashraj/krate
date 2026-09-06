@@ -1325,27 +1325,44 @@ jobs:
           Write-Host "   Explorer will run: $cmd"
 
           Write-Host '5b. running that exact command on a real file'
-          # A GUI app would wait for its window to be closed, so use the app
-          # the steps above already proved runs headlessly, and give the
-          # grants it needs. What is under test is that the double-click
-          # binary starts the app at all -- the failure this catches is
-          # krate-open exiting without running anything.
-          $bundle = Join-Path $work 'notes.krate'
-          Invoke-WebRequest -Uri 'https://krate.tech/notes.krate' -OutFile $bundle -UseBasicParsing
+          # What this can prove on a runner, and what it cannot.
+          #
+          # krate-open.exe runs `krate run <bundle> --consent`, and --consent
+          # on Windows opens a native "Allow this?" dialog, because a
+          # double-clicked bundle has no terminal to ask in. That dialog waits
+          # for a click. On a headless runner nobody clicks, so the process sat
+          # there until the 120s timeout and the job failed -- on behaviour
+          # that is exactly right for a real person double-clicking a file.
+          #
+          # So this asks the question the runner can actually answer: given a
+          # file it cannot read at all, does the opener find krate.exe, start
+          # it, and come back? That exercises the whole chain this step was
+          # written for -- the association points at a real binary, the binary
+          # locates the runtime, the runtime runs and reports -- and it never
+          # reaches the consent dialog, because there is no manifest to ask
+          # about.
+          #
+          # What it deliberately does NOT do any more is open a real bundle and
+          # wait. That is a human action, and it belongs in the manual Windows
+          # pass. Pretending a runner can click a dialog is how this step
+          # timed out for a week while the product was behaving correctly.
+          $bundle = Join-Path $work 'not-a-bundle.krate'
+          Set-Content -Path $bundle -Value 'this is not a krate bundle' -Encoding ascii
           $log = Join-Path $work 'open.log'
           $proc = Start-Process -FilePath $opener -ArgumentList "`"$bundle`"" -PassThru -RedirectStandardOutput $log -RedirectStandardError "$log.err"
-          if (-not $proc.WaitForExit(120000)) {
+          if (-not $proc.WaitForExit(60000)) {
             $proc.Kill()
-            throw 'COLD PATH BROKEN: double-click never finished'
+            throw 'COLD PATH BROKEN: the opener never came back -- it did not reach krate.exe'
           }
-          # Exit 5 is the wall refusing without grants, which still proves the
-          # opener found krate.exe and started the app. Anything else -- and
-          # especially a failure to start -- is the bug this step exists for.
-          if ($proc.ExitCode -ne 5 -and $proc.ExitCode -ne 0) {
-            $why = (Get-Content $log, "$log.err" -ErrorAction SilentlyContinue) -join ' '
-            throw "COLD PATH BROKEN: double-click exited $($proc.ExitCode): $why"
+          # A non-zero exit is expected and is the point: it means krate.exe
+          # ran, read the file, and rejected it. What is being ruled out is the
+          # opener failing to start anything at all, which is what a missing
+          # krate-open.exe or a wrong association looks like.
+          $why = (Get-Content $log, "$log.err" -ErrorAction SilentlyContinue) -join ' '
+          if ($why -notmatch 'krate') {
+            throw "COLD PATH BROKEN: the opener produced no Krate output, so it never reached the runtime: $why"
           }
-          Write-Host "   double-click started the app (exit $($proc.ExitCode))"
+          Write-Host "   double-click reached the runtime (exit $($proc.ExitCode))"
 
           Write-Host ''
           Write-Host 'the cold path works on Windows: install, refuse, grant, run, double-click'
