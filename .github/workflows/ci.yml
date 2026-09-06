@@ -686,12 +686,11 @@ jobs:
             -- quick
           code=$?
           set -e
-          # 0 or 1: the app finishes its bounded quick path either by running
-          # out of rounds or by the host closing the window under it. Both are
-          # a clean bounded exit; what this rules out is 30 and 31, which mean
-          # it never got a window at all.
-          if [ "$code" != "0" ] && [ "$code" != "1" ]; then
-            echo "expected headless clean exit 0 or 1 from the GUI component on $RUNNER_OS, got $code" >&2
+          # 0. K-092 made a clean session exit 0 whether or not anything was
+          # clicked; this asked for 1, which the app has not returned since.
+          # What it rules out is 30 and 31 -- the app never got a window.
+          if [ "$code" != "0" ]; then
+            echo "expected headless clean exit 0 from the GUI component on $RUNNER_OS, got $code" >&2
             exit 1
           fi
           echo "same GUI artifact ran headless on $RUNNER_OS (clean bounded exit)"
@@ -720,8 +719,14 @@ jobs:
             -- quick
           code=$?
           set -e
-          if [ "$code" != "1" ]; then
-            echo "expected clean bounded exit 1 from the native Linux window run, got $code" >&2
+          # 0, not 1. K-092 ("apps stop closing their own windows", 9009099b2)
+          # replaced the old scheme deliberately: it reported 1 for a bounded
+          # run with no click and 2 for a window closed first, which made the
+          # ordinary outcome look like a failure. hello-gui now always returns
+          # 0 for a clean session. The app was fixed and this check was left
+          # behind, so it could only pass against the old binary.
+          if [ "$code" != "0" ]; then
+            echo "expected clean exit 0 from the native Linux window run, got $code" >&2
             exit 1
           fi
           echo "hello-gui opened a real winit window on Linux (Xvfb) and exited cleanly"
@@ -883,8 +888,10 @@ jobs:
             -- quick
           code=$?
           set -e
-          if [ "$code" != "1" ]; then
-            echo "expected clean bounded exit 1 from the native Windows window run, got $code" >&2
+          # 0, for the same reason as the Linux run above: K-092 made a clean
+          # session exit 0, and this check kept the old 1.
+          if [ "$code" != "0" ]; then
+            echo "expected clean exit 0 from the native Windows window run, got $code" >&2
             exit 1
           fi
           echo "hello-gui opened a real winit window on Windows and exited cleanly"
