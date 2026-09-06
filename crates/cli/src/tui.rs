@@ -252,6 +252,13 @@ fn shell_split(line: &str) -> Vec<String> {
             continue;
         }
         match character {
+            // A backslash escapes the next character -- except on Windows,
+            // where it is the path separator and dropping it turns
+            // `C:\Users\me\My Design.png` into `C:Usersme...`. A dragged
+            // Windows path arrives with real separators in it and no escaping,
+            // because the shells that escape spaces with a backslash are the
+            // Unix ones; Explorer quotes instead, which the arm below handles.
+            #[cfg(not(windows))]
             '\\' if quote != Some('\'') => escaped = true,
             '"' | '\'' if quote.is_none() => quote = Some(character),
             c if Some(c) == quote => quote = None,
@@ -1775,12 +1782,19 @@ mod tests {
         let file = dir.join("My Design.png");
         std::fs::write(&file, b"x").expect("write fixture");
 
-        let escaped = format!(
-            "copy this {}",
-            file.display().to_string().replace(' ', "\\ ")
-        );
-        let (_, from_escaped) = split_off_attachments(&escaped);
-        assert_eq!(from_escaped, vec![file.clone()], "backslash-escaped space");
+        // Unix only. On Windows the backslash is the path separator, so a
+        // shell that escaped spaces with it would produce something that is
+        // not a path at all -- and none do: Explorer quotes instead, which is
+        // the case below and is checked everywhere.
+        #[cfg(not(windows))]
+        {
+            let escaped = format!(
+                "copy this {}",
+                file.display().to_string().replace(' ', "\\ ")
+            );
+            let (_, from_escaped) = split_off_attachments(&escaped);
+            assert_eq!(from_escaped, vec![file.clone()], "backslash-escaped space");
+        }
 
         let quoted = format!("copy this \"{}\"", file.display());
         let (_, from_quoted) = split_off_attachments(&quoted);
