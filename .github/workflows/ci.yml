@@ -1312,7 +1312,12 @@ jobs:
           $assoc = Join-Path $work 'install-krate-desktop.ps1'
           Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/incyashraj/krate/main/scripts/install-krate-desktop.ps1' -OutFile $assoc -UseBasicParsing
           & $assoc -KrateBinary $krate
-          $cmd = (Get-ItemProperty 'HKCU:\Software\Classes\dev.krate.bundle\shell\open\command' -ErrorAction SilentlyContinue).'(default)'
+          # Krate.Bundle, which is the ProgID the installer actually writes
+          # (scripts/install-krate-desktop.ps1) and the one Studio repairs in
+          # three places. This check read dev.krate.bundle -- a name nothing
+          # in the product uses -- so it could never have found the key and
+          # had never once passed.
+          $cmd = (Get-ItemProperty 'HKCU:\Software\Classes\Krate.Bundle\shell\open\command' -ErrorAction SilentlyContinue).'(default)'
           if (-not $cmd) { throw 'COLD PATH BROKEN: .krate has no open command in the registry' }
           if ($cmd -notmatch 'krate-open\.exe') {
             throw "COLD PATH BROKEN: double-click would use a console binary: $cmd"
