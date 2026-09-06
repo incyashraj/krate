@@ -2319,13 +2319,19 @@ fn complete_port(
     let packed_manifest = pack_dir.path().join("manifest.toml");
     write_manifest_with_entry(&manifest_src, &packed_manifest, "code.wasm")?;
     let assets = candidate.join("assets");
+    // Packed into the run's own workspace, not the requested path (IC-785).
+    // This used to pack straight to `output` and verify afterwards, so a
+    // candidate that then failed verification left a plausible .krate at the
+    // success path -- and had already replaced whatever the person kept
+    // there. The staged bundle is promoted only after the wall verdict.
+    let staged = workspace.join("candidate.krate");
     let size = krate_bundle::pack_with_assets(
         &packed_manifest,
         &code,
         assets.is_dir().then_some(assets.as_path()),
-        output,
+        &staged,
     )
-    .with_context(|| format!("pack {}", output.display()))?;
+    .with_context(|| format!("pack {}", staged.display()))?;
 
     println!("==> verifying the permission wall");
     // Verification is inside the repair budget too. It used to sit outside it,
@@ -2335,7 +2341,7 @@ fn complete_port(
     // failure there is. A ported RSS reader stripped tags before decoding
     // entities, said so in its own output, and was never asked to try again.
     let gating = loop {
-        match verify_packed_app(output, &manifest) {
+        match verify_packed_app(&staged, &manifest) {
             Ok(gating) => break gating,
             Err(error) if repairs_used < repair_attempts => {
                 repairs_used += 1;
@@ -2375,18 +2381,46 @@ fn complete_port(
                     &packed_manifest,
                     &code,
                     assets.is_dir().then_some(assets.as_path()),
-                    output,
+                    &staged,
                 )
-                .with_context(|| format!("repack {}", output.display()))?;
+                .with_context(|| format!("repack {}", staged.display()))?;
             }
             Err(error) => {
                 let report_path =
                     write_port_failure_report(workspace, &error.to_string(), original_source);
                 print_port_failure_guidance(&error.to_string(), report_path.as_deref());
+                // The failed candidate stays in the workspace as diagnostics.
+                // Nothing was written to the requested path: whatever the
+                // person kept there is exactly as it was (IC-785).
+                println!(
+                    "  the failed candidate is kept at {} -- {} was not touched",
+                    staged.display(),
+                    output.display()
+                );
                 return Err(error);
             }
         }
     };
+
+    // Verification passed on the staged bytes; only now do they take the
+    // requested path, through a sibling-and-rename so an interruption leaves
+    // the old file or the complete new one, never a torn half (IC-861's
+    // discipline, applied to promotion).
+    let partial = output.with_file_name(format!(
+        ".{}.{}.partial",
+        output
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "bundle.krate".to_string()),
+        std::process::id()
+    ));
+    fs::copy(&staged, &partial)
+        .with_context(|| format!("stage the verified bundle beside {}", output.display()))?;
+    if let Err(err) = fs::rename(&partial, output) {
+        let _ = fs::remove_file(&partial);
+        return Err(err)
+            .with_context(|| format!("promote the verified bundle to {}", output.display()));
+    }
     let bundle_sha256 = sha256_file(output)?;
     let plan_sha256 = sha256_file(&workspace.join("port-plan.json"))?;
     let permissions: Vec<String> = manifest
