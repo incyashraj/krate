@@ -12,8 +12,23 @@
 # the exe -- both leave a way for the binary to meet a machine that lacks them.
 # The cost is a few hundred KB of binary, against a product that does not start.
 
+# And give the main thread a stack the size Unix gives it.
+#
+# Windows reserves 1 MiB for a main thread where Linux and macOS give 8, and a
+# debug build's unoptimised frames are several times larger than a release
+# build's. `krate pack` overflowed on the Windows CI lane -- "thread 'main' has
+# overflowed its stack", exit 127 -- while the same code packed fine on every
+# other system and in release everywhere.
+#
+# /STACK sets it at link time, so nothing about how the program runs changes.
+# Moving the work onto a spawned thread would also have fixed it and was tried
+# first: it breaks every GUI app, because macOS requires windows to be created
+# on the main thread, and hello-gui went straight to exit 30.
+#
+# 8 MiB, matching Unix, so the three platforms have the same headroom rather
+# than one of them being the odd case that overflows first.
 [target.x86_64-pc-windows-msvc]
-rustflags = ["-C", "target-feature=+crt-static"]
+rustflags = ["-C", "target-feature=+crt-static", "-C", "link-arg=/STACK:8388608"]
 
 [target.aarch64-pc-windows-msvc]
-rustflags = ["-C", "target-feature=+crt-static"]
+rustflags = ["-C", "target-feature=+crt-static", "-C", "link-arg=/STACK:8388608"]
