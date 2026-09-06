@@ -186,7 +186,87 @@ fn resolve_in_app(app_dir: &Path, raw: &str) -> Result<PathBuf, String> {
     if !normalized.starts_with(&root) && !normalized.starts_with(app_dir) {
         return Err(format!("{raw} points outside the app"));
     }
+
+    // The lexical check above is not containment on its own (IC-768). The
+    // model cannot make a symlink through write_file, but check_app runs a
+    // full cargo build in this directory, and anything that build executes
+    // can drop one -- after which `src/lib.rs` is a perfectly relative path
+    // whose middle or end walks out of the app. So every component that
+    // exists is checked for being a link, from the app root down.
+    // Strip against whichever spelling of the root the path carries. On
+    // macOS the temp dir is `/var/...` while its canonical form is
+    // `/private/var/...`; stripping only the canonical form silently skipped
+    // this walk for every app under /tmp, and the directory-link escape
+    // below went straight through it.
+    let mut walk = app_dir.to_path_buf();
+    if let Ok(relative) = normalized
+        .strip_prefix(&root)
+        .or_else(|_| normalized.strip_prefix(app_dir))
+    {
+        for part in relative.components() {
+            walk.push(part.as_os_str());
+            match std::fs::symlink_metadata(&walk) {
+                Ok(meta) if meta.file_type().is_symlink() => {
+                    return Err(format!(
+                        "{raw} goes through a symlink, which could point outside the app"
+                    ));
+                }
+                // Nothing at this component: the rest of the path does not
+                // exist yet, so there is nothing left that could be a link.
+                Err(_) => break,
+                Ok(_) => {}
+            }
+        }
+    }
     Ok(normalized)
+}
+
+/// Read a file the model asked for, without following a final symlink.
+///
+/// `resolve_in_app` vets every component that existed when it looked; this
+/// closes the gap between that check and the open. On unix the open itself
+/// refuses a symlink (O_NOFOLLOW), so a link swapped into place after the
+/// check is refused rather than followed.
+fn read_in_app(target: &Path) -> std::io::Result<String> {
+    #[cfg(unix)]
+    {
+        use std::io::Read;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(target)?;
+        let mut text = String::new();
+        file.read_to_string(&mut text)?;
+        Ok(text)
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::read_to_string(target)
+    }
+}
+
+/// Write a file the model asked for: atomically, and never through a link.
+///
+/// The bytes go to a temporary sibling first and are renamed into place, so
+/// an interrupted write leaves the old file or the complete new one, never a
+/// torn half (the same discipline pack uses, IC-861). Rename has the second
+/// property this needs: if something swapped a symlink into place after the
+/// checks, rename replaces the link itself rather than writing through it.
+fn write_in_app(target: &Path, contents: &str) -> std::io::Result<()> {
+    let name = target
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "file".to_string());
+    let staging = target.with_file_name(format!(".{name}.{}.tmp", std::process::id()));
+    std::fs::write(&staging, contents)?;
+    match std::fs::rename(&staging, target) {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            let _ = std::fs::remove_file(&staging);
+            Err(err)
+        }
+    }
 }
 
 /// Run one tool call and return what the model should see.
@@ -201,10 +281,23 @@ fn run_tool(app_dir: &Path, krate_bin: &str, call: &ToolCall) -> String {
                     if let Some(parent) = target.parent() {
                         let _ = std::fs::create_dir_all(parent);
                     }
-                    match std::fs::write(&target, contents) {
+                    match write_in_app(&target, contents) {
                         Ok(()) => {
                             crate::report_progress_note(&format!("writing {path}"));
-                            format!("wrote {path} ({} bytes)", contents.len())
+                            // The digest goes into the transcript with the
+                            // path, so what was written is checkable later
+                            // rather than a size someone has to trust.
+                            let digest = {
+                                use sha2::{Digest, Sha256};
+                                let mut hasher = Sha256::new();
+                                hasher.update(contents.as_bytes());
+                                format!("{:x}", hasher.finalize())
+                            };
+                            format!(
+                                "wrote {path} ({} bytes, sha256:{})",
+                                contents.len(),
+                                &digest[..16]
+                            )
                         }
                         Err(err) => format!("could not write {path}: {err}"),
                     }
@@ -215,7 +308,7 @@ fn run_tool(app_dir: &Path, krate_bin: &str, call: &ToolCall) -> String {
             let path = call.input["path"].as_str().unwrap_or_default();
             match resolve_in_app(app_dir, path) {
                 Err(why) => format!("refused: {why}"),
-                Ok(target) => match std::fs::read_to_string(&target) {
+                Ok(target) => match read_in_app(&target) {
                     Ok(mut text) => {
                         if text.len() > MAX_READ_BYTES {
                             text.truncate(MAX_READ_BYTES);
@@ -619,6 +712,102 @@ mod tests {
         assert!(resolve_in_app(&dir, "/etc/passwd").is_err());
         assert!(resolve_in_app(&dir, "src/lib.rs").is_ok());
         assert!(resolve_in_app(&dir, "./src/app.rs").is_ok());
+    }
+
+    /// A symlink inside the app must not carry a read or a write outside it
+    /// (IC-768). The model cannot make a symlink through write_file, but
+    /// check_app runs a full cargo build in the app directory, and anything
+    /// that build executes can drop one -- after which the lexical check
+    /// passes and the escape is one ordinary tool call away.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_inside_the_app_cannot_reach_outside_it() {
+        let outside = tempfile::tempdir().expect("outside");
+        let secret = outside.path().join("secret.txt");
+        std::fs::write(&secret, "the host's file").expect("seed");
+
+        let app = tempfile::tempdir().expect("app");
+        std::os::unix::fs::symlink(&secret, app.path().join("link.rs")).expect("file link");
+        std::os::unix::fs::symlink(outside.path(), app.path().join("dir")).expect("dir link");
+
+        let read = run_tool(
+            app.path(),
+            "krate-not-used",
+            &ToolCall {
+                id: "t1".into(),
+                name: "read_file".into(),
+                input: serde_json::json!({"path": "link.rs"}),
+            },
+        );
+        assert!(
+            !read.contains("the host's file"),
+            "read_file followed a symlink out of the app: {read}"
+        );
+
+        let write = run_tool(
+            app.path(),
+            "krate-not-used",
+            &ToolCall {
+                id: "t2".into(),
+                name: "write_file".into(),
+                input: serde_json::json!({"path": "link.rs", "contents": "overwritten"}),
+            },
+        );
+        assert_eq!(
+            std::fs::read_to_string(&secret).expect("outside file"),
+            "the host's file",
+            "write_file reached through a symlink and changed a file outside the app: {write}"
+        );
+
+        // And through a symlinked directory: the final component is an
+        // ordinary name, the escape is in the middle.
+        let via_dir = run_tool(
+            app.path(),
+            "krate-not-used",
+            &ToolCall {
+                id: "t3".into(),
+                name: "write_file".into(),
+                input: serde_json::json!({"path": "dir/planted.txt", "contents": "outside"}),
+            },
+        );
+        assert!(
+            !outside.path().join("planted.txt").exists(),
+            "write_file planted a file outside the app through a linked directory: {via_dir}"
+        );
+    }
+
+    /// A write lands whole or not at all, leaves no staging litter, and the
+    /// reply records the digest of what was written -- so the transcript says
+    /// what went into the file, not just how big it was (IC-768, test 1628's
+    /// shape: interruption can leave the old file or the complete new one,
+    /// never a torn half, because the bytes travel via a renamed sibling).
+    #[test]
+    fn a_write_is_atomic_recorded_and_leaves_no_litter() {
+        let app = tempfile::tempdir().expect("app");
+        let reply = run_tool(
+            app.path(),
+            "krate-not-used",
+            &ToolCall {
+                id: "t1".into(),
+                name: "write_file".into(),
+                input: serde_json::json!({"path": "src/lib.rs", "contents": "fn main() {}"}),
+            },
+        );
+        assert!(
+            reply.contains("sha256:"),
+            "the reply must carry a digest: {reply}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(app.path().join("src/lib.rs")).expect("written"),
+            "fn main() {}"
+        );
+        let litter: Vec<_> = std::fs::read_dir(app.path().join("src"))
+            .expect("list")
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.ends_with(".tmp"))
+            .collect();
+        assert!(litter.is_empty(), "staging litter left behind: {litter:?}");
     }
 
     /// Each vendor wants a different tool envelope; sending Anthropic's
