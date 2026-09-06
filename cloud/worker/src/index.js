@@ -336,6 +336,33 @@ async function publish(request, env) {
     })(),
   };
 
+  // Identical bytes are idempotent, and authorship does not transfer
+  // (IC-387). Content addressing means anyone can re-POST bytes they
+  // downloaded, and this write used to replace the listing's author with
+  // theirs -- one authenticated request took over any app's public
+  // identity. If these bytes are already listed by someone else, the
+  // existing listing stands and they get the same URLs back.
+  try {
+    const priorRaw = await env.APPS.get(`app:${hash}`);
+    if (priorRaw) {
+      const prior = JSON.parse(priorRaw);
+      if (prior.author_login && prior.author_login !== identity.login) {
+        const base2 = (env.PUBLIC_BASE || "").replace(/\/$/, "");
+        return json({
+          url: `${base2}/a/${hash}`,
+          full_url: `${base2}/a/${hash}`,
+          id: hash,
+          note:
+            "these exact bytes are already published; the existing listing " +
+            "and its author stand",
+        });
+      }
+    }
+  } catch (e) {
+    // A KV read hiccup must not fail a publish; the worst case is the
+    // pre-fix behaviour for this one request.
+  }
+
   // Keyed so KV's own lexicographic listing comes back newest-first when
   // reversed, which saves sorting the whole set on every page load.
   let listed = true;
@@ -404,10 +431,30 @@ async function publish(request, env) {
 /// Separate from the bundle upload so a shot can be added or replaced without
 /// republishing, and so a publisher with no screenshot still gets a working
 /// listing rather than a rejection.
+/// The listing for a hash, but only when this caller owns it (IC-387).
+///
+/// A screenshot or icon is part of an app's public listing, and the listing
+/// belongs to whoever published the app -- not to whoever is signed in.
+/// Before this gate, any GitHub account could replace any app's images:
+/// defacement of someone else's listing with one authenticated POST.
+async function ownedApp(hash, identity, env) {
+  const raw = await env.APPS.get(`app:${hash}`);
+  if (!raw) {
+    return { error: text("publish the app first -- images belong to a listing", 404) };
+  }
+  const meta = JSON.parse(raw);
+  if (meta.author_login !== identity.login) {
+    return { error: text("only the app's author can change its listing", 403) };
+  }
+  return { meta };
+}
+
 async function putShot(request, hash, env) {
   const identity = await verifyGitHub(request, env);
   if (!identity) return text("sign in first", 401);
   if (!/^[0-9a-f]{64}$/.test(hash)) return text("not found", 404);
+  const owned = await ownedApp(hash, identity, env);
+  if (owned.error) return owned.error;
 
   const body = new Uint8Array(await request.arrayBuffer());
   // A PNG and a sane size. Anything else is refused rather than served back
@@ -556,12 +603,16 @@ async function purgeBundle(request, hash, env) {
 }
 
 /// Store a small square logo for a published app. Same contract as the
-/// screenshot: separate from the bundle, replaceable, author-gated by the
-/// same sign-in the publish used.
+/// screenshot: separate from the bundle, replaceable, and owned -- the old
+/// comment here said "author-gated by the same sign-in the publish used",
+/// which was true only in the sense that A sign-in was required. Whose was
+/// never checked (IC-387).
 async function putIcon(request, hash, env) {
   const identity = await verifyGitHub(request, env);
   if (!identity) return text("sign in first", 401);
   if (!/^[0-9a-f]{64}$/.test(hash)) return text("not found", 404);
+  const owned = await ownedApp(hash, identity, env);
+  if (owned.error) return owned.error;
   const body = new Uint8Array(await request.arrayBuffer());
   if (body.length === 0 || body.length > 512 * 1024) {
     return text("an icon must be a PNG under 512 KiB", 413);
