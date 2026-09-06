@@ -5,6 +5,27 @@
 //! transcribes each spoken phrase without exposing the user's filesystem or
 //! network. A visible voice-activity fallback keeps manual control available.
 
+// A Krate guest is no_std: the SDK owns the allocator, the panic handler, and
+// the mem intrinsics, so nothing here can pull std's latent `wasi:*` imports.
+//
+// This template was the one that did not say so, while the Cargo.toml written
+// beside it sets `std_feature = true` for a no_std build. The two disagreed and
+// the link failed before the import check could even run:
+//
+//   error: failed to load bitcode of module "std-....std....rcgu.o"
+//
+// so `krate create --kind voice-prompter` produced nothing at all.
+#![no_std]
+
+extern crate alloc;
+
+// Pulled in for its allocator and panic handler even though this file calls no
+// `krate::*` function directly. Without it the link fails with "no global
+// memory allocator found" and "`#[panic_handler]` function required".
+extern crate krate as _krate_runtime;
+
+use alloc::string::String;
+
 #[allow(warnings)]
 mod bindings;
 
@@ -50,12 +71,18 @@ fn pure_string(text: &str) -> String {
     }
     unsafe {
         let layout = core::alloc::Layout::from_size_align_unchecked(len, 1);
-        let ptr = std::alloc::alloc(layout);
+        // The allocator comes from `alloc`, which the SDK provides. There is
+        // no standard library linked here to reach into.
+        let ptr = alloc::alloc::alloc(layout);
         if ptr.is_null() {
             #[cfg(target_arch = "wasm32")]
             core::arch::wasm32::unreachable();
+            // A guest always builds for wasm32, so this arm exists only to
+            // keep the file readable on a host. core::intrinsics::abort has no
+            // stable form, and a panic is the honest no_std equivalent: the
+            // SDK's panic handler traps it exactly as unreachable() does.
             #[cfg(not(target_arch = "wasm32"))]
-            std::process::abort();
+            panic!("out of memory");
         }
         core::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, len);
         String::from_raw_parts(ptr, len, len)

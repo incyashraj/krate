@@ -1430,6 +1430,51 @@ mod tests {
         );
 
         let cli = skeleton("my-app", "/sdk", Skeleton::Cli).expect("cli skeleton");
+        // Every built-in kind, not just the two skeletons. The voice prompter
+        // template had no `#![no_std]` and reached for `std::alloc::alloc`,
+        // while the Cargo.toml written beside it sets `std_feature = true` for
+        // a no_std build. The two disagreed and the link failed before the
+        // import check could run:
+        //
+        //   error: failed to load bitcode of module "std-....std....rcgu.o"
+        //
+        // so `krate create --kind voice-prompter` produced nothing at all, on
+        // every platform. The assertions above existed and simply did not
+        // cover it; this closes that.
+        for kind in [
+            AppKind::Checklist,
+            AppKind::WordFrequency,
+            AppKind::VoicePrompter,
+        ] {
+            let request = match kind {
+                AppKind::Checklist => AppRequest::checklist("k"),
+                AppKind::WordFrequency => AppRequest::word_frequency("k"),
+                AppKind::VoicePrompter => AppRequest::voice_prompter("k"),
+            };
+            let app = generate(&request, "..").expect("generate");
+            let lib = app
+                .files
+                .iter()
+                .find(|f| f.path.ends_with("src/lib.rs"))
+                .map(|f| f.contents.as_str())
+                .unwrap_or_default();
+            assert!(
+                lib.contains("#![no_std]"),
+                "{kind:?} must be no_std: the SDK owns the allocator and the \
+                 panic handler, and linking std as well fails the build"
+            );
+            // Code only. A comment may say the word "std::" while explaining
+            // why the code does not use it, and failing on that would push
+            // the next person to delete the explanation.
+            let code_says_std = lib
+                .lines()
+                .map(|line| line.split("//").next().unwrap_or(""))
+                .any(|code| code.contains("std::"));
+            assert!(
+                !code_says_std,
+                "{kind:?} reaches into std, which is not linked in a guest"
+            );
+        }
         let cli_manifest = &cli
             .files
             .iter()

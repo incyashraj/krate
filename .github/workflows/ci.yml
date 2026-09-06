@@ -643,9 +643,11 @@ jobs:
           # The quick path is deliberately headless and deterministic. It
           # proves the authored component and package on every host; native
           # microphone hardware is exercised separately on a real machine.
-          ( cd "$out" && "$bin" run voice-prompter.krate --auto-grant -- quick )
+          # --headless, for the same reason as the checklist above: this is a
+          # windowed app, and window::create fails on a runner with no display.
+          ( cd "$out" && "$bin" run --headless voice-prompter.krate --auto-grant -- quick )
           set +e
-          ( cd "$out" && "$bin" run voice-prompter.krate \
+          ( cd "$out" && "$bin" run --headless voice-prompter.krate \
               --grant ui.window:create --grant io.stdout --grant io.args \
               -- quick ) >/dev/null 2>&1
           denied=$?
