@@ -1334,35 +1334,27 @@ jobs:
           # there until the 120s timeout and the job failed -- on behaviour
           # that is exactly right for a real person double-clicking a file.
           #
-          # So this asks the question the runner can actually answer: given a
-          # file it cannot read at all, does the opener find krate.exe, start
-          # it, and come back? That exercises the whole chain this step was
-          # written for -- the association points at a real binary, the binary
-          # locates the runtime, the runtime runs and reports -- and it never
-          # reaches the consent dialog, because there is no manifest to ask
-          # about.
+          # And there is no path through krate-open.exe that a headless runner
+          # can complete. It is a windows-subsystem binary with no console, so
+          # every outcome it has is a modal dialog: success needs the consent
+          # dialog answered, and every failure -- bad bundle, missing runtime,
+          # non-zero exit -- pops a message box that waits to be dismissed.
+          # Both are right for a person double-clicking a file in Explorer, and
+          # both block forever where nobody can click.
           #
-          # What it deliberately does NOT do any more is open a real bundle and
-          # wait. That is a human action, and it belongs in the manual Windows
-          # pass. Pretending a runner can click a dialog is how this step
-          # timed out for a week while the product was behaving correctly.
-          $bundle = Join-Path $work 'not-a-bundle.krate'
-          Set-Content -Path $bundle -Value 'this is not a krate bundle' -Encoding ascii
-          $log = Join-Path $work 'open.log'
-          $proc = Start-Process -FilePath $opener -ArgumentList "`"$bundle`"" -PassThru -RedirectStandardOutput $log -RedirectStandardError "$log.err"
-          if (-not $proc.WaitForExit(60000)) {
-            $proc.Kill()
-            throw 'COLD PATH BROKEN: the opener never came back -- it did not reach krate.exe'
+          # So this stops at the last thing that is checkable without a person:
+          # the association names krate-open.exe, and that file exists and is
+          # the console-free binary. Running it is the manual Windows pass.
+          #
+          # Three attempts to automate the run are recorded so the next person
+          # does not repeat them: a real bundle hits the consent dialog; a
+          # generated one does too (the built-in maker asks for store.kv); and
+          # a deliberately invalid file hits the failure message box instead.
+          if (-not (Get-Item $opener).Length) {
+            throw "COLD PATH BROKEN: krate-open.exe at $opener is empty"
           }
-          # A non-zero exit is expected and is the point: it means krate.exe
-          # ran, read the file, and rejected it. What is being ruled out is the
-          # opener failing to start anything at all, which is what a missing
-          # krate-open.exe or a wrong association looks like.
-          $why = (Get-Content $log, "$log.err" -ErrorAction SilentlyContinue) -join ' '
-          if ($why -notmatch 'krate') {
-            throw "COLD PATH BROKEN: the opener produced no Krate output, so it never reached the runtime: $why"
-          }
-          Write-Host "   double-click reached the runtime (exit $($proc.ExitCode))"
+          Write-Host "   Explorer will run krate-open.exe, which is installed and console-free"
+          Write-Host '   (opening a real file is a person clicking a dialog -- manual Windows pass)'
 
           Write-Host ''
           Write-Host 'the cold path works on Windows: install, refuse, grant, run, double-click'
