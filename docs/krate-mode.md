@@ -16,7 +16,8 @@ grants it. A component that tries to reach the operating system any other way is
 refused before it runs.
 
 The result is **one `.krate` file that runs unchanged on macOS, Windows, and
-Linux** -- no installer, no runtime to set up on the other end.
+Linux** -- no per-app installer and no per-platform build. The person you send
+it to installs the Krate player once; every app after that is just the file.
 
 ---
 

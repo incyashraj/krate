@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="theme-color" content="#000000" />
 <title>Krate -- Build once. Ship one file.</title>
-<meta name="description" content="Ship desktop software as one small file that runs on Mac, Windows and Linux. No installer, no per-OS port, no signing dance, and a sandbox the runtime enforces." />
+<meta name="description" content="Ship desktop software as one small file that runs on Mac, Windows and Linux. No per-app installer, no per-OS port, no signing dance, and a sandbox the runtime enforces." />
 <link rel="icon" href="/krate-favicon.png" />
   <link rel="canonical" href="https://krate.tech/" />
   <meta property="og:title" content="Krate: build once, ship one file" />
-  <meta property="og:description" content="Build once, ship one file. Desktop software in tens of kilobytes that runs on Mac, Windows and Linux -- no installer, no port, no signing dance." />
+  <meta property="og:description" content="Build once, ship one file. Desktop software in tens of kilobytes that runs on Mac, Windows and Linux -- no per-app installer, no port, no signing dance." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://krate.tech/" />
   <meta property="og:image" content="https://krate.tech/og-v3.png" />
@@ -880,8 +880,15 @@ img { max-width: 100%; display: block; }
       <canvas id="pixels"></canvas>
       <div class="ctaText">
         <h2>Ready to ship<br />without the port?</h2>
+        <!-- "no installer" was not true: the person receiving a .krate
+             installs the Krate player once, and only then does every app
+             after it arrive as one file with nothing to install (IC-401).
+             The open page already said this correctly -- "nothing to
+             install per app" -- and this page did not. -->
         <p>Free, no cap. Build once, get one file, and send it to anyone on
-        any desktop -- no installer, no per-OS build, no signing dance.</p>
+        any desktop -- no per-app installer, no per-OS build, no signing
+        dance. They install the Krate player once; every app after that is
+        just the file.</p>
       </div>
       <div class="ctaActs">
         <div class="ctaRow">

@@ -83,6 +83,18 @@
       "scope": "Apple silicon Mac, macOS 27, Krate only",
       "confidence": "internal measurement",
       "caveat": "there is no MarkText comparison for this row; it must never be written as a head-to-head win"
+    },
+    {
+      "id": "electron-baseline",
+      "metric": "what an Electron app carries",
+      "workload": "any Electron app",
+      "them": "about 100 MB of Chromium",
+      "us": "typically tens of kilobytes, sharing one runtime",
+      "source": "evidence/benchmarks/2026-08-16-notes-battery-macos.md",
+      "source_row": "App file | 107 MB download / 271 MB installed | 37 KB",
+      "scope": "the measured MarkText 0.17.1 download was 107 MB; 'about 100 MB' is the rounded general figure for a bundled Chromium",
+      "confidence": "internal measurement, generalised",
+      "caveat": "this is a general statement about Electron, not a measurement of every Electron app"
     }
   ],
   "forbidden": [
@@ -101,6 +113,14 @@
     {
       "pattern": "battery life",
       "why": "the battery leg was contaminated by live trackpad input and rejected; no energy claim is backed"
+    },
+    {
+      "pattern": "no runtime to set up",
+      "why": "there is a runtime to set up -- once. This claimed there was none at all (IC-401)"
+    },
+    {
+      "pattern": "no installer, no (port|per-OS)",
+      "why": "the recipient installs the Krate player once, so this framing -- aimed at what the RECIPIENT needs -- was false. 'no per-app installer' is the true form. Note 'you ship no installer' and 'no installer to sign' are about the DEVELOPER and are correct (IC-401)"
     }
   ]
 }

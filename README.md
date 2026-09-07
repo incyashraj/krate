@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  No installer, no per-OS port, no signing dance. A Krate app is tens of<br>
+  No per-app installer, no per-OS port, no signing dance. A Krate app is tens of<br>
   kilobytes, and it reaches nothing it did not declare.<br>
   The <strong>player</strong> is open source and installs once (~11 MB on macOS).
 </p>

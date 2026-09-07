@@ -33,8 +33,19 @@ RECORD = ROOT / "evidence" / "claims" / "performance.json"
 SURFACES = [
     "README.md",
     "docs/landing/index.html",
+    "docs/landing/studio/index.html",
     "docs/index.html",
+    "docs/krate-mode.md",
+    "docs/open/index.html",
 ]
+# The answers pages share one meta description, so a claim corrected in the
+# landing page can survive in three copies (IC-401 -- it did). Globbed rather
+# than listed so a new page joins the check by existing.
+import glob as _glob
+
+SURFACES += sorted(
+    p for p in _glob.glob("docs/answers/*.html")
+)
 
 # Figures that are not performance claims: version numbers, ports, years,
 # and the app-size facts that have their own dedicated line in the record.
