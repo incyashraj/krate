@@ -77,7 +77,10 @@ if [ -n "${KRATE_EXPECT_TYPED:-}" ]; then
   WIN_ID="$(xdotool search --name "Krate Hello GUI" 2>/dev/null | head -1 || true)"
   echo "app window id: ${WIN_ID:-not found}"
   if [ -n "$WIN_ID" ]; then
-    xdotool windowfocus --sync "$WIN_ID" || true
+    # `--sync` waits for the focus change to be confirmed, and on bare Xvfb
+    # with no window manager that confirmation may never come -- it blocks
+    # forever rather than failing, which `|| true` cannot catch. Bounded.
+    timeout 15 xdotool windowfocus --sync "$WIN_ID" || true
   fi
   xdotool mousemove 176 62 click 1 || true
   sleep 1
@@ -110,6 +113,23 @@ xdotool mousemove 96 32 click 1 || true
 sleep 1
 xdotool mousemove 96 32 click 1 || true
 
+# The app closes when the two clicks above land on its close button. If they
+# do not -- no window manager, a missed hit, a changed layout -- the app keeps
+# its window open by design (K-092: apps stop closing their own windows) and
+# this wait never returns. That is exactly what hung the Linux lane for two
+# hours before it was bounded: the window run itself passed, and the script
+# sat here (K-238).
+#
+# 120s is far past the second or two the click path needs. On expiry the app
+# is killed and the run is reported as the failure it is, with its output --
+# a hang that says nothing is the worst possible outcome for a proof.
+if ! timeout 120 tail --pid="$APP" -f /dev/null 2>/dev/null; then
+  echo "the app did not exit after the close clicks -- the click path did not reach it" >&2
+  kill "$APP" 2>/dev/null || true
+  wait "$APP" 2>/dev/null || true
+  cat "$OUT"
+  exit 91
+fi
 wait "$APP"
 CODE=$?
 
