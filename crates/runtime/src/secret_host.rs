@@ -73,12 +73,16 @@ impl AppSecrets {
     /// another's derived key even on the same computer.
     pub fn open(path: PathBuf, app_id: &str, machine_key: &[u8], granted: bool) -> Self {
         let key = derive_key(app_id, machine_key);
+        // Only for reading a store written before the HKDF change. Nothing
+        // is ever sealed with it; the first write after an upgrade re-seals
+        // the whole file as v2 (IC-249).
+        let key_v1 = derive_key_v1(app_id, machine_key);
         // A store that exists but cannot be read is not an empty store
         // (IC-877). Losing a credential silently is worse here than in the
         // KV store: the app asks for its key, gets nothing, and may write a
         // new one over the old ciphertext.
         let (entries, unreadable) = if granted {
-            match load(&path, &key) {
+            match load(&path, &key, &key_v1) {
                 Ok(Some(entries)) => (entries, None),
                 Ok(None) => (BTreeMap::new(), None),
                 Err(err) => (BTreeMap::new(), Some(err.to_string())),
@@ -192,7 +196,49 @@ fn restrict_permissions(path: &Path) {
 }
 
 /// Derive this app's encryption key from the machine key and the app's id.
+/// The per-app key, derived with HKDF-SHA256 (IC-249).
+///
+/// This was a bare `SHA256(label || app_id || machine_key)`. A single hash is
+/// not a key derivation function: it has no salt, no extract step, and no
+/// domain separation beyond the label being first, so a machine key reused
+/// across contexts produces related keys with no formal guarantee between
+/// them. HKDF is the standard answer and ring is an audited implementation of
+/// it -- RFC 5869, extract-then-expand, with the app id as the info string so
+/// two apps on one machine get keys that are independent by construction.
 fn derive_key(app_id: &str, machine_key: &[u8]) -> [u8; 32] {
+    use ring::hkdf;
+
+    // A fixed salt is what RFC 5869 calls for when there is no per-use salt
+    // to carry: the extract step still separates this use of the machine key
+    // from any other.
+    let salt = hkdf::Salt::new(hkdf::HKDF_SHA256, b"krate.secret.v2");
+    let prk = salt.extract(machine_key);
+    // Length-prefixed so an app id cannot be chosen to collide with another
+    // by absorbing the boundary.
+    let len = (app_id.len() as u64).to_le_bytes();
+    let info: [&[u8]; 2] = [&len, app_id.as_bytes()];
+
+    struct Key32;
+    impl hkdf::KeyType for Key32 {
+        fn len(&self) -> usize {
+            32
+        }
+    }
+    let okm = prk
+        .expand(&info, Key32)
+        .expect("HKDF-SHA256 expand to 32 bytes is always valid");
+    let mut key = [0u8; 32];
+    okm.fill(&mut key)
+        .expect("filling 32 bytes from a 32-byte OKM cannot fail");
+    key
+}
+
+/// The old key derivation, kept only to read stores written before v2.
+///
+/// A person's saved secrets are not something to lose in an upgrade, so a
+/// v1 file still opens; the next write re-seals it under v2. Nothing new is
+/// ever written with this.
+fn derive_key_v1(app_id: &str, machine_key: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(b"krate.secret.v1");
     hasher.update((app_id.len() as u64).to_le_bytes());
@@ -229,6 +275,8 @@ fn validate_name(name: &str) -> Result<(), SecretError> {
 /// written. Refusing to save is recoverable; saving under a guessable nonce
 /// quietly weakens every secret in the file.
 fn encrypt_all(entries: &BTreeMap<String, Vec<u8>>, key: &[u8; 32]) -> Option<Vec<u8>> {
+    use ring::aead;
+
     let mut plain = Vec::new();
     for (name, secret) in entries {
         plain.extend_from_slice(&(name.len() as u32).to_le_bytes());
@@ -237,20 +285,80 @@ fn encrypt_all(entries: &BTreeMap<String, Vec<u8>>, key: &[u8; 32]) -> Option<Ve
         plain.extend_from_slice(secret);
     }
 
-    let nonce = random_nonce()?;
-    let mut out = Vec::with_capacity(plain.len() + 48);
-    out.extend_from_slice(b"KRS1");
-    out.extend_from_slice(&nonce);
-    let start = out.len();
-    out.extend_from_slice(&plain);
-    apply_keystream(&mut out[start..], key, &nonce);
+    // ChaCha20-Poly1305, from ring, replacing a hand-rolled SHA-256 keystream
+    // and a homemade MAC (IC-249). The old scheme was not obviously broken,
+    // but "not obviously broken" is the wrong standard for the file holding
+    // somebody's API keys: this is RFC 8439, implemented by a maintained
+    // library, with the authentication tag part of the primitive rather than
+    // a construction of ours.
+    //
+    // The 12-byte nonce is what the AEAD requires; the old format's 16 bytes
+    // were sized for the custom keystream.
+    let mut nonce_bytes = [0u8; 12];
+    let random = random_bytes()?;
+    nonce_bytes.copy_from_slice(&random[..12]);
 
-    let mac = mac(key, &nonce, &out[start..]);
-    out.extend_from_slice(&mac);
+    let unbound = aead::UnboundKey::new(&aead::CHACHA20_POLY1305, key).ok()?;
+    let sealing = aead::LessSafeKey::new(unbound);
+    let nonce = aead::Nonce::assume_unique_for_key(nonce_bytes);
+
+    // The magic is the associated data, so a v2 file cannot be replayed as
+    // anything else without the tag failing.
+    let mut sealed = plain;
+    sealing
+        .seal_in_place_append_tag(nonce, aead::Aad::from(b"KRS2"), &mut sealed)
+        .ok()?;
+
+    let mut out = Vec::with_capacity(sealed.len() + 16);
+    out.extend_from_slice(b"KRS2");
+    out.extend_from_slice(&nonce_bytes);
+    out.extend_from_slice(&sealed);
     Some(out)
 }
 
-fn decrypt_all(bytes: &[u8], key: &[u8; 32]) -> Option<BTreeMap<String, Vec<u8>>> {
+/// Open a store, in whichever format it was written.
+///
+/// `key` is the v2 (HKDF) key; `key_v1` is the old one, used only to read a
+/// file written before the change. A person's saved secrets must survive an
+/// upgrade, so a v1 file still opens and the next write re-seals it as v2.
+fn decrypt_all(
+    bytes: &[u8],
+    key: &[u8; 32],
+    key_v1: &[u8; 32],
+) -> Option<BTreeMap<String, Vec<u8>>> {
+    let plain = if bytes.len() >= 4 && &bytes[..4] == b"KRS2" {
+        decrypt_v2(bytes, key)?
+    } else {
+        decrypt_v1(bytes, key_v1)?
+    };
+    parse_entries(&plain)
+}
+
+fn decrypt_v2(bytes: &[u8], key: &[u8; 32]) -> Option<Vec<u8>> {
+    use ring::aead;
+
+    // 4 magic + 12 nonce + 16 tag
+    if bytes.len() < 32 {
+        return None;
+    }
+    let mut nonce_bytes = [0u8; 12];
+    nonce_bytes.copy_from_slice(&bytes[4..16]);
+
+    let unbound = aead::UnboundKey::new(&aead::CHACHA20_POLY1305, key).ok()?;
+    let opening = aead::LessSafeKey::new(unbound);
+    let nonce = aead::Nonce::assume_unique_for_key(nonce_bytes);
+
+    // Poly1305 verifies before anything is returned: a tampered, truncated
+    // or wrong-key file yields None here rather than plausible-looking bytes.
+    let mut sealed = bytes[16..].to_vec();
+    let plain = opening
+        .open_in_place(nonce, aead::Aad::from(b"KRS2"), &mut sealed)
+        .ok()?;
+    Some(plain.to_vec())
+}
+
+/// The pre-v2 format: SHA-256 keystream with a homemade MAC. Read-only.
+fn decrypt_v1(bytes: &[u8], key: &[u8; 32]) -> Option<Vec<u8>> {
     // 4 magic + 16 nonce + 32 mac
     if bytes.len() < 52 || &bytes[..4] != b"KRS1" {
         return None;
@@ -268,7 +376,11 @@ fn decrypt_all(bytes: &[u8], key: &[u8; 32]) -> Option<BTreeMap<String, Vec<u8>>
 
     let mut plain = body.to_vec();
     apply_keystream(&mut plain, key, &nonce);
+    Some(plain)
+}
 
+fn parse_entries(plain: &[u8]) -> Option<BTreeMap<String, Vec<u8>>> {
+    let plain = plain.to_vec();
     let mut entries = BTreeMap::new();
     let mut at = 0usize;
     while at + 4 <= plain.len() {
@@ -328,10 +440,16 @@ fn mac(key: &[u8; 32], nonce: &[u8; 16], ciphertext: &[u8]) -> Vec<u8> {
 /// and for a stream cipher a repeated or predicted nonce leaks the difference
 /// between two plaintexts. `random_host` now reads real entropy on Windows too,
 /// so the weaker path is gone: no nonce is better than a guessable one.
-fn random_nonce() -> Option<[u8; 16]> {
-    let mut nonce = [0u8; 16];
-    crate::random_host::fill(&mut nonce).ok()?;
-    Some(nonce)
+/// Fresh random bytes for a nonce, or nothing.
+///
+/// Returning None means the store is not written. Refusing to save is
+/// recoverable; sealing under a nonce that is not random is not, because
+/// ChaCha20-Poly1305 loses its guarantees the moment a nonce repeats under
+/// one key.
+fn random_bytes() -> Option<[u8; 16]> {
+    let mut bytes = [0u8; 16];
+    crate::random_host::fill(&mut bytes).ok()?;
+    Some(bytes)
 }
 
 /// Read the secret store from disk.
@@ -339,7 +457,11 @@ fn random_nonce() -> Option<[u8; 16]> {
 /// `Ok(None)` means nothing has been saved yet. `Err` means a store exists
 /// and could not be read or decrypted -- which must never be reported as
 /// "no secrets" (IC-877).
-fn load(path: &Path, key: &[u8; 32]) -> std::io::Result<Option<BTreeMap<String, Vec<u8>>>> {
+fn load(
+    path: &Path,
+    key: &[u8; 32],
+    key_v1: &[u8; 32],
+) -> std::io::Result<Option<BTreeMap<String, Vec<u8>>>> {
     let bytes = match std::fs::read(path) {
         Ok(bytes) => bytes,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -356,7 +478,7 @@ fn load(path: &Path, key: &[u8; 32]) -> std::io::Result<Option<BTreeMap<String, 
     // So IC-877's guard applies to the case that is genuinely a fault --
     // a file that cannot be READ at all -- and a file that reads but does not
     // decrypt stays an empty store.
-    Ok(decrypt_all(&bytes, key))
+    Ok(decrypt_all(&bytes, key, key_v1))
 }
 
 #[cfg(test)]
@@ -440,6 +562,102 @@ mod tests {
         }
         let other = AppSecrets::open(path, "dev.krate.two", MACHINE, true);
         assert_eq!(other.get("token").expect("get"), None);
+    }
+
+    /// New stores are sealed with ChaCha20-Poly1305, not the old hand-rolled
+    /// keystream (IC-249). The magic byte is the visible proof, and it is
+    /// what tells the reader which format it is holding.
+    #[test]
+    fn a_new_store_is_written_with_real_aead() {
+        let dir = tempfile::tempdir().expect("dir");
+        let path = dir.path().join("secrets.bin");
+        let mut store = AppSecrets::open(path.clone(), "dev.krate.aead", b"machine", true);
+        store.set("token", b"hunter2".to_vec()).expect("set");
+
+        let bytes = std::fs::read(&path).expect("read");
+        assert_eq!(&bytes[..4], b"KRS2", "a new store must be the AEAD format");
+        assert!(
+            !bytes.windows(7).any(|w| w == b"hunter2"),
+            "the secret must not be on disk in the clear"
+        );
+    }
+
+    /// A store written before the change still opens, and the next write
+    /// re-seals it (IC-249). Losing somebody's saved credentials in an
+    /// upgrade would be a worse defect than the one being fixed.
+    #[test]
+    fn a_store_from_before_the_change_still_opens_and_is_resealed() {
+        let dir = tempfile::tempdir().expect("dir");
+        let path = dir.path().join("secrets.bin");
+
+        // Write one the old way, byte for byte.
+        let key_v1 = derive_key_v1("dev.krate.legacy", b"machine");
+        let mut old_entries = BTreeMap::new();
+        old_entries.insert("token".to_string(), b"from-the-old-format".to_vec());
+        let plain = {
+            let mut plain = Vec::new();
+            for (name, secret) in &old_entries {
+                plain.extend_from_slice(&(name.len() as u32).to_le_bytes());
+                plain.extend_from_slice(name.as_bytes());
+                plain.extend_from_slice(&(secret.len() as u32).to_le_bytes());
+                plain.extend_from_slice(secret);
+            }
+            plain
+        };
+        let nonce = [7u8; 16];
+        let mut body = plain.clone();
+        apply_keystream(&mut body, &key_v1, &nonce);
+        let tag = mac(&key_v1, &nonce, &body);
+        let mut legacy = Vec::new();
+        legacy.extend_from_slice(b"KRS1");
+        legacy.extend_from_slice(&nonce);
+        legacy.extend_from_slice(&body);
+        legacy.extend_from_slice(&tag);
+        std::fs::write(&path, &legacy).expect("seed a v1 store");
+
+        // It opens, with the secret intact.
+        let mut store = AppSecrets::open(path.clone(), "dev.krate.legacy", b"machine", true);
+        assert_eq!(
+            store.get("token").expect("get"),
+            Some(b"from-the-old-format".to_vec()),
+            "an upgrade must not lose saved secrets"
+        );
+
+        // And the next write moves it to the new format.
+        store.set("second", b"new".to_vec()).expect("set");
+        let bytes = std::fs::read(&path).expect("read");
+        assert_eq!(&bytes[..4], b"KRS2", "the next write re-seals as AEAD");
+
+        let reopened = AppSecrets::open(path, "dev.krate.legacy", b"machine", true);
+        assert_eq!(
+            reopened.get("token").expect("get"),
+            Some(b"from-the-old-format".to_vec())
+        );
+        assert_eq!(reopened.get("second").expect("get"), Some(b"new".to_vec()));
+    }
+
+    /// Poly1305 rejects a flipped bit anywhere -- ciphertext, nonce or tag --
+    /// rather than returning whatever the altered bytes decode to.
+    #[test]
+    fn every_part_of_an_aead_store_is_authenticated() {
+        let dir = tempfile::tempdir().expect("dir");
+        let path = dir.path().join("secrets.bin");
+        let mut store = AppSecrets::open(path.clone(), "dev.krate.tamper", b"machine", true);
+        store.set("token", b"hunter2".to_vec()).expect("set");
+        let good = std::fs::read(&path).expect("read");
+
+        // Nonce (4..16), ciphertext (16..len-16), tag (last 16).
+        for spot in [5usize, good.len() / 2, good.len() - 1] {
+            let mut bad = good.clone();
+            bad[spot] ^= 0x01;
+            std::fs::write(&path, &bad).expect("write tampered");
+            let opened = AppSecrets::open(path.clone(), "dev.krate.tamper", b"machine", true);
+            assert_eq!(
+                opened.get("token").expect("get"),
+                None,
+                "a flipped bit at {spot} must not yield a secret"
+            );
+        }
     }
 
     #[test]

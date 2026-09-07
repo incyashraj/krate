@@ -2441,6 +2441,7 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "png 0.18.1",
  "rfd",
+ "ring",
  "rusqlite",
  "serde",
  "serde_json",
