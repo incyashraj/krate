@@ -31,6 +31,8 @@ merged into `main`, and then **never modified** -- only superseded by a new ADR.
 | [0012](0012-adapter-crate-split-per-os.md) | Adapter crate split per host OS | Accepted | 2 |
 | [0013](0013-widget-lowering-strategy.md) | Widget lowering strategy | Proposed | 3 |
 | [0014](0014-layout-engine-taffy.md) | Layout engine uses Taffy | Proposed | 3 |
+| [0015](0015-linux-widget-strategy.md) | Linux widget strategy | Proposed | 3 |
+| [0016](0016-security-feed-refresh-policy.md) | Security feed refresh, before there is a feed | Accepted | 3 |
 
 ## Process
 
