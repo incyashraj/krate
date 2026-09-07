@@ -1695,3 +1695,15 @@ jobs:
         run: cargo install cargo-deny --locked --version 0.19.4
       - name: Run cargo-deny
         run: scripts/check-dependencies.sh
+      # The gate above answers "is anything matched right now" and throws the
+      # answer away. A release needs to show which advisories matched, what
+      # path brings each one in, and when the question was last asked -- so
+      # the scan is kept as evidence, dated and bound to the commit (IC-568).
+      - name: Record the advisory scan as evidence
+        run: scripts/record-advisory-evidence.sh --check
+      - name: Upload the advisory record
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: advisory-scan
+          path: evidence/advisories/latest.md
