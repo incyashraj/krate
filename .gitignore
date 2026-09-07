@@ -110,3 +110,6 @@ ehthumbs.db
 # public tree. The workflow in CLAUDE.md still uses them locally.
 /BUGS.md
 /GOALS.md
+
+# Python leaves these beside the check scripts in scripts/.
+__pycache__/
