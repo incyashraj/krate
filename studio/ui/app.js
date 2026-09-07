@@ -4819,7 +4819,7 @@ function openMakeitSheet() {
     if (known && !$("makeitEmail").value) $("makeitEmail").value = known;
   } catch (e) {}
   $("makeitSend").disabled = false;
-  $("makeitSend").textContent = "Send it to Krate";
+  $("makeitSend").textContent = "Send the request";
   $("makeitSheet").classList.remove("hidden");
   $("makeitEmail").focus();
 }
@@ -4842,11 +4842,16 @@ $("makeitSend")?.addEventListener("click", async () => {
     });
     try { localStorage.setItem("krateMakeitEmail", email); } catch (e) {}
     $("makeitSend").textContent = "Sent";
+    // Not "the finished file lands in your inbox, usually within a day".
+    // That was a delivery time with no queue, no staffing and no SLA
+    // behind it -- one person reads these (IC-425). Say what is true:
+    // it arrived, somebody will read it, and nothing is promised back.
     $("makeitNote").textContent =
-      "Done - the finished file lands in your inbox, usually within a day.";
+      "Sent. One person reads these, so there is no promised reply -- but " +
+      "seeing what failed is how Krate gets better.";
   } catch (err) {
     $("makeitSend").disabled = false;
-    $("makeitSend").textContent = "Send it to Krate";
+    $("makeitSend").textContent = "Send the request";
     $("makeitNote").textContent = String(err);
   }
 });

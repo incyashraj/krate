@@ -478,10 +478,14 @@
               <button class="btn" id="switchAiBtn">Use a different AI</button>
               <button class="btn btn-ghost" id="reportBtn">Report an issue</button>
             </div>
-            <!-- The human door, open today: we build it and mail the file. -->
+            <!-- Not a service door. This used to say "a person at Krate
+                 builds it and emails you the file" -- a human-delivery
+                 promise with no queue, no staffing and no response time
+                 behind it (IC-425). It sends the failed request to us so
+                 the tool improves; it does not promise anyone an app. -->
             <div class="fail-krateai fail-offer">
-              <span><b>Or let us make it</b> &middot; a person at Krate builds it and emails you the file</span>
-              <button class="btn" id="makeitBtn">Ask Krate</button>
+              <span><b>Or send it to us</b> &middot; we read what failed, and it makes Krate better. No promised reply.</span>
+              <button class="btn" id="makeitBtn">Send the request</button>
             </div>
             <details class="fail-raw-wrap hidden" id="failRawWrap">
               <summary>what the engine said</summary>
@@ -824,16 +828,18 @@
        you cannot drop a file, and the raw bundle stays one click away. -->
   <div class="sheet-wrap hidden" id="makeitSheet">
     <div class="sheet">
-      <h2>We'll make it for you</h2>
-      <p class="sheet-sub">A person at Krate builds your app from what is
-      already in this session -- your words below, and any answers you
-      gave -- and emails you the finished file. Free while Studio is in
-      preview.</p>
+      <h2>Send this build to us</h2>
+      <p class="sheet-sub">This sends what is already in this session --
+      your words below, and any answers you gave -- to the person who
+      makes Krate. There is no support team and no promised reply time:
+      it is one person reading these, and a build that cannot be helped
+      may get no answer at all. What it definitely does is show us the
+      request that failed, which is how the tool gets better.</p>
       <p class="makeit-recap" id="makeitRecap"></p>
       <input class="makeit-email" id="makeitEmail" type="email"
         placeholder="you@example.com" autocomplete="email" />
       <div class="detail-actions">
-        <button class="btn btn-primary" id="makeitSend">Send it to Krate</button>
+        <button class="btn btn-primary" id="makeitSend">Send the request</button>
         <button class="btn btn-ghost sheet-close" data-close="makeitSheet">Close</button>
       </div>
       <p class="detail-note" id="makeitNote"></p>

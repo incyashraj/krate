@@ -75,10 +75,13 @@ export default {
         return cors(await founding(request, env));
       }
       if (request.method === "POST" && pathname === "/makeit") {
-        // "We'll make it for you": when a build dies on someone, Studio
-        // offers a human fallback. What lands here is what we need to
-        // build their app by hand: their request, their answers to the
-        // AI's questions, and an email to send the file back to.
+        // A failed build, sent to us. Studio used to offer this as "a
+        // person at Krate builds it and emails you the file" with a
+        // within-a-day delivery line -- a human-delivery promise with no
+        // queue, no staffing and no SLA behind it (IC-425). The endpoint
+        // is unchanged and still useful: it records the request that
+        // failed, the answers given, and an email, so one person can read
+        // it and the tool can improve. Nothing here promises delivery.
         return cors(await makeit(request, env));
       }
       if (request.method === "POST" && pathname === "/usage") {
