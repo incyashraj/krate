@@ -28,6 +28,53 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 RECORD = ROOT / "evidence" / "claims" / "performance.json"
 
+# Claims that were checked, found wrong, and retired (IC-628). These are not
+# performance figures to be backed by a measurement -- they are sentences that
+# must not come back, in any document, however old.
+#
+# The scan is repository-wide rather than limited to the public surfaces above,
+# because the way a retired claim returns is by being copied out of an old deck
+# or a stale memo that nobody thought of as public until it was sent to
+# somebody. Invest/OUTREACH_TRUTH.md is the record of why each one went.
+RETIRED = [
+    (
+        r"6,?400\s*x",
+        '"6400x smaller" was stated against "regular applications", which is '
+        "not a measurement of anything. Against a native Rust build of the "
+        "same program it is ~19x; against a typical Electron app it is "
+        "~5,000-10,000x. Say which comparison you mean "
+        "(Invest/OUTREACH_TRUTH.md)",
+    ),
+    (
+        r"20\s*x\s+faster",
+        '"20x faster" was never measured against "regular applications". '
+        "The honest speed claims are the ones in "
+        "evidence/claims/performance.json, each against a named app on a "
+        "named machine (Invest/OUTREACH_TRUTH.md)",
+    ),
+    (
+        r"faster\s+than\s+regular\s+applications",
+        '"regular applications" is not a thing that can be measured. Name the '
+        "app being compared against (Invest/OUTREACH_TRUTH.md)",
+    ),
+]
+
+# Where a retired claim would hide. The truth file itself is excluded: it
+# quotes every retired claim in order to retire it, so scanning it would make
+# the record of the correction into a violation.
+RETIRED_SCAN_SUFFIXES = (".md", ".tex", ".html", ".txt")
+RETIRED_SKIP_PARTS = (
+    ".git",
+    "docs/book",  # build output; stale copies produce false hits
+    "target",
+    "node_modules",
+    "Invest/krate_bible",  # the source register, quoting claims to correct them
+)
+RETIRED_SKIP_FILES = (
+    "Invest/OUTREACH_TRUTH.md",  # the file that retires them
+    "scripts/check-claims.py",  # this file, which must name them to forbid them
+)
+
 # The surfaces a stranger reads. Evidence notes are deliberately absent: they
 # are the source, and holding them to themselves would be circular.
 SURFACES = [
@@ -115,7 +162,111 @@ def check_surface(path, record, figures):
     return problems
 
 
+def scan_retired():
+    """Every live document, looking for a claim that was retired (IC-628).
+
+    Repository-wide on purpose. A retired claim comes back by being copied out
+    of an old deck, not by being re-typed into the landing page.
+    """
+    problems = []
+    scanned = 0
+    for path in ROOT.rglob("*"):
+        if not path.is_file() or path.suffix not in RETIRED_SCAN_SUFFIXES:
+            continue
+        rel = path.relative_to(ROOT).as_posix()
+        if any(part in rel for part in RETIRED_SKIP_PARTS):
+            continue
+        if rel in RETIRED_SKIP_FILES:
+            continue
+        try:
+            text = path.read_text(errors="replace")
+        except OSError:
+            continue
+        scanned += 1
+        for line_no, line in enumerate(text.splitlines(), 1):
+            for pattern, why in RETIRED:
+                if re.search(pattern, line, re.I):
+                    problems.append(f"{rel}:{line_no}: {line.strip()[:90]}\n      {why}")
+    return scanned, problems
+
+
+def self_test():
+    """Prove the retired-claim scan actually bites (IC-628).
+
+    A scan that returns "clean" is worthless unless something demonstrates it
+    would have spoken up. This writes each retired claim into a temporary
+    document inside the tree, checks it is caught, and removes it -- so the
+    guard is tested on every run rather than trusted.
+    """
+    import tempfile
+
+    failures = []
+    for pattern, _why in RETIRED:
+        # The sentence a stale deck would actually carry, not the regex.
+        samples = {
+            r"6,?400\s*x": "Krate apps are 6400x smaller.",
+            r"20\s*x\s+faster": "Krate runs 20x faster.",
+            r"faster\s+than\s+regular\s+applications": (
+                "It is faster than regular applications."
+            ),
+        }
+        if pattern not in samples:
+            # A retired claim with no sample is an untested pattern, which is
+            # the failure this whole self-test exists to prevent. Say so in
+            # words rather than dying with a KeyError.
+            failures.append(
+                f"pattern {pattern!r} has no sample sentence in self_test(), "
+                f"so nothing proves it works -- add one beside it"
+            )
+            continue
+        sample = samples[pattern]
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".md", dir=ROOT, delete=False
+        ) as handle:
+            handle.write(f"# Stale deck\n\n{sample}\n")
+            temp = Path(handle.name)
+        try:
+            _, found = scan_retired()
+            if not any(temp.name in problem for problem in found):
+                failures.append(
+                    f"the scan did not catch {sample!r} -- pattern {pattern!r} "
+                    f"is not doing its job"
+                )
+        finally:
+            temp.unlink()
+
+    # And it must not fire on the corrected wording, or nobody will be able to
+    # write the true sentence.
+    honest = "About 19x smaller than the same program built as a native Rust binary."
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".md", dir=ROOT, delete=False
+    ) as handle:
+        handle.write(f"# Corrected\n\n{honest}\n")
+        temp = Path(handle.name)
+    try:
+        _, found = scan_retired()
+        if any(temp.name in problem for problem in found):
+            failures.append(
+                f"the scan fired on the corrected wording {honest!r}, which "
+                f"would stop anyone writing the true claim"
+            )
+    finally:
+        temp.unlink()
+
+    if failures:
+        print("retired-claim scan self-test FAILED:\n")
+        for failure in failures:
+            print(f"  {failure}")
+        return 1
+    print(f"OK -- the retired-claim scan catches all {len(RETIRED)} withdrawn claims, and leaves the corrected wording alone.")
+    return 0
+
+
 def main():
+    if "--self-test" in sys.argv:
+        return self_test()
+
     record = load()
     if "--list" in sys.argv:
         for claim in record["claims"]:
@@ -136,17 +287,33 @@ def main():
         checked += 1
         problems.extend(check_surface(surface, record, figures))
 
-    if problems:
-        print(f"claim drift in {checked} surface(s):\n")
-        for problem in problems:
-            print(f"  {problem}")
-        print(
-            "\nEvery public performance number must name an evidence row. "
-            "See evidence/claims/performance.json."
-        )
+    scanned, retired = scan_retired()
+
+    if problems or retired:
+        if problems:
+            print(f"claim drift in {checked} surface(s):\n")
+            for problem in problems:
+                print(f"  {problem}")
+            print(
+                "\nEvery public performance number must name an evidence row. "
+                "See evidence/claims/performance.json."
+            )
+        if retired:
+            if problems:
+                print()
+            print(f"retired claims found in {scanned} document(s):\n")
+            for problem in retired:
+                print(f"  {problem}")
+            print(
+                "\nThese claims were checked, found wrong, and withdrawn. They "
+                "do not come back. See Invest/OUTREACH_TRUTH.md."
+            )
         return 1
 
-    print(f"OK -- {checked} public surface(s), every performance figure backed by the claim record.")
+    print(
+        f"OK -- {checked} public surface(s), every performance figure backed by "
+        f"the claim record; {scanned} document(s) free of retired claims."
+    )
     return 0
 
 

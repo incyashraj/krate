@@ -1590,6 +1590,12 @@ jobs:
       # drift it catches is the kind nobody notices by reading.
       - name: Check public performance claims
         run: python3 scripts/check-claims.py
+      # The scan above also sweeps the whole repository for claims that were
+      # checked, found wrong and withdrawn (IC-628). A clean sweep proves
+      # nothing on its own, so the guard is tested against a stale document
+      # before it is believed.
+      - name: Prove the retired-claim scan still bites
+        run: python3 scripts/check-claims.py --self-test
       - name: Install mdBook
         run: |
           mkdir -p ~/bin
