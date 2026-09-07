@@ -717,8 +717,16 @@ jobs:
           # xvfb provides the display server; libxkbcommon-x11 is dlopen'd by
           # winit's X11 keyboard path and absent on minimal runners.
           # x11-apps (xwd) + imagemagick capture the drawn window as evidence.
+          # openbox: a window manager, which bare Xvfb does not have. Without
+          # one no window ever takes X input focus, so xdotool's synthetic
+          # clicks and keys go nowhere -- the app is found, clicked at, and
+          # never hears any of it. That is what left the click proof waiting
+          # for an app that would not close (K-238). The script's own comment
+          # already knew ("Bare Xvfb has no window manager, so no window ever
+          # gets X input focus on its own"); it tried to work around it with
+          # an explicit windowfocus instead of just running a WM.
           sudo apt-get install -y -q xvfb libxkbcommon-x11-0 xdotool \
-            x11-apps imagemagick
+            x11-apps imagemagick openbox
           # 1. Adapter-level native smoke: real winit window round trip.
           KRATE_WINIT_NATIVE_SMOKE=1 KRATE_WINIT_ANY_THREAD=1 timeout 240 xvfb-run -a \
             cargo test -p krate-adapter-linux --lib -- --ignored \

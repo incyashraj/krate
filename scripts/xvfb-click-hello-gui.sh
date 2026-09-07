@@ -13,13 +13,33 @@ set -u
 OUT="$(mktemp)"
 SERVE_DIR=""
 SERVER_PID=""
+WM_PID=""
 cleanup() {
   rm -f "$OUT"
   [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null
+  [ -n "$WM_PID" ] && kill "$WM_PID" 2>/dev/null
   [ -n "$SERVE_DIR" ] && rm -rf "$SERVE_DIR"
   return 0
 }
 trap cleanup EXIT
+
+# A window manager, before anything opens a window (K-238).
+#
+# Bare Xvfb has none, and without one no window ever takes X input focus --
+# so xdotool's synthetic clicks and keys go nowhere. The app is found, clicked
+# at, and hears none of it, which left this script waiting for an app that
+# would never close. The workaround was an explicit `windowfocus --sync`,
+# which on a WM-less server waits for a confirmation that never comes.
+#
+# openbox is the smallest thing that does the job. If it is not installed the
+# script carries on exactly as before rather than failing: the assertions
+# below still say whether the clicks landed.
+if command -v openbox >/dev/null 2>&1; then
+  openbox >/dev/null 2>&1 &
+  WM_PID=$!
+  # Give it a moment to own the root window before any app maps one.
+  sleep 1
+fi
 
 # KRATE_BUNDLE_URL_PROOF packs hello-gui into a .krate, serves it over local
 # HTTP, and runs it by URL instead of from a path. Same app, same assertions:
