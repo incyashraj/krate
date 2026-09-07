@@ -403,7 +403,71 @@ fn open_url(url: &str) -> Result<(), String> {
 fn studio_dir() -> PathBuf {
     let dir = dirs_home().join(".krate").join("studio");
     let _ = std::fs::create_dir_all(dir.join("sessions"));
+    private_dir(&dir);
+    private_dir(&dir.join("sessions"));
     dir
+}
+
+/// Make a directory the owner's business only, where the platform says so.
+///
+/// Studio's state -- what you asked for, the code that came back, the
+/// screenshots -- is nobody else's business on a shared machine, and it was
+/// being created with whatever the process umask allowed (IC-311). 0700 is
+/// the same rule ~/.ssh uses, for the same reason.
+fn private_dir(path: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700));
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+}
+
+/// Write a state file so a reader never sees a half-written one, and so
+/// nobody else on the machine can read it (IC-311).
+///
+/// Every one of these used to be a direct `fs::write` to the final path: a
+/// crash or a full disk mid-write left a truncated file, and the next read
+/// got invalid JSON and silently fell back to defaults -- somebody's settings
+/// or a session's history, gone, with nothing said. The bytes now land in a
+/// unique sibling, get flushed to the disk, and are renamed into place, so
+/// the final path only ever holds a complete file. On unix it is created
+/// 0600 before anything is written to it.
+fn write_private_atomic(path: &Path, body: &[u8]) -> Result<(), String> {
+    use std::io::Write as _;
+    let parent = path.parent().ok_or_else(|| "no parent directory".to_string())?;
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "state".to_string());
+    let staging = parent.join(format!(".{name}.{}.tmp", std::process::id()));
+
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options
+        .open(&staging)
+        .map_err(|e| format!("could not open {}: {e}", staging.display()))?;
+    if let Err(e) = file.write_all(body) {
+        let _ = std::fs::remove_file(&staging);
+        return Err(format!("could not write {}: {e}", staging.display()));
+    }
+    // Flushed before the rename, or the rename can publish a name whose
+    // contents have not reached the disk yet.
+    if let Err(e) = file.sync_all() {
+        let _ = std::fs::remove_file(&staging);
+        return Err(format!("could not flush {}: {e}", staging.display()));
+    }
+    drop(file);
+    std::fs::rename(&staging, path).map_err(|e| {
+        let _ = std::fs::remove_file(&staging);
+        format!("could not save {}: {e}", path.display())
+    })
 }
 
 /* ---- settings --------------------------------------------------------- */
@@ -468,11 +532,8 @@ fn settings_get() -> Settings {
 
 #[tauri::command]
 fn settings_set(settings: Settings) -> Result<(), String> {
-    std::fs::write(
-        studio_dir().join("settings.json"),
-        serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| e.to_string())
+    let body = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
+    write_private_atomic(&studio_dir().join("settings.json"), body.as_bytes())
 }
 
 /* ---- sessions: the development history -------------------------------- */
@@ -593,7 +654,7 @@ fn session_save(mut session: Session) -> Result<(), String> {
                     let png = studio_dir()
                         .join("sessions")
                         .join(format!("{}.shot.png", session.id));
-                    if std::fs::write(png, bytes).is_ok() {
+                    if write_private_atomic(&png, &bytes).is_ok() {
                         result["shot"] = serde_json::json!("file");
                     }
                 }
@@ -604,7 +665,7 @@ fn session_save(mut session: Session) -> Result<(), String> {
         .join("sessions")
         .join(format!("{}.json", session.id));
     let body = serde_json::to_string_pretty(&session).map_err(|e| e.to_string())?;
-    std::fs::write(path, &body).map_err(|e| e.to_string())?;
+    write_private_atomic(&path, body.as_bytes())?;
 
     // Then push it to the account, so the same conversation is there in a
     // browser tab and on a second machine.
@@ -4428,8 +4489,78 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{agent_home_env, copy_dir_shallow, probe_speaks_plan, slugify};
+    use super::{
+        agent_home_env, copy_dir_shallow, probe_speaks_plan, slugify, write_private_atomic,
+    };
     use std::path::{Path, PathBuf};
+
+    /// Studio's own state is written whole, or not at all, and only the
+    /// owner can read it (IC-311).
+    ///
+    /// Every one of these was a direct write to the final path: a crash or a
+    /// full disk mid-write left a truncated file, the next read got invalid
+    /// JSON, and the code silently fell back to defaults -- somebody's
+    /// settings or a session's history gone with nothing said. And on a
+    /// shared machine the files were whatever the umask allowed.
+    #[test]
+    fn state_files_are_written_whole_and_kept_private() {
+        let dir = tempfile::tempdir().expect("dir");
+        let path = dir.path().join("settings.json");
+
+        // A previous good file, so the replace case is the one under test.
+        write_private_atomic(&path, b"{\"first\":true}").expect("first write");
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("read"),
+            "{\"first\":true}"
+        );
+
+        write_private_atomic(&path, b"{\"second\":true}").expect("second write");
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("read"),
+            "{\"second\":true}"
+        );
+
+        // The staging sibling is renamed, never left behind for the next
+        // reader to trip over.
+        let litter: Vec<String> = std::fs::read_dir(dir.path())
+            .expect("list")
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.ends_with(".tmp"))
+            .collect();
+        assert!(litter.is_empty(), "staging litter left behind: {litter:?}");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).expect("stat").permissions().mode();
+            assert_eq!(
+                mode & 0o077,
+                0,
+                "state must not be readable by anyone else on the machine (mode {:o})",
+                mode
+            );
+        }
+    }
+
+    /// A write that cannot land reports it instead of leaving a half-file.
+    /// The old path returned the io error too, but only after the final file
+    /// had already been truncated.
+    #[test]
+    fn a_failed_write_leaves_the_previous_file_intact() {
+        let dir = tempfile::tempdir().expect("dir");
+        let path = dir.path().join("settings.json");
+        write_private_atomic(&path, b"{\"good\":true}").expect("seed");
+
+        // A directory where the staging file needs to go: the open fails,
+        // and the good file must still be the good file.
+        let blocked = dir.path().join("sub").join("settings.json");
+        assert!(write_private_atomic(&blocked, b"nope").is_err());
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("read"),
+            "{\"good\":true}"
+        );
+    }
 
     /// The Studio, the engine and the readiness probe must all mean the same
     /// directory by "the agent's home".
