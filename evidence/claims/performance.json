@@ -1,0 +1,106 @@
+{
+  "schema": "krate.claims.v1",
+  "note": [
+    "Every performance number Krate says in public, and the exact evidence",
+    "record it came from (IC-830). Prose does not get to hold its own",
+    "numbers: scripts/check-claims.py reads this file and refuses a public",
+    "surface that states a figure this record does not carry, or that",
+    "contradicts one it does.",
+    "",
+    "The failure this prevents is real and was in the README: a table headed",
+    "'Memory, 50,000 lines' paired with open times of 1.8 s and 0.2 s, which",
+    "are the 5,000-line warm start and the first-ever open. Two workloads",
+    "conflated in one row, each number true somewhere and the pair true",
+    "nowhere. Nobody was lying; the prose had simply drifted from the note it",
+    "cites, and nothing checked."
+  ],
+  "claims": [
+    {
+      "id": "app-file-size",
+      "metric": "the app file itself",
+      "workload": "notes app",
+      "them": "271 MB installed",
+      "us": "37 KB",
+      "source": "evidence/benchmarks/2026-08-16-notes-battery-macos.md",
+      "source_row": "App file | 107 MB download / 271 MB installed | 37 KB",
+      "scope": "MarkText 0.17.1, x86_64 package; Apple silicon Mac, macOS 27",
+      "confidence": "internal measurement",
+      "caveat": "the 271 MB package was x86_64; an ARM64-matched run has not been retained"
+    },
+    {
+      "id": "memory-50k",
+      "metric": "memory, 50,000-line document",
+      "workload": "50,000 lines",
+      "them": "2.3 GB across five processes",
+      "us": "95 MB, one process",
+      "source": "evidence/benchmarks/2026-08-16-notes-battery-macos.md",
+      "source_row": "Footprint, 50k doc | 2,331 MB ... | 95 MB",
+      "scope": "Apple silicon Mac, macOS 27, whole process tree",
+      "confidence": "internal measurement"
+    },
+    {
+      "id": "warm-start-50k",
+      "metric": "warm start to a visible window, 50,000-line document",
+      "workload": "50,000 lines",
+      "them": "1.97 s",
+      "us": "0.25 s",
+      "source": "evidence/benchmarks/2026-08-16-notes-battery-macos.md",
+      "source_row": "Warm start, 50k doc | 1.97 s | 0.25 s",
+      "scope": "Apple silicon Mac, macOS 27",
+      "confidence": "internal measurement",
+      "caveat": "the 5,000-line warm start is a different number (1.80 s vs 0.19-0.25 s) and must not be shown in a 50,000-line row"
+    },
+    {
+      "id": "first-open",
+      "metric": "first-ever open",
+      "workload": "notes app",
+      "them": "17.1 s",
+      "us": "0.2 s",
+      "source": "evidence/benchmarks/2026-08-16-notes-battery-macos.md",
+      "source_row": "First-ever open | 17.1 s | ~0.2 s",
+      "scope": "Apple silicon Mac, macOS 27, cold first launch after install",
+      "confidence": "internal measurement"
+    },
+    {
+      "id": "idle-cpu-50k",
+      "metric": "idle CPU with the document open, 50,000 lines",
+      "workload": "50,000 lines",
+      "them": "21.2% of a core",
+      "us": "0.8%",
+      "source": "evidence/benchmarks/2026-08-16-notes-battery-macos.md",
+      "source_row": "Idle CPU, 50k | 21.2% | 0.8%",
+      "scope": "Apple silicon Mac, macOS 27",
+      "confidence": "internal measurement"
+    },
+    {
+      "id": "scroll-pacing",
+      "metric": "scroll pacing",
+      "workload": "5,000 and 50,000 lines",
+      "them": "not measured (no per-frame instrument on macOS)",
+      "us": "58 fps, jitter under 0.3 ms",
+      "source": "evidence/benchmarks/2026-08-16-notes-battery-macos.md",
+      "source_row": "Scroll pacing, 5k + 50k | no per-frame instrument on macOS | p50 17.3 ms / p99 17.5 ms at 5k; p50 17.6 / p99 17.9 at 50k",
+      "scope": "Apple silicon Mac, macOS 27, Krate only",
+      "confidence": "internal measurement",
+      "caveat": "there is no MarkText comparison for this row; it must never be written as a head-to-head win"
+    }
+  ],
+  "forbidden": [
+    {
+      "pattern": "faster than Electron",
+      "why": "a universal claim; the measurement is one app, one workload, one machine"
+    },
+    {
+      "pattern": "uses less memory than Electron",
+      "why": "same: universal from a single comparison"
+    },
+    {
+      "pattern": "independently reproducible",
+      "why": "the retained raw samples and harness do not exist for these numbers yet; the kit in marktext-vs-krate/ is the protocol for when they do"
+    },
+    {
+      "pattern": "battery life",
+      "why": "the battery leg was contaminated by live trackpad input and rejected; no energy claim is backed"
+    }
+  ]
+}

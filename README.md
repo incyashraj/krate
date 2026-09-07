@@ -75,8 +75,8 @@ architecture-matched public reproduction is in progress.
 |---|---:|---:|
 | The file itself | 271 MB installed | **37 KB** |
 | Memory, 50,000 lines | 2.3 GB across five processes | **95 MB, one process** |
-| Opens in | 1.8 s (17 s on its first run) | **0.2 s** |
-| Idle CPU, document open | 21% of a core | **0.8%** |
+| Opens in | 1.97 s (17.1 s on its first run) | **0.25 s** |
+| Idle CPU, document open | 21.2% of a core | **0.8%** |
 | Scrolling | -- | **58 fps, jitter under 0.3 ms** |
 
 Krate does not put another browser inside every app. Install the shared

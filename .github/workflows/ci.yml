@@ -1554,6 +1554,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # Public performance wording, held to the evidence it came from
+      # (IC-830). Runs first and costs nothing: it is a file read, and the
+      # drift it catches is the kind nobody notices by reading.
+      - name: Check public performance claims
+        run: python3 scripts/check-claims.py
       - name: Install mdBook
         run: |
           mkdir -p ~/bin
