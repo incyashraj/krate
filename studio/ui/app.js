@@ -1780,10 +1780,16 @@ function cardAsks(asks) {
 /* ---- driving the engine ----------------------------------------------- */
 
 /* ---- the free-tier counter (stage 19) --------------------------------
- * Local, honest, soft: three NEW apps a month on the free plan. Only a
- * session's FIRST successful build counts -- failed builds and revisions
- * never do. In preview the sheet informs and lets them continue; the same
- * rail is where checkout attaches when Studio leaves preview. */
+ * Local, honest, soft: three free makes EVER, not three a month (IC-639).
+ * Only a session's FIRST successful build counts -- failed builds and
+ * revisions never do. In preview the sheet informs and lets them continue;
+ * the same rail is where checkout attaches when Studio leaves preview.
+ *
+ * This said "three NEW apps a month" and the code matched it, while the hub
+ * has always counted mkacct:/mkdev: with no month in the key. So on the
+ * first of every month the client offered three fresh makes and the server
+ * refused them -- two policies, one product. Three ever is the decision;
+ * this layer is the one that had drifted. */
 function monthKey() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -1796,7 +1802,9 @@ function monthKey() {
 function makesLocal() {
   try {
     const rec = JSON.parse(localStorage.getItem("krateMakes") || "{}");
-    return rec.month === monthKey() ? rec.n || 0 : 0;
+    // No month comparison: a make counted in August is still counted in
+    // September (IC-639).
+    return rec.n || 0;
   } catch (e) { return 0; }
 }
 function mirrorLocal(n) {
@@ -1805,8 +1813,11 @@ function mirrorLocal(n) {
   } catch (e) {}
 }
 function makesThisMonth() {
+  // Named for history; the count is lifetime. The month still travels in
+  // the record so an older shell reading it is not confused, but nothing
+  // compares it any more (IC-639).
   const p = state.planMakes;
-  if (p && p.month === monthKey()) return p.n || 0;
+  if (p && typeof p.n === "number") return p.n;
   return makesLocal();
 }
 async function loadPlanMakes() {

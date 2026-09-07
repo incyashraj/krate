@@ -3494,14 +3494,18 @@ fn plan_makes(seed_month: Option<String>, seed_n: Option<u64>) -> serde_json::Va
     let device = device_hash();
     let now = month_key_now();
     let (stored_dev, stored_month, stored_n) = plan_read();
-    let mut n = if stored_dev == device && stored_month == now {
-        stored_n
-    } else {
-        0
-    };
-    if seed_month.as_deref() == Some(now.as_str()) {
-        n = n.max(seed_n.unwrap_or(0));
-    }
+    // Three EVER, not three a month (IC-639). The stored month is kept in
+    // the file and reported for compatibility, but it no longer resets the
+    // count: the hub has always counted `mkacct:`/`mkdev:` with no month in
+    // the key, so a month-resetting client disagreed with the server every
+    // time a month rolled over -- the person saw three fresh makes and the
+    // hub refused them. The founder decision is three ever; the client and
+    // the shell were the two layers that had drifted.
+    let mut n = if stored_dev == device { stored_n } else { 0 };
+    // The seed from localStorage is an upgrade path, not a monthly one: take
+    // the larger so nobody is reset to zero by a version change.
+    let _ = seed_month;
+    n = n.max(seed_n.unwrap_or(0));
     // The hub keeps a mirror keyed by the device hash, so a deleted
     // plan.json or a wiped cache does not mint three fresh makes. Best
     // effort: offline, the local count stands alone.
@@ -3515,7 +3519,10 @@ fn plan_count_make() -> serde_json::Value {
     let device = device_hash();
     let now = month_key_now();
     let (stored_dev, stored_month, stored_n) = plan_read();
-    let mut n = if stored_dev == device && stored_month == now {
+    let _ = stored_month;
+    // Same rule as plan_makes: the count belongs to the device for good,
+    // not to the device this month (IC-639).
+    let mut n = if stored_dev == device {
         stored_n + 1
     } else {
         1
