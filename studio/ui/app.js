@@ -893,8 +893,18 @@ function appendMessage(who, body, files, extra) {
   const el = document.createElement("div");
   const variant = extra && extra.variant ? ` ${extra.variant}` : "";
   el.className = `msg ${who === "KRATE" ? "krate" : ""}${variant}`;
-  el.innerHTML = `<span class="who">${who}</span><span class="body"></span>`;
-  el.querySelector(".body").textContent = body;
+  // Built from text nodes, not interpolated into HTML (IC-320). `who` comes
+  // from a stored session, and sessions sync through the account -- so it is
+  // network-shaped data reaching the DOM, and `${who}` in an innerHTML
+  // template is the classic way that becomes markup. The body was already
+  // set as text; the label now is too.
+  const whoEl = document.createElement("span");
+  whoEl.className = "who";
+  whoEl.textContent = who;
+  const bodyEl = document.createElement("span");
+  bodyEl.className = "body";
+  bodyEl.textContent = body;
+  el.append(whoEl, bodyEl);
   if (files && files.length) {
     const f = document.createElement("span");
     f.className = "files";
@@ -1541,7 +1551,17 @@ function fillDone(result, opts) {
   try { localStorage.setItem("krateMadeOnce", "1"); } catch (e) {}
   $("doneName").textContent = result.name;
   $("doneSize").textContent = result.size;
-  $("asks").innerHTML = cardAsks(result.asks).map((w) => `<li>${w}</li>`).join("");
+  // Text nodes, not interpolation (IC-320). An unrecognised capability falls
+  // through friendlyAsk as its raw name from the app's OWN manifest -- a
+  // bundle somebody sent you -- so this is untrusted text reaching the DOM.
+  const asksEl = $("asks");
+  asksEl.replaceChildren(
+    ...cardAsks(result.asks).map((w) => {
+      const li = document.createElement("li");
+      li.textContent = w;
+      return li;
+    }),
+  );
   // The preview is the share object: the still with the card's own caption
   // strip -- filename, size, and ONE human trust line. If someone
   // screenshots this screen, they are screenshotting the card.
