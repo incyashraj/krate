@@ -704,6 +704,14 @@ jobs:
       - name: Run Linux winit native window proof (Xvfb)
         if: matrix.os == 'ubuntu-latest'
         shell: bash
+        # A hung window proof must fail this step in minutes, not burn to
+        # GitHub's 2-hour job ceiling and take the whole run down as
+        # "cancelled" (which reads like a decision and blocks the release
+        # gate). The macOS and headless paths finish the same bounded run in
+        # seconds; a winit X11 loop under xvfb-run that does not is a real
+        # failure, and a step timeout is how it says so. The per-command
+        # `timeout` guards below name which invocation hung.
+        timeout-minutes: 15
         run: |
           sudo apt-get update -q
           # xvfb provides the display server; libxkbcommon-x11 is dlopen'd by
@@ -712,13 +720,17 @@ jobs:
           sudo apt-get install -y -q xvfb libxkbcommon-x11-0 xdotool \
             x11-apps imagemagick
           # 1. Adapter-level native smoke: real winit window round trip.
-          KRATE_WINIT_NATIVE_SMOKE=1 KRATE_WINIT_ANY_THREAD=1 xvfb-run -a \
+          KRATE_WINIT_NATIVE_SMOKE=1 KRATE_WINIT_ANY_THREAD=1 timeout 240 xvfb-run -a \
             cargo test -p krate-adapter-linux --lib -- --ignored \
             winit_prototype_native_window_smoke
           # 2. The slice's definition of done: the portable hello-gui
           #    component opens a real window on a Linux host.
           set +e
-          xvfb-run -a target/debug/krate run \
+          # 240s: the bounded quick run finishes in seconds on every other
+          # path; if the winit X11 loop under Xvfb does not, that is the hang
+          # this bounds. `timeout` exits 124 on expiry, which the check below
+          # reports as a real failure rather than a clean exit.
+          timeout 240 xvfb-run -a target/debug/krate run \
             --auto-grant \
             --native-window \
             --manifest apps/krate-hello-gui/manifest.toml \
@@ -726,6 +738,10 @@ jobs:
             -- quick
           code=$?
           set -e
+          if [ "$code" = "124" ]; then
+            echo "the native window run did not exit within 240s under Xvfb -- it hung rather than completing its bounded quick path" >&2
+            exit 1
+          fi
           # 0, not 1. K-092 ("apps stop closing their own windows", 9009099b2)
           # replaced the old scheme deliberately: it reported 1 for a bounded
           # run with no click and 2 for a window closed first, which made the
