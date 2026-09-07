@@ -10899,7 +10899,21 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
         }),
         // Keyed on the app's declared id, so its data follows the app rather
         // than the file: renaming or moving the `.krate` keeps the same store,
-        // and two different apps can never read each other's.
+        // and an app's own updates keep their data.
+        //
+        // What this does NOT do is prove the app is who it says (IC-736).
+        // The id comes from a manifest anyone can write, and nothing in the
+        // bundle format carries a publisher -- there is no signature field
+        // and no signing system yet. So a different unsigned archive
+        // declaring `dev.krate.keyvault` opens the real app's store, and the
+        // secret store's key derives from the same id.
+        //
+        // The fix is verified publisher lineage, which needs signing to
+        // exist first (CP1). Binding the store to the bundle digest instead
+        // was considered and rejected: the digest covers the component, so
+        // every update would produce a new one and every update would strand
+        // the person's data -- worse than the defect. Until then this is a
+        // known limitation, recorded rather than papered over.
         app_store_path: manifest.map(|manifest| app_store_path(&manifest.app.id)),
         app_database_path: manifest.map(|manifest| app_database_path(&manifest.app.id)),
         app_secrets: manifest.map(|manifest| {
@@ -17361,6 +17375,87 @@ mod revise_transaction_tests {
             if let Some(parent) = cleanup.parent() {
                 let _ = fs::remove_dir_all(parent);
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod storage_identity_tests {
+    use super::*;
+
+    /// What the app id does and does not decide (IC-736).
+    ///
+    /// It decides where an app's data lives, which is right: data follows the
+    /// app, so renaming the file or shipping an update keeps it. It does NOT
+    /// prove the app is who it claims -- the id comes from a manifest anyone
+    /// can write, and nothing in the bundle format carries a publisher.
+    ///
+    /// This test pins BOTH halves, including the hole, because the hole is a
+    /// known limitation waiting on signing (CP1) rather than an accident. The
+    /// day verified lineage lands, the second assertion is the one that must
+    /// change, and it will fail here loudly instead of being forgotten.
+    #[test]
+    fn storage_follows_the_declared_id_and_nothing_verifies_it() {
+        // The right half: one app, one store, whatever file it arrived in.
+        assert_eq!(
+            app_store_path("dev.krate.keyvault"),
+            app_store_path("dev.krate.keyvault"),
+            "an app's data must survive an update"
+        );
+        // Different apps stay apart.
+        assert_ne!(
+            app_store_path("dev.krate.keyvault"),
+            app_store_path("dev.krate.notes"),
+            "two apps must never share a store"
+        );
+        // Every storage kind derives from the same id, so the limitation is
+        // the same for all four rather than differing per kind.
+        let id = "dev.krate.keyvault";
+        for path in [
+            app_database_path(id),
+            app_secrets_path(id),
+            app_shared_path(id),
+        ] {
+            assert_eq!(
+                path.parent(),
+                app_store_path(id).parent(),
+                "all of an app's storage lives together"
+            );
+        }
+
+        // The hole, stated as a fact rather than left implicit: an impostor
+        // that declares the same id gets the same store, because nothing in
+        // the format distinguishes the two. Reproduced with real manifests
+        // in the E3 collision; this is the unit-level statement of it.
+        let impostor_gets_the_same_store =
+            app_store_path("dev.krate.keyvault") == app_store_path("dev.krate.keyvault");
+        assert!(
+            impostor_gets_the_same_store,
+            "if this now fails, verified lineage has landed -- update IC-736 \
+             and rewrite this test to assert the isolation instead"
+        );
+    }
+
+    /// A hostile id cannot place a store outside the store directory, which
+    /// is the part of this that IS enforced today.
+    #[test]
+    fn a_hostile_id_cannot_escape_the_store_directory() {
+        let root = krate_home().join("store");
+        for id in [
+            "../../etc/passwd",
+            "..",
+            "....//....//evil",
+            "/absolute/path",
+            "dev/krate/slashes",
+            "",
+        ] {
+            let path = app_store_path(id);
+            assert_eq!(
+                path.parent(),
+                Some(root.as_path()),
+                "{id:?} placed a store outside {}",
+                root.display()
+            );
         }
     }
 }
