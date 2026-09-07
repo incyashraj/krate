@@ -466,17 +466,21 @@ jobs:
     runs-on: ${{ matrix.os }}
     needs: hello-fixture
     # A stuck runner (a hung evidence step, a stalled GUI proof) must fail the
-    # lane, not sit at GitHub's 6-hour default. Ubuntu/macOS finish in ~25 min,
-    # but the Windows lane legitimately takes ~53 (slower runner + cache save),
-    # so 75 leaves margin while still catching a real hang.
-    # 120, raised from 75. The job used to fail at early steps and never see
-    # its own full length; once everything passed, the ubuntu and windows
-    # lanes ran straight into the 75-minute wall and the whole run concluded
-    # "cancelled" -- which blocked a release for a reason that was neither a
-    # failure nor anyone's decision. macOS completes in ~40; the other two
-    # need over 75 now that the checklist, voice-prompter and authoring-loop
-    # steps all execute instead of stopping short.
-    timeout-minutes: 120
+    # lane, not sit at GitHub's 6-hour default.
+    #
+    # This number must stay UNDER GitHub's hard 2-hour job ceiling, which is
+    # separate from timeout-minutes and cannot be raised. Setting it to 120
+    # meant the two were equal, so the platform always won: a hung Windows
+    # Phase 1 step burned to the ceiling and the whole run concluded
+    # "cancelled" rather than the lane failing "timed out". A cancelled run
+    # names no cause and blocks a release for a reason that is neither a
+    # failure nor anyone's decision -- which is exactly what it did on
+    # run 34094426007.
+    #
+    # Measured on that run: macOS 37 min, ubuntu 46 min. Windows reaches the
+    # Phase 1 step at 33 min. 90 leaves real margin on the slowest lane while
+    # still failing, with a step name attached, well before the ceiling.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
