@@ -10690,6 +10690,25 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
     }
     let manifest_path = bundle_manifest.or(request.manifest_path.clone());
 
+    // Computed once, while the bundle is open, so every JSON report below can
+    // name the artifact it is about (IC-717). The archive digest reads the
+    // file the person actually passed; the other two come from its contents.
+    // A digest that cannot be computed is left absent rather than guessed --
+    // an identity nobody can check is worse than none.
+    let run_identity = bundle.as_ref().map(|bundle| RunIdentity {
+        archive: std::fs::read(&request.target)
+            .ok()
+            .map(|bytes| krate_bundle::provenance::digest_archive_bytes(&bytes).digest),
+        execution: bundle.digest().ok().map(|d| d.digest),
+        project: bundle.project_digest().ok().and_then(|project| {
+            // Only when there is genuinely more to rebuild. The two layers
+            // differ by schema tag even over identical entries, so comparing
+            // their values would report a project that does not exist.
+            let execution = bundle.digest().ok()?;
+            (project.entries.len() > execution.entries.len()).then_some(project.digest)
+        }),
+    });
+
     let request = RunRequest {
         file: file.clone(),
         manifest_path,
@@ -10772,6 +10791,7 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
                     RunJsonExit::denied_before_run(&missing),
                     None,
                     "",
+                    run_identity.as_ref(),
                 );
             } else {
                 eprintln!("This app needs permission it was not given, so it did not run.");
@@ -10974,6 +10994,7 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
             exit,
             Some(duration_ms),
             &String::from_utf8_lossy(&stdout),
+            run_identity.as_ref(),
         );
         return Ok(cli_code);
     }
@@ -11038,6 +11059,25 @@ impl RunJsonExit {
     }
 }
 
+/// What ran, bound to the report of it running (IC-717).
+///
+/// A run report that cannot name its artifact is a claim about nothing: two
+/// bundles can carry the same app id and version, and "this app passed" then
+/// means "some file called that passed". The capability dump already carried
+/// identities while the run envelope carried none.
+///
+/// The project identity is included when the bundle has one, because that is
+/// what tells two builds of the same behaviour apart -- but only ever as a
+/// digest. Nothing here reproduces a byte of source.
+struct RunIdentity {
+    /// The file's own bytes: "is this the file I was sent".
+    archive: Option<String>,
+    /// What runs -- manifest, component, assets.
+    execution: Option<String>,
+    /// What could be rebuilt. Absent unless the bundle carries source or SDK.
+    project: Option<String>,
+}
+
 /// Print the krate.run.v1 JSON object describing one run.
 fn print_run_json(
     manifest: Option<&Manifest>,
@@ -11045,6 +11085,7 @@ fn print_run_json(
     exit: RunJsonExit,
     duration_ms: Option<u128>,
     stdout: &str,
+    identity: Option<&RunIdentity>,
 ) {
     let app = manifest.map(|manifest| {
         serde_json::json!({
@@ -11084,6 +11125,19 @@ fn print_run_json(
         "remedy": remedy,
         "duration_ms": duration_ms,
         "stdout": stdout,
+        // What ran, and what ran it. Without these a report says an app
+        // passed without saying which file that was, or on what (IC-717).
+        "identity": identity.map(|id| {
+            serde_json::json!({
+                "archive": id.archive,
+                "execution": id.execution,
+                "project": id.project,
+            })
+        }),
+        "runtime": {
+            "version": env!("CARGO_PKG_VERSION"),
+            "platform": format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
+        },
     });
 
     println!("{payload}");

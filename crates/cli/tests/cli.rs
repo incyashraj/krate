@@ -3527,6 +3527,94 @@ fn check_app_passes_a_cli_app_that_needs_an_argument() {
     );
 }
 
+/// A run report names the artifact it is about (IC-717).
+///
+/// `run --json` carried the app id and version and no identity at all, while
+/// the capability dump exposed one. Two bundles can declare the same id and
+/// version, so "this app passed" meant "some file called that passed".
+///
+/// The three identities answer three different questions and this pins all
+/// of them, plus the rule that the project identity is absent -- not
+/// duplicated from the execution one -- when there is nothing extra to
+/// rebuild.
+#[test]
+fn a_run_report_names_the_exact_artifact_it_ran() {
+    // The clock component, because it is built against the CURRENT world.
+    // The hello fixture is Phase 1 and cannot instantiate, which would fail
+    // this test for a reason that has nothing to do with identities.
+    let Some(component) = configured_krate_clock_component() else {
+        eprintln!("skipping: no krate-clock component configured");
+        return;
+    };
+    let dir = tempfile::tempdir().expect("temp dir");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        "[app]\nid = \"dev.krate.identity\"\nname = \"Identity\"\nversion = \"1.0.0\"\n\
+         entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+         [[capabilities]]\ncap = \"time.clock\"\nrationale = \"tell the time\"\n\
+         required = true\n",
+    )
+    .expect("write manifest");
+
+    let bundle = dir.path().join("app.krate");
+    let packed = krate()
+        .args(["pack"])
+        .arg(&component)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("--output")
+        .arg(&bundle)
+        .output()
+        .expect("run pack");
+    assert!(
+        packed.status.success(),
+        "pack: {}",
+        String::from_utf8_lossy(&packed.stderr)
+    );
+
+    let output = krate()
+        .arg("run")
+        .arg(&bundle)
+        .arg("--json")
+        .output()
+        .expect("run --json");
+    let payload: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("the report is one JSON object");
+
+    assert_eq!(payload["schema"], "krate.run.v1");
+    let identity = &payload["identity"];
+    for layer in ["archive", "execution"] {
+        let value = identity[layer]
+            .as_str()
+            .unwrap_or_else(|| panic!("the report must carry the {layer} identity: {payload}"));
+        assert_eq!(value.len(), 64, "{layer} must be a full sha256");
+    }
+    assert_ne!(
+        identity["archive"], identity["execution"],
+        "the file's bytes and what runs are different questions and must not \
+         be answered with one number",
+    );
+    assert!(
+        identity["project"].is_null(),
+        "a bundle with no source has nothing extra to rebuild, and inventing \
+         a second identity for it would be a claim about nothing: {payload}",
+    );
+
+    // What ran it, not only what ran: a report that cannot say which runtime
+    // and platform produced it cannot be compared across machines.
+    assert!(
+        payload["runtime"]["version"].is_string(),
+        "the report must name the runtime that produced it: {payload}"
+    );
+    assert!(
+        payload["runtime"]["platform"]
+            .as_str()
+            .is_some_and(|p| p.contains('-')),
+        "platform must be arch-os: {payload}"
+    );
+}
+
 fn configured_hello_component() -> Option<PathBuf> {
     configured_component_from_env("KRATE_HELLO_WASM", "hello component test")
 }
