@@ -4174,6 +4174,22 @@ pub(crate) fn recent_apps() -> Vec<PathBuf> {
 }
 
 /// Write a `.krate` bundle from a component and its manifest.
+/// What this machine knows about withdrawn signing keys.
+///
+/// Krate has no revocation feed yet (ADR-0016 designs one and it is
+/// deliberately unbuilt), so the honest answer is "not checked" rather than
+/// an empty list. Those are different claims: an empty list says every key is
+/// fine, and this machine cannot say that.
+///
+/// The consequence is visible rather than hidden -- a delegated release
+/// verifies with UnknownRevocationState, and the trust screen says whether
+/// the key has since been withdrawn could not be checked from here.
+fn revocations_known_here() -> krate_bundle::delegation::RevocationState {
+    krate_bundle::delegation::RevocationState::Unknown {
+        last_known: Vec::new(),
+    }
+}
+
 /// Sign a bundle so a recipient can check who it came from (IC-015).
 fn sign_bundle_command(
     file: &Path,
@@ -4223,7 +4239,15 @@ fn sign_bundle_command(
         .version
         .clone();
 
-    let envelope = krate_bundle::sign_bundle(file, &key, namespace, &version)
+    // The one place a clock is legitimately read: signing is the act of
+    // saying "at this moment, I vouch for these bytes". Verification never
+    // reads a clock -- it measures against this recorded instant, which is
+    // inside the signed bytes and so cannot be moved to dodge an expiry.
+    let signed_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let envelope = krate_bundle::sign_bundle(file, &key, namespace, &version, signed_at)
         .map_err(|err| anyhow::anyhow!("{err}"))?;
     println!("signed {}", file.display());
     println!("  namespace {}", envelope.namespace);
@@ -10830,8 +10854,9 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
     // the same position as unsigned.
     if let Some(krate_bundle::signing::Verdict::Tampered { problems }) = bundle
         .as_ref()
-        .and_then(|bundle| bundle.signature_verdict().ok())
+        .and_then(|bundle| bundle.full_verdict(&revocations_known_here()).ok())
         .flatten()
+        .map(|full| full.signature)
     {
         eprintln!("error: this app was changed after it was signed");
         for problem in &problems {
@@ -10906,7 +10931,7 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
             // an identity was printed, not by this.
             bundle
                 .as_ref()
-                .and_then(|bundle| bundle.signature_verdict().ok())
+                .and_then(|bundle| bundle.full_verdict(&revocations_known_here()).ok())
                 .flatten(),
         )?;
         return Ok(0);
@@ -12585,7 +12610,7 @@ fn print_effective_capabilities(
     format: OutputFormat,
     digest: Option<krate_bundle::provenance::BundleDigest>,
     project_digest: Option<krate_bundle::provenance::BundleDigest>,
-    signature: Option<krate_bundle::signing::Verdict>,
+    signature: Option<krate_bundle::signing::FullVerdict>,
 ) -> Result<()> {
     if format == OutputFormat::Json {
         let dump = RunCapsDump {
@@ -12655,9 +12680,9 @@ fn print_effective_capabilities(
     // every app today is unsigned, and a warning that fires on everything
     // teaches people to ignore warnings -- which is worse than saying
     // nothing, because it also devalues the line when it does matter.
-    if let Some(verdict) = &signature {
+    if let Some(full) = &signature {
         println!("Signature");
-        match verdict {
+        match &full.signature {
             krate_bundle::signing::Verdict::Valid { public_key } => {
                 let key: String = public_key.iter().map(|b| format!("{b:02x}")).collect();
                 println!("  - signed, and the file matches what was signed");
@@ -12670,6 +12695,15 @@ fn print_effective_capabilities(
                 for line in other.to_string().lines() {
                     println!("  - {line}");
                 }
+            }
+        }
+        // The chain, when the publisher used a delegated release key. A
+        // signature can be perfect and the key still not authorised -- the
+        // publisher may have withdrawn it, or it may never have covered this
+        // namespace -- so this line is not decoration.
+        if let Some(chain) = &full.chain {
+            for line in chain.to_string().lines() {
+                println!("  - {line}");
             }
         }
         println!();

@@ -782,7 +782,8 @@ mod tests {
         let root = key();
         let release = key();
         let delegation = delegation_for(&root, &release, "acme/notes");
-        let statement = SignedStatement::build("acme/notes", "1.0.0", &Default::default());
+        let statement =
+            SignedStatement::build("acme/notes", "1.0.0", SIGNED_AT, &Default::default());
 
         assert_ne!(
             delegation.canonical_bytes(),

