@@ -41,8 +41,9 @@ ehthumbs.db
 /scripts/out/
 /outputs/
 
-# Fuzz artifacts
-/fuzz/Cargo.lock
+# Fuzz outputs. The LOCK is not here: it is the pin, not an artifact --
+# ignoring it made the nightly's `cargo fetch --locked` fail on a lock file
+# that never shipped, and left the fuzz build's dependency graph floating.
 /fuzz/corpus/
 /fuzz/artifacts/
 
