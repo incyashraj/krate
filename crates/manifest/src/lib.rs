@@ -685,6 +685,10 @@ fn validate_capability_resource(
         return Ok(());
     }
 
+    // `store.group` is not declarable yet -- see the test on
+    // validate_group_name. The dispatch stays out until the capability
+    // exists, so nothing suggests a grant that does nothing.
+
     if module == "ui" {
         validate_ui_resource(action, resource)?;
         return Ok(());
@@ -785,6 +789,47 @@ fn canonicalize_connect_resource(resource: &str) -> Option<String> {
     }
 
     Some(format!("{host}:{port}"))
+}
+
+/// A shared-group name, which becomes a directory component (IC-738).
+///
+/// Held to a narrow shape rather than sanitised, because sanitising is how
+/// two different names quietly become one store: `family budget` and
+/// `family/budget` both flattening to `family_budget` would put two groups
+/// that were never meant to meet in the same bucket. A name Krate cannot
+/// represent exactly is refused instead.
+///
+/// It is also shown to a person on the permission wall, so it must read as
+/// itself: no control characters, no leading or trailing punctuation.
+#[cfg_attr(not(test), allow(dead_code))]
+fn validate_group_name(name: &str) -> std::result::Result<(), String> {
+    if name.is_empty() {
+        return Err("a shared group needs a name".to_string());
+    }
+    if name.len() > 64 {
+        return Err(format!(
+            "shared group name is {} characters; 64 is the limit, so it fits \
+             on the permission screen a person reads",
+            name.len()
+        ));
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    {
+        return Err(format!(
+            "shared group name `{name}` may use only lowercase letters, \
+             digits and hyphens. Anything else has to be flattened to sit in \
+             a path, and two names flattening to one would silently share a \
+             store that was never meant to be shared."
+        ));
+    }
+    if name.starts_with('-') || name.ends_with('-') {
+        return Err(format!(
+            "shared group name `{name}` cannot start or end with a hyphen"
+        ));
+    }
+    Ok(())
 }
 
 fn validate_connect_resource(resource: &str) -> std::result::Result<(), String> {
@@ -982,6 +1027,50 @@ mod tests {
             "the regression corpus went missing or empty ({fed} inputs) -- \
              this lane only means something while it feeds real inputs"
         );
+    }
+
+    /// A shared-group name is refused rather than flattened (IC-738).
+    ///
+    /// The validator is here ahead of the capability it will gate. That is
+    /// deliberate: `store.group` cannot be declarable until a host call
+    /// exists for it -- a capability an app can ask for, a person can grant,
+    /// and nothing then does is worse than no capability -- and the runtime
+    /// cannot gain that interface until it can host older worlds (IC-016),
+    /// or all 53 existing apps stop starting.
+    ///
+    /// What CAN be settled now is the naming rule, and settling it early is
+    /// the point: names are refused, never sanitised, because two different
+    /// names flattening to one identifier would silently share a store that
+    /// was never meant to be shared -- the exact collision the capability
+    /// exists to replace with a deliberate act.
+    #[test]
+    fn a_shared_group_name_is_refused_rather_than_flattened() {
+        for good in ["family-budget", "notes2", "a", "team-1-plans"] {
+            validate_group_name(good)
+                .unwrap_or_else(|err| panic!("{good:?} is an ordinary group name: {err}"));
+        }
+
+        // Every one of these would flatten into a name that already exists,
+        // or into something that is not a single path component.
+        for hostile in [
+            "family budget", // space -> would flatten onto family-budget
+            "family/budget", // separator -> a second path component
+            "family_budget", // underscore -> another flattening collision
+            "Family-Budget", // case -> two names, one directory on macOS
+            "../escape",
+            "-leading",
+            "trailing-",
+            "",
+        ] {
+            assert!(
+                validate_group_name(hostile).is_err(),
+                "{hostile:?} must be refused, not flattened into some other \
+                 group's store",
+            );
+        }
+
+        // Long enough to be unreadable on the screen a person decides from.
+        assert!(validate_group_name(&"a".repeat(65)).is_err());
     }
 
     /// The check must not become a filter on what an app may call itself.

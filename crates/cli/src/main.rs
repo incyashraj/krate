@@ -15844,6 +15844,56 @@ pub(crate) fn development_identity() -> Option<String> {
     Some(id)
 }
 
+/// Where a named shared group's store lives (IC-738).
+///
+/// NOT YET REACHABLE FROM AN APP. The `store.group:<name>` capability
+/// parses, validates and walls, and this decides where such a group's data
+/// would live -- but no guest interface exposes it, because adding one to
+/// the WIT world would stop all 53 existing apps from starting: the runtime
+/// hosts exactly the current worlds and multi-version linking is IC-016,
+/// unbuilt. Verified rather than assumed -- a bundle naming an older world
+/// today fails with "built against different versions of the app
+/// interface".
+///
+/// Landing the path rule now means the authorization question is settled
+/// before an interface exists to get it wrong, which is the order the
+/// register asks for.
+///
+/// Scoped by LINEAGE, not by the name alone. If any app declaring
+/// `store.group:family-budget` joined, a downloaded archive declaring the
+/// same string would join too -- the same collision, wearing a capability's
+/// clothes. So the group is owned by whoever the joining app is:
+///
+/// - a verified app's group belongs to its publisher root, so two publishers
+///   may each have a `family-budget` and never meet;
+/// - an unsigned app's group belongs to this machine, so a file that arrives
+///   from elsewhere cannot join a group its author merely guessed the name
+///   of.
+///
+/// Groups live in their own directory, never beside an app's private stores,
+/// so nothing can reach a group's data by guessing an app-shaped filename --
+/// and `store.kv`, `store.sql` and `store.secret` stay private by default,
+/// which the requirement asks for in those words.
+#[cfg_attr(not(test), allow(dead_code))]
+fn group_store_path(principal: &StoragePrincipal, group: &str) -> PathBuf {
+    let owner = match principal {
+        StoragePrincipal::Verified { publisher, .. } => {
+            format!("pub-{}", &publisher[..publisher.len().min(16)])
+        }
+        StoragePrincipal::Development { developer, .. } => {
+            format!("dev-{}", &developer[..developer.len().min(16)])
+        }
+        // An app with no lineage at all shares only with other apps that
+        // also have none, on this machine. That is weaker than the other two
+        // and it is named `shared-` so nobody reads it as a guarantee.
+        StoragePrincipal::Unverified { .. } => "shared".to_string(),
+    };
+    krate_home()
+        .join("groups")
+        .join(owner)
+        .join(format!("{}.kv", sanitize_storage_name(group)))
+}
+
 /// Where a principal's storage lives.
 ///
 /// A verified app gets its own directory named for the publisher, so it can
@@ -18160,6 +18210,90 @@ mod storage_identity_tests {
     /// known limitation waiting on signing (CP1) rather than an accident. The
     /// day verified lineage lands, the second assertion is the one that must
     /// change, and it will fail here loudly instead of being forgotten.
+    /// A shared group is owned by lineage, not by its name (IC-738).
+    ///
+    /// If the name alone decided, a downloaded archive declaring
+    /// `store.group:family-budget` would join the local group of that name --
+    /// the same collision the storage work exists to stop, wearing a
+    /// capability's clothes.
+    #[test]
+    fn a_shared_group_belongs_to_whoever_joins_it_not_to_its_name() {
+        let publisher_app = StoragePrincipal::Verified {
+            publisher: "1111111111111111".to_string(),
+            app_id: "com.acme.budget".to_string(),
+        };
+        let other_publisher = StoragePrincipal::Verified {
+            publisher: "2222222222222222".to_string(),
+            app_id: "com.acme.budget".to_string(),
+        };
+        let local_app = StoragePrincipal::Development {
+            developer: "3333333333333333".to_string(),
+            app_id: "com.acme.budget".to_string(),
+        };
+        let stranger = StoragePrincipal::Unverified {
+            app_id: "com.acme.budget".to_string(),
+        };
+
+        let group = "family-budget";
+        let mine = group_store_path(&publisher_app, group);
+
+        assert_ne!(
+            mine,
+            group_store_path(&other_publisher, group),
+            "two publishers may each have a family-budget and never meet",
+        );
+        assert_ne!(
+            mine,
+            group_store_path(&local_app, group),
+            "a local build must not join a publisher's group by naming it",
+        );
+        assert_ne!(
+            mine,
+            group_store_path(&stranger, group),
+            "an unsigned archive must not join by guessing the name -- this \
+             is the collision, wearing a capability's clothes",
+        );
+
+        // One publisher's own two apps DO meet, which is the point: that is
+        // the designed sharing this replaces the collision with.
+        let sibling = StoragePrincipal::Verified {
+            publisher: "1111111111111111".to_string(),
+            app_id: "com.acme.reports".to_string(),
+        };
+        assert_eq!(
+            mine,
+            group_store_path(&sibling, group),
+            "the same publisher's apps sharing a named group is the feature",
+        );
+
+        // Different group names never meet, whoever owns them.
+        assert_ne!(mine, group_store_path(&publisher_app, "holiday-fund"));
+    }
+
+    /// A group's data never sits where an app's private store could be
+    /// reached by guessing a filename, and private storage stays private.
+    #[test]
+    fn group_storage_is_kept_away_from_private_storage() {
+        let principal = StoragePrincipal::Verified {
+            publisher: "1111111111111111".to_string(),
+            app_id: "com.acme.budget".to_string(),
+        };
+        let group = group_store_path(&principal, "family-budget");
+        let private = principal_store_path(&principal);
+
+        assert_ne!(group, private);
+        assert_ne!(
+            group.parent(),
+            private.parent(),
+            "groups live in their own directory, so nothing reaches a group \
+             by guessing an app-shaped filename",
+        );
+        // The requirement's words: private kv, sql and secrets stay private.
+        for extension in ["sqlite", "secrets"] {
+            assert_ne!(group, private.with_extension(extension));
+        }
+    }
+
     /// A development identity separates this machine's data from a
     /// publisher's and from another machine's (IC-737).
     ///
