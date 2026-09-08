@@ -352,6 +352,42 @@ pub type Result<T> = std::result::Result<T, PolicyError>;
 mod tests {
     use super::*;
 
+    /// The fuzz campaign's interesting inputs, replayed every run (IC-163).
+    /// Same body as fuzz/fuzz_targets/policy_match.rs: grant on line one,
+    /// required on line two, then allows() and check(). A panic fails;
+    /// nothing else can.
+    #[test]
+    fn every_fuzz_regression_input_runs_without_panicking() {
+        use std::str::FromStr;
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fuzz/regressions/policy_match");
+        let mut fed = 0;
+        for entry in std::fs::read_dir(&dir).expect("the regression corpus exists") {
+            let bytes = std::fs::read(entry.expect("entry").path()).expect("fixture");
+            let Ok(input) = std::str::from_utf8(&bytes) else {
+                continue;
+            };
+            let mut lines = input.lines();
+            let (Some(grant_line), Some(required_line)) = (lines.next(), lines.next()) else {
+                continue;
+            };
+            let (Ok(grant), Ok(required)) = (
+                Capability::from_str(grant_line),
+                Capability::from_str(required_line),
+            ) else {
+                continue;
+            };
+            let policy = SessionPolicy::from_grants([grant]);
+            let _ = policy.allows(&required);
+            let _ = policy.check(&required);
+            fed += 1;
+        }
+        assert!(
+            fed >= 3,
+            "the regression corpus went missing or empty ({fed} usable inputs)"
+        );
+    }
+
     fn manifest_declaring(caps: &[&str]) -> Manifest {
         let mut source = String::from(
             "[app]\nid = \"dev.krate.test\"\nname = \"Test\"\nversion = \"1.0.0\"\n\

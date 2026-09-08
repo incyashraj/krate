@@ -177,6 +177,36 @@ fn has_windows_ambiguous_suffix(segment: &str) -> bool {
 mod tests {
     use super::*;
 
+    /// The fuzz campaign's interesting inputs, replayed every run (IC-163).
+    /// Same body as fuzz/fuzz_targets/logical_path_parse.rs: parse, and if
+    /// it parses, walk every operation over it. No outcome is wrong; a
+    /// panic is.
+    #[test]
+    fn every_fuzz_regression_input_runs_without_panicking() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fuzz/regressions/logical_path_parse");
+        let mut fed = 0;
+        for entry in std::fs::read_dir(&dir).expect("the regression corpus exists") {
+            let bytes = std::fs::read(entry.expect("entry").path()).expect("fixture");
+            if let Ok(input) = std::str::from_utf8(&bytes) {
+                if let Ok(path) = LogicalPath::parse(input) {
+                    let _ = path.as_str();
+                    let _ = path.to_path_buf();
+                    let _ = FsOperation::Existing.validate_target(&path);
+                    let _ = FsOperation::CreateLeaf.validate_target(&path);
+                    let _ = FsOperation::RemoveLeaf.validate_target(&path);
+                    let _ = FsOperation::RenameSource.validate_target(&path);
+                    let _ = FsOperation::RenameDestination.validate_target(&path);
+                }
+            }
+            fed += 1;
+        }
+        assert!(
+            fed >= 4,
+            "the regression corpus went missing or empty ({fed} inputs)"
+        );
+    }
+
     #[test]
     fn normalizes_relative_paths() {
         let path = LogicalPath::parse("./fixtures//public\\note.txt").expect("valid path");

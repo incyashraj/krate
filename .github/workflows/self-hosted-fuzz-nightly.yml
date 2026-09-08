@@ -55,9 +55,75 @@ jobs:
             rustup toolchain install nightly --profile minimal
           fi
 
+      # The corpus lives OUTSIDE the workspace. actions/checkout defaults to
+      # clean=true (git clean -ffdx), which deleted the untracked fuzz/corpus
+      # directory on every nightly checkout -- so ten weeks of "nightly
+      # fuzzing" explored from scratch every night (K-244). A campaign is the
+      # corpus; without it this was a smoke test wearing a campaign's name.
+      - name: Restore the corpus
+        shell: bash
+        run: |
+          mkdir -p "$HOME/krate-fuzz-corpus"
+          mkdir -p fuzz/corpus
+          cp -R "$HOME/krate-fuzz-corpus/." fuzz/corpus/ 2>/dev/null || true
+          for d in fuzz/corpus/*/; do
+            [ -d "$d" ] && echo "restored $(ls "$d" | wc -l | tr -d ' ') inputs into $d"
+          done || true
+
+      # The network is only needed here. Five straight nightlies died on
+      # "transfer too slow" from this machine to crates.io before a single
+      # input ran (K-244) -- so the fetch retries hard, and the fuzz itself
+      # then runs offline, where a flaky network cannot reach it.
+      - name: Fetch dependencies (with retries), then go offline
+        env:
+          RUSTUP_TOOLCHAIN: nightly
+          CARGO_NET_RETRY: "10"
+          CARGO_HTTP_TIMEOUT: "120"
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if cargo fetch --manifest-path fuzz/Cargo.toml --locked; then
+              exit 0
+            fi
+            echo "fetch attempt $attempt failed; waiting before retrying"
+            sleep 30
+          done
+          echo "::error::could not fetch fuzz dependencies after 3 attempts"
+          exit 1
+
       - name: Run fuzz targets
         env:
           RUSTUP_TOOLCHAIN: nightly
+          CARGO_NET_OFFLINE: "true"
         # caffeinate -i keeps this macOS laptop from idle-sleeping mid-fuzz
         # (the exact failure mode of the 2026-07-19/20 cancelled runs).
         run: caffeinate -i scripts/run-phase2-fuzz-smoke.sh
+
+      # What tonight's run learned goes back outside the workspace, so
+      # tomorrow starts where tonight stopped.
+      - name: Save the corpus
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p "$HOME/krate-fuzz-corpus"
+          [ -d fuzz/corpus ] && cp -R fuzz/corpus/. "$HOME/krate-fuzz-corpus/" || true
+
+      # The campaign's evidence: per-target logs and the corpus counts, kept
+      # with the run rather than lost with the terminal (IC-163).
+      - name: Upload fuzz evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: fuzz-nightly-evidence
+          path: target/fuzz-nightly/
+          if-no-files-found: warn
+
+      # Any crash cargo-fuzz wrote is the single most valuable output of the
+      # whole night. Kept even when -- especially when -- the job fails.
+      - name: Upload crash artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: fuzz-crashes
+          path: fuzz/artifacts/
+          if-no-files-found: ignore

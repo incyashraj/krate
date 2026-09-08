@@ -1721,6 +1721,39 @@ jobs:
   # ──────────────────────────────────────────────
   # 15. Dependency audit (cargo-deny)
   # ──────────────────────────────────────────────
+  # ──────────────────────────────────────────────
+  # Fuzz evidence freshness (IC-163, K-244)
+  # ──────────────────────────────────────────────
+  # The nightly fuzz runs on a self-hosted laptop, and when it broke it
+  # broke silently: ten straight days dark and no job anybody reads said so.
+  # This runs in the full suite -- the one a stable release requires -- so a
+  # stale campaign denies a release rather than merely being findable.
+  fuzz-freshness:
+    name: Fuzz evidence freshness
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    steps:
+      - name: The last successful nightly must be under 7 days old
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          last=$(gh api \
+            "repos/${{ github.repository }}/actions/workflows/self-hosted-fuzz-nightly.yml/runs?status=success&per_page=1" \
+            --jq '.workflow_runs[0].created_at // empty')
+          if [ -z "$last" ]; then
+            echo "::error::no successful fuzz nightly has EVER run -- the campaign is not evidence"
+            exit 1
+          fi
+          age_days=$(( ( $(date -u +%s) - $(date -u -d "$last" +%s) ) / 86400 ))
+          echo "last successful fuzz nightly: $last (${age_days} day(s) ago)"
+          if [ "$age_days" -gt 7 ]; then
+            echo "::error::the fuzz signal has been dark for ${age_days} days. A stable release cannot lean on a campaign that is not running -- fix the nightly (see K-244) or run it by hand (gh workflow run self-hosted-fuzz-nightly.yml) before releasing."
+            exit 1
+          fi
+
   deny:
     name: Dependency audit (cargo-deny)
     if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}

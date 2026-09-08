@@ -1,0 +1,14 @@
+[[capabilities]]
+cap = "io.stdout"
+rationale = "print"
+required = true
+[app]
+id = "com.example.x"
+name = "X"
+version = "1"
+entry = "a.wasm"
+world = "krate:app/cli@0.1.0"
+[[capabilities]]
+cap = "io.stdin"
+rationale = "read"
+required = true

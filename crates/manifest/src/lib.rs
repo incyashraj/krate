@@ -954,6 +954,36 @@ mod tests {
         }
     }
 
+    /// Every input the fuzz campaign found interesting, replayed on every
+    /// test run (IC-163).
+    ///
+    /// The nightly fuzz explores; what it learns must not evaporate. Each
+    /// file under fuzz/regressions/manifest_parse goes through the same call
+    /// the fuzz target makes -- parse may accept or refuse, it must not
+    /// panic. When a nightly finds a crash, its minimized input is added
+    /// here and the crash can never quietly return.
+    #[test]
+    fn every_fuzz_regression_input_parses_without_panicking() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fuzz/regressions/manifest_parse");
+        let mut fed = 0;
+        for entry in std::fs::read_dir(&dir).expect("the regression corpus exists") {
+            let path = entry.expect("readable dir entry").path();
+            let bytes = std::fs::read(&path).expect("readable fixture");
+            // Exactly the fuzz target's body (fuzz/fuzz_targets/manifest_parse.rs):
+            // utf8 or skip, then parse, outcome ignored.
+            if let Ok(input) = std::str::from_utf8(&bytes) {
+                let _ = Manifest::parse(input);
+            }
+            fed += 1;
+        }
+        assert!(
+            fed >= 4,
+            "the regression corpus went missing or empty ({fed} inputs) -- \
+             this lane only means something while it feeds real inputs"
+        );
+    }
+
     /// The check must not become a filter on what an app may call itself.
     /// Every one of these is ordinary text somebody would legitimately use.
     #[test]

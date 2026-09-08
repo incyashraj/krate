@@ -51,7 +51,48 @@ export PATH="$nightly_bindir:$PATH"
 export CARGO="$nightly_cargo"
 export RUSTC="$nightly_rustc"
 
+# Evidence with the run, not lost with the terminal (IC-163): every target's
+# full log, and a summary of what the campaign holds afterwards.
+EVIDENCE_DIR="target/fuzz-nightly"
+mkdir -p "$EVIDENCE_DIR"
+SUMMARY="$EVIDENCE_DIR/summary.md"
+{
+  echo "# Fuzz run"
+  echo
+  echo "Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "Commit: $(git rev-parse HEAD 2>/dev/null || echo unknown)"
+  echo "Seconds per target: $FUZZ_MAX_TOTAL_TIME"
+  echo "Engine: $(cargo-fuzz --version 2>/dev/null || echo cargo-fuzz)"
+  echo
+} > "$SUMMARY"
+
 for target in $FUZZ_TARGETS; do
   echo "Running cargo-fuzz target '$target' for ${FUZZ_MAX_TOTAL_TIME}s"
-  cargo-fuzz run "$target" -- -max_total_time="$FUZZ_MAX_TOTAL_TIME"
+  # tee, so the terminal still shows progress while the log is kept. The
+  # corpus count before and after is the honest measure of a campaign: a
+  # count that never grows across nights means the corpus is being lost,
+  # which is exactly what happened for ten weeks (K-244).
+  before=$(ls "fuzz/corpus/$target" 2>/dev/null | wc -l | tr -d ' ')
+  if cargo-fuzz run "$target" -- -max_total_time="$FUZZ_MAX_TOTAL_TIME" 2>&1 | tee "$EVIDENCE_DIR/$target.log"; then
+    verdict="ok"
+  else
+    verdict="FAILED"
+  fi
+  after=$(ls "fuzz/corpus/$target" 2>/dev/null | wc -l | tr -d ' ')
+  crashes=$(ls "fuzz/artifacts/$target" 2>/dev/null | wc -l | tr -d ' ')
+  {
+    echo "## $target"
+    echo
+    echo "- verdict: $verdict"
+    echo "- corpus: $before inputs before, $after after"
+    echo "- crash artifacts: $crashes"
+    echo
+  } >> "$SUMMARY"
+  # Every target runs even after one fails: a crash in manifest_parse is no
+  # reason to skip tonight's coverage of the other two, and the evidence of
+  # all three belongs in the same artifact.
+  [ "$verdict" = "ok" ] || FAILED=1
 done
+
+echo "Evidence written to $EVIDENCE_DIR"
+[ "${FAILED:-0}" = "0" ] || exit 1

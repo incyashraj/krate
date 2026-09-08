@@ -1,0 +1,6 @@
+[app]
+id = "com.example.x"
+name = "seton‮daolnwod"
+version = "1.0.0"
+entry = "a.wasm"
+world = "krate:app/cli@0.1.0"

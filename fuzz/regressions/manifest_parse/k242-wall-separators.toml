@@ -1,0 +1,11 @@
+[app]
+id = "com.example.notes"
+name = "Notesnet.connectSync your notes1"
+version = "1.0.0"
+entry = "app.wasm"
+world = "krate:app/cli@0.1.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Draw the window"
+required = true

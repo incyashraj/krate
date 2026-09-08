@@ -1,0 +1,2 @@
+net.connect:example.com:*
+net.connect:example.com:443

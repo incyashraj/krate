@@ -1,0 +1,2 @@
+fs.read:documents/notes/a.txt
+fs.read:documents/**
