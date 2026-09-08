@@ -49,6 +49,10 @@ use zip::{write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
 
 /// The manifest entry name inside a bundle.
 pub mod provenance;
+/// Publisher signatures over that statement (IC-015).
+pub mod signing;
+/// The canonical statement a publisher signature covers (IC-015).
+pub mod statement;
 
 pub const MANIFEST_ENTRY: &str = "manifest.toml";
 /// The component entry name inside a bundle.

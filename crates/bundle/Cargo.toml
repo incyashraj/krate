@@ -9,6 +9,11 @@ publish = false
 
 [dependencies]
 krate-manifest = { path = "../manifest" }
+# Ed25519 for publisher signatures (IC-015). Same reasoning as the runtime's
+# use of it for AEAD: audited, maintained, and already compiled in this tree
+# through the TLS stack, so signing adds no new supply-chain surface. Signing
+# is the one place where rolling our own is indefensible.
+ring = "0.17"
 sha2 = "0.10.9"
 tempfile.workspace = true
 thiserror.workspace = true

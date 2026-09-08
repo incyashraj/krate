@@ -2275,6 +2275,7 @@ name = "krate-bundle"
 version = "0.4.0"
 dependencies = [
  "krate-manifest",
+ "ring",
  "sha2",
  "tempfile",
  "thiserror 2.0.18",
