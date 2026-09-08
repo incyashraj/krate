@@ -17,6 +17,42 @@ use thiserror::Error;
 
 pub const PHASE2_CLI_WORLD: &str = "krate:app/cli@0.1.0";
 pub const PHASE3_GUI_WORLD: &str = "krate:app/gui@0.2.0";
+
+/// Older world names this runtime still hosts (IC-016).
+///
+/// The compatibility window, written down. Krate's promise is that a file
+/// somebody was sent keeps opening, and an app is not broken merely because
+/// its contract has a lower number than today's.
+///
+/// Hosting an older world costs nothing at the linker: a component imports
+/// only the interfaces it actually uses, so a world that has since GROWN
+/// still satisfies it. Measured rather than assumed -- adding an interface
+/// to the world and rebuilding left all 16 shipped apps running. What was
+/// stopping them was this list, which did not exist: an app declaring
+/// `krate:app/gui@0.1.0` was refused at manifest validation, before the
+/// linker it would have satisfied was ever consulted.
+///
+/// An entry leaves this list only when its contract can no longer be
+/// honoured -- an interface removed, or a signature changed in a way no
+/// adaptation covers. That is a deliberate, announced act, and the refusal
+/// says so rather than reading as a defect.
+const SUPPORTED_OLDER_WORLDS: &[(&str, AppWorld)] = &[
+    // The GUI world before the Phase 3 interfaces were added. Its apps
+    // import a strict subset of what gui@0.2.0 provides.
+    ("krate:app/gui@0.1.0", AppWorld::Phase3Gui),
+];
+
+/// World names this runtime deliberately no longer hosts, and why.
+///
+/// Named rather than merely absent, so the refusal can say what happened
+/// instead of "unsupported", which reads as a bug in the file. A person
+/// whose app stopped opening deserves the reason and the move.
+const RETIRED_WORLDS: &[(&str, &str)] = &[(
+    "krate:phase1/host@0.0.1",
+    "Phase 1 was the prototype interface; every app has been rebuilt since. \
+     Open it with `krate` and choose \"Make a change\" to rebuild it against \
+     the current one.",
+)];
 const MAX_NET_CONNECT_HOST_BYTES: usize = 253;
 
 const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
@@ -248,12 +284,44 @@ pub enum AppWorld {
 impl AppWorld {
     pub fn from_world_name(world: &str) -> Result<Self> {
         match world {
-            PHASE2_CLI_WORLD => Ok(Self::Phase2Cli),
-            PHASE3_GUI_WORLD => Ok(Self::Phase3Gui),
-            _ => Err(ManifestError::UnsupportedWorld {
-                world: world.to_string(),
-            }),
+            PHASE2_CLI_WORLD => return Ok(Self::Phase2Cli),
+            PHASE3_GUI_WORLD => return Ok(Self::Phase3Gui),
+            _ => {}
         }
+        // Inside the compatibility window: an older contract this runtime
+        // still honours, hosted by the world that superseded it.
+        if let Some((_, hosted_by)) = SUPPORTED_OLDER_WORLDS
+            .iter()
+            .find(|(name, _)| *name == world)
+        {
+            return Ok(*hosted_by);
+        }
+        Err(ManifestError::UnsupportedWorld {
+            world: world.to_string(),
+        })
+    }
+
+    /// Why a world is not hosted, in words a person can act on.
+    ///
+    /// A retired contract and a name Krate has never seen are different
+    /// situations with different moves, and "unsupported app world" for both
+    /// tells somebody nothing about which they have.
+    pub fn explain_unsupported(world: &str) -> String {
+        if let Some((_, reason)) = RETIRED_WORLDS.iter().find(|(name, _)| *name == world) {
+            return format!("`{world}` is no longer supported. {reason}");
+        }
+        format!(
+            "`{world}` is not an app interface this copy of Krate knows. If \
+             somebody sent you this app recently, it may need a newer Krate: \
+             https://krate.tech/open"
+        )
+    }
+
+    /// Every world name this runtime accepts, current and older.
+    pub fn supported_world_names() -> Vec<&'static str> {
+        let mut names = vec![PHASE2_CLI_WORLD, PHASE3_GUI_WORLD];
+        names.extend(SUPPORTED_OLDER_WORLDS.iter().map(|(name, _)| *name));
+        names
     }
 
     pub fn world_name(self) -> &'static str {
@@ -505,7 +573,11 @@ pub enum ManifestError {
     MissingField(&'static str),
     #[error("invalid app id `{id}`: {reason}")]
     InvalidAppId { id: String, reason: String },
-    #[error("unsupported app world `{world}`")]
+    // Carries the explanation rather than only the name: a retired contract
+    // and a name Krate has never seen are different situations with
+    // different moves, and one message for both reads as a defect in the
+    // person's file (IC-016).
+    #[error("{}", AppWorld::explain_unsupported(world))]
     UnsupportedWorld { world: String },
     #[error("invalid {field}: {reason}")]
     InvalidIdentifier { field: &'static str, reason: String },
@@ -1209,10 +1281,74 @@ mod tests {
 
     #[test]
     fn rejects_unknown_worlds() {
-        let input = EXAMPLE.replace(PHASE2_CLI_WORLD, "krate:app/gui@0.1.0");
-        let err = Manifest::parse(&input).expect_err("reject unsupported world");
+        // A name Krate has never defined. Note this is NOT `gui@0.1.0`,
+        // which this test used to use: that is a real older contract and
+        // hosting it is the point of IC-016.
+        for unknown in [
+            "krate:app/cli@9.9.9",
+            "krate:app/holodeck@0.1.0",
+            "some:other/world@1.0.0",
+            "",
+        ] {
+            let input = EXAMPLE.replace(PHASE2_CLI_WORLD, unknown);
+            let err = Manifest::parse(&input)
+                .expect_err(&format!("{unknown:?} is not a world Krate knows"));
+            assert!(matches!(err, ManifestError::UnsupportedWorld { .. }));
+        }
+    }
 
-        assert!(matches!(err, ManifestError::UnsupportedWorld { .. }));
+    /// An app built against an older contract still opens (IC-016).
+    ///
+    /// Krate's promise is that a file somebody was sent keeps opening, and an
+    /// app is not broken merely because its world has a lower number than
+    /// today's. Before this, `gui@0.1.0` was refused at manifest validation
+    /// -- before the linker it would have satisfied was ever consulted.
+    #[test]
+    fn an_app_built_against_an_older_world_still_opens() {
+        let input = EXAMPLE.replace(PHASE2_CLI_WORLD, "krate:app/gui@0.1.0");
+        let manifest = Manifest::parse(&input).expect("an older GUI world is still hosted");
+        assert_eq!(
+            manifest.app_world().expect("world"),
+            AppWorld::Phase3Gui,
+            "an older world is hosted by the one that superseded it",
+        );
+    }
+
+    /// The window is a list, not a guess: every name in it resolves, and the
+    /// current worlds keep resolving to themselves.
+    #[test]
+    fn every_supported_world_name_resolves() {
+        for name in AppWorld::supported_world_names() {
+            AppWorld::from_world_name(name)
+                .unwrap_or_else(|err| panic!("{name} is advertised as supported: {err}"));
+        }
+        assert_eq!(
+            AppWorld::from_world_name(PHASE2_CLI_WORLD).expect("cli"),
+            AppWorld::Phase2Cli
+        );
+        assert_eq!(
+            AppWorld::from_world_name(PHASE3_GUI_WORLD).expect("gui"),
+            AppWorld::Phase3Gui
+        );
+    }
+
+    /// A retired contract says what happened; an unknown name says something
+    /// else. "Unsupported" for both tells a person nothing about which they
+    /// have, and reads as a defect in their file.
+    #[test]
+    fn a_retired_world_is_explained_differently_from_an_unknown_one() {
+        let retired = AppWorld::explain_unsupported("krate:phase1/host@0.0.1");
+        assert!(
+            retired.contains("no longer supported") && retired.contains("Make a change"),
+            "a retired world must say what happened and what to do: {retired}"
+        );
+
+        let unknown = AppWorld::explain_unsupported("krate:app/holodeck@0.1.0");
+        assert!(
+            unknown.contains("newer Krate"),
+            "an unknown world is most likely a newer one: {unknown}"
+        );
+        assert_ne!(retired, unknown, "the two situations differ");
     }
 
     #[test]
