@@ -47,6 +47,8 @@ use tempfile::TempDir;
 use thiserror::Error;
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
 
+/// Release keys delegated by a publisher root (IC-015).
+pub mod delegation;
 /// The manifest entry name inside a bundle.
 pub mod provenance;
 /// Publisher signatures over that statement (IC-015).

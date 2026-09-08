@@ -59,6 +59,22 @@ impl SigningKey {
         self.pair.public_key().as_ref().to_vec()
     }
 
+    /// Sign a delegation's canonical bytes with this (root) key.
+    ///
+    /// Deliberately separate from [`Self::sign`], and deliberately NOT a
+    /// general "sign these bytes": a key that will sign anything handed to it
+    /// can be walked into signing a delegation that was presented as a
+    /// bundle statement, or the reverse. The two documents are
+    /// domain-separated by their schema strings, which are inside the bytes
+    /// each one signs, so a signature over one can never verify as the other.
+    ///
+    /// Returns the raw signature rather than a [`Signature`], because a
+    /// `Signature` is specifically a release signature over a statement and
+    /// this is not one.
+    pub fn sign_delegation_bytes(&self, bytes: &[u8]) -> Vec<u8> {
+        self.pair.sign(bytes).as_ref().to_vec()
+    }
+
     /// Sign a statement.
     ///
     /// Takes the statement rather than arbitrary bytes so a caller cannot
