@@ -2230,6 +2230,27 @@ function madeCount(byId) {
   return n;
 }
 
+/// The consumed count, read the only way KV answers immediately.
+///
+/// KV `list` is eventually consistent -- measured against production, a case
+/// written now is invisible to a listing for up to ~30 seconds. Deriving the
+/// wall's number from `list` therefore let somebody make a fourth free app
+/// simply by being quick, which is the one thing the wall exists to stop.
+///
+/// `get` on a single key IS read-your-writes, which is why the counters this
+/// replaced never had the problem. So the counters stay as the authoritative
+/// tally -- every consumption writes them -- and the cases carry the history.
+/// The higher of the two wins: a listing that has caught up cannot be argued
+/// down by a counter, and a counter that is ahead is believed at once.
+async function consumedCount(env, user, device, byId) {
+  const keys = [];
+  if (user) keys.push(`mkacct:${user.id}`);
+  if (/^[0-9a-f]{64}$/.test(device)) keys.push(`mkdev:${device}`);
+  const raw = await Promise.all(keys.map((k) => env.APPS.get(k)));
+  const counter = raw.reduce((most, v) => Math.max(most, parseInt(v || "0", 10)), 0);
+  return Math.max(counter, madeCount(byId));
+}
+
 async function writeCase(env, prefixes, record) {
   await Promise.all(
     prefixes.map((prefix) => env.APPS.put(`${prefix}${record.id}`, JSON.stringify(record))),
@@ -2305,7 +2326,7 @@ async function caseOpen(request, env) {
   // The wall. A paid plan lifts it; the free allowance is counted in cases
   // that produced a file, so a person whose three attempts all failed for
   // our reasons has spent nothing.
-  const made = madeCount(byId);
+  const made = await consumedCount(env, user, device, byId);
   if (made >= CASE_LIMIT_FREE) {
     const ent = user ? JSON.parse((await env.APPS.get(`ent:${user.id}`)) || "null") : null;
     if (!entitlementActive(ent)) {
@@ -2380,8 +2401,15 @@ async function caseAttempt(request, env) {
     if (user) counterKeys.push(`mkacct:${user.id}`);
     if (/^[0-9a-f]{64}$/.test(device)) counterKeys.push(`mkdev:${device}`);
     if (counterKeys.length) {
-      const byId = await loadCases(env, prefixes);
-      const n = madeCount(byId);
+      // The counter is INCREMENTED from its own strongly-consistent value,
+      // never recomputed from a listing. Recomputing wrote the stale number
+      // straight back, so the counter never moved and the wall never saw
+      // the consumption -- measured against production: n stayed 0 for
+      // ~30 seconds after a made attempt, which is long enough to take a
+      // fourth free app.
+      const raw = await Promise.all(counterKeys.map((k) => env.APPS.get(k)));
+      const current = raw.reduce((most, v) => Math.max(most, parseInt(v || "0", 10)), 0);
+      const n = current + 1;
       await Promise.all(counterKeys.map((k) => env.APPS.put(k, String(n))));
     }
   }
@@ -2426,7 +2454,11 @@ async function caseList(request, env) {
   const cases = [...byId.values()]
     .filter((c) => !c.phantom)
     .sort((a, b) => (a.opened < b.opened ? -1 : 1));
-  return json({ n: madeCount(byId), limit: CASE_LIMIT_FREE, cases });
+  // The counter, not the listing: a case made seconds ago is not in the
+  // listing yet, and reporting a number the wall disagrees with would read
+  // as the allowance resetting.
+  const n = await consumedCount(env, user, device, byId);
+  return json({ n, limit: CASE_LIMIT_FREE, cases });
 }
 
 async function planCount(request, env, increment) {
@@ -2515,7 +2547,7 @@ async function planCount(request, env, increment) {
   // materialised, so the client's own number still counts toward what is
   // reported -- the wall must not under-count just because this call
   // declined to spend writes.
-  const n = Math.max(madeCount(byId), local);
+  const n = Math.max(await consumedCount(env, user, device, byId), local);
   // The counters stay mirrored, but only on a call that was already
   // writing. Nothing reads them for truth any more; they exist so a
   // rolled-back worker cannot hand the allowance out again, and a rollback

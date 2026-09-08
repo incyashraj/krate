@@ -208,6 +208,69 @@ assert.ok(
   `a huge claimed count cannot mint unbounded records, got ${capped.cases.length}`,
 );
 
+/* ---- KV list lags, and the wall must not ---------------------------------- */
+// Real Cloudflare KV `list` is eventually consistent: measured against
+// production, a case written now is invisible to a listing for up to ~30
+// seconds, while `get` on a single key is read-your-writes. Deriving the
+// wall's number from the listing therefore let somebody take a fourth free
+// app just by being quick -- the one thing the wall exists to stop. This
+// stub reproduces that lag; the plain Map above never could, which is why
+// the bug reached production before it was found.
+const laggy = new Map(KV);
+const lagEnv = {
+  APPS: {
+    get: async (k) => laggy.get(k) ?? null,
+    put: async (k, v) => { laggy.set(k, v); },
+    delete: async (k) => { laggy.delete(k); },
+    // The lag: freshly written case keys are simply not listed yet.
+    list: async ({ prefix, limit = 1000 }) => ({
+      keys: [...laggy.keys()]
+        .filter((k) => k.startsWith(prefix) && !justWritten.has(k))
+        .slice(0, limit)
+        .map((name) => ({ name })),
+    }),
+  },
+};
+const justWritten = new Set();
+const originalPut = lagEnv.APPS.put;
+lagEnv.APPS.put = async (k, v) => {
+  if (k.startsWith("case:")) justWritten.add(k);
+  await originalPut(k, v);
+};
+
+async function lagCall(path, body, token) {
+  const headers = { "content-type": "application/json" };
+  if (token) headers.authorization = `Bearer ${token}`;
+  const res = await worker.fetch(
+    new Request(`https://hub.test${path}`, { method: "POST", headers, body: JSON.stringify(body) }),
+    lagEnv,
+    { waitUntil() {} },
+  );
+  const text = await res.text();
+  let parsed = null;
+  try { parsed = JSON.parse(text); } catch (e) {}
+  return { status: res.status, body: parsed, text };
+}
+
+const lagDev = "9".repeat(64);
+// Three apps made back to back, faster than the listing catches up.
+for (let i = 0; i < 3; i++) {
+  const opened = await lagCall("/case/open", { device: lagDev, request: `app ${i}` }, null);
+  assert.strictEqual(opened.status, 200, `open ${i} while the listing lags: ${opened.text}`);
+  const made = await lagCall(
+    "/case/attempt", { device: lagDev, id: opened.body.id, outcome: "made" }, null,
+  );
+  assert.strictEqual(made.body.made, true, `attempt ${i} recorded`);
+}
+
+// The fourth must be refused even though NONE of the three are listable yet.
+const fourthWhileLagging = await lagCall("/case/open", { device: lagDev, request: "one too many" }, null);
+assert.strictEqual(
+  fourthWhileLagging.status, 402,
+  "the wall must hold while KV's listing is still catching up -- otherwise "
+  + "being quick buys a fourth free app",
+);
+
 /* ---- no identity, no ledger ---------------------------------------------- */
 const nobody = await call("/case/open", { request: "an app" }, null);
 assert.strictEqual(nobody.status, 400, "no account and no device is nobody");
