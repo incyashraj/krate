@@ -524,6 +524,34 @@ impl OpenBundle {
     /// differ in timestamps, compression, or entry order. Re-packing an app
     /// therefore does not invalidate a reference to it.
     pub fn digest(&self) -> Result<provenance::BundleDigest> {
+        Ok(provenance::digest_layer(
+            provenance::Layer::Execution,
+            &self.entries_for_digest(provenance::Layer::Execution)?,
+        ))
+    }
+
+    /// This bundle's project identity: everything a person could rebuild.
+    ///
+    /// The execution set plus `source/` and `sdk/`. Two bundles equal here are
+    /// the same editable project; two bundles equal only on [`Self::digest`]
+    /// behave the same but may carry different source, which is a real
+    /// difference and the one the execution digest cannot see.
+    ///
+    /// This exists because that blindness shipped: a bundle carrying 3 source
+    /// files and one carrying 4, with different `lib.rs`, printed the same
+    /// value under the heading "Identity" (K-245).
+    pub fn project_digest(&self) -> Result<provenance::BundleDigest> {
+        Ok(provenance::digest_layer(
+            provenance::Layer::Project,
+            &self.entries_for_digest(provenance::Layer::Project)?,
+        ))
+    }
+
+    /// Every entry this layer covers, read from the extracted tree.
+    fn entries_for_digest(
+        &self,
+        layer: provenance::Layer,
+    ) -> Result<std::collections::BTreeMap<String, Vec<u8>>> {
         let mut entries = std::collections::BTreeMap::new();
         entries.insert(
             MANIFEST_ENTRY.to_string(),
@@ -545,7 +573,26 @@ impl OpenBundle {
                 );
             }
         }
-        Ok(provenance::digest_entries(&entries))
+
+        // The two namespaces the execution identity deliberately ignores. They
+        // are walked with the same collector as assets, so the names here are
+        // the names the bundle stores.
+        for (root, prefix) in [
+            (self.source_path.as_deref(), SOURCE_PREFIX),
+            (self.sdk_path.as_deref(), SDK_PREFIX),
+        ] {
+            let Some(root) = root else { continue };
+            for (entry_name, source) in collect_tree(root, prefix)? {
+                if !layer.includes(&entry_name) {
+                    continue;
+                }
+                entries.insert(
+                    entry_name,
+                    fs::read(&source).map_err(|err| io_err(&source, err))?,
+                );
+            }
+        }
+        Ok(entries)
     }
 }
 
@@ -1162,6 +1209,73 @@ required = true
         let path = dir.join(name);
         fs::write(&path, contents).expect("write fixture");
         path
+    }
+
+    /// Two real bundles, same component, different source, opened through the
+    /// public path (K-245, IC-712).
+    ///
+    /// Before the layered identities this printed ONE value under the heading
+    /// "Identity" for both, on the screen where a person decides whether to
+    /// trust an app. The execution digest agreeing is correct -- they do run
+    /// the same -- but a reader of the source would see a different program,
+    /// and nothing said so.
+    #[test]
+    fn two_bundles_with_different_source_are_told_apart_by_the_project_digest() {
+        let dir = TempDir::new().expect("tempdir");
+        let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
+        let component = write_temp(dir.path(), "code.wasm", b"\0asm\x01\0\0\0");
+
+        let mut digests = Vec::new();
+        for (name, source_body) in [
+            ("honest", b"fn main() { tick() }".as_slice()),
+            ("swapped", b"fn main() { steal_everything() }".as_slice()),
+        ] {
+            let src = dir.path().join(format!("src-{name}"));
+            fs::create_dir_all(&src).expect("source dir");
+            fs::write(src.join("lib.rs"), source_body).expect("write source");
+
+            let bundle = dir.path().join(format!("{name}.krate"));
+            pack_with_source(&manifest, &component, None, Some(&src), &bundle).expect("pack");
+            let opened = open(&bundle).expect("open");
+            digests.push((
+                opened.digest().expect("execution digest").digest,
+                opened.project_digest().expect("project digest").digest,
+            ));
+        }
+
+        assert_eq!(
+            digests[0].0, digests[1].0,
+            "the same component and manifest run the same",
+        );
+        assert_ne!(
+            digests[0].1, digests[1].1,
+            "but different source is a different project, and the identity a \
+             person is shown must say so",
+        );
+    }
+
+    /// A bundle carrying no source has one project, not two identities.
+    ///
+    /// The digests still differ (their schema tags do), so a caller must
+    /// decide by what the layers COVER, not by comparing values -- getting
+    /// that wrong printed a second identity for a project that did not exist.
+    #[test]
+    fn a_bundle_without_source_has_nothing_extra_to_rebuild() {
+        let dir = TempDir::new().expect("tempdir");
+        let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
+        let component = write_temp(dir.path(), "code.wasm", b"\0asm\x01\0\0\0");
+        let bundle = dir.path().join("plain.krate");
+        pack(&manifest, &component, &bundle).expect("pack");
+
+        let opened = open(&bundle).expect("open");
+        let execution = opened.digest().expect("execution digest");
+        let project = opened.project_digest().expect("project digest");
+        assert_eq!(
+            execution.entries.len(),
+            project.entries.len(),
+            "with no source and no SDK the two layers cover the same files, \
+             which is how a caller knows there is only one thing to show",
+        );
     }
 
     #[test]

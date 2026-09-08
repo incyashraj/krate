@@ -10742,6 +10742,9 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
             // whether to trust it. Without it, "the app I was told to verify"
             // and "the app I am about to run" are the same claim only by trust.
             bundle.as_ref().and_then(|bundle| bundle.digest().ok()),
+            bundle
+                .as_ref()
+                .and_then(|bundle| bundle.project_digest().ok()),
         )?;
         return Ok(0);
     }
@@ -12383,14 +12386,25 @@ fn print_effective_capabilities(
     policy: &SessionPolicy,
     format: OutputFormat,
     digest: Option<krate_bundle::provenance::BundleDigest>,
+    project_digest: Option<krate_bundle::provenance::BundleDigest>,
 ) -> Result<()> {
     if format == OutputFormat::Json {
         let dump = RunCapsDump {
             wasm: wasm_file.display().to_string(),
             app: manifest.map(RunCapsApp::from_manifest),
             capabilities: policy.grants().iter().map(ToString::to_string).collect(),
-            // The identity a registry or a reviewer would key on.
+            // The identity a registry or a reviewer would key on: what runs.
             digest: digest.as_ref().map(|d| d.digest.clone()),
+            // What could be rebuilt. Absent when the bundle carries no source,
+            // rather than repeating the execution digest under a second name.
+            project_digest: project_digest
+                .as_ref()
+                .filter(|p| {
+                    digest
+                        .as_ref()
+                        .is_some_and(|d| p.entries.len() > d.entries.len())
+                })
+                .map(|d| d.digest.clone()),
             // What the app declares it needs, granted or not, so a tool reading
             // this sees the whole ask and not just the default grants.
             requested: manifest
@@ -12404,8 +12418,31 @@ fn print_effective_capabilities(
     if let Some(digest) = &digest {
         // Printed before the capability list, because "is this the app I think
         // it is?" comes before "what does it want?".
+        //
+        // Each line says WHICH identity it is. One unlabelled digest here read
+        // as whole-bundle identity while covering only what runs, so two
+        // bundles whose source differed printed the same value on the screen
+        // where a person decides whether to trust the app (K-245, IC-712).
         println!("Identity");
-        println!("  - {}", digest.digest);
+        println!(
+            "  - {}  {}",
+            digest.digest,
+            krate_bundle::provenance::Layer::Execution.describe()
+        );
+        // Only when the bundle actually carries something extra to rebuild.
+        // Comparing the two digests is NOT the test: they differ by schema
+        // tag even when they cover identical entries, so a source-less
+        // bundle printed a second identity for a project that does not
+        // exist -- two lines where there is one thing.
+        if let Some(project) = &project_digest {
+            if project.entries.len() > digest.entries.len() {
+                println!(
+                    "  - {}  {}",
+                    project.digest,
+                    krate_bundle::provenance::Layer::Project.describe()
+                );
+            }
+        }
         println!();
     }
     println!("Effective capabilities");
@@ -12441,9 +12478,15 @@ struct RunCapsDump {
     wasm: String,
     app: Option<RunCapsApp>,
     capabilities: Vec<String>,
-    /// Content identity of the bundle, when the input was one.
+    /// What runs: manifest, component and assets. The identity a registry
+    /// keys on and a capability decision rests on.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     digest: Option<String>,
+    /// What can be rebuilt: the above plus source and SDK. Absent when the
+    /// bundle carries neither, rather than repeating `digest` under a second
+    /// name and implying two identities were compared (IC-712).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    project_digest: Option<String>,
     /// Everything the manifest declares, whether or not it is granted yet.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     requested: Vec<String>,
