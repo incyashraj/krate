@@ -23,7 +23,6 @@ mod player {
     use objc2_ui_kit::{UIApplication, UIApplicationDelegate};
     use std::cell::Cell;
 
-
     const GRAM_WASM: &[u8] =
         include_bytes!("../../../apps/krate-gram/target/wasm32-wasip1/release/krate_gram.wasm");
     const GRAM_MANIFEST: &str = include_str!("../../../apps/krate-gram/manifest.toml");
