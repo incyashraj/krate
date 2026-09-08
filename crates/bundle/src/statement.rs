@@ -188,6 +188,24 @@ impl SignedStatement {
         out
     }
 
+    /// A short, stable name for this exact statement.
+    ///
+    /// SHA-256 over the canonical bytes. Recorded in the signature envelope
+    /// so a verifier can tell two failures apart without storing the whole
+    /// statement: if the recomputed statement has a different digest, the
+    /// FILE changed; if it has the same digest and the signature still does
+    /// not verify, the KEY is wrong. Reporting both as "bad signature" sends
+    /// people looking in the wrong place.
+    ///
+    /// The digest is not itself trusted -- it is a hint about which message
+    /// to print. The signature is what decides, and it is checked against
+    /// the recomputed statement either way.
+    pub fn digest(&self) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(self.canonical_bytes());
+        hex(&hasher.finalize())
+    }
+
     /// Does this statement describe the bundle in front of us?
     ///
     /// Answered separately from "is the signature valid", because the two

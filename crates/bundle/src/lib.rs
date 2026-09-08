@@ -80,6 +80,19 @@ pub const SDK_PREFIX: &str = "sdk/";
 /// ought to mean. It roughly doubles a small app's size and that is a fair
 /// trade for the app remaining alive.
 pub const SOURCE_PREFIX: &str = "source/";
+/// The publisher's signature over this bundle, when it has one (IC-015).
+///
+/// One fixed entry name, read by exact name like the manifest and the
+/// component, so a signature cannot be smuggled in under a path that escapes
+/// the temp directory. Its absence is not an error: an unsigned app runs and
+/// is labelled unverified, which is the identity contract's rule -- requiring
+/// a signature to run would make publishing a precondition for using your own
+/// machine.
+///
+/// The signature covers a statement, never the archive, so it cannot cover
+/// its own bytes. See `statement` and `signing`.
+pub const SIGNATURE_ENTRY: &str = "signature.json";
+
 /// Conventional file extension.
 pub const BUNDLE_EXTENSION: &str = "krate";
 
@@ -551,6 +564,36 @@ impl OpenBundle {
         ))
     }
 
+    /// What a signature over this bundle says, if it carries one (IC-015).
+    ///
+    /// The statement is RECOMPUTED from the extracted files, never parsed
+    /// from the bundle: a stored statement is an attacker-supplied document,
+    /// and a parser that disagreed with the canonical encoding by one byte
+    /// would verify a signature over something other than what is on disk.
+    ///
+    /// `None` means unsigned, which is not a failure. An unsigned app runs
+    /// and is labelled unverified -- requiring a signature to run would make
+    /// publishing a precondition for using your own machine.
+    pub fn signature_verdict(&self) -> Result<Option<signing::Verdict>> {
+        let Some(envelope) = self.signature_envelope()? else {
+            return Ok(None);
+        };
+        // Every entry, including source and SDK: a signature covers the whole
+        // file, not the part that happens to run.
+        let entries = self.entries_for_digest(provenance::Layer::Project)?;
+        Ok(Some(signing::verify_envelope(&envelope, &entries)))
+    }
+
+    /// The raw envelope, when the bundle carries one.
+    pub fn signature_envelope(&self) -> Result<Option<signing::SignatureEnvelope>> {
+        let path = self._dir.path().join(SIGNATURE_ENTRY);
+        if !path.is_file() {
+            return Ok(None);
+        }
+        let bytes = fs::read(&path).map_err(|err| io_err(&path, err))?;
+        Ok(serde_json::from_slice(&bytes).ok())
+    }
+
     /// Every entry this layer covers, read from the extracted tree.
     fn entries_for_digest(
         &self,
@@ -600,6 +643,72 @@ impl OpenBundle {
     }
 }
 
+/// Sign an existing bundle in place, writing `signature.json` into it.
+///
+/// The statement is built from the bundle's own extracted bytes, so what is
+/// signed is exactly what the file contains -- there is no path by which a
+/// caller can sign one thing and ship another.
+///
+/// Signing an already-signed bundle replaces the signature. That is the
+/// honest behaviour: the previous signer's claim covered a file that no
+/// longer has the same contents, so keeping it would preserve a signature
+/// that could only ever read as tampering.
+///
+/// Written to a temporary file and renamed, so an interrupted sign leaves
+/// the original bundle intact rather than a half-written archive.
+pub fn sign_bundle(
+    bundle_path: &Path,
+    key: &signing::SigningKey,
+    namespace: &str,
+    version: &str,
+) -> Result<signing::SignatureEnvelope> {
+    let opened = open(bundle_path)?;
+    let entries = opened.entries_for_digest(provenance::Layer::Project)?;
+    let statement = statement::SignedStatement::build(namespace, version, &entries);
+    let envelope = signing::SignatureEnvelope::new(&statement, &key.sign(&statement));
+    let json = serde_json::to_vec_pretty(&envelope)
+        .map_err(|err| BundleError::Manifest(err.to_string()))?;
+
+    // Rewrite the archive with the signature entry added, copying every other
+    // entry through untouched. Reading the source fully before writing the
+    // destination is what allows the destination to be the same path.
+    let source = fs::read(bundle_path).map_err(|err| io_err(bundle_path, err))?;
+    let mut archive = ZipArchive::new(io::Cursor::new(&source))?;
+    let temporary = bundle_path.with_extension("krate.signing");
+    {
+        let file = File::create(&temporary).map_err(|err| io_err(&temporary, err))?;
+        let mut writer = ZipWriter::new(file);
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+        for index in 0..archive.len() {
+            let mut entry = archive.by_index(index)?;
+            let name = entry.name().to_string();
+            if name == SIGNATURE_ENTRY {
+                continue; // replaced below
+            }
+            let mut bytes = Vec::new();
+            entry
+                .read_to_end(&mut bytes)
+                .map_err(|err| BundleError::Io {
+                    path: PathBuf::from(&name),
+                    source: err,
+                })?;
+            writer.start_file(name.clone(), options)?;
+            writer.write_all(&bytes).map_err(|err| BundleError::Io {
+                path: PathBuf::from(&name),
+                source: err,
+            })?;
+        }
+        writer.start_file(SIGNATURE_ENTRY, options)?;
+        writer.write_all(&json).map_err(|err| BundleError::Io {
+            path: PathBuf::from(SIGNATURE_ENTRY),
+            source: err,
+        })?;
+        writer.finish()?;
+    }
+    fs::rename(&temporary, bundle_path).map_err(|err| io_err(bundle_path, err))?;
+    Ok(envelope)
+}
+
 /// Open a bundle from disk, extracting it into a temporary directory.
 pub fn open(bundle_path: &Path) -> Result<OpenBundle> {
     let size = fs::metadata(bundle_path)
@@ -626,6 +735,10 @@ pub fn open_reader<R: Read + io::Seek>(reader: R) -> Result<OpenBundle> {
     // neither name can escape the temp directory.
     extract_entry(&mut archive, MANIFEST_ENTRY, &manifest_path)?;
     extract_entry(&mut archive, COMPONENT_ENTRY, &component_path)?;
+    // Optional, and by exact name like the two above. A bundle without one is
+    // unsigned, which is a state Krate supports rather than an error.
+    let signature_path = dir.path().join(SIGNATURE_ENTRY);
+    let _ = extract_entry(&mut archive, SIGNATURE_ENTRY, &signature_path);
     let asset_names = asset_entry_names(&mut archive)?;
     let mut total_asset_bytes = 0_u64;
     for name in &asset_names {
@@ -1256,6 +1369,101 @@ required = true
             "but different source is a different project, and the identity a \
              person is shown must say so",
         );
+    }
+
+    /// Sign a real bundle, verify it, then change it (IC-015).
+    ///
+    /// The end-to-end path: pack, sign in place, reopen, and confirm the
+    /// verdict flips from valid to tampering when a byte inside the file
+    /// changes. Nothing here parses a stored statement -- the statement is
+    /// recomputed from the bundle each time, which is what makes the check
+    /// about the file rather than about a document the file carries.
+    #[test]
+    fn a_signed_bundle_verifies_until_something_inside_it_changes() {
+        use ring::rand::SystemRandom;
+        use ring::signature::Ed25519KeyPair;
+
+        let dir = TempDir::new().expect("tempdir");
+        let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
+        let component = write_temp(dir.path(), "code.wasm", b"\0asm\x01\0\0\0");
+        let src = dir.path().join("src");
+        fs::create_dir_all(&src).expect("source dir");
+        fs::write(src.join("lib.rs"), b"fn main() {}").expect("write source");
+
+        let bundle = dir.path().join("signed.krate");
+        pack_with_source(&manifest, &component, None, Some(&src), &bundle).expect("pack");
+
+        // Unsigned bundles are a supported state, not an error.
+        assert!(
+            open(&bundle)
+                .expect("open")
+                .signature_verdict()
+                .expect("verdict")
+                .is_none(),
+            "a bundle nobody signed must read as unsigned, not as invalid",
+        );
+
+        let rng = SystemRandom::new();
+        let pkcs8 = Ed25519KeyPair::generate_pkcs8(&rng).expect("generate");
+        let key = signing::SigningKey::from_pkcs8(pkcs8.as_ref()).expect("load key");
+        let envelope = sign_bundle(&bundle, &key, "pub/demo", "1.0.0").expect("sign");
+        assert_eq!(envelope.namespace, "pub/demo");
+
+        let verdict = open(&bundle)
+            .expect("reopen")
+            .signature_verdict()
+            .expect("verdict")
+            .expect("a signed bundle has a verdict");
+        assert!(
+            verdict.is_genuinely_signed(),
+            "a freshly signed bundle must verify: {verdict}",
+        );
+
+        // The app still opens normally -- signing must not disturb anything
+        // else the bundle is for.
+        let reopened = open(&bundle).expect("open signed");
+        assert_eq!(reopened.manifest().app.id, "com.example.demo");
+        assert!(reopened.source_path().is_some(), "source survives signing");
+
+        // Now change the component inside the signed archive.
+        let tampered = dir.path().join("tampered.krate");
+        rewrite_entry(&bundle, &tampered, COMPONENT_ENTRY, b"\0asm-evil");
+        match open(&tampered)
+            .expect("open tampered")
+            .signature_verdict()
+            .expect("verdict")
+        {
+            Some(signing::Verdict::Tampered { problems }) => {
+                assert!(
+                    problems.iter().any(|p| p.to_string().contains("code.wasm")),
+                    "the changed file must be named: {problems:?}",
+                );
+            }
+            other => panic!("a changed component must read as tampering, got {other:?}"),
+        }
+    }
+
+    /// Rewrite one entry of a zip, copying the rest through.
+    fn rewrite_entry(source: &Path, destination: &Path, entry: &str, bytes: &[u8]) {
+        let data = fs::read(source).expect("read source");
+        let mut archive = ZipArchive::new(io::Cursor::new(&data)).expect("open zip");
+        let file = File::create(destination).expect("create");
+        let mut writer = ZipWriter::new(file);
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+        for index in 0..archive.len() {
+            let mut existing = archive.by_index(index).expect("entry");
+            let name = existing.name().to_string();
+            let mut existing_bytes = Vec::new();
+            existing.read_to_end(&mut existing_bytes).expect("read");
+            writer.start_file(name.clone(), options).expect("start");
+            let payload = if name == entry {
+                bytes
+            } else {
+                &existing_bytes
+            };
+            writer.write_all(payload).expect("write");
+        }
+        writer.finish().expect("finish");
     }
 
     /// A bundle carrying no source has one project, not two identities.

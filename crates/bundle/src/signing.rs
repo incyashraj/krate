@@ -30,6 +30,7 @@
 //! as one that was checked.
 
 use ring::signature::{self, Ed25519KeyPair, KeyPair, UnparsedPublicKey};
+use serde::{Deserialize, Serialize};
 
 use crate::statement::{Mismatch, SignedStatement};
 
@@ -165,8 +166,8 @@ pub fn verify(
         };
     }
 
-    // Signature first. If it does not match the statement, nothing about the
-    // statement is worth reporting -- an attacker chose its contents.
+    // Signature first: if it does not cover this statement, nothing the
+    // statement says is worth reporting -- an attacker chose its contents.
     let key = UnparsedPublicKey::new(&signature::ED25519, &signature.public_key);
     if key
         .verify(&statement.canonical_bytes(), &signature.bytes)
@@ -183,6 +184,169 @@ pub fn verify(
     Verdict::Valid {
         public_key: signature.public_key.clone(),
     }
+}
+
+/// What a bundle actually carries in `signature.json`.
+///
+/// The envelope holds the signature, the key that made it, and the two
+/// claims that are not derivable from the file -- who this release belongs
+/// to and what version it says it is. Everything else a verifier needs is
+/// recomputed from the bundle's own bytes.
+///
+/// The STATEMENT is deliberately not stored. Storing it would mean parsing
+/// an attacker-supplied document and trusting it to describe the file, and a
+/// parser that disagreed with `canonical_bytes()` by one byte would verify a
+/// signature over something other than what is on disk. Recomputing removes
+/// that class of bug entirely: there is only ever one statement, the one the
+/// bundle itself produces.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignatureEnvelope {
+    pub schema: String,
+    /// The application namespace this release claims.
+    pub namespace: String,
+    /// The version this release claims.
+    pub version: String,
+    /// Lowercase hex Ed25519 public key.
+    pub public_key: String,
+    /// Lowercase hex signature over the statement's canonical bytes.
+    pub signature: String,
+    /// SHA-256 of the statement that was signed.
+    ///
+    /// Not trusted, and not what decides anything -- the signature does. It
+    /// exists so a verifier can say WHY verification failed: a recomputed
+    /// statement with a different digest means the file changed, while the
+    /// same digest with a failing signature means the key is wrong.
+    #[serde(default)]
+    pub statement_digest: String,
+    /// The entries as they were when signed: path -> sha256.
+    ///
+    /// Recorded so a verifier can NAME what changed rather than only that
+    /// something did. It is a convenience for the message, never an
+    /// authority: it is attacker-supplied like the rest of the envelope, and
+    /// the signature -- checked against a statement recomputed from the file
+    /// -- is what actually decides. An attacker editing this list can change
+    /// the wording of a refusal and nothing else.
+    #[serde(default)]
+    pub signed_entries: std::collections::BTreeMap<String, String>,
+}
+
+impl SignatureEnvelope {
+    /// Build the envelope for a signature over a statement.
+    pub fn new(statement: &SignedStatement, signature: &Signature) -> SignatureEnvelope {
+        SignatureEnvelope {
+            schema: signature.schema.clone(),
+            namespace: statement.namespace.clone(),
+            version: statement.version.clone(),
+            public_key: hex(&signature.public_key),
+            signature: hex(&signature.bytes),
+            statement_digest: statement.digest(),
+            signed_entries: statement
+                .entries
+                .iter()
+                .map(|e| (e.path.clone(), e.digest.clone()))
+                .collect(),
+        }
+    }
+
+    /// The signature this envelope carries, or `None` if its hex is not hex.
+    ///
+    /// Malformed hex is not an error to shout about: an envelope nobody can
+    /// decode is a signature that does not verify, which is already a verdict
+    /// this module has words for.
+    pub fn signature(&self) -> Option<Signature> {
+        Some(Signature {
+            schema: self.schema.clone(),
+            public_key: unhex(&self.public_key)?,
+            bytes: unhex(&self.signature)?,
+        })
+    }
+}
+
+fn hex(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        out.push_str(&format!("{byte:02x}"));
+    }
+    out
+}
+
+fn unhex(text: &str) -> Option<Vec<u8>> {
+    if !text.len().is_multiple_of(2) {
+        return None;
+    }
+    (0..text.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&text[i..i + 2], 16).ok())
+        .collect()
+}
+
+/// Verify a bundle against the envelope it carries.
+///
+/// The statement is recomputed from `entries` -- never parsed from the file --
+/// so what is checked is what is on disk. The envelope's recorded statement
+/// digest is used only to choose the message: a mismatch there means the file
+/// moved underneath a real signature, which is tampering, while a match with a
+/// failing signature means the key never signed this.
+pub fn verify_envelope(
+    envelope: &SignatureEnvelope,
+    entries: &std::collections::BTreeMap<String, Vec<u8>>,
+) -> Verdict {
+    if envelope.schema != SIGNATURE_SCHEMA {
+        return Verdict::UnknownSchema {
+            schema: envelope.schema.clone(),
+        };
+    }
+    let Some(signature) = envelope.signature() else {
+        return Verdict::BadSignature;
+    };
+    let statement = SignedStatement::build(&envelope.namespace, &envelope.version, entries);
+
+    // The file changed since it was signed: the statement it produces now is
+    // not the statement that was signed. Say what changed rather than blaming
+    // the key.
+    if !envelope.statement_digest.is_empty() && statement.digest() != envelope.statement_digest {
+        let problems = changed_since_signing(&envelope.signed_entries, entries);
+        if !problems.is_empty() {
+            return Verdict::Tampered { problems };
+        }
+    }
+    verify(&statement, &signature, entries)
+}
+
+/// What changed between the entries recorded at signing time and the file now.
+///
+/// A statement recomputed from the current bytes matches them by construction,
+/// so the comparison has to be against what the envelope recorded. That record
+/// is untrusted -- it only shapes the message -- which is why this is called
+/// solely after the signature has already failed to cover the recomputed
+/// statement, and never to decide that something is fine.
+fn changed_since_signing(
+    signed: &std::collections::BTreeMap<String, String>,
+    now: &std::collections::BTreeMap<String, Vec<u8>>,
+) -> Vec<Mismatch> {
+    use sha2::{Digest, Sha256};
+    let mut problems = Vec::new();
+    for (path, signed_digest) in signed {
+        match now.get(path) {
+            None => problems.push(Mismatch::Missing { path: path.clone() }),
+            Some(bytes) => {
+                let mut hasher = Sha256::new();
+                hasher.update(bytes);
+                if hex(&hasher.finalize()) != *signed_digest {
+                    problems.push(Mismatch::Content {
+                        path: path.clone(),
+                        role: crate::statement::Role::of(path),
+                    });
+                }
+            }
+        }
+    }
+    for path in now.keys() {
+        if !signed.contains_key(path) {
+            problems.push(Mismatch::Uncovered { path: path.clone() });
+        }
+    }
+    problems
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -332,6 +496,66 @@ mod tests {
             public_key: vec![1, 2, 3]
         }
         .is_genuinely_signed());
+    }
+
+    /// The envelope's bookkeeping is UNTRUSTED and must never be able to
+    /// talk a verifier into accepting a file.
+    ///
+    /// An attacker who swaps the component can rewrite `signed_entries` and
+    /// `statement_digest` to match it, so the envelope agrees with the file
+    /// perfectly. Only the signature can tell: it covers a statement built
+    /// from the real bytes, and no edit to the envelope changes that.
+    ///
+    /// Both orderings are tested because they take different branches. A
+    /// version that returned Valid as soon as the recorded list agreed
+    /// passed every other test in this file.
+    #[test]
+    fn a_forged_entry_list_cannot_make_a_swapped_component_verify() {
+        let key = key();
+        let entries = bundle();
+        let statement = SignedStatement::build("pub/notes", "1.0.0", &entries);
+        let envelope = SignatureEnvelope::new(&statement, &key.sign(&statement));
+
+        let mut swapped = entries.clone();
+        swapped.insert("code.wasm".into(), b"\0asm-evil".to_vec());
+        let forged_statement = SignedStatement::build("pub/notes", "1.0.0", &swapped);
+        let forged_entries: std::collections::BTreeMap<String, String> = forged_statement
+            .entries
+            .iter()
+            .map(|e| (e.path.clone(), e.digest.clone()))
+            .collect();
+
+        // Both fields rewritten: the envelope is internally consistent.
+        let mut fully_forged = envelope.clone();
+        fully_forged.statement_digest = forged_statement.digest();
+        fully_forged.signed_entries = forged_entries.clone();
+        assert_eq!(
+            verify_envelope(&fully_forged, &swapped),
+            Verdict::BadSignature,
+            "an envelope that agrees with a swapped file must still be refused",
+        );
+
+        // Only the entry list rewritten, so the stale statement digest sends
+        // this down the "did the file change" branch instead.
+        let mut half_forged = envelope.clone();
+        half_forged.signed_entries = forged_entries;
+        let sneaky = verify_envelope(&half_forged, &swapped);
+        assert!(
+            !sneaky.is_genuinely_signed(),
+            "a rewritten entry list must not verify a file the signature \
+             never covered, got {sneaky:?}",
+        );
+    }
+
+    /// The honest path through verify_envelope, so the test above is not
+    /// passing merely because everything is refused.
+    #[test]
+    fn an_untouched_bundle_verifies_through_the_envelope() {
+        let key = key();
+        let entries = bundle();
+        let statement = SignedStatement::build("pub/notes", "1.0.0", &entries);
+        let envelope = SignatureEnvelope::new(&statement, &key.sign(&statement));
+        assert!(verify_envelope(&envelope, &entries).is_genuinely_signed());
     }
 
     /// Appending a file to a signed bundle is refused even though every
