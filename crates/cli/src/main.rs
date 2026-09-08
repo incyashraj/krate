@@ -10918,21 +10918,31 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
             manifest,
             &policy,
             request.dump_caps_format,
-            // A bundle's identity belongs on the screen where someone decides
-            // whether to trust it. Without it, "the app I was told to verify"
-            // and "the app I am about to run" are the same claim only by trust.
-            bundle.as_ref().and_then(|bundle| bundle.digest().ok()),
-            bundle
-                .as_ref()
-                .and_then(|bundle| bundle.project_digest().ok()),
-            // Flattened deliberately: a bundle carrying no signature and one
-            // whose verdict could not be computed are both "no verdict to
-            // show". The screen tells a bundle from a bare .wasm by whether
-            // an identity was printed, not by this.
-            bundle
-                .as_ref()
-                .and_then(|bundle| bundle.full_verdict(&revocations_known_here()).ok())
-                .flatten(),
+            TrustFacts {
+                // A bundle's identity belongs on the screen where someone
+                // decides whether to trust it. Without it, "the app I was
+                // told to verify" and "the app I am about to run" are the
+                // same claim only by trust.
+                digest: bundle.as_ref().and_then(|bundle| bundle.digest().ok()),
+                project_digest: bundle
+                    .as_ref()
+                    .and_then(|bundle| bundle.project_digest().ok()),
+                signature: bundle
+                    .as_ref()
+                    .and_then(|bundle| bundle.full_verdict(&revocations_known_here()).ok())
+                    .flatten(),
+                storage: manifest.map(|manifest| {
+                    let envelope = bundle
+                        .as_ref()
+                        .and_then(|bundle| bundle.signature_envelope().ok())
+                        .flatten();
+                    let verdict = bundle
+                        .as_ref()
+                        .and_then(|bundle| bundle.full_verdict(&revocations_known_here()).ok())
+                        .flatten();
+                    storage_principal(manifest, envelope.as_ref(), verdict.as_ref())
+                }),
+            },
         )?;
         return Ok(0);
     }
@@ -11063,6 +11073,25 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
         }
     }
 
+    // Who this app is for storage purposes (IC-736).
+    //
+    // A verified publisher gets their own namespace; anything unsigned,
+    // tampered, forged or revoked keeps the id-derived path it already had.
+    // Computed once so all four stores -- kv, sql, secrets, shared -- agree:
+    // a principal that differed between them would isolate an app's notes
+    // while leaving its passwords reachable.
+    let storage = manifest.map(|manifest| {
+        let envelope = bundle
+            .as_ref()
+            .and_then(|bundle| bundle.signature_envelope().ok())
+            .flatten();
+        let verdict = bundle
+            .as_ref()
+            .and_then(|bundle| bundle.full_verdict(&revocations_known_here()).ok())
+            .flatten();
+        storage_principal(manifest, envelope.as_ref(), verdict.as_ref())
+    });
+
     let config = Config {
         fuel: request.fuel,
         memory_bytes: request
@@ -11089,33 +11118,42 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
                 .as_ref()
                 .and_then(|bundle| bundle.assets_path().map(Path::to_path_buf))
         }),
-        // Keyed on the app's declared id, so its data follows the app rather
-        // than the file: renaming or moving the `.krate` keeps the same store,
-        // and an app's own updates keep their data.
+        // Keyed on the storage PRINCIPAL, not the declared id (IC-736).
         //
-        // What this does NOT do is prove the app is who it says (IC-736).
-        // The id comes from a manifest anyone can write, and nothing in the
-        // bundle format carries a publisher -- there is no signature field
-        // and no signing system yet. So a different unsigned archive
-        // declaring `dev.krate.keyvault` opens the real app's store, and the
-        // secret store's key derives from the same id.
+        // A signed app's data lives under its publisher, so another archive
+        // claiming the same id reaches a different place. That was not
+        // hypothetical: a journal app given `id = "dev.krate.keyvault"`
+        // opened the real keyvault's store and read `run-count MTEw`.
         //
-        // The fix is verified publisher lineage, which needs signing to
-        // exist first (CP1). Binding the store to the bundle digest instead
-        // was considered and rejected: the digest covers the component, so
-        // every update would produce a new one and every update would strand
-        // the person's data -- worse than the defect. Until then this is a
-        // known limitation, recorded rather than papered over.
-        app_store_path: manifest.map(|manifest| app_store_path(&manifest.app.id)),
-        app_database_path: manifest.map(|manifest| app_database_path(&manifest.app.id)),
-        app_secrets: manifest.map(|manifest| {
+        // An unsigned app keeps the id-derived path it already had. Moving
+        // it would lose people's notes to fix a problem they do not have --
+        // an unsigned app was never protected and still is not, which is
+        // what StoragePrincipal::Unverified says out loud.
+        //
+        // Binding the store to the bundle digest was considered and
+        // rejected: the digest covers the component, so every update would
+        // strand the person's data -- worse than the defect.
+        app_store_path: storage.as_ref().map(principal_store_path),
+        app_database_path: storage
+            .as_ref()
+            .map(|p| principal_store_path(p).with_extension("sqlite")),
+        app_secrets: storage.as_ref().map(|principal| {
             (
-                app_secrets_path(&manifest.app.id),
-                manifest.app.id.clone(),
+                principal_store_path(principal).with_extension("secrets"),
+                // The secret store derives its key from this string, so it
+                // must be the principal too. Leaving the bare id here would
+                // isolate an app's files while letting an impostor derive
+                // the same key and read its passwords.
+                principal.storage_key(),
                 machine_key(),
             )
         }),
-        app_shared: manifest.map(|manifest| (app_shared_path(&manifest.app.id), shared_hub_url())),
+        app_shared: storage.as_ref().map(|p| {
+            (
+                principal_store_path(p).with_extension("shared.json"),
+                shared_hub_url(),
+            )
+        }),
         phase3_ui_mode: request.ui_mode,
         screenshot_path: request.screenshot_path.clone(),
         screenshot_scale: request.screenshot_scale,
@@ -12603,15 +12641,31 @@ fn parse_grant_response(input: &str, caps: &[Capability]) -> Result<Vec<Capabili
     Ok(selected)
 }
 
+/// What a bundle can be said to be, on the screen where somebody decides
+/// whether to trust it: its identities, who signed it, and whose storage it
+/// reaches. Grouped because they answer one question together and are always
+/// computed together.
+#[derive(Default)]
+struct TrustFacts {
+    digest: Option<krate_bundle::provenance::BundleDigest>,
+    project_digest: Option<krate_bundle::provenance::BundleDigest>,
+    signature: Option<krate_bundle::signing::FullVerdict>,
+    storage: Option<StoragePrincipal>,
+}
+
 fn print_effective_capabilities(
     wasm_file: &Path,
     manifest: Option<&Manifest>,
     policy: &SessionPolicy,
     format: OutputFormat,
-    digest: Option<krate_bundle::provenance::BundleDigest>,
-    project_digest: Option<krate_bundle::provenance::BundleDigest>,
-    signature: Option<krate_bundle::signing::FullVerdict>,
+    trust: TrustFacts,
 ) -> Result<()> {
+    let TrustFacts {
+        digest,
+        project_digest,
+        signature,
+        storage,
+    } = trust;
     if format == OutputFormat::Json {
         let dump = RunCapsDump {
             wasm: wasm_file.display().to_string(),
@@ -12706,10 +12760,26 @@ fn print_effective_capabilities(
                 println!("  - {line}");
             }
         }
+        // Where this app's data lives follows from who signed it, so it
+        // belongs on the same screen: an unsigned app shares its storage
+        // with anything else claiming the same id, and a person deciding
+        // whether to trust it should be told that plainly.
+        if let Some(principal) = &storage {
+            if principal.is_verified() {
+                println!("  - its saved data is kept under this publisher");
+            } else {
+                println!("  - its saved data is shared with anything claiming the same app id");
+            }
+        }
         println!();
     } else if digest.is_some() {
         println!("Signature");
         println!("  - none: nobody has signed this app");
+        if let Some(principal) = &storage {
+            if !principal.is_verified() {
+                println!("  - its saved data is shared with anything claiming the same app id");
+            }
+        }
         println!();
     }
 
@@ -15411,6 +15481,135 @@ pub(crate) fn krate_home() -> PathBuf {
 /// sanitised rather than trusted: it comes from a manifest an app author wrote,
 /// so an id containing `..` or a path separator must not be able to place the
 /// store outside this directory or over another app's.
+/// Who a running app is, for the purpose of reaching storage (IC-736).
+///
+/// The manifest's `app.id` is a string its author chose, so keying storage on
+/// it means any app claiming an id gets that id's data. That is not a
+/// hypothetical: a journal app given `id = "dev.krate.keyvault"` opened the
+/// real keyvault's store and read `run-count MTEw` out of it.
+///
+/// A verified publisher changes the question from "what does this file call
+/// itself" to "who signed it". Two publishers may both ship an app called
+/// `notes`; their storage stays apart because their roots differ.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum StoragePrincipal {
+    /// A signed release: the publisher's key plus the app's id.
+    ///
+    /// The key is the part an impostor cannot supply. Including the id as
+    /// well keeps one publisher's two apps apart.
+    Verified { publisher: String, app_id: String },
+    /// No usable signature. Storage is keyed on the declared id alone, which
+    /// is exactly the weak case -- so it is a distinct variant rather than a
+    /// silent fallback, and callers can tell the two apart.
+    ///
+    /// Unsigned apps keep working and keep their existing data. Almost every
+    /// app today is unsigned, and moving their storage would lose people's
+    /// notes to fix a problem they do not have yet.
+    Unverified { app_id: String },
+}
+
+impl StoragePrincipal {
+    /// The directory-safe name this principal stores under.
+    ///
+    /// A verified app lands in its own subdirectory named for the publisher,
+    /// so it cannot collide with the unsigned file of the same id, and two
+    /// publishers shipping the same app id cannot collide with each other.
+    fn storage_key(&self) -> String {
+        match self {
+            // Short prefix of the publisher key: enough to separate
+            // publishers without an unreadable 64-character filename. A
+            // collision here needs a deliberate 16-hex-character preimage,
+            // and the consequence would be two of ONE publisher's own apps
+            // sharing a store, not a stranger reaching in.
+            StoragePrincipal::Verified { publisher, app_id } => {
+                format!(
+                    "{}@{}",
+                    sanitize_storage_name(app_id),
+                    &publisher[..publisher.len().min(16)]
+                )
+            }
+            StoragePrincipal::Unverified { app_id } => sanitize_storage_name(app_id),
+        }
+    }
+
+    /// Is this app's storage protected by a verified publisher?
+    pub(crate) fn is_verified(&self) -> bool {
+        matches!(self, StoragePrincipal::Verified { .. })
+    }
+}
+
+/// Work out who an app is, from its manifest and whatever signature it carries.
+///
+/// A signature only establishes lineage when it actually verifies AND the
+/// chain authorises it: a tampered file, a forged delegation or a revoked key
+/// must not hand an app the publisher's storage. Anything short of a full
+/// verdict falls back to the unverified principal, which is the same place
+/// the app was storing before -- no data is lost by failing to verify.
+pub(crate) fn storage_principal(
+    manifest: &Manifest,
+    envelope: Option<&krate_bundle::signing::SignatureEnvelope>,
+    verdict: Option<&krate_bundle::signing::FullVerdict>,
+) -> StoragePrincipal {
+    let app_id = manifest.app.id.clone();
+    let (Some(envelope), Some(full)) = (envelope, verdict) else {
+        return StoragePrincipal::Unverified { app_id };
+    };
+    if !full.is_trustworthy() {
+        return StoragePrincipal::Unverified { app_id };
+    }
+
+    // The publisher is the ROOT when a release key was delegated. Release
+    // keys rotate -- that is what they are for -- and storage keyed on one
+    // would be lost every rotation, which the requirement forbids
+    // ("preserve signed update continuity"). The root is what "this
+    // publisher" means across time.
+    //
+    // The root is read from the delegation only because the chain already
+    // verified it: an unverified envelope never reaches this line, so this
+    // is reading a value the signature vouched for, not trusting the file.
+    let publisher = match envelope.delegation.as_ref() {
+        Some(delegation) => delegation.delegation.root.clone(),
+        None => envelope.public_key.clone(),
+    };
+    StoragePrincipal::Verified { publisher, app_id }
+}
+
+/// Reduce a name to something safe to put in a path.
+fn sanitize_storage_name(name: &str) -> String {
+    let safe: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let safe = safe.replace("..", "__");
+    if safe.trim_matches(['.', '_'].as_slice()).is_empty() {
+        "unnamed-app".to_string()
+    } else {
+        safe
+    }
+}
+
+/// Where a principal's storage lives.
+///
+/// A verified app gets its own directory named for the publisher, so it can
+/// never collide with the unsigned file of the same id nor with a second
+/// publisher shipping the same app name.
+fn principal_store_path(principal: &StoragePrincipal) -> PathBuf {
+    match principal {
+        // Unchanged from before, byte for byte: an unsigned app must find
+        // the data it already has.
+        StoragePrincipal::Unverified { app_id } => app_store_path(app_id),
+        StoragePrincipal::Verified { .. } => krate_home()
+            .join("store")
+            .join(format!("{}.kv", principal.storage_key())),
+    }
+}
+
 fn app_store_path(app_id: &str) -> PathBuf {
     let safe: String = app_id
         .chars()
@@ -15431,23 +15630,6 @@ fn app_store_path(app_id: &str) -> PathBuf {
         safe
     };
     krate_home().join("store").join(format!("{safe}.kv"))
-}
-
-/// Where one app's database lives. Same directory and the same sanitising as
-/// the key-value store, so both follow the app rather than the file.
-fn app_database_path(app_id: &str) -> PathBuf {
-    let kv = app_store_path(app_id);
-    kv.with_extension("sqlite")
-}
-
-/// Where one app's secrets live, alongside its other storage.
-fn app_secrets_path(app_id: &str) -> PathBuf {
-    app_store_path(app_id).with_extension("secrets")
-}
-
-/// Where one app's shared-store mirror lives, alongside its other storage.
-fn app_shared_path(app_id: &str) -> PathBuf {
-    app_store_path(app_id).with_extension("shared.json")
 }
 
 /// Where the id of the agent session that last wrote this app is kept: beside
@@ -17705,8 +17887,149 @@ mod storage_identity_tests {
     /// known limitation waiting on signing (CP1) rather than an accident. The
     /// day verified lineage lands, the second assertion is the one that must
     /// change, and it will fail here loudly instead of being forgotten.
+    /// A verified publisher's storage is unreachable by anyone else
+    /// (IC-736, the E3 collision).
+    ///
+    /// Reproduced with real bundles before this landed: a journal app given
+    /// `id = "dev.krate.keyvault"` opened the real keyvault's store and read
+    /// `run-count MTEw` out of it. Now the signed app lives under its
+    /// publisher and the impostor cannot name that path.
     #[test]
-    fn storage_follows_the_declared_id_and_nothing_verifies_it() {
+    fn a_verified_app_is_isolated_from_anyone_claiming_its_id() {
+        let signed = StoragePrincipal::Verified {
+            publisher: "aaaaaaaaaaaaaaaabbbb".to_string(),
+            app_id: "dev.krate.keyvault".to_string(),
+        };
+        let impostor = StoragePrincipal::Unverified {
+            app_id: "dev.krate.keyvault".to_string(),
+        };
+        assert_ne!(
+            principal_store_path(&signed),
+            principal_store_path(&impostor),
+            "an unsigned archive claiming the id must not reach the signed \
+             app's store -- this is the exact E3 collision",
+        );
+
+        // A DIFFERENT publisher shipping the same app id is also separate:
+        // two people may both ship `notes`.
+        let other_publisher = StoragePrincipal::Verified {
+            publisher: "ccccccccccccccccdddd".to_string(),
+            app_id: "dev.krate.keyvault".to_string(),
+        };
+        assert_ne!(
+            principal_store_path(&signed),
+            principal_store_path(&other_publisher),
+            "two publishers shipping one app id must not share storage",
+        );
+
+        // And one publisher's two apps stay apart from each other.
+        let same_publisher_other_app = StoragePrincipal::Verified {
+            publisher: "aaaaaaaaaaaaaaaabbbb".to_string(),
+            app_id: "dev.krate.notes".to_string(),
+        };
+        assert_ne!(
+            principal_store_path(&signed),
+            principal_store_path(&same_publisher_other_app),
+        );
+
+        // Every storage kind moves together. A principal that isolated the
+        // key-value store while leaving secrets on the old path would hide
+        // the hole rather than close it.
+        let signed_kv = principal_store_path(&signed);
+        let impostor_kv = principal_store_path(&impostor);
+        for extension in ["sqlite", "secrets", "shared.json"] {
+            assert_ne!(
+                signed_kv.with_extension(extension),
+                impostor_kv.with_extension(extension),
+                "{extension} must be isolated too, or the passwords are still reachable",
+            );
+        }
+        // The secret store keys on this string, so it must differ as well.
+        assert_ne!(signed.storage_key(), impostor.storage_key());
+    }
+
+    /// An app whose signature does not hold gets no publisher storage.
+    ///
+    /// Tampered, forged, expired and revoked all land in the same place as
+    /// unsigned: the storage an impostor could already reach. Anything else
+    /// would hand a revoked key the publisher's data.
+    #[test]
+    fn only_a_trustworthy_verdict_earns_a_publishers_storage() {
+        use krate_bundle::signing::{FullVerdict, Verdict};
+
+        let manifest = Manifest::parse(
+            "[app]\nid = \"dev.krate.keyvault\"\nname = \"K\"\nversion = \"1.0.0\"\n\
+             entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n",
+        )
+        .expect("manifest");
+
+        // No signature at all.
+        assert!(!storage_principal(&manifest, None, None).is_verified());
+
+        // A signature that did not verify.
+        let bad = FullVerdict {
+            signature: Verdict::BadSignature,
+            chain: None,
+        };
+        assert!(
+            !storage_principal(&manifest, None, Some(&bad)).is_verified(),
+            "a failed signature must not earn publisher storage",
+        );
+
+        // Tampered: the file is not what was signed.
+        let tampered = FullVerdict {
+            signature: Verdict::Tampered { problems: vec![] },
+            chain: None,
+        };
+        assert!(!storage_principal(&manifest, None, Some(&tampered)).is_verified());
+
+        // The case the other arms cannot catch: the SIGNATURE is perfect and
+        // the CHAIN is not -- a revoked release key. Without this, removing
+        // the is_trustworthy() gate entirely passed every test here, because
+        // the remaining arms fail the Verdict::Valid match on their own.
+        let envelope = krate_bundle::signing::SignatureEnvelope {
+            schema: krate_bundle::signing::SIGNATURE_SCHEMA.to_string(),
+            namespace: "acme/keyvault".to_string(),
+            version: "1.0.0".to_string(),
+            signed_at: 1_700_000_000,
+            public_key: "aa".repeat(32),
+            signature: "bb".repeat(64),
+            statement_digest: String::new(),
+            signed_entries: Default::default(),
+            delegation: None,
+        };
+        let revoked = FullVerdict {
+            signature: Verdict::Valid {
+                public_key: vec![0xaa; 32],
+            },
+            chain: Some(krate_bundle::delegation::ChainVerdict::RevokedAtSigning {
+                compromised_from: 1_699_999_000,
+                signed_at: 1_700_000_000,
+                reason: "key stolen".to_string(),
+            }),
+        };
+        assert!(
+            !storage_principal(&manifest, Some(&envelope), Some(&revoked)).is_verified(),
+            "a revoked key must not reach the publisher's storage, however \
+             good its signature is",
+        );
+
+        // And the honest case still earns it, so the test is not passing by
+        // refusing everything.
+        let good = FullVerdict {
+            signature: Verdict::Valid {
+                public_key: vec![0xaa; 32],
+            },
+            chain: Some(krate_bundle::delegation::ChainVerdict::Authorised),
+        };
+        assert!(
+            storage_principal(&manifest, Some(&envelope), Some(&good)).is_verified(),
+            "a genuinely authorised release must get its publisher storage",
+        );
+    }
+
+    #[test]
+    fn storage_follows_the_declared_id_when_nothing_verifies_it() {
         // The right half: one app, one store, whatever file it arrived in.
         assert_eq!(
             app_store_path("dev.krate.keyvault"),
@@ -17719,31 +18042,28 @@ mod storage_identity_tests {
             app_store_path("dev.krate.notes"),
             "two apps must never share a store"
         );
-        // Every storage kind derives from the same id, so the limitation is
-        // the same for all four rather than differing per kind.
-        let id = "dev.krate.keyvault";
-        for path in [
-            app_database_path(id),
-            app_secrets_path(id),
-            app_shared_path(id),
-        ] {
+        // Every storage kind hangs off one base path, so a principal cannot
+        // isolate an app's notes while leaving its passwords behind.
+        let base = app_store_path("dev.krate.keyvault");
+        for extension in ["sqlite", "secrets", "shared.json"] {
             assert_eq!(
-                path.parent(),
-                app_store_path(id).parent(),
+                base.with_extension(extension).parent(),
+                base.parent(),
                 "all of an app's storage lives together"
             );
         }
 
-        // The hole, stated as a fact rather than left implicit: an impostor
-        // that declares the same id gets the same store, because nothing in
-        // the format distinguishes the two. Reproduced with real manifests
-        // in the E3 collision; this is the unit-level statement of it.
-        let impostor_gets_the_same_store =
-            app_store_path("dev.krate.keyvault") == app_store_path("dev.krate.keyvault");
-        assert!(
-            impostor_gets_the_same_store,
-            "if this now fails, verified lineage has landed -- update IC-736 \
-             and rewrite this test to assert the isolation instead"
+        // Two UNSIGNED archives claiming one id still share a store, and
+        // that is deliberate rather than unfixed: an unsigned app was never
+        // protected, and moving its data to a new path would lose people's
+        // notes without protecting anything. The isolation that does exist
+        // is asserted in
+        // `a_verified_app_is_isolated_from_anyone_claiming_its_id`.
+        assert_eq!(
+            app_store_path("dev.krate.keyvault"),
+            app_store_path("dev.krate.keyvault"),
+            "unsigned apps keep the path they already had, so existing data \
+             is not stranded",
         );
     }
 
