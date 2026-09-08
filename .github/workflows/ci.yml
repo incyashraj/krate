@@ -1619,6 +1619,15 @@ jobs:
             echo "== $test"
             node "$test"
           done
+      # The build service, driven as a real process with a stub hub and a
+      # fake engine: ownership on every job operation, restart honesty,
+      # download expiry, and the audit trail (IC-416).
+      - name: Build service tests
+        run: |
+          for test in cloud/builder/test/*.test.mjs; do
+            echo "== $test"
+            node "$test"
+          done
       - name: Install mdBook
         run: |
           mkdir -p ~/bin

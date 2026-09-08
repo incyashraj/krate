@@ -15,8 +15,19 @@
 
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
+import {
+  appendFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -34,6 +45,141 @@ const BUILD_TIMEOUT_MS = Number(process.env.KRATE_BUILD_TIMEOUT_MS || 15 * 60 * 
  * bill and a bankruptcy, since each build is inference we pay for. */
 const jobs = new Map();          // id -> job
 const activeByAccount = new Map(); // account -> job id
+
+/* ---- durable state -------------------------------------------------------
+ * The machine stops when nobody is building and starts on the next request.
+ * Jobs used to live only in this process, so every one of those restarts
+ * silently forgot them: a person polling their build id got "no such build"
+ * with no way to tell a typo from a lost result. Job records and finished
+ * bundles now live on the volume, and a restart answers honestly instead.
+ */
+const STATE_DIR = process.env.KRATE_STATE_DIR || "/work/state";
+const JOBS_DIR = join(STATE_DIR, "jobs");
+let stateWritable = false;
+
+/* A finished bundle is handed over and then expires. We are not the file's
+ * host: the download exists so the person can save their app, not so a URL
+ * can serve it forever. */
+const RESULT_TTL_MS = Number(process.env.KRATE_RESULT_TTL_MS || 60 * 60 * 1000);
+
+async function initState() {
+  try {
+    await mkdir(JOBS_DIR, { recursive: true });
+    stateWritable = true;
+  } catch (err) {
+    // No volume (a dev checkout, a test without the env var pointing
+    // anywhere writable): the service still works, jobs are just mortal.
+    console.error(`state dir unavailable (${err.message}); jobs will not survive a restart`);
+    return;
+  }
+
+  // Every record left by the previous life of this process. A job that was
+  // mid-build when the machine stopped cannot be resumed -- the compiler
+  // died with the process -- so it is reported as what it is, not left
+  // "working" forever and not forgotten.
+  let names = [];
+  try { names = await readdir(JOBS_DIR); } catch (e) { return; }
+  for (const name of names) {
+    if (!name.endsWith(".json")) continue;
+    try {
+      const job = JSON.parse(await readFile(join(JOBS_DIR, name), "utf8"));
+      job.proc = null;
+      if (job.state === "working") {
+        job.state = "failed";
+        job.error = "The build machine restarted while this was being made. Start it again -- a failed build never costs a free one.";
+        await persistJob(job);
+      }
+      jobs.set(job.id, job);
+    } catch (e) { /* a torn write from a crash; skip it */ }
+  }
+}
+
+/* What survives a restart: the record, never the process, and the bytes as
+ * their own file so the JSON stays small enough to write atomically. */
+async function persistJob(job) {
+  if (!stateWritable) return;
+  const { proc, result, ...record } = job;
+  if (result) {
+    record.result = { ...result, bytes: undefined, onDisk: true };
+  }
+  try {
+    // Write-then-rename, so a crash mid-write leaves the old record whole
+    // rather than a torn file the boot loader has to skip.
+    const path = join(JOBS_DIR, `${job.id}.json`);
+    await writeFile(`${path}.tmp`, JSON.stringify(record));
+    await rename(`${path}.tmp`, path);
+  } catch (e) { /* the next state change tries again */ }
+}
+
+async function persistResultBytes(job) {
+  if (!stateWritable || !job.result || !job.result.bytes) return;
+  try {
+    await writeFile(join(JOBS_DIR, `${job.id}.krate`), job.result.bytes);
+  } catch (e) { /* the in-memory copy still serves until restart */ }
+}
+
+async function resultBytes(job) {
+  if (job.result && job.result.bytes) return job.result.bytes;
+  if (job.result && job.result.onDisk) {
+    try { return await readFile(join(JOBS_DIR, `${job.id}.krate`)); } catch (e) { return null; }
+  }
+  return null;
+}
+
+/* Results expire; expired jobs say so rather than vanish. */
+async function expireOldResults() {
+  const now = Date.now();
+  for (const job of jobs.values()) {
+    if (job.state !== "done" || !job.finished) continue;
+    if (now - job.finished < RESULT_TTL_MS) continue;
+    job.state = "expired";
+    job.result = null;
+    job.error = "This finished a while ago and the download has expired. Start the build again if you still need the file.";
+    try { await unlink(join(JOBS_DIR, `${job.id}.krate`)); } catch (e) {}
+    await persistJob(job);
+    await audit({ action: "expire", account: job.account, job: job.id });
+  }
+}
+
+/* ---- who is asking -------------------------------------------------------
+ * Every operation on a job -- status, download, stop -- must come from the
+ * account that started it. The hub is the authority; a short cache keeps a
+ * two-second poll from becoming a hub request per poll. Cached by token, so
+ * a refreshed sign-in (new token, same account) just takes one more lookup,
+ * and an expired one stops working when the hub says so.
+ */
+const accountCache = new Map(); // token -> { account, until }
+const ACCOUNT_CACHE_MS = 60 * 1000;
+
+async function resolveAccount(token) {
+  if (process.env.KRATE_BUILDER_DEV === "1") return "dev";
+  if (!token) return null;
+  const hit = accountCache.get(token);
+  if (hit && hit.until > Date.now()) return hit.account;
+  try {
+    const res = await fetch(`${HUB}/me`, { headers: { authorization: `Bearer ${token}` } });
+    if (!res.ok) { accountCache.delete(token); return null; }
+    const me = await res.json();
+    const account = (me.user && (me.user.login || me.user.email)) || null;
+    if (account) accountCache.set(token, { account, until: Date.now() + ACCOUNT_CACHE_MS });
+    return account;
+  } catch (e) {
+    // The hub being unreachable must not grant access; a stale cache entry
+    // (checked above) is the only grace.
+    return null;
+  }
+}
+
+/* ---- audit ---------------------------------------------------------------
+ * One line per thing that happened to a job: started, finished, failed,
+ * stopped, downloaded, denied, expired. Not per poll -- a status check is
+ * reading, not doing. JSON lines, append-only, on the volume.
+ */
+async function audit(entry) {
+  if (!stateWritable) return;
+  const line = JSON.stringify({ at: new Date().toISOString(), ...entry }) + "\n";
+  try { await appendFile(join(STATE_DIR, "audit.log"), line); } catch (e) {}
+}
 
 /* The engine's own progress vocabulary, mapped to the four stages Studio
  * shows. These patterns are lifted from studio/ui/app.js so the web and
@@ -142,7 +288,12 @@ async function allowedToBuild(token, device) {
 /* ---- running one build --------------------------------------------------- */
 
 async function startBuild({ request, token, account, device }) {
-  const id = randomUUID().slice(0, 12);
+  // 128 random bits. The id appears in URLs and is all a page holds, so it
+  // must not be guessable -- the truncated UUID this used to be was the only
+  // thing between anyone on the internet and another person's app file.
+  // Ownership is checked on every operation now, but the id stays opaque:
+  // two locks, and this one also keeps 404 and 403 indistinguishable.
+  const id = randomBytes(16).toString("hex");
   const dir = await mkdtemp(join(tmpdir(), "krate-build-"));
   const output = join(dir, "app.krate");
   const shotPath = join(dir, "frame.png");
@@ -156,10 +307,13 @@ async function startBuild({ request, token, account, device }) {
     result: null,
     error: null,
     started: Date.now(),
+    finished: null,
     proc: null,
   };
   jobs.set(id, job);
   activeByAccount.set(account, id);
+  await persistJob(job);
+  await audit({ action: "start", account, job: id });
 
   // The engine prints its progress as it works; that is what drives the
   // stages. The app's picture comes after, from running the finished file
@@ -200,10 +354,17 @@ async function startBuild({ request, token, account, device }) {
     clearTimeout(killer);
     activeByAccount.delete(account);
 
-    if (job.state === "stopped") return cleanup(job);
+    if (job.state === "stopped") {
+      await persistJob(job);
+      await audit({ action: "stopped", account, job: job.id });
+      return cleanup(job);
+    }
     if (code !== 0 || job.error) {
       job.state = "failed";
       job.error = job.error || plainFailure(tail);
+      job.finished = Date.now();
+      await persistJob(job);
+      await audit({ action: "failed", account, job: job.id });
       return cleanup(job);
     }
 
@@ -226,12 +387,22 @@ async function startBuild({ request, token, account, device }) {
         bytes,
       };
       job.state = "done";
+      job.finished = Date.now();
+      // The bundle goes to the volume before the record says "done", so a
+      // restart between the two cannot leave a record that promises a file
+      // the disk does not have.
+      await persistResultBytes(job);
+      await persistJob(job);
+      await audit({ action: "done", account, job: job.id });
       // Only a build that produced a file counts against the free three.
       // A failure the person did not cause must never cost them one.
       countTheMake(token, job.device).catch(() => {});
     } catch (err) {
       job.state = "failed";
       job.error = "The app was made but could not be read back.";
+      job.finished = Date.now();
+      await persistJob(job);
+      await audit({ action: "failed", account, job: job.id });
     }
     cleanup(job, { keepFile: true });
   });
@@ -403,17 +574,34 @@ const server = createServer(async (req, res) => {
 
     if (req.method === "GET" && url.pathname.startsWith("/build/")) {
       const [, , id, action] = url.pathname.split("/");
+      await expireOldResults();
+
+      // Every operation on a job belongs to the account that started it.
+      // These routes used to take no token at all: the truncated id was the
+      // only secret, and anyone holding it could read the status, download
+      // the finished app, or kill the build. Now the token is resolved to an
+      // account and compared -- and a job that is not yours looks exactly
+      // like a job that does not exist, so a probe learns nothing.
+      const account = await resolveAccount(token);
+      if (!account) return send(res, 401, "Sign in first.");
       const job = jobs.get(id);
-      if (!job) return send(res, 404, "no such build");
+      if (!job || job.account !== account) {
+        if (job) await audit({ action: "denied", account, job: id });
+        return send(res, 404, "no such build");
+      }
 
       if (action === "file") {
+        if (job.state === "expired") return send(res, 404, job.error);
         if (!job.result) return send(res, 404, "not ready");
+        const bytes = await resultBytes(job);
+        if (!bytes) return send(res, 404, "not ready");
         res.setHeader("content-type", "application/octet-stream");
         res.setHeader(
           "content-disposition",
           `attachment; filename="${job.result.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.krate"`,
         );
-        return send(res, 200, job.result.bytes);
+        await audit({ action: "download", account, job: id });
+        return send(res, 200, bytes);
       }
 
       return json(res, 200, {
@@ -435,13 +623,27 @@ const server = createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname.endsWith("/stop")) {
       const id = url.pathname.split("/")[2];
+
+      // Owned, like every other operation: stopping somebody else's build
+      // is denying them the thing they are paying attention to.
+      const account = await resolveAccount(token);
+      if (!account) return send(res, 401, "Sign in first.");
       const job = jobs.get(id);
-      if (job && job.proc) {
+      if (!job || job.account !== account) {
+        if (job) await audit({ action: "denied", account, job: id });
+        return send(res, 404, "no such build");
+      }
+
+      // Idempotent. A double-tap on the stop button, or a stop after the
+      // build already finished, changes nothing and says what is true.
+      if (job.state === "working" && job.proc) {
         job.state = "stopped";
         try { job.proc.kill("SIGTERM"); } catch (e) {}
         activeByAccount.delete(job.account);
+        await persistJob(job);
+        await audit({ action: "stop", account, job: id });
       }
-      return json(res, 200, { ok: true });
+      return json(res, 200, { ok: true, state: job.state });
     }
 
     return send(res, 404, "not found");
@@ -474,6 +676,9 @@ function send(res, status, body) {
   res.end(body);
 }
 
+// State first, then the port: a request that arrives before the old records
+// are loaded would answer "no such build" about a job the disk knows.
+await initState();
 server.listen(PORT, () => {
   console.log(`krate builder on :${PORT} (engine: ${KRATE}, agent: ${AGENT})`);
 });
