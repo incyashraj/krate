@@ -113,3 +113,7 @@ ehthumbs.db
 
 # Python leaves these beside the check scripts in scripts/.
 __pycache__/
+
+# Release decision records quote the private defect board's titles, so they
+# stay on this machine with the board they read from.
+/evidence/releases/

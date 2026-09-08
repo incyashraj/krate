@@ -1601,6 +1601,11 @@ jobs:
       # founder's machine before anything is sent, it means something (IC-655).
       - name: Prove the fundraising checks still bite
         run: python3 scripts/check-fundraising.py --self-test
+      # The release decision record runs for real on the founder's machine
+      # (the defect board is private, and absence forces HOLD by design).
+      # CI proves the tool: every gate alone must hold a release (IC-159).
+      - name: Prove the release decision holds on every gate
+        run: python3 scripts/release-decision.py --self-test
       # The open-core boundary: the player and format are MIT/Apache, Studio
       # and the hub worker are BSL 1.1. It breaks by an MIT crate quietly
       # depending on the product layer, not by anyone relicensing a file

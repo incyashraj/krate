@@ -44,6 +44,16 @@ tracking files.
 Work top-down: goal, then gate, then workstation. If a task has no line back up
 to a goal in that file, question whether it should be done at all.
 
+## Report real progress to Founder OS
+
+Founder OS is the local view of the work. It does not replace `GOALS.md` or
+`BUGS.md`. When `http://localhost:3000` is available, use the
+`krate-founder-os` MCP tools or `./Plan/founder-os/founder-os` to find the
+narrowest matching task, mark it started, append material progress, attach
+evidence, and mark it done only after its completion checks pass. Never replace
+the founder's notes and do not send heartbeat updates. Read
+`Plan/founder-os/AI-INTEGRATION.md` for the exact workflow and examples.
+
 ## Testing like a stranger
 
 Users never ask for templates, so tests must not use them. Ask for arbitrary
@@ -88,6 +98,20 @@ So: **stage the paths you actually touched.** `git add apps/krate-query
 apps/krate-trace`, never a bare `git add -A` or `git add .` while other
 agents are running. If the work is genuinely parallel and long, give each
 agent its own worktree.
+
+## Cutting a stable tag
+
+Before any non-rc tag, run `python3 scripts/release-decision.py` on this
+machine (the board lives here; CI cannot read it). It writes the decision
+record to `evidence/releases/` and exits 1 on HOLD, listing exactly what
+holds the release: a red or missing lane, stale fuzz or advisory evidence,
+claim drift, and every open blocker on the board.
+
+A HOLD is not an obstacle to argue with -- it is the release saying what it
+would ship broken. An open blocker rides along only via
+`--accept K-nnn --because "..."`, and that acceptance is the founder's call,
+never the agent's. The record stays local (evidence/releases/ is ignored:
+it quotes the private board), beside the board it read.
 
 ## Commits
 
