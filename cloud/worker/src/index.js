@@ -192,6 +192,22 @@ export default {
       if (request.method === "POST" && pathname === "/plan/get") {
         return cors(await planCount(request, env, false));
       }
+      // ---- the funded-case ledger (IC-414) -----------------------------
+      // The allowance is counted in CASES -- one per app somebody asked
+      // for -- not in raw counter bumps. A failed attempt retries inside
+      // its case for free; only a case that produced a file consumes one.
+      if (request.method === "POST" && pathname === "/case/open") {
+        return cors(await caseOpen(request, env));
+      }
+      if (request.method === "POST" && pathname === "/case/attempt") {
+        return cors(await caseAttempt(request, env));
+      }
+      if (request.method === "POST" && pathname === "/case/close") {
+        return cors(await caseClose(request, env));
+      }
+      if (request.method === "POST" && pathname === "/case/list") {
+        return cors(await caseList(request, env));
+      }
       // ---- the account: profile, apps, referrals, the portal ----------
       if (request.method === "GET" && pathname === "/me") {
         return cors(await meProfile(request, env));
@@ -2153,6 +2169,223 @@ async function billingWebhook(request, env) {
 
 // ================================================================ free tier
 
+// ================================================== the funded-case ledger
+//
+// One case per app somebody asked for. The old mechanism was a pair of bare
+// counters (mkacct:, mkdev:) bumped when a make produced a file -- a number
+// with no story, which could not tell a retry from a new app, could not
+// refund a failure that was our fault, and lost one of every two
+// simultaneous increments to a read-modify-write race.
+//
+// A case is its own KV key, written under every identity the caller
+// presented (account and/or device -- the same two-key rule as the
+// counters, so switching accounts does not hand back an allowance):
+//
+//   case:acct:<userId>:<caseId>
+//   case:dev:<deviceHash>:<caseId>
+//
+// Its lifecycle: opened (funded, consuming nothing yet) -> attempts append
+// (made / provider-failed / infra-failed / krate-failed / not-as-asked /
+// stopped / revision) -> closed (accepted or abandoned). ONLY a case with a
+// "made" attempt counts against the allowance: a failure the person did not
+// cause retries inside its case for free, and an abandoned case that never
+// produced a file never cost anything. A revision of the same app is an
+// attempt on its case; a different app is a new case.
+//
+// The race two devices used to lose: each case is a distinct key, so
+// nothing is overwritten. Two simultaneous opens at 2-of-3 both succeed and
+// the ledger briefly holds four cases; the wall refuses the next open. An
+// overspend of one in the worst race, never a lost record -- the opposite
+// trade from the counters, and the right one, because a lost count was
+// silent and this is visible in the person's own ledger.
+
+const CASE_LIMIT_FREE = 3; // three EVER, per the 2026-09-01 ruling
+
+function caseKeys(user, device) {
+  const keys = [];
+  if (user) keys.push(`case:acct:${user.id}:`);
+  if (/^[0-9a-f]{64}$/.test(device)) keys.push(`case:dev:${device}:`);
+  return keys;
+}
+
+/// Every case under these identities, one entry per case id.
+async function loadCases(env, prefixes) {
+  const byId = new Map();
+  for (const prefix of prefixes) {
+    const listing = await env.APPS.list({ prefix, limit: 1000 });
+    for (const key of listing.keys) {
+      const id = key.name.slice(prefix.length);
+      if (byId.has(id)) continue;
+      const record = JSON.parse((await env.APPS.get(key.name)) || "null");
+      if (record) byId.set(id, record);
+    }
+  }
+  return byId;
+}
+
+/// The number that gates the wall: cases that produced a file.
+function madeCount(byId) {
+  let n = 0;
+  for (const record of byId.values()) if (record.made) n += 1;
+  return n;
+}
+
+async function writeCase(env, prefixes, record) {
+  await Promise.all(
+    prefixes.map((prefix) => env.APPS.put(`${prefix}${record.id}`, JSON.stringify(record))),
+  );
+}
+
+/// The old counters become legacy cases, once, lazily.
+///
+/// Anyone who made apps before the ledger existed has a number in mkacct:/
+/// mkdev: and no cases. If the counter says more than the ledger does, the
+/// difference is minted as closed, accepted, made cases marked "migrated" --
+/// so the allowance they spent stays spent, and it is now READABLE: every
+/// consumed slot is a record, not a bare integer.
+async function migrateCounters(env, user, device, prefixes, byId) {
+  const counterKeys = [];
+  if (user) counterKeys.push(`mkacct:${user.id}`);
+  if (/^[0-9a-f]{64}$/.test(device)) counterKeys.push(`mkdev:${device}`);
+  if (!counterKeys.length) return byId;
+
+  const counts = await Promise.all(counterKeys.map((k) => env.APPS.get(k)));
+  const counter = counts.reduce((most, raw) => Math.max(most, parseInt(raw || "0", 10)), 0);
+  const short = counter - madeCount(byId);
+  for (let i = 0; i < short; i++) {
+    const record = {
+      id: `legacy-${crypto.randomUUID().replaceAll("-", "").slice(0, 16)}`,
+      opened: new Date().toISOString(),
+      state: "accepted",
+      made: true,
+      request: "",
+      attempts: [
+        { at: new Date().toISOString(), outcome: "made", note: "migrated from the counter" },
+      ],
+    };
+    await writeCase(env, prefixes, record);
+    byId.set(record.id, record);
+  }
+  return byId;
+}
+
+async function caseIdentity(request, env, body) {
+  const device = String(body.device || "");
+  const user = await authedUser(request, env);
+  const prefixes = caseKeys(user, device);
+  return { user, device, prefixes };
+}
+
+async function caseOpen(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const { user, device, prefixes } = await caseIdentity(request, env, body);
+  if (!prefixes.length) return text("Sign in first, or send a device id.", 400);
+
+  const byId = await migrateCounters(env, user, device, prefixes, await loadCases(env, prefixes));
+
+  // The wall. A paid plan lifts it; the free allowance is counted in cases
+  // that produced a file, so a person whose three attempts all failed for
+  // our reasons has spent nothing.
+  const made = madeCount(byId);
+  if (made >= CASE_LIMIT_FREE) {
+    const ent = user ? JSON.parse((await env.APPS.get(`ent:${user.id}`)) || "null") : null;
+    if (!entitlementActive(ent)) {
+      return json({ wall: true, n: made, message: "The free apps are used. Studio is $12 a month, unlimited." }, 402);
+    }
+  }
+
+  const record = {
+    id: crypto.randomUUID().replaceAll("-", "").slice(0, 16),
+    opened: new Date().toISOString(),
+    state: "open",
+    made: false,
+    request: String(body.request || "").slice(0, 200),
+    attempts: [],
+  };
+  await writeCase(env, prefixes, record);
+  return json({ id: record.id, n: made });
+}
+
+const CASE_OUTCOMES = new Set([
+  "made", // a file was produced -- this is the one that consumes the case's funding
+  "provider-failed", // the AI vendor failed; not the person's fault
+  "infra-failed", // our machine failed; not the person's fault
+  "krate-failed", // the engine failed; not the person's fault
+  "not-as-asked", // built, but the wrong thing -- exit 6 in the CLI's vocabulary
+  "stopped", // the person stopped it
+  "revision", // more work on the same app, inside the same case
+]);
+
+async function loadOwnCase(env, prefixes, id) {
+  if (!/^[a-z0-9-]{1,40}$/.test(id)) return null;
+  for (const prefix of prefixes) {
+    const record = JSON.parse((await env.APPS.get(`${prefix}${id}`)) || "null");
+    if (record) return record;
+  }
+  return null;
+}
+
+async function caseAttempt(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const { prefixes } = await caseIdentity(request, env, body);
+  if (!prefixes.length) return text("Sign in first, or send a device id.", 400);
+
+  const outcome = String(body.outcome || "");
+  if (!CASE_OUTCOMES.has(outcome)) {
+    return text(`say what happened: one of ${[...CASE_OUTCOMES].join(", ")}`, 400);
+  }
+  // Only a case you can name under your own identity: the id space is per
+  // account/device, so someone else's case id simply is not found.
+  const record = await loadOwnCase(env, prefixes, String(body.id || ""));
+  if (!record) return text("no such case", 404);
+  if (record.state !== "open") {
+    return text(`that case is ${record.state}; new work is a new case`, 409);
+  }
+
+  record.attempts.push({
+    at: new Date().toISOString(),
+    outcome,
+    note: String(body.note || "").slice(0, 200) || undefined,
+  });
+  if (outcome === "made") record.made = true;
+  await writeCase(env, prefixes, record);
+  return json({ id: record.id, state: record.state, made: record.made });
+}
+
+async function caseClose(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const { prefixes } = await caseIdentity(request, env, body);
+  if (!prefixes.length) return text("Sign in first, or send a device id.", 400);
+
+  const verdict = String(body.verdict || "");
+  if (verdict !== "accepted" && verdict !== "abandoned") {
+    return text("verdict is accepted or abandoned", 400);
+  }
+  const record = await loadOwnCase(env, prefixes, String(body.id || ""));
+  if (!record) return text("no such case", 404);
+
+  // Closing twice with the same verdict is idempotent; changing a verdict
+  // is not a thing -- the record is the history.
+  if (record.state === "open") {
+    record.state = verdict;
+    record.closed = new Date().toISOString();
+    await writeCase(env, prefixes, record);
+  }
+  // An abandoned case that never made a file was never counted; nothing to
+  // refund because nothing was taken. One that made a file stays counted:
+  // the file exists.
+  return json({ id: record.id, state: record.state, made: record.made });
+}
+
+async function caseList(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const { user, device, prefixes } = await caseIdentity(request, env, body);
+  if (!prefixes.length) return text("Sign in first, or send a device id.", 400);
+  const byId = await migrateCounters(env, user, device, prefixes, await loadCases(env, prefixes));
+  const cases = [...byId.values()].sort((a, b) => (a.opened < b.opened ? -1 : 1));
+  return json({ n: madeCount(byId), limit: CASE_LIMIT_FREE, cases });
+}
+
 async function planCount(request, env, increment) {
   const body = await request.json().catch(() => ({}));
   const device = String(body.device || "");
@@ -2177,24 +2410,58 @@ async function planCount(request, env, increment) {
     return text("Sign in first, or send a device id.", 400);
   }
 
-  // No month in the key. Three EVER, per Yashraj's ruling (2026-09-01):
-  // the words must not promise a reset the wall will not honour.
-  const counts = await Promise.all(keys.map((k) => env.APPS.get(k)));
-  let n = counts.reduce((most, raw) => Math.max(most, parseInt(raw || "0", 10)), 0);
+  // The wire contract is unchanged -- {n, keys} in, {device, n} out -- but
+  // the number now comes from the funded-case ledger, with the old counters
+  // as a migration floor. No month anywhere. Three EVER, per Yashraj's
+  // ruling (2026-09-01): the words must not promise a reset the wall will
+  // not honour.
+  const prefixes = caseKeys(user, device);
+  const byId = await migrateCounters(env, user, device, prefixes, await loadCases(env, prefixes));
 
   // A device that made apps offline reports the higher local number; the
-  // mirror never goes backward, so an offline make is still counted.
+  // mirror never goes backward, so an offline make is still counted --
+  // minted as cases, so even those slots have a readable record.
   const local = Number.isFinite(body.n) ? Math.max(0, Math.floor(body.n)) : 0;
-  n = Math.max(n, local);
-  if (increment) n = n + 1;
+  let short = local - madeCount(byId);
+  while (short > 0) {
+    const record = {
+      id: `offline-${crypto.randomUUID().replaceAll("-", "").slice(0, 16)}`,
+      opened: new Date().toISOString(),
+      state: "accepted",
+      made: true,
+      request: "",
+      attempts: [
+        { at: new Date().toISOString(), outcome: "made", note: "made offline, mirrored later" },
+      ],
+    };
+    await writeCase(env, prefixes, record);
+    byId.set(record.id, record);
+    short -= 1;
+  }
 
   if (increment) {
-    // Both keys carry the same number, so removing either one does not
-    // hand back an allowance. No TTL: an expiry is a monthly reset by
-    // another name.
+    // The legacy increment is one whole case: opened, made, accepted, in a
+    // single call. Older clients (Studio's plan_count_make, the builder's
+    // countTheMake) speak this route and get exact ledger semantics without
+    // knowing the ledger exists.
+    const record = {
+      id: crypto.randomUUID().replaceAll("-", "").slice(0, 16),
+      opened: new Date().toISOString(),
+      state: "accepted",
+      made: true,
+      request: String(body.request || "").slice(0, 200),
+      attempts: [{ at: new Date().toISOString(), outcome: "made" }],
+    };
+    await writeCase(env, prefixes, record);
+    byId.set(record.id, record);
+  }
+
+  const n = madeCount(byId);
+  // The counters stay mirrored on writes. Nothing reads them for truth any
+  // more, but a rolled-back worker would, and a rollback that hands out
+  // free apps is the expensive kind of surprise.
+  if (increment || local > 0) {
     await Promise.all(keys.map((k) => env.APPS.put(k, String(n))));
-    // The old per-month key is left alone. It expires on its own, and
-    // deleting it would give anyone mid-month a silent extra make.
   }
   return json({ n, keys: keys.length });
 }
