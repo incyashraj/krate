@@ -43,6 +43,18 @@ live = d.get("live") or {}
 def total(by_day, key):
     return sum(day.get(key, 0) for day in (by_day or {}).values())
 
+def peak_machines(live):
+    """Distinct machines on the busiest single day of the live window.
+
+    A peak rather than a sum: the same machine active on ten days is one
+    machine, and adding the days would count it ten times -- the exact
+    mistake that makes an event count look like an audience.
+    """
+    by_day = live.get("active_machines_by_day") or {}
+    if not by_day:
+        return ""
+    return max(by_day.values())
+
 kv = d.get("actions_by_day") or {}
 lv = live.get("actions_by_day") or {}
 
@@ -65,6 +77,15 @@ print("\t".join(str(x) for x in [
     total(days, "publish"),
     total(days, "open-failed"),
     live.get("distinct_installs") or d.get("distinct_installs_90d") or 0,
+    # The denominator. Every column to the left counts events; this counts
+    # the machines that produced them, so a reader can tell traffic from
+    # people. 38,356 opens against 461 machines is 83 opens each, which is
+    # our own CI and development -- not adoption (K-243, IC-428).
+    #
+    # Blank, never 0, when the query could not answer: a zero here would be
+    # a claim that nothing was active, and that is a different statement
+    # from "we do not know".
+    peak_machines(live),
 ]))
 ')" || { echo "could not read the stats payload" >&2; exit 1; }
 
@@ -85,14 +106,27 @@ if command -v gh >/dev/null 2>&1; then
 fi
 row="$row	$gh_row"
 
-header="date	source	views	installs	makes	opens	publishes	open_failed	distinct_installs	gh_dl_studio	gh_dl_cli	gh_repo_views_14d	gh_repo_uniques_14d"
+header="date	source	views	installs	makes	opens	publishes	open_failed	distinct_installs	peak_machines_day	gh_dl_studio	gh_dl_cli	gh_repo_views_14d	gh_repo_uniques_14d"
 
 if [ "$print_only" = "1" ]; then
   printf '%s\n%s\n' "$header" "$row" | column -t -s "$(printf '\t')"
   exit 0
 fi
 
-[ -f "$out" ] || printf '%s\n' "$header" > "$out"
+# The header is rewritten every run, not only when the file is new. It was
+# written once and then columns were added to the row without it: the file
+# carried a 9-field header over 14-field rows, so the GitHub columns had no
+# names and anything reading it by position was reading the wrong column.
+if [ -f "$out" ]; then
+  current="$(head -1 "$out")"
+  if [ "$current" != "$header" ]; then
+    tmp_h="$(mktemp)"
+    { printf '%s\n' "$header"; tail -n +2 "$out"; } > "$tmp_h"
+    mv "$tmp_h" "$out"
+  fi
+else
+  printf '%s\n' "$header" > "$out"
+fi
 
 # Replace today's row if it is already there, so re-running is harmless.
 today="$(printf '%s' "$row" | cut -f1)"

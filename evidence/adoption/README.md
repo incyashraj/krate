@@ -27,6 +27,7 @@ scripts/record-adoption.sh            # append today's row
 | `publishes` | apps published to the hub |
 | `open_failed` | opens that did not end in a running app |
 | `distinct_installs` | unique machines over the window |
+| `peak_machines_day` | machines active on the busiest single day. Blank means the query could not answer -- never 0, which would be a claim |
 
 ## Two numbers that mislead if quoted raw
 
@@ -64,9 +65,41 @@ at all.
 - **Anything before 2026-08-05**, which is when counting started, or before
   2026-08-13 for views.
 
-## Honesty notes for outreach
+## Every count here is a numerator
 
-The gap between `opens` and `makes` is the real shape of the product today:
-thousands of opens against a handful of authored apps. Most opens are CI and
-development traffic on our own machines, not strangers. Say that plainly
-rather than letting the open count carry an implication it cannot support.
+**None of these columns exclude us.** Not our own machines, not CI runners,
+not bots. There is no field in the telemetry that marks a machine as ours --
+the only handle is a random per-machine id -- so no number in this file is
+"outside adoption", and none of them should ever be quoted as though it were.
+
+The arithmetic says so plainly. On 2026-09-08:
+
+```
+opens               38,390
+distinct_installs      462     = 83 opens per machine
+```
+
+Eighty-three opens per machine is not how people use software. It is our CI
+replaying bundles and our own development. A single day makes it starker --
+2026-08-11 recorded 5,857 opens against 74 installs.
+
+`peak_machines_day` is the denominator that makes this checkable rather than
+a warning somebody has to remember. It is blank for rows recorded before the
+hub started reporting it (K-243: `active_installs_by_day` was built from KV
+keys that stopped being written on 2026-08-10, so for a month the event
+counts climbed with nothing to divide them by).
+
+**What to say instead.** The gap between `opens` and `makes` is the real
+shape of the product today: thousands of opens against a handful of authored
+apps. `makes` is the honest number, and it is 4. Say that, and say the opens
+are mostly ours.
+
+### Four kinds of evidence, which are not interchangeable
+
+- **Product** -- does it work: `open_failed` by reason, `makes`.
+- **Reliability** -- does it keep working: the failure breakdown, minus
+  `refused`, which is the wall doing its job.
+- **Finance** -- what it costs and earns. Not in this file at all.
+- **Publishable adoption** -- strangers choosing to use it. **This file
+  cannot currently produce that number**, and saying so is the point of this
+  section.

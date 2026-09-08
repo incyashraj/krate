@@ -1609,6 +1609,16 @@ jobs:
         run: |
           python3 scripts/check-licensing.py
           python3 scripts/check-licensing.py --self-test
+      # The hub worker's tests mirror its logic rather than importing it (it
+      # is one file with no module boundary), and a mirrored test that never
+      # runs cannot catch the drift it was written for. Three of these
+      # existed and nothing executed them.
+      - name: Hub worker tests
+        run: |
+          for test in cloud/worker/test/*.test.mjs; do
+            echo "== $test"
+            node "$test"
+          done
       - name: Install mdBook
         run: |
           mkdir -p ~/bin

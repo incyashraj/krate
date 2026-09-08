@@ -1317,7 +1317,43 @@ async function liveStats(env, days) {
     day[key] = (day[key] || 0) + Number(row.n);
     if (row.action === "install") installs += Number(row.installs);
   }
-  return { actions_by_day: byDay, distinct_installs: installs };
+
+  // How many machines were active each day. This needs its own query: the
+  // one above groups by day, action and outcome, so its DISTINCT is per
+  // group and summing those would count a machine once per action it took.
+  //
+  // Without this number every count above is a numerator with no
+  // denominator, and "38,356 opens" cannot be told apart from one CI runner
+  // in a loop. It is the same dataset and the same index -- no new
+  // collection, just a count nobody was asking for (K-243). The old
+  // active_installs_by_day came from KV keys that stopped being written on
+  // 2026-08-10 and has been frozen ever since.
+  const activeSql =
+    "SELECT toDate(timestamp) AS day, count(DISTINCT index1) AS machines " +
+    "FROM krate_usage " +
+    `WHERE timestamp > now() - INTERVAL '${days}' DAY ` +
+    "GROUP BY day ORDER BY day";
+  const activeRes = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/analytics_engine/sql`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env.CF_ANALYTICS_TOKEN}` },
+      body: activeSql,
+    },
+  );
+  const activeByDay = {};
+  if (activeRes.ok) {
+    const activeBody = await activeRes.json();
+    for (const row of activeBody.data || []) {
+      activeByDay[row.day] = Number(row.machines);
+    }
+  }
+
+  return {
+    actions_by_day: byDay,
+    distinct_installs: installs,
+    active_machines_by_day: activeByDay,
+  };
 }
 
 /// The numbers, for us. Distinct installs and action counts by day.
