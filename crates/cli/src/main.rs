@@ -482,6 +482,35 @@ enum Command {
         file: Option<PathBuf>,
     },
 
+    /// Sign a bundle with a publisher key, so a recipient can check it came
+    /// from you and has not been changed since.
+    ///
+    /// The key never leaves this machine and no account is involved: signing
+    /// and checking both work offline, because requiring a sign-in to sign
+    /// your own software would put Krate Cloud inside your file's execution
+    /// path.
+    Sign {
+        /// The .krate bundle to sign, in place.
+        file: PathBuf,
+
+        /// PKCS#8 Ed25519 signing key. Created with `--generate-key` if absent.
+        #[arg(long)]
+        key: PathBuf,
+
+        /// Write a new signing key to --key first. Refuses to overwrite one.
+        #[arg(long)]
+        generate_key: bool,
+
+        /// The application namespace this release belongs to.
+        ///
+        /// Not read from the manifest: a manifest is written by whoever made
+        /// the file, so taking the namespace from it would let a bundle name
+        /// its own publisher -- exactly the authority the signature exists to
+        /// establish.
+        #[arg(long)]
+        namespace: String,
+    },
+
     /// Pack a component and its manifest into one shareable .krate bundle.
     Pack {
         /// Path to the .wasm component.
@@ -1420,6 +1449,12 @@ fn run() -> Result<u8> {
             manifest,
             output,
         } => pack_bundle(&file, &manifest, &output),
+        Command::Sign {
+            file,
+            key,
+            generate_key,
+            namespace,
+        } => sign_bundle_command(&file, &key, generate_key, &namespace),
         Command::Card {
             bundle,
             output,
@@ -4139,6 +4174,80 @@ pub(crate) fn recent_apps() -> Vec<PathBuf> {
 }
 
 /// Write a `.krate` bundle from a component and its manifest.
+/// Sign a bundle so a recipient can check who it came from (IC-015).
+fn sign_bundle_command(
+    file: &Path,
+    key_path: &Path,
+    generate_key: bool,
+    namespace: &str,
+) -> Result<u8> {
+    if generate_key {
+        // Never silently. A signing key is the publisher's identity, and
+        // overwriting one would hand every app they ever signed to nobody --
+        // an unrecoverable loss from a mistyped path.
+        if key_path.exists() {
+            anyhow::bail!(
+                "{} already exists. Signing keys are not overwritten: a lost                  key is a lost publisher identity, and every app signed with                  it becomes uncheckable.",
+                key_path.display()
+            );
+        }
+        let document = krate_bundle::signing::SigningKey::generate_pkcs8()
+            .map_err(|err| anyhow::anyhow!("could not generate a signing key: {err}"))?;
+        if let Some(parent) = key_path.parent() {
+            if !parent.as_os_str().is_empty() {
+                fs::create_dir_all(parent)?;
+            }
+        }
+        write_private_key(key_path, &document)?;
+        eprintln!("wrote a new signing key to {}", key_path.display());
+        eprintln!("Keep it. Anyone holding it can sign apps as you, and losing");
+        eprintln!("it means you can never sign an update to your own app again.");
+    }
+
+    let key_bytes = fs::read(key_path).with_context(|| {
+        format!(
+            "could not read the signing key at {}. Create one with --generate-key.",
+            key_path.display()
+        )
+    })?;
+    let key = krate_bundle::signing::SigningKey::from_pkcs8(&key_bytes)
+        .map_err(|err| anyhow::anyhow!("{err}"))?;
+
+    // The version comes from the manifest the bundle already carries: it is
+    // what the app calls itself, and signing a different number would make
+    // the signature disagree with the app it covers.
+    let version = krate_bundle::open(file)
+        .map_err(|err| anyhow::anyhow!("{err}"))?
+        .manifest()
+        .app
+        .version
+        .clone();
+
+    let envelope = krate_bundle::sign_bundle(file, &key, namespace, &version)
+        .map_err(|err| anyhow::anyhow!("{err}"))?;
+    println!("signed {}", file.display());
+    println!("  namespace {}", envelope.namespace);
+    println!("  version   {}", envelope.version);
+    println!(
+        "  key       {}",
+        &envelope.public_key[..32.min(envelope.public_key.len())]
+    );
+    Ok(0)
+}
+
+/// Write a signing key with owner-only permissions where the OS supports it.
+fn write_private_key(path: &Path, bytes: &[u8]) -> Result<()> {
+    fs::write(path, bytes)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        // A signing key readable by every account on the machine is a signing
+        // key that is not really the publisher's.
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(())
+}
+
 fn pack_bundle(file: &Path, manifest: &Path, output: &Path) -> Result<u8> {
     // A development manifest points `entry` at the build output; inside a
     // bundle the component is always stored as `code.wasm`. The difference is
@@ -10709,6 +10818,33 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
         }),
     });
 
+    // A signature that says the file changed is a refusal, not a note
+    // (IC-015). The publisher signed one thing and this is another, so
+    // running it would be running something nobody vouched for while a
+    // signature sits in the file implying somebody did.
+    //
+    // Only tampering refuses. An UNSIGNED app runs exactly as before -- almost
+    // every app today is unsigned, and refusing those would break the product
+    // to enforce a promise nobody has made yet. A bad or unreadable signature
+    // is also not a refusal: it proves the signer is wrong or absent, which is
+    // the same position as unsigned.
+    if let Some(krate_bundle::signing::Verdict::Tampered { problems }) = bundle
+        .as_ref()
+        .and_then(|bundle| bundle.signature_verdict().ok())
+        .flatten()
+    {
+        eprintln!("error: this app was changed after it was signed");
+        for problem in &problems {
+            eprintln!("  - {problem}");
+        }
+        eprintln!();
+        eprintln!("The publisher signed a different file than the one you have.");
+        eprintln!("Ask them for a fresh copy.");
+        // 5, the same code the permission wall uses: the product refusing on
+        // purpose, not a defect and not a crash.
+        return Ok(5);
+    }
+
     let request = RunRequest {
         file: file.clone(),
         manifest_path,
@@ -10764,6 +10900,14 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
             bundle
                 .as_ref()
                 .and_then(|bundle| bundle.project_digest().ok()),
+            // Flattened deliberately: a bundle carrying no signature and one
+            // whose verdict could not be computed are both "no verdict to
+            // show". The screen tells a bundle from a bare .wasm by whether
+            // an identity was printed, not by this.
+            bundle
+                .as_ref()
+                .and_then(|bundle| bundle.signature_verdict().ok())
+                .flatten(),
         )?;
         return Ok(0);
     }
@@ -12441,6 +12585,7 @@ fn print_effective_capabilities(
     format: OutputFormat,
     digest: Option<krate_bundle::provenance::BundleDigest>,
     project_digest: Option<krate_bundle::provenance::BundleDigest>,
+    signature: Option<krate_bundle::signing::Verdict>,
 ) -> Result<()> {
     if format == OutputFormat::Json {
         let dump = RunCapsDump {
@@ -12499,6 +12644,41 @@ fn print_effective_capabilities(
         }
         println!();
     }
+
+    // Who vouched for this file, before what it may do (IC-015).
+    //
+    // Printed for bundles only: a bare .wasm has no container to carry a
+    // signature, and saying "unsigned" about one would be noise rather than
+    // information.
+    //
+    // An unsigned app is stated as a plain fact, not an accusation. Almost
+    // every app today is unsigned, and a warning that fires on everything
+    // teaches people to ignore warnings -- which is worse than saying
+    // nothing, because it also devalues the line when it does matter.
+    if let Some(verdict) = &signature {
+        println!("Signature");
+        match verdict {
+            krate_bundle::signing::Verdict::Valid { public_key } => {
+                let key: String = public_key.iter().map(|b| format!("{b:02x}")).collect();
+                println!("  - signed, and the file matches what was signed");
+                println!("  - by key {}", &key[..key.len().min(32)]);
+                // The line that stops a signature being read as an
+                // endorsement. Krate checked the maths, not the publisher.
+                println!("  - Krate has checked the signature, not who holds the key");
+            }
+            other => {
+                for line in other.to_string().lines() {
+                    println!("  - {line}");
+                }
+            }
+        }
+        println!();
+    } else if digest.is_some() {
+        println!("Signature");
+        println!("  - none: nobody has signed this app");
+        println!();
+    }
+
     println!("Effective capabilities");
     for cap in policy.grants() {
         println!("  - {cap}");

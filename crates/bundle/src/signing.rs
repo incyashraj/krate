@@ -54,6 +54,18 @@ impl SigningKey {
             .map_err(|_| SigningError::BadKey)
     }
 
+    /// Create a new publisher signing key, as a PKCS#8 document.
+    ///
+    /// Lives here rather than in the CLI so that the one crate holding the
+    /// crypto dependency is the one that understands keys. A caller gets
+    /// bytes to store; it never has to know which curve or encoding.
+    pub fn generate_pkcs8() -> Result<Vec<u8>, SigningError> {
+        let rng = ring::rand::SystemRandom::new();
+        Ed25519KeyPair::generate_pkcs8(&rng)
+            .map(|doc| doc.as_ref().to_vec())
+            .map_err(|_| SigningError::BadKey)
+    }
+
     /// The public half, as raw Ed25519 bytes.
     pub fn public_key(&self) -> Vec<u8> {
         self.pair.public_key().as_ref().to_vec()

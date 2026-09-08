@@ -3615,6 +3615,150 @@ fn a_run_report_names_the_exact_artifact_it_ran() {
     );
 }
 
+/// A signed app that was changed afterwards does not run (IC-015).
+///
+/// The whole point of a signature: the publisher signed one file and this is
+/// another, so running it would execute something nobody vouched for while a
+/// signature sits inside implying somebody did. Exit 5 -- the permission
+/// wall's code -- because this is the product refusing on purpose.
+///
+/// The other half matters just as much: an UNSIGNED app must be completely
+/// unaffected. Almost every app today is unsigned, and refusing those would
+/// break the product to enforce a promise nobody has made yet.
+#[test]
+fn a_signed_app_that_was_changed_afterwards_is_refused() {
+    let Some(component) = configured_krate_clock_component() else {
+        eprintln!("skipping: no krate-clock component configured");
+        return;
+    };
+    let dir = tempfile::tempdir().expect("temp dir");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        "[app]\nid = \"dev.krate.signed\"\nname = \"Signed\"\nversion = \"1.0.0\"\n\
+         entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+         [[capabilities]]\ncap = \"time.clock\"\nrationale = \"tell the time\"\n\
+         required = true\n",
+    )
+    .expect("write manifest");
+
+    let bundle = dir.path().join("app.krate");
+    assert!(
+        krate()
+            .args(["pack"])
+            .arg(&component)
+            .arg("--manifest")
+            .arg(&manifest)
+            .arg("--output")
+            .arg(&bundle)
+            .output()
+            .expect("pack")
+            .status
+            .success(),
+        "pack must succeed"
+    );
+
+    // Unsigned: runs exactly as before. Asserted BEFORE signing, so a
+    // regression here cannot hide behind the signing path.
+    let unsigned = krate()
+        .arg("run")
+        .arg(&bundle)
+        .args(["--headless", "--auto-grant"])
+        .output()
+        .expect("run unsigned");
+    assert_eq!(
+        unsigned.status.code(),
+        Some(0),
+        "an unsigned app must be untouched by signature enforcement: {}",
+        String::from_utf8_lossy(&unsigned.stderr)
+    );
+
+    let key = dir.path().join("publisher.key");
+    let signed = krate()
+        .args(["sign"])
+        .arg(&bundle)
+        .arg("--key")
+        .arg(&key)
+        .arg("--generate-key")
+        .args(["--namespace", "acme/signed"])
+        .output()
+        .expect("sign");
+    assert!(
+        signed.status.success(),
+        "sign: {}",
+        String::from_utf8_lossy(&signed.stderr)
+    );
+
+    // Signed and untouched: still runs.
+    assert_eq!(
+        krate()
+            .arg("run")
+            .arg(&bundle)
+            .args(["--headless", "--auto-grant"])
+            .output()
+            .expect("run signed")
+            .status
+            .code(),
+        Some(0),
+        "signing an app must not stop it running",
+    );
+
+    // Now change one file inside the signed bundle.
+    let tampered = dir.path().join("tampered.krate");
+    rewrite_bundle_entry(&bundle, &tampered, "manifest.toml", |bytes| {
+        let mut text = String::from_utf8_lossy(bytes).into_owned();
+        text.push_str("\n# added after signing\n");
+        text.into_bytes()
+    });
+
+    let refused = krate()
+        .arg("run")
+        .arg(&tampered)
+        .args(["--headless", "--auto-grant"])
+        .output()
+        .expect("run tampered");
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert_eq!(
+        refused.status.code(),
+        Some(5),
+        "a changed signed app must be refused with the wall's own code: {stderr}",
+    );
+    assert!(
+        stderr.contains("changed after it was signed"),
+        "the refusal must say what happened: {stderr}"
+    );
+    assert!(
+        stderr.contains("manifest.toml"),
+        "and name the file that changed: {stderr}"
+    );
+}
+
+/// Copy a bundle, transforming one entry.
+fn rewrite_bundle_entry(
+    source: &std::path::Path,
+    destination: &std::path::Path,
+    entry: &str,
+    change: impl Fn(&[u8]) -> Vec<u8>,
+) {
+    use std::io::{Read, Write};
+    let data = std::fs::read(source).expect("read bundle");
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&data)).expect("open zip");
+    let file = std::fs::File::create(destination).expect("create");
+    let mut writer = zip::ZipWriter::new(file);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    for index in 0..archive.len() {
+        let mut existing = archive.by_index(index).expect("entry");
+        let name = existing.name().to_string();
+        let mut bytes = Vec::new();
+        existing.read_to_end(&mut bytes).expect("read entry");
+        writer.start_file(name.clone(), options).expect("start");
+        let payload = if name == entry { change(&bytes) } else { bytes };
+        writer.write_all(&payload).expect("write");
+    }
+    writer.finish().expect("finish");
+}
+
 fn configured_hello_component() -> Option<PathBuf> {
     configured_component_from_env("KRATE_HELLO_WASM", "hello component test")
 }
