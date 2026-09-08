@@ -26,8 +26,6 @@ mod player {
     use krate_adapter_android::winit_native::AndroidApp;
     use std::io::Cursor;
 
-    const RECORD_SEP: char = '\u{1e}';
-    const FIELD_SEP: char = '\u{1c}';
     const MAX_BUNDLE_BYTES: usize = 6 * 1024 * 1024;
 
     // The demo app, for a plain launch with no intent: krate-gram, the
@@ -191,14 +189,25 @@ mod player {
             return Some(Vec::new());
         }
 
-        let mut input = manifest.app.name.clone();
+        // One argument per field, never one string the wall has to cut up.
+        //
+        // This used to join the name, capability, rationale and required flag
+        // with U+001E and U+001C and hand the wall the result. Nothing checked
+        // the manifest strings for those characters, so an app name could
+        // carry them and add rows to the wall: an app declaring only ui.window
+        // displayed a net.connect request with a convincing reason, and a
+        // crafted rationale could flip its own capability from required to
+        // optional -- required rows being the ones a person cannot switch off.
+        //
+        // The runtime rejects any argument containing a newline or a NUL
+        // (encode_args_raw), so argument boundaries cannot be forged the way
+        // an in-band separator can. Manifest parsing now refuses these
+        // characters in displayed fields as well; both locks stay.
+        let mut input = vec![manifest.app.name.clone()];
         for request in &manifest.capabilities {
-            input.push(RECORD_SEP);
-            input.push_str(&request.cap);
-            input.push(FIELD_SEP);
-            input.push_str(&request.rationale);
-            input.push(FIELD_SEP);
-            input.push(if request.required { '1' } else { '0' });
+            input.push(request.cap.clone());
+            input.push(request.rationale.clone());
+            input.push(if request.required { "1" } else { "0" }.to_string());
         }
 
         let wall_manifest = krate_manifest::Manifest::parse(WALL_MANIFEST).ok()?;
@@ -206,7 +215,7 @@ mod player {
         let config = krate_runtime::Config {
             session_policy: policy,
             sandbox_root: data_root.join("wall"),
-            app_args: vec![input],
+            app_args: input,
             phase3_ui_mode: krate_runtime::phase3_ui::Phase3HostUiMode::NativePrototype,
             ..Default::default()
         };

@@ -23,8 +23,6 @@ mod player {
     use objc2_ui_kit::{UIApplication, UIApplicationDelegate};
     use std::cell::Cell;
 
-    const RECORD_SEP: char = '\u{1e}';
-    const FIELD_SEP: char = '\u{1c}';
 
     const GRAM_WASM: &[u8] =
         include_bytes!("../../../apps/krate-gram/target/wasm32-wasip1/release/krate_gram.wasm");
@@ -184,14 +182,14 @@ mod player {
         if manifest.capabilities.is_empty() {
             return Some(Vec::new());
         }
-        let mut input = manifest.app.name.clone();
+        // One argument per field. See the same change in the Android player:
+        // joining these with U+001E and U+001C let a manifest string that
+        // contained them add or rewrite rows on the permission screen.
+        let mut input = vec![manifest.app.name.clone()];
         for request in &manifest.capabilities {
-            input.push(RECORD_SEP);
-            input.push_str(&request.cap);
-            input.push(FIELD_SEP);
-            input.push_str(&request.rationale);
-            input.push(FIELD_SEP);
-            input.push(if request.required { '1' } else { '0' });
+            input.push(request.cap.clone());
+            input.push(request.rationale.clone());
+            input.push(if request.required { "1" } else { "0" }.to_string());
         }
 
         let wall_manifest = krate_manifest::Manifest::parse(WALL_MANIFEST).ok()?;
@@ -199,7 +197,7 @@ mod player {
         let config = krate_runtime::Config {
             session_policy: policy,
             sandbox_root: data_root.join("wall"),
-            app_args: vec![input],
+            app_args: input,
             phase3_ui_mode: krate_runtime::phase3_ui::Phase3HostUiMode::NativePrototype,
             ..Default::default()
         };

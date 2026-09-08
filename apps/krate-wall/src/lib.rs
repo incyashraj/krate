@@ -1,14 +1,26 @@
 //! The permission wall as a trusted guest: the sheet a phone shows before
 //! any app runs.
 //!
-//! The player passes one argument built of ASCII separators -- records
-//! split by `\x1e`, fields by `\x1c` -- so names and rationales keep their
-//! spaces. First record is the app's name; each further record is
-//! `cap\x1crationale\x1crequired`. The person taps rows to allow or deny
-//! (required rows stay on -- the app says it cannot run without them),
-//! then Open or Cancel. The decision goes to stdout as one line:
-//! `wall:open:<cap,cap,...>` or `wall:cancel`. The player owns both sides
-//! of that pipe, so this sheet cannot be lied to and cannot lie.
+//! The player passes one argument per field: the app's name, then three
+//! arguments for every request -- `cap`, `rationale`, `required` ("1" or
+//! "0"). The person taps rows to allow or deny (required rows stay on -- the
+//! app says it cannot run without them), then Open or Cancel. The decision
+//! goes to stdout as one line: `wall:open:<cap,cap,...>` or `wall:cancel`.
+//! The player owns both sides of that pipe, so this sheet cannot be lied to
+//! and cannot lie.
+//!
+//! It used to be one argument with the fields joined by `\x1e` and `\x1c`,
+//! and nothing stopped a manifest string from containing those characters.
+//! An app declaring only `ui.window` could name itself
+//! `Notes\x1enet.connect\x1cSync your notes\x1c1` and this sheet would draw a
+//! network request it had never declared, under a name still reading "Notes".
+//! A crafted rationale was worse: it could flip its own row from required to
+//! optional, and required rows are the ones a person cannot switch off.
+//!
+//! Arguments cannot be forged that way. The runtime refuses any argument
+//! containing a newline or a NUL, so the boundaries between them are real,
+//! which is why the structure is carried by the argument list rather than by
+//! characters inside one string.
 //!
 //! `quick` renders one frame of a sample wall and answers `wall:open` with
 //! everything granted, so check-app can verify the drawing path headless.
@@ -31,8 +43,12 @@ use krate::motion::Spring;
 
 const ROOT_ID: u64 = 1;
 const CANVAS_ID: u64 = 2;
-const RECORD_SEP: char = '\u{1e}';
-const FIELD_SEP: char = '\u{1c}';
+/// Arguments arrive newline-joined, and the runtime refuses an argument that
+/// contains one -- so this split cannot be steered by any manifest string.
+const ARG_SEP: char = '\n';
+
+/// Name, then three fields per request.
+const FIELDS_PER_ASK: usize = 3;
 
 fn color(r: f32, g: f32, b: f32, a: f32) -> gfx::Color {
     gfx::Color { r, g, b, a }
@@ -78,26 +94,32 @@ struct Ask {
     granted: bool,
 }
 
+/// Read the argument list: name, then `cap`, `rationale`, `required` per ask.
+///
+/// A trailing group that is not whole is dropped rather than guessed at. The
+/// wall is the one screen where a person decides what to trust, so a request
+/// it cannot read completely is a request it does not draw.
 fn parse_input(raw: &str) -> (String, Vec<Ask>) {
-    let mut records = raw.split(RECORD_SEP);
-    let name = records.next().unwrap_or("This app").trim().to_string();
-    let asks = records
-        .filter_map(|record| {
-            let mut fields = record.split(FIELD_SEP);
-            let cap = fields.next()?.trim();
-            if cap.is_empty() {
-                return None;
-            }
-            let rationale = fields.next().unwrap_or("").trim();
-            let required = fields.next().unwrap_or("0").trim() == "1";
-            Some(Ask {
-                cap: cap.to_string(),
-                rationale: rationale.to_string(),
-                required,
-                granted: true,
-            })
-        })
-        .collect();
+    let args: Vec<&str> = raw.split(ARG_SEP).collect();
+    let name = args.first().copied().unwrap_or("This app").trim().to_string();
+
+    let mut asks = Vec::new();
+    let rest = args.get(1..).unwrap_or(&[]);
+    for group in rest.chunks(FIELDS_PER_ASK) {
+        if group.len() < FIELDS_PER_ASK {
+            break;
+        }
+        let cap = group[0].trim();
+        if cap.is_empty() {
+            continue;
+        }
+        asks.push(Ask {
+            cap: cap.to_string(),
+            rationale: group[1].trim().to_string(),
+            required: group[2].trim() == "1",
+            granted: true,
+        });
+    }
     (name, asks)
 }
 
@@ -391,13 +413,15 @@ struct Component;
 impl bindings::Guest for Component {
     fn run() -> i32 {
         let raw = args::raw();
-        // Real invocations always carry the record separator; anything else
-        // (no args, a harness probe) renders the sample sheet headlessly.
-        let quick = !raw.contains(RECORD_SEP);
+        // A real invocation carries a name and at least one whole request, so
+        // four arguments at the least. Anything shorter (no args, a harness
+        // probe) renders the sample sheet headlessly.
+        let quick = raw.split(ARG_SEP).filter(|a| !a.is_empty()).count()
+            < 1 + FIELDS_PER_ASK;
 
         let (name, asks) = if quick {
             parse_input(&format!(
-                "Sample app{RECORD_SEP}net.fetch:example.com:443{FIELD_SEP}Fetch the daily quote from example.com{FIELD_SEP}0{RECORD_SEP}fs.write:./notes/**{FIELD_SEP}Save your notes in its own folder -- never your files{FIELD_SEP}1"
+                "Sample app{ARG_SEP}net.fetch:example.com:443{ARG_SEP}Fetch the daily quote from example.com{ARG_SEP}0{ARG_SEP}fs.write:./notes/**{ARG_SEP}Save your notes in its own folder -- never your files{ARG_SEP}1"
             ))
         } else {
             parse_input(&raw)

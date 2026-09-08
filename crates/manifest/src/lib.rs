@@ -195,6 +195,7 @@ impl Manifest {
     fn validate(&self) -> Result<()> {
         validate_app_id(&self.app.id)?;
         validate_required("app.name", &self.app.name)?;
+        validate_display_text("app.name", &self.app.name)?;
         validate_required("app.version", &self.app.version)?;
         validate_required_path("app.entry", &self.app.entry)?;
 
@@ -204,6 +205,7 @@ impl Manifest {
         for request in &self.capabilities {
             let cap: Capability = request.cap.parse()?;
             validate_required("capability.rationale", &request.rationale)?;
+            validate_display_text("capability.rationale", &request.rationale)?;
             if !seen.insert(cap.to_string()) {
                 return Err(ManifestError::DuplicateCapability {
                     cap: request.cap.clone(),
@@ -523,6 +525,57 @@ fn validate_required(field: &'static str, value: &str) -> Result<()> {
     }
 }
 
+/// A field the permission wall shows to a person, checked for characters that
+/// could rewrite the wall rather than appear in it.
+///
+/// The mobile players hand the wall its request list as text, and the wall
+/// finds the boundaries by splitting on U+001E and U+001C. Nothing stopped a
+/// manifest string from containing them, so an app name of
+/// `Notes<U+001E>net.connect<U+001C>Sync your notes<U+001C>1` displayed a
+/// network request the app had never declared, under a name that still read
+/// as "Notes". A crafted rationale was worse: it could flip its own capability
+/// from required to optional, and required rows are the ones a person is not
+/// allowed to switch off.
+///
+/// The players no longer pass structure as text, so this is the second lock
+/// rather than the only one -- a bundle carrying these characters in a
+/// displayed field does not open at all, on any platform, whatever the caller
+/// does with the strings afterwards.
+///
+/// Only C0/C1 controls and the Unicode separators are refused. Ordinary text
+/// in any language passes untouched: this must never become a filter on what
+/// an app may call itself.
+fn validate_display_text(field: &'static str, value: &str) -> Result<()> {
+    for ch in value.chars() {
+        let forbidden = match ch {
+            // Tab, newline and carriage return are controls a person might
+            // reasonably type; they are still refused, because a name that
+            // spans lines misrepresents itself in a one-line row.
+            '\u{0}'..='\u{1f}' | '\u{7f}'..='\u{9f}' => true,
+            // The Unicode line/paragraph separators, which split text in the
+            // same way without being C0 controls.
+            '\u{2028}' | '\u{2029}' => true,
+            // Bidirectional overrides: these reorder what is drawn without
+            // changing what is parsed, so a capability can be made to read as
+            // a different one.
+            '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' => true,
+            _ => false,
+        };
+        if forbidden {
+            return Err(ManifestError::InvalidIdentifier {
+                field,
+                reason: format!(
+                    "contains U+{:04X}, a control or text-direction character. \
+                     These do not show up as themselves on the permission \
+                     screen -- they change what it says.",
+                    ch as u32
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
 fn validate_required_path(field: &'static str, value: &Path) -> Result<()> {
     if value.as_os_str().is_empty() {
         Err(ManifestError::MissingField(field))
@@ -833,6 +886,97 @@ fn is_valid_ipv4_host(host: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A manifest whose display fields carry the characters the permission
+    /// wall used to split on does not open (IC-292, K-242).
+    ///
+    /// The wall showed the app's name and each rationale, and the players
+    /// joined those strings with U+001E and U+001C. Nothing checked the
+    /// strings for those characters, so an app declaring only `ui.window`
+    /// could call itself `Notes<RS>net.connect<FS>Sync your notes<FS>1` and
+    /// the sheet drew a network request it had never declared -- under a name
+    /// that still read "Notes".
+    ///
+    /// The players no longer pass structure as text, so this is the second
+    /// lock. It is here because a bundle carrying these characters is hostile
+    /// whatever any one caller does with the strings.
+    #[test]
+    fn a_name_or_rationale_carrying_wall_separators_is_refused() {
+        // Exactly the injection that worked: the separators, plus the
+        // Unicode paragraph separator and a bidi override, which reorder what
+        // is drawn without changing what is parsed.
+        // TOML's own escape, not Rust's: `\u{1e}` is a Rust literal and a TOML
+        // parse error, so escape_default() here tests nothing but the TOML
+        // reader's error message.
+        let toml_escape = |ch: char| format!("\\u{:04X}", ch as u32);
+
+        for bad in [
+            '\u{1e}', '\u{1c}', '\u{0}', '\n', '\r', '\t', '\u{7f}', '\u{9f}', '\u{2028}',
+            '\u{2029}', '\u{202e}', '\u{2066}',
+        ] {
+            let manifest = format!(
+                "[app]\nid = \"com.example.notes\"\nname = \"Notes{}net.connect\"\n\
+                 version = \"1.0.0\"\n\
+                 entry = \"app.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+                 [[capabilities]]\ncap = \"ui.window:create\"\n\
+                 rationale = \"Draw the notes window\"\nrequired = true\n",
+                toml_escape(bad)
+            );
+            let error = Manifest::parse(&manifest).expect_err(&format!(
+                "an app name containing U+{:04X} must not parse",
+                bad as u32
+            ));
+            let text = error.to_string();
+            assert!(
+                text.contains("app.name"),
+                "the refusal must name the field: {text}"
+            );
+
+            // And the same character in a rationale, which is the worse
+            // direction: a crafted rationale could flip its own capability
+            // from required to optional, and required rows are the ones a
+            // person is not allowed to switch off.
+            let manifest = format!(
+                "[app]\nid = \"com.example.notes\"\nname = \"Notes\"\nversion = \"1.0.0\"\n\
+                 entry = \"app.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+                 [[capabilities]]\ncap = \"ui.window:create\"\n\
+                 rationale = \"Draw the window{}0\"\nrequired = true\n",
+                toml_escape(bad)
+            );
+            let error = Manifest::parse(&manifest).expect_err(&format!(
+                "a rationale containing U+{:04X} must not parse",
+                bad as u32
+            ));
+            assert!(
+                error.to_string().contains("capability.rationale"),
+                "the refusal must name the field: {error}"
+            );
+        }
+    }
+
+    /// The check must not become a filter on what an app may call itself.
+    /// Every one of these is ordinary text somebody would legitimately use.
+    #[test]
+    fn ordinary_names_and_rationales_still_parse() {
+        for name in [
+            "Notes",
+            "Café Notes",
+            "メモ帳",
+            "Notes — the good one",
+            "Q&A: 100% offline",
+            "Ünïcödé Nötes",
+            "ملاحظات",
+        ] {
+            let manifest = format!(
+                "[app]\nid = \"com.example.notes\"\nname = \"{name}\"\nversion = \"1.0.0\"\n\
+                 entry = \"app.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+                 [[capabilities]]\ncap = \"ui.window:create\"\n\
+                 rationale = \"Draw the window — it is where you type\"\nrequired = true\n"
+            );
+            Manifest::parse(&manifest)
+                .unwrap_or_else(|err| panic!("{name:?} is an ordinary name: {err}"));
+        }
+    }
 
     /// Two truths about dialog resources exist -- the spec table and the
     /// validator's list -- and they drifted the day open-folder landed in
