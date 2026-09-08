@@ -2349,6 +2349,23 @@ async function caseAttempt(request, env) {
   });
   if (outcome === "made") record.made = true;
   await writeCase(env, prefixes, record);
+
+  // The legacy counters mirror every consumption, whichever route consumed
+  // it. planCount mirrors its own writes; without this, a made-attempt
+  // through the case route left the counters behind, and a rolled-back
+  // worker -- which reads only counters -- would hand the allowance out
+  // again.
+  if (outcome === "made") {
+    const { user, device } = await caseIdentity(request, env, body);
+    const counterKeys = [];
+    if (user) counterKeys.push(`mkacct:${user.id}`);
+    if (/^[0-9a-f]{64}$/.test(device)) counterKeys.push(`mkdev:${device}`);
+    if (counterKeys.length) {
+      const byId = await loadCases(env, prefixes);
+      const n = madeCount(byId);
+      await Promise.all(counterKeys.map((k) => env.APPS.put(k, String(n))));
+    }
+  }
   return json({ id: record.id, state: record.state, made: record.made });
 }
 

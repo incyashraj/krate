@@ -35,9 +35,25 @@ const hub = createServer((req, res) => {
     return res.end(JSON.stringify({ user: { login: who }, plan: { active: true } }));
   }
   if (req.url === "/plan/count") { res.statusCode = 200; return res.end("{}"); }
+  if (req.url === "/case/open" || req.url === "/case/attempt") {
+    let raw = "";
+    req.on("data", (c) => { raw += c; });
+    req.on("end", () => {
+      const body = JSON.parse(raw || "{}");
+      caseCalls.push({ path: req.url, who, body });
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify(req.url === "/case/open"
+        ? { id: "case-" + caseCalls.length, n: 0 }
+        : { id: body.id, made: body.outcome === "made" }));
+    });
+    return;
+  }
   res.statusCode = 404;
   res.end("no");
 });
+
+// Every ledger call the builder makes, in order, for the assertions below.
+const caseCalls = [];
 
 /* ---- a krate that "builds" in half a second ------------------------------ */
 async function fakeKrate(dir) {
@@ -47,6 +63,7 @@ async function fakeKrate(dir) {
     `#!/bin/sh
 # create <request> --output <path> --agent <agent> | run <bundle> --shoot ...
 if [ "$1" = "create" ]; then
+  case "$*" in *FAIL*) echo "the engine fell over" >&2; exit 1;; esac
   out=""
   prev=""
   for a in "$@"; do
@@ -251,6 +268,38 @@ const denied = actions.find((a) => a.action === "denied");
 assert.strictEqual(denied.account, "bob", "the denial names who was refused");
 assert.strictEqual(denied.job, jobId, "and which job they reached for");
 
+/* ---- the funded case (IC-001) -------------------------------------------- */
+// The successful first build must have opened a case and recorded "made";
+// the old counter route must not have been touched at all.
+const opens = caseCalls.filter((c) => c.path === "/case/open");
+const attempts = caseCalls.filter((c) => c.path === "/case/attempt");
+assert.ok(opens.length >= 1, "a build opens a case");
+assert.ok(
+  attempts.some((c) => c.body.outcome === "made"),
+  `the successful build records a made attempt: ${JSON.stringify(attempts)}`,
+);
+
+// A build that dies on our side records a free failure, never "made".
+const before = attempts.length;
+const broken = await post("/build", { request: "FAIL on purpose" }, asAlice);
+assert.strictEqual(broken.status, 200, broken.body);
+const brokenId = JSON.parse(broken.body).id;
+await until(async () => {
+  const s = JSON.parse((await get(`/build/${brokenId}`, asAlice)).body);
+  return s.state === "failed";
+});
+await until(async () => caseCalls.filter((c) => c.path === "/case/attempt").length > before);
+const failedAttempt = caseCalls.filter((c) => c.path === "/case/attempt").slice(before).pop();
+assert.strictEqual(
+  failedAttempt.body.outcome,
+  "krate-failed",
+  `an engine failure is recorded as krate-failed, free to retry: ${JSON.stringify(failedAttempt)}`,
+);
+assert.ok(
+  !caseCalls.slice(-3).some((c) => c.body.outcome === "made"),
+  "a failed build must never record made",
+);
+
 builder.kill("SIGKILL");
 hub.close();
-console.log("OK -- jobs are owned on every operation, survive restarts honestly, expire, and leave an audit trail");
+console.log("OK -- jobs are owned on every operation, survive restarts honestly, expire, leave an audit trail, and live inside funded cases");

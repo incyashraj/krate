@@ -312,6 +312,10 @@ async function startBuild({ request, token, account, device }) {
   };
   jobs.set(id, job);
   activeByAccount.set(account, id);
+  // The build lives inside a funded case on the hub's ledger. Opening it
+  // consumes nothing; the outcome recorded when this build ends is what
+  // decides whether it cost an allowance (only "made" does).
+  job.caseId = await caseOpen(token, device, request);
   await persistJob(job);
   await audit({ action: "start", account, job: id });
 
@@ -357,14 +361,26 @@ async function startBuild({ request, token, account, device }) {
     if (job.state === "stopped") {
       await persistJob(job);
       await audit({ action: "stopped", account, job: job.id });
+      await caseAttempt(token, device, job.caseId, "stopped");
       return cleanup(job);
     }
     if (code !== 0 || job.error) {
+      const timedOut = Boolean(job.error);
       job.state = "failed";
       job.error = job.error || plainFailure(tail);
       job.finished = Date.now();
       await persistJob(job);
       await audit({ action: "failed", account, job: job.id });
+      // A failure on our side costs the person nothing: the case records it
+      // and stays open for a free retry. The timeout is this machine being
+      // slow (infra); anything else out of `krate create` is the engine or
+      // the provider, and "krate-failed" is the honest default when the
+      // exit code cannot tell them apart.
+      await caseAttempt(
+        token, device, job.caseId,
+        timedOut ? "infra-failed" : "krate-failed",
+        tail.split("\n").filter(Boolean).pop() || "",
+      );
       return cleanup(job);
     }
 
@@ -394,9 +410,9 @@ async function startBuild({ request, token, account, device }) {
       await persistResultBytes(job);
       await persistJob(job);
       await audit({ action: "done", account, job: job.id });
-      // Only a build that produced a file counts against the free three.
-      // A failure the person did not cause must never cost them one.
-      countTheMake(token, job.device).catch(() => {});
+      // Only a build that produced a file counts against the allowance:
+      // "made" is the one outcome that consumes the case's funding.
+      await caseAttempt(token, device, job.caseId, "made");
     } catch (err) {
       job.state = "failed";
       job.error = "The app was made but could not be read back.";
@@ -444,12 +460,39 @@ async function takeShot(bundle, shotPath) {
   });
 }
 
-async function countTheMake(token, device) {
-  await fetch(`${HUB}/plan/count`, {
+/* ---- the funded case (IC-001) --------------------------------------------
+ * Every build lives inside a case on the hub's ledger. Opening one consumes
+ * nothing; only an attempt that produced a file does. So a build that dies
+ * on our side -- the provider, this machine, the engine -- is recorded as
+ * exactly that and costs the person nothing, where the old counter bumped
+ * the same number for every outcome it managed to reach.
+ *
+ * Every call is fire-and-forget past the open: a hub outage must not turn
+ * into a failed build, and the ledger self-heals -- planCount mirrors and
+ * migration mints -- when the hub is back.
+ */
+async function caseOpen(token, device, request) {
+  try {
+    const res = await fetch(`${HUB}/case/open`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ device: device || "", request }),
+    });
+    if (!res.ok) return null;
+    const body = await res.json();
+    return body.id || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function caseAttempt(token, device, caseId, outcome, note) {
+  if (!caseId) return;
+  await fetch(`${HUB}/case/attempt`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-    body: JSON.stringify({ device: device || "" }),
-  });
+    body: JSON.stringify({ device: device || "", id: caseId, outcome, note }),
+  }).catch(() => {});
 }
 
 async function cleanup(job, opts = {}) {
