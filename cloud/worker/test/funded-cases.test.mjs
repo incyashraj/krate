@@ -137,24 +137,76 @@ assert.strictEqual(legacyN, 3, "/plan/get reads the ledger");
 // race case, which is the two-key rule working, not migration failing.
 const BOB_DEV = "d".repeat(64);
 KV.set("mkacct:u-bob", "2");
+
+// A READ reports the spend and writes NOTHING. Minting on a read put KV
+// puts on Studio's per-session status check -- on the namespace publishes
+// and sign-ins share -- and a dropped put (quota gone) meant the next read
+// minted again, unbounded, exactly when the budget was exhausted. That is
+// how counting took the product down on 2026-08-10.
+const writesBefore = KV.size;
 const bob = (await call("/case/list", { device: BOB_DEV }, "krs_bob")).body;
-assert.strictEqual(bob.n, 2, "the counter's spend survives as cases");
-assert.strictEqual(bob.cases.length, 2);
-assert.ok(
-  bob.cases.every((c) => c.attempts[0].note === "migrated from the counter"),
-  "every migrated slot says where it came from",
-);
-// And reading again does not mint again.
+assert.strictEqual(bob.n, 2, "the counter's spend is reported on a read");
+assert.strictEqual(bob.cases.length, 0, "a read materialises nothing");
+assert.strictEqual(KV.size, writesBefore, "a read writes no KV keys at all");
+
+// Reading again is still free, and still reports the same number.
 const bobAgain = (await call("/case/list", { device: BOB_DEV }, "krs_bob")).body;
-assert.strictEqual(bobAgain.cases.length, 2, "migration is once, not per read");
+assert.strictEqual(bobAgain.n, 2, "a repeat read is stable");
+assert.strictEqual(KV.size, writesBefore, "and still writes nothing");
+
+// The wall reads the same number, so a migrated user is gated correctly
+// without a single write having happened.
+const kvBeforePlanGet = KV.size;
+const bobPlan = (await call("/plan/get", { device: BOB_DEV }, "krs_bob")).body;
+assert.strictEqual(bobPlan.n, 2, "/plan/get agrees on a read");
+// The one that matters most: Studio calls /plan/get on EVERY session, so a
+// write here is a write per session forever. This assertion is why the
+// read/write split exists -- without it the sabotage (write: true) passed.
+assert.strictEqual(
+  KV.size, kvBeforePlanGet,
+  "/plan/get must write NOTHING -- it runs on every Studio session, on the "
+  + "namespace publishes and sign-ins share",
+);
+
+// A call that was ALREADY writing materialises them, once, with their
+// history intact.
+await call("/plan/count", { device: BOB_DEV }, "krs_bob");
+const bobWritten = (await call("/case/list", { device: BOB_DEV }, "krs_bob")).body;
+assert.strictEqual(bobWritten.n, 3, "the write counted, on top of the migrated two");
+assert.strictEqual(bobWritten.cases.length, 3, "and now the records exist");
+assert.strictEqual(
+  bobWritten.cases.filter((c) => c.attempts[0].note === "migrated from the counter").length,
+  2,
+  "the two migrated slots say where they came from",
+);
 
 /* ---- offline makes mirror as cases --------------------------------------- */
 const carolDev = "c".repeat(64);
+// A read honours the client's number without writing for it: Studio sends
+// its local count on every session sync, and minting there turned one
+// status check into up to three KV puts, forever.
+const kvBeforeOffline = KV.size;
 const offline = (await call("/plan/get", { device: carolDev, n: 2 }, null)).body;
-assert.strictEqual(offline.n, 2, "offline makes are honoured");
+assert.strictEqual(offline.n, 2, "offline makes are honoured on a read");
+assert.strictEqual(KV.size, kvBeforeOffline, "and cost no writes");
+
+// The next call that writes anyway materialises them, capped at the free
+// allowance so a client claiming a thousand offline makes cannot make us
+// write a thousand records.
+await call("/plan/count", { device: carolDev, n: 2 }, null);
 const carol = (await call("/case/list", { device: carolDev }, null)).body;
-assert.strictEqual(carol.cases.length, 2, "and each one is a readable record");
-assert.ok(carol.cases.every((c) => c.attempts[0].note === "made offline, mirrored later"));
+assert.ok(
+  carol.cases.some((c) => c.attempts[0].note === "made offline, mirrored later"),
+  `the offline makes became readable records: ${JSON.stringify(carol.cases)}`,
+);
+
+const greedy = "e".repeat(64);
+await call("/plan/count", { device: greedy, n: 1000 }, null);
+const capped = (await call("/case/list", { device: greedy }, null)).body;
+assert.ok(
+  capped.cases.length <= 4,
+  `a huge claimed count cannot mint unbounded records, got ${capped.cases.length}`,
+);
 
 /* ---- no identity, no ledger ---------------------------------------------- */
 const nobody = await call("/case/open", { request: "an app" }, null);

@@ -2243,7 +2243,7 @@ async function writeCase(env, prefixes, record) {
 /// difference is minted as closed, accepted, made cases marked "migrated" --
 /// so the allowance they spent stays spent, and it is now READABLE: every
 /// consumed slot is a record, not a bare integer.
-async function migrateCounters(env, user, device, prefixes, byId) {
+async function migrateCounters(env, user, device, prefixes, byId, { write = true } = {}) {
   const counterKeys = [];
   if (user) counterKeys.push(`mkacct:${user.id}`);
   if (/^[0-9a-f]{64}$/.test(device)) counterKeys.push(`mkdev:${device}`);
@@ -2252,6 +2252,25 @@ async function migrateCounters(env, user, device, prefixes, byId) {
   const counts = await Promise.all(counterKeys.map((k) => env.APPS.get(k)));
   const counter = counts.reduce((most, raw) => Math.max(most, parseInt(raw || "0", 10)), 0);
   const short = counter - madeCount(byId);
+
+  // A READ must not write. `/plan/get` is called on every Studio session,
+  // and minting here put KV puts on a read path -- on the namespace that
+  // publishes and sign-ins share. Worse, a dropped put (quota exhausted)
+  // leaves the cases unstored, so the next read computes the same shortfall
+  // and mints again: unbounded writes exactly when the budget is gone. That
+  // is how counting took the product down on 2026-08-10, and the note above
+  // planCount says never to do it again.
+  //
+  // So a read reports the counter's number without materialising it. The
+  // wall is still correct -- the count is the same -- and the records get
+  // written by the next call that was going to write anyway.
+  if (!write) {
+    for (let i = 0; i < short; i++) {
+      byId.set(`unmigrated-${i}`, { id: `unmigrated-${i}`, made: true, phantom: true });
+    }
+    return byId;
+  }
+
   for (let i = 0; i < short; i++) {
     const record = {
       id: `legacy-${crypto.randomUUID().replaceAll("-", "").slice(0, 16)}`,
@@ -2398,8 +2417,15 @@ async function caseList(request, env) {
   const body = await request.json().catch(() => ({}));
   const { user, device, prefixes } = await caseIdentity(request, env, body);
   if (!prefixes.length) return text("Sign in first, or send a device id.", 400);
-  const byId = await migrateCounters(env, user, device, prefixes, await loadCases(env, prefixes));
-  const cases = [...byId.values()].sort((a, b) => (a.opened < b.opened ? -1 : 1));
+  // A listing is a read: it reports the counter's spend without spending
+  // puts to materialise it. The phantom rows carry no history, which is
+  // honest -- the counter never had any.
+  const byId = await migrateCounters(
+    env, user, device, prefixes, await loadCases(env, prefixes), { write: false },
+  );
+  const cases = [...byId.values()]
+    .filter((c) => !c.phantom)
+    .sort((a, b) => (a.opened < b.opened ? -1 : 1));
   return json({ n: madeCount(byId), limit: CASE_LIMIT_FREE, cases });
 }
 
@@ -2433,13 +2459,25 @@ async function planCount(request, env, increment) {
   // ruling (2026-09-01): the words must not promise a reset the wall will
   // not honour.
   const prefixes = caseKeys(user, device);
-  const byId = await migrateCounters(env, user, device, prefixes, await loadCases(env, prefixes));
+  // Materialise the old counters only when this call was going to write
+  // anyway. A plain read reports the same number without spending puts.
+  const byId = await migrateCounters(
+    env, user, device, prefixes, await loadCases(env, prefixes),
+    { write: Boolean(increment) },
+  );
 
   // A device that made apps offline reports the higher local number; the
   // mirror never goes backward, so an offline make is still counted --
   // minted as cases, so even those slots have a readable record.
   const local = Number.isFinite(body.n) ? Math.max(0, Math.floor(body.n)) : 0;
   let short = local - madeCount(byId);
+  // Bounded, and only where a write was already happening. Studio sends its
+  // local count on EVERY session sync, so minting here on a read turned one
+  // status check into up to three KV puts, forever, on the namespace
+  // publishes share. The cap is the free allowance: a client claiming a
+  // thousand offline makes cannot make us write a thousand records.
+  if (!increment) short = 0;
+  short = Math.min(short, CASE_LIMIT_FREE);
   while (short > 0) {
     const record = {
       id: `offline-${crypto.randomUUID().replaceAll("-", "").slice(0, 16)}`,
@@ -2473,11 +2511,16 @@ async function planCount(request, env, increment) {
     byId.set(record.id, record);
   }
 
-  const n = madeCount(byId);
-  // The counters stay mirrored on writes. Nothing reads them for truth any
-  // more, but a rolled-back worker would, and a rollback that hands out
-  // free apps is the expensive kind of surprise.
-  if (increment || local > 0) {
+  // The answer never goes backward. On a read the offline makes were not
+  // materialised, so the client's own number still counts toward what is
+  // reported -- the wall must not under-count just because this call
+  // declined to spend writes.
+  const n = Math.max(madeCount(byId), local);
+  // The counters stay mirrored, but only on a call that was already
+  // writing. Nothing reads them for truth any more; they exist so a
+  // rolled-back worker cannot hand the allowance out again, and a rollback
+  // that gives away free apps is the expensive kind of surprise.
+  if (increment) {
     await Promise.all(keys.map((k) => env.APPS.put(k, String(n))));
   }
   return json({ n, keys: keys.length });
