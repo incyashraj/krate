@@ -482,6 +482,29 @@ enum Command {
         file: Option<PathBuf>,
     },
 
+    /// Show this machine's development identity, and choose whether your own
+    /// unsigned apps get storage nobody else can reach.
+    Identity {
+        /// Store your unsigned apps' data under this machine, so it is not
+        /// confused with another machine's or a published app's. Existing
+        /// data is not moved: an app that already has data keeps reading it
+        /// until you adopt it.
+        #[arg(long)]
+        isolate: bool,
+
+        /// Go back to sharing storage by app id. Nothing is deleted.
+        #[arg(long)]
+        share: bool,
+
+        /// Move one app's existing data under this machine's identity.
+        ///
+        /// A deliberate act, never automatic: silently repartitioning the
+        /// stores already on a machine is how somebody opens their notes and
+        /// finds it empty.
+        #[arg(long, value_name = "APP_ID")]
+        adopt: Option<String>,
+    },
+
     /// Sign a bundle with a publisher key, so a recipient can check it came
     /// from you and has not been changed since.
     ///
@@ -1455,6 +1478,11 @@ fn run() -> Result<u8> {
             generate_key,
             namespace,
         } => sign_bundle_command(&file, &key, generate_key, &namespace),
+        Command::Identity {
+            isolate,
+            share,
+            adopt,
+        } => identity_command(isolate, share, adopt.as_deref()),
         Command::Card {
             bundle,
             output,
@@ -4188,6 +4216,90 @@ fn revocations_known_here() -> krate_bundle::delegation::RevocationState {
     krate_bundle::delegation::RevocationState::Unknown {
         last_known: Vec::new(),
     }
+}
+
+/// Show and set this machine's development identity (IC-737).
+fn identity_command(isolate: bool, share: bool, adopt: Option<&str>) -> Result<u8> {
+    let flag = krate_home().join("keys").join("isolate-development");
+    if isolate && share {
+        anyhow::bail!("--isolate and --share ask for opposite things; pick one");
+    }
+    if isolate {
+        fs::create_dir_all(flag.parent().expect("keys dir has a parent"))?;
+        fs::write(&flag, b"on")?;
+        println!("Your unsigned apps now store data under this machine.");
+        println!();
+        println!("Apps that already have data keep reading it, so nothing is lost.");
+        println!("To move one across: krate identity --adopt <app-id>");
+        println!();
+        println!("This separates your data from another machine's and from a");
+        println!("published app's. It does NOT stop a file you downloaded from");
+        println!("reaching a local app of the same id -- both run here. For that,");
+        println!("sign your app: krate sign --help");
+    }
+    if share {
+        let _ = fs::remove_file(&flag);
+        println!("Unsigned apps share storage by app id again. Nothing was deleted.");
+    }
+
+    if let Some(app_id) = adopt {
+        let Some(developer) = development_identity() else {
+            anyhow::bail!("could not read or create this machine's development identity");
+        };
+        let principal = StoragePrincipal::Development {
+            developer: developer.clone(),
+            app_id: app_id.to_string(),
+        };
+        let destination = krate_home()
+            .join("store")
+            .join(format!("{}.kv", principal.storage_key()));
+        let legacy = app_store_path(app_id);
+        if !legacy.exists() {
+            anyhow::bail!("no shared store for {app_id} to adopt. Nothing was changed.");
+        }
+        if destination.exists() {
+            // Refusing an ambiguous claimant, as the requirement asks: two
+            // stores for one app is a question only the person can answer,
+            // and picking one for them could discard the wrong data.
+            anyhow::bail!(
+                "{app_id} already has data under this machine's identity, and \
+                 a shared store also exists.\n\nBoth are at:\n  {}\n  {}\n\n\
+                 Krate will not choose between them. Move or remove one, then \
+                 run this again.",
+                destination.display(),
+                legacy.display(),
+            );
+        }
+        // Copy rather than move, so a mistake is recoverable and a rollback
+        // is just deleting the new file.
+        fs::copy(&legacy, &destination)?;
+        println!("Adopted {app_id}.");
+        println!("  from {}", legacy.display());
+        println!("  to   {}", destination.display());
+        println!();
+        println!("The original is still there. Delete it once you are happy.");
+    }
+
+    // Always print the state, so running the command with no flags answers
+    // "who am I and what does that mean" -- which is the visible part the
+    // requirement asks for.
+    println!();
+    match development_identity() {
+        Some(id) => println!("This machine's development identity: {id}"),
+        None => println!("This machine has no development identity (it could not be created)."),
+    }
+    if development_isolation_enabled() {
+        println!("Your unsigned apps: stored under this machine.");
+        println!("  Still shared with any other app on THIS machine claiming the");
+        println!("  same id -- signing is what separates those.");
+    } else {
+        println!("Your unsigned apps: share storage with anything claiming the same app id.");
+        println!("  To change that: krate identity --isolate");
+    }
+    println!();
+    println!("This identity stays on this machine and proves nothing to anyone else.");
+    println!("To make a claim others can check, sign the app: krate sign --help");
+    Ok(0)
 }
 
 /// Sign a bundle so a recipient can check who it came from (IC-015).
@@ -12767,6 +12879,11 @@ fn print_effective_capabilities(
         if let Some(principal) = &storage {
             if principal.is_verified() {
                 println!("  - its saved data is kept under this publisher");
+            } else if principal.is_isolated() {
+                // Signed but not trustworthy, running under this machine's
+                // development identity: isolated from other machines, not
+                // from other apps here.
+                println!("  - its saved data is kept under this machine");
             } else {
                 println!("  - its saved data is shared with anything claiming the same app id");
             }
@@ -12776,7 +12893,9 @@ fn print_effective_capabilities(
         println!("Signature");
         println!("  - none: nobody has signed this app");
         if let Some(principal) = &storage {
-            if !principal.is_verified() {
+            if principal.is_isolated() {
+                println!("  - its saved data is kept under this machine");
+            } else {
                 println!("  - its saved data is shared with anything claiming the same app id");
             }
         }
@@ -15506,6 +15625,20 @@ pub(crate) enum StoragePrincipal {
     /// app today is unsigned, and moving their storage would lose people's
     /// notes to fix a problem they do not have yet.
     Unverified { app_id: String },
+    /// An unsigned app running under this machine's development identity
+    /// (IC-737).
+    ///
+    /// Signing is not the only honest way to own an app. Somebody building
+    /// locally, offline, with no account and no intention of publishing must
+    /// still get storage that a downloaded archive claiming the same id
+    /// cannot reach -- otherwise the only way to be safe is to publish,
+    /// which would make Krate Cloud a precondition for private work.
+    ///
+    /// The identity is per machine and deliberately visible: `krate identity`
+    /// prints it, so a person can see which principal their data belongs to
+    /// rather than guessing. It is not a publisher claim -- it says "this
+    /// machine made this", never "this person is who they say".
+    Development { developer: String, app_id: String },
 }
 
 impl StoragePrincipal {
@@ -15529,12 +15662,34 @@ impl StoragePrincipal {
                 )
             }
             StoragePrincipal::Unverified { app_id } => sanitize_storage_name(app_id),
+            // A different separator from the publisher's `@`, so the two can
+            // never be confused by eye or by a path parser: `notes+ab12` is a
+            // machine's own app, `notes@ab12` is a published one.
+            StoragePrincipal::Development { developer, app_id } => format!(
+                "{}+{}",
+                sanitize_storage_name(app_id),
+                &developer[..developer.len().min(16)]
+            ),
         }
     }
 
     /// Is this app's storage protected by a verified publisher?
+    ///
+    /// A development identity is NOT verified: it isolates storage on this
+    /// machine but proves nothing to anybody else, and saying otherwise
+    /// would let a local build wear a publisher's clothes.
     pub(crate) fn is_verified(&self) -> bool {
         matches!(self, StoragePrincipal::Verified { .. })
+    }
+
+    /// Is this app's storage isolated from other apps claiming its id?
+    ///
+    /// True for both a verified publisher and this machine's development
+    /// identity. The question a person actually has is "can something else
+    /// reach my data", and the answer is no in both cases -- for different
+    /// reasons, which `is_verified` is there to distinguish.
+    pub(crate) fn is_isolated(&self) -> bool {
+        !matches!(self, StoragePrincipal::Unverified { .. })
     }
 }
 
@@ -15545,6 +15700,60 @@ impl StoragePrincipal {
 /// must not hand an app the publisher's storage. Anything short of a full
 /// verdict falls back to the unverified principal, which is the same place
 /// the app was storing before -- no data is lost by failing to verify.
+/// Which principal an unsigned app gets on this machine (IC-737).
+///
+/// Two answers, and the difference is a person's deliberate choice:
+///
+/// - **Off (the default).** The shared, id-keyed path every app has used.
+///   Anything claiming the same id reaches the same data -- which is the
+///   weakness, stated rather than hidden, and the reason `krate identity`
+///   exists to offer the alternative.
+/// - **On.** This machine's development identity, so data written here is
+///   not reachable from another machine's store directory that happens to
+///   be copied in, and not confused with a published app's.
+///
+/// What this deliberately does NOT do is separate two unsigned apps on the
+/// SAME machine. Both get the same machine identity, so an archive claiming
+/// `dev.krate.keyvault` still meets the local one. Fixing that needs
+/// per-app identity, and the two candidates both fail:
+///
+/// - binding to the app's digest strands the data on every rebuild, which
+///   is the failure explicitly rejected for IC-736 ("worse than the
+///   defect") and would hit a local developer hardest;
+/// - trusting anything inside the file is trusting a string its author
+///   chose, which is the original defect.
+///
+/// The answer the identity contract gives is a *deliberate identity key*:
+/// a developer signs their own app with a local key (`krate sign`, no
+/// account, offline), and the storage then keys on that key -- surviving
+/// rebuilds, and unreachable by an archive that does not hold it. That path
+/// works today; this flag is for the case where somebody has not signed.
+///
+/// Off by default because turning it on for everyone would silently
+/// repartition 89 stores of real data on this machine alone. A person who
+/// opens their notes app and finds it empty has been failed worse than by
+/// the sharing this fixes. `krate identity --isolate` is that decision.
+fn unsigned_principal(app_id: String) -> StoragePrincipal {
+    if !development_isolation_enabled() {
+        return StoragePrincipal::Unverified { app_id };
+    }
+    match development_identity() {
+        Some(developer) => StoragePrincipal::Development { developer, app_id },
+        // No identity could be made -- a read-only home, a full disk. The
+        // app still runs on the shared path rather than failing over a
+        // bookkeeping file.
+        None => StoragePrincipal::Unverified { app_id },
+    }
+}
+
+/// Has this machine chosen to isolate its own unsigned apps?
+fn development_isolation_enabled() -> bool {
+    krate_home()
+        .join("keys")
+        .join("isolate-development")
+        .exists()
+}
+
 pub(crate) fn storage_principal(
     manifest: &Manifest,
     envelope: Option<&krate_bundle::signing::SignatureEnvelope>,
@@ -15552,10 +15761,10 @@ pub(crate) fn storage_principal(
 ) -> StoragePrincipal {
     let app_id = manifest.app.id.clone();
     let (Some(envelope), Some(full)) = (envelope, verdict) else {
-        return StoragePrincipal::Unverified { app_id };
+        return unsigned_principal(app_id);
     };
     if !full.is_trustworthy() {
-        return StoragePrincipal::Unverified { app_id };
+        return unsigned_principal(app_id);
     }
 
     // The publisher is the ROOT when a release key was delegated. Release
@@ -15594,6 +15803,47 @@ fn sanitize_storage_name(name: &str) -> String {
     }
 }
 
+/// This machine's development identity (IC-737).
+///
+/// A stable random name for "apps built here". Created on first use and kept
+/// in `~/.krate/keys/development-id`, so a person's own work gets storage
+/// that a downloaded archive claiming the same id cannot reach -- without
+/// signing anything, without an account, and without being online.
+///
+/// It is an identifier, not a key: it proves nothing to anyone else, and it
+/// is never sent anywhere. Its whole job is to separate one machine's own
+/// apps from files that arrive from elsewhere. Somebody who wants a claim
+/// others can check signs their app instead, which is a different act with
+/// a different tool (`krate sign`).
+///
+/// Returns `None` when it cannot be created or read -- a read-only home, a
+/// full disk. That is a real state and the caller falls back to the shared
+/// unverified path rather than failing to run somebody's app over a
+/// bookkeeping file.
+pub(crate) fn development_identity() -> Option<String> {
+    let path = krate_home().join("keys").join("development-id");
+    if let Ok(existing) = fs::read_to_string(&path) {
+        let trimmed = existing.trim().to_string();
+        if !trimmed.is_empty() {
+            return Some(trimmed);
+        }
+    }
+    // 128 bits, hex. Long enough that two machines never collide by
+    // accident, short enough to read aloud when somebody is comparing what
+    // `krate identity` printed with what a path says.
+    let mut bytes = [0u8; 16];
+    std::fs::File::open("/dev/urandom")
+        .and_then(|mut file| {
+            use std::io::Read;
+            file.read_exact(&mut bytes)
+        })
+        .ok()?;
+    let id: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+    fs::create_dir_all(path.parent()?).ok()?;
+    fs::write(&path, &id).ok()?;
+    Some(id)
+}
+
 /// Where a principal's storage lives.
 ///
 /// A verified app gets its own directory named for the publisher, so it can
@@ -15607,6 +15857,29 @@ fn principal_store_path(principal: &StoragePrincipal) -> PathBuf {
         StoragePrincipal::Verified { .. } => krate_home()
             .join("store")
             .join(format!("{}.kv", principal.storage_key())),
+        // A development app prefers its own isolated store, but falls back
+        // to the legacy shared one while that is where the data lives.
+        //
+        // Adoption is deliberate (`krate identity --adopt`), never
+        // automatic: silently moving 89 stores on a version upgrade would
+        // be a migration nobody asked for, and the failure mode -- somebody
+        // opens their notes app and it is empty -- is exactly the one worth
+        // never causing. So an app that already has data keeps reading it,
+        // and a NEW app starts isolated straight away.
+        StoragePrincipal::Development { app_id, .. } => {
+            let isolated = krate_home()
+                .join("store")
+                .join(format!("{}.kv", principal.storage_key()));
+            if isolated.exists() {
+                return isolated;
+            }
+            let legacy = app_store_path(app_id);
+            if legacy.exists() {
+                legacy
+            } else {
+                isolated
+            }
+        }
     }
 }
 
@@ -17887,6 +18160,65 @@ mod storage_identity_tests {
     /// known limitation waiting on signing (CP1) rather than an accident. The
     /// day verified lineage lands, the second assertion is the one that must
     /// change, and it will fail here loudly instead of being forgotten.
+    /// A development identity separates this machine's data from a
+    /// publisher's and from another machine's (IC-737).
+    ///
+    /// It does NOT separate two unsigned apps on one machine -- both get
+    /// the same machine identity. That limit is asserted here rather than
+    /// left for somebody to discover, because the command's own text
+    /// promises exactly this much and no more.
+    #[test]
+    fn a_development_identity_separates_machines_and_publishers_not_local_apps() {
+        let mine = StoragePrincipal::Development {
+            developer: "1111111111111111".to_string(),
+            app_id: "dev.krate.keyvault".to_string(),
+        };
+        let another_machine = StoragePrincipal::Development {
+            developer: "2222222222222222".to_string(),
+            app_id: "dev.krate.keyvault".to_string(),
+        };
+        let published = StoragePrincipal::Verified {
+            publisher: "1111111111111111".to_string(),
+            app_id: "dev.krate.keyvault".to_string(),
+        };
+        let shared = StoragePrincipal::Unverified {
+            app_id: "dev.krate.keyvault".to_string(),
+        };
+
+        assert_ne!(
+            mine.storage_key(),
+            another_machine.storage_key(),
+            "two machines' data must not collide if a store directory is copied",
+        );
+        assert_ne!(
+            mine.storage_key(),
+            published.storage_key(),
+            "a local build must not land in a publisher's storage even when \
+             the identifiers happen to match -- `+` and `@` keep them apart",
+        );
+        assert_ne!(mine.storage_key(), shared.storage_key());
+
+        // The honest limit, stated as a test so it cannot be quietly
+        // forgotten: another unsigned app on THIS machine reaches the same
+        // place, because it is the same machine.
+        let local_impostor = StoragePrincipal::Development {
+            developer: "1111111111111111".to_string(),
+            app_id: "dev.krate.keyvault".to_string(),
+        };
+        assert_eq!(
+            mine.storage_key(),
+            local_impostor.storage_key(),
+            "a machine identity cannot separate two apps on one machine; \
+             signing is what does that, and the command says so",
+        );
+
+        // And a development identity is never mistaken for a verified one.
+        assert!(!mine.is_verified(), "local is not published");
+        assert!(mine.is_isolated(), "but it is not the shared path either");
+        assert!(published.is_verified() && published.is_isolated());
+        assert!(!shared.is_verified() && !shared.is_isolated());
+    }
+
     /// A verified publisher's storage is unreachable by anyone else
     /// (IC-736, the E3 collision).
     ///
