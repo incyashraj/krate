@@ -727,7 +727,7 @@ mod tests {
             reason: String::new(),
         }]);
 
-        let states = vec![
+        let states = [
             // 1. a valid signature made before revocation
             verify_chain(&signed, "acme/notes", &me, SIGNED_AT - 60, &revoked),
             // 2. a signature made after compromise
