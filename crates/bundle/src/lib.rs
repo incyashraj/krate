@@ -59,6 +59,21 @@ pub mod statement;
 pub const MANIFEST_ENTRY: &str = "manifest.toml";
 /// The component entry name inside a bundle.
 pub const COMPONENT_ENTRY: &str = "code.wasm";
+
+/// The one function the runtime calls on a Krate app.
+///
+/// Both worlds declare `export run: func() -> s32`, and every shipped app
+/// exports exactly this and nothing else (measured on krate-clocks and
+/// krate-notes: `exports: {"run"}`).
+///
+/// NOT enforced at pack time, deliberately. A component that parses but
+/// exports nothing is a valid empty component, and the minimal
+/// `\0asm\x01\0\0\0` stub that fifteen tests use as a stand-in is exactly
+/// that -- so enforcing it here would mean rewriting every fixture to embed
+/// a real component, a large change carrying its own risk for a gap that
+/// `krate check-app` already closes by RUNNING the app. Recorded rather than
+/// half-done (IC-210).
+pub const RUN_EXPORT: &str = "run";
 /// Root for optional portable resources inside the bundle.
 pub const ASSETS_PREFIX: &str = "assets/";
 /// Root for the SDK the app was built against.

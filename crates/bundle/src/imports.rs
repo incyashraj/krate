@@ -69,6 +69,26 @@ pub fn unknown_krate_imports(bytes: &[u8]) -> Result<Vec<String>, String> {
         .collect())
 }
 
+/// Every interface or function a component exports.
+///
+/// A Krate app must export `run` -- the runtime calls it and nothing else.
+/// A component with clean imports and no `run` packs today and fails at the
+/// recipient's machine, which is the same shape of defect as accepting a
+/// name we never defined (IC-210).
+pub fn component_exports(bytes: &[u8]) -> Result<BTreeSet<String>, String> {
+    let mut exports = BTreeSet::new();
+    for payload in Parser::new(0).parse_all(bytes) {
+        let payload = payload.map_err(|err| format!("parse component: {err}"))?;
+        if let Payload::ComponentExportSection(section) = payload {
+            for export in section {
+                let export = export.map_err(|err| format!("read export: {err}"))?;
+                exports.insert(export.name.0.to_string());
+            }
+        }
+    }
+    Ok(exports)
+}
+
 /// The imports that are not Krate APIs. Empty means the component is clean.
 pub fn non_krate_imports(bytes: &[u8]) -> Result<Vec<String>, String> {
     Ok(component_imports(bytes)?
