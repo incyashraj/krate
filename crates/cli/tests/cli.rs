@@ -3805,6 +3805,54 @@ fn adversarial_archives_are_refused_by_the_binary_people_run() {
     }
 }
 
+/// A file whose name is not ASCII cannot be pinned down (IC-209).
+///
+/// `caf\u{e9}.rs` written NFC and NFD is two different byte strings and one
+/// file on macOS, so a reviewed copy and a substituted one are
+/// indistinguishable. `krate run` must say so, name the file, and stop.
+#[test]
+fn a_path_outside_ascii_is_refused_by_the_binary_people_run() {
+    let dir = tempfile::tempdir().expect("temp dir");
+
+    for (what, path) in [
+        ("the composed spelling", "source/caf\u{e9}.rs"),
+        ("the decomposed spelling", "source/cafe\u{301}.rs"),
+    ] {
+        let bundle = dir.path().join("unicode.krate");
+        std::fs::write(
+            &bundle,
+            archive_carrying(&[(path.to_string(), b"fn main() {}".to_vec())]),
+        )
+        .expect("write fixture");
+
+        let output = krate()
+            .arg("run")
+            .arg(&bundle)
+            .args(["--headless", "--auto-grant"])
+            .output()
+            .expect("run the non-ASCII bundle");
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_ne!(
+            output.status.code(),
+            Some(0),
+            "{what} must not open: {stderr}"
+        );
+        assert!(
+            stderr.contains("outside ASCII"),
+            "{what} must be refused for its name, not something else: {stderr}"
+        );
+        assert!(
+            stderr.contains(path),
+            "{what} must NAME the path {path:?}: {stderr}"
+        );
+        assert!(
+            stderr.contains("Rename it to ASCII"),
+            "{what} must say what to do about it: {stderr}"
+        );
+    }
+}
+
 /// A zip whose central directory lists `path` twice.
 ///
 /// Assembled from raw records: the zip crate's writer refuses a literal
@@ -3812,16 +3860,25 @@ fn adversarial_archives_are_refused_by_the_binary_people_run() {
 /// produces. IC-713 asks for exactly this ("archives produced by multiple
 /// ZIP writers").
 fn archive_naming_one_path_twice(path: &str) -> Vec<u8> {
+    archive_carrying(&[
+        (path.to_string(), b"the reviewed copy".to_vec()),
+        (path.to_string(), b"the attacker's copy".to_vec()),
+    ])
+}
+
+/// A well formed archive plus whatever `extra` entries are named, verbatim.
+fn archive_carrying(extra: &[(String, Vec<u8>)]) -> Vec<u8> {
     const MANIFEST: &str = "[app]\nid = \"com.example.adversarial\"\nname = \"Adversarial\"\n\
                             version = \"1.0.0\"\nentry = \"code.wasm\"\n\
                             world = \"krate:app/cli@0.1.0\"\n";
 
-    let entries: Vec<(String, Vec<u8>)> = vec![
+    let entries: Vec<(String, Vec<u8>)> = [
         ("manifest.toml".to_string(), MANIFEST.as_bytes().to_vec()),
         ("code.wasm".to_string(), b"\0asm\x01\0\0\0".to_vec()),
-        (path.to_string(), b"the reviewed copy".to_vec()),
-        (path.to_string(), b"the attacker's copy".to_vec()),
-    ];
+    ]
+    .into_iter()
+    .chain(extra.iter().cloned())
+    .collect();
 
     let mut out = Vec::new();
     let mut offsets = Vec::new();

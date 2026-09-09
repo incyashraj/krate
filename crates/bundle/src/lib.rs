@@ -226,6 +226,13 @@ pub enum BundleError {
          component (`cargo component build`) rather than a plain module."
     )]
     NotAComponent { path: String, detail: String },
+    #[error(
+        "{path} uses characters outside ASCII.\n\n  \
+         Two spellings of one accented name are different bytes but the same \
+         file on some systems, so Krate cannot tell a reviewed copy from a \
+         substituted one. Rename it to ASCII and pack again."
+    )]
+    NonAsciiPath { path: String },
     #[error("bundle contains more than {MAX_ENTRY_COUNT} files")]
     TooManyEntries,
     #[error("bundle source and SDK expand to more than {MAX_TOTAL_SOURCE_BYTES} bytes")]
@@ -1349,6 +1356,30 @@ fn preflight_entries<R: Read + io::Seek>(archive: &mut ZipArchive<R>) -> Result<
             return Err(BundleError::TooManyEntries);
         }
 
+        // ASCII only (IC-209).
+        //
+        // `café.rs` has two spellings -- NFC and NFD -- that are different
+        // bytes and the same file on macOS. One of them would then be a copy
+        // the reviewer never saw, and telling them apart needs Unicode
+        // normalization tables: a new dependency, in the crate that opens
+        // untrusted files, carrying data that changes between releases.
+        //
+        // Krate controls what it packs, and no shipped bundle uses a
+        // non-ASCII entry name. Refusing them costs a developer one rename,
+        // with a message saying exactly that, and removes the ambiguity
+        // entirely rather than approximating it.
+        //
+        // The name is read from the RAW bytes, not from `entry.name()`: a zip
+        // that leaves the UTF-8 flag bit clear is decoded as CP437, so a
+        // genuine `caf\u{e9}.rs` would be reported back as `caf\u{251c}\u{2510}.rs`
+        // and the developer would be told to rename a file they do not have.
+        let raw = entry.name_raw().to_vec();
+        if !raw.is_ascii() {
+            return Err(BundleError::NonAsciiPath {
+                path: String::from_utf8_lossy(&raw).into_owned(),
+            });
+        }
+
         // One logical path, however it is spelled. Backslashes are folded to
         // forward slashes because a zip may carry either and both name the
         // same file once extracted.
@@ -2172,7 +2203,18 @@ required = true
     /// a literal duplicate name -- which is exactly the archive a hostile
     /// packer produces, and exactly what IC-713 asks to be tested against
     /// ("archives produced by multiple ZIP writers").
+    /// A well formed archive that also carries `path` twice.
     fn archive_with_duplicate(path: &str) -> Vec<u8> {
+        archive_with(&[
+            (path.to_string(), b"the reviewed copy".to_vec()),
+            (path.to_string(), b"the attacker's copy".to_vec()),
+        ])
+    }
+
+    /// A well formed archive plus whatever `extra` entries are asked for.
+    /// The names go into the zip verbatim, which is the point: a real writer
+    /// would not build these, and an attacker's zip is not written by ours.
+    fn archive_with(extra: &[(String, Vec<u8>)]) -> Vec<u8> {
         fn local_header(name: &str, body: &[u8]) -> Vec<u8> {
             let mut out = Vec::new();
             out.extend_from_slice(&[0x50, 0x4b, 0x03, 0x04]);
@@ -2196,8 +2238,7 @@ required = true
             (MANIFEST_ENTRY.to_string(), MANIFEST.as_bytes().to_vec()),
             (COMPONENT_ENTRY.to_string(), b"\0asm\x01\0\0\0".to_vec()),
         ];
-        entries.push((path.to_string(), b"the reviewed copy".to_vec()));
-        entries.push((path.to_string(), b"the attacker's copy".to_vec()));
+        entries.extend(extra.iter().cloned());
 
         let mut out = Vec::new();
         let mut offsets = Vec::new();
@@ -2287,6 +2328,48 @@ required = true
                 "the {namespace} refusal must NAME the path {path}: {text}"
             );
         }
+    }
+
+    #[test]
+    fn a_path_outside_ascii_is_refused_and_named() {
+        // `cafe\u{301}.rs` (NFD) and `caf\u{e9}.rs` (NFC) are different bytes
+        // and the same file once written to disk on macOS. Whichever one a
+        // reviewer read, the other could replace it. Both are refused.
+        for spelling in ["source/caf\u{e9}.rs", "source/cafe\u{301}.rs"] {
+            let bytes = archive_with(&[(spelling.to_string(), b"fn main() {}".to_vec())]);
+            let dir = TempDir::new().expect("tempdir");
+            let bundle = dir.path().join("unicode.krate");
+            fs::write(&bundle, &bytes).expect("write");
+
+            let err = match open(&bundle) {
+                Err(err) => err,
+                Ok(_) => panic!("a non-ASCII entry name must be refused: {spelling:?}"),
+            };
+            let text = err.to_string();
+            assert!(
+                text.contains("outside ASCII"),
+                "{spelling:?}: {text}"
+            );
+            assert!(
+                text.contains(spelling),
+                "the refusal must NAME the path {spelling:?}: {text}"
+            );
+            assert!(
+                text.contains("Rename it to ASCII"),
+                "the refusal must say what to DO about it: {text}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_ordinary_ascii_path_is_still_accepted() {
+        // The guard above must not cost a normal bundle. If this ever fails,
+        // the ASCII rule has grown teeth it was never meant to have.
+        let bytes = archive_with(&[("source/lib.rs".to_string(), b"fn main() {}".to_vec())]);
+        let dir = TempDir::new().expect("tempdir");
+        let bundle = dir.path().join("plain.krate");
+        fs::write(&bundle, &bytes).expect("write");
+        open(&bundle).expect("an ASCII path must still open");
     }
 
     #[test]
