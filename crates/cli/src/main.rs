@@ -3180,7 +3180,9 @@ fn run_port_author_command(
     task: &Path,
     repair: Option<(u8, &Path)>,
 ) -> Result<()> {
-    let shell = author_shell();
+    let Some(shell) = author_shell() else {
+        anyhow::bail!("{}", no_author_shell_message());
+    };
     let mut child = ProcessCommand::new(shell);
     child
         .arg("-c")
@@ -9660,7 +9662,10 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
         direct.arg("author-agent").arg(agent);
         direct
     } else {
-        let mut through_shell = std::process::Command::new(author_shell());
+        let Some(shell) = author_shell() else {
+            anyhow::bail!("{}", no_author_shell_message());
+        };
+        let mut through_shell = std::process::Command::new(shell);
         through_shell.arg("-c").arg(ctx.cmd);
         through_shell
     };
@@ -15572,19 +15577,71 @@ fn cargo_home() -> Option<PathBuf> {
 /// never asked for WSL -- including CI. Git for Windows ships a real POSIX bash
 /// and is present wherever git is, so prefer it and fall back to `bash` only
 /// when it is missing.
-fn author_shell() -> String {
+fn author_shell() -> Option<String> {
     if !cfg!(windows) {
-        return "sh".to_string();
+        return Some("sh".to_string());
     }
-    for candidate in [
-        r"C:\Program Files\Git\bin\bash.exe",
-        r"C:\Program Files (x86)\Git\bin\bash.exe",
-    ] {
-        if Path::new(candidate).is_file() {
-            return candidate.to_string();
+    // Git for Windows ships a real POSIX bash, but it does not always land in
+    // Program Files: winget and scoop put it under the user's profile, and a
+    // portable install goes wherever it was unzipped. Checking only the two
+    // default paths made a machine with Git installed look like a machine
+    // without one (K-249 found the reverse case: no Git at all).
+    let mut candidates = vec![
+        PathBuf::from(r"C:\Program Files\Git\bin\bash.exe"),
+        PathBuf::from(r"C:\Program Files\Git\usr\bin\bash.exe"),
+        PathBuf::from(r"C:\Program Files (x86)\Git\bin\bash.exe"),
+    ];
+    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+        candidates.push(PathBuf::from(&local).join(r"Programs\Git\bin\bash.exe"));
+    }
+    if let Some(home) = std::env::var_os("USERPROFILE") {
+        // scoop's default layout.
+        candidates.push(PathBuf::from(&home).join(r"scoop\apps\git\current\bin\bash.exe"));
+    }
+    for candidate in candidates {
+        if candidate.is_file() {
+            return Some(candidate.to_string_lossy().into_owned());
         }
     }
-    "bash".to_string()
+
+    // A bash on PATH, but only if it is NOT the WSL stub.
+    //
+    // Falling back to a bare "bash" was worse than failing. On a machine with
+    // no Git, `bash` resolves to C:\Windows\System32\wsl.exe, which on a
+    // box with no distribution installed prints its own usage text instead of
+    // running the command -- or, as measured on DESKTOP-EF1TJL9, is not
+    // resolvable at all and the spawn dies with "program not found". Either
+    // way the person sees a failure that says nothing about what is wrong.
+    if let Some(found) = which_on_path("bash.exe") {
+        let is_wsl_stub = found
+            .to_string_lossy()
+            .to_ascii_lowercase()
+            .contains(r"\windows\system32");
+        if !is_wsl_stub {
+            return Some(found.to_string_lossy().into_owned());
+        }
+    }
+    None
+}
+
+/// The first match for `name` on PATH, if any.
+fn which_on_path(name: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|dir| dir.join(name))
+        .find(|candidate| candidate.is_file())
+}
+
+/// What to tell somebody whose machine has no POSIX shell for an author
+/// command. Named separately so the message is one sentence in one place.
+fn no_author_shell_message() -> String {
+    "this needs a POSIX shell to run the author command, and none was found \
+     on this machine.\n\n  Install Git for Windows, which ships one:\n    \
+     https://git-scm.com/download/win\n\n  Krate deliberately does not use \
+     the `wsl` command here: on a machine with no Linux distribution \
+     installed it prints its own help text instead of running anything, which \
+     looks like the app failing for no reason."
+        .to_string()
 }
 
 pub(crate) fn krate_home() -> PathBuf {
@@ -17279,12 +17336,24 @@ mod create_tests {
         // other systems passed.
         let shell = super::author_shell();
         if cfg!(windows) {
-            assert!(
-                shell.ends_with("bash.exe") || shell == "bash",
-                "unexpected Windows shell: {shell}"
-            );
+            // None is a legitimate answer -- a machine with no Git has no
+            // POSIX shell, and saying so beats spawning something that
+            // cannot work. What is NOT allowed is a bare "bash", which
+            // resolves to the WSL stub (K-249: measured on a real PC, that
+            // spawn dies with "program not found" and `wsl --list` prints
+            // usage text instead of running anything).
+            if let Some(shell) = shell {
+                assert!(
+                    shell.to_ascii_lowercase().ends_with("bash.exe"),
+                    "the Windows author shell must be a real bash.exe, got {shell}"
+                );
+                assert!(
+                    !shell.to_ascii_lowercase().contains(r"\windows\system32"),
+                    "never the WSL stub: {shell}"
+                );
+            }
         } else {
-            assert_eq!(shell, "sh");
+            assert_eq!(shell.as_deref(), Some("sh"));
         }
     }
 
