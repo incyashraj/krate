@@ -2387,10 +2387,7 @@ required = true
                 Ok(_) => panic!("a non-ASCII entry name must be refused: {spelling:?}"),
             };
             let text = err.to_string();
-            assert!(
-                text.contains("outside ASCII"),
-                "{spelling:?}: {text}"
-            );
+            assert!(text.contains("outside ASCII"), "{spelling:?}: {text}");
             assert!(
                 text.contains(spelling),
                 "the refusal must NAME the path {spelling:?}: {text}"
@@ -2420,8 +2417,7 @@ required = true
         let mut buf = Vec::new();
         {
             let mut writer = ZipWriter::new(io::Cursor::new(&mut buf));
-            let opts =
-                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
             writer.start_file(MANIFEST_ENTRY, opts).expect("manifest");
             writer.write_all(MANIFEST.as_bytes()).expect("write");
             writer.start_file(COMPONENT_ENTRY, opts).expect("component");
@@ -2532,8 +2528,7 @@ required = true
         let mut buf = Vec::new();
         {
             let mut writer = ZipWriter::new(io::Cursor::new(&mut buf));
-            let opts =
-                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
             writer.start_file(MANIFEST_ENTRY, opts).expect("manifest");
             writer.write_all(MANIFEST.as_bytes()).expect("write");
             writer.start_file(COMPONENT_ENTRY, opts).expect("component");
@@ -2564,10 +2559,7 @@ required = true
         let forged = forge_source_sizes_to_one_byte(&buf);
         // The forgery must have actually happened, or this test would be
         // re-checking the honest archive above and proving nothing.
-        assert_ne!(
-            forged, buf,
-            "the fixture must really declare forged sizes"
-        );
+        assert_ne!(forged, buf, "the fixture must really declare forged sizes");
         let bundle = dir.path().join("forged.krate");
         fs::write(&bundle, &forged).expect("write");
         assert!(
@@ -2588,8 +2580,8 @@ required = true
         {
             let mut i = 0;
             while let Some(found) = find(&data, magic, i) {
-                let namelen = u16::from_le_bytes([data[found + len_at], data[found + len_at + 1]])
-                    as usize;
+                let namelen =
+                    u16::from_le_bytes([data[found + len_at], data[found + len_at + 1]]) as usize;
                 let start = found + name_at;
                 if start + namelen <= data.len() {
                     let name = String::from_utf8_lossy(&data[start..start + namelen]).into_owned();
