@@ -12,6 +12,7 @@ libfuzzer-sys = "0.4"
 krate-adapter-common = { path = "../crates/adapter-common" }
 krate-manifest = { path = "../crates/manifest" }
 krate-policy = { path = "../crates/policy" }
+krate-bundle = { path = "../crates/bundle" }
 
 [workspace]
 members = ["."]
@@ -33,6 +34,13 @@ bench = false
 [[bin]]
 name = "policy_match"
 path = "fuzz_targets/policy_match.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bundle_open"
+path = "fuzz_targets/bundle_open.rs"
 test = false
 doc = false
 bench = false

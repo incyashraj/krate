@@ -4,7 +4,7 @@ set -eu
 # Ensure locally installed cargo subcommands are reachable.
 export PATH="$HOME/.cargo/bin:$PATH"
 FUZZ_MAX_TOTAL_TIME="${KRATE_FUZZ_MAX_TOTAL_TIME:-30}"
-FUZZ_TARGETS="${KRATE_FUZZ_TARGETS:-manifest_parse logical_path_parse policy_match}"
+FUZZ_TARGETS="${KRATE_FUZZ_TARGETS:-manifest_parse logical_path_parse policy_match bundle_open}"
 
 case "$FUZZ_MAX_TOTAL_TIME" in
   ''|*[!0-9]*)

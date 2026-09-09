@@ -10,7 +10,7 @@ OUTPUT="target/phase2-fuzz-evidence/fuzz-evidence.md"
 STRICT="${KRATE_FUZZ_EVIDENCE_STRICT:-0}"
 DRY_RUN="${KRATE_FUZZ_EVIDENCE_DRY_RUN:-0}"
 FUZZ_MAX_TOTAL_TIME="${KRATE_FUZZ_MAX_TOTAL_TIME:-30}"
-FUZZ_TARGETS="${KRATE_FUZZ_TARGETS:-manifest_parse logical_path_parse policy_match}"
+FUZZ_TARGETS="${KRATE_FUZZ_TARGETS:-manifest_parse logical_path_parse policy_match bundle_open}"
 
 usage() {
   cat <<'USAGE'
