@@ -865,7 +865,12 @@ pub fn open(bundle_path: &Path) -> Result<OpenBundle> {
             .unwrap_or(declared);
         if declared > parsed {
             return Err(BundleError::DuplicateEntry {
-                path: format!("{declared} entries, {parsed} distinct names"),
+                // Name it when the records can be walked; fall back to the
+                // counts only when they cannot, because a vague refusal
+                // still beats opening a file whose contents are ambiguous.
+                path: first_duplicate_record_name(&bytes).unwrap_or_else(|| {
+                    format!("{declared} entries but only {parsed} distinct names")
+                }),
             });
         }
     }
@@ -1379,6 +1384,53 @@ fn preflight_entries<R: Read + io::Seek>(archive: &mut ZipArchive<R>) -> Result<
 /// would over-count and refuse an honest bundle. It is therefore only
 /// counted from the start of the central directory, which the end-of-central
 /// -directory record locates exactly.
+/// The normalized name of the first path the central directory lists twice.
+///
+/// IC-713 asks for the offending path to be STATED, not counted: "3 entries,
+/// 2 distinct names" tells somebody the file is wrong without telling them
+/// which part. The parser cannot answer this -- it keys entries by name and
+/// has already dropped the duplicate -- so the records are walked directly.
+///
+/// Normalized the same way `preflight_entries` compares, because that is the
+/// sense in which they collide: `source/lib.rs` and `source\lib.rs` are one
+/// path once extracted, and naming the raw spelling of only one of them
+/// would send somebody looking for a file that reads as different.
+fn first_duplicate_record_name(bytes: &[u8]) -> Option<String> {
+    const EOCD_SIG: [u8; 4] = [0x50, 0x4b, 0x05, 0x06];
+    const CD_SIG: [u8; 4] = [0x50, 0x4b, 0x01, 0x02];
+
+    let window = bytes.len().min(64 * 1024 + 22);
+    let tail = &bytes[bytes.len() - window..];
+    let eocd_at = tail.windows(4).rposition(|w| w == EOCD_SIG)?;
+    let eocd = &tail[eocd_at..];
+    if eocd.len() < 20 {
+        return None;
+    }
+    // Offset 16: where the central directory starts, from the file's start.
+    let mut at = u32::from_le_bytes([eocd[16], eocd[17], eocd[18], eocd[19]]) as usize;
+
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    // Each record is at least 46 bytes before its variable-length name.
+    while at + 46 <= bytes.len() && bytes[at..at + 4] == CD_SIG {
+        let name_len = u16::from_le_bytes([bytes[at + 28], bytes[at + 29]]) as usize;
+        let extra_len = u16::from_le_bytes([bytes[at + 30], bytes[at + 31]]) as usize;
+        let comment_len = u16::from_le_bytes([bytes[at + 32], bytes[at + 33]]) as usize;
+        let name_at = at + 46;
+        if name_at + name_len > bytes.len() {
+            return None;
+        }
+        let name = String::from_utf8_lossy(&bytes[name_at..name_at + name_len]).into_owned();
+        if !name.ends_with('/') {
+            let logical = name.replace('\\', "/").to_lowercase();
+            if !seen.insert(logical.clone()) {
+                return Some(logical);
+            }
+        }
+        at = name_at + name_len + extra_len + comment_len;
+    }
+    None
+}
+
 fn central_directory_record_count(bytes: &[u8]) -> Option<usize> {
     // The EOCD is at the end, and holds the record count in a fixed field.
     // Scanning backwards for its signature is the standard way to find it;
@@ -2112,6 +2164,129 @@ required = true
         }
 
         open(&older).expect("a pre-profile bundle must still open");
+    }
+
+    /// Build a minimal zip whose central directory lists `path` twice.
+    ///
+    /// Written by hand rather than with the zip crate, whose writer refuses
+    /// a literal duplicate name -- which is exactly the archive a hostile
+    /// packer produces, and exactly what IC-713 asks to be tested against
+    /// ("archives produced by multiple ZIP writers").
+    fn archive_with_duplicate(path: &str) -> Vec<u8> {
+        fn local_header(name: &str, body: &[u8]) -> Vec<u8> {
+            let mut out = Vec::new();
+            out.extend_from_slice(&[0x50, 0x4b, 0x03, 0x04]);
+            out.extend_from_slice(&[10, 0]); // version needed
+            out.extend_from_slice(&[0, 0]); // flags
+            out.extend_from_slice(&[0, 0]); // stored, no compression
+            out.extend_from_slice(&[0, 0, 0, 0]); // time, date
+            out.extend_from_slice(&crc32(body).to_le_bytes());
+            out.extend_from_slice(&(body.len() as u32).to_le_bytes());
+            out.extend_from_slice(&(body.len() as u32).to_le_bytes());
+            out.extend_from_slice(&(name.len() as u16).to_le_bytes());
+            out.extend_from_slice(&[0, 0]); // extra length
+            out.extend_from_slice(name.as_bytes());
+            out.extend_from_slice(body);
+            out
+        }
+
+        // manifest and component so the bundle is otherwise well formed,
+        // then the target path twice.
+        let mut entries: Vec<(String, Vec<u8>)> = vec![
+            (MANIFEST_ENTRY.to_string(), MANIFEST.as_bytes().to_vec()),
+            (COMPONENT_ENTRY.to_string(), b"\0asm\x01\0\0\0".to_vec()),
+        ];
+        entries.push((path.to_string(), b"the reviewed copy".to_vec()));
+        entries.push((path.to_string(), b"the attacker's copy".to_vec()));
+
+        let mut out = Vec::new();
+        let mut offsets = Vec::new();
+        for (name, body) in &entries {
+            offsets.push(out.len() as u32);
+            out.extend_from_slice(&local_header(name, body));
+        }
+
+        let cd_start = out.len() as u32;
+        for ((name, body), offset) in entries.iter().zip(&offsets) {
+            out.extend_from_slice(&[0x50, 0x4b, 0x01, 0x02]);
+            out.extend_from_slice(&[10, 0, 10, 0]); // version made by / needed
+            out.extend_from_slice(&[0, 0, 0, 0]); // flags, method (stored)
+            out.extend_from_slice(&[0, 0, 0, 0]); // time, date
+            out.extend_from_slice(&crc32(body).to_le_bytes());
+            out.extend_from_slice(&(body.len() as u32).to_le_bytes());
+            out.extend_from_slice(&(body.len() as u32).to_le_bytes());
+            out.extend_from_slice(&(name.len() as u16).to_le_bytes());
+            out.extend_from_slice(&[0, 0, 0, 0, 0, 0]); // extra, comment, disk
+            out.extend_from_slice(&[0, 0, 0, 0, 0, 0]); // attrs
+            out.extend_from_slice(&offset.to_le_bytes());
+            out.extend_from_slice(name.as_bytes());
+        }
+        let cd_len = out.len() as u32 - cd_start;
+
+        out.extend_from_slice(&[0x50, 0x4b, 0x05, 0x06]);
+        out.extend_from_slice(&[0, 0, 0, 0]); // disk numbers
+        out.extend_from_slice(&(entries.len() as u16).to_le_bytes());
+        out.extend_from_slice(&(entries.len() as u16).to_le_bytes());
+        out.extend_from_slice(&cd_len.to_le_bytes());
+        out.extend_from_slice(&cd_start.to_le_bytes());
+        out.extend_from_slice(&[0, 0]); // comment length
+        out
+    }
+
+    /// CRC-32, so the records a real reader checks are correct.
+    fn crc32(bytes: &[u8]) -> u32 {
+        let mut crc = 0xffff_ffffu32;
+        for byte in bytes {
+            crc ^= *byte as u32;
+            for _ in 0..8 {
+                let mask = (crc & 1).wrapping_neg();
+                crc = (crc >> 1) ^ (0xedb8_8320 & mask);
+            }
+        }
+        !crc
+    }
+
+    /// A duplicate is refused in EVERY namespace, and the refusal names the
+    /// path (IC-713).
+    ///
+    /// "3 entries, 2 distinct names" told somebody the file was wrong
+    /// without telling them which part. The parser cannot answer that -- it
+    /// keys entries by name and has already dropped the duplicate -- so the
+    /// central-directory records are walked directly.
+    ///
+    /// The fixtures are built by a different zip writer than Krate's, which
+    /// is IC-713's own requirement ("archives produced by multiple ZIP
+    /// writers"): the Rust writer refuses a literal duplicate name, so these
+    /// are assembled from raw records.
+    #[test]
+    fn a_duplicate_in_any_namespace_is_refused_and_named() {
+        for (namespace, path) in [
+            ("core", MANIFEST_ENTRY),
+            ("core", COMPONENT_ENTRY),
+            ("asset", "assets/logo.png"),
+            ("source", "source/lib.rs"),
+            ("sdk", "sdk/krate.wit"),
+            ("extension", "future/thing.bin"),
+        ] {
+            let bytes = archive_with_duplicate(path);
+            let dir = TempDir::new().expect("tempdir");
+            let bundle = dir.path().join("dup.krate");
+            fs::write(&bundle, &bytes).expect("write");
+
+            let err = match open(&bundle) {
+                Err(err) => err,
+                Ok(_) => panic!("a duplicate {namespace} record must be refused: {path}"),
+            };
+            let text = err.to_string();
+            assert!(
+                text.contains("names the same file twice"),
+                "{namespace}: {text}"
+            );
+            assert!(
+                text.contains(&path.to_lowercase()),
+                "the {namespace} refusal must NAME the path {path}: {text}"
+            );
+        }
     }
 
     #[test]
