@@ -2382,6 +2382,56 @@ required = true
     }
 
     #[test]
+    fn the_entry_count_limit_holds_at_exactly_the_boundary() {
+        // IC-209 asks for each limit at minus one, exact, and plus one.
+        // MAX_ENTRY_COUNT counts every file in the archive, so the two
+        // required entries come out of the same budget.
+        fn archive_with_n_files(n: usize) -> Vec<u8> {
+            let mut buf = Vec::new();
+            {
+                let mut writer = ZipWriter::new(io::Cursor::new(&mut buf));
+                let opts =
+                    SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+                writer.start_file(MANIFEST_ENTRY, opts).expect("manifest");
+                writer.write_all(MANIFEST.as_bytes()).expect("write");
+                writer.start_file(COMPONENT_ENTRY, opts).expect("component");
+                writer.write_all(b"\0asm\x01\0\0\0").expect("write");
+                for i in 0..n.saturating_sub(2) {
+                    writer
+                        .start_file(format!("source/f{i}.rs"), opts)
+                        .expect("source");
+                    writer.write_all(b"//").expect("write");
+                }
+                writer.finish().expect("finish");
+            }
+            buf
+        }
+
+        let dir = TempDir::new().expect("tempdir");
+        for (n, must_open) in [
+            (MAX_ENTRY_COUNT - 1, true),
+            (MAX_ENTRY_COUNT, true),
+            (MAX_ENTRY_COUNT + 1, false),
+        ] {
+            let bundle = dir.path().join(format!("n{n}.krate"));
+            fs::write(&bundle, archive_with_n_files(n)).expect("write");
+            let opened = open(&bundle);
+            if must_open {
+                assert!(
+                    !matches!(opened, Err(BundleError::TooManyEntries)),
+                    "{n} files is within the limit of {MAX_ENTRY_COUNT} and must not be \
+                     refused for its count"
+                );
+            } else {
+                assert!(
+                    matches!(opened, Err(BundleError::TooManyEntries)),
+                    "{n} files is over the limit of {MAX_ENTRY_COUNT} and must be refused"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn a_forged_size_cannot_get_past_the_source_limit() {
         // K-255. The limit used to be checked against the size in the zip
         // header, so an archive that declared one byte per file and carried
