@@ -945,13 +945,28 @@ pub fn open_reader<R: Read + io::Seek>(reader: R) -> Result<OpenBundle> {
         }
         names
     };
+    // Bytes actually WRITTEN, not the sizes the headers declare (K-255).
+    //
+    // preflight_entries() already refused this bundle if its declared source
+    // total is over the limit, which is the cheap early check. But a header
+    // can say one byte and deliver ninety megabytes, and the declared total
+    // is the only thing that check can see. Counting what comes out of the
+    // decompressor is the number that matters, and it is the same thing the
+    // asset loop above already does. Source and SDK share one running total
+    // because MAX_TOTAL_SOURCE_BYTES covers both together.
+    let mut total_source_bytes = 0_u64;
     for name in &source_names {
         let relative = safe_source_relative_path(name)?;
         let destination = source_path.join(relative);
         if let Some(parent) = destination.parent() {
             fs::create_dir_all(parent).map_err(|err| io_err(parent, err))?;
         }
-        extract_asset_entry(&mut archive, name, &destination)?;
+        total_source_bytes = total_source_bytes
+            .checked_add(extract_asset_entry(&mut archive, name, &destination)?)
+            .ok_or(BundleError::SourceTooLarge)?;
+        if total_source_bytes > MAX_TOTAL_SOURCE_BYTES {
+            return Err(BundleError::SourceTooLarge);
+        }
     }
 
     let sdk_path = dir.path().join("sdk");
@@ -971,7 +986,12 @@ pub fn open_reader<R: Read + io::Seek>(reader: R) -> Result<OpenBundle> {
         if let Some(parent) = destination.parent() {
             fs::create_dir_all(parent).map_err(|err| io_err(parent, err))?;
         }
-        extract_asset_entry(&mut archive, name, &destination)?;
+        total_source_bytes = total_source_bytes
+            .checked_add(extract_asset_entry(&mut archive, name, &destination)?)
+            .ok_or(BundleError::SourceTooLarge)?;
+        if total_source_bytes > MAX_TOTAL_SOURCE_BYTES {
+            return Err(BundleError::SourceTooLarge);
+        }
     }
 
     let manifest_text =
@@ -2359,6 +2379,102 @@ required = true
                 "the refusal must say what to DO about it: {text}"
             );
         }
+    }
+
+    #[test]
+    fn a_forged_size_cannot_get_past_the_source_limit() {
+        // K-255. The limit used to be checked against the size in the zip
+        // header, so an archive that declared one byte per file and carried
+        // far more walked straight past it -- measured at 1.6 GiB written
+        // from a 1.6 MB file. What counts is what comes out of the
+        // decompressor.
+        //
+        // Kept small enough to run in a test: eight entries whose headers
+        // claim 1 byte and which each expand to well past the limit between
+        // them. Zeros deflate to almost nothing, so the fixture stays tiny.
+        const EACH: usize = 48 * 1024 * 1024;
+        let count = (MAX_TOTAL_SOURCE_BYTES as usize / EACH) + 2;
+
+        let mut buf = Vec::new();
+        {
+            let mut writer = ZipWriter::new(io::Cursor::new(&mut buf));
+            let opts =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            writer.start_file(MANIFEST_ENTRY, opts).expect("manifest");
+            writer.write_all(MANIFEST.as_bytes()).expect("write");
+            writer.start_file(COMPONENT_ENTRY, opts).expect("component");
+            writer.write_all(b"\0asm\x01\0\0\0").expect("write");
+            let blob = vec![0u8; EACH];
+            for i in 0..count {
+                writer
+                    .start_file(format!("source/big{i}.rs"), opts)
+                    .expect("source");
+                writer.write_all(&blob).expect("write");
+            }
+            writer.finish().expect("finish");
+        }
+
+        // Honest declaration: refused by the preflight, which is the cheap
+        // early check and must keep working.
+        let dir = TempDir::new().expect("tempdir");
+        let honest = dir.path().join("honest.krate");
+        fs::write(&honest, &buf).expect("write");
+        assert!(
+            matches!(open(&honest), Err(BundleError::SourceTooLarge)),
+            "an honestly declared oversize source tree must be refused"
+        );
+
+        // Now rewrite every source record to declare one byte, leaving the
+        // compressed data untouched. This is the archive the preflight
+        // cannot see through.
+        let forged = forge_source_sizes_to_one_byte(&buf);
+        // The forgery must have actually happened, or this test would be
+        // re-checking the honest archive above and proving nothing.
+        assert_ne!(
+            forged, buf,
+            "the fixture must really declare forged sizes"
+        );
+        let bundle = dir.path().join("forged.krate");
+        fs::write(&bundle, &forged).expect("write");
+        assert!(
+            matches!(open(&bundle), Err(BundleError::SourceTooLarge)),
+            "a FORGED size must not get past the source limit"
+        );
+    }
+
+    /// Rewrite the uncompressed-size field of every `source/` record to 1,
+    /// in both the central directory and the local headers, leaving the
+    /// compressed bytes alone. No writer produces this; an attacker does.
+    fn forge_source_sizes_to_one_byte(input: &[u8]) -> Vec<u8> {
+        let mut data = input.to_vec();
+        let one = 1u32.to_le_bytes();
+
+        for (magic, name_at, len_at, size_at) in
+            [(b"PK\x01\x02", 46, 28, 24), (b"PK\x03\x04", 30, 26, 22)]
+        {
+            let mut i = 0;
+            while let Some(found) = find(&data, magic, i) {
+                let namelen = u16::from_le_bytes([data[found + len_at], data[found + len_at + 1]])
+                    as usize;
+                let start = found + name_at;
+                if start + namelen <= data.len() {
+                    let name = String::from_utf8_lossy(&data[start..start + namelen]).into_owned();
+                    if name.starts_with(SOURCE_PREFIX) {
+                        data[found + size_at..found + size_at + 4].copy_from_slice(&one);
+                    }
+                }
+                i = found + 4;
+            }
+        }
+        data
+    }
+
+    fn find(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
+        haystack
+            .get(from..)?
+            .windows(needle.len())
+            .position(|w| w == needle)
+            .map(|p| p + from)
     }
 
     #[test]
