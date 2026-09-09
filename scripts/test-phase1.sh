@@ -25,4 +25,22 @@ fi
 #
 # The cost is a noisier log. That is a fair trade against a two-hour
 # cancelled run that names no cause.
-KRATE_HELLO_WASM="$HELLO_WASM" cargo test --workspace -- --nocapture
+# One thread on Windows, until K-240 is understood.
+#
+# The lane hung with EXACTLY FOUR tests stuck, and a GitHub Windows runner
+# has four cores -- so cargo ran four test threads and all four were
+# blocked, which is why the suite went silent rather than slow. There was no
+# fifth thread left to make progress.
+#
+# Single-threaded turns that into a question with an answer: if it hangs, it
+# hangs on ONE named test and the log says which. If it completes, the four
+# were contending with each other rather than individually stuck, and the
+# contention is the bug.
+#
+# Windows only. The other two lanes are green and fast, and slowing them
+# would cost real minutes to learn nothing.
+if [ "${RUNNER_OS:-}" = "Windows" ]; then
+  KRATE_HELLO_WASM="$HELLO_WASM" cargo test --workspace -- --nocapture --test-threads=1
+else
+  KRATE_HELLO_WASM="$HELLO_WASM" cargo test --workspace -- --nocapture
+fi
