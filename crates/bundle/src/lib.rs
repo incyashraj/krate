@@ -174,6 +174,13 @@ pub enum BundleError {
          one copy. Ask whoever sent it for a freshly packed file."
     )]
     DuplicateEntry { path: String },
+    #[error(
+        "{path} is not a WebAssembly component, so it cannot be packed into \
+         an app.\n\n  {detail}\n\n  \
+         If this came from a build, check that the build produced a \
+         component (`cargo component build`) rather than a plain module."
+    )]
+    NotAComponent { path: String, detail: String },
     #[error("bundle contains more than {MAX_ENTRY_COUNT} files")]
     TooManyEntries,
     #[error("bundle source and SDK expand to more than {MAX_TOTAL_SOURCE_BYTES} bytes")]
@@ -392,6 +399,35 @@ pub fn pack_with_sdk(
     }
 
     let component = fs::read(component_path).map_err(|err| io_err(component_path, err))?;
+
+    // A bundle must contain a component, not merely some bytes (IC-210).
+    //
+    // `pack` accepted anything: a text file went in as `code.wasm` and came
+    // out as a 351-byte "app" that exits 2 the moment somebody opens it.
+    // The person packing is the one who can fix that, and they are the one
+    // who never heard about it -- the failure landed on the recipient.
+    //
+    // Parsing here is the same work `open` already does at run time, moved
+    // to where it is actionable.
+    imports::component_imports(&component).map_err(|detail| {
+        // wasmparser's own words run to several lines of hex for the
+        // commonest case, a file that is not wasm at all. Say that plainly
+        // and keep the detail only when it adds something.
+        let detail = if detail.contains("magic header not detected") {
+            "it does not start with the WebAssembly magic number".to_string()
+        } else {
+            detail
+                .trim()
+                .lines()
+                .next()
+                .unwrap_or("unreadable")
+                .to_string()
+        };
+        BundleError::NotAComponent {
+            path: component_path.display().to_string(),
+            detail,
+        }
+    })?;
 
     // Write beside the destination, then move it into place (IC-861).
     //
@@ -1851,6 +1887,43 @@ required = true
             err.to_string().contains("names the same file twice"),
             "got: {err}"
         );
+    }
+
+    /// `pack` refuses bytes that are not a component (IC-210).
+    ///
+    /// It used to accept anything: a text file went in as `code.wasm` and
+    /// came out as a 351-byte "app" that exits 2 the moment somebody opens
+    /// it. The person packing can fix that; the recipient cannot, and the
+    /// recipient was the one who found out.
+    #[test]
+    fn packing_something_that_is_not_a_component_is_refused() {
+        let dir = TempDir::new().expect("tempdir");
+        let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
+        let not_wasm = write_temp(dir.path(), "code.wasm", b"this is not a component");
+        let bundle = dir.path().join("junk.krate");
+
+        let err =
+            pack(&manifest, &not_wasm, &bundle).expect_err("plain text must not pack as an app");
+        let text = err.to_string();
+        assert!(
+            text.contains("is not a WebAssembly component"),
+            "the refusal must say what is wrong: {text}"
+        );
+        assert!(
+            text.contains("cargo component build"),
+            "and what to check: {text}"
+        );
+        assert!(
+            !bundle.exists(),
+            "a refused pack must not leave a bundle behind",
+        );
+
+        // A real component still packs -- this must not become a check that
+        // refuses working apps.
+        let component = write_temp(dir.path(), "real.wasm", b"\0asm\x01\0\0\0");
+        let good = dir.path().join("good.krate");
+        pack(&manifest, &component, &good).expect("a real component packs");
+        assert!(good.is_file());
     }
 
     #[test]
