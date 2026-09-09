@@ -40,18 +40,27 @@ fi
 # thread to contend with. So the four were not contending: one test hangs
 # and took the other three down with it.
 #
-# That test is held out on Windows until the cause is found. Holding out one
-# test is a debt, and it is recorded as one on the board -- but the choice is
-# between running the other 1,400 tests on Windows and running none of them,
-# because the alternative is a 90-minute cancelled run that reports nothing
-# about anything. The other two lanes still run it.
+# Holding that test out did NOT help, and that is the useful part. With it
+# skipped the lane hung again, at the same 90 minutes, on a DIFFERENT test:
+# a_path_outside_ascii_is_refused_by_the_binary_people_run, which simply
+# occupied the position the skipped one had.
+#
+# So it is not one cursed test. In that run only 7 of 116 cli tests finished,
+# all within 90 milliseconds, and all seven return early without spawning
+# anything ("skipping: phase2 smoke fixture not built"). The 8th -- the first
+# to actually launch krate.exe and wait for it -- is where it stopped. A
+# krate.exe child launched from this harness on a GitHub Windows runner
+# sometimes never returns, and .output() waits on it forever. Which test is
+# holding the bag is decided by position, not by anything about the test.
+#
+# The skip is therefore reverted: it cost Windows coverage of `krate accept`
+# and bought nothing.
 #
 # Windows only. The other two lanes are green and fast, and slowing them
 # would cost real minutes to learn nothing.
 if [ "${RUNNER_OS:-}" = "Windows" ]; then
   KRATE_HELLO_WASM="$HELLO_WASM" cargo test --workspace -- \
-    --nocapture --test-threads=1 \
-    --skip a_sign_off_names_the_build_and_refuses_to_cover_a_real_failure
+    --nocapture --test-threads=1
 else
   KRATE_HELLO_WASM="$HELLO_WASM" cargo test --workspace -- --nocapture
 fi

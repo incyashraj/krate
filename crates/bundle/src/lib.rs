@@ -2673,6 +2673,98 @@ required = true
     }
 
     #[test]
+    fn the_source_byte_limit_holds_at_exactly_the_boundary() {
+        // IC-209 asks for EACH limit at minus one, exact, and plus one --
+        // not just the count. This is the aggregate the forged-size fixture
+        // exercises from far above; here it is checked where an off-by-one
+        // would live.
+        fn archive_of_source_bytes(total: u64) -> Vec<u8> {
+            let mut buf = Vec::new();
+            {
+                let mut writer = ZipWriter::new(io::Cursor::new(&mut buf));
+                let opts =
+                    SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+                writer.start_file(MANIFEST_ENTRY, opts).expect("manifest");
+                writer.write_all(MANIFEST.as_bytes()).expect("write");
+                writer.start_file(COMPONENT_ENTRY, opts).expect("component");
+                writer.write_all(b"\0asm\x01\0\0\0").expect("write");
+                // Split across a few files so no single one trips the
+                // per-file cap instead of the aggregate one being measured.
+                let chunk = MAX_ASSET_BYTES / 2;
+                let mut written = 0u64;
+                let mut i = 0;
+                while written < total {
+                    let n = chunk.min(total - written);
+                    writer
+                        .start_file(format!("source/f{i}.bin"), opts)
+                        .expect("source");
+                    writer.write_all(&vec![0u8; n as usize]).expect("write");
+                    written += n;
+                    i += 1;
+                }
+                writer.finish().expect("finish");
+            }
+            buf
+        }
+
+        let dir = TempDir::new().expect("tempdir");
+        for (total, must_pass) in [
+            (MAX_TOTAL_SOURCE_BYTES - 1, true),
+            (MAX_TOTAL_SOURCE_BYTES, true),
+            (MAX_TOTAL_SOURCE_BYTES + 1, false),
+        ] {
+            let bundle = dir.path().join("bytes.krate");
+            fs::write(&bundle, archive_of_source_bytes(total)).expect("write");
+            let opened = open(&bundle);
+            if must_pass {
+                assert!(
+                    !matches!(opened, Err(BundleError::SourceTooLarge)),
+                    "{total} bytes is within the limit of {MAX_TOTAL_SOURCE_BYTES} and \
+                     must not be refused for its size"
+                );
+            } else {
+                assert!(
+                    matches!(opened, Err(BundleError::SourceTooLarge)),
+                    "{total} bytes is over the limit of {MAX_TOTAL_SOURCE_BYTES} and \
+                     must be refused"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn an_archive_with_no_entries_is_refused() {
+        // IC-209 asks for zero entries as well as too many. An empty archive
+        // is a VALID zip -- twenty-two bytes, no records -- so nothing in the
+        // parsing rejects it. It has to be refused for what it lacks.
+        let dir = TempDir::new().expect("tempdir");
+
+        let empty = dir.path().join("empty.krate");
+        {
+            let writer = ZipWriter::new(fs::File::create(&empty).expect("create"));
+            writer.finish().expect("finish");
+        }
+        assert_eq!(
+            fs::metadata(&empty).expect("stat").len(),
+            22,
+            "an empty zip is 22 bytes; if this changed the fixture is not what it claims"
+        );
+        let err = open(&empty).expect_err("an archive with no entries must be refused");
+        assert!(
+            matches!(err, BundleError::MissingEntry(_)),
+            "it must be refused for what it is missing: {err}"
+        );
+
+        // And a file that is not an archive at all.
+        let junk = dir.path().join("junk.krate");
+        fs::write(&junk, b"this is not a zip").expect("write");
+        assert!(
+            open(&junk).is_err(),
+            "a file that is not an archive must be refused"
+        );
+    }
+
+    #[test]
     fn a_path_that_nests_too_deep_is_refused_at_the_boundary() {
         // K-257. Nothing bounded depth, so an entry 200 directories deep was
         // accepted and written out -- 209 components once extracted, which is
