@@ -11190,6 +11190,22 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
         }
     }
 
+    // A signature that will not parse is said out loud (K-258).
+    //
+    // Storage below already treats it as unsigned, which is the safe
+    // handling. But the person is told nothing, and "unsigned" and "signed,
+    // then damaged" are different news: the first is ordinary, the second is
+    // a reason to stop and get a fresh copy. This is the only place that
+    // difference can still be seen -- everything downstream has collapsed it
+    // to None by design.
+    if let Some(concern) = bundle
+        .as_ref()
+        .and_then(|bundle| bundle.signature_state().ok())
+        .and_then(|state| state.concern())
+    {
+        eprintln!("warning: {concern}");
+    }
+
     // Who this app is for storage purposes (IC-736).
     //
     // A verified publisher gets their own namespace; anything unsigned,

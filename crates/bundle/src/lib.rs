@@ -653,6 +653,37 @@ pub struct OpenBundle {
     manifest: Manifest,
 }
 
+/// What a bundle carries where a signature would be (K-258).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SignatureState {
+    /// No `signature.json`. The bundle was never signed.
+    Absent,
+    /// A `signature.json` that is not a signature envelope: truncated,
+    /// edited, or replaced. Somebody signed this and something happened to
+    /// it afterwards, which is worth saying out loud.
+    Damaged { detail: String },
+    /// A signature envelope that parsed. Whether it VERIFIES is a separate
+    /// question, answered by [`OpenBundle::full_verdict`].
+    Signed(Box<signing::SignatureEnvelope>),
+}
+
+impl SignatureState {
+    /// Words for a person, or `None` when there is nothing to report.
+    ///
+    /// Absent is not news -- most bundles are unsigned and that is a state
+    /// Krate supports. A damaged signature is news.
+    pub fn concern(&self) -> Option<String> {
+        match self {
+            SignatureState::Absent | SignatureState::Signed(_) => None,
+            SignatureState::Damaged { detail } => Some(format!(
+                "this app carries a signature that cannot be read ({detail}). \
+                 It was signed and then changed, or the copy is damaged. \
+                 Treat it as unsigned, and get a fresh copy from whoever sent it."
+            )),
+        }
+    }
+}
+
 impl OpenBundle {
     /// Path to the extracted manifest.
     pub fn manifest_path(&self) -> &Path {
@@ -759,14 +790,39 @@ impl OpenBundle {
         Ok(Some(signing::verify_full(&envelope, &entries, revocations)))
     }
 
-    /// The raw envelope, when the bundle carries one.
+    /// The raw envelope, when the bundle carries one that parses.
+    ///
+    /// A bundle whose signature will not parse yields `None` here, the same
+    /// as one carrying no signature. That is deliberate for the callers that
+    /// only need "is there something to check" -- but it is NOT enough to
+    /// report to a person, because "unsigned" and "signed, and the signature
+    /// is damaged" are different news. Use [`signature_state`] for that.
+    ///
+    /// [`signature_state`]: OpenBundle::signature_state
     pub fn signature_envelope(&self) -> Result<Option<signing::SignatureEnvelope>> {
+        match self.signature_state()? {
+            SignatureState::Signed(envelope) => Ok(Some(*envelope)),
+            SignatureState::Absent | SignatureState::Damaged { .. } => Ok(None),
+        }
+    }
+
+    /// What this bundle carries in place of a signature (K-258).
+    ///
+    /// Three states, because there are three. Collapsing the middle one into
+    /// "absent" told a recipient their tampered bundle was merely unsigned,
+    /// which is the opposite of what a signature exists to tell them.
+    pub fn signature_state(&self) -> Result<SignatureState> {
         let path = self._dir.path().join(SIGNATURE_ENTRY);
         if !path.is_file() {
-            return Ok(None);
+            return Ok(SignatureState::Absent);
         }
         let bytes = fs::read(&path).map_err(|err| io_err(&path, err))?;
-        Ok(serde_json::from_slice(&bytes).ok())
+        match serde_json::from_slice::<signing::SignatureEnvelope>(&bytes) {
+            Ok(envelope) => Ok(SignatureState::Signed(Box::new(envelope))),
+            Err(err) => Ok(SignatureState::Damaged {
+                detail: err.to_string(),
+            }),
+        }
     }
 
     /// Every entry this layer covers, read from the extracted tree.
@@ -2730,6 +2786,77 @@ required = true
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_damaged_signature_is_not_reported_as_unsigned() {
+        // K-258. signature_envelope() used to swallow a parse failure with
+        // `.ok()`, so a bundle whose signature had been edited looked exactly
+        // like one that was never signed -- and "unsigned" is the one thing a
+        // recipient shrugs at.
+        fn bundle_with_signature(dir: &Path, name: &str, signature: Option<&[u8]>) -> PathBuf {
+            let mut buf = Vec::new();
+            {
+                let mut writer = ZipWriter::new(io::Cursor::new(&mut buf));
+                let opts =
+                    SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+                writer.start_file(MANIFEST_ENTRY, opts).expect("manifest");
+                writer.write_all(MANIFEST.as_bytes()).expect("write");
+                writer.start_file(COMPONENT_ENTRY, opts).expect("component");
+                writer.write_all(b"\0asm\x01\0\0\0").expect("write");
+                if let Some(signature) = signature {
+                    writer.start_file(SIGNATURE_ENTRY, opts).expect("signature");
+                    writer.write_all(signature).expect("write");
+                }
+                writer.finish().expect("finish");
+            }
+            let path = dir.join(name);
+            fs::write(&path, &buf).expect("write bundle");
+            path
+        }
+
+        let dir = TempDir::new().expect("tempdir");
+
+        // No signature at all: absent, and nothing to say about it.
+        let unsigned = bundle_with_signature(dir.path(), "unsigned.krate", None);
+        let state = open(&unsigned)
+            .expect("opens")
+            .signature_state()
+            .expect("state");
+        assert_eq!(state, SignatureState::Absent);
+        assert!(
+            state.concern().is_none(),
+            "an unsigned bundle is ordinary and must not warn about anything"
+        );
+
+        // A signature that will not parse: damaged, and it must SAY so.
+        let damaged =
+            bundle_with_signature(dir.path(), "damaged.krate", Some(br#"{"corrupted":true}"#));
+        let state = open(&damaged)
+            .expect("opens")
+            .signature_state()
+            .expect("state");
+        assert!(
+            matches!(state, SignatureState::Damaged { .. }),
+            "a signature that will not parse must be Damaged, not Absent: {state:?}"
+        );
+        let concern = state
+            .concern()
+            .expect("a damaged signature must give a person something to act on");
+        assert!(
+            concern.contains("get a fresh copy"),
+            "the warning must say what to do: {concern}"
+        );
+
+        // And the two must not be the same state, which is the whole defect.
+        assert_ne!(
+            open(&unsigned)
+                .expect("opens")
+                .signature_state()
+                .expect("s"),
+            open(&damaged).expect("opens").signature_state().expect("s"),
+            "a damaged signature must be distinguishable from no signature"
+        );
     }
 
     #[test]

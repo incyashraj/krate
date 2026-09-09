@@ -3853,6 +3853,59 @@ fn a_path_that_cannot_be_unpacked_everywhere_is_refused_by_the_binary_people_run
     );
 }
 
+/// A signature that was damaged after signing is said out loud (K-258).
+///
+/// Storage already treats it as unsigned, which is the safe handling. What
+/// was missing is telling the person: "unsigned" is ordinary and gets a
+/// shrug, while "signed, then changed" is a reason to get a fresh copy.
+#[test]
+fn a_damaged_signature_is_reported_and_an_unsigned_one_is_not() {
+    let dir = tempfile::tempdir().expect("temp dir");
+
+    // Unsigned: ordinary, and must not warn.
+    let unsigned = dir.path().join("unsigned.krate");
+    std::fs::write(&unsigned, archive_carrying(&[])).expect("write fixture");
+    let output = krate()
+        .arg("run")
+        .arg(&unsigned)
+        .args(["--headless", "--auto-grant"])
+        .output()
+        .expect("run the unsigned bundle");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("signature that cannot be read"),
+        "an unsigned bundle must not be warned about: {stderr}"
+    );
+
+    // Signed once, then the signature replaced with something that is not
+    // one. This is the bundle that used to be indistinguishable from the
+    // bundle above.
+    let damaged = dir.path().join("damaged.krate");
+    std::fs::write(
+        &damaged,
+        archive_carrying(&[(
+            "signature.json".to_string(),
+            br#"{"corrupted":true}"#.to_vec(),
+        )]),
+    )
+    .expect("write fixture");
+    let output = krate()
+        .arg("run")
+        .arg(&damaged)
+        .args(["--headless", "--auto-grant"])
+        .output()
+        .expect("run the damaged bundle");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("signature that cannot be read"),
+        "a damaged signature must be reported to the person: {stderr}"
+    );
+    assert!(
+        stderr.contains("get a fresh copy"),
+        "the warning must say what to do about it: {stderr}"
+    );
+}
+
 /// A file whose name is not ASCII cannot be pinned down (IC-209).
 ///
 /// `caf\u{e9}.rs` written NFC and NFD is two different byte strings and one
