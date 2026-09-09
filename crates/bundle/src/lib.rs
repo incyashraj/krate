@@ -151,6 +151,29 @@ pub const MAX_TOTAL_ASSET_BYTES: u64 = 512 * 1024 * 1024;
 /// Maximum number of asset files in one bundle.
 pub const MAX_ASSET_COUNT: usize = 4096;
 
+/// Deepest an entry path may nest, counting separators (IC-209).
+///
+/// Nothing bounded depth, so an entry 200 directories deep was accepted and
+/// written out: measured at 209 path components and 963 characters. On
+/// Windows that crosses MAX_PATH (260) once joined to the directory it is
+/// unpacked into, and the run fails partway through extraction with an I/O
+/// error naming a path nobody typed, rather than a refusal saying what is
+/// wrong. On macOS and Linux the same bundle just works, so it is portable
+/// in name only.
+///
+/// A real bundle's deepest entry is `source/src/lib.rs` -- two separators.
+/// Sixteen is eight times that, and still far inside every system's limit.
+pub const MAX_PATH_DEPTH: usize = 16;
+
+/// Longest an entry path may be, in bytes, as stored in the archive (IC-209).
+///
+/// Judged as STORED, not as extracted: the directory a bundle is unpacked
+/// into differs per machine and per run, so measuring the final path would
+/// accept a bundle on one machine and refuse it on another. The limit leaves
+/// room for the longest real entry name (20 characters) many times over
+/// while keeping the extracted path inside MAX_PATH on Windows.
+pub const MAX_PATH_BYTES: usize = 180;
+
 /// Maximum number of files in one bundle, across every namespace (IC-209).
 ///
 /// Assets were bounded and `source/`/`sdk/` were not, so a 5,000-entry source
@@ -233,6 +256,20 @@ pub enum BundleError {
          substituted one. Rename it to ASCII and pack again."
     )]
     NonAsciiPath { path: String },
+    #[error(
+        "{path} nests deeper than {MAX_PATH_DEPTH} directories.\n\n  \
+         A path this deep does not survive being unpacked on every system \
+         -- on Windows it runs past the limit on how long a path may be. \
+         Flatten it and pack again."
+    )]
+    PathTooDeep { path: String },
+    #[error(
+        "{path} is longer than {MAX_PATH_BYTES} characters.\n\n  \
+         A name this long does not survive being unpacked on every system \
+         -- on Windows it runs past the limit on how long a path may be. \
+         Shorten it and pack again."
+    )]
+    PathTooLong { path: String },
     #[error("bundle contains more than {MAX_ENTRY_COUNT} files")]
     TooManyEntries,
     #[error("bundle source and SDK expand to more than {MAX_TOTAL_SOURCE_BYTES} bytes")]
@@ -1381,6 +1418,25 @@ fn check_profile<R: Read + io::Seek>(archive: &mut ZipArchive<R>) -> Result<()> 
     }
 }
 
+/// A path short enough to read in an error message.
+///
+/// The paths these refusals are about are the long ones, and printing 900
+/// characters buries the sentence that says what to do about it. The start
+/// and the end are what identify the file; the middle is the part that made
+/// it too long.
+fn shorten_path(path: &str) -> String {
+    const KEEP: usize = 60;
+    if path.chars().count() <= KEEP * 2 {
+        return path.to_string();
+    }
+    let head: String = path.chars().take(KEEP).collect();
+    let tail: String = {
+        let all: Vec<char> = path.chars().collect();
+        all[all.len() - KEEP..].iter().collect()
+    };
+    format!("{head}...{tail}")
+}
+
 fn preflight_entries<R: Read + io::Seek>(archive: &mut ZipArchive<R>) -> Result<()> {
     let mut seen: BTreeSet<String> = BTreeSet::new();
     let mut files = 0usize;
@@ -1425,6 +1481,19 @@ fn preflight_entries<R: Read + io::Seek>(archive: &mut ZipArchive<R>) -> Result<
         // forward slashes because a zip may carry either and both name the
         // same file once extracted.
         let logical = name.replace('\\', "/").to_lowercase();
+
+        // Depth and length are judged on the folded form, so a path cannot
+        // hide its nesting behind backslashes (IC-209).
+        if logical.matches('/').count() > MAX_PATH_DEPTH {
+            return Err(BundleError::PathTooDeep {
+                path: shorten_path(&name),
+            });
+        }
+        if name.len() > MAX_PATH_BYTES {
+            return Err(BundleError::PathTooLong {
+                path: shorten_path(&name),
+            });
+        }
         if !seen.insert(logical) {
             return Err(BundleError::DuplicateEntry { path: name });
         }
@@ -2601,6 +2670,103 @@ required = true
             .windows(needle.len())
             .position(|w| w == needle)
             .map(|p| p + from)
+    }
+
+    #[test]
+    fn a_path_that_nests_too_deep_is_refused_at_the_boundary() {
+        // K-257. Nothing bounded depth, so an entry 200 directories deep was
+        // accepted and written out -- 209 components once extracted, which is
+        // past MAX_PATH on Windows. Checked at the boundary, because an
+        // off-by-one here refuses a legitimate bundle.
+        for (depth, must_open) in [
+            (MAX_PATH_DEPTH - 1, true),
+            (MAX_PATH_DEPTH, true),
+            (MAX_PATH_DEPTH + 1, false),
+        ] {
+            // depth counts separators, and `source/` is the first one.
+            let dirs: Vec<String> = (0..depth.saturating_sub(1))
+                .map(|i| format!("d{i}"))
+                .collect();
+            let path = if dirs.is_empty() {
+                "source/lib.rs".to_string()
+            } else {
+                format!("source/{}/lib.rs", dirs.join("/"))
+            };
+            assert_eq!(
+                path.matches('/').count(),
+                depth,
+                "the fixture must actually be {depth} deep: {path}"
+            );
+
+            let bytes = archive_with(&[(path.clone(), b"fn main() {}".to_vec())]);
+            let dir = TempDir::new().expect("tempdir");
+            let bundle = dir.path().join("deep.krate");
+            fs::write(&bundle, &bytes).expect("write");
+
+            let opened = open(&bundle);
+            if must_open {
+                assert!(
+                    !matches!(opened, Err(BundleError::PathTooDeep { .. })),
+                    "{depth} separators is within the limit of {MAX_PATH_DEPTH} and must \
+                     not be refused for its depth"
+                );
+            } else {
+                let err = opened.expect_err("must be refused");
+                assert!(
+                    matches!(err, BundleError::PathTooDeep { .. }),
+                    "{depth} separators is over the limit and must be refused: {err}"
+                );
+                let text = err.to_string();
+                assert!(
+                    text.contains("Flatten it"),
+                    "the refusal must say what to do about it: {text}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_path_that_is_too_long_is_refused_and_stays_readable() {
+        // Length is judged as STORED, so the same bundle is judged the same
+        // way on every machine -- measuring the extracted path would depend
+        // on the temp directory it landed in.
+        let long = format!("source/{}.rs", "a".repeat(MAX_PATH_BYTES));
+        let bytes = archive_with(&[(long.clone(), b"fn main() {}".to_vec())]);
+        let dir = TempDir::new().expect("tempdir");
+        let bundle = dir.path().join("long.krate");
+        fs::write(&bundle, &bytes).expect("write");
+
+        let err = open(&bundle).expect_err("a long path must be refused");
+        assert!(
+            matches!(err, BundleError::PathTooLong { .. }),
+            "refused for the wrong reason: {err}"
+        );
+        let text = err.to_string();
+        assert!(
+            text.contains("Shorten it"),
+            "the refusal must say what to do: {text}"
+        );
+        // The message is about a very long name, so it must not repeat that
+        // name in full -- the advice has to stay visible next to it.
+        assert!(
+            !text.contains(&long),
+            "the refusal must shorten the path it is about, not repeat it: {text}"
+        );
+        assert!(
+            text.contains("..."),
+            "a shortened path should show that it was shortened: {text}"
+        );
+
+        // And a name just inside the limit still opens.
+        let ok = format!("source/{}.rs", "a".repeat(MAX_PATH_BYTES - 20));
+        assert!(ok.len() <= MAX_PATH_BYTES, "fixture is within the limit");
+        let bytes = archive_with(&[(ok, b"fn main() {}".to_vec())]);
+        let bundle = dir.path().join("ok.krate");
+        fs::write(&bundle, &bytes).expect("write");
+        assert!(
+            !matches!(open(&bundle), Err(BundleError::PathTooLong { .. })),
+            "a name inside the limit must still open"
+        );
     }
 
     #[test]

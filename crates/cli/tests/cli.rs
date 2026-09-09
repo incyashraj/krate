@@ -3805,6 +3805,54 @@ fn adversarial_archives_are_refused_by_the_binary_people_run() {
     }
 }
 
+/// A path that will not survive being unpacked is refused before it is
+/// written (K-257).
+///
+/// A source tree two hundred directories deep opened and extracted on macOS
+/// and would have crossed Windows' path length limit part way through, which
+/// surfaces as an I/O error naming a path nobody typed rather than a refusal
+/// that says what is wrong.
+#[test]
+fn a_path_that_cannot_be_unpacked_everywhere_is_refused_by_the_binary_people_run() {
+    let dir = tempfile::tempdir().expect("temp dir");
+
+    let deep = format!(
+        "source/{}/lib.rs",
+        (0..200)
+            .map(|i| format!("d{i}"))
+            .collect::<Vec<_>>()
+            .join("/")
+    );
+    let bundle = dir.path().join("deep.krate");
+    std::fs::write(
+        &bundle,
+        archive_carrying(&[(deep, b"fn main() {}".to_vec())]),
+    )
+    .expect("write fixture");
+
+    let output = krate()
+        .arg("run")
+        .arg(&bundle)
+        .args(["--headless", "--auto-grant"])
+        .output()
+        .expect("run the deep bundle");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "a path that deep must not open: {stderr}"
+    );
+    assert!(
+        stderr.contains("nests deeper than"),
+        "it must be refused for its depth, not something else: {stderr}"
+    );
+    assert!(
+        stderr.contains("Flatten it"),
+        "the refusal must say what to do about it: {stderr}"
+    );
+}
+
 /// A file whose name is not ASCII cannot be pinned down (IC-209).
 ///
 /// `caf\u{e9}.rs` written NFC and NFD is two different byte strings and one
