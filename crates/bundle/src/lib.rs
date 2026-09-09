@@ -2789,6 +2789,50 @@ required = true
     }
 
     #[test]
+    fn packing_the_same_input_twice_gives_the_same_bytes() {
+        // The plan asks for a deterministic writer where determinism is
+        // claimed. Measured: packing one component and manifest twice, two
+        // seconds apart, already gives byte-identical output.
+        //
+        // Nothing was holding it there. A zip writer stamps a modification
+        // time by default, and one SystemTime::now() anywhere in the packer
+        // would break this quietly -- the bundles would still open, still
+        // run, and simply stop being comparable. Two bundles that differ
+        // only in when they were built cannot be told apart from two that
+        // differ in what they contain, which is the property the archive
+        // digest identity rests on.
+        let dir = TempDir::new().expect("tempdir");
+        let component = dir.path().join("code.wasm");
+        fs::write(&component, b"\0asm\x01\0\0\0").expect("component");
+        let manifest = dir.path().join("manifest.toml");
+        fs::write(&manifest, MANIFEST.as_bytes()).expect("manifest");
+
+        let first = dir.path().join("first.krate");
+        let second = dir.path().join("second.krate");
+        pack(&manifest, &component, &first).expect("pack once");
+        pack(&manifest, &component, &second).expect("pack twice");
+
+        // No sleep between the two. One was tried, and it is worse than
+        // useless here: zip stores times in two-second steps, so a short
+        // sleep may or may not cross a boundary and the test would pass or
+        // fail depending on when it ran. A flaky test that only sometimes
+        // notices is worse than one that says plainly what it checks.
+        //
+        // What this catches is any value that differs between two packs in
+        // one process -- a counter, a random name, an address, an
+        // unordered map. Verified by making the packer stamp a counter:
+        // the assertion below fires.
+
+        let a = fs::read(&first).expect("read first");
+        let b = fs::read(&second).expect("read second");
+        assert_eq!(
+            a, b,
+            "packing the same input twice must give the same bytes; if this \
+             fails, something in the packer is reading the clock"
+        );
+    }
+
+    #[test]
     fn a_damaged_signature_is_not_reported_as_unsigned() {
         // K-258. signature_envelope() used to swallow a parse failure with
         // `.ok()`, so a bundle whose signature had been edited looked exactly
