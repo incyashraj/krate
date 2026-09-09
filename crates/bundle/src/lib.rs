@@ -886,6 +886,27 @@ pub fn open(bundle_path: &Path) -> Result<OpenBundle> {
     open_reader(file)
 }
 
+// Where a bundle is unpacked: the system temp directory in a real run.
+// Tests can point it somewhere they own, which is the only way to check that
+// a REFUSED bundle removed what it wrote -- the shared temp directory is full
+// of other tests' live directories, and telling those apart from a leak is
+// not possible from the outside.
+#[cfg(test)]
+thread_local! {
+    static EXTRACT_ROOT: std::cell::RefCell<Option<PathBuf>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+fn new_extract_dir() -> io::Result<TempDir> {
+    #[cfg(test)]
+    {
+        if let Some(root) = EXTRACT_ROOT.with(|r| r.borrow().clone()) {
+            return TempDir::new_in(root);
+        }
+    }
+    TempDir::new()
+}
+
 /// Open a bundle from any reader that can seek.
 pub fn open_reader<R: Read + io::Seek>(reader: R) -> Result<OpenBundle> {
     let mut archive = ZipArchive::new(reader)?;
@@ -893,7 +914,7 @@ pub fn open_reader<R: Read + io::Seek>(reader: R) -> Result<OpenBundle> {
     // Judge the archive as a whole before writing any of it to disk (IC-209).
     preflight_entries(&mut archive)?;
 
-    let dir = TempDir::new().map_err(|err| io_err(Path::new("<tempdir>"), err))?;
+    let dir = new_extract_dir().map_err(|err| io_err(Path::new("<tempdir>"), err))?;
     let manifest_path = dir.path().join(MANIFEST_ENTRY);
     let component_path = dir.path().join(COMPONENT_ENTRY);
     let assets_path = dir.path().join("assets");
@@ -2379,6 +2400,69 @@ required = true
                 "the refusal must say what to DO about it: {text}"
             );
         }
+    }
+
+    #[test]
+    fn a_refused_bundle_leaves_nothing_behind() {
+        // IC-209 asks for cleanup. A bundle refused PART WAY THROUGH
+        // extraction has already written files; if those survived, a
+        // rejected bundle would still cost disk, and repeated attempts
+        // would fill it. The struct doc claims this ("removed on drop, so a
+        // fetched bundle leaves nothing behind after the run"); nothing
+        // checked it.
+        //
+        // open() unpacks into a directory this test owns, so what is left
+        // there afterwards came from this call and nothing else. Counting
+        // the shared system temp directory instead was tried first and
+        // flaked: it cannot tell a leak from another test's live directory.
+        const EACH: usize = 48 * 1024 * 1024;
+        let count = (MAX_TOTAL_SOURCE_BYTES as usize / EACH) + 2;
+        let mut buf = Vec::new();
+        {
+            let mut writer = ZipWriter::new(io::Cursor::new(&mut buf));
+            let opts =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            writer.start_file(MANIFEST_ENTRY, opts).expect("manifest");
+            writer.write_all(MANIFEST.as_bytes()).expect("write");
+            writer.start_file(COMPONENT_ENTRY, opts).expect("component");
+            writer.write_all(b"\0asm\x01\0\0\0").expect("write");
+            let blob = vec![0u8; EACH];
+            for i in 0..count {
+                writer
+                    .start_file(format!("source/big{i}.rs"), opts)
+                    .expect("source");
+                writer.write_all(&blob).expect("write");
+            }
+            writer.finish().expect("finish");
+        }
+        // Refused during extraction, not at the preflight: the source total
+        // is only exceeded once the bytes are actually read out.
+        let forged = forge_source_sizes_to_one_byte(&buf);
+
+        let dir = TempDir::new().expect("tempdir");
+        let bundle = dir.path().join("refused.krate");
+        fs::write(&bundle, &forged).expect("write");
+        let root = dir.path().join("extract-here");
+        fs::create_dir(&root).expect("root");
+
+        EXTRACT_ROOT.with(|r| *r.borrow_mut() = Some(root.clone()));
+        let opened = open(&bundle);
+        EXTRACT_ROOT.with(|r| *r.borrow_mut() = None);
+
+        assert!(
+            matches!(opened, Err(BundleError::SourceTooLarge)),
+            "the fixture must be refused during extraction"
+        );
+
+        let left: Vec<PathBuf> = fs::read_dir(&root)
+            .expect("read root")
+            .flatten()
+            .map(|e| e.path())
+            .collect();
+        assert!(
+            left.is_empty(),
+            "a refused bundle must not leave its extracted files behind: {left:?}"
+        );
     }
 
     #[test]
