@@ -60,6 +60,30 @@ pub const MANIFEST_ENTRY: &str = "manifest.toml";
 /// The component entry name inside a bundle.
 pub const COMPONENT_ENTRY: &str = "code.wasm";
 
+/// The container profile this Krate reads and writes (IC-208).
+///
+/// One line, first entry, read before anything else. It exists so that a
+/// format change is a sentence rather than a puzzle: an old Krate meeting a
+/// future bundle can say "this app needs a newer Krate" instead of ignoring
+/// the entries it does not recognise and mis-reading the rest.
+///
+/// The number is the PROFILE, not the app and not the SDK. It moves only
+/// when the container's rules change -- a new required entry, a different
+/// normalisation, a digest input -- and each move is a deliberate act with
+/// migration behind it.
+pub const PROFILE_ENTRY: &str = "krate-profile";
+
+/// The profile version this build writes.
+///
+/// 1 is what every bundle shipped so far implicitly is: manifest.toml and
+/// code.wasm required, assets/ source/ sdk/ signature.json optional,
+/// unknown entries ignored, paths compared case- and separator-insensitively.
+/// Bundles written before this entry existed carry no profile line and are
+/// read as generation 1, because that is what they are -- "keep existing
+/// files readable as their recorded generation" is the requirement's own
+/// words.
+pub const PROFILE_VERSION: u32 = 1;
+
 /// The one function the runtime calls on a Krate app.
 ///
 /// Both worlds declare `export run: func() -> s32`, and every shipped app
@@ -189,6 +213,12 @@ pub enum BundleError {
          one copy. Ask whoever sent it for a freshly packed file."
     )]
     DuplicateEntry { path: String },
+    #[error(
+        "this app uses a newer .krate format (profile {found}) than this \
+         copy of Krate understands (profile {supported}).\n\n  \
+         Update Krate: https://krate.tech/open"
+    )]
+    UnsupportedProfile { found: String, supported: u32 },
     #[error(
         "{path} is not a WebAssembly component, so it cannot be packed into \
          an app.\n\n  {detail}\n\n  \
@@ -501,6 +531,11 @@ fn write_bundle_into(
     let file = File::create(staging).map_err(|err| io_err(staging, err))?;
     let mut zip = ZipWriter::new(file);
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+
+    // First entry, so a reader meets it before anything else (IC-208).
+    zip.start_file(PROFILE_ENTRY, options)?;
+    zip.write_all(PROFILE_VERSION.to_string().as_bytes())
+        .map_err(|err| io_err(output_path, err))?;
 
     zip.start_file(MANIFEST_ENTRY, options)?;
     zip.write_all(manifest_text.as_bytes())
@@ -854,6 +889,15 @@ pub fn open_reader<R: Read + io::Seek>(reader: R) -> Result<OpenBundle> {
     // Reading by exact name rather than iterating entries is what makes path
     // traversal unrepresentable: any other entry in the archive is ignored, and
     // neither name can escape the temp directory.
+    // The profile FIRST, before the manifest is parsed (IC-208).
+    //
+    // A bundle from a future Krate should say so, not have its manifest
+    // read under this version's rules and fail somewhere further in with a
+    // message about a field. Absent means generation 1: every bundle
+    // shipped so far predates this entry and is exactly what version 1
+    // describes.
+    check_profile(&mut archive)?;
+
     extract_entry(&mut archive, MANIFEST_ENTRY, &manifest_path)?;
     extract_entry(&mut archive, COMPONENT_ENTRY, &component_path)?;
     // Optional, and by exact name like the two above. A bundle without one is
@@ -1252,6 +1296,38 @@ fn safe_source_relative_path(name: &str) -> Result<PathBuf> {
 /// Names are compared after normalising case and separators, so a collision
 /// that only appears on a case-insensitive filesystem is caught on every
 /// platform rather than on the reviewer's machine but not the recipient's.
+/// Refuse a container profile this build does not understand (IC-208).
+///
+/// Absent is generation 1, deliberately: bundles written before the entry
+/// existed carry no line, and treating their absence as an error would
+/// strand every app already sent to somebody.
+///
+/// A profile that is present but unreadable -- not a number, or a number
+/// this build has never heard of -- is refused rather than guessed at. The
+/// whole point of the line is that a reader which cannot honour the rules
+/// says so.
+fn check_profile<R: Read + io::Seek>(archive: &mut ZipArchive<R>) -> Result<()> {
+    let mut entry = match archive.by_name(PROFILE_ENTRY) {
+        Ok(entry) => entry,
+        Err(_) => return Ok(()), // generation 1
+    };
+    let mut text = String::new();
+    entry
+        .read_to_string(&mut text)
+        .map_err(|err| BundleError::Io {
+            path: PathBuf::from(PROFILE_ENTRY),
+            source: err,
+        })?;
+    let found = text.trim();
+    match found.parse::<u32>() {
+        Ok(version) if version <= PROFILE_VERSION => Ok(()),
+        _ => Err(BundleError::UnsupportedProfile {
+            found: found.chars().take(32).collect(),
+            supported: PROFILE_VERSION,
+        }),
+    }
+}
+
 fn preflight_entries<R: Read + io::Seek>(archive: &mut ZipArchive<R>) -> Result<()> {
     let mut seen: BTreeSet<String> = BTreeSet::new();
     let mut files = 0usize;
@@ -1939,6 +2015,103 @@ required = true
         let good = dir.path().join("good.krate");
         pack(&manifest, &component, &good).expect("a real component packs");
         assert!(good.is_file());
+    }
+
+    /// A bundle carries its container profile, first (IC-208).
+    ///
+    /// The point is that a format change becomes a sentence rather than a
+    /// puzzle: an old Krate meeting a future bundle says so, instead of
+    /// ignoring entries it does not recognise and mis-reading the rest.
+    #[test]
+    fn a_bundle_declares_the_container_profile_it_was_written_for() {
+        let dir = TempDir::new().expect("tempdir");
+        let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
+        let component = write_temp(dir.path(), "code.wasm", b"\0asm\x01\0\0\0");
+        let bundle = dir.path().join("profiled.krate");
+        pack(&manifest, &component, &bundle).expect("pack");
+
+        let bytes = fs::read(&bundle).expect("read");
+        let mut archive = ZipArchive::new(io::Cursor::new(&bytes)).expect("open");
+        assert_eq!(
+            archive.name_for_index(0),
+            Some(PROFILE_ENTRY),
+            "the profile must be the FIRST entry, so a reader meets it before \
+             it parses anything under this version's rules",
+        );
+        let mut text = String::new();
+        archive
+            .by_name(PROFILE_ENTRY)
+            .expect("profile entry")
+            .read_to_string(&mut text)
+            .expect("read profile");
+        assert_eq!(text.trim(), PROFILE_VERSION.to_string());
+
+        open(&bundle).expect("a bundle we just wrote must open");
+    }
+
+    /// A profile from a future Krate is refused, and says what to do.
+    #[test]
+    fn a_future_container_profile_is_refused_with_words_a_person_can_act_on() {
+        let dir = TempDir::new().expect("tempdir");
+        let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
+        let component = write_temp(dir.path(), "code.wasm", b"\0asm\x01\0\0\0");
+        let bundle = dir.path().join("ok.krate");
+        pack(&manifest, &component, &bundle).expect("pack");
+
+        for claimed in ["99", "not-a-number", ""] {
+            let future = dir.path().join(format!("future-{}.krate", claimed.len()));
+            rewrite_entry(&bundle, &future, PROFILE_ENTRY, claimed.as_bytes());
+            let err = open(&future)
+                .expect_err("a profile this build does not understand must be refused");
+            let text = err.to_string();
+            assert!(
+                text.contains("newer .krate format"),
+                "must name the real problem for {claimed:?}: {text}"
+            );
+            assert!(
+                text.contains("krate.tech/open"),
+                "and what to do about it: {text}"
+            );
+        }
+    }
+
+    /// A bundle written before the profile entry existed still opens.
+    ///
+    /// "Keep existing files readable as their recorded generation" is the
+    /// requirement's own words, and every app already sent to somebody
+    /// predates this entry.
+    #[test]
+    fn a_bundle_with_no_profile_line_is_read_as_generation_one() {
+        let dir = TempDir::new().expect("tempdir");
+        let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
+        let component = write_temp(dir.path(), "code.wasm", b"\0asm\x01\0\0\0");
+        let bundle = dir.path().join("with.krate");
+        pack(&manifest, &component, &bundle).expect("pack");
+
+        // Rebuild it without the profile entry, as an older Krate wrote it.
+        let older = dir.path().join("older.krate");
+        {
+            let source = fs::read(&bundle).expect("read");
+            let mut archive = ZipArchive::new(io::Cursor::new(&source)).expect("open");
+            let file = File::create(&older).expect("create");
+            let mut writer = ZipWriter::new(file);
+            let options =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            for index in 0..archive.len() {
+                let mut entry = archive.by_index(index).expect("entry");
+                let name = entry.name().to_string();
+                if name == PROFILE_ENTRY {
+                    continue;
+                }
+                let mut bytes = Vec::new();
+                entry.read_to_end(&mut bytes).expect("read entry");
+                writer.start_file(name, options).expect("start");
+                writer.write_all(&bytes).expect("write");
+            }
+            writer.finish().expect("finish");
+        }
+
+        open(&older).expect("a pre-profile bundle must still open");
     }
 
     #[test]
