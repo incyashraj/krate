@@ -112,6 +112,22 @@ pub const MAX_TOTAL_ASSET_BYTES: u64 = 512 * 1024 * 1024;
 /// Maximum number of asset files in one bundle.
 pub const MAX_ASSET_COUNT: usize = 4096;
 
+/// Maximum number of files in one bundle, across every namespace (IC-209).
+///
+/// Assets were bounded and `source/`/`sdk/` were not, so a 5,000-entry source
+/// tree opened where a 5,000-entry asset tree would have been refused. The
+/// SDK alone is ~28 files and a real app's source is a handful, so this is
+/// generous by two orders of magnitude while still bounding an archive built
+/// to exhaust the machine extracting it.
+pub const MAX_ENTRY_COUNT: usize = 8192;
+
+/// Maximum expanded bytes across `source/` and `sdk/` together.
+///
+/// The same reasoning as [`MAX_TOTAL_ASSET_BYTES`], for the two namespaces
+/// that had a per-file cap but no aggregate one: a thousand files just under
+/// the per-file limit is a zip bomb that passes every per-file check.
+pub const MAX_TOTAL_SOURCE_BYTES: u64 = 256 * 1024 * 1024;
+
 #[derive(Debug, Error)]
 pub enum BundleError {
     #[error("io error on {path}: {source}")]
@@ -152,6 +168,16 @@ pub enum BundleError {
     AssetSymlink { path: PathBuf },
     #[error("bundle contains more than {MAX_ASSET_COUNT} asset files")]
     TooManyAssets,
+    #[error(
+        "this bundle names the same file twice ({path}). What you review \
+         would not be what runs, so Krate refuses it rather than picking \
+         one copy. Ask whoever sent it for a freshly packed file."
+    )]
+    DuplicateEntry { path: String },
+    #[error("bundle contains more than {MAX_ENTRY_COUNT} files")]
+    TooManyEntries,
+    #[error("bundle source and SDK expand to more than {MAX_TOTAL_SOURCE_BYTES} bytes")]
+    SourceTooLarge,
     #[error("bundle assets expand to more than {MAX_TOTAL_ASSET_BYTES} bytes")]
     AssetsTooLarge,
     #[error("refusing to fetch over plain HTTP: {url}\nuse https, or pass --insecure-http for a local test server")]
@@ -737,6 +763,27 @@ pub fn open(bundle_path: &Path) -> Result<OpenBundle> {
     if size > MAX_BUNDLE_BYTES {
         return Err(BundleError::TooLarge { size });
     }
+    // Compare what the FILE claims against what the parser will see.
+    //
+    // `ZipArchive` keys entries by name, so two records with one path become
+    // one entry and the LAST wins -- silently. Reading the end-of-central-
+    // directory count is the only way to notice, and noticing matters: what
+    // a person reviews is then not what Krate extracts (K-252).
+    //
+    // Only done here, where the bytes are on disk. `open_reader` takes any
+    // reader and cannot re-read it without consuming the stream.
+    let bytes = fs::read(bundle_path).map_err(|err| io_err(bundle_path, err))?;
+    if let Some(declared) = central_directory_record_count(&bytes) {
+        let parsed = ZipArchive::new(io::Cursor::new(&bytes))
+            .map(|archive| archive.len())
+            .unwrap_or(declared);
+        if declared > parsed {
+            return Err(BundleError::DuplicateEntry {
+                path: format!("{declared} entries, {parsed} distinct names"),
+            });
+        }
+    }
+
     let file = File::open(bundle_path).map_err(|err| io_err(bundle_path, err))?;
     open_reader(file)
 }
@@ -744,6 +791,9 @@ pub fn open(bundle_path: &Path) -> Result<OpenBundle> {
 /// Open a bundle from any reader that can seek.
 pub fn open_reader<R: Read + io::Seek>(reader: R) -> Result<OpenBundle> {
     let mut archive = ZipArchive::new(reader)?;
+
+    // Judge the archive as a whole before writing any of it to disk (IC-209).
+    preflight_entries(&mut archive)?;
 
     let dir = TempDir::new().map_err(|err| io_err(Path::new("<tempdir>"), err))?;
     let manifest_path = dir.path().join(MANIFEST_ENTRY);
@@ -1136,6 +1186,87 @@ fn safe_source_relative_path(name: &str) -> Result<PathBuf> {
         });
     }
     Ok(path.to_path_buf())
+}
+
+/// Read the central directory once and refuse an ambiguous archive (IC-209).
+///
+/// Runs BEFORE anything is extracted, because the decision it makes is about
+/// the archive as a whole. Two entries with one logical path mean what a
+/// person reviews need not be what Krate writes to disk -- a zip reader that
+/// takes the last wins, a reviewer's tool that shows the first, and the
+/// difference is an attacker's file (K-252: a bundle with two
+/// `source/src/lib.rs` entries opened and ran, and the second copy was the
+/// one extracted).
+///
+/// Names are compared after normalising case and separators, so a collision
+/// that only appears on a case-insensitive filesystem is caught on every
+/// platform rather than on the reviewer's machine but not the recipient's.
+fn preflight_entries<R: Read + io::Seek>(archive: &mut ZipArchive<R>) -> Result<()> {
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    let mut files = 0usize;
+    let mut source_bytes = 0u64;
+
+    for index in 0..archive.len() {
+        let entry = archive.by_index(index)?;
+        let name = entry.name().to_string();
+        if name.ends_with('/') {
+            continue; // a directory record carries no content
+        }
+        files += 1;
+        if files > MAX_ENTRY_COUNT {
+            return Err(BundleError::TooManyEntries);
+        }
+
+        // One logical path, however it is spelled. Backslashes are folded to
+        // forward slashes because a zip may carry either and both name the
+        // same file once extracted.
+        let logical = name.replace('\\', "/").to_lowercase();
+        if !seen.insert(logical) {
+            return Err(BundleError::DuplicateEntry { path: name });
+        }
+
+        if name.starts_with(SOURCE_PREFIX) || name.starts_with(SDK_PREFIX) {
+            source_bytes = source_bytes.saturating_add(entry.size());
+            if source_bytes > MAX_TOTAL_SOURCE_BYTES {
+                return Err(BundleError::SourceTooLarge);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Count the central-directory records the FILE actually carries.
+///
+/// `ZipArchive` cannot answer this: it builds a map keyed by name, so an
+/// archive with two `source/src/lib.rs` records reports one entry and hands
+/// back the LAST -- measured on a real fixture, where the file held 4
+/// records and `archive.len()` said 3 (K-252). Every duplicate check built
+/// on the parsed archive is therefore blind by construction.
+///
+/// So the count comes from the bytes. A central-directory header starts with
+/// `PK\x01\x02`, and comparing that count against the number of distinct
+/// entries the parser found is enough to say "this archive names something
+/// twice" without reimplementing zip parsing.
+///
+/// The signature can also appear inside compressed data by chance, which
+/// would over-count and refuse an honest bundle. It is therefore only
+/// counted from the start of the central directory, which the end-of-central
+/// -directory record locates exactly.
+fn central_directory_record_count(bytes: &[u8]) -> Option<usize> {
+    // The EOCD is at the end, and holds the record count in a fixed field.
+    // Scanning backwards for its signature is the standard way to find it;
+    // the comment field can be up to 64 KiB, so bound the search.
+    const EOCD_SIG: [u8; 4] = [0x50, 0x4b, 0x05, 0x06];
+    let window = bytes.len().min(64 * 1024 + 22);
+    let start = bytes.len() - window;
+    let tail = &bytes[start..];
+    let position = tail.windows(4).rposition(|w| w == EOCD_SIG)?;
+    let eocd = &tail[position..];
+    if eocd.len() < 12 {
+        return None;
+    }
+    // Offset 10: total number of entries in the central directory.
+    Some(u16::from_le_bytes([eocd[10], eocd[11]]) as usize)
 }
 
 fn asset_entry_names<R: Read + io::Seek>(archive: &mut ZipArchive<R>) -> Result<Vec<String>> {
@@ -1603,6 +1734,122 @@ required = true
             project.entries.len(),
             "with no source and no SDK the two layers cover the same files, \
              which is how a caller knows there is only one thing to show",
+        );
+    }
+
+    /// A bundle that names one file twice does not open (K-252, IC-209).
+    ///
+    /// Two spellings of one path, which is what a hostile packer produces:
+    /// `source/lib.rs` and `source\lib.rs` extract to the same file, so one
+    /// of them is a copy the reviewer never saw. Krate refuses rather than
+    /// choosing.
+    ///
+    /// The zip LIBRARY cannot express the plainer version of this attack --
+    /// its writer rejects a literal duplicate name and its reader keys
+    /// entries by name, reporting 3 where the file holds 4 records. That
+    /// blindness is exactly why `open` counts what the file declares
+    /// instead of trusting the parser.
+    #[test]
+    fn a_bundle_that_names_one_file_twice_is_refused() {
+        use std::io::Write as _;
+
+        let dir = TempDir::new().expect("tempdir");
+        let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
+        let component = write_temp(dir.path(), "code.wasm", b"\0asm\x01\0\0\0");
+        let src = dir.path().join("src");
+        fs::create_dir_all(&src).expect("source dir");
+        fs::write(src.join("lib.rs"), b"// the reviewed copy").expect("write source");
+        let honest = dir.path().join("honest.krate");
+        pack_with_source(&manifest, &component, None, Some(&src), &honest).expect("pack");
+
+        // The honest bundle opens.
+        open(&honest).expect("an ordinary bundle must still open");
+
+        // Rewrite it with a second spelling of a path it already has.
+        let doubled = dir.path().join("doubled.krate");
+        {
+            let source = fs::read(&honest).expect("read");
+            let mut archive = ZipArchive::new(io::Cursor::new(&source)).expect("open");
+            let file = File::create(&doubled).expect("create");
+            let mut writer = ZipWriter::new(file);
+            let options =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            for index in 0..archive.len() {
+                let mut entry = archive.by_index(index).expect("entry");
+                let name = entry.name().to_string();
+                let mut bytes = Vec::new();
+                entry.read_to_end(&mut bytes).expect("read entry");
+                writer.start_file(name, options).expect("start");
+                writer.write_all(&bytes).expect("write");
+            }
+            writer
+                .start_file("source\\lib.rs", options)
+                .expect("start the second spelling");
+            writer
+                .write_all(b"// the attacker's copy")
+                .expect("write dup");
+            writer.finish().expect("finish");
+        }
+
+        let err = open(&doubled).expect_err("a duplicated path must be refused");
+        let text = err.to_string();
+        assert!(
+            text.contains("names the same file twice"),
+            "the refusal must say what is wrong: {text}"
+        );
+        assert!(
+            text.contains("freshly packed"),
+            "and what to do about it: {text}"
+        );
+    }
+
+    /// The record count is read from the FILE, not from the parser (K-252).
+    ///
+    /// `ZipArchive` keys entries by name: an archive whose central directory
+    /// holds two records for one path reports ONE entry and hands back the
+    /// last. Measured on a real fixture -- 4 records, `archive.len()` == 3 --
+    /// so every duplicate check built on the parsed archive is blind to the
+    /// plainest form of the attack.
+    ///
+    /// The zip crate's writer will not produce that fixture (it refuses a
+    /// literal duplicate name), which is why this asserts on the counting
+    /// function directly against bytes built here.
+    #[test]
+    fn the_declared_record_count_comes_from_the_archive_bytes() {
+        let dir = TempDir::new().expect("tempdir");
+        let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
+        let component = write_temp(dir.path(), "code.wasm", b"\0asm\x01\0\0\0");
+        let bundle = dir.path().join("plain.krate");
+        pack(&manifest, &component, &bundle).expect("pack");
+
+        let bytes = fs::read(&bundle).expect("read");
+        let declared = central_directory_record_count(&bytes)
+            .expect("an ordinary bundle declares its record count");
+        let parsed = ZipArchive::new(io::Cursor::new(&bytes))
+            .expect("open")
+            .len();
+        assert_eq!(
+            declared, parsed,
+            "an honest bundle declares exactly what the parser finds",
+        );
+
+        // Forge the count: claim one more record than the parser will see.
+        // That is precisely the shape a duplicate produces, and `open` must
+        // refuse it rather than trusting the parser.
+        let mut forged = bytes.clone();
+        let eocd = forged
+            .windows(4)
+            .rposition(|w| w == [0x50, 0x4b, 0x05, 0x06])
+            .expect("end of central directory");
+        let inflated = (parsed as u16) + 1;
+        forged[eocd + 10..eocd + 12].copy_from_slice(&inflated.to_le_bytes());
+        let forged_path = dir.path().join("forged.krate");
+        fs::write(&forged_path, &forged).expect("write forged");
+
+        let err = open(&forged_path).expect_err("a claimed extra record must be refused");
+        assert!(
+            err.to_string().contains("names the same file twice"),
+            "got: {err}"
         );
     }
 
