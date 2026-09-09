@@ -11545,9 +11545,7 @@ fn launch_target(bundle: &Path) -> Result<PathBuf> {
         .map(|home| home.join(".krate/cloud"))
         .context("no home directory")?;
     fs::create_dir_all(&dir)?;
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    std::hash::Hash::hash(&raw.as_ref(), &mut hasher);
-    let dest = dir.join(format!("{:016x}.krate", std::hash::Hasher::finish(&hasher)));
+
     let response = ureq::get(&raw)
         .timeout(std::time::Duration::from_secs(60))
         .call()
@@ -11562,7 +11560,40 @@ fn launch_target(bundle: &Path) -> Result<PathBuf> {
             .read_to_end(&mut bytes)
             .context("reading the download")?;
     }
-    fs::write(&dest, &bytes).with_context(|| format!("writing {}", dest.display()))?;
+
+    // Named for the BYTES, not the URL (K-251, IC-212).
+    //
+    // Keying on the URL meant a publisher who republished at the same link
+    // served every recipient the old bundle out of this cache forever, and
+    // nothing ever checked that the file on disk was what had been
+    // downloaded. Two different links carrying the same app also paid for
+    // two copies.
+    //
+    // The old key was also a DefaultHasher, whose algorithm is documented as
+    // unstable across Rust releases -- so a toolchain upgrade renamed every
+    // entry at once, silently re-downloading everything and orphaning the
+    // old files with nothing to clean them up.
+    //
+    // The archive digest is the identity that means "these exact bytes"
+    // (IC-712), so the same app is one file however it was reached, and a
+    // changed app is a different file rather than a stale hit.
+    let digest = krate_bundle::provenance::digest_archive_bytes(&bytes).digest;
+    let dest = dir.join(format!("{digest}.krate"));
+
+    // Already have these exact bytes: nothing to write.
+    if fs::metadata(&dest)
+        .map(|meta| meta.len() as usize == bytes.len())
+        .unwrap_or(false)
+    {
+        return Ok(dest);
+    }
+
+    // Written through a temporary file and renamed, so an interrupted
+    // download cannot leave a half-file under a name that claims to be a
+    // complete app -- the name is a promise about the content.
+    let staged = dir.join(format!(".{digest}.partial"));
+    fs::write(&staged, &bytes).with_context(|| format!("writing {}", staged.display()))?;
+    fs::rename(&staged, &dest).with_context(|| format!("writing {}", dest.display()))?;
     Ok(dest)
 }
 
@@ -18261,6 +18292,74 @@ mod revise_transaction_tests {
                 let _ = fs::remove_dir_all(parent);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod url_cache_tests {
+    /// A downloaded app is cached under its BYTES, never its URL (K-251).
+    ///
+    /// Keying on the URL meant republishing at the same link served every
+    /// recipient the old bundle forever. Keying on content means the same
+    /// app is one file however it was reached, and a changed app is a
+    /// different file rather than a stale hit.
+    #[test]
+    fn the_cache_name_follows_the_bytes_not_the_link() {
+        let one = krate_bundle::provenance::digest_archive_bytes(b"PK\x03\x04 version one");
+        let two = krate_bundle::provenance::digest_archive_bytes(b"PK\x03\x04 version two");
+
+        assert_ne!(
+            one.digest, two.digest,
+            "republishing different bytes must not reuse the cached file",
+        );
+        assert_eq!(
+            one.digest,
+            krate_bundle::provenance::digest_archive_bytes(b"PK\x03\x04 version one").digest,
+            "the same bytes always name the same cache file, so two links \
+             carrying one app do not pay for two copies",
+        );
+
+        // Stable across releases, unlike the DefaultHasher this replaced:
+        // a hex SHA-256 is 64 characters and is defined by the algorithm,
+        // not by the compiler that happened to build Krate.
+        assert_eq!(one.digest.len(), 64);
+        assert!(one.digest.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    /// The cache path `launch_target` actually writes is the content digest.
+    ///
+    /// Asserting only that the digest function works proved nothing about
+    /// the caller: reverting launch_target to the URL-keyed DefaultHasher
+    /// left the first test passing. This reads the source of the function
+    /// under test, which is blunt but is the thing that would have caught
+    /// the regression.
+    #[test]
+    fn launch_target_names_the_cache_file_from_the_downloaded_bytes() {
+        let source = include_str!("main.rs");
+        let start = source
+            .find("fn launch_target(")
+            .expect("launch_target exists");
+        let body = &source[start..start + 3000.min(source.len() - start)];
+
+        assert!(
+            body.contains("digest_archive_bytes(&bytes)"),
+            "launch_target must name its cache file from the DOWNLOADED BYTES; \
+             keying on the URL serves a republished app's old copy forever",
+        );
+        // Comment lines are stripped first: this function's own comment
+        // explains why DefaultHasher was removed, and matching prose rather
+        // than code is how a guard starts lying about what it checks.
+        let code: String = body
+            .lines()
+            .map(str::trim_start)
+            .filter(|line| !line.starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            !code.contains("DefaultHasher"),
+            "DefaultHasher is unstable across Rust releases -- using it here \
+             renames every cache entry on a toolchain upgrade",
+        );
     }
 }
 
