@@ -3759,6 +3759,121 @@ fn rewrite_bundle_entry(
     writer.finish().expect("finish");
 }
 
+/// Adversarial archives, through the CLI a person actually runs (IC-714).
+///
+/// The register's point is exact: the SOURCE contained duplicate-asset
+/// rejection while the shipped debug, release and public binaries accepted
+/// the archive, and no test caught the mismatch. A library test cannot --
+/// it exercises the code, not the binary. This runs the fixtures through
+/// `krate run`, which is what a recipient does.
+#[test]
+fn adversarial_archives_are_refused_by_the_binary_people_run() {
+    let dir = tempfile::tempdir().expect("temp dir");
+
+    for (what, path) in [
+        ("a duplicated core record", "manifest.toml"),
+        ("a duplicated component", "code.wasm"),
+        ("a duplicated asset", "assets/logo.png"),
+        ("a duplicated source file", "source/lib.rs"),
+        ("a duplicated SDK file", "sdk/krate.wit"),
+        ("a duplicated unknown record", "future/thing.bin"),
+    ] {
+        let bundle = dir.path().join("adversarial.krate");
+        std::fs::write(&bundle, archive_naming_one_path_twice(path)).expect("write fixture");
+
+        let output = krate()
+            .arg("run")
+            .arg(&bundle)
+            .args(["--headless", "--auto-grant"])
+            .output()
+            .expect("run the adversarial bundle");
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_ne!(
+            output.status.code(),
+            Some(0),
+            "{what} must not open: {stderr}"
+        );
+        assert!(
+            stderr.contains("names the same file twice"),
+            "{what} must be refused as a duplicate, not something else: {stderr}"
+        );
+        assert!(
+            stderr.contains(&path.to_lowercase()),
+            "{what} must NAME the path {path}: {stderr}"
+        );
+    }
+}
+
+/// A zip whose central directory lists `path` twice.
+///
+/// Assembled from raw records: the zip crate's writer refuses a literal
+/// duplicate name, so a library cannot build the archive a hostile packer
+/// produces. IC-713 asks for exactly this ("archives produced by multiple
+/// ZIP writers").
+fn archive_naming_one_path_twice(path: &str) -> Vec<u8> {
+    const MANIFEST: &str = "[app]\nid = \"com.example.adversarial\"\nname = \"Adversarial\"\n\
+                            version = \"1.0.0\"\nentry = \"code.wasm\"\n\
+                            world = \"krate:app/cli@0.1.0\"\n";
+
+    let entries: Vec<(String, Vec<u8>)> = vec![
+        ("manifest.toml".to_string(), MANIFEST.as_bytes().to_vec()),
+        ("code.wasm".to_string(), b"\0asm\x01\0\0\0".to_vec()),
+        (path.to_string(), b"the reviewed copy".to_vec()),
+        (path.to_string(), b"the attacker's copy".to_vec()),
+    ];
+
+    let mut out = Vec::new();
+    let mut offsets = Vec::new();
+    for (name, body) in &entries {
+        offsets.push(out.len() as u32);
+        out.extend_from_slice(&[0x50, 0x4b, 0x03, 0x04]);
+        out.extend_from_slice(&[10, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        out.extend_from_slice(&zip_crc32(body).to_le_bytes());
+        out.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        out.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        out.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        out.extend_from_slice(&[0, 0]);
+        out.extend_from_slice(name.as_bytes());
+        out.extend_from_slice(body);
+    }
+
+    let cd_start = out.len() as u32;
+    for ((name, body), offset) in entries.iter().zip(&offsets) {
+        out.extend_from_slice(&[0x50, 0x4b, 0x01, 0x02]);
+        out.extend_from_slice(&[10, 0, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        out.extend_from_slice(&zip_crc32(body).to_le_bytes());
+        out.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        out.extend_from_slice(&(body.len() as u32).to_le_bytes());
+        out.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        out.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        out.extend_from_slice(&offset.to_le_bytes());
+        out.extend_from_slice(name.as_bytes());
+    }
+    let cd_len = out.len() as u32 - cd_start;
+
+    out.extend_from_slice(&[0x50, 0x4b, 0x05, 0x06]);
+    out.extend_from_slice(&[0, 0, 0, 0]);
+    out.extend_from_slice(&(entries.len() as u16).to_le_bytes());
+    out.extend_from_slice(&(entries.len() as u16).to_le_bytes());
+    out.extend_from_slice(&cd_len.to_le_bytes());
+    out.extend_from_slice(&cd_start.to_le_bytes());
+    out.extend_from_slice(&[0, 0]);
+    out
+}
+
+fn zip_crc32(bytes: &[u8]) -> u32 {
+    let mut crc = 0xffff_ffffu32;
+    for byte in bytes {
+        crc ^= *byte as u32;
+        for _ in 0..8 {
+            let mask = (crc & 1).wrapping_neg();
+            crc = (crc >> 1) ^ (0xedb8_8320 & mask);
+        }
+    }
+    !crc
+}
+
 fn configured_hello_component() -> Option<PathBuf> {
     configured_component_from_env("KRATE_HELLO_WASM", "hello component test")
 }
