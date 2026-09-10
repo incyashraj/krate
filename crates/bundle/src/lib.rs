@@ -858,7 +858,9 @@ impl OpenBundle {
         let mut entries = std::collections::BTreeMap::new();
         entries.insert(
             MANIFEST_ENTRY.to_string(),
-            fs::read(&self.manifest_path).map_err(|err| io_err(&self.manifest_path, err))?,
+            manifest_bytes_for_digest(
+                &fs::read(&self.manifest_path).map_err(|err| io_err(&self.manifest_path, err))?,
+            ),
         );
         entries.insert(
             COMPONENT_ENTRY.to_string(),
@@ -1522,6 +1524,41 @@ fn shorten_path(path: &str) -> String {
         all[all.len() - KEEP..].iter().collect()
     };
     format!("{head}...{tail}")
+}
+
+/// The manifest as the identity sees it: line endings normalised (K-265).
+///
+/// The manifest is identity-bearing, and rightly so -- it carries the
+/// capabilities, so a change to it is a change to what the app may do. But it
+/// was hashed as raw bytes, which made the SAME manifest a different app
+/// depending on how it reached the disk. Measured on a shipped app whose
+/// manifest was checked out with Windows line endings, nothing else touched:
+///   unix    (LF)   97ec3bffa3c1a3e1
+///   windows (CRLF) 6cad357106be407e
+/// That is git's default on Windows, so one commit built on two machines
+/// disagreed about what the app was -- which defeats a reproducible build and
+/// is invisible in any editor.
+///
+/// Only line endings are folded. Everything else stays byte-exact: a comment,
+/// a reordered key or a changed value is a real edit to the file that
+/// describes the app, and the identity should follow it. Folding more would
+/// need a TOML parser in the path that decides what an app IS, and the
+/// narrow rule fixes the case that actually bites.
+///
+/// A lone CR is left alone: no tooling produces it as a line ending, and
+/// treating it as one would fold two genuinely different files together.
+fn manifest_bytes_for_digest(raw: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(raw.len());
+    let mut index = 0;
+    while index < raw.len() {
+        if raw[index] == b'\r' && raw.get(index + 1) == Some(&b'\n') {
+            index += 1; // drop the CR and keep the LF written below
+            continue;
+        }
+        out.push(raw[index]);
+        index += 1;
+    }
+    out
 }
 
 fn preflight_entries<R: Read + io::Seek>(archive: &mut ZipArchive<R>) -> Result<()> {
@@ -3016,6 +3053,152 @@ required = true
         assert!(
             message.contains("not enough room") && message.contains("Free some space"),
             "a full disk must say so, and say what to do: {message}"
+        );
+    }
+
+    #[test]
+    fn the_same_manifest_checked_out_on_windows_is_the_same_app() {
+        // K-265. The manifest is hashed into the execution identity, and it
+        // was hashed as raw bytes -- so git's default on Windows, which
+        // rewrites LF to CRLF on checkout, made one commit build into two
+        // different apps depending on the machine. Invisible in an editor,
+        // and fatal to a reproducible build.
+        fn bundle(dir: &Path, name: &str, manifest: &[u8]) -> PathBuf {
+            let mut buf = Vec::new();
+            {
+                let mut writer = ZipWriter::new(io::Cursor::new(&mut buf));
+                let opts =
+                    SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+                writer.start_file(MANIFEST_ENTRY, opts).expect("manifest");
+                writer.write_all(manifest).expect("write");
+                writer.start_file(COMPONENT_ENTRY, opts).expect("component");
+                writer.write_all(b"\0asm\x01\0\0\0").expect("write");
+                writer.finish().expect("finish");
+            }
+            let path = dir.join(name);
+            fs::write(&path, &buf).expect("write bundle");
+            path
+        }
+
+        let dir = TempDir::new().expect("tempdir");
+        let unix = MANIFEST.as_bytes().to_vec();
+        let windows = MANIFEST.replace('\n', "\r\n").into_bytes();
+        assert_ne!(unix, windows, "the fixture must really differ in bytes");
+
+        let a = open(&bundle(dir.path(), "unix.krate", &unix)).expect("opens");
+        let b = open(&bundle(dir.path(), "win.krate", &windows)).expect("opens");
+        assert_eq!(
+            a.digest().expect("digest").digest,
+            b.digest().expect("digest").digest,
+            "the same manifest with Windows line endings is the same app; \
+             otherwise one commit built on two machines is two apps"
+        );
+
+        // But a real edit to the manifest is still a different app: the
+        // manifest carries the capabilities, so it must stay
+        // identity-bearing.
+        let renamed = MANIFEST.replace("Demo", "Renamed").into_bytes();
+        assert_ne!(
+            renamed, unix,
+            "the fixture must really change the manifest's meaning"
+        );
+        let c = open(&bundle(dir.path(), "renamed.krate", &renamed)).expect("opens");
+        assert_ne!(
+            a.digest().expect("digest").digest,
+            c.digest().expect("digest").digest,
+            "a changed manifest must still be a different app"
+        );
+    }
+
+    #[test]
+    fn repacking_an_app_keeps_its_execution_identity_and_changes_the_file() {
+        // IC-212 and IC-860: the identities answer different questions and
+        // must move independently. The digest functions are tested on their
+        // own inputs; this is the property END TO END, through a real
+        // archive, because that is where the two can be confused.
+        //
+        // A repack -- different entry order, different compression, same
+        // contents -- is exactly what a mirror, a proxy or a rebuild does.
+        // If it moved the execution identity, every reference to an app
+        // would break the moment somebody stored it differently.
+        fn bundle(dir: &Path, name: &str, method: CompressionMethod, reversed: bool) -> PathBuf {
+            let mut entries: Vec<(&str, Vec<u8>)> = vec![
+                (MANIFEST_ENTRY, MANIFEST.as_bytes().to_vec()),
+                (COMPONENT_ENTRY, b"\0asm\x01\0\0\0".to_vec()),
+                ("source/lib.rs", b"fn main() {}".to_vec()),
+            ];
+            if reversed {
+                entries.reverse();
+            }
+            let mut buf = Vec::new();
+            {
+                let mut writer = ZipWriter::new(io::Cursor::new(&mut buf));
+                let opts = SimpleFileOptions::default().compression_method(method);
+                for (name, bytes) in &entries {
+                    writer.start_file(*name, opts).expect("entry");
+                    writer.write_all(bytes).expect("write");
+                }
+                writer.finish().expect("finish");
+            }
+            let path = dir.join(name);
+            fs::write(&path, &buf).expect("write bundle");
+            path
+        }
+
+        let dir = TempDir::new().expect("tempdir");
+        let plain = bundle(dir.path(), "a.krate", CompressionMethod::Deflated, false);
+        let repacked = bundle(dir.path(), "b.krate", CompressionMethod::Stored, true);
+
+        // The FILES differ: different compression, different order, so the
+        // bytes on disk are not the same.
+        assert_ne!(
+            fs::read(&plain).expect("read"),
+            fs::read(&repacked).expect("read"),
+            "the fixture must really be a repack, or this proves nothing"
+        );
+
+        let a = open(&plain).expect("opens");
+        let b = open(&repacked).expect("opens");
+        assert_eq!(
+            a.digest().expect("digest").digest,
+            b.digest().expect("digest").digest,
+            "a repack must NOT change what the app is -- otherwise every \
+             reference to an app breaks when somebody stores it differently"
+        );
+        assert_eq!(
+            a.project_digest().expect("digest").digest,
+            b.project_digest().expect("digest").digest,
+            "a repack must not change the project identity either"
+        );
+
+        // And a real change to what runs DOES move it.
+        let changed = {
+            let mut buf = Vec::new();
+            {
+                let mut writer = ZipWriter::new(io::Cursor::new(&mut buf));
+                let opts =
+                    SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+                writer.start_file(MANIFEST_ENTRY, opts).expect("manifest");
+                writer.write_all(MANIFEST.as_bytes()).expect("write");
+                writer.start_file(COMPONENT_ENTRY, opts).expect("component");
+                // A different component: the same app id, different code.
+                writer.write_all(b"\0asm\x01\0\0\0\0").expect("write");
+                writer.start_file("source/lib.rs", opts).expect("source");
+                writer.write_all(b"fn main() {}").expect("write");
+                writer.finish().expect("finish");
+            }
+            let path = dir.path().join("c.krate");
+            fs::write(&path, &buf).expect("write");
+            path
+        };
+        assert_ne!(
+            a.digest().expect("digest").digest,
+            open(&changed)
+                .expect("opens")
+                .digest()
+                .expect("digest")
+                .digest,
+            "different code must be a different app"
         );
     }
 
