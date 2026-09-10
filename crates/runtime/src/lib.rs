@@ -240,6 +240,46 @@ pub enum RuntimeError {
 pub type Result<T> = std::result::Result<T, RuntimeError>;
 
 /// Reusable runtime handle.
+/// Wasmtime's explanation, not just its headline (K-267).
+///
+/// Printing one of its errors gives the top line only -- "failed to parse
+/// WebAssembly module" -- and drops the causes underneath, which are where
+/// the useful sentence lives ("does not start with the WebAssembly magic
+/// number"). The packer reads the whole chain and tells a developer exactly
+/// what is wrong with their file; the person who RECEIVED the app got the
+/// headline, and they are the one who can do least with it.
+///
+/// Walked through `std::error::Error::source` rather than anyhow's own
+/// `chain`, so the runtime does not take a dependency to read an error.
+fn component_error(err: &(dyn std::error::Error + 'static)) -> String {
+    let mut message = err.to_string();
+    let mut cause = err.source();
+    while let Some(current) = cause {
+        let text = current.to_string();
+        // Wasmtime repeats its headline as its own first cause often enough
+        // that echoing it back reads like a stutter.
+        if !message.contains(&text) {
+            message.push_str(": ");
+            message.push_str(&text);
+        }
+        cause = current.source();
+    }
+
+    // The commonest case by far is a file that is not WebAssembly at all,
+    // and for it wasmtime produces several lines of expected-versus-found
+    // hex. Say that plainly instead -- the same sentence the packer already
+    // uses, so both doors describe one situation the same way.
+    if message.contains("magic header not detected") {
+        return "this file does not start with the WebAssembly magic number, \
+                so it is not a component at all"
+            .to_string();
+    }
+
+    // Everything else keeps its detail, trimmed to the first line: the rest
+    // is offsets and byte dumps that help nobody reading a refusal.
+    message.lines().next().unwrap_or("unreadable").to_string()
+}
+
 pub struct Runtime {
     engine: Engine,
 }
@@ -461,7 +501,7 @@ impl Runtime {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn load_component(&self, bytes: &[u8]) -> Result<LoadedComponent> {
         let component = Component::from_binary(&self.engine, bytes)
-            .map_err(|err| RuntimeError::InvalidComponent(err.to_string()))?;
+            .map_err(|err| RuntimeError::InvalidComponent(component_error(err.as_ref())))?;
 
         Ok(LoadedComponent { component })
     }
@@ -2850,6 +2890,67 @@ mod tests {
             .expect_err("invalid bytes must fail");
 
         assert!(matches!(err, RuntimeError::InvalidComponent(_)));
+    }
+
+    /// A recipient is told what is actually wrong with the file (K-267).
+    ///
+    /// The message used to be wasmtime's headline alone -- "failed to parse
+    /// WebAssembly module" -- for every shape of broken component, because
+    /// printing the error dropped the causes underneath it. The packer read
+    /// the whole chain and told a developer exactly what was wrong; the
+    /// person who RECEIVED the app got the headline, and they are the one
+    /// who can do least with it.
+    #[test]
+    fn a_broken_component_says_what_is_wrong_with_it() {
+        let config = Config::default();
+        let runtime = Runtime::new(&config).expect("runtime should initialize");
+
+        let cases: [(&str, &[u8], &str); 3] = [
+            // Not WebAssembly at all: the commonest case, and the one whose
+            // raw form is several lines of expected-versus-found hex.
+            (
+                "a file that is not wasm",
+                b"this is not wasm at all",
+                "magic number",
+            ),
+            // A component header followed by nonsense.
+            (
+                "a truncated component",
+                b"\0asm\x01\0\0\0\x01\xff\xff\xff",
+                "parse",
+            ),
+            ("an empty file", b"", "end-of-file"),
+        ];
+
+        let mut messages = Vec::new();
+        for (what, bytes, expected) in cases {
+            let err = runtime
+                .run_bytes(bytes, &config)
+                .expect_err("broken bytes must fail");
+            let RuntimeError::InvalidComponent(message) = err else {
+                panic!("{what}: must be refused as an invalid component");
+            };
+            assert!(
+                message.contains(expected),
+                "{what}: the message must say what is wrong -- expected \
+                 something containing {expected:?}, got {message:?}"
+            );
+            // No hex dumps or byte offsets in the part a person reads.
+            assert!(
+                message.lines().count() == 1,
+                "{what}: the message must be one line, not a dump: {message:?}"
+            );
+            messages.push(message);
+        }
+
+        // Three different faults must not produce one indistinguishable
+        // sentence, which is what made the old message useless.
+        let unique: std::collections::BTreeSet<&String> = messages.iter().collect();
+        assert_eq!(
+            unique.len(),
+            messages.len(),
+            "each kind of breakage needs its own words: {messages:?}"
+        );
     }
 
     #[cfg(feature = "phase2-bindings")]
