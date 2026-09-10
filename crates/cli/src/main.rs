@@ -18242,7 +18242,7 @@ mod revise_transaction_tests {
         )
         .expect("manifest");
         let component = dir.path().join("code.wasm");
-        fs::write(&component, b"\0asm\x01\0\0\0").expect("component");
+        fs::write(&component, b"\0asm\x0d\0\x01\0").expect("component");
 
         // A source tree whose Cargo.toml points at the SDK placeholder, and a
         // tiny bundled SDK, so the sibling-SDK path is exercised too.

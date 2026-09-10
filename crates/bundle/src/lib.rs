@@ -530,6 +530,21 @@ pub fn pack_with_sdk(
     //
     // Parsing here is the same work `open` already does at run time, moved
     // to where it is actionable.
+    // A core module is not a component, and only the header says so (K-272).
+    // wasmparser reads a module happily, so the import check below sees an
+    // empty set -- the same thing a component that imports nothing gives --
+    // and lets it through. The failure then lands on whoever was SENT the
+    // file, who can do nothing about it; the person here can rebuild.
+    if !imports::is_component(&component) {
+        return Err(BundleError::NotAComponent {
+            path: component_path.display().to_string(),
+            detail: "it is a core WebAssembly module, not a component. \
+                     Build it with `cargo component build` rather than \
+                     `cargo build`."
+                .to_string(),
+        });
+    }
+
     imports::component_imports(&component).map_err(|detail| {
         // wasmparser's own words run to several lines of hex for the
         // commonest case, a file that is not wasm at all. Say that plainly
@@ -1929,6 +1944,20 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
+    /// The smallest valid COMPONENT: eight bytes of header and nothing else.
+    ///
+    /// Almost every fixture here used `\0asm\x01\0\0\0`, which is a core
+    /// MODULE header, not a component. Nothing noticed until pack learned to
+    /// tell them apart (K-272), at which point fifteen tests turned out to
+    /// have been packing modules and calling them components.
+    ///
+    ///   component  00 61 73 6d 0d 00 01 00
+    ///   module     00 61 73 6d 01 00 00 00
+    ///
+    /// A test whose fixture is not the thing it claims to be is testing
+    /// something other than what it says.
+    const EMPTY_COMPONENT: &[u8] = &[0x00, 0x61, 0x73, 0x6d, 0x0d, 0x00, 0x01, 0x00];
+
     const MANIFEST: &str = r#"
 [app]
 id = "com.example.demo"
@@ -1956,7 +1985,7 @@ required = true
         let before = fs::read(&output).expect("read before");
 
         let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
-        let component = write_temp(dir.path(), "code.wasm", b"\0asm\x01\0\0\0");
+        let component = write_temp(dir.path(), "code.wasm", EMPTY_COMPONENT);
 
         // A source directory naming a file that cannot be opened. The failure
         // lands after the manifest and component have already been written,
@@ -2034,7 +2063,7 @@ required = true
     fn two_bundles_with_different_source_are_told_apart_by_the_project_digest() {
         let dir = TempDir::new().expect("tempdir");
         let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
-        let component = write_temp(dir.path(), "code.wasm", b"\0asm\x01\0\0\0");
+        let component = write_temp(dir.path(), "code.wasm", EMPTY_COMPONENT);
 
         let mut digests = Vec::new();
         for (name, source_body) in [
@@ -2079,7 +2108,7 @@ required = true
 
         let dir = TempDir::new().expect("tempdir");
         let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
-        let component = write_temp(dir.path(), "code.wasm", b"\0asm\x01\0\0\0");
+        let component = write_temp(dir.path(), "code.wasm", EMPTY_COMPONENT);
         let src = dir.path().join("src");
         fs::create_dir_all(&src).expect("source dir");
         fs::write(src.join("lib.rs"), b"fn main() {}").expect("write source");
@@ -2175,7 +2204,7 @@ required = true
 
         let dir = TempDir::new().expect("tempdir");
         let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
-        let component = write_temp(dir.path(), "code.wasm", b"\0asm\x01\0\0\0");
+        let component = write_temp(dir.path(), "code.wasm", EMPTY_COMPONENT);
         let bundle = dir.path().join("delegated.krate");
         pack(&manifest, &component, &bundle).expect("pack");
 
@@ -2265,7 +2294,7 @@ required = true
     fn a_bundle_without_source_has_nothing_extra_to_rebuild() {
         let dir = TempDir::new().expect("tempdir");
         let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
-        let component = write_temp(dir.path(), "code.wasm", b"\0asm\x01\0\0\0");
+        let component = write_temp(dir.path(), "code.wasm", EMPTY_COMPONENT);
         let bundle = dir.path().join("plain.krate");
         pack(&manifest, &component, &bundle).expect("pack");
 
@@ -2298,7 +2327,7 @@ required = true
 
         let dir = TempDir::new().expect("tempdir");
         let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
-        let component = write_temp(dir.path(), "code.wasm", b"\0asm\x01\0\0\0");
+        let component = write_temp(dir.path(), "code.wasm", EMPTY_COMPONENT);
         let src = dir.path().join("src");
         fs::create_dir_all(&src).expect("source dir");
         fs::write(src.join("lib.rs"), b"// the reviewed copy").expect("write source");
@@ -2361,7 +2390,7 @@ required = true
     fn the_declared_record_count_comes_from_the_archive_bytes() {
         let dir = TempDir::new().expect("tempdir");
         let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
-        let component = write_temp(dir.path(), "code.wasm", b"\0asm\x01\0\0\0");
+        let component = write_temp(dir.path(), "code.wasm", EMPTY_COMPONENT);
         let bundle = dir.path().join("plain.krate");
         pack(&manifest, &component, &bundle).expect("pack");
 
@@ -2427,7 +2456,7 @@ required = true
 
         // A real component still packs -- this must not become a check that
         // refuses working apps.
-        let component = write_temp(dir.path(), "real.wasm", b"\0asm\x01\0\0\0");
+        let component = write_temp(dir.path(), "real.wasm", EMPTY_COMPONENT);
         let good = dir.path().join("good.krate");
         pack(&manifest, &component, &good).expect("a real component packs");
         assert!(good.is_file());
@@ -2442,7 +2471,7 @@ required = true
     fn a_bundle_declares_the_container_profile_it_was_written_for() {
         let dir = TempDir::new().expect("tempdir");
         let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
-        let component = write_temp(dir.path(), "code.wasm", b"\0asm\x01\0\0\0");
+        let component = write_temp(dir.path(), "code.wasm", EMPTY_COMPONENT);
         let bundle = dir.path().join("profiled.krate");
         pack(&manifest, &component, &bundle).expect("pack");
 
@@ -2477,7 +2506,7 @@ required = true
     fn a_future_container_profile_is_refused_with_words_a_person_can_act_on() {
         let dir = TempDir::new().expect("tempdir");
         let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
-        let component = write_temp(dir.path(), "code.wasm", b"\0asm\x01\0\0\0");
+        let component = write_temp(dir.path(), "code.wasm", EMPTY_COMPONENT);
         let bundle = dir.path().join("ok.krate");
         pack(&manifest, &component, &bundle).expect("pack");
 
@@ -2521,7 +2550,7 @@ required = true
     fn a_bundle_with_no_profile_line_is_read_as_generation_one() {
         let dir = TempDir::new().expect("tempdir");
         let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
-        let component = write_temp(dir.path(), "code.wasm", b"\0asm\x01\0\0\0");
+        let component = write_temp(dir.path(), "code.wasm", EMPTY_COMPONENT);
         let bundle = dir.path().join("with.krate");
         pack(&manifest, &component, &bundle).expect("pack");
 
@@ -2590,7 +2619,7 @@ required = true
         // then the target path twice.
         let mut entries: Vec<(String, Vec<u8>)> = vec![
             (MANIFEST_ENTRY.to_string(), MANIFEST.as_bytes().to_vec()),
-            (COMPONENT_ENTRY.to_string(), b"\0asm\x01\0\0\0".to_vec()),
+            (COMPONENT_ENTRY.to_string(), EMPTY_COMPONENT.to_vec()),
         ];
         entries.extend(extra.iter().cloned());
 
@@ -2674,7 +2703,7 @@ required = true
             writer.start_file(MANIFEST_ENTRY, opts).expect("manifest");
             writer.write_all(MANIFEST.as_bytes()).expect("write");
             writer.start_file(COMPONENT_ENTRY, opts).expect("component");
-            writer.write_all(b"\0asm\x01\0\0\0").expect("write");
+            writer.write_all(EMPTY_COMPONENT).expect("write");
             writer.finish().expect("finish");
         }
         fs::write(&bundle, &buf).expect("write bundle");
@@ -2745,7 +2774,7 @@ required = true
             fn default() -> Self {
                 Parts {
                     manifest: MANIFEST_FOR_LAYERS,
-                    component: b"\0asm\x01\0\0\0",
+                    component: EMPTY_COMPONENT,
                     asset: b"PNGDATA",
                     source: b"fn main() {}",
                     sdk: b"wit",
@@ -2893,7 +2922,7 @@ required = true
             for (entry, bytes) in [
                 (PROFILE_ENTRY, b"1".as_slice()),
                 (MANIFEST_ENTRY, MANIFEST.as_bytes()),
-                (COMPONENT_ENTRY, b"\0asm\x01\0\0\0"),
+                (COMPONENT_ENTRY, EMPTY_COMPONENT),
                 ("source/lib.rs", b"fn main() {}"),
             ] {
                 writer.start_file(entry, opts).expect("entry");
@@ -2993,6 +3022,55 @@ required = true
     }
 
     #[test]
+    fn packing_a_core_module_is_refused_where_it_can_still_be_fixed() {
+        // K-272 / IC-210. A core module packed without complaint, and the
+        // failure surfaced for whoever was SENT the file -- who can do
+        // nothing about it. The person packing can rebuild, so that is where
+        // the refusal belongs.
+        //
+        // Getting `cargo build` instead of `cargo component build` is a
+        // common enough mistake that the message names the command.
+        let dir = TempDir::new().expect("tempdir");
+        let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
+
+        let module = write_temp(
+            dir.path(),
+            "module.wasm",
+            &[0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00],
+        );
+        let out = dir.path().join("module.krate");
+        let err = pack(&manifest, &module, &out).expect_err("a module must not pack");
+        assert!(
+            matches!(err, BundleError::NotAComponent { .. }),
+            "a module must be refused as not-a-component: {err}"
+        );
+        let text = err.to_string();
+        assert!(
+            text.contains("core WebAssembly module"),
+            "the refusal must say what it actually is: {text}"
+        );
+        assert!(
+            text.contains("cargo component build"),
+            "and name the command that produces a component: {text}"
+        );
+        assert!(
+            !out.exists(),
+            "a refused pack must not leave a bundle behind"
+        );
+
+        // A component still packs. This is the half that would break if the
+        // header check were wrong, and it would break every app at once.
+        let component = write_temp(
+            dir.path(),
+            "code.wasm",
+            &[0x00, 0x61, 0x73, 0x6d, 0x0d, 0x00, 0x01, 0x00],
+        );
+        let good = dir.path().join("good.krate");
+        pack(&manifest, &component, &good).expect("a component must still pack");
+        assert!(good.is_file(), "the bundle must be written");
+    }
+
+    #[test]
     fn a_damaged_format_line_is_not_called_a_newer_format() {
         // K-271. Every unreadable profile used to be reported as "a newer
         // .krate format", with advice to update Krate. For a version this
@@ -3011,7 +3089,7 @@ required = true
                 writer.start_file(MANIFEST_ENTRY, opts).expect("manifest");
                 writer.write_all(MANIFEST.as_bytes()).expect("write");
                 writer.start_file(COMPONENT_ENTRY, opts).expect("component");
-                writer.write_all(b"\0asm\x01\0\0\0").expect("write");
+                writer.write_all(EMPTY_COMPONENT).expect("write");
                 writer.finish().expect("finish");
             }
             let path = dir.join(name);
@@ -3087,7 +3165,7 @@ required = true
                 writer.start_file(MANIFEST_ENTRY, opts).expect("manifest");
                 writer.write_all(MANIFEST.as_bytes()).expect("write");
                 writer.start_file(COMPONENT_ENTRY, opts).expect("component");
-                writer.write_all(b"\0asm\x01\0\0\0").expect("write");
+                writer.write_all(EMPTY_COMPONENT).expect("write");
                 writer.finish().expect("finish");
             }
             let path = dir.join(name);
@@ -3269,7 +3347,7 @@ required = true
             writer.start_file(MANIFEST_ENTRY, opts).expect("manifest");
             writer.write_all(MANIFEST.as_bytes()).expect("write");
             writer.start_file(COMPONENT_ENTRY, opts).expect("component");
-            writer.write_all(b"\0asm\x01\0\0\0").expect("write");
+            writer.write_all(EMPTY_COMPONENT).expect("write");
             let blob = vec![0u8; EACH];
             for i in 0..count {
                 writer
@@ -3323,7 +3401,7 @@ required = true
                 writer.start_file(MANIFEST_ENTRY, opts).expect("manifest");
                 writer.write_all(MANIFEST.as_bytes()).expect("write");
                 writer.start_file(COMPONENT_ENTRY, opts).expect("component");
-                writer.write_all(b"\0asm\x01\0\0\0").expect("write");
+                writer.write_all(EMPTY_COMPONENT).expect("write");
                 for i in 0..n.saturating_sub(2) {
                     writer
                         .start_file(format!("source/f{i}.rs"), opts)
@@ -3380,7 +3458,7 @@ required = true
             writer.start_file(MANIFEST_ENTRY, opts).expect("manifest");
             writer.write_all(MANIFEST.as_bytes()).expect("write");
             writer.start_file(COMPONENT_ENTRY, opts).expect("component");
-            writer.write_all(b"\0asm\x01\0\0\0").expect("write");
+            writer.write_all(EMPTY_COMPONENT).expect("write");
             let blob = vec![0u8; EACH];
             for i in 0..count {
                 writer
@@ -3466,7 +3544,7 @@ required = true
                 writer.start_file(MANIFEST_ENTRY, opts).expect("manifest");
                 writer.write_all(MANIFEST.as_bytes()).expect("write");
                 writer.start_file(COMPONENT_ENTRY, opts).expect("component");
-                writer.write_all(b"\0asm\x01\0\0\0").expect("write");
+                writer.write_all(EMPTY_COMPONENT).expect("write");
                 // Split across a few files so no single one trips the
                 // per-file cap instead of the aggregate one being measured.
                 let chunk = MAX_ASSET_BYTES / 2;
@@ -3527,7 +3605,7 @@ required = true
                 };
                 let write_component = |w: &mut ZipWriter<io::Cursor<&mut Vec<u8>>>| {
                     w.start_file(COMPONENT_ENTRY, opts).expect("component");
-                    w.write_all(b"\0asm\x01\0\0\0").expect("write");
+                    w.write_all(EMPTY_COMPONENT).expect("write");
                 };
                 if component_first {
                     write_component(&mut writer);
@@ -3617,7 +3695,7 @@ required = true
         // digest identity rests on.
         let dir = TempDir::new().expect("tempdir");
         let component = dir.path().join("code.wasm");
-        fs::write(&component, b"\0asm\x01\0\0\0").expect("component");
+        fs::write(&component, EMPTY_COMPONENT).expect("component");
         let manifest = dir.path().join("manifest.toml");
         fs::write(&manifest, MANIFEST.as_bytes()).expect("manifest");
 
@@ -3727,7 +3805,7 @@ required = true
                 writer.start_file(MANIFEST_ENTRY, opts).expect("manifest");
                 writer.write_all(manifest).expect("write");
                 writer.start_file(COMPONENT_ENTRY, opts).expect("component");
-                writer.write_all(b"\0asm\x01\0\0\0").expect("write");
+                writer.write_all(EMPTY_COMPONENT).expect("write");
                 writer.finish().expect("finish");
             }
             let path = dir.join(name);
@@ -3779,7 +3857,7 @@ required = true
         fn bundle(dir: &Path, name: &str, method: CompressionMethod, reversed: bool) -> PathBuf {
             let mut entries: Vec<(&str, Vec<u8>)> = vec![
                 (MANIFEST_ENTRY, MANIFEST.as_bytes().to_vec()),
-                (COMPONENT_ENTRY, b"\0asm\x01\0\0\0".to_vec()),
+                (COMPONENT_ENTRY, EMPTY_COMPONENT.to_vec()),
                 ("source/lib.rs", b"fn main() {}".to_vec()),
             ];
             if reversed {
@@ -3919,7 +3997,7 @@ required = true
                 writer.start_file(MANIFEST_ENTRY, opts).expect("manifest");
                 writer.write_all(MANIFEST.as_bytes()).expect("write");
                 writer.start_file(COMPONENT_ENTRY, opts).expect("component");
-                writer.write_all(b"\0asm\x01\0\0\0").expect("write");
+                writer.write_all(EMPTY_COMPONENT).expect("write");
                 if let Some(signature) = signature {
                     writer.start_file(SIGNATURE_ENTRY, opts).expect("signature");
                     writer.write_all(signature).expect("write");
@@ -4119,7 +4197,7 @@ required = true
     fn pack_then_open_round_trips_manifest_and_component() {
         let dir = TempDir::new().expect("tempdir");
         let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
-        let component = write_temp(dir.path(), "code.wasm", b"\0asm\x01\0\0\0");
+        let component = write_temp(dir.path(), "code.wasm", EMPTY_COMPONENT);
         let bundle = dir.path().join("demo.krate");
 
         let size = pack(&manifest, &component, &bundle).expect("pack");
@@ -4129,7 +4207,7 @@ required = true
         assert_eq!(opened.manifest().app.id, "com.example.demo");
         assert_eq!(
             fs::read(opened.component_path()).expect("read component"),
-            b"\0asm\x01\0\0\0"
+            EMPTY_COMPONENT
         );
         assert!(opened.assets_path().is_none());
     }
@@ -4138,7 +4216,7 @@ required = true
     fn pack_then_open_round_trips_nested_assets() {
         let dir = TempDir::new().expect("tempdir");
         let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
-        let component = write_temp(dir.path(), "code.wasm", b"\0asm\x01\0\0\0");
+        let component = write_temp(dir.path(), "code.wasm", EMPTY_COMPONENT);
         let assets = dir.path().join("assets");
         fs::create_dir_all(assets.join("prompts")).expect("create assets");
         fs::write(assets.join("prompts/welcome.txt"), b"Welcome to Krate").expect("write asset");
@@ -4162,7 +4240,7 @@ required = true
     fn packs_the_source_so_an_app_can_be_changed_later() {
         let dir = TempDir::new().expect("tempdir");
         let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
-        let component = write_temp(dir.path(), "code.wasm", b"\0asm\x01\0\0\0");
+        let component = write_temp(dir.path(), "code.wasm", EMPTY_COMPONENT);
 
         // A crate-shaped directory, including the two things that must NOT be
         // packed: build output, and a lock file that may not resolve elsewhere.
@@ -4191,7 +4269,7 @@ required = true
     fn a_bundle_without_source_still_opens() {
         let dir = TempDir::new().expect("tempdir");
         let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
-        let component = write_temp(dir.path(), "code.wasm", b"\0asm\x01\0\0\0");
+        let component = write_temp(dir.path(), "code.wasm", EMPTY_COMPONENT);
         let bundle = dir.path().join("out.krate");
         pack(&manifest, &component, &bundle).expect("pack");
         // Every bundle made before source shipped is this shape.
@@ -4208,7 +4286,7 @@ required = true
                 .expect("start manifest");
             zip.write_all(MANIFEST.as_bytes()).expect("write manifest");
             zip.start_file(COMPONENT_ENTRY, opts).expect("start wasm");
-            zip.write_all(b"\0asm\x01\0\0\0").expect("write wasm");
+            zip.write_all(EMPTY_COMPONENT).expect("write wasm");
             zip.start_file("assets/../../evil", opts)
                 .expect("start hostile asset");
             zip.write_all(b"pwned").expect("write hostile asset");
@@ -4249,7 +4327,7 @@ required = true
             "manifest.toml",
             MANIFEST.replace("code.wasm", "other.wasm").as_bytes(),
         );
-        let component = write_temp(dir.path(), "code.wasm", b"\0asm\x01\0\0\0");
+        let component = write_temp(dir.path(), "code.wasm", EMPTY_COMPONENT);
         let bundle = dir.path().join("demo.krate");
 
         let err = pack(&manifest, &component, &bundle).expect_err("entry mismatch must fail");
@@ -4287,7 +4365,7 @@ required = true
                 .expect("start manifest");
             zip.write_all(MANIFEST.as_bytes()).expect("write manifest");
             zip.start_file(COMPONENT_ENTRY, opts).expect("start wasm");
-            zip.write_all(b"\0asm\x01\0\0\0").expect("write wasm");
+            zip.write_all(EMPTY_COMPONENT).expect("write wasm");
             zip.finish().expect("finish");
         }
         buffer.set_position(0);

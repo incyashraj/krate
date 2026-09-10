@@ -4125,7 +4125,16 @@ fn archive_carrying(extra: &[(String, Vec<u8>)]) -> Vec<u8> {
 
     let entries: Vec<(String, Vec<u8>)> = [
         ("manifest.toml".to_string(), MANIFEST.as_bytes().to_vec()),
-        ("code.wasm".to_string(), b"\0asm\x01\0\0\0".to_vec()),
+        // A real COMPONENT header. `\0asm\x01\0\0\0` is a core MODULE,
+        // which is what almost every fixture used until pack learned to tell
+        // them apart (K-272). These archives are assembled by hand rather
+        // than packed, so nothing forced the correction here -- but a
+        // fixture that is not the thing it claims to be is worth fixing on
+        // sight.
+        (
+            "code.wasm".to_string(),
+            vec![0x00, 0x61, 0x73, 0x6d, 0x0d, 0x00, 0x01, 0x00],
+        ),
     ]
     .into_iter()
     .chain(extra.iter().cloned())

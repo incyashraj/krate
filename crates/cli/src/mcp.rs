@@ -557,7 +557,7 @@ required = true
         let manifest = dir.join("manifest.toml");
         std::fs::write(&manifest, MANIFEST).expect("write manifest");
         let component = dir.join("code.wasm");
-        std::fs::write(&component, b"\0asm\x01\0\0\0").expect("write component");
+        std::fs::write(&component, b"\0asm\x0d\0\x01\0").expect("write component");
         let bundle = dir.join("demo.krate");
         krate_bundle::pack(&manifest, &component, &bundle).expect("pack");
         bundle

@@ -10,6 +10,29 @@ use std::collections::BTreeSet;
 
 use wasmparser::{Parser, Payload};
 
+/// Whether these bytes are a component rather than a core module (K-272).
+///
+/// The two are told apart by their header, and only there: wasmparser parses
+/// a core module perfectly well, so asking for its component imports returns
+/// an empty set -- exactly what a component that imports nothing returns.
+/// That is why `krate pack` accepted a module and the failure landed on
+/// whoever was sent the file.
+///
+///   component  00 61 73 6d 0d 00 01 00
+///   module     00 61 73 6d 01 00 00 00
+///                          ^^^^^^^^^^^
+///
+/// The first four bytes are the same magic. The next four are a version and
+/// a layer, and the layer is what says which of the two this is.
+pub fn is_component(bytes: &[u8]) -> bool {
+    // 8 bytes of header, then the layer field: 1 for a component, 0 for a
+    // module. Anything shorter is neither.
+    matches!(
+        bytes.get(..8),
+        Some([0x00, 0x61, 0x73, 0x6d, _, _, 0x01, 0x00])
+    )
+}
+
 /// Every interface a component imports, in sorted order.
 pub fn component_imports(bytes: &[u8]) -> Result<BTreeSet<String>, String> {
     let mut imports = BTreeSet::new();
@@ -114,6 +137,41 @@ mod tests {
     /// `starts_with("krate:")` accepted every one of these, so a component
     /// importing an interface that has never existed packed cleanly and
     /// failed later at instantiate.
+    #[test]
+    fn a_core_module_is_not_a_component() {
+        // K-272. Only the header separates them: wasmparser parses a core
+        // module happily, so asking for its component imports gives an empty
+        // set -- the same answer a component that imports nothing gives.
+        // That is how `krate pack` accepted a module.
+        assert!(
+            is_component(&[0x00, 0x61, 0x73, 0x6d, 0x0d, 0x00, 0x01, 0x00]),
+            "a component header must be recognised"
+        );
+        assert!(
+            !is_component(&[0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]),
+            "a core module must NOT pass as a component"
+        );
+
+        // The import check genuinely cannot tell them apart, which is the
+        // reason this function exists. If this ever stops being true, the
+        // header check could be simplified away.
+        let module = &[0x00u8, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00];
+        let component = &[0x00u8, 0x61, 0x73, 0x6d, 0x0d, 0x00, 0x01, 0x00];
+        assert_eq!(
+            component_imports(module).map(|i| i.len()),
+            component_imports(component).map(|i| i.len()),
+            "the import check sees these as the same, so the header is the \
+             only thing that can separate them"
+        );
+
+        // Too short to have a header is not a component either.
+        assert!(!is_component(b""), "empty bytes are not a component");
+        assert!(
+            !is_component(&[0x00, 0x61, 0x73, 0x6d]),
+            "magic alone is not a component"
+        );
+    }
+
     #[test]
     fn an_invented_krate_name_is_not_a_krate_api() {
         // The empty-list fallback cannot be exercised here -- this build
