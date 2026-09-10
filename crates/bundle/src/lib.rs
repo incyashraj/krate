@@ -270,6 +270,12 @@ pub enum BundleError {
          Shorten it and pack again."
     )]
     PathTooLong { path: String },
+    #[error(
+        "could not make room to open this app: {detail}.\n\n  \
+         Opening an app unpacks it into a temporary folder first. Check \
+         there is free space on this disk."
+    )]
+    Unpack { detail: String },
     #[error("bundle contains more than {MAX_ENTRY_COUNT} files")]
     TooManyEntries,
     #[error("bundle source and SDK expand to more than {MAX_TOTAL_SOURCE_BYTES} bytes")]
@@ -290,10 +296,17 @@ impl BundleError {
     pub fn user_message(&self) -> Option<String> {
         match self {
             // A missing/unreadable file: say which and why, once.
-            BundleError::Io { path, source } => Some(if source.kind() == io::ErrorKind::NotFound {
-                format!("no file at {}", path.display())
-            } else {
-                format!("could not read {}: {}", path.display(), plain_io(source))
+            BundleError::Io { path, source } => Some(match source.kind() {
+                io::ErrorKind::NotFound => format!("no file at {}", path.display()),
+                // Opening an app unpacks it, so the commonest failure here is
+                // a WRITE, not a read -- and a full disk is the one a person
+                // can do something about (K-263).
+                io::ErrorKind::StorageFull => {
+                    "there is not enough room on this disk to open this app. \
+                     Free some space and try again."
+                        .to_string()
+                }
+                _ => format!("could not open {}: {}", path.display(), plain_io(source)),
             }),
             // A file we CAN read the shape of but not the contents: a real
             // Krate app packed with a compression method we do not support.
@@ -1019,7 +1032,13 @@ pub fn open_reader<R: Read + io::Seek>(reader: R) -> Result<OpenBundle> {
     // Judge the archive as a whole before writing any of it to disk (IC-209).
     preflight_entries(&mut archive)?;
 
-    let dir = new_extract_dir().map_err(|err| io_err(Path::new("<tempdir>"), err))?;
+    // The error tempfile returns names the directory it could not create, so
+    // it is passed through whole rather than relabelled `<tempdir>` -- a
+    // placeholder that reached people and named a file that does not exist
+    // (K-263).
+    let dir = new_extract_dir().map_err(|err| BundleError::Unpack {
+        detail: err.to_string(),
+    })?;
     let manifest_path = dir.path().join(MANIFEST_ENTRY);
     let component_path = dir.path().join(COMPONENT_ENTRY);
     let assets_path = dir.path().join("assets");
@@ -2932,6 +2951,71 @@ required = true
             a, b,
             "packing the same input twice must give the same bytes; if this \
              fails, something in the packer is reading the clock"
+        );
+    }
+
+    #[test]
+    fn a_failure_to_unpack_names_the_real_path_and_the_real_direction() {
+        // K-263. Opening an app unpacks it, so the failures that actually
+        // happen here are WRITES -- a full disk, a folder we may not write
+        // into. Both used to be reported as "could not read <tempdir>":
+        // the wrong direction, and a placeholder naming a file that does
+        // not exist.
+        //
+        // A directory we cannot write into stands in for a full disk: the
+        // archive reads fine and the write fails, which is the same shape.
+        let dir = TempDir::new().expect("tempdir");
+        let bundle = dir.path().join("b.krate");
+        fs::write(&bundle, archive_with(&[])).expect("write");
+
+        let locked = dir.path().join("locked");
+        fs::create_dir(&locked).expect("create");
+        let mut perms = fs::metadata(&locked).expect("metadata").permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o500);
+        fs::set_permissions(&locked, perms).expect("chmod");
+
+        EXTRACT_ROOT.with(|r| *r.borrow_mut() = Some(locked.clone()));
+        let opened = open(&bundle);
+        EXTRACT_ROOT.with(|r| *r.borrow_mut() = None);
+
+        let err = opened.expect_err("a directory we cannot write into must fail");
+        let message = err.user_message().unwrap_or_else(|| err.to_string());
+        assert!(
+            !message.contains("<tempdir>"),
+            "the refusal must not name a placeholder path: {message}"
+        );
+        assert!(
+            !message.contains("could not read"),
+            "the failure was a write, and must not be described as a read: {message}"
+        );
+        assert!(
+            message.contains(&locked.display().to_string()),
+            "the refusal must name the real path it failed at: {message}"
+        );
+
+        // The general io wording covers reads AND writes -- of the 40-odd
+        // places that raise one, some read the archive and some write the
+        // unpacked files -- so it must not claim a direction it cannot know.
+        let write_failed = BundleError::Io {
+            path: PathBuf::from("/some/where.krate"),
+            source: io::Error::from(io::ErrorKind::PermissionDenied),
+        };
+        let message = write_failed.user_message().expect("words for a person");
+        assert!(
+            !message.contains("could not read"),
+            "the general io wording covers writes too and must not say read: {message}"
+        );
+
+        // A full disk is the one a person can act on, so it gets its own
+        // sentence rather than an errno.
+        let full = BundleError::Io {
+            path: PathBuf::from("/some/where.krate"),
+            source: io::Error::from(io::ErrorKind::StorageFull),
+        };
+        let message = full.user_message().expect("words for a person");
+        assert!(
+            message.contains("not enough room") && message.contains("Free some space"),
+            "a full disk must say so, and say what to do: {message}"
         );
     }
 
