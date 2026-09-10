@@ -1024,14 +1024,82 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
+/// Prefix on every directory Krate unpacks into.
+///
+/// tempfile's default is `.tmp`, which is what every other program on the
+/// machine uses too. Naming ours makes them findable -- which is what lets
+/// [`sweep_abandoned_extractions`] clean up after a run that was killed
+/// before its directory could be removed (K-264).
+const EXTRACT_PREFIX: &str = "krate-open-";
+
+/// How long an abandoned directory is left alone before it is swept.
+///
+/// Long enough that a slow open in another process is never touched: opening
+/// a large bundle took 6.5 seconds in the measurement behind K-264, and an
+/// hour is three orders of magnitude past that. Short enough that a machine
+/// does not accumulate them for weeks.
+const ABANDONED_AFTER: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
 fn new_extract_dir() -> io::Result<TempDir> {
+    // Once per process, not once per open: a run that opens twenty bundles
+    // should not walk the temp directory twenty times, and anything a
+    // concurrent process leaves behind is younger than the threshold anyway.
+    static SWEPT: std::sync::Once = std::sync::Once::new();
+    SWEPT.call_once(sweep_abandoned_extractions);
+
     #[cfg(test)]
     {
         if let Some(root) = EXTRACT_ROOT.with(|r| r.borrow().clone()) {
-            return TempDir::new_in(root);
+            return tempfile::Builder::new()
+                .prefix(EXTRACT_PREFIX)
+                .tempdir_in(root);
         }
     }
-    TempDir::new()
+    tempfile::Builder::new().prefix(EXTRACT_PREFIX).tempdir()
+}
+
+/// Remove extraction directories a previous run left behind (K-264).
+///
+/// A bundle is unpacked into a directory that is removed when the value
+/// owning it drops. A hard kill runs no destructors, so the directory and
+/// everything in it stays -- measured at 200 MB from one interrupted open.
+/// A signal handler would cover Ctrl-C and not SIGKILL, and neither covers
+/// power loss; sweeping on the next open covers all three.
+///
+/// Deliberately best effort. This runs on the path that opens an app, and a
+/// permission error on somebody else's temp directory is not a reason to
+/// refuse to open a file. Anything it cannot remove is left for next time.
+fn sweep_abandoned_extractions() {
+    sweep_in(&std::env::temp_dir());
+}
+
+/// The sweep, against a named directory so it can be tested without
+/// touching the machine's real temp directory.
+fn sweep_in(root: &Path) {
+    let Ok(entries) = fs::read_dir(root) else {
+        return;
+    };
+    let now = std::time::SystemTime::now();
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if !name.starts_with(EXTRACT_PREFIX) {
+            continue;
+        }
+        // Age is read from the directory itself. A directory still being
+        // written to by a live open is young, so it is never a candidate.
+        let old_enough = entry
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .ok()
+            .and_then(|modified| now.duration_since(modified).ok())
+            .is_some_and(|age| age > ABANDONED_AFTER);
+        if old_enough {
+            let _ = fs::remove_dir_all(entry.path());
+        }
+    }
 }
 
 /// Open a bundle from any reader that can seek.
@@ -2865,6 +2933,62 @@ required = true
             signed.project_digest().expect("digest").digest,
             project,
             "signing must not change the project identity either"
+        );
+    }
+
+    /// Backdate a directory, so a test can stand in for a crash an hour ago.
+    fn set_modified(path: &Path, when: std::time::SystemTime) {
+        let file = fs::File::open(path).expect("open the directory");
+        file.set_modified(when).expect("backdate it");
+    }
+
+    #[test]
+    fn a_directory_left_by_a_killed_run_is_swept_but_a_live_one_is_not() {
+        // K-264. A hard kill runs no destructors, so the directory a bundle
+        // was being unpacked into survives -- measured at 200 MB from one
+        // interrupted open. A signal handler would cover Ctrl-C and not
+        // SIGKILL, and neither covers power loss. Sweeping on the next open
+        // covers all three.
+        //
+        // The danger in a sweep is deleting a directory another process is
+        // still using, so both halves are checked: old is removed, young is
+        // left alone.
+        let root = TempDir::new().expect("tempdir");
+
+        let abandoned = root.path().join(format!("{EXTRACT_PREFIX}abandoned"));
+        fs::create_dir(&abandoned).expect("create");
+        fs::write(abandoned.join("code.wasm"), b"left behind").expect("write");
+
+        let live = root.path().join(format!("{EXTRACT_PREFIX}live"));
+        fs::create_dir(&live).expect("create");
+        fs::write(live.join("code.wasm"), b"in use right now").expect("write");
+
+        // Something else's temp directory, which we must never touch.
+        let stranger = root.path().join(".tmpSomeoneElse");
+        fs::create_dir(&stranger).expect("create");
+        fs::write(stranger.join("data"), b"not ours").expect("write");
+
+        // Age the abandoned one past the threshold. The other two are new.
+        let long_ago =
+            std::time::SystemTime::now() - ABANDONED_AFTER - std::time::Duration::from_secs(60);
+        set_modified(&abandoned, long_ago);
+        set_modified(&stranger, long_ago);
+
+        sweep_in(root.path());
+
+        assert!(
+            !abandoned.exists(),
+            "a directory left behind by a killed run must be swept"
+        );
+        assert!(
+            live.exists(),
+            "a directory a live open is still writing into must NOT be swept \
+             -- it is young, and age is the only thing separating them"
+        );
+        assert!(
+            stranger.exists(),
+            "another program's temp directory is not ours to delete, however \
+             old it is"
         );
     }
 
