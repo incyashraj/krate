@@ -74,7 +74,9 @@ def peer_sizes():
     found.sort(key=lambda row: row[2], reverse=True)
     return found
 
-# Sustained compute, native vs Krate, from Plan/Native-Comparison-2026-07-31.md.
+# Sustained compute, native vs Krate. Measured 2026-07-31; the working notes
+# stay on the maintainer's machine rather than in the public tree, so this
+# page carries the numbers rather than pointing at a file nobody can open.
 # Not re-measurable here: it needs both a native build and a Krate build of the
 # same program, which is a benchmark harness rather than a page generator.
 COMPUTE = [
@@ -525,8 +527,8 @@ def main():
         check is what caught it. The honest worst case is <strong>5.14&times;</strong>,
         for a program that crosses the sandbox boundary constantly and computes
         almost nothing in between; that is the price of checking a permission on
-        every crossing. Full method in
-        <code>Plan/Native-Comparison-2026-07-31.md</code>.
+        every crossing. The method, the machine and the commands are recorded
+        with the measurement; the numbers above are what they produced.
       </p>
     </section>
 

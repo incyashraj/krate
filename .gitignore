@@ -92,11 +92,20 @@ ehthumbs.db
 
 # Internal working material: strategy docs, the internal guide, promo
 # tooling, design sketches, agent briefs, and local hub data. They live on
-# this machine, not in the public tree. Two Plan files stay tracked because
-# CI re-measures one and the public reports page cites the other.
+# this machine, not in the public tree.
+#
+# Two Plan files used to be exempted here, on the grounds that CI re-measured
+# one and the reports page cited the other. Measured: neither script OPENS
+# either file -- they print the paths in prose -- and both exit 0 with the
+# files absent. One of them is investor copy. So the exemptions are gone and
+# the rule is what it says.
 /Plan/*
-!/Plan/Claims-We-Can-Make.md
-!/Plan/Native-Comparison-2026-07-31.md
+# The working instructions for AI agents on this repo. They point at BUGS.md,
+# which is private, and they are about how to work here rather than about
+# Krate -- so they belong on the machine, not on the front page.
+/CLAUDE.md
+/AGENTS.md
+/.mcp.json
 /Doc/
 /Promo/
 /hub-data/

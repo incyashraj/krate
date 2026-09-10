@@ -10,7 +10,7 @@
   <meta property="og:description" content="A 2D game in 11 KB. Sandboxed code at native speed. Every chart drawn from a real measurement, with the limits published beside them." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://krate.tech/reports/" />
-  <meta property="og:image" content="https://krate.tech/og-v3.png" />
+  <meta property="og:image" content="https://krate.tech/og-v2.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <title>Krate: the measurements</title>
   <link rel="icon" href="/krate-favicon.png" />
@@ -120,7 +120,7 @@
       not contain. Where a number cannot be re-measured automatically, the method
       is written underneath it.
     </p>
-    <p class="method">Generated 2026-09-01. Anyone can reproduce it: <code>python3 scripts/build-reports-page.py</code>.</p>
+    <p class="method">Generated 2026-09-10. Anyone can reproduce it: <code>python3 scripts/build-reports-page.py</code>.</p>
 
     <section>
       <p class="eyebrow">Size</p>
@@ -142,7 +142,7 @@
   <text x="0" y="187" class="bl">eo2</text><rect x="132" y="175" width="137.3" height="18" rx="4" fill="#5c93f8"/><text x="279.3" y="189" class="bv">17.6 KB</text>
   <text x="0" y="221" class="bl">ddh</text><rect x="132" y="209" width="135.8" height="18" rx="4" fill="#5c93f8"/><text x="277.8" y="223" class="bv">17.4 KB</text>
   <text x="0" y="255" class="bl">nova</text><rect x="132" y="243" width="128.8" height="18" rx="4" fill="#5c93f8"/><text x="270.8" y="257" class="bv">16.5 KB</text>
-  <text x="0" y="289" class="bl">notes</text><rect x="132" y="277" width="118.6" height="18" rx="4" fill="#5c93f8"/><text x="260.6" y="291" class="bv">15.2 KB</text>
+  <text x="0" y="289" class="bl">notes</text><rect x="132" y="277" width="120.9" height="18" rx="4" fill="#5c93f8"/><text x="262.9" y="291" class="bv">15.5 KB</text>
   <text x="0" y="323" class="bl">savings</text><rect x="132" y="311" width="116.3" height="18" rx="4" fill="#5c93f8"/><text x="258.3" y="325" class="bv">14.9 KB</text>
   <text x="0" y="357" class="bl">fetch</text><rect x="132" y="345" width="115.5" height="18" rx="4" fill="#5c93f8"/><text x="257.5" y="359" class="bv">14.8 KB</text>
   <text x="0" y="391" class="bl">hexyl</text><rect x="132" y="379" width="113.1" height="18" rx="4" fill="#5c93f8"/><text x="255.1" y="393" class="bv">14.5 KB</text>
@@ -201,36 +201,36 @@
 
     <section>
       <p class="eyebrow">Speed</p>
-      <h2>An app opens in 17&ndash;11,181 milliseconds.</h2>
+      <h2>An app opens in 25&ndash;11,107 milliseconds.</h2>
       <p>
         One frame of 60&nbsp;fps video lasts 16.7&nbsp;ms. Most Krate apps have
         finished opening before a screen finishes drawing a single frame. The
         slowest here are the two ported desktop applications, which do real
         work on startup.
       </p>
-      <svg viewBox="0 0 640 748" role="img" class="chart" aria-label="Bar chart, longest bar is 11,181.2 ms">
-  <text x="0" y="17" class="bl">envelope</text><rect x="132" y="5" width="2.0" height="18" rx="4" fill="#7cc4a4"/><text x="144.0" y="19" class="bv">16.6 ms</text>
-  <text x="0" y="51" class="bl">rssfwd</text><rect x="132" y="39" width="2.0" height="18" rx="4" fill="#7cc4a4"/><text x="144.0" y="53" class="bv">17.9 ms</text>
-  <text x="0" y="85" class="bl">grex</text><rect x="132" y="73" width="2.0" height="18" rx="4" fill="#7cc4a4"/><text x="144.0" y="87" class="bv">29.5 ms</text>
-  <text x="0" y="119" class="bl">cubes</text><rect x="132" y="107" width="2.8" height="18" rx="4" fill="#7cc4a4"/><text x="144.8" y="121" class="bv">75.5 ms</text>
-  <text x="0" y="153" class="bl">chart</text><rect x="132" y="141" width="3.1" height="18" rx="4" fill="#7cc4a4"/><text x="145.1" y="155" class="bv">84.6 ms</text>
-  <text x="0" y="187" class="bl">savings</text><rect x="132" y="175" width="3.3" height="18" rx="4" fill="#7cc4a4"/><text x="145.3" y="189" class="bv">90.5 ms</text>
-  <text x="0" y="221" class="bl">checklist</text><rect x="132" y="209" width="3.3" height="18" rx="4" fill="#7cc4a4"/><text x="145.3" y="223" class="bv">90.7 ms</text>
-  <text x="0" y="255" class="bl">focus</text><rect x="132" y="243" width="3.4" height="18" rx="4" fill="#7cc4a4"/><text x="145.4" y="257" class="bv">93.5 ms</text>
-  <text x="0" y="289" class="bl">clocks</text><rect x="132" y="277" width="3.6" height="18" rx="4" fill="#7cc4a4"/><text x="145.6" y="291" class="bv">96.8 ms</text>
-  <text x="0" y="323" class="bl">mdview</text><rect x="132" y="311" width="3.6" height="18" rx="4" fill="#7cc4a4"/><text x="145.6" y="325" class="bv">96.9 ms</text>
-  <text x="0" y="357" class="bl">pulse</text><rect x="132" y="345" width="3.6" height="18" rx="4" fill="#7cc4a4"/><text x="145.6" y="359" class="bv">97 ms</text>
-  <text x="0" y="391" class="bl">journal</text><rect x="132" y="379" width="3.6" height="18" rx="4" fill="#7cc4a4"/><text x="145.6" y="393" class="bv">97.4 ms</text>
-  <text x="0" y="425" class="bl">eo2</text><rect x="132" y="413" width="3.7" height="18" rx="4" fill="#7cc4a4"/><text x="145.7" y="427" class="bv">101.7 ms</text>
-  <text x="0" y="459" class="bl">keyvault</text><rect x="132" y="447" width="5.1" height="18" rx="4" fill="#7cc4a4"/><text x="147.1" y="461" class="bv">139.3 ms</text>
-  <text x="0" y="493" class="bl">fetch</text><rect x="132" y="481" width="11.9" height="18" rx="4" fill="#7cc4a4"/><text x="153.9" y="495" class="bv">323 ms</text>
-  <text x="0" y="527" class="bl">contacts</text><rect x="132" y="515" width="12.1" height="18" rx="4" fill="#7cc4a4"/><text x="154.1" y="529" class="bv">329.1 ms</text>
-  <text x="0" y="561" class="bl">clip</text><rect x="132" y="549" width="12.1" height="18" rx="4" fill="#7cc4a4"/><text x="154.1" y="563" class="bv">329.3 ms</text>
-  <text x="0" y="595" class="bl">weather</text><rect x="132" y="583" width="41.8" height="18" rx="4" fill="#7cc4a4"/><text x="183.8" y="597" class="bv">1,133.1 ms</text>
-  <text x="0" y="629" class="bl">notes</text><rect x="132" y="617" width="60.2" height="18" rx="4" fill="#7cc4a4"/><text x="202.2" y="631" class="bv">1,633.4 ms</text>
-  <text x="0" y="663" class="bl">paint</text><rect x="132" y="651" width="64.2" height="18" rx="4" fill="#7cc4a4"/><text x="206.2" y="665" class="bv">1,743.5 ms</text>
-  <text x="0" y="697" class="bl">nova</text><rect x="132" y="685" width="165.2" height="18" rx="4" fill="#7cc4a4"/><text x="307.2" y="699" class="bv">4,482.9 ms</text>
-  <text x="0" y="731" class="bl">bounce</text><rect x="132" y="719" width="412.0" height="18" rx="4" fill="#7cc4a4"/><text x="554.0" y="733" class="bv">11,181.2 ms</text>
+      <svg viewBox="0 0 640 748" role="img" class="chart" aria-label="Bar chart, longest bar is 11,107 ms">
+  <text x="0" y="17" class="bl">envelope</text><rect x="132" y="5" width="2.0" height="18" rx="4" fill="#7cc4a4"/><text x="144.0" y="19" class="bv">24.8 ms</text>
+  <text x="0" y="51" class="bl">rssfwd</text><rect x="132" y="39" width="2.0" height="18" rx="4" fill="#7cc4a4"/><text x="144.0" y="53" class="bv">28.1 ms</text>
+  <text x="0" y="85" class="bl">grex</text><rect x="132" y="73" width="2.0" height="18" rx="4" fill="#7cc4a4"/><text x="144.0" y="87" class="bv">48 ms</text>
+  <text x="0" y="119" class="bl">cubes</text><rect x="132" y="107" width="2.8" height="18" rx="4" fill="#7cc4a4"/><text x="144.8" y="121" class="bv">76.6 ms</text>
+  <text x="0" y="153" class="bl">chart</text><rect x="132" y="141" width="3.5" height="18" rx="4" fill="#7cc4a4"/><text x="145.5" y="155" class="bv">94.1 ms</text>
+  <text x="0" y="187" class="bl">focus</text><rect x="132" y="175" width="3.6" height="18" rx="4" fill="#7cc4a4"/><text x="145.6" y="189" class="bv">97.7 ms</text>
+  <text x="0" y="221" class="bl">savings</text><rect x="132" y="209" width="3.7" height="18" rx="4" fill="#7cc4a4"/><text x="145.7" y="223" class="bv">100.9 ms</text>
+  <text x="0" y="255" class="bl">pulse</text><rect x="132" y="243" width="4.4" height="18" rx="4" fill="#7cc4a4"/><text x="146.4" y="257" class="bv">118.9 ms</text>
+  <text x="0" y="289" class="bl">checklist</text><rect x="132" y="277" width="4.7" height="18" rx="4" fill="#7cc4a4"/><text x="146.7" y="291" class="bv">125.6 ms</text>
+  <text x="0" y="323" class="bl">clocks</text><rect x="132" y="311" width="4.9" height="18" rx="4" fill="#7cc4a4"/><text x="146.9" y="325" class="bv">132.3 ms</text>
+  <text x="0" y="357" class="bl">journal</text><rect x="132" y="345" width="5.0" height="18" rx="4" fill="#7cc4a4"/><text x="147.0" y="359" class="bv">134.5 ms</text>
+  <text x="0" y="391" class="bl">mdview</text><rect x="132" y="379" width="5.1" height="18" rx="4" fill="#7cc4a4"/><text x="147.1" y="393" class="bv">137.7 ms</text>
+  <text x="0" y="425" class="bl">keyvault</text><rect x="132" y="413" width="5.4" height="18" rx="4" fill="#7cc4a4"/><text x="147.4" y="427" class="bv">146.9 ms</text>
+  <text x="0" y="459" class="bl">eo2</text><rect x="132" y="447" width="5.5" height="18" rx="4" fill="#7cc4a4"/><text x="147.5" y="461" class="bv">147 ms</text>
+  <text x="0" y="493" class="bl">fetch</text><rect x="132" y="481" width="12.1" height="18" rx="4" fill="#7cc4a4"/><text x="154.1" y="495" class="bv">325 ms</text>
+  <text x="0" y="527" class="bl">clip</text><rect x="132" y="515" width="12.2" height="18" rx="4" fill="#7cc4a4"/><text x="154.2" y="529" class="bv">328.8 ms</text>
+  <text x="0" y="561" class="bl">contacts</text><rect x="132" y="549" width="12.3" height="18" rx="4" fill="#7cc4a4"/><text x="154.3" y="563" class="bv">330.6 ms</text>
+  <text x="0" y="595" class="bl">weather</text><rect x="132" y="583" width="41.4" height="18" rx="4" fill="#7cc4a4"/><text x="183.4" y="597" class="bv">1,116.7 ms</text>
+  <text x="0" y="629" class="bl">notes</text><rect x="132" y="617" width="60.3" height="18" rx="4" fill="#7cc4a4"/><text x="202.3" y="631" class="bv">1,625.7 ms</text>
+  <text x="0" y="663" class="bl">paint</text><rect x="132" y="651" width="63.9" height="18" rx="4" fill="#7cc4a4"/><text x="205.9" y="665" class="bv">1,723.9 ms</text>
+  <text x="0" y="697" class="bl">nova</text><rect x="132" y="685" width="164.5" height="18" rx="4" fill="#7cc4a4"/><text x="306.5" y="699" class="bv">4,434.3 ms</text>
+  <text x="0" y="731" class="bl">bounce</text><rect x="132" y="719" width="412.0" height="18" rx="4" fill="#7cc4a4"/><text x="554.0" y="733" class="bv">11,107 ms</text>
 </svg>
       <p class="method">
         Measured while this page was generated: five runs of each app on this
@@ -270,8 +270,8 @@
         check is what caught it. The honest worst case is <strong>5.14&times;</strong>,
         for a program that crosses the sandbox boundary constantly and computes
         almost nothing in between; that is the price of checking a permission on
-        every crossing. Full method in
-        <code>Plan/Native-Comparison-2026-07-31.md</code>.
+        every crossing. The method, the machine and the commands are recorded
+        with the measurement; the numbers above are what they produced.
       </p>
     </section>
 
@@ -395,7 +395,7 @@
         <tr><td><code>eo2</code></td><td>Ported</td><td class="num">18,021</td><td>Image viewer, from 2,677 lines of desktop source</td><td class="mid">Nightly</td></tr>
         <tr><td><code>ddh</code></td><td>Filesystem</td><td class="num">17,778</td><td>Duplicate-file finder</td><td class="mid">Nightly</td></tr>
         <tr><td><code>nova</code></td><td></td><td class="num">16,881</td><td></td><td class="mid">--</td></tr>
-        <tr><td><code>notes</code></td><td></td><td class="num">15,576</td><td></td><td class="mid">--</td></tr>
+        <tr><td><code>notes</code></td><td></td><td class="num">15,835</td><td></td><td class="mid">--</td></tr>
         <tr><td><code>savings</code></td><td>Everyday app</td><td class="num">15,227</td><td>A window, a form, state that survives a restart</td><td class="mid">Nightly</td></tr>
         <tr><td><code>fetch</code></td><td></td><td class="num">15,135</td><td></td><td class="mid">--</td></tr>
         <tr><td><code>hexyl</code></td><td>Command line</td><td class="num">14,872</td><td>Hex viewer with byte-identical output to the original</td><td class="mid">Nightly</td></tr>
