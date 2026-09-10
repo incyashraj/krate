@@ -2534,6 +2534,66 @@ required = true
     /// writers"): the Rust writer refuses a literal duplicate name, so these
     /// are assembled from raw records.
     #[test]
+    fn a_duplicate_written_by_another_tool_is_refused_too() {
+        // IC-713 asks for "archives produced by multiple ZIP writers", and
+        // that is not a formality: the Rust zip crate REFUSES to write one
+        // name twice, so our own writer cannot build the archive this is
+        // about. The hand-assembled fixture elsewhere in this file covers
+        // one shape; this one was written by Python's zipfile, which emits
+        // the duplicate without complaint.
+        //
+        // Which check catches it was MEASURED, not assumed. Removing the
+        // duplicate-NAME check leaves this archive still refused, because
+        // ZipArchive deduplicates by name as it parses: it reports three
+        // entries where the EOCD declares four, and the record-count
+        // comparison fires. So a real writer's duplicate is caught by
+        // counting, and the name check is what catches the shapes where the
+        // count still agrees.
+        //
+        // That is the reason to keep both, and the reason this fixture earns
+        // its place: it is the only one here produced by a writer that
+        // genuinely emits duplicates.
+        const FIXTURE: &[u8] =
+            include_bytes!("../tests/fixtures/duplicate-from-another-writer.krate");
+
+        // The fixture must really be what it claims, or this proves nothing.
+        assert_eq!(
+            FIXTURE.windows(4).filter(|w| *w == b"PK\x01\x02").count(),
+            4,
+            "the fixture must carry four central-directory records"
+        );
+
+        let dir = TempDir::new().expect("tempdir");
+        let bundle = dir.path().join("other-writer.krate");
+        fs::write(&bundle, FIXTURE).expect("write");
+
+        let err = open(&bundle).expect_err("a duplicate must be refused");
+        let text = err.to_string();
+        assert!(
+            text.contains("names the same file twice"),
+            "it must be refused as a duplicate, not something else: {text}"
+        );
+        assert!(
+            text.contains("source/lib.rs"),
+            "the refusal must name the path: {text}"
+        );
+
+        // The count path is what fires here, so assert it directly: the
+        // archive declares more records than a parser can see, and that gap
+        // is the whole signal.
+        let declared =
+            central_directory_record_count(FIXTURE).expect("the fixture declares a record count");
+        let parsed = ZipArchive::new(io::Cursor::new(FIXTURE))
+            .expect("the fixture is a readable archive")
+            .len();
+        assert!(
+            declared > parsed,
+            "this fixture is about a writer that emits a duplicate the parser \
+             folds away: declared {declared}, parsed {parsed}"
+        );
+    }
+
+    #[test]
     fn a_duplicate_in_any_namespace_is_refused_and_named() {
         for (namespace, path) in [
             ("core", MANIFEST_ENTRY),
