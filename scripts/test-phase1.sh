@@ -58,9 +58,41 @@ fi
 #
 # Windows only. The other two lanes are green and fast, and slowing them
 # would cost real minutes to learn nothing.
+# How much of the suite actually ran (K-269).
+#
+# A test whose fixture is missing returns early and PASSES, so the count at
+# the end of a run reads as coverage when it is not: 121 tests reported ok in
+# 234 seconds on a machine where 44 of them did nothing. Each test prints a
+# skip line, but cargo captures both streams for a passing test, so those
+# lines are invisible without --nocapture -- which is why a bug report about
+# this said "ten" before anybody measured it.
+#
+# The run below already passes --nocapture, so the lines are in the log. This
+# just counts them and says so where a person will see it, at the end, next
+# to the number they were about to trust.
+log="${TMPDIR:-/tmp}/krate-phase1-$$.log"
+trap 'rm -f "$log"' EXIT
+
+# The status has to be cargo's, not tee's. `set -e` is on, so a failing run
+# would normally end the script here -- `|| status=$?` keeps it alive just
+# long enough to print the tally, and the real status is re-raised at the
+# bottom. Writing to the log and reading it back afterwards, rather than
+# piping, is what keeps the two separable.
+status=0
 if [ "${RUNNER_OS:-}" = "Windows" ]; then
   KRATE_HELLO_WASM="$HELLO_WASM" cargo test --workspace -- \
-    --nocapture --test-threads=1
+    --nocapture --test-threads=1 >"$log" 2>&1 || status=$?
 else
-  KRATE_HELLO_WASM="$HELLO_WASM" cargo test --workspace -- --nocapture
+  KRATE_HELLO_WASM="$HELLO_WASM" cargo test --workspace -- --nocapture >"$log" 2>&1 || status=$?
 fi
+cat "$log"
+
+skipped=$(grep -c "^skipping" "$log" 2>/dev/null || echo 0)
+if [ "$skipped" -gt 0 ]; then
+  echo
+  echo "NOT RUN: $skipped tests skipped because their fixtures are missing."
+  grep "^skipping" "$log" 2>/dev/null | sed 's/^skipping[: ]*//' | sort | uniq -c | sort -rn
+  echo "The number above counts them as passed. They did nothing."
+fi
+
+exit "$status"
