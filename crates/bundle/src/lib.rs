@@ -2604,6 +2604,172 @@ required = true
     }
 
     #[test]
+    fn each_kind_of_change_moves_exactly_the_identities_it_should() {
+        // IC-860. Three identities answer three questions, and the whole
+        // point is that they move INDEPENDENTLY. One digest standing in for
+        // another is the defect this row exists for -- a bundle whose source
+        // differed showed the same value under the heading "Identity"
+        // (K-245).
+        //
+        // The table below is the contract, one row per kind of change:
+        //
+        //   change            archive  execution  project
+        //   source only       yes      no         yes
+        //   sdk only          yes      no         yes
+        //   asset only        yes      yes        yes
+        //   manifest only     yes      yes        yes
+        //   component only    yes      yes        yes
+        //   packaging only    yes      no         no
+        //
+        // "packaging only" is the one that would be easiest to get wrong and
+        // the most damaging: re-compressing an app must not rename it, or
+        // every reference breaks the moment somebody mirrors it.
+        const MANIFEST_FOR_LAYERS: &str = "[app]\nid = \"com.example.layers\"\n\
+             name = \"Layers\"\nversion = \"1.0.0\"\nentry = \"code.wasm\"\n\
+             world = \"krate:app/cli@0.1.0\"\n";
+
+        struct Parts<'a> {
+            manifest: &'a str,
+            component: &'a [u8],
+            asset: &'a [u8],
+            source: &'a [u8],
+            sdk: &'a [u8],
+            stored: bool,
+        }
+        impl Default for Parts<'_> {
+            fn default() -> Self {
+                Parts {
+                    manifest: MANIFEST_FOR_LAYERS,
+                    component: b"\0asm\x01\0\0\0",
+                    asset: b"PNGDATA",
+                    source: b"fn main() {}",
+                    sdk: b"wit",
+                    stored: false,
+                }
+            }
+        }
+
+        fn build(dir: &Path, name: &str, parts: Parts<'_>) -> PathBuf {
+            let mut buf = Vec::new();
+            {
+                let mut writer = ZipWriter::new(io::Cursor::new(&mut buf));
+                let opts = SimpleFileOptions::default().compression_method(if parts.stored {
+                    CompressionMethod::Stored
+                } else {
+                    CompressionMethod::Deflated
+                });
+                for (entry, bytes) in [
+                    (PROFILE_ENTRY, b"1".as_slice()),
+                    (MANIFEST_ENTRY, parts.manifest.as_bytes()),
+                    (COMPONENT_ENTRY, parts.component),
+                    ("assets/logo.png", parts.asset),
+                    ("source/lib.rs", parts.source),
+                    ("sdk/krate.wit", parts.sdk),
+                ] {
+                    writer.start_file(entry, opts).expect("entry");
+                    writer.write_all(bytes).expect("write");
+                }
+                writer.finish().expect("finish");
+            }
+            let path = dir.join(name);
+            fs::write(&path, &buf).expect("write bundle");
+            path
+        }
+
+        let dir = TempDir::new().expect("tempdir");
+        let base_path = build(dir.path(), "base.krate", Parts::default());
+        let base = open(&base_path).expect("base opens");
+        let base_archive =
+            provenance::digest_archive_bytes(&fs::read(&base_path).expect("read")).digest;
+        let base_execution = base.digest().expect("digest").digest;
+        let base_project = base.project_digest().expect("digest").digest;
+
+        let renamed = MANIFEST_FOR_LAYERS.replace("Layers", "Renamed");
+        let cases: [(&str, Parts<'_>, bool, bool); 6] = [
+            // (what changed, parts, execution should move, project should move)
+            (
+                "source only",
+                Parts {
+                    source: b"fn main() { /* changed */ }",
+                    ..Default::default()
+                },
+                false,
+                true,
+            ),
+            (
+                "sdk only",
+                Parts {
+                    sdk: b"wit v2",
+                    ..Default::default()
+                },
+                false,
+                true,
+            ),
+            (
+                "asset only",
+                Parts {
+                    asset: b"PNGDATA2",
+                    ..Default::default()
+                },
+                true,
+                true,
+            ),
+            (
+                "manifest only",
+                Parts {
+                    manifest: &renamed,
+                    ..Default::default()
+                },
+                true,
+                true,
+            ),
+            (
+                "component only",
+                Parts {
+                    component: b"\0asm\x01\0\0\0\0",
+                    ..Default::default()
+                },
+                true,
+                true,
+            ),
+            (
+                "packaging only",
+                Parts {
+                    stored: true,
+                    ..Default::default()
+                },
+                false,
+                false,
+            ),
+        ];
+
+        for (what, parts, execution_moves, project_moves) in cases {
+            let path = build(dir.path(), "variant.krate", parts);
+            let opened = open(&path).expect("variant opens");
+            let archive = provenance::digest_archive_bytes(&fs::read(&path).expect("read")).digest;
+            let execution = opened.digest().expect("digest").digest;
+            let project = opened.project_digest().expect("digest").digest;
+
+            // Every one of these produces a different FILE, or the fixture
+            // is not testing what it claims.
+            assert_ne!(
+                archive, base_archive,
+                "{what}: the fixture must really produce different bytes"
+            );
+            assert_eq!(
+                execution != base_execution,
+                execution_moves,
+                "{what}: execution identity moved the wrong way"
+            );
+            assert_eq!(
+                project != base_project,
+                project_moves,
+                "{what}: project identity moved the wrong way"
+            );
+        }
+    }
+
+    #[test]
     fn an_envelope_field_this_build_never_heard_of_does_not_strand_the_bundle() {
         // K-266 / IC-856. The envelope exists so a NEW bundle can meet an OLD
         // reader and both behave sensibly. The first way a format grows is by
