@@ -2951,6 +2951,65 @@ fn run_with_manifest_and_explicit_grant_reaches_runtime() {
     assert!(stderr.contains("invalid wasm component"));
 }
 
+/// Looking at an app must not run it (IC-231).
+///
+/// This is the security property the inspection path exists for: somebody
+/// sent you a file, and the safe first move is to look at what it wants
+/// before deciding. If looking executed the guest, that decision would come
+/// after the app had already had its turn.
+///
+/// The other dump-caps tests use a file that is not even wasm, so nothing
+/// COULD run in them -- they prove the command tolerates junk, not that a
+/// real app stays still. This one uses a shipped app that announces itself
+/// on stdout when it runs, so the absence of that line is the evidence.
+#[test]
+fn inspecting_a_real_app_does_not_run_it() {
+    let bundle = std::path::Path::new("../../evidence/store/krate-checklist.krate");
+    assert!(
+        bundle.exists(),
+        "the shipped app this test depends on is missing: {}",
+        bundle.display()
+    );
+
+    // First establish what running it actually looks like, so the assertion
+    // below is anchored to observed behaviour rather than a guess.
+    let ran = krate()
+        .arg("run")
+        .arg(bundle)
+        .args(["--headless", "--auto-grant"])
+        .output()
+        .expect("run the app");
+    let ran_stdout = String::from_utf8_lossy(&ran.stdout).into_owned();
+    assert!(
+        ran_stdout.contains("items:"),
+        "this test depends on the app announcing itself when it runs; it \
+         printed: {ran_stdout}"
+    );
+
+    // Now inspect the same app. The announcement must not appear.
+    let looked = krate()
+        .arg("run")
+        .arg(bundle)
+        .arg("--dump-caps")
+        .output()
+        .expect("inspect the app");
+    let stdout = String::from_utf8_lossy(&looked.stdout);
+    assert!(
+        looked.status.success(),
+        "inspecting an app must succeed: {}",
+        String::from_utf8_lossy(&looked.stderr)
+    );
+    assert!(
+        stdout.contains("Effective capabilities"),
+        "inspection must actually report something: {stdout}"
+    );
+    assert!(
+        !stdout.contains("items:"),
+        "the app RAN while being inspected -- looking at a file somebody sent \
+         you must never execute it: {stdout}"
+    );
+}
+
 #[test]
 fn run_dump_caps_prints_effective_policy_without_running_component() {
     let dir = tempfile::tempdir().expect("create temp dir");
