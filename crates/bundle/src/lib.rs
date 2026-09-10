@@ -1485,6 +1485,19 @@ fn safe_source_relative_path(name: &str) -> Result<PathBuf> {
 /// this build has never heard of -- is refused rather than guessed at. The
 /// whole point of the line is that a reader which cannot honour the rules
 /// says so.
+///
+/// The FIRST LINE is the version; anything after it is ignored (K-266).
+/// That is what makes the envelope an envelope. It exists so a new bundle
+/// can meet an old reader and both behave sensibly, and the first way a
+/// format grows is by adding a line -- so a reader that refuses every line
+/// it has not seen before makes growth impossible, and does it in the field,
+/// on readers already shipped.
+///
+/// Ignoring is right for an OPTIONAL field, and it is the only kind that can
+/// exist today. A field a reader must understand cannot simply be added
+/// later without stranding every reader before it -- that is what the
+/// version number is for. Raising the version is how a bundle says "you need
+/// to understand more than you do", and an old reader already refuses those.
 fn check_profile<R: Read + io::Seek>(archive: &mut ZipArchive<R>) -> Result<()> {
     let mut entry = match archive.by_name(PROFILE_ENTRY) {
         Ok(entry) => entry,
@@ -1497,7 +1510,9 @@ fn check_profile<R: Read + io::Seek>(archive: &mut ZipArchive<R>) -> Result<()> 
             path: PathBuf::from(PROFILE_ENTRY),
             source: err,
         })?;
-    let found = text.trim();
+    // The version is the first line, so a bundle carrying fields this build
+    // has never heard of still says which rules it was written for.
+    let found = text.lines().next().unwrap_or("").trim();
     match found.parse::<u32>() {
         Ok(version) if version <= PROFILE_VERSION => Ok(()),
         _ => Err(BundleError::UnsupportedProfile {
@@ -2533,6 +2548,65 @@ required = true
     /// is IC-713's own requirement ("archives produced by multiple ZIP
     /// writers"): the Rust writer refuses a literal duplicate name, so these
     /// are assembled from raw records.
+    #[test]
+    fn an_envelope_field_this_build_never_heard_of_does_not_strand_the_bundle() {
+        // K-266 / IC-856. The envelope exists so a NEW bundle can meet an OLD
+        // reader and both behave sensibly. The first way a format grows is by
+        // adding a line -- so a reader that refuses every line it has not
+        // seen before makes growth impossible, on every reader already
+        // shipped.
+        fn bundle(dir: &Path, name: &str, profile: &[u8]) -> PathBuf {
+            let mut buf = Vec::new();
+            {
+                let mut writer = ZipWriter::new(io::Cursor::new(&mut buf));
+                let opts =
+                    SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+                writer.start_file(PROFILE_ENTRY, opts).expect("profile");
+                writer.write_all(profile).expect("write");
+                writer.start_file(MANIFEST_ENTRY, opts).expect("manifest");
+                writer.write_all(MANIFEST.as_bytes()).expect("write");
+                writer.start_file(COMPONENT_ENTRY, opts).expect("component");
+                writer.write_all(b"\0asm\x01\0\0\0").expect("write");
+                writer.finish().expect("finish");
+            }
+            let path = dir.join(name);
+            fs::write(&path, &buf).expect("write bundle");
+            path
+        }
+
+        let dir = TempDir::new().expect("tempdir");
+
+        // A supported version, plus a line written by some later Krate.
+        let with_field = bundle(
+            dir.path(),
+            "field.krate",
+            b"1\nsomething-added-later = whatever\n",
+        );
+        assert!(
+            open(&with_field).is_ok(),
+            "a generation-1 bundle carrying an unknown line must still open: \
+             refusing it is how an envelope stops being an envelope"
+        );
+
+        // The version still governs. A bundle that needs more than this
+        // build knows is still refused -- that is what raising the version
+        // is FOR, and it is the only way to demand a reader understand
+        // something new.
+        let future = bundle(dir.path(), "future.krate", b"2\nanything = here\n");
+        let err = open(&future).expect_err("a future profile must be refused");
+        let text = err.to_string();
+        assert!(
+            text.contains("profile 2"),
+            "the refusal must name the version it found: {text}"
+        );
+        assert!(
+            !text.contains("anything = here"),
+            "the version message must quote the VERSION, not the whole file -- \
+             it used to read 'profile 1\\nfuture-field = ...' is newer than \
+             'profile 1': {text}"
+        );
+    }
+
     #[test]
     fn a_duplicate_written_by_another_tool_is_refused_too() {
         // IC-713 asks for "archives produced by multiple ZIP writers", and
