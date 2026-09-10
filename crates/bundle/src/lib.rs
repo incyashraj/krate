@@ -2936,6 +2936,53 @@ required = true
     }
 
     #[test]
+    fn many_opens_of_one_bundle_at_once_do_not_collide() {
+        // IC-209 asks for concurrent opens. Every open unpacks into a
+        // directory of its own, so several at once must not see each other's
+        // files or race to the same path -- one bundle opened twice is the
+        // ordinary case (a person double-clicks, then double-clicks again).
+        let dir = TempDir::new().expect("tempdir");
+        let bundle = dir.path().join("shared.krate");
+        fs::write(
+            &bundle,
+            archive_with(&[("source/lib.rs".to_string(), b"fn main() {}".to_vec())]),
+        )
+        .expect("write");
+
+        let paths: Vec<PathBuf> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..8)
+                .map(|_| {
+                    scope.spawn(|| {
+                        let opened = open(&bundle).expect("each open must succeed");
+                        // Hold it open: the directories must coexist, not
+                        // merely be created and freed one after another.
+                        let path = opened.manifest_path().to_path_buf();
+                        assert!(path.is_file(), "each open must have its own manifest");
+                        std::thread::sleep(std::time::Duration::from_millis(20));
+                        assert!(
+                            path.is_file(),
+                            "another open must not have removed this one's files"
+                        );
+                        path
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|handle| handle.join().expect("no open may panic"))
+                .collect()
+        });
+
+        let unique: BTreeSet<&PathBuf> = paths.iter().collect();
+        assert_eq!(
+            unique.len(),
+            paths.len(),
+            "each open needs its OWN directory; two sharing one would let a \
+             second open overwrite what a first is still reading: {paths:?}"
+        );
+    }
+
+    #[test]
     fn a_damaged_signature_is_not_reported_as_unsigned() {
         // K-258. signature_envelope() used to swallow a parse failure with
         // `.ok()`, so a bundle whose signature had been edited looked exactly
