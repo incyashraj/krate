@@ -2770,6 +2770,68 @@ required = true
     }
 
     #[test]
+    fn signing_an_app_does_not_make_it_a_different_app() {
+        // IC-860. A signature is ABOUT an identity, so it cannot be part of
+        // one -- signing would otherwise change the very value it is
+        // attesting to, and no signature could ever verify against the
+        // bundle carrying it.
+        //
+        // It is also the change most likely to be made to a finished bundle,
+        // so getting it wrong would break references to every app anybody
+        // ever signed.
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("app.krate");
+        let mut buf = Vec::new();
+        {
+            let mut writer = ZipWriter::new(io::Cursor::new(&mut buf));
+            let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            for (entry, bytes) in [
+                (PROFILE_ENTRY, b"1".as_slice()),
+                (MANIFEST_ENTRY, MANIFEST.as_bytes()),
+                (COMPONENT_ENTRY, b"\0asm\x01\0\0\0"),
+                ("source/lib.rs", b"fn main() {}"),
+            ] {
+                writer.start_file(entry, opts).expect("entry");
+                writer.write_all(bytes).expect("write");
+            }
+            writer.finish().expect("finish");
+        }
+        fs::write(&path, &buf).expect("write bundle");
+
+        let (execution, project) = {
+            let opened = open(&path).expect("opens");
+            (
+                opened.digest().expect("digest").digest,
+                opened.project_digest().expect("digest").digest,
+            )
+        };
+
+        let pkcs8 = signing::SigningKey::generate_pkcs8().expect("generate");
+        let key = signing::SigningKey::from_pkcs8(&pkcs8).expect("load");
+        sign_bundle(&path, &key, "pub/test", "1.0.0", 1_700_000_000).expect("sign");
+
+        // The FILE changed -- there is a signature in it now.
+        assert_ne!(
+            fs::read(&path).expect("read"),
+            buf,
+            "signing must actually have written something"
+        );
+
+        let signed = open(&path).expect("the signed bundle opens");
+        assert_eq!(
+            signed.digest().expect("digest").digest,
+            execution,
+            "signing must not change what the app IS -- a signature attests \
+             to an identity and cannot be part of it"
+        );
+        assert_eq!(
+            signed.project_digest().expect("digest").digest,
+            project,
+            "signing must not change the project identity either"
+        );
+    }
+
+    #[test]
     fn an_envelope_field_this_build_never_heard_of_does_not_strand_the_bundle() {
         // K-266 / IC-856. The envelope exists so a NEW bundle can meet an OLD
         // reader and both behave sensibly. The first way a format grows is by
