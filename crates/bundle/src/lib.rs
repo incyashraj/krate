@@ -243,6 +243,13 @@ pub enum BundleError {
     )]
     UnsupportedProfile { found: String, supported: u32 },
     #[error(
+        "this app's format line is damaged: it should be a version number \
+         and it reads {found:?}.\n\n  \
+         No version of Krate can read this, so updating will not help. \
+         Ask whoever sent it for a fresh copy."
+    )]
+    DamagedProfile { found: String },
+    #[error(
         "{path} is not a WebAssembly component, so it cannot be packed into \
          an app.\n\n  {detail}\n\n  \
          If this came from a build, check that the build produced a \
@@ -1515,9 +1522,18 @@ fn check_profile<R: Read + io::Seek>(archive: &mut ZipArchive<R>) -> Result<()> 
     let found = text.lines().next().unwrap_or("").trim();
     match found.parse::<u32>() {
         Ok(version) if version <= PROFILE_VERSION => Ok(()),
-        _ => Err(BundleError::UnsupportedProfile {
+        // A number this build has not reached: genuinely a newer format, and
+        // updating Krate is the thing that helps.
+        Ok(_) => Err(BundleError::UnsupportedProfile {
             found: found.chars().take(32).collect(),
             supported: PROFILE_VERSION,
+        }),
+        // Not a number at all -- empty, a word, a negative. That is damage,
+        // not a version from the future, and no release will ever read it.
+        // Telling somebody to update Krate sends them to do something that
+        // cannot work (K-271).
+        Err(_) => Err(BundleError::DamagedProfile {
+            found: found.chars().take(32).collect(),
         }),
     }
 }
@@ -2381,7 +2397,14 @@ required = true
         open(&bundle).expect("a bundle we just wrote must open");
     }
 
-    /// A profile from a future Krate is refused, and says what to do.
+    /// A profile this build cannot honour is refused, and says what to do.
+    ///
+    /// "What to do" differs by case, which is the point (K-271). A version
+    /// from a future Krate is fixed by updating Krate. A format line that is
+    /// not a version at all is damage: no release will ever read it, so the
+    /// only thing that helps is a fresh copy. This test used to require both
+    /// to say "newer .krate format", which is how the wrong advice was
+    /// locked in.
     #[test]
     fn a_future_container_profile_is_refused_with_words_a_person_can_act_on() {
         let dir = TempDir::new().expect("tempdir");
@@ -2390,19 +2413,33 @@ required = true
         let bundle = dir.path().join("ok.krate");
         pack(&manifest, &component, &bundle).expect("pack");
 
-        for claimed in ["99", "not-a-number", ""] {
-            let future = dir.path().join(format!("future-{}.krate", claimed.len()));
-            rewrite_entry(&bundle, &future, PROFILE_ENTRY, claimed.as_bytes());
-            let err = open(&future)
-                .expect_err("a profile this build does not understand must be refused");
+        // A real version from later: updating is the answer.
+        let future = dir.path().join("future.krate");
+        rewrite_entry(&bundle, &future, PROFILE_ENTRY, b"99");
+        let err = open(&future).expect_err("a future profile must be refused");
+        let text = err.to_string();
+        assert!(
+            text.contains("newer .krate format"),
+            "a later version must be named as one: {text}"
+        );
+        assert!(
+            text.contains("krate.tech/open"),
+            "and it must say where to get it: {text}"
+        );
+
+        // Not a version at all: damage, and updating would not help.
+        for claimed in ["not-a-number", ""] {
+            let damaged = dir.path().join(format!("damaged-{}.krate", claimed.len()));
+            rewrite_entry(&bundle, &damaged, PROFILE_ENTRY, claimed.as_bytes());
+            let err = open(&damaged).expect_err("a damaged profile must be refused");
             let text = err.to_string();
             assert!(
-                text.contains("newer .krate format"),
+                text.contains("damaged"),
                 "must name the real problem for {claimed:?}: {text}"
             );
             assert!(
-                text.contains("krate.tech/open"),
-                "and what to do about it: {text}"
+                text.contains("fresh copy"),
+                "and point at the thing that would help: {text}"
             );
         }
     }
@@ -2828,6 +2865,83 @@ required = true
             signed.project_digest().expect("digest").digest,
             project,
             "signing must not change the project identity either"
+        );
+    }
+
+    #[test]
+    fn a_damaged_format_line_is_not_called_a_newer_format() {
+        // K-271. Every unreadable profile used to be reported as "a newer
+        // .krate format", with advice to update Krate. For a version this
+        // build has not reached that is true and useful. For an empty line,
+        // a word, or a negative number it is false twice over: the file is
+        // damaged, and no release will ever read it, so updating cannot
+        // help.
+        fn bundle(dir: &Path, name: &str, profile: &[u8]) -> PathBuf {
+            let mut buf = Vec::new();
+            {
+                let mut writer = ZipWriter::new(io::Cursor::new(&mut buf));
+                let opts =
+                    SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+                writer.start_file(PROFILE_ENTRY, opts).expect("profile");
+                writer.write_all(profile).expect("write");
+                writer.start_file(MANIFEST_ENTRY, opts).expect("manifest");
+                writer.write_all(MANIFEST.as_bytes()).expect("write");
+                writer.start_file(COMPONENT_ENTRY, opts).expect("component");
+                writer.write_all(b"\0asm\x01\0\0\0").expect("write");
+                writer.finish().expect("finish");
+            }
+            let path = dir.join(name);
+            fs::write(&path, &buf).expect("write bundle");
+            path
+        }
+
+        let dir = TempDir::new().expect("tempdir");
+
+        // Not a version at all: damage, and say so.
+        for (what, profile) in [
+            ("an empty line", b"".as_slice()),
+            ("a word", b"banana"),
+            ("a negative number", b"-1"),
+            ("a decimal", b"1.5"),
+        ] {
+            let path = bundle(dir.path(), "damaged.krate", profile);
+            let err = open(&path).expect_err("a damaged profile must be refused");
+            assert!(
+                matches!(err, BundleError::DamagedProfile { .. }),
+                "{what} must be reported as damage: {err}"
+            );
+            let text = err.to_string();
+            assert!(
+                text.contains("fresh copy"),
+                "{what} must point at the thing that would help: {text}"
+            );
+            assert!(
+                !text.contains("newer .krate format"),
+                "{what} is not a newer format: {text}"
+            );
+        }
+
+        // A version this build has not reached: genuinely newer, and
+        // updating IS the answer. Checked at the top of the range too, so
+        // the split is about parsing rather than about size.
+        for (what, profile) in [
+            ("the next version", b"2".as_slice()),
+            ("a far future version", b"4294967295"),
+        ] {
+            let path = bundle(dir.path(), "future.krate", profile);
+            let err = open(&path).expect_err("a future profile must be refused");
+            assert!(
+                matches!(err, BundleError::UnsupportedProfile { .. }),
+                "{what} must be reported as a newer format: {err}"
+            );
+        }
+
+        // And a version that merely picked up whitespace still opens: a file
+        // is not damaged because it gained a space in transit.
+        let padded = bundle(dir.path(), "padded.krate", b"  1  \n");
+        assert!(
+            open(&padded).is_ok(),
+            "a version with surrounding whitespace must still be read"
         );
     }
 
