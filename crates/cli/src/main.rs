@@ -5386,6 +5386,24 @@ fn publish_bundle(
         anyhow::bail!("bundle is empty: {}", bundle.display());
     }
 
+    // Open it properly, here, before anything leaves the machine (K-273).
+    //
+    // This used to be `open(bundle).ok()` further down, purely to read the
+    // app's name -- so a bundle Krate would refuse to RUN was treated as one
+    // that merely had no name, and was uploaded anyway. Publishing is the
+    // moment a file stops being one person's problem, and an archive whose
+    // reviewed copy is not the copy that runs is exactly the one that must
+    // not reach a hub.
+    //
+    // Opening once and keeping it also means every refusal `open` already
+    // gives -- duplicates, non-ASCII names, paths too deep, forged sizes, a
+    // damaged format line -- is a publish refusal without writing any of
+    // them again.
+    let opened = krate_bundle::open(bundle).map_err(|err| {
+        let detail = err.user_message().unwrap_or_else(|| err.to_string());
+        anyhow::anyhow!("this bundle cannot be opened, so it will not be published: {detail}")
+    })?;
+
     let hub = hub_override
         .map(str::to_string)
         .or_else(|| std::env::var("KRATE_HUB_URL").ok())
@@ -5399,11 +5417,7 @@ fn publish_bundle(
     let app_name = name_override
         .map(str::to_string)
         .filter(|name| !name.trim().is_empty())
-        .or_else(|| {
-            krate_bundle::open(bundle)
-                .ok()
-                .map(|opened| opened.manifest().app.name.clone())
-        })
+        .or_else(|| Some(opened.manifest().app.name.clone()))
         .unwrap_or_default();
     // The error message told people to run `krate publish` and be asked, so
     // it had better ask. Signing in here rather than failing with advice is

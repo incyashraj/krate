@@ -4003,6 +4003,54 @@ fn the_send_advice_does_not_promise_a_double_click_to_someone_without_krate() {
     );
 }
 
+/// Publishing must not upload what Krate would refuse to open (K-273).
+///
+/// Publish is the moment a file stops being one person's problem. It used to
+/// open the bundle only to read its name, with `.ok()`, so a malformed
+/// archive was treated as one that merely had no name and went to the hub
+/// anyway. An archive whose reviewed copy is not the copy that runs is
+/// exactly the one that must never be published.
+///
+/// The hub is pointed at a dead port throughout, so a failure to refuse
+/// shows up as a CONNECTION error -- proof the bundle got as far as the
+/// network -- rather than as anything leaving this machine.
+#[test]
+fn publishing_refuses_a_bundle_that_cannot_be_opened() {
+    let dir = tempfile::tempdir().expect("temp dir");
+
+    // Names one file twice: what a reviewer reads is not what runs.
+    let duplicate = dir.path().join("duplicate.krate");
+    std::fs::write(&duplicate, archive_naming_one_path_twice("source/lib.rs"))
+        .expect("write fixture");
+
+    let output = krate()
+        .arg("publish")
+        .arg(&duplicate)
+        .env("KRATE_HUB_URL", "http://127.0.0.1:1")
+        .output()
+        .expect("run publish");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "a malformed bundle must not publish: {stderr}"
+    );
+    assert!(
+        stderr.contains("will not be published"),
+        "the refusal must say the publish did not happen: {stderr}"
+    );
+    assert!(
+        stderr.contains("names the same file twice"),
+        "and why, in the words the opener already uses: {stderr}"
+    );
+    assert!(
+        !stderr.contains("could not reach the hub"),
+        "it must be refused BEFORE the network is touched -- reaching the \
+         hub means a real hub would have taken it: {stderr}"
+    );
+}
+
 /// A signature that was damaged after signing is said out loud (K-258).
 ///
 /// Storage already treats it as unsigned, which is the safe handling. What
