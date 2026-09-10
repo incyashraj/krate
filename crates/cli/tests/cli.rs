@@ -3853,6 +3853,40 @@ fn a_path_that_cannot_be_unpacked_everywhere_is_refused_by_the_binary_people_run
     );
 }
 
+/// Telling a sender to "just send it" is only true for a receiver who
+/// already has Krate (K-195).
+///
+/// To anyone else a .krate is an unclaimed extension: the system offers
+/// "Choose Application" or the App Store, and neither finds Krate. The whole
+/// promise is "make an app you can actually send someone", so the sentence
+/// that ends the build has to be true for the person receiving it, and name
+/// the way through for the one who has nothing installed.
+#[test]
+fn the_send_advice_does_not_promise_a_double_click_to_someone_without_krate() {
+    // The advice lives in the source of the build path, so it is read from
+    // there rather than by running a multi-minute build.
+    let source = include_str!("../src/main.rs");
+    let body: String = source
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(
+        !body.contains("to someone; they can double-click it to open it"),
+        "the unconditional promise is back: a receiver without Krate gets a \
+         dead file, and this sentence tells the sender otherwise"
+    );
+    assert!(
+        body.contains("to someone who has Krate"),
+        "the advice must say WHO can double-click it"
+    );
+    assert!(
+        body.contains("krate card"),
+        "the advice must name the way through for a receiver without Krate"
+    );
+}
+
 /// A signature that was damaged after signing is said out loud (K-258).
 ///
 /// Storage already treats it as unsigned, which is the safe handling. What

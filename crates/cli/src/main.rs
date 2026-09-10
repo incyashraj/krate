@@ -7101,8 +7101,23 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     }
     if acceptance.accepted {
         println!();
+        // "They can double-click it" is only true if they already have Krate
+        // (K-195). To anyone who does not, a .krate is an unclaimed
+        // extension: the system offers "Choose Application" or the App
+        // Store, and neither finds Krate. Saying only the happy half is how
+        // a first impression becomes "he sent me a broken file".
+        //
+        // So: say what is true for someone who has Krate, and name the way
+        // through for someone who does not. `krate card` is the answer worth
+        // pointing at -- the receiver sees the app running and where to get
+        // the player, before they have anything installed.
         println!(
-            "Send {} to someone; they can double-click it to open it.",
+            "Send {} to someone who has Krate and they can double-click it.",
+            req.output.display()
+        );
+        println!(
+            "  For someone who does not: `krate card {}` makes a picture of \
+             it that is still the app, and says where to get Krate.",
             req.output.display()
         );
     }
