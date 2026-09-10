@@ -589,6 +589,13 @@ impl Runtime {
             Err(RuntimeError::Instantiate(message)) if message.contains("all fuel consumed") => {
                 Ok(RunOutcome::LimitExceeded("fuel exhausted".to_string()))
             }
+            // A component with no `run` is the commonest authoring mistake
+            // there is, and the message for it was written and never raised
+            // (K-268). Said in our own words here, so it keeps saying the
+            // same thing when the engine reworks its own.
+            Err(RuntimeError::Instantiate(message)) if message.contains("no export `run`") => {
+                Err(RuntimeError::MissingRunExport)
+            }
             other => other,
         }
     }
@@ -2890,6 +2897,48 @@ mod tests {
             .expect_err("invalid bytes must fail");
 
         assert!(matches!(err, RuntimeError::InvalidComponent(_)));
+    }
+
+    /// A component with no `run` is told so in our own words (K-268).
+    ///
+    /// This is the commonest authoring mistake there is -- a component that
+    /// builds, parses and instantiates, and exports nothing to call. The
+    /// message for it was written, kept compiling, and never raised: the
+    /// engine's own wording surfaced instead, so the variant read as covered
+    /// while nothing constructed it.
+    ///
+    /// The fixture is a GENUINE empty component, which is worth spelling out
+    /// because almost every fixture in this repo is not one. A component
+    /// header is `00 61 73 6d 0d 00 01 00`; the stub used elsewhere is
+    /// `00 61 73 6d 01 00 00 00`, which is a MODULE header. That difference
+    /// is why an export check over those fixtures was reverted before -- they
+    /// cannot carry an export, because they are not components.
+    #[test]
+    fn a_component_with_nothing_to_call_says_exactly_that() {
+        let config = Config::default();
+        let runtime = Runtime::new(&config).expect("runtime should initialize");
+
+        // A valid, empty component: parses, instantiates, exports nothing.
+        const EMPTY_COMPONENT: &[u8] = &[0x00, 0x61, 0x73, 0x6d, 0x0d, 0x00, 0x01, 0x00];
+        let err = runtime
+            .run_bytes(EMPTY_COMPONENT, &config)
+            .expect_err("a component with no run export must fail");
+        assert!(
+            matches!(err, RuntimeError::MissingRunExport),
+            "it must be reported as a missing export, not as a generic \
+             instantiate failure: {err}"
+        );
+
+        // And it must stay distinct from a file that will not parse at all --
+        // one is an app that needs fixing, the other is not an app.
+        let module = &[0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00];
+        let err = runtime
+            .run_bytes(module, &config)
+            .expect_err("a module is not a component");
+        assert!(
+            matches!(err, RuntimeError::InvalidComponent(_)),
+            "a module must be refused as invalid, not as a missing export: {err}"
+        );
     }
 
     /// A recipient is told what is actually wrong with the file (K-267).
