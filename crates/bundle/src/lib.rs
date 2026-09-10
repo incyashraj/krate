@@ -295,6 +295,18 @@ impl BundleError {
             } else {
                 format!("could not read {}: {}", path.display(), plain_io(source))
             }),
+            // A file we CAN read the shape of but not the contents: a real
+            // Krate app packed with a compression method we do not support.
+            // Saying "not a Krate app, or damaged" here is simply false, and
+            // it sends whoever packed it to rebuild a file that is fine
+            // (K-259). The one fact that helps them is the one to give.
+            BundleError::Archive(zip::result::ZipError::UnsupportedArchive(detail)) => {
+                Some(format!(
+                    "this Krate app is packed a way this version cannot read ({detail}). \
+                     The file itself looks fine -- pack it again with `krate pack`, \
+                     which writes the compression every Krate reads."
+                ))
+            }
             // A corrupt or non-.krate file surfaces from the zip layer as an
             // "EOCD"/"invalid Zip archive" chain. None of that helps a person.
             BundleError::Archive(_) => Some(
@@ -2786,6 +2798,97 @@ required = true
                 );
             }
         }
+    }
+
+    #[test]
+    fn the_compression_method_and_entry_order_are_read_correctly() {
+        // IC-208's close_with names "compression method" and "reordered
+        // archive". Both are things another writer may legitimately do
+        // differently, and a bundle is not ours to reject for either.
+        fn archive(method: CompressionMethod, component_first: bool) -> Vec<u8> {
+            let mut buf = Vec::new();
+            {
+                let mut writer = ZipWriter::new(io::Cursor::new(&mut buf));
+                let opts = SimpleFileOptions::default().compression_method(method);
+                let write_manifest = |w: &mut ZipWriter<io::Cursor<&mut Vec<u8>>>| {
+                    w.start_file(MANIFEST_ENTRY, opts).expect("manifest");
+                    w.write_all(MANIFEST.as_bytes()).expect("write");
+                };
+                let write_component = |w: &mut ZipWriter<io::Cursor<&mut Vec<u8>>>| {
+                    w.start_file(COMPONENT_ENTRY, opts).expect("component");
+                    w.write_all(b"\0asm\x01\0\0\0").expect("write");
+                };
+                if component_first {
+                    write_component(&mut writer);
+                    write_manifest(&mut writer);
+                } else {
+                    write_manifest(&mut writer);
+                    write_component(&mut writer);
+                }
+                writer.finish().expect("finish");
+            }
+            buf
+        }
+
+        let dir = TempDir::new().expect("tempdir");
+        for (what, method, component_first) in [
+            (
+                "deflate, manifest first",
+                CompressionMethod::Deflated,
+                false,
+            ),
+            ("stored (uncompressed)", CompressionMethod::Stored, true),
+            (
+                "deflate, component first",
+                CompressionMethod::Deflated,
+                true,
+            ),
+        ] {
+            let bundle = dir.path().join("profile.krate");
+            fs::write(&bundle, archive(method, component_first)).expect("write");
+            assert!(
+                open(&bundle).is_ok(),
+                "a bundle written {what} is a legitimate bundle and must open"
+            );
+        }
+    }
+
+    #[test]
+    fn a_compression_we_cannot_read_says_so_instead_of_calling_it_damaged() {
+        // K-259. Every zip-layer failure used to collapse into "this is not a
+        // Krate app, or the file is damaged". For a real app packed with a
+        // method we do not support, both halves of that are false, and it
+        // sends whoever packed it to rebuild a file that is fine.
+        //
+        // The zip crate separates "probably not a zip" from "a zip we cannot
+        // read"; the mapping now does too.
+        let unsupported = BundleError::Archive(zip::result::ZipError::UnsupportedArchive(
+            "Compression method",
+        ));
+        let message = unsupported
+            .user_message()
+            .expect("an unsupported archive must have words for a person");
+        assert!(
+            message.contains("cannot read"),
+            "it must say we cannot read it: {message}"
+        );
+        assert!(
+            !message.contains("not a Krate app"),
+            "it must NOT claim the file is not a Krate app: {message}"
+        );
+        assert!(
+            message.contains("krate pack"),
+            "it must say what to do about it: {message}"
+        );
+
+        // A file that really is not an archive keeps the old, correct words.
+        let invalid =
+            BundleError::Archive(zip::result::ZipError::InvalidArchive("Invalid zip header"));
+        let message = invalid.user_message().expect("words for a person");
+        assert!(
+            message.contains("not a Krate app"),
+            "a genuinely invalid file must still say so: {message}"
+        );
     }
 
     #[test]
