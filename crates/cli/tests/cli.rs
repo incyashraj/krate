@@ -2832,6 +2832,63 @@ fn fuel_limit_exits_with_limit_code() {
     assert!(stderr.contains("limit exceeded: fuel exhausted"));
 }
 
+/// The fuel limit, on a fixture that is always here (K-269).
+///
+/// The test above needs a component built by a CI lane that installs the
+/// component toolchain. Where that fixture is absent it RETURNS, and a test
+/// that returns reports ok -- 0.00s for something meant to spawn a process
+/// and run a component to exhaustion. Ten tests in this file were in that
+/// state, so the suite counted them as passing while they did nothing.
+///
+/// This one uses a shipped app, which is tracked in git and therefore
+/// present on every machine and in every lane. Stopping a run is the
+/// difference between "the app failed" and "the app was stopped", and that
+/// distinction should not be tested only where a toolchain happens to be
+/// installed.
+#[test]
+fn stopping_a_run_is_reported_differently_from_the_app_failing() {
+    let bundle = std::path::Path::new("../../evidence/store/krate-checklist.krate");
+    assert!(
+        bundle.exists(),
+        "the shipped app this test depends on is missing: {}",
+        bundle.display()
+    );
+
+    // One unit of fuel cannot get a real app through instantiation.
+    let stopped = krate()
+        .arg("run")
+        .arg(bundle)
+        .args(["--headless", "--auto-grant", "--fuel", "1"])
+        .output()
+        .expect("run the app with almost no fuel");
+    assert_eq!(
+        stopped.status.code(),
+        Some(4),
+        "a run stopped by a limit has its own exit code: {}",
+        String::from_utf8_lossy(&stopped.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&stopped.stderr);
+    assert!(
+        stderr.contains("fuel exhausted"),
+        "it must say WHY it stopped: {stderr}"
+    );
+
+    // The same app with a normal budget runs, so the exit code above is
+    // about the limit and not about the app being broken.
+    let ran = krate()
+        .arg("run")
+        .arg(bundle)
+        .args(["--headless", "--auto-grant"])
+        .output()
+        .expect("run the app normally");
+    assert_eq!(
+        ran.status.code(),
+        Some(0),
+        "the same app must run when it is given room: {}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+}
+
 #[test]
 fn memory_limit_exits_with_limit_code() {
     let Some(path) = configured_hello_component() else {
