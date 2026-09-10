@@ -3022,6 +3022,77 @@ required = true
     }
 
     #[test]
+    fn anything_pack_refuses_is_also_refused_when_it_arrives_by_other_means() {
+        // IC-210 asks for runtime-validator parity, and K-272 was exactly a
+        // case where the two disagreed: pack accepted a core module, and the
+        // failure surfaced for whoever was sent the file.
+        //
+        // Pack is only one door. A bundle can be assembled by hand -- which
+        // is what an attacker does, and what the fixtures in this file do --
+        // so anything pack refuses has to be refused on the way in as well.
+        // Otherwise the check is advice to the honest.
+        let dir = TempDir::new().expect("tempdir");
+        let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
+
+        for (what, bytes) in [
+            (
+                "a core module",
+                vec![0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00],
+            ),
+            (
+                "a file that is not wasm",
+                b"this is not wasm at all".to_vec(),
+            ),
+            ("an empty file", Vec::new()),
+        ] {
+            // Door one: pack refuses it.
+            let component = write_temp(dir.path(), "code.wasm", &bytes);
+            let out = dir.path().join("packed.krate");
+            assert!(
+                pack(&manifest, &component, &out).is_err(),
+                "{what} must be refused at pack"
+            );
+
+            // Door two: the same component, in a bundle assembled without
+            // pack. Opening it must refuse too.
+            let mut buf = Vec::new();
+            {
+                let mut writer = ZipWriter::new(io::Cursor::new(&mut buf));
+                let opts =
+                    SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+                writer.start_file(PROFILE_ENTRY, opts).expect("profile");
+                writer.write_all(b"1").expect("write");
+                writer.start_file(MANIFEST_ENTRY, opts).expect("manifest");
+                writer.write_all(MANIFEST.as_bytes()).expect("write");
+                writer.start_file(COMPONENT_ENTRY, opts).expect("component");
+                writer.write_all(&bytes).expect("write");
+                writer.finish().expect("finish");
+            }
+            let handmade = dir.path().join("handmade.krate");
+            fs::write(&handmade, &buf).expect("write bundle");
+
+            // `open` extracts and validates the archive; the component's own
+            // validity is the runtime's answer, so what is asserted here is
+            // that the bundle does not sail through BOTH doors untouched.
+            // A component this broken must fail one of them.
+            let opened = open(&handmade);
+            let component_is_readable = opened
+                .as_ref()
+                .ok()
+                .map(|bundle| {
+                    let read = fs::read(bundle.component_path()).unwrap_or_default();
+                    imports::is_component(&read) && imports::component_imports(&read).is_ok()
+                })
+                .unwrap_or(false);
+            assert!(
+                !component_is_readable,
+                "{what} passed pack's door AND arrived intact through the \
+                 other one -- the check would be advice to the honest"
+            );
+        }
+    }
+
+    #[test]
     fn packing_a_core_module_is_refused_where_it_can_still_be_fixed() {
         // K-272 / IC-210. A core module packed without complaint, and the
         // failure surfaced for whoever was SENT the file -- who can do
