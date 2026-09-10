@@ -2549,6 +2549,61 @@ required = true
     /// writers"): the Rust writer refuses a literal duplicate name, so these
     /// are assembled from raw records.
     #[test]
+    fn signing_a_bundle_preserves_an_envelope_it_does_not_understand() {
+        // IC-856 asks for read-write preservation, and signing is the one
+        // path that reads a bundle and writes it back. If it dropped or
+        // rewrote entries it does not understand, then adding a signature
+        // would quietly strip whatever a later Krate had put there -- and
+        // the bundle would come out different from the one that was
+        // reviewed.
+        let dir = TempDir::new().expect("tempdir");
+        let bundle = dir.path().join("app.krate");
+
+        const PROFILE: &[u8] = b"1\nsomething-added-later = whatever\n";
+        let mut buf = Vec::new();
+        {
+            let mut writer = ZipWriter::new(io::Cursor::new(&mut buf));
+            let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            writer.start_file(PROFILE_ENTRY, opts).expect("profile");
+            writer.write_all(PROFILE).expect("write");
+            writer.start_file(MANIFEST_ENTRY, opts).expect("manifest");
+            writer.write_all(MANIFEST.as_bytes()).expect("write");
+            writer.start_file(COMPONENT_ENTRY, opts).expect("component");
+            writer.write_all(b"\0asm\x01\0\0\0").expect("write");
+            writer.finish().expect("finish");
+        }
+        fs::write(&bundle, &buf).expect("write bundle");
+
+        let pkcs8 = signing::SigningKey::generate_pkcs8().expect("generate a key");
+        let key = signing::SigningKey::from_pkcs8(&pkcs8).expect("load the key");
+        sign_bundle(&bundle, &key, "pub/test", "1.0.0", 1_700_000_000).expect("sign");
+
+        let mut signed = ZipArchive::new(io::Cursor::new(
+            fs::read(&bundle).expect("read the signed bundle"),
+        ))
+        .expect("the signed bundle is an archive");
+
+        let mut profile = Vec::new();
+        signed
+            .by_name(PROFILE_ENTRY)
+            .expect("the profile must survive signing")
+            .read_to_end(&mut profile)
+            .expect("read the profile");
+        assert_eq!(
+            profile, PROFILE,
+            "signing must copy an envelope it does not understand through \
+             untouched, or adding a signature silently rewrites the bundle"
+        );
+
+        // And the signature really was added, so this is not passing because
+        // signing quietly did nothing.
+        assert!(
+            signed.by_name(SIGNATURE_ENTRY).is_ok(),
+            "the bundle must actually be signed"
+        );
+    }
+
+    #[test]
     fn an_envelope_field_this_build_never_heard_of_does_not_strand_the_bundle() {
         // K-266 / IC-856. The envelope exists so a NEW bundle can meet an OLD
         // reader and both behave sensibly. The first way a format grows is by
