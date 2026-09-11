@@ -3660,7 +3660,7 @@ fn a_run_report_names_the_exact_artifact_it_ran() {
     // The hello fixture is Phase 1 and cannot instantiate, which would fail
     // this test for a reason that has nothing to do with identities.
     let Some(component) = configured_krate_clock_component() else {
-        eprintln!("skipping: no krate-clock component configured");
+        eprintln!("skipping: KRATE_CLOCK_WASM is not set (no krate-clock component configured)");
         return;
     };
     let dir = tempfile::tempdir().expect("temp dir");
@@ -3745,7 +3745,7 @@ fn a_run_report_names_the_exact_artifact_it_ran() {
 #[test]
 fn a_signed_app_that_was_changed_afterwards_is_refused() {
     let Some(component) = configured_krate_clock_component() else {
-        eprintln!("skipping: no krate-clock component configured");
+        eprintln!("skipping: KRATE_CLOCK_WASM is not set (no krate-clock component configured)");
         return;
     };
     let dir = tempfile::tempdir().expect("temp dir");
@@ -4055,18 +4055,25 @@ fn the_reported_commit_is_the_one_this_binary_was_built_from() {
     // HEAD itself. With a dirty tree it may be HEAD and must say dirty,
     // because the source that produced it is not the source that commit
     // names.
+    //
+    // The question is the one build.rs asked, verbatim -- it leaves out the
+    // wit-bindgen output that a workspace build rewrites, because that is
+    // exactly what dirtied CI's tree between the stamp and this test.
+    let query: Vec<&str> = env!("KRATE_DIRTY_TREE_QUERY").split('\t').collect();
     let tracked_changes = std::process::Command::new("git")
-        .args(["status", "--porcelain", "--untracked-files=no"])
+        .args(&query)
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .output()
         .expect("git status");
-    let tree_is_dirty = !String::from_utf8_lossy(&tracked_changes.stdout)
+    let changed = String::from_utf8_lossy(&tracked_changes.stdout)
         .trim()
-        .is_empty();
+        .to_owned();
+    let tree_is_dirty = !changed.is_empty();
 
     assert_eq!(
         dirty, tree_is_dirty,
-        "the stamp says dirty={dirty} and the tracked files say {tree_is_dirty}"
+        "the stamp says dirty={dirty} and the tracked files say {tree_is_dirty}; \
+         git status shows:\n{changed}"
     );
 
     if !tree_is_dirty {
@@ -4609,6 +4616,19 @@ required = true
 
 /// Minimal valid component: the phase 2 smoke fixture built by CI.
 fn smoke_component() -> Option<PathBuf> {
+    // The lane that builds the fixture hands it over in
+    // KRATE_PHASE2_SMOKE_WASM; a developer's checkout has it at the build
+    // path below. Only the second was looked at, so the six gift-and-wrap
+    // tests behind this helper skipped in EVERY CI run while the lane's
+    // count said they passed -- the categorised report found them (IC-706).
+    // No skip line here: each caller prints its own, and one test printing
+    // two would break the report's reconciliation.
+    if let Some(path) = std::env::var_os("KRATE_PHASE2_SMOKE_WASM") {
+        let path = workspace_path(PathBuf::from(path));
+        if path.exists() {
+            return Some(path);
+        }
+    }
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../test/integration/phase2-smoke/target/wasm32-wasip1/release/phase2_smoke.wasm");
     path.exists().then_some(path)

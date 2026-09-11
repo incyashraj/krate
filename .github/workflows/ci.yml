@@ -1605,6 +1605,11 @@ jobs:
         run: python3 scripts/check-test-skips.py
       - name: Prove the silent-skip checker still bites
         run: python3 scripts/check-test-skips.py --self-test
+      # The categorised test report (IC-706) splits cargo's pass count into
+      # ran / optional skip / mandatory setup failure. Prove the classifier
+      # still tells them apart before any lane leans on its numbers.
+      - name: Prove the test report still classifies skips
+        run: python3 scripts/test-report.py --self-test
       # The fundraising documents are private, so CI cannot read them. What CI
       # can do is prove the checker still works, so that when it runs on the
       # founder's machine before anything is sent, it means something (IC-655).

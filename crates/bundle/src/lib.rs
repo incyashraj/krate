@@ -3941,10 +3941,20 @@ required = true
         fs::write(&bundle, archive_with(&[])).expect("write");
 
         let locked = dir.path().join("locked");
-        fs::create_dir(&locked).expect("create");
-        let mut perms = fs::metadata(&locked).expect("metadata").permissions();
-        std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o500);
-        fs::set_permissions(&locked, perms).expect("chmod");
+        #[cfg(unix)]
+        {
+            fs::create_dir(&locked).expect("create");
+            let mut perms = fs::metadata(&locked).expect("metadata").permissions();
+            std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o500);
+            fs::set_permissions(&locked, perms).expect("chmod");
+        }
+        // Windows has no mode bit that refuses writes INTO a directory (its
+        // read-only attribute only protects the entry itself), so the write
+        // is refused a different way there: `locked` is a plain file, and
+        // nothing can be created underneath a file on any OS. Same shape --
+        // the archive reads fine and the first write fails.
+        #[cfg(not(unix))]
+        fs::write(&locked, b"not a directory").expect("create");
 
         EXTRACT_ROOT.with(|r| *r.borrow_mut() = Some(locked.clone()));
         let opened = open(&bundle);

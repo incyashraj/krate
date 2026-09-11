@@ -11,6 +11,12 @@ fn main() {
 
     println!("cargo:rustc-env=KRATE_RUSTC_VERSION={rustc}");
     println!("cargo:rustc-env=KRATE_GIT_SHA={git_sha}");
+    // The exact query that decided `-dirty`, tab-joined, so the test that
+    // checks the stamp against the tree asks git the same question.
+    println!(
+        "cargo:rustc-env=KRATE_DIRTY_TREE_QUERY={}",
+        DIRTY_TREE_QUERY.join("\t")
+    );
 
     embed_icon();
     embed_sdk();
@@ -268,11 +274,32 @@ fn git_build_identity() -> String {
     // differ from the commit being named, because that is what the number
     // claims. Counting untracked files would mark almost every working
     // checkout dirty and the marker would stop meaning anything.
-    match command_output("git", &["status", "--porcelain", "--untracked-files=no"]) {
+    //
+    // Generated bindings are left out for the same reason. Every
+    // `*/src/bindings.rs` in this repo is emitted by wit-bindgen from
+    // tracked WIT, and building an app rewrites it -- so a workspace build
+    // dirties the tree AFTER this crate was stamped, and CI saw a binary
+    // that said "clean" beside a tree that said otherwise. A rewritten
+    // binding is not a change to the source the commit names; a change to
+    // the WIT it came from is, and that file still counts.
+    match command_output("git", &DIRTY_TREE_QUERY) {
         Some(status) if !status.is_empty() => format!("{sha}-dirty"),
         _ => sha,
     }
 }
+
+/// The `git status` that decides `-dirty`. Handed to the test that checks
+/// the stamp against the tree (as `KRATE_DIRTY_TREE_QUERY`), so the two
+/// cannot drift apart: `(top)` asks from the repository root whatever the
+/// current directory is, and the `(top,exclude)` pathspec drops the
+/// generated bindings.
+const DIRTY_TREE_QUERY: [&str; 5] = [
+    "status",
+    "--porcelain",
+    "--untracked-files=no",
+    ":(top)",
+    ":(top,exclude)*/src/bindings.rs",
+];
 
 fn command_output(program: &str, args: &[&str]) -> Option<String> {
     let output = Command::new(program).args(args).output().ok()?;

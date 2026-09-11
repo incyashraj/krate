@@ -87,12 +87,30 @@ else
 fi
 cat "$log"
 
-skipped=$(grep -c "^skipping" "$log" 2>/dev/null || echo 0)
-if [ "$skipped" -gt 0 ]; then
-  echo
-  echo "NOT RUN: $skipped tests skipped because their fixtures are missing."
-  grep "^skipping" "$log" 2>/dev/null | sed 's/^skipping[: ]*//' | sort | uniq -c | sort -rn
-  echo "The number above counts them as passed. They did nothing."
+# The categorised report (IC-706): what cargo's "passed" actually contains --
+# tests that reached their assertions, OPTIONAL skips (a language variant
+# built by a later step, a platform the test does not cover), and SETUP
+# FAILURES (a fixture the lane was supposed to provide and did not). The
+# last is the one that matters: it is coverage the lane claims and does not
+# have. Six gift-and-wrap tests skipped in every CI run this way, counted
+# as passed, until the report was first run over a lane log.
+#
+# In CI the lane provides every mandatory fixture, so a setup failure there
+# is a broken lane and fails it (--strict; test 1421, IC-709). On a
+# developer's machine the same report is advice: it says which fixtures
+# would widen the run and who builds them, and leaves cargo's status alone.
+echo
+report_status=0
+if [ -n "${CI:-}" ]; then
+  python3 "$ROOT/scripts/test-report.py" "$log" --strict || report_status=$?
+else
+  python3 "$ROOT/scripts/test-report.py" "$log" || report_status=$?
+fi
+# A report that could not be produced, or that found a hole, must not be
+# hidden behind a green cargo run. cargo's own failure still comes first.
+if [ "$status" -eq 0 ] && [ "$report_status" -ne 0 ]; then
+  echo "the test report did not come out clean (exit $report_status); see above" >&2
+  status="$report_status"
 fi
 
 exit "$status"

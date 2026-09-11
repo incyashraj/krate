@@ -51,7 +51,7 @@ fn gpu_matches_cpu_painter_on_geometry() {
     let mut gpu = match krate_presenter_gpu::OffscreenPresenter::new() {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("skipping: {e}");
+            eprintln!("skipping: no GPU adapter for the offscreen presenter ({e})");
             return;
         }
     };
@@ -142,7 +142,7 @@ fn gpu_text_matches_cpu_vector_ink() {
     let mut gpu = match krate_presenter_gpu::OffscreenPresenter::new() {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("skipping: {e}");
+            eprintln!("skipping: no GPU adapter for the offscreen presenter ({e})");
             return;
         }
     };
@@ -224,7 +224,7 @@ fn gpu_image_matches_cpu_painter() {
     let mut gpu = match krate_presenter_gpu::OffscreenPresenter::new() {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("skipping: {e}");
+            eprintln!("skipping: no GPU adapter for the offscreen presenter ({e})");
             return;
         }
     };
