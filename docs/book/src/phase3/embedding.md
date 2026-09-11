@@ -82,9 +82,11 @@ Field notes:
   exits `5` in that case, matching the interactive flow.
 - `exit.class` is one of `success`, `permission-denied` (app exit code 5 by
   Krate convention, or a refusal before the run), `app-error`,
-  `limit-exceeded`, `invalid-component`, or `trap`. `exit.code` is `null`
-  when the runtime stopped the component (`limit-exceeded`,
-  `invalid-component`, `trap`).
+  `limit-exceeded`, `invalid-component`, `no-matching-world` (a loose
+  component whose imports or `run` signature fit no world this Krate hosts;
+  decided by inspection, before anything runs), or `trap`. `exit.code` is
+  `null` when the runtime stopped the component (`limit-exceeded`,
+  `invalid-component`, `no-matching-world`, `trap`).
 - `duration_ms` is `null` when the run was refused before starting.
 - `stdout` holds the app's captured stdout as lossy UTF-8.
 

@@ -220,6 +220,107 @@ pub enum RuntimeWorld {
     Gui,
 }
 
+/// The world a loose component was matched to by inspection (IC-231).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectedWorld {
+    /// `krate:phase1/host`, `run: func()`. The prototype contract, hosted
+    /// through its own bindings so a file from then still opens.
+    Legacy,
+    /// `krate:app/cli`: `run: func() -> s32`, no UI imports.
+    Cli,
+    /// `krate:app/gui`: the CLI surface plus `krate:ui` and friends.
+    Gui,
+}
+
+impl SelectedWorld {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Legacy => "krate:phase1/app@0.0.1",
+            Self::Cli => krate_manifest::PHASE2_CLI_WORLD,
+            Self::Gui => krate_manifest::PHASE3_GUI_WORLD,
+        }
+    }
+}
+
+/// What a component's `run` export returns: nothing (the legacy world) or
+/// an exit code (every current world).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RunShape {
+    Unit,
+    ExitCode,
+}
+
+/// Read the `run` export's type without instantiating anything.
+///
+/// A component with no `run` is the commonest authoring mistake there is
+/// (K-268) and is named as such; one whose `run` has the wrong shape fits
+/// no world, and the refusal says what shape it has.
+fn run_export_shape(engine: &Engine, component: &Component) -> Result<RunShape> {
+    use wasmtime::component::types::ComponentItem;
+    use wasmtime::component::Type;
+
+    let ty = component.component_type();
+    let Some((_, item)) = ty.exports(engine).find(|(name, _)| *name == "run") else {
+        return Err(RuntimeError::MissingRunExport);
+    };
+    let ComponentItem::ComponentFunc(func) = item.ty else {
+        return Err(RuntimeError::NoMatchingWorld(
+            "`run` is exported, but not as a function".to_string(),
+        ));
+    };
+    if func.params().count() != 0 {
+        return Err(RuntimeError::NoMatchingWorld(
+            "`run` takes parameters; every Krate world's `run` takes none".to_string(),
+        ));
+    }
+    let results: Vec<Type> = func.results().collect();
+    match results.as_slice() {
+        [] => Ok(RunShape::Unit),
+        [Type::S32] => Ok(RunShape::ExitCode),
+        other => Err(RuntimeError::NoMatchingWorld(format!(
+            "`run` returns {other:?}; a Krate app's `run` returns an s32 exit code"
+        ))),
+    }
+}
+
+/// wasmtime's link errors carry a multi-line context chain; the first line
+/// names the import, which is the part a person needs.
+fn first_line(err: &wasmtime::Error) -> String {
+    let text = err.to_string();
+    text.lines()
+        .next()
+        .unwrap_or("could not link")
+        .trim()
+        .to_string()
+}
+
+/// An instantiation failure with its causes kept, one line each (IC-231).
+///
+/// wasmtime's headline for a module start that traps is "error while
+/// executing at wasm backtrace: ..." and the fact -- "wasm trap: wasm
+/// `unreachable` instruction executed" -- is the cause underneath. Rendering
+/// only the headline dropped the reason; rendering the chain whole pasted a
+/// backtrace into a sentence. The first line of each cause, joined, keeps
+/// the reason and leaves the offsets out.
+fn instantiate_error(err: &wasmtime::Error) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    let mut cause: Option<&(dyn std::error::Error + 'static)> = Some(err.as_ref());
+    while let Some(current) = cause {
+        let line = current
+            .to_string()
+            .lines()
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if !line.is_empty() && !parts.iter().any(|p| p.contains(&line)) {
+            parts.push(line);
+        }
+        cause = current.source();
+    }
+    parts.join(": ")
+}
+
 /// Errors surfaced by the Phase 1 runtime.
 #[derive(Debug, Error)]
 pub enum RuntimeError {
@@ -233,6 +334,10 @@ pub enum RuntimeError {
     Instantiate(String),
     #[error("component does not export a callable `run` function")]
     MissingRunExport,
+    /// The component's imports and `run` signature fit no world this
+    /// runtime hosts. Decided before anything is instantiated (IC-231).
+    #[error("this component fits no Krate world: {0}")]
+    NoMatchingWorld(String),
     #[error("component trapped while running: {0}")]
     Trap(String),
 }
@@ -600,39 +705,102 @@ impl Runtime {
         }
     }
 
+    /// A loose component, no manifest to say which world: choose the world
+    /// from what the component asks for, then instantiate it exactly once
+    /// (IC-231).
+    ///
+    /// This used to instantiate in the legacy world, and on ANY error try
+    /// the CLI world, and on any error again the GUI world -- so a module
+    /// start that trapped, or a limit that bit during initialisation, read
+    /// as "wrong world, try the next", ran the component three times, and
+    /// reported whatever the last world happened to say: a type error from
+    /// a world the component was never meant for. Now the world is chosen
+    /// by inspection, and whatever goes wrong afterwards is what actually
+    /// went wrong.
     fn run_component_auto(
         &self,
         component: &LoadedComponent,
         config: &Config,
         output: OutputMode,
     ) -> Result<RunOutcome> {
-        match self.run_phase1_component(component, config, output.clone()) {
-            Ok(outcome) => Ok(outcome),
-            Err(err) => {
-                // A component that ran out of fuel is not a component in the
-                // wrong world: retrying it in two more worlds only burns the
-                // same empty budget again. The caller classifies it, so this
-                // just must not swallow it first.
-                if matches!(&err, RuntimeError::Instantiate(m) if m.contains("all fuel consumed")) {
-                    return Err(err);
-                }
-                #[cfg(feature = "phase2-bindings")]
-                if matches!(err, RuntimeError::Instantiate(_)) {
-                    return match self.run_phase2_component(component, config, output.clone()) {
-                        Ok(outcome) => Ok(outcome),
-                        // A Phase 3 GUI component imports krate:ui, which the
-                        // CLI world linker cannot satisfy — fall through to the
-                        // gui world path before giving up.
-                        Err(RuntimeError::Instantiate(_)) => {
-                            self.run_phase3_gui_component(component, config, output)
-                        }
-                        Err(err) => Err(err),
-                    };
-                }
+        match self.select_world(component)? {
+            SelectedWorld::Legacy => self.run_phase1_component(component, config, output),
+            #[cfg(feature = "phase2-bindings")]
+            SelectedWorld::Cli => self.run_phase2_component(component, config, output),
+            #[cfg(feature = "phase2-bindings")]
+            SelectedWorld::Gui => self.run_phase3_gui_component(component, config, output),
+            #[cfg(not(feature = "phase2-bindings"))]
+            SelectedWorld::Cli | SelectedWorld::Gui => Err(RuntimeError::Instantiate(
+                "the runtime was built without current Krate world bindings".to_string(),
+            )),
+        }
+    }
 
-                Err(err)
+    /// Which world a component fits, decided from its imports and its `run`
+    /// export alone. Nothing is instantiated and no guest code runs (IC-231):
+    /// imports are checked by asking each world's linker whether it could
+    /// link the component (`instantiate_pre`, which resolves and type-checks
+    /// imports and stops there), and the export by reading its type.
+    ///
+    /// Worlds are tried narrowest first -- legacy, CLI, GUI -- so a component
+    /// that fits more than one (the CLI surface is a subset of the GUI one)
+    /// gets the smallest world that provides everything it asks for. A
+    /// component that fits none is refused with every world's reason, the
+    /// widest world's first, because that is the one closest to fitting.
+    pub fn select_world(&self, component: &LoadedComponent) -> Result<SelectedWorld> {
+        let run = run_export_shape(&self.engine, &component.component)?;
+        let mut reasons: Vec<String> = Vec::new();
+
+        // The legacy world's `run` returns nothing; every current world's
+        // returns an exit code. The signature alone settles which family a
+        // component belongs to, before any import is looked at.
+        match run {
+            RunShape::Unit => match self.phase1_linker()?.instantiate_pre(&component.component) {
+                Ok(_) => return Ok(SelectedWorld::Legacy),
+                Err(err) => reasons.push(format!("legacy world: {err}")),
+            },
+            RunShape::ExitCode => {
+                reasons.push("legacy world: `run` returns a value there".to_string())
             }
         }
+
+        #[cfg(feature = "phase2-bindings")]
+        if run == RunShape::ExitCode {
+            match self.phase2_linker()?.instantiate_pre(&component.component) {
+                Ok(_) => return Ok(SelectedWorld::Cli),
+                Err(err) => reasons.push(format!("cli world: {}", first_line(&err))),
+            }
+            match self
+                .phase3_gui_linker()?
+                .instantiate_pre(&component.component)
+            {
+                Ok(_) => return Ok(SelectedWorld::Gui),
+                Err(err) => reasons.push(format!("gui world: {}", first_line(&err))),
+            }
+        }
+
+        // Widest world's reason first: it is the one closest to fitting, so
+        // its complaint names the import no world provides.
+        reasons.reverse();
+        Err(RuntimeError::NoMatchingWorld(reasons.join("; ")))
+    }
+
+    fn phase1_linker(&self) -> Result<wasmtime::component::Linker<HostState>> {
+        let mut linker = wasmtime::component::Linker::new(&self.engine);
+        App::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state)
+            .map_err(|err| RuntimeError::Instantiate(err.to_string()))?;
+        Ok(linker)
+    }
+
+    #[cfg(feature = "phase2-bindings")]
+    fn phase2_linker(&self) -> Result<wasmtime::component::Linker<HostState>> {
+        let mut linker = wasmtime::component::Linker::new(&self.engine);
+        phase2_bindings::Cli::add_to_linker::<_, HasSelf<_>>(
+            &mut linker,
+            |state: &mut HostState| state.phase2(),
+        )
+        .map_err(|err| RuntimeError::Instantiate(err.to_string()))?;
+        Ok(linker)
     }
 
     fn new_store(&self, config: &Config, output: OutputMode) -> Result<Store<HostState>> {
@@ -708,9 +876,7 @@ impl Runtime {
         output: OutputMode,
     ) -> Result<RunOutcome> {
         let mut store = self.new_store(config, output)?;
-        let mut linker = wasmtime::component::Linker::new(&self.engine);
-        App::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state)
-            .map_err(|err| RuntimeError::Instantiate(err.to_string()))?;
+        let linker = self.phase1_linker()?;
 
         let bindings = match App::instantiate(&mut store, &component.component, &linker) {
             Ok(bindings) => bindings,
@@ -719,7 +885,7 @@ impl Runtime {
                     return Ok(RunOutcome::LimitExceeded(message));
                 }
 
-                return Err(RuntimeError::Instantiate(err.to_string()));
+                return Err(RuntimeError::Instantiate(instantiate_error(&err)));
             }
         };
 
@@ -742,15 +908,10 @@ impl Runtime {
         output: OutputMode,
     ) -> Result<RunOutcome> {
         let mut store = self.new_store(config, output)?;
-        let mut linker = wasmtime::component::Linker::new(&self.engine);
-        phase2_bindings::Cli::add_to_linker::<_, HasSelf<_>>(
-            &mut linker,
-            |state: &mut HostState| state.phase2(),
-        )
-        .map_err(|err| RuntimeError::Instantiate(err.to_string()))?;
+        let linker = self.phase2_linker()?;
 
         let bindings = phase2_bindings::Cli::instantiate(&mut store, &component.component, &linker)
-            .map_err(|err| RuntimeError::Instantiate(err.to_string()))?;
+            .map_err(|err| RuntimeError::Instantiate(instantiate_error(&err)))?;
 
         let code = match bindings.call_run(&mut store) {
             Ok(code) => code,
@@ -780,9 +941,6 @@ impl Runtime {
         config: &Config,
         output: OutputMode,
     ) -> Result<RunOutcome> {
-        use phase2_bindings::krate::{fs, io, locale, net, random, resources, store, time};
-        use phase3_gui_bindings::krate::{audio, camera, gfx, speech, ui};
-
         let mut store = self.new_store(config, output)?;
         let gui_host = phase3_gui_host::Phase3GuiHost::new(
             UapiGuard::new(config.session_policy.clone()),
@@ -800,6 +958,24 @@ impl Runtime {
         .with_layout_check(config.check_layout)
         .with_chosen_files(store.data().chosen.clone());
         store.data_mut().phase3_gui = Some(gui_host);
+
+        let linker = self.phase3_gui_linker()?;
+
+        let bindings =
+            phase3_gui_bindings::Gui::instantiate(&mut store, &component.component, &linker)
+                .map_err(|err| RuntimeError::Instantiate(instantiate_error(&err)))?;
+
+        let outcome = bindings.call_run(&mut store);
+        self.finish_phase3_gui_run(&mut store, outcome)
+    }
+
+    /// The GUI world's linker: the whole Phase 2 surface plus the Phase 3
+    /// interfaces. Built without a store, so world selection can ask it
+    /// whether a component links before anything is instantiated.
+    #[cfg(feature = "phase2-bindings")]
+    fn phase3_gui_linker(&self) -> Result<wasmtime::component::Linker<HostState>> {
+        use phase2_bindings::krate::{fs, io, locale, net, random, resources, store, time};
+        use phase3_gui_bindings::krate::{audio, camera, gfx, speech, ui};
 
         let mut linker = wasmtime::component::Linker::new(&self.engine);
 
@@ -867,12 +1043,16 @@ impl Runtime {
         link_gui!(camera::capture);
         link_gui!(speech::transcription);
 
-        let bindings =
-            phase3_gui_bindings::Gui::instantiate(&mut store, &component.component, &linker)
-                .map_err(|err| RuntimeError::Instantiate(err.to_string()))?;
+        Ok(linker)
+    }
 
-        let outcome = bindings.call_run(&mut store);
-
+    /// Everything a GUI run does after `run` returns, whatever it returned.
+    #[cfg(feature = "phase2-bindings")]
+    fn finish_phase3_gui_run(
+        &self,
+        store: &mut Store<HostState>,
+        outcome: std::result::Result<i32, wasmtime::Error>,
+    ) -> Result<RunOutcome> {
         // Write the usability report before anything else can return, so a run
         // that trapped or ran out of fuel still reports what it saw. An app
         // that dies halfway is exactly the kind this stage exists to describe,
@@ -2886,6 +3066,183 @@ mod tests {
                 path: "./notes/today.txt".to_string(),
             }))
             .is_ok());
+    }
+
+    /// World selection by inspection (IC-231). Every component here is
+    /// written in the text format: the SDK would not compile one that
+    /// imports an interface Krate never defined or whose start traps.
+    #[cfg(feature = "phase2-bindings")]
+    mod world_selection {
+        use crate::{Config, RunOutcome, Runtime, RuntimeError, SelectedWorld};
+
+        /// One imported function, named the way the linker sees it: the
+        /// instance (interface) it lives in, its name, and its type in the
+        /// text format. An import has to ask for something REAL: an empty
+        /// instance type is satisfied by every linker, so it selects nothing.
+        type Import = (&'static str, &'static str, &'static str);
+        const CLOCK: Import = ("krate:time/clock@0.1.0", "now-millis", "(result u64)");
+        const ARGS: Import = ("krate:io/args@0.1.0", "raw", "(result string)");
+        const EVENTS: Import = (
+            "krate:ui/events@0.1.0",
+            "gamepad-connected",
+            "(result bool)",
+        );
+        const LEGACY: Import = ("krate:phase1/host@0.0.1", "exit", "(param \"code\" s32)");
+        const WRONG_VERSION: Import = ("krate:time/clock@9.9.9", "now-millis", "(result u64)");
+        const INVENTED: Import = ("krate:evil/backdoor@0.1.0", "open", "(result bool)");
+
+        /// A component importing `imports`, exporting `run` with the given
+        /// result type, and optionally a core start function that traps the
+        /// moment the component is instantiated.
+        fn component(imports: &[Import], run_result: &str, trapping_start: bool) -> Vec<u8> {
+            let mut wat = String::from("(component\n");
+            for (instance, name, ty) in imports {
+                wat.push_str(&format!(
+                    "  (import \"{instance}\" (instance (export \"{name}\" (func {ty}))))\n"
+                ));
+            }
+            let core_result = match run_result {
+                "" => "",
+                "s32" => " (result i32)",
+                _ => panic!("core shape for {run_result}"),
+            };
+            let core_body = if run_result.is_empty() {
+                ""
+            } else {
+                " i32.const 0"
+            };
+            wat.push_str(&format!(
+                "  (core module $m\n    (func (export \"run\"){core_result}{core_body})\n"
+            ));
+            if trapping_start {
+                wat.push_str("    (func $boom unreachable)\n    (start $boom)\n");
+            }
+            wat.push_str("  )\n  (core instance $i (instantiate $m))\n");
+            let lifted_result = if run_result.is_empty() {
+                String::new()
+            } else {
+                format!(" (result {run_result})")
+            };
+            wat.push_str(&format!(
+                "  (func $run{lifted_result} (canon lift (core func $i \"run\")))\n  \
+                 (export \"run\" (func $run))\n)\n"
+            ));
+            wat::parse_str(&wat).expect("the test's own component must parse")
+        }
+
+        fn runtime() -> (Runtime, Config) {
+            let config = Config::default();
+            let runtime = Runtime::new(&config).expect("runtime");
+            (runtime, config)
+        }
+
+        #[test]
+        fn each_world_is_chosen_from_imports_and_the_run_signature_alone() {
+            let (runtime, _) = runtime();
+            let select = |bytes: &[u8]| {
+                let loaded = runtime.load_component(bytes).expect("loads");
+                runtime.select_world(&loaded)
+            };
+
+            // Exact legacy, CLI and GUI worlds.
+            assert_eq!(
+                select(&component(&[LEGACY], "", false)).expect("legacy"),
+                SelectedWorld::Legacy
+            );
+            assert_eq!(
+                select(&component(&[CLOCK, ARGS], "s32", false)).expect("cli"),
+                SelectedWorld::Cli
+            );
+            assert_eq!(
+                select(&component(&[CLOCK, EVENTS], "s32", false)).expect("gui"),
+                SelectedWorld::Gui
+            );
+            // A component that fits more than one world gets the narrowest:
+            // no imports at all fits CLI, so it is not called a GUI app.
+            assert_eq!(
+                select(&component(&[], "s32", false)).expect("narrowest"),
+                SelectedWorld::Cli
+            );
+            assert_eq!(SelectedWorld::Cli.name(), "krate:app/cli@0.1.0");
+
+            // Wrong version: no world provides it, and the refusal names it.
+            match select(&component(&[WRONG_VERSION], "s32", false)) {
+                Err(RuntimeError::NoMatchingWorld(reason)) => assert!(
+                    reason.contains("krate:time/clock@9.9.9") && reason.starts_with("gui world:"),
+                    "the widest world's complaint comes first and names the import: {reason}"
+                ),
+                other => panic!("a wrong version must fit no world: {other:?}"),
+            }
+            // An interface Krate never defined.
+            match select(&component(&[INVENTED], "s32", false)) {
+                Err(RuntimeError::NoMatchingWorld(reason)) => {
+                    assert!(reason.contains("krate:evil/backdoor@0.1.0"), "{reason}")
+                }
+                other => panic!("an unknown interface must fit no world: {other:?}"),
+            }
+            // Ambiguous signature: `run` with the legacy shape but current
+            // imports fits neither family, and the refusal says why.
+            match select(&component(&[CLOCK], "", false)) {
+                Err(RuntimeError::NoMatchingWorld(reason)) => assert!(
+                    reason.contains("legacy world") && reason.contains("krate:time/clock"),
+                    "{reason}"
+                ),
+                other => panic!("a legacy signature with current imports fits nothing: {other:?}"),
+            }
+            // No `run` at all is the K-268 answer, not "no world".
+            let none = wat::parse_str("(component)").expect("parses");
+            assert!(matches!(select(&none), Err(RuntimeError::MissingRunExport)));
+        }
+
+        /// The whole point of choosing by inspection: a start that traps is
+        /// reported AS the trap, from the one world the component fits,
+        /// rather than being read as "wrong world" and replaced by whatever
+        /// the last world tried happened to say.
+        #[test]
+        fn a_trapping_start_is_reported_as_the_trap_and_runs_exactly_once() {
+            let (runtime, config) = runtime();
+            let bytes = component(&[CLOCK], "s32", true);
+
+            // Selection does not execute: the start would trap if it did.
+            let loaded = runtime.load_component(&bytes).expect("loads");
+            assert_eq!(
+                runtime
+                    .select_world(&loaded)
+                    .expect("selection runs nothing"),
+                SelectedWorld::Cli
+            );
+
+            // Running it hits the trap, and says so.
+            let err = runtime
+                .run_bytes(&bytes, &config)
+                .expect_err("a trapping start cannot run");
+            let text = err.to_string();
+            assert!(
+                text.contains("unreachable"),
+                "the real cause must survive -- the trap, not a type error \
+                 from some other world: {text}"
+            );
+            assert!(
+                !text.to_lowercase().contains("type mismatch") && !text.contains("gui"),
+                "no other world's complaint may replace the cause: {text}"
+            );
+        }
+
+        /// A limit that bites during instantiation is a limit, not a wrong
+        /// world: the old fallback burned the same empty budget three times.
+        #[test]
+        fn a_limit_during_instantiation_is_a_limit_not_a_wrong_world() {
+            let config = Config {
+                fuel: Some(1),
+                ..Config::default()
+            };
+            let runtime = Runtime::new(&config).expect("runtime");
+            let bytes = component(&[CLOCK], "s32", false);
+            match runtime.run_bytes(&bytes, &config) {
+                Ok(RunOutcome::LimitExceeded(what)) => assert!(what.contains("fuel"), "{what}"),
+                other => panic!("one unit of fuel must be reported as the limit: {other:?}"),
+            }
+        }
     }
 
     #[test]

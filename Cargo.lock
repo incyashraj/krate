@@ -2457,6 +2457,7 @@ dependencies = [
  "tungstenite",
  "ureq",
  "wasmtime",
+ "wat",
  "whisper-rs",
  "windows-sys 0.61.2",
  "wit-parser 0.244.0",

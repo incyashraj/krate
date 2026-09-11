@@ -140,6 +140,11 @@ nokhwa = { version = "0.10", default-features = false, features = ["input-msmf"]
 
 [dev-dependencies]
 tempfile = "3.27.0"
+# Components written in the text format for the world-selection tests: a
+# component that imports an interface Krate never defined, or whose module
+# start traps, cannot be built with cargo-component. Already in the tree
+# through wasmtime.
+wat = "1"
 criterion.workspace = true
 wit-parser.workspace = true
 

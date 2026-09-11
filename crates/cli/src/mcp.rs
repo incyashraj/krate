@@ -394,6 +394,7 @@ fn run_component_tool(arguments: &Value) -> Result<Value> {
         Err(err) => {
             let class = match &err {
                 krate_runtime::RuntimeError::InvalidComponent(_) => "invalid-component",
+                krate_runtime::RuntimeError::NoMatchingWorld(_) => "no-matching-world",
                 krate_runtime::RuntimeError::Trap(_) => "trap",
                 _ => "runtime-error",
             };

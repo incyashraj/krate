@@ -11351,6 +11351,15 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
                     Vec::new(),
                     2,
                 ),
+                // Fits no world this runtime hosts (IC-231): the same family
+                // as an invalid component -- it is not an app this Krate can
+                // run -- with its own class so an agent can tell "rebuild"
+                // from "wrong contract".
+                Err(RuntimeError::NoMatchingWorld(message)) => (
+                    RunJsonExit::failure("no-matching-world", &message),
+                    Vec::new(),
+                    2,
+                ),
                 Err(RuntimeError::Trap(message)) => {
                     (RunJsonExit::failure("trap", &message), Vec::new(), 3)
                 }
@@ -11376,6 +11385,10 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
         }
         Err(RuntimeError::InvalidComponent(message)) => {
             eprintln!("invalid wasm component: {message}");
+            Ok(2)
+        }
+        Err(RuntimeError::NoMatchingWorld(message)) => {
+            eprintln!("this component fits no Krate world: {message}");
             Ok(2)
         }
         Err(RuntimeError::Trap(message)) => {

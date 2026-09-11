@@ -4286,6 +4286,55 @@ fn a_path_outside_ascii_is_refused_by_the_binary_people_run() {
     }
 }
 
+/// A loose component that fits no Krate world is refused by inspection,
+/// before anything runs, with the import it asked for named (IC-231).
+///
+/// This is the manifestless developer path -- `krate run app.wasm` -- where
+/// the runtime used to pick a world by instantiating in each until one did
+/// not error, and then reported whatever the LAST world happened to say.
+#[test]
+fn a_loose_component_that_fits_no_world_is_refused_before_it_runs() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let wasm = dir.path().join("app.wasm");
+    std::fs::write(
+        &wasm,
+        include_bytes!("../../bundle/tests/fixtures/fits-no-world.wasm"),
+    )
+    .expect("write component");
+
+    let output = krate()
+        .arg("run")
+        .arg(&wasm)
+        .args(["--headless", "--auto-grant"])
+        .output()
+        .expect("run the loose component");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "not an app this Krate can run: {stderr}"
+    );
+    assert!(
+        stderr.contains("fits no Krate world") && stderr.contains("krate:time/clock@9.9.9"),
+        "the refusal must say which import no world provides: {stderr}"
+    );
+
+    let output = krate()
+        .args(["run", "--json"])
+        .arg(&wasm)
+        .output()
+        .expect("run --json");
+    let payload: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("the report is one JSON object");
+    assert_eq!(payload["exit"]["class"], "no-matching-world", "{payload}");
+    assert!(
+        payload["exit"]["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("krate:time/clock@9.9.9")),
+        "{payload}"
+    );
+}
+
 /// The validator and the runtime agree (IC-210, "runtime-validator parity").
 ///
 /// One function judges a component at every door -- pack, open, and so run,
