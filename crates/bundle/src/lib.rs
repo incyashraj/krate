@@ -1060,14 +1060,27 @@ fn new_extract_dir() -> io::Result<TempDir> {
     SWEPT.call_once(sweep_abandoned_extractions);
 
     #[cfg(test)]
-    {
-        if let Some(root) = EXTRACT_ROOT.with(|r| r.borrow().clone()) {
-            return tempfile::Builder::new()
-                .prefix(EXTRACT_PREFIX)
-                .tempdir_in(root);
-        }
-    }
-    tempfile::Builder::new().prefix(EXTRACT_PREFIX).tempdir()
+    let root = EXTRACT_ROOT
+        .with(|r| r.borrow().clone())
+        .unwrap_or_else(std::env::temp_dir);
+    #[cfg(not(test))]
+    let root = std::env::temp_dir();
+    tempfile::Builder::new()
+        .prefix(EXTRACT_PREFIX)
+        .tempdir_in(&root)
+        .map_err(|err| {
+            // tempfile quotes the path Debug-style, which on Windows doubles
+            // every backslash -- the K-263 test read the real path back and
+            // could not find it in the message. Say it in its own spelling,
+            // with the OS's reason and without the path repeated.
+            let reason = std::error::Error::source(&err)
+                .map(ToString::to_string)
+                .unwrap_or_else(|| err.to_string());
+            io::Error::new(
+                err.kind(),
+                format!("could not create a folder in {}: {reason}", root.display()),
+            )
+        })
 }
 
 /// Remove extraction directories a previous run left behind (K-264).
@@ -1963,8 +1976,32 @@ fn extract_entry<R: Read + io::Seek>(
 /// Anything else is passed through: this exists to rewrite the one case that
 /// is both common and unreadable, not to launder every network error into
 /// something vague.
-fn map_fetch_error(_url: &str, raw: &str) -> String {
-    if raw.contains("timed out") {
+/// Whether a ureq failure is the socket's read timeout firing.
+///
+/// Judged by the io error's KIND, found by walking the cause chain, and
+/// only then by text. Unix says "timed out reading response"; Windows says
+/// "the connected party did not properly respond after a period of time"
+/// (WSAETIMEDOUT), and a text match on the first left every Windows user
+/// with three copies of the url and two "Network Error"s instead of the
+/// plain sentence.
+fn is_read_timeout(err: &ureq::Error) -> bool {
+    let mut cause: Option<&(dyn std::error::Error + 'static)> = Some(err);
+    while let Some(current) = cause {
+        if let Some(io) = current.downcast_ref::<io::Error>() {
+            if matches!(
+                io.kind(),
+                io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
+            ) {
+                return true;
+            }
+        }
+        cause = current.source();
+    }
+    err.to_string().contains("timed out")
+}
+
+fn map_fetch_error(_url: &str, err: &ureq::Error) -> String {
+    if is_read_timeout(err) {
         return format!(
             "the server accepted the connection and then stopped responding, \
              so the download was given up on after {} seconds. Try again, or \
@@ -1972,7 +2009,7 @@ fn map_fetch_error(_url: &str, raw: &str) -> String {
             FETCH_SILENCE_TIMEOUT.as_secs()
         );
     }
-    raw.to_string()
+    err.to_string()
 }
 
 /// Fetch a bundle over the network and open it.
@@ -2010,7 +2047,7 @@ pub fn fetch(url: &str, allow_insecure_http: bool) -> Result<OpenBundle> {
         // over and the one useful phrase last. Say it plainly instead.
         BundleError::Fetch {
             url: url.to_string(),
-            message: map_fetch_error(url, &err.to_string()),
+            message: map_fetch_error(url, &err),
         }
     })?;
 
@@ -3090,7 +3127,14 @@ required = true
 
     /// Backdate a directory, so a test can stand in for a crash an hour ago.
     fn set_modified(path: &Path, when: std::time::SystemTime) {
-        let file = fs::File::open(path).expect("open the directory");
+        let mut options = fs::OpenOptions::new();
+        options.read(true);
+        // Windows refuses to open a DIRECTORY as a file ("Access is denied")
+        // unless the handle asks for backup semantics; there is no other way
+        // to get a handle to set its times through.
+        #[cfg(windows)]
+        std::os::windows::fs::OpenOptionsExt::custom_flags(&mut options, 0x0200_0000);
+        let file = options.open(path).expect("open the directory");
         file.set_modified(when).expect("backdate it");
     }
 
@@ -4699,7 +4743,7 @@ required = true
         let _ = silent.join();
 
         assert!(
-            err.to_string().contains("timed out"),
+            is_read_timeout(&err),
             "it must give up because the read timed out, not for some other \
              reason: {err}"
         );
@@ -4711,7 +4755,7 @@ required = true
 
         // And the message a person gets says what happened and what to do.
         // This is the mapping fetch() applies to exactly that error.
-        let mapped = map_fetch_error("http://example/x", &err.to_string());
+        let mapped = map_fetch_error("http://example/x", &err);
         assert!(
             mapped.contains("stopped responding") && mapped.contains("Try again"),
             "the raw ureq text is three copies of the url and two Network \
