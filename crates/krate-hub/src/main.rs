@@ -23,6 +23,7 @@ use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use sha2::{Digest, Sha256};
 
@@ -37,6 +38,18 @@ const MAX_UPLOAD_BYTES: usize = 5 * 1024 * 1024;
 /// The routes here take no large headers, so anything past this is junk or an
 /// attempt to make us buffer forever.
 const MAX_HEADER_BYTES: usize = 16 * 1024;
+
+/// How long a connection may produce NOTHING before it is dropped (K-279).
+///
+/// Without it, a client that connects and stalls -- one byte then silence,
+/// or a partial header and nothing more -- held a thread open forever, and
+/// enough of them exhaust the server for everybody. This bounds SILENCE, not
+/// total transfer: it is the socket read timeout, so every chunk that
+/// arrives resets it. A real 5 MiB upload over a poor link keeps it alive;
+/// a stalled one is released. Same reasoning and roughly the same number as
+/// the download side's FETCH_SILENCE_TIMEOUT (K-275), so the two read
+/// together.
+const CONNECTION_SILENCE_TIMEOUT: Duration = Duration::from_secs(30);
 
 struct Config {
     addr: String,
@@ -84,7 +97,7 @@ fn main() {
             Ok(stream) => {
                 let config = Arc::clone(&config);
                 std::thread::spawn(move || {
-                    if let Err(err) = handle(stream, &config) {
+                    if let Err(err) = handle(stream, &config, CONNECTION_SILENCE_TIMEOUT) {
                         // A dropped connection is normal; log at a low volume
                         // rather than crashing the server over one client.
                         eprintln!("krate-hub: connection error: {err}");
@@ -103,7 +116,14 @@ fn env_or(key: &str, default: &str) -> String {
 /// One request/response cycle. The connection is closed after (HTTP/1.0-style)
 /// because the routes are one-shot and a keep-alive loop would be more code for
 /// no benefit here.
-fn handle(mut stream: TcpStream, config: &Config) -> io::Result<()> {
+fn handle(mut stream: TcpStream, config: &Config, silence: Duration) -> io::Result<()> {
+    // Drop a connection that goes silent, before a byte of it is read
+    // (K-279). A read past the timeout returns WouldBlock/TimedOut, which
+    // surfaces as the ordinary connection error the accept loop already
+    // logs and moves on from. Passed in rather than read from the constant
+    // so a test can use a short budget instead of the real 30 seconds.
+    stream.set_read_timeout(Some(silence))?;
+
     let mut reader = BufReader::new(stream.try_clone()?);
 
     let (method, path, headers) = match read_request_head(&mut reader) {
@@ -507,6 +527,58 @@ mod tests {
     /// each was admitted here with an HTTP 200 -- measured against a live
     /// hub before the shared validator went in. A curl straight at /publish
     /// skips the client, so the client's discipline has to live here too.
+    /// A client that stalls mid-request is dropped, not held forever (K-279).
+    ///
+    /// The hub gives every connection its own thread, so a stalled one that
+    /// is never released is a thread leaked, and enough of them stop the
+    /// server for everybody. `handle` takes its silence budget as a
+    /// parameter so this can use a short one instead of the real 30s: a
+    /// client connects, sends a partial request, and goes quiet; the read
+    /// must fail within the budget rather than blocking on the socket.
+    #[test]
+    fn a_stalled_connection_is_dropped_within_the_silence_budget() {
+        use std::io::Write as _;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let config = Config {
+            addr: addr.to_string(),
+            data_dir: std::env::temp_dir().join(format!("krate-hub-test-{}", std::process::id())),
+            public_base: format!("http://{addr}"),
+        };
+        std::fs::create_dir_all(&config.data_dir).ok();
+
+        let server = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("accept");
+            let started = std::time::Instant::now();
+            // A short budget so the test is quick; the production caller
+            // passes CONNECTION_SILENCE_TIMEOUT.
+            let result = handle(stream, &config, Duration::from_millis(400));
+            (started.elapsed(), result)
+        });
+
+        // Connect, send a partial head promising a body, then go silent.
+        let mut client = TcpStream::connect(addr).expect("connect");
+        client
+            .write_all(b"POST /publish HTTP/1.0\r\nContent-Length: 100\r\n\r\nten bytes.")
+            .expect("write partial");
+
+        let (elapsed, result) = server.join().expect("server thread");
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "the hub must give up on a silent client near its budget, not \
+             block on the socket: waited {elapsed:?}"
+        );
+        assert!(
+            result.is_err(),
+            "a stalled read must surface as a connection error the accept \
+             loop logs and moves past, not a success",
+        );
+        // Keep the client alive until here so the OS does not close the
+        // socket for us and mask what is being tested.
+        drop(client);
+    }
+
     #[test]
     fn refuses_what_the_client_refuses() {
         // Names one file twice: what a reviewer reads is not what runs.
