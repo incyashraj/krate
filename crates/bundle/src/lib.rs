@@ -4477,6 +4477,48 @@ required = true
     }
 
     #[test]
+    fn the_bundle_size_limit_holds_at_exactly_the_boundary() {
+        // IC-393 asks for the cap at its exact value and one past it. The
+        // limit is 256 MiB, which is far too much to write in a test -- but
+        // `open` reads the size from the file's METADATA, so a sparse file
+        // has the apparent size without the bytes. The whole fixture costs
+        // no disk at all.
+        let dir = TempDir::new().expect("tempdir");
+
+        // One past the cap: refused for its size, naming both numbers.
+        let over = dir.path().join("over.krate");
+        fs::File::create(&over)
+            .expect("create")
+            .set_len(MAX_BUNDLE_BYTES + 1)
+            .expect("size it");
+        let err = open(&over).expect_err("a bundle over the cap must be refused");
+        assert!(
+            matches!(err, BundleError::TooLarge { .. }),
+            "it must be refused for its SIZE, not for anything else: {err}"
+        );
+        let text = err.to_string();
+        assert!(
+            text.contains(&(MAX_BUNDLE_BYTES + 1).to_string())
+                && text.contains(&MAX_BUNDLE_BYTES.to_string()),
+            "the refusal must name what arrived and what is allowed: {text}"
+        );
+
+        // Exactly the cap: the size check must NOT fire. It still fails --
+        // a file of zeros is not an archive -- and that is the point: the
+        // refusal has to come from what the bytes are, not from how many.
+        let exact = dir.path().join("exact.krate");
+        fs::File::create(&exact)
+            .expect("create")
+            .set_len(MAX_BUNDLE_BYTES)
+            .expect("size it");
+        let err = open(&exact).expect_err("a file of zeros is not an archive");
+        assert!(
+            !matches!(err, BundleError::TooLarge { .. }),
+            "a bundle of exactly the limit is within it: {err}"
+        );
+    }
+
+    #[test]
     fn a_truncated_download_is_not_blamed_on_the_file() {
         // K-274. A server understating Content-Length makes the client stop
         // reading early, and a few bytes of a zip open exactly like a
