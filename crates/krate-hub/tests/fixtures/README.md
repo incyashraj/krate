@@ -25,3 +25,16 @@ Regenerate with:
     data = bytearray(buf.getvalue()).replace(b'source/lib1.rs', b'source/lib0.rs')
     open('duplicate-source-path.krate', 'wb').write(bytes(data))
     PY
+
+## forged-size-bomb.krate
+
+A compression bomb whose source entries DECLARE ~1 byte each and each contain
+32 MiB of zeros -- 384 MiB expanded, ~393 KB on the wire. It declares small,
+so the declared-size preflight lets it through; it is refused by the guard
+that counts bytes actually WRITTEN during extraction (K-255). An honest bomb
+(one that declares its true size) is a different fixture, caught earlier at
+the preflight -- this one exercises the written-bytes path specifically.
+
+Regenerate with the script recorded in K-255's board entry, then forge every
+`source/` entry's uncompressed-size field to 1 in both the local header
+(offset 22) and the central-directory record (offset 24).

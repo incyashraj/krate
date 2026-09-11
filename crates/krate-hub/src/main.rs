@@ -691,6 +691,26 @@ mod tests {
             refusal.contains("cargo component build"),
             "and told the command that fixes it: {refusal}"
         );
+
+        // A compression bomb, and specifically a FORGED one: its source
+        // entries declare ~1 byte and each hold 32 MiB, 384 MiB expanded,
+        // ~393 KB on the wire. IC-833 names the bomb. The declared-size
+        // preflight would catch an HONEST oversize bundle earlier; this
+        // committed fixture declares small, so it exercises the guard that
+        // counts bytes actually WRITTEN (K-255). Refused before it can fill
+        // the store -- verified against a live hub at 393 KB in, 0 written.
+        const BOMB: &[u8] = include_bytes!("../tests/fixtures/forged-size-bomb.krate");
+        assert!(
+            BOMB.len() < 5 * 1024 * 1024,
+            "the bomb must be under the upload cap, or it is refused for its \
+             wire size rather than its expansion: {} bytes",
+            BOMB.len(),
+        );
+        assert!(
+            looks_like_krate(BOMB).is_err(),
+            "a bundle whose source expands past the limit must be refused, \
+             however small it is on the wire",
+        );
     }
 
     #[test]
