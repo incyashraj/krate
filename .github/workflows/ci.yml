@@ -147,6 +147,11 @@ jobs:
           key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
       - name: Install cargo-component (the port tests build a real component)
         run: cargo install cargo-component --locked --version 0.21.1
+      # The checked-in wit-bindgen output must be what this generator makes,
+      # or every build dirties the tree (IC-295). Regenerates without
+      # compiling and fails naming the packages that moved.
+      - name: Check the generated bindings are the ones checked in
+        run: sh scripts/check-bindings-fresh.sh
       - name: Warm the cargo cache for the offline port tests
         run: |
           # The port tests build a guest with CARGO_NET_OFFLINE so they
