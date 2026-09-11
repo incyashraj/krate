@@ -141,6 +141,24 @@ pub const BUNDLE_EXTENSION: &str = "krate";
 /// reference application is 26 KB, and small enough that a hostile URL cannot
 /// stream gigabytes at us.
 pub const MAX_BUNDLE_BYTES: u64 = 256 * 1024 * 1024;
+
+/// How long to wait for a host to answer at all.
+///
+/// ureq's own default, made explicit because the read timeout beside it is
+/// not defaulted and the pair should be read together.
+const FETCH_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// How long a transfer may produce NOTHING before it is given up on (K-275).
+///
+/// This is the socket's read timeout, so it bounds silence rather than total
+/// transfer time -- every chunk that arrives resets it. A slow download of a
+/// large bundle keeps it alive indefinitely; a server that accepts the
+/// connection and then never speaks trips it once.
+///
+/// Thirty seconds of complete silence is far longer than any healthy
+/// connection goes between packets, and short enough that a person is not
+/// left staring at a command that will never return.
+const FETCH_SILENCE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 /// Largest single entry we will decompress. Bounds the classic zip bomb, where
 /// a small archive expands to an enormous file.
 pub const MAX_ENTRY_BYTES: u64 = 512 * 1024 * 1024;
@@ -1902,6 +1920,29 @@ fn extract_entry<R: Read + io::Seek>(
     Ok(())
 }
 
+/// Plain words for a transfer that failed (K-275).
+///
+/// ureq stacks its own context, so a read timeout arrives as
+/// "<url>: Network Error: Network Error: Error encountered in the status
+/// line: timed out reading response" -- the url three times over and the one
+/// useful phrase last. A person needs to know the server went quiet and that
+/// trying again is worth doing.
+///
+/// Anything else is passed through: this exists to rewrite the one case that
+/// is both common and unreadable, not to launder every network error into
+/// something vague.
+fn map_fetch_error(_url: &str, raw: &str) -> String {
+    if raw.contains("timed out") {
+        return format!(
+            "the server accepted the connection and then stopped responding, \
+             so the download was given up on after {} seconds. Try again, or \
+             check the link.",
+            FETCH_SILENCE_TIMEOUT.as_secs()
+        );
+    }
+    raw.to_string()
+}
+
 /// Fetch a bundle over the network and open it.
 ///
 /// HTTPS is required unless `allow_insecure_http` is set, which exists so CI
@@ -1915,9 +1956,30 @@ pub fn fetch(url: &str, allow_insecure_http: bool) -> Result<OpenBundle> {
         });
     }
 
-    let response = ureq::get(url).call().map_err(|err| BundleError::Fetch {
-        url: url.to_string(),
-        message: err.to_string(),
+    // A server that accepts and then says nothing must not hold us forever
+    // (K-275). ureq bounds CONNECT by default and leaves READ unbounded, so
+    // a host that completes the handshake and stalls kept `krate run <url>`
+    // open with no output and nothing to retry -- the worst shape a failure
+    // can take on the receiver's path.
+    //
+    // This is the socket's read timeout, which bounds time WITHOUT DATA
+    // rather than total transfer time. That distinction is the whole reason
+    // a number this small is safe: a slow 256 MB download over a poor link
+    // keeps resetting it and is never cut off, while a silent server trips
+    // it once.
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(FETCH_CONNECT_TIMEOUT)
+        .timeout_read(FETCH_SILENCE_TIMEOUT)
+        .build();
+    let response = agent.get(url).call().map_err(|err| {
+        // ureq stacks its own context, so a timeout arrives as
+        // "<url>: Network Error: Network Error: Error encountered in the
+        // status line: timed out reading response" -- the url three times
+        // over and the one useful phrase last. Say it plainly instead.
+        BundleError::Fetch {
+            url: url.to_string(),
+            message: map_fetch_error(url, &err.to_string()),
+        }
     })?;
 
     let mut bytes = Vec::new();
@@ -4515,6 +4577,116 @@ required = true
         assert!(
             !matches!(err, BundleError::TooLarge { .. }),
             "a bundle of exactly the limit is within it: {err}"
+        );
+    }
+
+    #[test]
+    fn a_server_that_stops_responding_does_not_hold_the_run_open() {
+        // K-275. ureq bounds CONNECT and leaves READ unbounded, so a host
+        // that completes the handshake and then says nothing held
+        // `krate run <url>` open indefinitely -- no output, nothing to
+        // retry, the worst shape a failure can take on the receiver's path.
+        //
+        // The real budget is thirty seconds of silence, which is too long to
+        // sit through here. So the timeout is set SHORT for this one call,
+        // against a server that accepts and never answers, and the test
+        // requires both that it gives up and that it gives up for the right
+        // reason.
+        //
+        // An earlier version asserted only that the constant was non-zero
+        // and that a CLOSING socket ended the wait. Neither needs the
+        // timeout to exist: deleting `.timeout_read(..)` left it passing.
+        // A test that cannot fail on the defect it names is worth less than
+        // no test.
+        //
+        // What this covers, stated plainly so nobody over-reads it: that a
+        // read timeout DOES stop a silent server, and that the message it
+        // produces is one a person can act on. It builds its own agent with
+        // a short budget, so it does NOT prove that `fetch` configures one --
+        // deleting the timeout from fetch's agent leaves this green. That
+        // half is covered by a_download_gives_up_on_a_silent_server below,
+        // which drives fetch itself.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        let silent = std::thread::spawn(move || {
+            // Accept, read the request, and hold the connection open saying
+            // nothing at all.
+            if let Ok((stream, _)) = listener.accept() {
+                std::thread::sleep(std::time::Duration::from_secs(3));
+                drop(stream);
+            }
+        });
+
+        let agent = ureq::AgentBuilder::new()
+            .timeout_connect(FETCH_CONNECT_TIMEOUT)
+            .timeout_read(std::time::Duration::from_millis(300))
+            .build();
+        let started = std::time::Instant::now();
+        let err = agent
+            .get(&format!("http://127.0.0.1:{port}/x"))
+            .call()
+            .expect_err("a server that never answers must not succeed");
+        let elapsed = started.elapsed();
+        let _ = silent.join();
+
+        assert!(
+            err.to_string().contains("timed out"),
+            "it must give up because the read timed out, not for some other \
+             reason: {err}"
+        );
+        assert!(
+            elapsed < std::time::Duration::from_secs(3),
+            "it must give up on the read timeout rather than waiting for the \
+             server to close: took {elapsed:?}"
+        );
+
+        // And the message a person gets says what happened and what to do.
+        // This is the mapping fetch() applies to exactly that error.
+        let mapped = map_fetch_error("http://example/x", &err.to_string());
+        assert!(
+            mapped.contains("stopped responding") && mapped.contains("Try again"),
+            "the raw ureq text is three copies of the url and two Network \
+             Errors; a person needs the plain sentence: {mapped}"
+        );
+    }
+
+    /// `fetch` itself must carry a read timeout, not merely be able to.
+    ///
+    /// The test above proves a read timeout works and that its message is
+    /// readable. It builds its own agent, so it stays green if `fetch`
+    /// forgets to set one -- which is exactly the defect K-275 was about.
+    /// This one drives `fetch`, so the configuration is what is under test.
+    ///
+    /// Ignored by default: the real budget is thirty seconds of silence and
+    /// the point is to WAIT for it. Run it deliberately with
+    /// `cargo test -p krate-bundle -- --ignored a_download_gives_up`.
+    #[test]
+    #[ignore = "waits out the real 30s silence budget; run deliberately"]
+    fn a_download_gives_up_on_a_silent_server() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        let silent = std::thread::spawn(move || {
+            if let Ok((stream, _)) = listener.accept() {
+                // Outlive the budget, saying nothing.
+                std::thread::sleep(FETCH_SILENCE_TIMEOUT + std::time::Duration::from_secs(15));
+                drop(stream);
+            }
+        });
+
+        let started = std::time::Instant::now();
+        let err = fetch(&format!("http://127.0.0.1:{port}/x"), true)
+            .expect_err("a server that never answers must not succeed");
+        let elapsed = started.elapsed();
+        let _ = silent.join();
+
+        assert!(
+            elapsed < FETCH_SILENCE_TIMEOUT + std::time::Duration::from_secs(10),
+            "fetch must give up on its own timeout rather than waiting for \
+             the server: took {elapsed:?}"
+        );
+        assert!(
+            err.to_string().contains("stopped responding"),
+            "and say so in words a person can act on: {err}"
         );
     }
 
