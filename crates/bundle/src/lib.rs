@@ -1016,31 +1016,9 @@ pub fn open(bundle_path: &Path) -> Result<OpenBundle> {
     if size > MAX_BUNDLE_BYTES {
         return Err(BundleError::TooLarge { size });
     }
-    // Compare what the FILE claims against what the parser will see.
-    //
-    // `ZipArchive` keys entries by name, so two records with one path become
-    // one entry and the LAST wins -- silently. Reading the end-of-central-
-    // directory count is the only way to notice, and noticing matters: what
-    // a person reviews is then not what Krate extracts (K-252).
-    //
-    // Only done here, where the bytes are on disk. `open_reader` takes any
-    // reader and cannot re-read it without consuming the stream.
+    // Compare what the FILE claims against what the parser will see (K-252).
     let bytes = fs::read(bundle_path).map_err(|err| io_err(bundle_path, err))?;
-    if let Some(declared) = central_directory_record_count(&bytes) {
-        let parsed = ZipArchive::new(io::Cursor::new(&bytes))
-            .map(|archive| archive.len())
-            .unwrap_or(declared);
-        if declared > parsed {
-            return Err(BundleError::DuplicateEntry {
-                // Name it when the records can be walked; fall back to the
-                // counts only when they cannot, because a vague refusal
-                // still beats opening a file whose contents are ambiguous.
-                path: first_duplicate_record_name(&bytes).unwrap_or_else(|| {
-                    format!("{declared} entries but only {parsed} distinct names")
-                }),
-            });
-        }
-    }
+    refuse_undeclared_duplicate(&bytes)?;
 
     let file = File::open(bundle_path).map_err(|err| io_err(bundle_path, err))?;
     open_reader(file)
@@ -1136,6 +1114,51 @@ fn sweep_in(root: &Path) {
 }
 
 /// Open a bundle from any reader that can seek.
+/// Refuse an archive that declares more central-directory records than a
+/// parser can see (K-252, K-278).
+///
+/// `ZipArchive` keys entries by name, so two records naming one path become
+/// one entry and the LAST wins -- silently. The end-of-central-directory
+/// count is the only place the duplicate survives, and it is the check that
+/// catches a duplicate a real ZIP writer produced (the record-count path,
+/// not the name-comparison one).
+///
+/// This needs the whole byte string, so it belongs to the callers that hold
+/// one: `open` (from disk) and `open_bytes` (a download, a hub upload). A
+/// pure streaming `open_reader` cannot re-read its input, which is why the
+/// bytes-holding entry points exist.
+fn refuse_undeclared_duplicate(bytes: &[u8]) -> Result<()> {
+    if let Some(declared) = central_directory_record_count(bytes) {
+        let parsed = ZipArchive::new(io::Cursor::new(bytes))
+            .map(|archive| archive.len())
+            .unwrap_or(declared);
+        if declared > parsed {
+            return Err(BundleError::DuplicateEntry {
+                path: first_duplicate_record_name(bytes).unwrap_or_else(|| {
+                    format!("{declared} entries but only {parsed} distinct names")
+                }),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Open a bundle held in memory -- a download, or a hub upload (K-278).
+///
+/// The same validation as [`open`], including the record-count duplicate
+/// check that a pure streaming reader cannot do. Any caller that already
+/// has the bytes should use this rather than `open_reader`, so admission on
+/// the server is the same open the recipient runs.
+pub fn open_bytes(bytes: &[u8]) -> Result<OpenBundle> {
+    if bytes.len() as u64 > MAX_BUNDLE_BYTES {
+        return Err(BundleError::TooLarge {
+            size: bytes.len() as u64,
+        });
+    }
+    refuse_undeclared_duplicate(bytes)?;
+    open_reader(io::Cursor::new(bytes.to_vec()))
+}
+
 pub fn open_reader<R: Read + io::Seek>(reader: R) -> Result<OpenBundle> {
     let mut archive = ZipArchive::new(reader)?;
 
@@ -1992,12 +2015,6 @@ pub fn fetch(url: &str, allow_insecure_http: bool) -> Result<OpenBundle> {
             message: err.to_string(),
         })?;
 
-    if bytes.len() as u64 > MAX_BUNDLE_BYTES {
-        return Err(BundleError::TooLarge {
-            size: bytes.len() as u64,
-        });
-    }
-
     // A download that did not finish is not a damaged app (K-274).
     //
     // A server understating Content-Length makes the client stop reading
@@ -2007,7 +2024,7 @@ pub fn fetch(url: &str, allow_insecure_http: bool) -> Result<OpenBundle> {
     // the download was cut short, try again -- is the thing that helps, and
     // only this function is in a position to say it, because only this
     // function knows the bytes arrived over a network.
-    open_reader(io::Cursor::new(bytes.clone())).map_err(|err| {
+    open_bytes(&bytes).map_err(|err| {
         if matches!(err, BundleError::Archive(_)) {
             // Deliberately without a byte count. The obvious detail --
             // promised length against received length -- can never differ
@@ -3361,6 +3378,33 @@ required = true
             "the version message must quote the VERSION, not the whole file -- \
              it used to read 'profile 1\\nfuture-field = ...' is newer than \
              'profile 1': {text}"
+        );
+    }
+
+    #[test]
+    fn open_bytes_and_open_agree_on_a_duplicate_from_disk() {
+        // K-278: the record-count duplicate check lived only in `open`, so
+        // every byte-holding caller (hub upload, URL download) lost it. Both
+        // entry points must now refuse the same fixture -- the one a real
+        // ZIP writer produced, caught by counting records, not comparing
+        // names.
+        const FIXTURE: &[u8] =
+            include_bytes!("../tests/fixtures/duplicate-from-another-writer.krate");
+
+        let from_bytes = open_bytes(FIXTURE);
+        assert!(
+            matches!(from_bytes, Err(BundleError::DuplicateEntry { .. })),
+            "open_bytes must refuse the duplicate a real writer produced: {from_bytes:?}"
+        );
+
+        // And `open` from a temp file must give the identical verdict, so
+        // the two paths cannot drift.
+        let dir = TempDir::new().expect("tempdir");
+        let path = dir.path().join("dup.krate");
+        fs::write(&path, FIXTURE).expect("write");
+        assert!(
+            matches!(open(&path), Err(BundleError::DuplicateEntry { .. })),
+            "open from disk must refuse the same duplicate open_bytes does",
         );
     }
 

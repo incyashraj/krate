@@ -18,3 +18,9 @@ sha2 = "0.10.9"
 # Validate the upload really is a .krate (a zip) before we store it, using the
 # same zip crate the rest of the workspace already depends on.
 zip.workspace = true
+# The shared release-candidate validator (IC-833): admission runs the same
+# open the recipient's `krate run` will, so the hub cannot hand out a URL to
+# a bundle the client refuses. The plan names this dependency explicitly --
+# "one shared release-candidate validator used by CLI, Studio, Hub, and
+# Worker" -- so the weight is the point, not a cost.
+krate-bundle = { path = "../bundle" }

@@ -398,30 +398,30 @@ fn is_hex_hash(s: &str) -> bool {
 /// contains both `manifest.toml` and `code.wasm`. Not a full validation -- the
 /// runtime does that at run time -- just enough to refuse obvious non-bundles.
 fn looks_like_krate(bytes: &[u8]) -> Result<(), String> {
-    let cursor = io::Cursor::new(bytes);
-    let mut archive =
-        zip::ZipArchive::new(cursor).map_err(|_| "not a readable zip archive".to_string())?;
+    // Admission is the same open the recipient will run (IC-833). This used
+    // to be a two-name scan -- "accepts any PK 03 04 byte string containing
+    // two filename strings", as the register's audit put it -- so every
+    // refusal the client makes (duplicate paths, names outside ASCII, paths
+    // too deep to unpack, forged sizes, a damaged format line) was absent
+    // exactly where a curl could reach past the client (K-278). One shared
+    // validator means the hub can never admit what `krate run` refuses.
+    let opened = krate_bundle::open_bytes(bytes)
+        .map_err(|err| err.user_message().unwrap_or_else(|| err.to_string()))?;
 
-    let mut has_manifest = false;
-    let mut has_component = false;
-    for i in 0..archive.len() {
-        let entry = archive
-            .by_index(i)
-            .map_err(|err| format!("corrupt zip entry: {err}"))?;
-        match entry.name() {
-            "manifest.toml" => has_manifest = true,
-            "code.wasm" => has_component = true,
-            _ => {}
-        }
+    // And the component itself, to the same bar `krate pack` holds: a real
+    // component header, and imports that parse. A core module or a text file
+    // named code.wasm gets its URL refused here rather than its recipients
+    // getting exit 2 later (the K-272 shape, server-side).
+    let component = std::fs::read(opened.component_path())
+        .map_err(|err| format!("could not read the component back: {err}"))?;
+    if !krate_bundle::imports::is_component(&component) {
+        return Err("code.wasm is a core WebAssembly module, not a component. \
+             Build it with `cargo component build` rather than `cargo build`."
+            .to_string());
     }
-
-    if !has_manifest {
-        return Err("missing manifest.toml".to_string());
-    }
-    if !has_component {
-        return Err("missing code.wasm".to_string());
-    }
-    Ok(())
+    krate_bundle::imports::component_imports(&component)
+        .map(|_| ())
+        .map_err(|detail| format!("code.wasm is not a readable component: {detail}"))
 }
 
 fn write_response(
@@ -458,27 +458,116 @@ mod tests {
 
     /// Build a minimal valid `.krate` in memory: a zip with the two required
     /// entries. Enough to exercise `looks_like_krate` without a real component.
-    fn make_krate(manifest: bool, component: bool) -> Vec<u8> {
+    /// A real manifest and a real COMPONENT header.
+    ///
+    /// The old fixture wrote `[app]` alone and the module header
+    /// `\0asm\x01\0\0\0` -- fine for the two-name scan this file used to
+    /// do, and exactly the K-272 trap once admission became the shared
+    /// validator: a module is not a component, and an empty [app] table is
+    /// not a manifest. A fixture that is not the thing it claims to be
+    /// tests something other than what it says.
+    const MANIFEST: &str = "[app]\nid = \"com.example.hub\"\nname = \"Hub\"\n\
+                            version = \"1.0.0\"\nentry = \"code.wasm\"\n\
+                            world = \"krate:app/cli@0.1.0\"\n";
+    const EMPTY_COMPONENT: &[u8] = &[0x00, 0x61, 0x73, 0x6d, 0x0d, 0x00, 0x01, 0x00];
+
+    fn krate_of(entries: &[(&str, &[u8])]) -> Vec<u8> {
         let mut buf = Vec::new();
         {
             let mut zip = zip::ZipWriter::new(io::Cursor::new(&mut buf));
             let opts: zip::write::FileOptions<'_, ()> = zip::write::FileOptions::default();
-            if manifest {
-                zip.start_file("manifest.toml", opts).unwrap();
-                zip.write_all(b"[app]\n").unwrap();
-            }
-            if component {
-                zip.start_file("code.wasm", opts).unwrap();
-                zip.write_all(b"\0asm\x01\0\0\0").unwrap();
+            for (name, bytes) in entries {
+                zip.start_file(*name, opts).unwrap();
+                zip.write_all(bytes).unwrap();
             }
             zip.finish().unwrap();
         }
         buf
     }
 
+    fn make_krate(manifest: bool, component: bool) -> Vec<u8> {
+        let mut entries: Vec<(&str, &[u8])> = Vec::new();
+        if manifest {
+            entries.push(("manifest.toml", MANIFEST.as_bytes()));
+        }
+        if component {
+            entries.push(("code.wasm", EMPTY_COMPONENT));
+        }
+        krate_of(&entries)
+    }
+
     #[test]
     fn accepts_a_well_formed_krate() {
         assert!(looks_like_krate(&make_krate(true, true)).is_ok());
+    }
+
+    /// Admission is the same open the recipient will run (K-278 / IC-833).
+    ///
+    /// Each of these is refused by `krate run` and by `krate publish`, and
+    /// each was admitted here with an HTTP 200 -- measured against a live
+    /// hub before the shared validator went in. A curl straight at /publish
+    /// skips the client, so the client's discipline has to live here too.
+    #[test]
+    fn refuses_what_the_client_refuses() {
+        // Names one file twice: what a reviewer reads is not what runs.
+        //
+        // The zip WRITER refuses to produce this (the K-713 lesson: our own
+        // tools cannot build the archive the rule is about), so it is a
+        // committed fixture assembled by Python's zipfile with one name
+        // byte-patched to collide -- exactly what a hostile publisher does.
+        // The opener catches it via the record-count path, which is the one
+        // that fires for a real writer's duplicate.
+        const DUPLICATE: &[u8] = include_bytes!("../tests/fixtures/duplicate-source-path.krate");
+        let refusal = looks_like_krate(DUPLICATE).expect_err("a duplicate must be refused");
+        assert!(
+            refusal.contains("names the same file twice"),
+            "and refused AS a duplicate: {refusal}"
+        );
+
+        // A 200-directory path: unpacks nowhere portable.
+        let deep_name = format!(
+            "source/{}/lib.rs",
+            (0..200)
+                .map(|i| format!("d{i}"))
+                .collect::<Vec<_>>()
+                .join("/")
+        );
+        let deep = krate_of(&[
+            ("manifest.toml", MANIFEST.as_bytes()),
+            ("code.wasm", EMPTY_COMPONENT),
+            (deep_name.as_str(), b"x"),
+        ]);
+        assert!(
+            looks_like_krate(&deep).is_err(),
+            "a path too deep to unpack everywhere must be refused"
+        );
+
+        // A damaged format line.
+        let damaged = krate_of(&[
+            ("krate-profile", b"banana"),
+            ("manifest.toml", MANIFEST.as_bytes()),
+            ("code.wasm", EMPTY_COMPONENT),
+        ]);
+        assert!(
+            looks_like_krate(&damaged).is_err(),
+            "a damaged format line must be refused"
+        );
+
+        // A core module where the component belongs: the K-272 shape,
+        // server-side. The recipient would get exit 2; the publisher gets
+        // told the build command instead.
+        let module = krate_of(&[
+            ("manifest.toml", MANIFEST.as_bytes()),
+            (
+                "code.wasm",
+                &[0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00],
+            ),
+        ]);
+        let refusal = looks_like_krate(&module).expect_err("a module must be refused");
+        assert!(
+            refusal.contains("cargo component build"),
+            "and told the command that fixes it: {refusal}"
+        );
     }
 
     #[test]
