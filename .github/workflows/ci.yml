@@ -1596,6 +1596,15 @@ jobs:
       # before it is believed.
       - name: Prove the retired-claim scan still bites
         run: python3 scripts/check-claims.py --self-test
+      # A test that returns early counts as PASSED, and on a machine without
+      # the optional fixtures 44 of 121 CLI tests did exactly that (K-269;
+      # the register's audit counted 51, IC-706). The run's tally counts the
+      # skips that announce themselves; this refuses the ones that stay
+      # silent, at the source, where the pattern is visible.
+      - name: Refuse silent early returns in test suites
+        run: python3 scripts/check-test-skips.py
+      - name: Prove the silent-skip checker still bites
+        run: python3 scripts/check-test-skips.py --self-test
       # The fundraising documents are private, so CI cannot read them. What CI
       # can do is prove the checker still works, so that when it runs on the
       # founder's machine before anything is sent, it means something (IC-655).

@@ -66,6 +66,7 @@ fn a_tool_next_to_the_krate_binary_is_found() {
     });
     if cfg!(windows) {
         // A .exe cannot be faked with a script, so only assert the Unix path.
+        eprintln!("skipping the tool-beside-binary check on Windows: a .exe cannot be faked with a script");
         return;
     }
     std::fs::write(&tool, "#!/bin/sh\necho 'cargo-component 0.21.1'\n").expect("write tool");
@@ -4028,6 +4029,7 @@ fn the_reported_commit_is_the_one_this_binary_was_built_from() {
     if reported == "unknown" {
         // A build with no git at all -- a published crate, a tarball. Saying
         // "unknown" is the honest answer there.
+        eprintln!("skipping the commit-stamp check: this binary was built without git");
         return;
     }
 
@@ -4943,6 +4945,7 @@ fn a_failed_port_says_what_kind_of_failure_it_was() {
     // path, which is why they run everywhere; this one needs a file because it
     // has to append to the candidate.
     if cfg!(windows) {
+        eprintln!("skipping the script-author check on Windows: it needs a shell script the agent seam can append to");
         return;
     }
     let dir = tempfile::tempdir().expect("tempdir");
