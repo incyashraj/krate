@@ -476,6 +476,81 @@ mod tests {
         );
     }
 
+    /// The four relations a grant can have to a requirement (IC-017).
+    ///
+    /// Every grant decision reduces to one of these, and each existing test
+    /// covers a nuance of one of them without naming the discipline. This is
+    /// the table, so a regression in any relation is caught by the test that
+    /// says which relation broke:
+    ///
+    ///   same          grant == requirement            -> allow
+    ///   broader grant grant strictly covers it        -> allow
+    ///   narrower      grant covers strictly less      -> DENY
+    ///   incomparable  overlap without containment,    -> DENY
+    ///                 or different module/action
+    ///
+    /// The narrower row is the security one: a grant of one file must never
+    /// satisfy an app that asks for the tree.
+    #[test]
+    fn a_grant_allows_exactly_its_own_relation_to_the_requirement() {
+        let table: [(&str, &str, bool, &str); 7] = [
+            ("fs.read:data/a.txt", "fs.read:data/a.txt", true, "same"),
+            (
+                "fs.read:data/**",
+                "fs.read:data/a.txt",
+                true,
+                "broader grant",
+            ),
+            (
+                "fs.read:data/**",
+                "fs.read:data/deep/b.txt",
+                true,
+                "broader grant, nested",
+            ),
+            (
+                "fs.read:data/a.txt",
+                "fs.read:data/**",
+                false,
+                "narrower grant",
+            ),
+            (
+                "fs.read:data/**",
+                "fs.read:other/a.txt",
+                false,
+                "incomparable resource",
+            ),
+            (
+                "fs.read:data/**",
+                "fs.write:data/a.txt",
+                false,
+                "incomparable action",
+            ),
+            (
+                "fs.read:data/**",
+                "net.fetch:example.com",
+                false,
+                "incomparable module",
+            ),
+        ];
+        for (grant, required, expected, relation) in table {
+            let grant_cap = Capability::from_str(grant).expect("grant parses");
+            let Ok(required_cap) = Capability::from_str(required) else {
+                // A requirement that does not parse can never be granted,
+                // which satisfies the deny rows it appears in.
+                assert!(
+                    !expected,
+                    "{relation}: requirement must parse to be allowed"
+                );
+                continue;
+            };
+            assert_eq!(
+                capability_allows(&grant_cap, &required_cap),
+                expected,
+                "{relation}: grant {grant:?} against requirement {required:?}",
+            );
+        }
+    }
+
     #[test]
     fn a_list_glob_covers_the_folder_itself_and_a_remove_glob_does_not() {
         // `fs.list:images/**` grants "see what is in images". Listing the

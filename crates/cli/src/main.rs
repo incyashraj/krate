@@ -16033,11 +16033,19 @@ fn group_store_path(principal: &StoragePrincipal, group: &str) -> PathBuf {
 /// never collide with the unsigned file of the same id nor with a second
 /// publisher shipping the same app name.
 fn principal_store_path(principal: &StoragePrincipal) -> PathBuf {
+    principal_store_path_in(&krate_home(), principal)
+}
+
+/// The same decision against a named root, so the fallback ladder below can
+/// be tested without touching the real `~/.krate` (IC-017). The ladder is
+/// exactly the kind of logic that silently loses data when it regresses,
+/// and the real home is exactly the place not to rehearse that.
+fn principal_store_path_in(home: &Path, principal: &StoragePrincipal) -> PathBuf {
     match principal {
         // Unchanged from before, byte for byte: an unsigned app must find
         // the data it already has.
-        StoragePrincipal::Unverified { app_id } => app_store_path(app_id),
-        StoragePrincipal::Verified { .. } => krate_home()
+        StoragePrincipal::Unverified { app_id } => app_store_path_in(home, app_id),
+        StoragePrincipal::Verified { .. } => home
             .join("store")
             .join(format!("{}.kv", principal.storage_key())),
         // A development app prefers its own isolated store, but falls back
@@ -16050,13 +16058,13 @@ fn principal_store_path(principal: &StoragePrincipal) -> PathBuf {
         // never causing. So an app that already has data keeps reading it,
         // and a NEW app starts isolated straight away.
         StoragePrincipal::Development { app_id, .. } => {
-            let isolated = krate_home()
+            let isolated = home
                 .join("store")
                 .join(format!("{}.kv", principal.storage_key()));
             if isolated.exists() {
                 return isolated;
             }
-            let legacy = app_store_path(app_id);
+            let legacy = app_store_path_in(home, app_id);
             if legacy.exists() {
                 legacy
             } else {
@@ -16067,6 +16075,10 @@ fn principal_store_path(principal: &StoragePrincipal) -> PathBuf {
 }
 
 fn app_store_path(app_id: &str) -> PathBuf {
+    app_store_path_in(&krate_home(), app_id)
+}
+
+fn app_store_path_in(home: &Path, app_id: &str) -> PathBuf {
     let safe: String = app_id
         .chars()
         .map(|c| {
@@ -16085,7 +16097,7 @@ fn app_store_path(app_id: &str) -> PathBuf {
     } else {
         safe
     };
-    krate_home().join("store").join(format!("{safe}.kv"))
+    home.join("store").join(format!("{safe}.kv"))
 }
 
 /// Where the id of the agent session that last wrote this app is kept: beside
@@ -18743,6 +18755,154 @@ mod storage_identity_tests {
             app_store_path("dev.krate.keyvault"),
             "unsigned apps keep the path they already had, so existing data \
              is not stranded",
+        );
+    }
+
+    /// Rotating a release key must not move anybody's data (IC-017).
+    ///
+    /// Release keys exist to rotate. If storage keyed on the release key,
+    /// every rotation would strand every user's data -- so the design keys
+    /// on the ROOT a delegation names, and this is the test that holds it
+    /// there. Nothing exercised a delegated envelope through
+    /// storage_principal before; the property lived only in a comment.
+    ///
+    /// The envelopes here are fabricated and the verdict is handed in as
+    /// Authorised, deliberately: whether a chain VERIFIES is signing.rs's
+    /// job, tested there with real crypto. What this owns is the KEYING --
+    /// given a chain the verifier already accepted, which storage does the
+    /// app get.
+    #[test]
+    fn rotating_a_release_key_keeps_the_publishers_storage() {
+        use krate_bundle::delegation::{ChainVerdict, Delegation, Purpose, SignedDelegation};
+        use krate_bundle::signing::{FullVerdict, SignatureEnvelope, Verdict, SIGNATURE_SCHEMA};
+
+        let manifest = Manifest::parse(
+            "[app]\nid = \"dev.krate.keyvault\"\nname = \"K\"\nversion = \"1.0.0\"\n\
+             entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n",
+        )
+        .expect("manifest");
+
+        let envelope_signed_by = |release_key: &str, root: &str| SignatureEnvelope {
+            schema: SIGNATURE_SCHEMA.to_string(),
+            namespace: "acme/keyvault".to_string(),
+            version: "1.0.0".to_string(),
+            signed_at: 1_700_000_000,
+            public_key: release_key.to_string(),
+            signature: "bb".repeat(64),
+            statement_digest: String::new(),
+            signed_entries: Default::default(),
+            delegation: Some(SignedDelegation {
+                delegation: Delegation {
+                    schema: "krate.delegation.v1".to_string(),
+                    root: root.to_string(),
+                    namespace: "acme/*".to_string(),
+                    key: release_key.to_string(),
+                    purpose: Purpose::Release,
+                    not_before: 0,
+                    expires: 2_000_000_000,
+                    approvers: Vec::new(),
+                },
+                signature: "cc".repeat(64),
+            }),
+        };
+        let authorised = FullVerdict {
+            signature: Verdict::Valid {
+                public_key: vec![0xaa; 32],
+            },
+            chain: Some(ChainVerdict::Authorised),
+        };
+
+        let root = "dd".repeat(32);
+        let before = storage_principal(
+            &manifest,
+            Some(&envelope_signed_by(&"11".repeat(32), &root)),
+            Some(&authorised),
+        );
+        let after = storage_principal(
+            &manifest,
+            Some(&envelope_signed_by(&"22".repeat(32), &root)),
+            Some(&authorised),
+        );
+        assert_eq!(
+            before.storage_key(),
+            after.storage_key(),
+            "the same publisher rotated their release key and their users' \
+             data moved -- storage must key on the ROOT, not the release key",
+        );
+
+        // The fork case rides on the same mechanism: a different root IS a
+        // different publisher, however identical the app id and release key.
+        let fork = storage_principal(
+            &manifest,
+            Some(&envelope_signed_by(&"11".repeat(32), &"ee".repeat(32))),
+            Some(&authorised),
+        );
+        assert_ne!(
+            before.storage_key(),
+            fork.storage_key(),
+            "a fork signed under a different root must not reach the \
+             original publisher's storage",
+        );
+
+        // And an UNDELEGATED envelope keys on its own public key, which is
+        // the root when nobody delegated: the two forms must agree when the
+        // key IS the root.
+        let mut direct = envelope_signed_by(&root, &root);
+        direct.delegation = None;
+        let direct = storage_principal(&manifest, Some(&direct), Some(&authorised));
+        assert_eq!(
+            before.storage_key(),
+            direct.storage_key(),
+            "signing directly with the root and signing via a delegation \
+             from that root are the same publisher",
+        );
+    }
+
+    /// The development fallback ladder never strands data (IC-017 migration).
+    ///
+    /// Turning on isolation must not empty anybody's notes app: an app that
+    /// already has data on the shared path keeps reading it until adoption
+    /// is a deliberate act, a NEW app starts isolated immediately, and once
+    /// an isolated store exists it always wins. Each rung protects a
+    /// different person, and a regression in any of them reads as data loss.
+    #[test]
+    fn the_development_fallback_ladder_never_strands_data() {
+        let home = tempfile::tempdir().expect("tempdir");
+        let home = home.path();
+        fs::create_dir_all(home.join("store")).expect("store dir");
+        let principal = StoragePrincipal::Development {
+            developer: "machine0123456789".to_string(),
+            app_id: "dev.krate.notes".to_string(),
+        };
+
+        // Rung 1: nothing exists yet -- a NEW app starts isolated, so work
+        // begun after the choice is protected from the first write.
+        let fresh = principal_store_path_in(home, &principal);
+        assert!(
+            fresh
+                .file_name()
+                .is_some_and(|name| { name.to_string_lossy().contains('+') }),
+            "a new app must start on the isolated path: {fresh:?}",
+        );
+
+        // Rung 2: legacy data exists and no isolated store does -- the app
+        // keeps reading its old data. This is the rung that, broken, opens
+        // somebody's notes app onto nothing.
+        let legacy = app_store_path_in(home, "dev.krate.notes");
+        fs::write(&legacy, b"the notes somebody already has").expect("legacy");
+        assert_eq!(
+            principal_store_path_in(home, &principal),
+            legacy,
+            "existing data must keep being read until adoption is deliberate",
+        );
+
+        // Rung 3: adoption happened -- the isolated store exists and wins,
+        // even though the legacy file is still there.
+        fs::write(&fresh, b"adopted").expect("isolated");
+        assert_eq!(
+            principal_store_path_in(home, &principal),
+            fresh,
+            "once adopted, the isolated store must win over the legacy one",
         );
     }
 
