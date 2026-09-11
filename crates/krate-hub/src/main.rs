@@ -414,9 +414,14 @@ fn is_hex_hash(s: &str) -> bool {
     s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
-/// Cheap structural check that the bytes are a `.krate`: a readable zip that
-/// contains both `manifest.toml` and `code.wasm`. Not a full validation -- the
-/// runtime does that at run time -- just enough to refuse obvious non-bundles.
+/// Full admission validation: the same open the recipient will run (IC-833).
+///
+/// This was once a cheap structural check -- readable zip, two names -- and
+/// the comment still said "not a full validation". It is now exactly a full
+/// validation: `open_bytes` is what `krate run` runs, so the hub cannot hand
+/// out a URL to a bundle a client would refuse (K-278). It returns Err on
+/// every malformed input rather than panicking, which is what keeps a bad
+/// upload from taking down the connection thread (K-280).
 fn looks_like_krate(bytes: &[u8]) -> Result<(), String> {
     // Admission is the same open the recipient will run (IC-833). This used
     // to be a two-name scan -- "accepts any PK 03 04 byte string containing
@@ -577,6 +582,52 @@ mod tests {
         // Keep the client alive until here so the OS does not close the
         // socket for us and mask what is being tested.
         drop(client);
+    }
+
+    /// Malformed archives are refused, never crash the validator (K-280).
+    ///
+    /// Admission now runs the full opener on untrusted bytes -- it parses a
+    /// zip, reads an end-of-central-directory count, writes to a temp dir.
+    /// A panic there would be caught by the per-connection thread, but a
+    /// validator that aborts on a hostile input still costs the upload and
+    /// can leave state behind. IC-833 names "validator crash" as a case to
+    /// prove safe, so this feeds it the shapes that break naive zip readers
+    /// and requires every one to come back as a plain Err.
+    #[test]
+    fn a_malformed_archive_is_refused_not_a_crash() {
+        let cases: [(&str, &[u8]); 6] = [
+            ("one byte", b"P"),
+            ("zip magic only", b"PK\x03\x04"),
+            (
+                "truncated EOCD",
+                b"PK\x05\x06\x00\x00\x00\x00\x00\x00\x00\x00",
+            ),
+            // EOCD claiming 65535 records, none present.
+            (
+                "huge declared count",
+                b"PK\x05\x06\x00\x00\x00\x00\xff\xff\xff\xff\x00\x00\x00\x00\x00\x00\x00\x00",
+            ),
+            (
+                "zip64 marker of 0xff",
+                b"PK\x06\x06\xff\xff\xff\xff\xff\xff\xff\xff",
+            ),
+            // Many local-file signatures, no directory: a reader that trusts
+            // them loops or over-allocates.
+            (
+                "repeated local headers",
+                &[0x50, 0x4b, 0x03, 0x04].repeat(500),
+            ),
+        ];
+        for (what, bytes) in cases {
+            // The contract is total: Err, never a panic. A panic here fails
+            // the test loudly rather than being swallowed by a thread.
+            let result = looks_like_krate(bytes);
+            assert!(
+                result.is_err(),
+                "{what} must be refused, and it must be refused as an Err \
+                 rather than crash the validator",
+            );
+        }
     }
 
     #[test]
