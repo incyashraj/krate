@@ -20,6 +20,7 @@ It also refuses the sentences the benchmark's own CLAIMS.md forbids --
 universal "faster than Electron" wording, "independently reproducible" while
 the raw samples are unretained, any battery claim at all.
 """
+import datetime
 import json
 import re
 import sys
@@ -150,7 +151,88 @@ def load_from(record_path):
             "Zero evidence means zero-work, and a zero-work check passing is "
             "the defect this gate exists to prevent (IC-828)."
         )
+    # Every claim is somebody's, was measured on a day, and goes stale
+    # (IC-504). A claim without those is not an inventory entry, it is a
+    # number with nobody behind it -- refused in words, like the rest.
+    incomplete = []
+    for claim in claims:
+        for field in ("id", "owner", "measured_on", "stale_after_days", "source"):
+            if not claim.get(field):
+                incomplete.append(f"{claim.get('id', '?')}: missing {field}")
+        try:
+            datetime.date.fromisoformat(str(claim.get("measured_on", "")))
+        except ValueError:
+            incomplete.append(f"{claim.get('id', '?')}: measured_on must be a date (YYYY-MM-DD)")
+        source = claim.get("source")
+        if source and not (record_path.parent.parent.parent / source).is_file():
+            incomplete.append(f"{claim.get('id', '?')}: evidence {source} does not exist -- a claim whose evidence is gone has none")
+    if incomplete:
+        sys.exit(
+            f"the claim record is incomplete: {record_path}\n  "
+            + "\n  ".join(incomplete)
+            + "\nEvery claim needs an owner, a measurement date, a freshness "
+            "window and evidence that exists (IC-504)."
+        )
     return record
+
+
+def stale_claims(record, today=None):
+    """Claims whose measurement is older than the window they declare.
+
+    The stale-evidence alert (IC-504). A benchmark number does not stay true
+    because nobody re-ran it; past the window it is a claim about an older
+    Krate on an older machine, and the page carrying it must either get a
+    fresh measurement or an explicit, reviewed extension of the window.
+    """
+    today = today or datetime.date.today()
+    stale = []
+    for claim in record["claims"]:
+        measured = datetime.date.fromisoformat(str(claim["measured_on"]))
+        age = (today - measured).days
+        limit = int(claim["stale_after_days"])
+        if age > limit:
+            stale.append((claim["id"], age, limit, claim["owner"]))
+    return stale
+
+
+def inventory(record, today=None):
+    """The repository-wide claim list (IC-504): every public figure, who owns
+    it, when it was measured, how fresh it is, where its evidence is, and
+    which public surface states it."""
+    today = today or datetime.date.today()
+    figures_by_claim = {}
+    for claim in record["claims"]:
+        figures_by_claim[claim["id"]] = {
+            normalise(v, u)
+            for field in ("them", "us")
+            for v, u in NUMBER.findall(claim.get(field, ""))
+        }
+    used_on = {cid: set() for cid in figures_by_claim}
+    for surface in SURFACES:
+        path = ROOT / surface
+        if not path.is_file():
+            continue
+        text = path.read_text(errors="replace")
+        present = {normalise(v, u) for v, u in NUMBER.findall(text)}
+        for cid, figs in figures_by_claim.items():
+            if figs & present:
+                used_on[cid].add(surface)
+    lines = []
+    for claim in record["claims"]:
+        measured = datetime.date.fromisoformat(str(claim["measured_on"]))
+        age = (today - measured).days
+        limit = int(claim["stale_after_days"])
+        freshness = f"{age} days old, window {limit}" + (" -- STALE" if age > limit else "")
+        lines.append(f"  {claim['id']:18} {claim['metric']}")
+        lines.append(f"  {'':18} them: {claim['them']}   us: {claim['us']}")
+        lines.append(f"  {'':18} owner: {claim['owner']}   measured: {claim['measured_on']} ({freshness})")
+        lines.append(f"  {'':18} evidence: {claim['source']}   confidence: {claim.get('confidence', '?')}")
+        if claim.get("caveat"):
+            lines.append(f"  {'':18} caveat: {claim['caveat']}")
+        surfaces = sorted(used_on[claim["id"]])
+        lines.append(f"  {'':18} stated on: {', '.join(surfaces) if surfaces else 'no public surface'}")
+        lines.append("")
+    return "\n".join(lines)
 
 
 def known_figures(record):
@@ -326,12 +408,49 @@ def self_test():
                 f"{refusal.code!r}"
             )
 
+    # The stale-evidence alert and the inventory's completeness rules
+    # (IC-504), rehearsed on a record built here rather than trusted.
+    import datetime as _dt
+    fresh = {"claims": [{"id": "x", "metric": "m", "them": "1 MB", "us": "2 MB", "source": "README.md",
+                         "owner": "lead", "measured_on": "2026-08-16", "stale_after_days": 120}], "forbidden": []}
+    if stale_claims(fresh, _dt.date(2026, 9, 12)):
+        failures.append("a 27-day-old claim with a 120-day window was called stale")
+    found = stale_claims(fresh, _dt.date(2027, 1, 1))
+    if not found or found[0][0] != "x" or found[0][1] <= 120:
+        failures.append(f"a claim past its window must be reported stale: {found}")
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", dir=ROOT / "evidence" / "claims", delete=False) as handle:
+        json.dump({"claims": [{"id": "y", "metric": "m", "them": "1 MB", "us": "2 MB", "source": "README.md"}],
+                   "forbidden": []}, handle)
+        temp = Path(handle.name)
+    try:
+        try:
+            load_from(temp)
+            failures.append("a claim with no owner or measurement date was accepted -- nobody is behind that number")
+        except SystemExit as refusal:
+            if "missing owner" not in str(refusal.code) or "missing measured_on" not in str(refusal.code):
+                failures.append(f"the incomplete-claim refusal must name each missing field: {refusal.code!r}")
+        temp.write_text(json.dumps({"claims": [{"id": "z", "metric": "m", "them": "1 MB", "us": "2 MB",
+                                                "source": "evidence/benchmarks/no-such-file.md", "owner": "lead",
+                                                "measured_on": "2026-08-16", "stale_after_days": 120}], "forbidden": []}))
+        try:
+            load_from(temp)
+            failures.append("a claim whose evidence file does not exist was accepted")
+        except SystemExit as refusal:
+            if "does not exist" not in str(refusal.code):
+                failures.append(f"the missing-evidence refusal must say so: {refusal.code!r}")
+    finally:
+        temp.unlink()
+    listing = inventory(fresh, _dt.date(2026, 9, 12))
+    if "owner: lead" not in listing or "27 days old" not in listing or "stated on:" not in listing:
+        failures.append(f"the inventory must show owner, age and where the figure is stated: {listing}")
+
     if failures:
         print("retired-claim scan self-test FAILED:\n")
         for failure in failures:
             print(f"  {failure}")
         return 1
-    print(f"OK -- the retired-claim scan catches all {len(RETIRED)} withdrawn claims, and leaves the corrected wording alone.")
+    print(f"OK -- the retired-claim scan catches all {len(RETIRED)} withdrawn claims, leaves the corrected")
+    print("wording alone, refuses a claim with no owner, date or evidence, and reports a stale one.")
     return 0
 
 
@@ -341,13 +460,7 @@ def main():
 
     record = load()
     if "--list" in sys.argv:
-        for claim in record["claims"]:
-            print(f"  {claim['id']:18} {claim['metric']}")
-            print(f"  {'':18} them: {claim['them']}   us: {claim['us']}")
-            print(f"  {'':18} {claim['source']}")
-            if claim.get("caveat"):
-                print(f"  {'':18} caveat: {claim['caveat']}")
-            print()
+        print(inventory(record))
         return 0
 
     missing = missing_fixed_surfaces()
@@ -375,6 +488,21 @@ def main():
         problems.extend(check_surface(surface, record, figures))
 
     scanned, retired = scan_retired()
+
+    # The stale-evidence alert. Reported and fatal: a stale number on a
+    # public page is a claim about an older product, and the gate that
+    # let it age would be exactly the silent drift this file exists for.
+    stale = stale_claims(record)
+    if stale:
+        print("STALE EVIDENCE -- these public figures are past their window:\n")
+        for cid, age, limit, owner in stale:
+            print(f"  {cid}: measured {age} days ago, window {limit} days (owner: {owner})")
+        print(
+            "\nRe-measure and update evidence/claims/performance.json, or extend "
+            "stale_after_days in a reviewed change that says why (IC-504)."
+        )
+        if not (problems or retired):
+            return 1
 
     if problems or retired:
         if problems:

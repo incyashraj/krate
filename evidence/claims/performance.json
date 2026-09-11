@@ -12,7 +12,12 @@
     "are the 5,000-line warm start and the first-ever open. Two workloads",
     "conflated in one row, each number true somewhere and the pair true",
     "nowhere. Nobody was lying; the prose had simply drifted from the note it",
-    "cites, and nothing checked."
+    "cites, and nothing checked.",
+    "",
+    "Every claim names its owner, the day it was measured and how many days",
+    "the measurement stays current (IC-504). Past that, scripts/check-claims.py",
+    "raises a stale-evidence alert and fails: the number must be re-measured",
+    "or the window extended in a reviewed change, never left to age silently."
   ],
   "claims": [
     {
@@ -25,7 +30,10 @@
       "source_row": "App file | 107 MB download / 271 MB installed | 37 KB",
       "scope": "MarkText 0.17.1, x86_64 package; Apple silicon Mac, macOS 27",
       "confidence": "internal measurement",
-      "caveat": "the 271 MB package was x86_64; an ARM64-matched run has not been retained"
+      "caveat": "the 271 MB package was x86_64; an ARM64-matched run has not been retained",
+      "owner": "lead",
+      "measured_on": "2026-08-16",
+      "stale_after_days": 120
     },
     {
       "id": "memory-50k",
@@ -36,7 +44,10 @@
       "source": "evidence/benchmarks/2026-08-16-notes-battery-macos.md",
       "source_row": "Footprint, 50k doc | 2,331 MB ... | 95 MB",
       "scope": "Apple silicon Mac, macOS 27, whole process tree",
-      "confidence": "internal measurement"
+      "confidence": "internal measurement",
+      "owner": "lead",
+      "measured_on": "2026-08-16",
+      "stale_after_days": 120
     },
     {
       "id": "warm-start-50k",
@@ -48,7 +59,10 @@
       "source_row": "Warm start, 50k doc | 1.97 s | 0.25 s",
       "scope": "Apple silicon Mac, macOS 27",
       "confidence": "internal measurement",
-      "caveat": "the 5,000-line warm start is a different number (1.80 s vs 0.19-0.25 s) and must not be shown in a 50,000-line row"
+      "caveat": "the 5,000-line warm start is a different number (1.80 s vs 0.19-0.25 s) and must not be shown in a 50,000-line row",
+      "owner": "lead",
+      "measured_on": "2026-08-16",
+      "stale_after_days": 120
     },
     {
       "id": "first-open",
@@ -59,7 +73,10 @@
       "source": "evidence/benchmarks/2026-08-16-notes-battery-macos.md",
       "source_row": "First-ever open | 17.1 s | ~0.2 s",
       "scope": "Apple silicon Mac, macOS 27, cold first launch after install",
-      "confidence": "internal measurement"
+      "confidence": "internal measurement",
+      "owner": "lead",
+      "measured_on": "2026-08-16",
+      "stale_after_days": 120
     },
     {
       "id": "idle-cpu-50k",
@@ -70,7 +87,10 @@
       "source": "evidence/benchmarks/2026-08-16-notes-battery-macos.md",
       "source_row": "Idle CPU, 50k | 21.2% | 0.8%",
       "scope": "Apple silicon Mac, macOS 27",
-      "confidence": "internal measurement"
+      "confidence": "internal measurement",
+      "owner": "lead",
+      "measured_on": "2026-08-16",
+      "stale_after_days": 120
     },
     {
       "id": "scroll-pacing",
@@ -82,7 +102,10 @@
       "source_row": "Scroll pacing, 5k + 50k | no per-frame instrument on macOS | p50 17.3 ms / p99 17.5 ms at 5k; p50 17.6 / p99 17.9 at 50k",
       "scope": "Apple silicon Mac, macOS 27, Krate only",
       "confidence": "internal measurement",
-      "caveat": "there is no MarkText comparison for this row; it must never be written as a head-to-head win"
+      "caveat": "there is no MarkText comparison for this row; it must never be written as a head-to-head win",
+      "owner": "lead",
+      "measured_on": "2026-08-16",
+      "stale_after_days": 120
     },
     {
       "id": "electron-baseline",
@@ -94,7 +117,10 @@
       "source_row": "App file | 107 MB download / 271 MB installed | 37 KB",
       "scope": "the measured MarkText 0.17.1 download was 107 MB; 'about 100 MB' is the rounded general figure for a bundled Chromium",
       "confidence": "internal measurement, generalised",
-      "caveat": "this is a general statement about Electron, not a measurement of every Electron app"
+      "caveat": "this is a general statement about Electron, not a measurement of every Electron app",
+      "owner": "lead",
+      "measured_on": "2026-08-16",
+      "stale_after_days": 120
     }
   ],
   "forbidden": [
