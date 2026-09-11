@@ -1,0 +1,70 @@
+{
+ "id": "E-CI-cdb4b836f-dependency-audit-cargo-deny",
+ "claims": [
+  "C-RELEASE-GATES"
+ ],
+ "subject": {
+  "kind": "source tree",
+  "source": {
+   "commit": "cdb4b836fe6d8469506f8b024860a4d245e2486c",
+   "tree": "47821ac6df1ab8947ff811a7da92124acde38d39"
+  },
+  "binary_digest": null,
+  "package_digest": null,
+  "relationship": "the CI workflow checked out this commit and built it inside the lane"
+ },
+ "environment": {
+  "kind": "hosted",
+  "os": "ubuntu",
+  "arch": "x86_64",
+  "runner": "GitHub-hosted"
+ },
+ "toolchain": {
+  "rust": "as pinned by .github/workflows/ci.yml at this commit"
+ },
+ "command": "GitHub Actions job 'Dependency audit (cargo-deny)' of CI run 34626717612",
+ "inputs": {
+  "prerequisites": []
+ },
+ "oracle": {
+  "class": "execution",
+  "description": "cargo-deny found no advisory, licence or source violation in the locked dependency graph"
+ },
+ "raw_result": {
+  "conclusion": "skipped",
+  "run_id": "34626717612",
+  "location": "https://github.com/incyashraj/krate/actions/runs/34626717612",
+  "note": "skipped is not evidence"
+ },
+ "outcome": "skipped",
+ "scope": {
+  "supports": "Dependency audit (cargo-deny) concluded skipped on commit cdb4b836f",
+  "exclusions": [
+   "anything the lane does not exercise",
+   "clean recipients",
+   "published artifacts"
+  ]
+ },
+ "independence": "first-party API observation",
+ "time": {
+  "start": "2026-09-11T17:16:08Z",
+  "finish": "2026-09-11T17:16:07Z"
+ },
+ "operator": "GitHub Actions, CI workflow",
+ "privacy": {
+  "audience": "public",
+  "redact": []
+ },
+ "retention": {
+  "raw": "the GitHub Actions run log",
+  "until": "GitHub's log retention"
+ },
+ "expiry": {
+  "triggers": [
+   "source-change"
+  ],
+  "on": null
+ },
+ "supersedes": null,
+ "invalidated_by": null
+}
