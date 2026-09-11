@@ -1936,7 +1936,32 @@ pub fn fetch(url: &str, allow_insecure_http: bool) -> Result<OpenBundle> {
         });
     }
 
-    open_reader(io::Cursor::new(bytes))
+    // A download that did not finish is not a damaged app (K-274).
+    //
+    // A server understating Content-Length makes the client stop reading
+    // early, and ten bytes of a zip open exactly like a corrupt file. The
+    // recipient was told their file was damaged, which sends them back for
+    // another copy of a link that will download the same way. The truth --
+    // the download was cut short, try again -- is the thing that helps, and
+    // only this function is in a position to say it, because only this
+    // function knows the bytes arrived over a network.
+    open_reader(io::Cursor::new(bytes.clone())).map_err(|err| {
+        if matches!(err, BundleError::Archive(_)) {
+            // Deliberately without a byte count. The obvious detail --
+            // promised length against received length -- can never differ
+            // here: the client stops at exactly Content-Length, so a server
+            // that understates it produces a short read where the two agree.
+            // Printing "10 of 10 bytes" would be true and useless.
+            return BundleError::Fetch {
+                url: url.to_string(),
+                message: format!(
+                    "the download did not finish, so the app could not be read. \
+                     The file at {url} may be fine -- try again."
+                ),
+            };
+        }
+        err
+    })
 }
 
 #[cfg(test)]
@@ -4449,6 +4474,71 @@ required = true
             .to_path_buf();
         assert!(opened.component_path().starts_with(&parent));
         assert!(!parent.join("../../evil").exists());
+    }
+
+    #[test]
+    fn a_truncated_download_is_not_blamed_on_the_file() {
+        // K-274. A server understating Content-Length makes the client stop
+        // reading early, and a few bytes of a zip open exactly like a
+        // corrupt file. The recipient was told their file was damaged --
+        // which sends them back for another copy of a link that will
+        // download the same way.
+        //
+        // Served from a real socket, because the defect lives in the seam
+        // between the HTTP client and the opener: nothing below fetch() can
+        // know the bytes came off a network.
+        use std::io::Write as _;
+
+        let bundle = {
+            let dir = TempDir::new().expect("tempdir");
+            let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
+            let component = write_temp(dir.path(), "code.wasm", EMPTY_COMPONENT);
+            let path = dir.path().join("app.krate");
+            pack(&manifest, &component, &path).expect("pack");
+            fs::read(&path).expect("read")
+        };
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        let served = bundle.clone();
+        let server = std::thread::spawn(move || {
+            // One request: claim ten bytes, send the whole thing. The client
+            // reads ten and stops.
+            //
+            // The body is written in ONE call together with the headers, and
+            // the socket is held briefly afterwards. Writing them separately
+            // and returning immediately raced the client -- the thread
+            // dropped the stream while ureq was still reading, and the test
+            // failed with "Invalid argument (os error 22)" perhaps one run in
+            // five. That is a defect in the fixture, not in what it tests.
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut response =
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 10\r\nConnection: close\r\n\r\n".to_vec();
+                response.extend_from_slice(&served);
+                let _ = stream.write_all(&response);
+                let _ = stream.flush();
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+        });
+
+        let err = fetch(&format!("http://127.0.0.1:{port}/app.krate"), true)
+            .expect_err("a truncated download must not open");
+        let _ = server.join();
+
+        let text = err.to_string();
+        assert!(
+            text.contains("download did not finish"),
+            "a truncated download must be named as one: {text}"
+        );
+        assert!(
+            !text.contains("is not a Krate app"),
+            "and must NOT tell somebody their file is damaged when the file \
+             is fine and the transfer was cut short: {text}"
+        );
+        assert!(
+            text.contains("try again"),
+            "it must say the thing that actually helps: {text}"
+        );
     }
 
     #[test]
