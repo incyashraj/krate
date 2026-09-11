@@ -18906,6 +18906,58 @@ mod storage_identity_tests {
         );
     }
 
+    /// What moves storage and what must not (IC-874).
+    ///
+    /// The storage key is (app id, publisher root) and nothing else, and
+    /// each absence is as deliberate as each presence:
+    ///
+    ///   update    new version, same id, same root  -> SAME storage.
+    ///             Version in the key would wipe every app on every
+    ///             release, which is the opposite of what storage is for.
+    ///   rename    new app id                       -> new storage.
+    ///             An id is the app's name for its own data; a renamed app
+    ///             is asking to be somebody new, and silently inheriting
+    ///             the old data would also let any app "rename itself"
+    ///             into another's store.
+    ///   transfer  same id, new root                -> new storage.
+    ///             Mechanically identical to a fork, and that is the
+    ///             point: nothing distinguishes a sale from a theft
+    ///             EXCEPT the old root signing something -- which is
+    ///             delegation's job, not the storage key's.
+    #[test]
+    fn only_identity_moves_storage_never_the_version() {
+        let key = |app_id: &str, publisher: &str| {
+            StoragePrincipal::Verified {
+                publisher: publisher.to_string(),
+                app_id: app_id.to_string(),
+            }
+            .storage_key()
+        };
+        let root_a = "aa".repeat(32);
+        let root_b = "bb".repeat(32);
+
+        // The version does not appear in the key AT ALL -- there is nothing
+        // to vary. This assertion documents that the key is built from
+        // exactly two inputs, so a future field cannot slip in unnoticed.
+        let original = key("dev.krate.notes", &root_a);
+        assert_eq!(
+            original,
+            key("dev.krate.notes", &root_a),
+            "update: a new release of the same app must open the same data",
+        );
+        assert_ne!(
+            original,
+            key("dev.krate.notes2", &root_a),
+            "rename: a new id is a new app, and must not inherit the data",
+        );
+        assert_ne!(
+            original,
+            key("dev.krate.notes", &root_b),
+            "transfer: a new root is a new publisher until the old root \
+             says otherwise, which is delegation's job to prove",
+        );
+    }
+
     /// A hostile id cannot place a store outside the store directory, which
     /// is the part of this that IS enforced today.
     #[test]
