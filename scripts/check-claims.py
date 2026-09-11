@@ -77,14 +77,24 @@ RETIRED_SKIP_FILES = (
 
 # The surfaces a stranger reads. Evidence notes are deliberately absent: they
 # are the source, and holding them to themselves would be circular.
-SURFACES = [
+# The fixed surfaces are load-bearing BY NAME: if one of these is missing,
+# the gate must fail rather than shrug, because a moved README is exactly how
+# the most-read page leaves the scan while the OK count stays plausible
+# (K-277: renaming two of them away still printed "OK -- 6 public
+# surface(s)"). The globbed answers pages below may legitimately be empty.
+FIXED_SURFACES = [
     "README.md",
     "docs/landing/index.html",
     "docs/landing/studio/index.html",
-    "docs/index.html",
+    # docs/index.html used to sit here. It has NEVER existed in this
+    # repository -- no git history at all -- so the gate spent its whole life
+    # claiming a surface it never scanned, and the silent-skip loop hid that
+    # until the skip became a failure (K-277). The site's front page is
+    # docs/landing/index.html, above.
     "docs/krate-mode.md",
     "docs/open/index.html",
 ]
+SURFACES = list(FIXED_SURFACES)
 # The answers pages share one meta description, so a claim corrected in the
 # landing page can survive in three copies (IC-401 -- it did). Globbed rather
 # than listed so a new page joins the check by existing.
@@ -108,7 +118,39 @@ NUMBER = re.compile(
 
 
 def load():
-    return json.loads(RECORD.read_text())
+    return load_from(RECORD)
+
+
+def load_from(record_path):
+    """The claim record, or a refusal in words (K-277 / IC-828).
+
+    This used to be one line, and a missing or corrupt record exited 1 via a
+    raw traceback. The exit code was right and the words were absent -- a
+    traceback in a CI log reads as "the script broke", not "the evidence is
+    missing", and those call for opposite responses.
+    """
+    try:
+        record = json.loads(record_path.read_text())
+    except FileNotFoundError:
+        sys.exit(
+            f"the claim record is MISSING: {record_path}\n"
+            "Every public performance figure is held to this file, so with it "
+            "absent the gate has nothing to hold anything to. Restore it; do "
+            "not ship without it."
+        )
+    except (json.JSONDecodeError, OSError) as err:
+        sys.exit(
+            f"the claim record cannot be read: {record_path}\n  {err}\n"
+            "A gate that cannot read its evidence must not pass."
+        )
+    claims = record.get("claims")
+    if not isinstance(claims, list) or not claims:
+        sys.exit(
+            f"the claim record holds no claims: {record_path}\n"
+            "Zero evidence means zero-work, and a zero-work check passing is "
+            "the defect this gate exists to prevent (IC-828)."
+        )
+    return record
 
 
 def known_figures(record):
@@ -190,6 +232,13 @@ def scan_retired():
     return scanned, problems
 
 
+def missing_fixed_surfaces(fixed=None):
+    """Which load-bearing surfaces are absent. Parameterised for the
+    rehearsal in self_test, so the check is exercised rather than trusted."""
+    fixed = FIXED_SURFACES if fixed is None else fixed
+    return [surface for surface in fixed if not (ROOT / surface).is_file()]
+
+
 def self_test():
     """Prove the retired-claim scan actually bites (IC-628).
 
@@ -254,6 +303,29 @@ def self_test():
     finally:
         temp.unlink()
 
+    # The missing-fixture rehearsals (IC-709's close_with, verbatim: "a
+    # deliberate missing-fixture rehearsal"). Each proves the gate refuses
+    # when its inputs are gone, rather than passing over nothing.
+    if missing_fixed_surfaces(["no-such-surface.md"]) != ["no-such-surface.md"]:
+        failures.append(
+            "a missing fixed surface was not reported -- the gate would "
+            "print OK with its most-read pages gone"
+        )
+    if missing_fixed_surfaces([]):
+        failures.append("an empty fixed list reported phantom missing surfaces")
+    try:
+        load_from(ROOT / "evidence" / "claims" / "no-such-record.json")
+        failures.append(
+            "a missing claim record did not stop the gate -- zero evidence "
+            "passed as zero drift"
+        )
+    except SystemExit as refusal:
+        if "MISSING" not in str(refusal.code):
+            failures.append(
+                f"the missing-record refusal does not say what is missing: "
+                f"{refusal.code!r}"
+            )
+
     if failures:
         print("retired-claim scan self-test FAILED:\n")
         for failure in failures:
@@ -278,11 +350,26 @@ def main():
             print()
         return 0
 
+    missing = missing_fixed_surfaces()
+    if missing:
+        print("public surfaces this gate is FOR are missing from the tree:\n")
+        for surface in missing:
+            print(f"  {surface}")
+        print(
+            "\nA moved page silently leaves the scan and the OK keeps "
+            "printing (K-277). If a surface was renamed, rename it here in "
+            "FIXED_SURFACES in the same change."
+        )
+        return 1
+
     figures = known_figures(record)
     problems = []
     checked = 0
     for surface in SURFACES:
         if not (ROOT / surface).is_file():
+            # Only the globbed extras can land here now, and a glob that
+            # matched a file which then vanished mid-run is not worth dying
+            # over.
             continue
         checked += 1
         problems.extend(check_surface(surface, record, figures))
