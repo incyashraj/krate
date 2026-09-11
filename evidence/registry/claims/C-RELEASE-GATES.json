@@ -1,0 +1,27 @@
+{
+ "id": "C-RELEASE-GATES",
+ "sentence": "Every required CI lane passed on the release commit: the full test suite on macOS, Ubuntu and Windows, the dependency audit, and fresh fuzz evidence.",
+ "audience": "whoever cuts a release, and whoever reads the release notes",
+ "surfaces": ["release"],
+ "subject": {"commit": "f33217251"},
+ "requires": {
+  "evidence_classes": ["execution"],
+  "platforms": ["macos-arm64", "ubuntu-x86_64", "windows-x86_64"],
+  "environment": "any",
+  "same_bytes": false
+ },
+ "evidence": [
+  "E-CI-f33217251-full-test-macos-latest",
+  "E-CI-f33217251-full-test-ubuntu-latest",
+  "E-CI-f33217251-full-test-windows-2022",
+  "E-CI-f33217251-dependency-audit-cargo-deny",
+  "E-CI-f33217251-fuzz-evidence-freshness"
+ ],
+ "declared_state": "UNSUPPORTED",
+ "exclusions": ["clean recipients", "published artifacts matching what CI built", "the installer, update and rollback paths"],
+ "owner": "lead",
+ "approval": null,
+ "expiry": {"triggers": ["source-change"]},
+ "revision": 1,
+ "history": []
+}

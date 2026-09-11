@@ -1,0 +1,21 @@
+{
+ "id": "C-VALIDATOR-PARITY",
+ "sentence": "A component Krate's validator refuses is refused by pack, run and publish with the same words, before anything runs.",
+ "audience": "developers reading the docs",
+ "surfaces": ["docs"],
+ "subject": {"commit": "496cc9a15"},
+ "requires": {
+  "evidence_classes": ["execution"],
+  "platforms": ["macos-arm64", "ubuntu-x86_64", "windows-x86_64"],
+  "environment": "any",
+  "same_bytes": false
+ },
+ "evidence": ["E-2026-09-11-LOCAL-CLI-VALIDATOR-PARITY"],
+ "declared_state": "OBSERVED",
+ "exclusions": ["the hub's admission path", "components the SDK can build", "Studio"],
+ "owner": "lead",
+ "approval": null,
+ "expiry": {"triggers": ["source-change"]},
+ "revision": 1,
+ "history": []
+}

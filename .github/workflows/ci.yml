@@ -1610,6 +1610,14 @@ jobs:
       # still tells them apart before any lane leans on its numbers.
       - name: Prove the test report still classifies skips
         run: python3 scripts/test-report.py --self-test
+      # The evidence registry (IC-681) and its claim gate (IC-682): every
+      # record and claim well formed, and the gate still refusing what it
+      # must -- a no-op recorded as a pass, a later pass erasing a failure,
+      # emulated evidence promoted to native, one platform proving "every".
+      - name: Validate the evidence registry
+        run: python3 scripts/evidence-registry.py validate
+      - name: Prove the evidence gate still refuses
+        run: python3 scripts/evidence-registry.py --self-test
       # The fundraising documents are private, so CI cannot read them. What CI
       # can do is prove the checker still works, so that when it runs on the
       # founder's machine before anything is sent, it means something (IC-655).

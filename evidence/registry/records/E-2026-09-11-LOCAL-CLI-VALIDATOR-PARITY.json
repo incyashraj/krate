@@ -1,0 +1,36 @@
+{
+ "id": "E-2026-09-11-LOCAL-CLI-VALIDATOR-PARITY",
+ "claims": ["C-VALIDATOR-PARITY"],
+ "subject": {
+  "kind": "source tree",
+  "source": {"commit": "496cc9a15", "tree": "adefc648a245"},
+  "binary_digest": null,
+  "package_digest": null,
+  "relationship": "cargo test built the CLI from this checkout on the named machine; the binary under test is the one it built"
+ },
+ "environment": {"kind": "native", "os": "macos", "arch": "arm64", "version": "Darwin 27.0.0"},
+ "toolchain": {"rustc": "1.94.1 (rustup)", "cargo-component": "0.21.1", "wasm-tools": "the fixtures were assembled with it"},
+ "command": "cargo test -p krate-cli --test cli the_validator_and_the_runtime_agree_on_what_a_krate_component_is -- --nocapture",
+ "inputs": {
+  "fixtures": ["crates/bundle/tests/fixtures/minimal-run.wasm", "crates/bundle/tests/fixtures/extra-export.wasm"],
+  "prerequisites": []
+ },
+ "oracle": {
+  "class": "execution",
+  "description": "the smallest component the validator passes is packed and run to a clean exit 0; a component that exports run and one more function is refused by run, then by pack, with the same words naming the extra export, and no bundle is left behind"
+ },
+ "raw_result": {"exit": 0, "counts": {"passed": 1, "failed": 0, "ignored": 0}, "location": "/Users/yashrajpardeshi/... parity.log in the session scratchpad"},
+ "outcome": "pass",
+ "scope": {
+  "supports": "on this Mac at commit 496cc9a15, the validator's accept and refuse verdicts match what the runtime, pack and publish then do",
+  "exclusions": ["other operating systems", "the hub's admission path (covered by the hub's own test, not this record)", "components the SDK can build"]
+ },
+ "independence": "local reproduction",
+ "time": {"start": "2026-09-11T22:10:00Z", "finish": "2026-09-11T22:10:02Z"},
+ "operator": "lead workstation",
+ "privacy": {"audience": "public", "redact": ["raw_result.location"]},
+ "retention": {"raw": "the session log named above", "until": "the next full run of the CLI suite on this machine"},
+ "expiry": {"triggers": ["source-change"], "on": null},
+ "supersedes": null,
+ "invalidated_by": null
+}

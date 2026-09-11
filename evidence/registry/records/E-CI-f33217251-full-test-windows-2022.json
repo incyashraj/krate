@@ -1,0 +1,70 @@
+{
+ "id": "E-CI-f33217251-full-test-windows-2022",
+ "claims": [
+  "C-RELEASE-GATES"
+ ],
+ "subject": {
+  "kind": "source tree",
+  "source": {
+   "commit": "f33217251ca21248a6b5c830aba7b64cc6e17192",
+   "tree": "4c80c4b7b35afc4775582cd0f746852a721b692b"
+  },
+  "binary_digest": null,
+  "package_digest": null,
+  "relationship": "the CI workflow checked out this commit and built it inside the lane"
+ },
+ "environment": {
+  "kind": "hosted",
+  "os": "windows",
+  "arch": "x86_64",
+  "runner": "GitHub-hosted"
+ },
+ "toolchain": {
+  "rust": "as pinned by .github/workflows/ci.yml at this commit"
+ },
+ "command": "GitHub Actions job 'Full test (windows-2022)' of CI run 34613657073",
+ "inputs": {
+  "prerequisites": []
+ },
+ "oracle": {
+  "class": "execution",
+  "description": "the whole workspace test suite plus the replay and open-every-bundle steps ran and reported no failure"
+ },
+ "raw_result": {
+  "conclusion": "missing",
+  "run_id": "34613657073",
+  "location": "https://github.com/incyashraj/krate/actions/runs/34613657073",
+  "note": "this lane never ran on the commit -- a platform gap, not a pass"
+ },
+ "outcome": "blocked",
+ "scope": {
+  "supports": "Full test (windows-2022) concluded missing on commit f33217251",
+  "exclusions": [
+   "anything the lane does not exercise",
+   "clean recipients",
+   "published artifacts"
+  ]
+ },
+ "independence": "first-party API observation",
+ "time": {
+  "start": "2026-09-11T17:12:55Z",
+  "finish": "2026-09-11T17:12:55Z"
+ },
+ "operator": "GitHub Actions, CI workflow",
+ "privacy": {
+  "audience": "public",
+  "redact": []
+ },
+ "retention": {
+  "raw": "the GitHub Actions run log",
+  "until": "GitHub's log retention"
+ },
+ "expiry": {
+  "triggers": [
+   "source-change"
+  ],
+  "on": null
+ },
+ "supersedes": null,
+ "invalidated_by": null
+}

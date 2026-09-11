@@ -1,0 +1,70 @@
+{
+ "id": "E-CI-f33217251-fuzz-evidence-freshness",
+ "claims": [
+  "C-RELEASE-GATES"
+ ],
+ "subject": {
+  "kind": "source tree",
+  "source": {
+   "commit": "f33217251ca21248a6b5c830aba7b64cc6e17192",
+   "tree": "4c80c4b7b35afc4775582cd0f746852a721b692b"
+  },
+  "binary_digest": null,
+  "package_digest": null,
+  "relationship": "the CI workflow checked out this commit and built it inside the lane"
+ },
+ "environment": {
+  "kind": "hosted",
+  "os": "ubuntu",
+  "arch": "x86_64",
+  "runner": "GitHub-hosted"
+ },
+ "toolchain": {
+  "rust": "as pinned by .github/workflows/ci.yml at this commit"
+ },
+ "command": "GitHub Actions job 'Fuzz evidence freshness' of CI run 34613657073",
+ "inputs": {
+  "prerequisites": []
+ },
+ "oracle": {
+  "class": "execution",
+  "description": "the last successful fuzz nightly is within the freshness window"
+ },
+ "raw_result": {
+  "conclusion": "skipped",
+  "run_id": "34613657073",
+  "location": "https://github.com/incyashraj/krate/actions/runs/34613657073",
+  "note": "skipped is not evidence"
+ },
+ "outcome": "skipped",
+ "scope": {
+  "supports": "Fuzz evidence freshness concluded skipped on commit f33217251",
+  "exclusions": [
+   "anything the lane does not exercise",
+   "clean recipients",
+   "published artifacts"
+  ]
+ },
+ "independence": "first-party API observation",
+ "time": {
+  "start": "2026-09-11T15:01:44Z",
+  "finish": "2026-09-11T15:01:44Z"
+ },
+ "operator": "GitHub Actions, CI workflow",
+ "privacy": {
+  "audience": "public",
+  "redact": []
+ },
+ "retention": {
+  "raw": "the GitHub Actions run log",
+  "until": "GitHub's log retention"
+ },
+ "expiry": {
+  "triggers": [
+   "source-change"
+  ],
+  "on": null
+ },
+ "supersedes": null,
+ "invalidated_by": null
+}

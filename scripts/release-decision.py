@@ -38,6 +38,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = ROOT / "evidence" / "releases"
+# Every required lane's verdict is also written as an evidence record, so a
+# release gate leaves a retained, public-safe record behind it (IC-681) --
+# not only a decision file that quotes the private board and stays local.
+REGISTRY_RECORDS = ROOT / "evidence" / "registry" / "records"
 REPO = "incyashraj/krate"
 FUZZ_FRESH_DAYS = 7
 ADVISORY_FRESH_DAYS = 7
@@ -60,6 +64,98 @@ def sh(args):
 
 # ---- sources ---------------------------------------------------------------
 
+# What each lane runs on, and what its oracle actually judges. A record that
+# says "hosted, ubuntu, x86_64, execution" can be read by the gate; "CI was
+# green" cannot.
+LANE_FACTS = {
+    "Full test (macos-latest)": ("macos", "arm64",
+        "the whole workspace test suite plus the replay and open-every-bundle steps ran and reported no failure"),
+    "Full test (ubuntu-latest)": ("ubuntu", "x86_64",
+        "the whole workspace test suite plus the replay and open-every-bundle steps ran and reported no failure"),
+    "Full test (windows-2022)": ("windows", "x86_64",
+        "the whole workspace test suite plus the replay and open-every-bundle steps ran and reported no failure"),
+    "Dependency audit (cargo-deny)": ("ubuntu", "x86_64",
+        "cargo-deny found no advisory, licence or source violation in the locked dependency graph"),
+    "Fuzz evidence freshness": ("ubuntu", "x86_64",
+        "the last successful fuzz nightly is within the freshness window"),
+}
+LANE_OUTCOME = {"pass": "pass", "fail": "fail", "skipped": "skipped", "missing": "blocked"}
+
+
+def lane_slug(lane):
+    return re.sub(r"[^a-z0-9]+", "-", lane.lower()).strip("-")
+
+
+def lane_record(sha, tree, lane, state, why, ci, now, supersedes=None, suffix=""):
+    os_name, arch, oracle = LANE_FACTS.get(lane, ("unknown", "unknown", "the lane concluded"))
+    run_id = ci.get("run_id", "")
+    times = (ci.get("times") or {}).get(lane) or {}
+    return {
+        "id": f"E-CI-{sha[:9]}-{lane_slug(lane)}{suffix}",
+        "claims": ["C-RELEASE-GATES"],
+        "subject": {
+            "kind": "source tree",
+            "source": {"commit": sha, "tree": tree},
+            "binary_digest": None,
+            "package_digest": None,
+            "relationship": "the CI workflow checked out this commit and built it inside the lane",
+        },
+        "environment": {"kind": "hosted", "os": os_name, "arch": arch, "runner": "GitHub-hosted"},
+        "toolchain": {"rust": "as pinned by .github/workflows/ci.yml at this commit"},
+        "command": f"GitHub Actions job {lane!r} of CI run {run_id}",
+        "inputs": {"prerequisites": []},
+        "oracle": {"class": "execution", "description": oracle},
+        "raw_result": {
+            "conclusion": (ci.get("lanes") or {}).get(lane, "missing"),
+            "run_id": run_id,
+            "location": f"https://github.com/{REPO}/actions/runs/{run_id}" if run_id else "no run",
+            "note": why,
+        },
+        "outcome": LANE_OUTCOME.get(state, "informational"),
+        "scope": {
+            "supports": f"{lane} concluded {state} on commit {sha[:9]}",
+            "exclusions": ["anything the lane does not exercise", "clean recipients", "published artifacts"],
+        },
+        "independence": "first-party API observation",
+        "time": {"start": times.get("started_at") or now, "finish": times.get("completed_at") or now},
+        "operator": "GitHub Actions, CI workflow",
+        "privacy": {"audience": "public", "redact": []},
+        "retention": {"raw": "the GitHub Actions run log", "until": "GitHub's log retention"},
+        "expiry": {"triggers": ["source-change"], "on": None},
+        "supersedes": supersedes,
+        "invalidated_by": None,
+    }
+
+
+def emit_registry_records(sha, tree, ci, findings, records_dir=REGISTRY_RECORDS, now=None):
+    """One record per required lane. Append-only: a lane whose verdict changed
+    since the last record (CI was re-run) gets a new record that names the
+    old one; a verdict already on file is left alone."""
+    if not ci.get("assessed"):
+        return []
+    now = now or datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    records_dir.mkdir(parents=True, exist_ok=True)
+    written = []
+    for lane, state, why in findings:
+        base = f"E-CI-{sha[:9]}-{lane_slug(lane)}"
+        existing = sorted(
+            records_dir.glob(f"{base}*.json"),
+            key=lambda p: (len(p.stem), p.stem),
+        )
+        supersedes, suffix = None, ""
+        if existing:
+            latest = json.loads(existing[-1].read_text())
+            if latest.get("outcome") == LANE_OUTCOME.get(state, "informational"):
+                continue
+            supersedes = latest["id"]
+            suffix = f"-r{len(existing) + 1}"
+        record = lane_record(sha, tree, lane, state, why, ci, now, supersedes, suffix)
+        path = records_dir / f"{record['id']}.json"
+        path.write_text(json.dumps(record, indent=1) + "\n")
+        written.append(record["id"])
+    return written
+
+
 def gather_ci(sha):
     """Every required lane's conclusion on this exact commit."""
     code, out, _err = sh([
@@ -73,15 +169,16 @@ def gather_ci(sha):
     run_id = out
     code, out, _err = sh([
         "gh", "api", f"repos/{REPO}/actions/runs/{run_id}/jobs?per_page=100", "--paginate",
-        "--jq", '.jobs[] | "\\(.name)\\t\\(.conclusion // "pending")"',
+        "--jq", '.jobs[] | "\\(.name)\\t\\(.conclusion // "pending")\\t\\(.started_at // "")\\t\\(.completed_at // "")"',
     ])
     if code != 0:
         return {"assessed": False, "why": "could not list the run's jobs"}
-    lanes = {}
+    lanes, times = {}, {}
     for line in out.splitlines():
-        name, _, conclusion = line.partition("\t")
+        name, conclusion, started, completed = (line.split("\t") + ["", "", ""])[:4]
         lanes[name] = conclusion
-    return {"assessed": True, "run_id": run_id, "lanes": lanes}
+        times[name] = {"started_at": started or None, "completed_at": completed or None}
+    return {"assessed": True, "run_id": run_id, "lanes": lanes, "times": times}
 
 
 def classify_lanes(ci):
@@ -183,6 +280,25 @@ def parse_bugs(text):
     return findings
 
 
+def gather_registry():
+    """The evidence registry's own gate: a material claim the evidence does
+    not carry holds the release (IC-682). Read through the registry script
+    itself, so this file never grows a second opinion about claim states."""
+    import importlib.util
+    path = ROOT / "scripts" / "evidence-registry.py"
+    if not path.exists():
+        return {"assessed": False, "why": "scripts/evidence-registry.py is missing"}
+    spec = importlib.util.spec_from_file_location("registry", path)
+    registry = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(registry)
+    records, claims, load_problems = registry.load()
+    problems = registry.validate(records, claims, load_problems)
+    if problems:
+        return {"assessed": True, "valid": False, "problems": problems, "refusals": []}
+    return {"assessed": True, "valid": True, "problems": [],
+            "refusals": registry.publication_gate(claims, records)}
+
+
 def gather_bugs():
     board = ROOT / "BUGS.md"
     if not board.is_file():
@@ -195,8 +311,20 @@ def gather_bugs():
 
 # ---- the verdict -----------------------------------------------------------
 
-def decide(sha, ci_findings, fuzz, advisories, claims, bugs, accepted):
+def decide(sha, ci_findings, fuzz, advisories, claims, bugs, accepted, registry=None):
     holds = []
+
+    # The evidence registry: a release surface may not carry a claim the
+    # records do not support, and a registry that cannot be read is not a
+    # registry that passed.
+    if registry is not None:
+        if not registry.get("assessed"):
+            holds.append(f"evidence registry: not assessed -- {registry.get('why', '')}")
+        elif not registry.get("valid"):
+            holds.append(f"evidence registry: {len(registry['problems'])} malformed record(s)/claim(s) -- run scripts/evidence-registry.py validate")
+        else:
+            for refusal in registry.get("refusals", []):
+                holds.append(f"evidence registry: {refusal}")
 
     for name, state, why in ci_findings:
         if state == "pass":
@@ -355,6 +483,22 @@ Severity: blocker
         if verdict != "HOLD":
             failures.append(f"{name} must hold the release")
 
+    # The registry's own gate holds the release, and so does a registry that
+    # cannot be read or is malformed (IC-682).
+    for name, registry in [
+        ("a refused material claim", {"assessed": True, "valid": True, "problems": [],
+                                      "refusals": ["C-X (UNSUPPORTED): nothing"]}),
+        ("a malformed registry", {"assessed": True, "valid": False, "problems": ["bad"], "refusals": []}),
+        ("an unreadable registry", {"assessed": False, "why": "gone"}),
+    ]:
+        verdict, _holds = decide("x", green_ci, fresh_fuzz, good_adv, good_claims, clean_bugs, set(), registry)
+        if verdict != "HOLD":
+            failures.append(f"{name} must hold the release")
+    verdict, _holds = decide("x", green_ci, fresh_fuzz, good_adv, good_claims, clean_bugs, set(),
+                             {"assessed": True, "valid": True, "problems": [], "refusals": []})
+    if verdict != "RELEASE":
+        failures.append("a clean registry must not hold the release")
+
     # An accepted blocker releases -- and only the named one.
     with_blocker = {"assessed": True, "blockers": [{"id": "K-900", "title": "x"}],
                     "serious": [], "unparseable": []}
@@ -364,6 +508,41 @@ Severity: blocker
     verdict, _ = decide("x", green_ci, fresh_fuzz, good_adv, good_claims, with_blocker, {"K-999"})
     if verdict != "HOLD":
         failures.append("accepting a different bug must not release this one")
+
+    # Every lane verdict becomes a registry record the gate can read, and a
+    # changed verdict supersedes rather than overwrites (IC-681).
+    import importlib.util
+    import tempfile
+    spec = importlib.util.spec_from_file_location("registry", ROOT / "scripts" / "evidence-registry.py")
+    registry = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(registry)
+    with tempfile.TemporaryDirectory() as tmp:
+        records_dir = Path(tmp)
+        ci = {"assessed": True, "run_id": "1", "lanes": {lane: "success" for lane in REQUIRED_LANES[1:]}, "times": {}}
+        findings = classify_lanes(ci)
+        first = emit_registry_records("abc123def0", "cafe1234", ci, findings, records_dir, now="2026-09-11T00:00:00Z")
+        if len(first) != len(REQUIRED_LANES):
+            failures.append(f"one record per required lane, got {len(first)}")
+        recs, problems = registry.load_dir(records_dir, registry.RECORD_ID, "record")
+        problems += [p for r in recs.values() for p in registry.validate_record(r, recs)]
+        if problems:
+            failures.append(f"emitted lane records must be valid registry records: {problems[:3]}")
+        missing = [r for r in recs.values() if r["outcome"] == "blocked"]
+        if len(missing) != 1:
+            failures.append(f"a lane that never ran is recorded as blocked, not omitted: {[r['id'] for r in missing]}")
+        again = emit_registry_records("abc123def0", "cafe1234", ci, findings, records_dir, now="2026-09-11T00:00:00Z")
+        if again:
+            failures.append(f"an unchanged verdict must not write a new record: {again}")
+        ci["lanes"][REQUIRED_LANES[0]] = "failure"
+        changed = emit_registry_records("abc123def0", "cafe1234", ci, classify_lanes(ci), records_dir, now="2026-09-11T01:00:00Z")
+        if len(changed) != 1 or not changed[0].endswith("-r2"):
+            failures.append(f"a changed verdict must supersede with a new record: {changed}")
+        else:
+            newer = json.loads((records_dir / f"{changed[0]}.json").read_text())
+            if newer.get("supersedes") != changed[0][: -len("-r2")]:
+                failures.append(f"the new record must name the one it supersedes: {newer.get('supersedes')}")
+            if not (records_dir / f"{changed[0][: -len('-r2')]}.json").exists():
+                failures.append("the superseded record must still exist -- nothing is deleted")
 
     # The record binds itself.
     record = render("abc123", "HOLD", ["x"], {}, fresh_fuzz, good_adv, good_claims, clean_bugs, set(), {})
@@ -404,12 +583,17 @@ def main():
 
     ci = gather_ci(sha)
     ci_findings = classify_lanes(ci)
+    _code, tree, _err = sh(["git", "-C", str(ROOT), "rev-parse", f"{sha}^{{tree}}"])
+    written = emit_registry_records(sha, tree or "0000000", ci, ci_findings)
+    if written:
+        print(f"evidence registry: wrote {len(written)} lane record(s) under {REGISTRY_RECORDS.relative_to(ROOT)}")
     fuzz = gather_fuzz()
     advisories = gather_advisories()
     claims = gather_claims()
     bugs = gather_bugs()
+    registry = gather_registry()
 
-    verdict, holds = decide(sha, ci_findings, fuzz, advisories, claims, bugs, accepted)
+    verdict, holds = decide(sha, ci_findings, fuzz, advisories, claims, bugs, accepted, registry)
     record = render(sha, verdict, holds, ci, fuzz, advisories, claims, bugs, accepted, because)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
