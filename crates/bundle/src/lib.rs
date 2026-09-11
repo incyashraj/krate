@@ -3130,10 +3130,20 @@ required = true
         let mut options = fs::OpenOptions::new();
         options.read(true);
         // Windows refuses to open a DIRECTORY as a file ("Access is denied")
-        // unless the handle asks for backup semantics; there is no other way
-        // to get a handle to set its times through.
+        // unless the handle asks for backup semantics, and refuses to SET a
+        // time through a handle opened for reading alone -- it needs
+        // FILE_WRITE_ATTRIBUTES. Both are asked for; there is no other way
+        // to get a handle to set a directory's times through.
         #[cfg(windows)]
-        std::os::windows::fs::OpenOptionsExt::custom_flags(&mut options, 0x0200_0000);
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            const FILE_READ_ATTRIBUTES: u32 = 0x0080;
+            const FILE_WRITE_ATTRIBUTES: u32 = 0x0100;
+            const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+            options
+                .access_mode(FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES)
+                .custom_flags(FILE_FLAG_BACKUP_SEMANTICS);
+        }
         let file = options.open(path).expect("open the directory");
         file.set_modified(when).expect("backdate it");
     }
