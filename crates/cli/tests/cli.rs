@@ -4003,6 +4003,85 @@ fn the_send_advice_does_not_promise_a_double_click_to_someone_without_krate() {
     );
 }
 
+/// The commit this binary reports must be the one it was built from (K-276).
+///
+/// One line in build.rs watched `.git/HEAD`, which on a branch holds a ref
+/// rather than a SHA and does not change when a commit lands. Cargo
+/// therefore never re-ran the script, and the binary reported a commit
+/// fourteen behind its own source -- plausibly wrong, which is worse than
+/// obviously wrong, because a bug report quotes it and the reader goes
+/// looking in the wrong code.
+///
+/// This runs against whatever git state the checkout is in, so it asserts
+/// the two things that hold in every state: the stamp names a commit that
+/// exists, and it says when the source was edited.
+#[test]
+fn the_reported_commit_is_the_one_this_binary_was_built_from() {
+    let output = krate().arg("version").output().expect("run version");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let reported = stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("commit"))
+        .map(str::trim)
+        .expect("version must report a commit");
+
+    if reported == "unknown" {
+        // A build with no git at all -- a published crate, a tarball. Saying
+        // "unknown" is the honest answer there.
+        return;
+    }
+
+    let (sha, dirty) = match reported.strip_suffix("-dirty") {
+        Some(sha) => (sha, true),
+        None => (reported, false),
+    };
+
+    // The stamp must name a real commit. A stale stamp names one too, so
+    // this alone is not enough -- see below.
+    let exists = std::process::Command::new("git")
+        .args(["cat-file", "-e", &format!("{sha}^{{commit}}")])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false);
+    assert!(
+        exists,
+        "the reported commit {sha} is not a commit in this repo"
+    );
+
+    // The part that catches staleness: with a clean tree the stamp must be
+    // HEAD itself. With a dirty tree it may be HEAD and must say dirty,
+    // because the source that produced it is not the source that commit
+    // names.
+    let tracked_changes = std::process::Command::new("git")
+        .args(["status", "--porcelain", "--untracked-files=no"])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .expect("git status");
+    let tree_is_dirty = !String::from_utf8_lossy(&tracked_changes.stdout)
+        .trim()
+        .is_empty();
+
+    assert_eq!(
+        dirty, tree_is_dirty,
+        "the stamp says dirty={dirty} and the tracked files say {tree_is_dirty}"
+    );
+
+    if !tree_is_dirty {
+        let head = std::process::Command::new("git")
+            .args(["rev-parse", "--short=12", "HEAD"])
+            .current_dir(env!("CARGO_MANIFEST_DIR"))
+            .output()
+            .expect("git rev-parse");
+        let head = String::from_utf8_lossy(&head.stdout).trim().to_string();
+        assert_eq!(
+            sha, head,
+            "a binary built from a clean tree must report HEAD, not an \
+             older commit -- that is exactly the staleness this checks for"
+        );
+    }
+}
+
 /// Publishing must not upload what Krate would refuse to open (K-273).
 ///
 /// Publish is the moment a file stops being one person's problem. It used to

@@ -263,7 +263,12 @@ fn git_build_identity() -> String {
     };
     // Empty output means a clean tree. Anything else means the source that
     // produced this binary is not the source that commit names.
-    match command_output("git", &["status", "--porcelain"]) {
+    // `--untracked-files=no`: a stray scratch directory beside the source is
+    // not a change to the source. What matters is whether the TRACKED files
+    // differ from the commit being named, because that is what the number
+    // claims. Counting untracked files would mark almost every working
+    // checkout dirty and the marker would stop meaning anything.
+    match command_output("git", &["status", "--porcelain", "--untracked-files=no"]) {
         Some(status) if !status.is_empty() => format!("{sha}-dirty"),
         _ => sha,
     }
