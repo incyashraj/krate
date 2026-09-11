@@ -11506,6 +11506,13 @@ fn print_run_json(
         "runtime": {
             "version": env!("CARGO_PKG_VERSION"),
             "platform": format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
+            // Which rules judged the component before it ran, and the WIT
+            // they were generated from (IC-210). A report that says an app
+            // was valid should say valid against what.
+            "validator": {
+                "version": krate_bundle::imports::VALIDATOR_VERSION,
+                "wit": krate_bundle::imports::WIT_DIGEST,
+            },
         },
     });
 
@@ -16342,7 +16349,8 @@ mod card_tests {
             .expect("write manifest");
         zip.start_file("code.wasm", stored)
             .expect("start component");
-        zip.write_all(b"\0asm\x01\0\0\0").expect("write component");
+        zip.write_all(crate::MINIMAL_COMPONENT)
+            .expect("write component");
         let bundle_bytes = zip.finish().expect("finish zip").into_inner();
 
         // A real face over it, composed exactly as `krate card` composes one.
@@ -16373,6 +16381,12 @@ mod card_tests {
     }
 }
 
+/// A real component with a `run` export, for tests that build bundles by
+/// hand. Since open validates the component (IC-210), a bare header -- a
+/// component that could never run -- is refused, which is right.
+#[cfg(test)]
+const MINIMAL_COMPONENT: &[u8] = include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm");
+
 #[cfg(test)]
 mod wrap_tests {
     use super::{wrap_prefix_unix, wrap_prefix_windows};
@@ -16390,7 +16404,8 @@ mod wrap_tests {
             .expect("write manifest");
         zip.start_file("code.wasm", stored)
             .expect("start component");
-        zip.write_all(b"\0asm\x01\0\0\0").expect("write component");
+        zip.write_all(crate::MINIMAL_COMPONENT)
+            .expect("write component");
         zip.finish().expect("finish zip").into_inner()
     }
 
@@ -18268,7 +18283,7 @@ mod revise_transaction_tests {
         )
         .expect("manifest");
         let component = dir.path().join("code.wasm");
-        fs::write(&component, b"\0asm\x0d\0\x01\0").expect("component");
+        fs::write(&component, MINIMAL_COMPONENT).expect("component");
 
         // A source tree whose Cargo.toml points at the SDK placeholder, and a
         // tiny bundled SDK, so the sibling-SDK path is exercised too.

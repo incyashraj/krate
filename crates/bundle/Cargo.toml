@@ -27,4 +27,15 @@ ureq.workspace = true
 wasmparser.workspace = true
 zip.workspace = true
 
+[build-dependencies]
+# The WIT digest the validator reports (IC-210). Same crate the library
+# already uses for content identities.
+sha2 = "0.10.9"
+
 [dev-dependencies]
+# Hand-written components for the validator's refusal matrix: a component
+# importing an interface Krate never defined, or exporting nothing, cannot
+# be built with cargo-component -- the SDK would not compile it -- so the
+# tests write them in the text format instead. Already in the tree through
+# wasmtime, so no new supply-chain surface.
+wat = "1"

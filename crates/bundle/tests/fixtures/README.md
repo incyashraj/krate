@@ -26,3 +26,20 @@ Regenerate with:
     z.writestr('source/lib.rs', b'// the attacker copy')
     z.close()
     PY
+
+# The smallest real components
+
+`minimal-run.wasm` and `minimal-run-other.wasm` are the two smallest
+components Krate accepts: no imports, exactly the `run` export every Krate
+world declares, and `run` returning 0 and 1 respectively. Their text form is
+beside each (`.wat`); regenerate with
+
+    wasm-tools parse minimal-run.wat -o minimal-run.wasm
+    wasm-tools parse minimal-run-other.wat -o minimal-run-other.wasm
+
+They exist because open validates the component it finds (IC-210): a bare
+8-byte component header -- what every hand-assembled fixture used to carry --
+is a component that could never run, and is now refused for exactly that.
+Tests in this crate, the hub and the CLI that only need "a real component"
+include these bytes; tests that need "a different but still valid component"
+swap in the second.

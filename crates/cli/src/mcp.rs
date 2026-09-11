@@ -557,7 +557,7 @@ required = true
         let manifest = dir.join("manifest.toml");
         std::fs::write(&manifest, MANIFEST).expect("write manifest");
         let component = dir.join("code.wasm");
-        std::fs::write(&component, b"\0asm\x0d\0\x01\0").expect("write component");
+        std::fs::write(&component, crate::MINIMAL_COMPONENT).expect("write component");
         let bundle = dir.join("demo.krate");
         krate_bundle::pack(&manifest, &component, &bundle).expect("pack");
         bundle
@@ -586,8 +586,8 @@ required = true
         assert_eq!(report["app"]["id"], "com.example.agent");
         assert_eq!(report["requests"][0]["capability"], "fs.read:./data/**");
         assert_eq!(report["requests"][0]["rationale"], "Read the input file");
-        // The component here is not a runnable module. Inspect still succeeds,
-        // which is the point: deciding does not require executing.
+        // The component here does nothing at all. Inspect still reports the
+        // requests, which is the point: deciding does not require executing.
         assert_eq!(report["schema"], "krate.inspect.v1");
     }
 

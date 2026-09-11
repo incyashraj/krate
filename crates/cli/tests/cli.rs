@@ -3724,6 +3724,19 @@ fn a_run_report_names_the_exact_artifact_it_ran() {
         payload["runtime"]["version"].is_string(),
         "the report must name the runtime that produced it: {payload}"
     );
+    // And which rules judged the component valid before it ran, against
+    // which WIT (IC-210): "valid" without "against what" is not a claim.
+    assert_eq!(
+        payload["runtime"]["validator"]["version"], 1,
+        "the report must name the validator version: {payload}"
+    );
+    assert_eq!(
+        payload["runtime"]["validator"]["wit"]
+            .as_str()
+            .map(str::len),
+        Some(64),
+        "the report must name the WIT the validator was built from: {payload}"
+    );
     assert!(
         payload["runtime"]["platform"]
             .as_str()
@@ -4137,6 +4150,39 @@ fn publishing_refuses_a_bundle_that_cannot_be_opened() {
         "it must be refused BEFORE the network is touched -- reaching the \
          hub means a real hub would have taken it: {stderr}"
     );
+
+    // A component the validator refuses (IC-210): well formed as an archive,
+    // instantiates as a component, and is still not a Krate app. Publish
+    // must say so in the validator's words, and must not have reached out.
+    let chatty = dir.path().join("chatty.krate");
+    std::fs::write(
+        &chatty,
+        archive_with_component(
+            include_bytes!("../../bundle/tests/fixtures/extra-export.wasm"),
+            &[],
+        ),
+    )
+    .expect("write fixture");
+    let output = krate()
+        .arg("publish")
+        .arg(&chatty)
+        .env("KRATE_HUB_URL", "http://127.0.0.1:1")
+        .output()
+        .expect("run publish");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "an invalid component must not publish: {stderr}"
+    );
+    assert!(
+        stderr.contains("will not be published") && stderr.contains("exports more than `run`"),
+        "the refusal must carry the validator's reason: {stderr}"
+    );
+    assert!(
+        !stderr.contains("could not reach the hub"),
+        "and happen before the network: {stderr}"
+    );
 }
 
 /// A signature that was damaged after signing is said out loud (K-258).
@@ -4240,6 +4286,96 @@ fn a_path_outside_ascii_is_refused_by_the_binary_people_run() {
     }
 }
 
+/// The validator and the runtime agree (IC-210, "runtime-validator parity").
+///
+/// One function judges a component at every door -- pack, open, and so run,
+/// publish and the hub -- and this is the test that its verdicts match what
+/// the engine then does. The accept side: the smallest component the
+/// validator passes is one the runtime actually runs to a clean exit. The
+/// refuse side: a component the validator rejects is refused by `run` and
+/// by `pack` with the SAME words, before the engine is asked, and the
+/// engine would have run it happily -- it exports `run` and instantiates --
+/// which is exactly why the rule has to live in the validator.
+#[test]
+fn the_validator_and_the_runtime_agree_on_what_a_krate_component_is() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let minimal = include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm");
+    let extra_export = include_bytes!("../../bundle/tests/fixtures/extra-export.wasm");
+
+    // Accept side: packed by our own packer, run by our own runtime.
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(&manifest, BUNDLE_MANIFEST).expect("write manifest");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, minimal).expect("write component");
+    let bundle = dir.path().join("minimal.krate");
+    let packed = krate()
+        .args(["pack"])
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .output()
+        .expect("run krate pack");
+    assert!(
+        packed.status.success(),
+        "the smallest valid component must pack: {}",
+        String::from_utf8_lossy(&packed.stderr)
+    );
+    let ran = krate()
+        .arg("run")
+        .arg(&bundle)
+        .args(["--headless", "--auto-grant"])
+        .output()
+        .expect("run the minimal bundle");
+    assert_eq!(
+        ran.status.code(),
+        Some(0),
+        "what the validator accepts, the runtime runs: {}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+
+    // Refuse side, at run: a hand-assembled bundle nobody's packer checked.
+    let refused = dir.path().join("extra.krate");
+    std::fs::write(&refused, archive_with_component(extra_export, &[])).expect("write");
+    let ran = krate()
+        .arg("run")
+        .arg(&refused)
+        .args(["--headless", "--auto-grant"])
+        .output()
+        .expect("run the extra-export bundle");
+    let run_stderr = String::from_utf8_lossy(&ran.stderr);
+    assert_ne!(ran.status.code(), Some(0), "an extra export must not run");
+    assert!(
+        run_stderr.contains("exports more than `run`") && run_stderr.contains("debug-hook"),
+        "run must refuse with the validator's words and name the export: {run_stderr}"
+    );
+
+    // Refuse side, at pack: the same component, the same words.
+    let wasm = dir.path().join("extra.wasm");
+    std::fs::write(&wasm, extra_export).expect("write component");
+    let out = dir.path().join("never.krate");
+    let packed = krate()
+        .args(["pack"])
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&out)
+        .output()
+        .expect("run krate pack");
+    let pack_stderr = String::from_utf8_lossy(&packed.stderr);
+    assert!(
+        !packed.status.success(),
+        "pack must refuse what run refuses"
+    );
+    assert!(
+        pack_stderr.contains("exports more than `run`") && pack_stderr.contains("debug-hook"),
+        "pack must refuse with the same words: {pack_stderr}"
+    );
+    assert!(!out.exists(), "a refused pack leaves no bundle behind");
+}
+
 /// A zip whose central directory lists `path` twice.
 ///
 /// Assembled from raw records: the zip crate's writer refuses a literal
@@ -4255,22 +4391,29 @@ fn archive_naming_one_path_twice(path: &str) -> Vec<u8> {
 
 /// A well formed archive plus whatever `extra` entries are named, verbatim.
 fn archive_carrying(extra: &[(String, Vec<u8>)]) -> Vec<u8> {
+    archive_with_component(
+        include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm"),
+        extra,
+    )
+}
+
+/// A well formed archive around exactly these component bytes.
+fn archive_with_component(component: &[u8], extra: &[(String, Vec<u8>)]) -> Vec<u8> {
     const MANIFEST: &str = "[app]\nid = \"com.example.adversarial\"\nname = \"Adversarial\"\n\
                             version = \"1.0.0\"\nentry = \"code.wasm\"\n\
                             world = \"krate:app/cli@0.1.0\"\n";
 
     let entries: Vec<(String, Vec<u8>)> = [
         ("manifest.toml".to_string(), MANIFEST.as_bytes().to_vec()),
-        // A real COMPONENT header. `\0asm\x01\0\0\0` is a core MODULE,
-        // which is what almost every fixture used until pack learned to tell
-        // them apart (K-272). These archives are assembled by hand rather
-        // than packed, so nothing forced the correction here -- but a
-        // fixture that is not the thing it claims to be is worth fixing on
-        // sight.
-        (
-            "code.wasm".to_string(),
-            vec![0x00, 0x61, 0x73, 0x6d, 0x0d, 0x00, 0x01, 0x00],
-        ),
+        // A real component with a `run` export. `\0asm\x01\0\0\0` is a
+        // core MODULE, which is what almost every fixture used until pack
+        // learned to tell them apart (K-272); a bare component header is a
+        // component that could never run, which open refuses since it
+        // validates the component (IC-210). These archives are assembled by
+        // hand rather than packed, so nothing forced either correction --
+        // but a fixture that is not the thing it claims to be is worth
+        // fixing on sight.
+        ("code.wasm".to_string(), component.to_vec()),
     ]
     .into_iter()
     .chain(extra.iter().cloned())

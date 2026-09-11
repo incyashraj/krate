@@ -494,7 +494,10 @@ mod tests {
     const MANIFEST: &str = "[app]\nid = \"com.example.hub\"\nname = \"Hub\"\n\
                             version = \"1.0.0\"\nentry = \"code.wasm\"\n\
                             world = \"krate:app/cli@0.1.0\"\n";
-    const EMPTY_COMPONENT: &[u8] = &[0x00, 0x61, 0x73, 0x6d, 0x0d, 0x00, 0x01, 0x00];
+    // A real component with a `run` export (IC-210): admission runs the
+    // same validator as open, and a bare header is a component that could
+    // never run, which it now rightly refuses.
+    const MINIMAL_COMPONENT: &[u8] = include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm");
 
     fn krate_of(entries: &[(&str, &[u8])]) -> Vec<u8> {
         let mut buf = Vec::new();
@@ -516,7 +519,7 @@ mod tests {
             entries.push(("manifest.toml", MANIFEST.as_bytes()));
         }
         if component {
-            entries.push(("code.wasm", EMPTY_COMPONENT));
+            entries.push(("code.wasm", MINIMAL_COMPONENT));
         }
         krate_of(&entries)
     }
@@ -657,7 +660,7 @@ mod tests {
         );
         let deep = krate_of(&[
             ("manifest.toml", MANIFEST.as_bytes()),
-            ("code.wasm", EMPTY_COMPONENT),
+            ("code.wasm", MINIMAL_COMPONENT),
             (deep_name.as_str(), b"x"),
         ]);
         assert!(
@@ -669,7 +672,7 @@ mod tests {
         let damaged = krate_of(&[
             ("krate-profile", b"banana"),
             ("manifest.toml", MANIFEST.as_bytes()),
-            ("code.wasm", EMPTY_COMPONENT),
+            ("code.wasm", MINIMAL_COMPONENT),
         ]);
         assert!(
             looks_like_krate(&damaged).is_err(),
@@ -690,6 +693,23 @@ mod tests {
         assert!(
             refusal.contains("cargo component build"),
             "and told the command that fixes it: {refusal}"
+        );
+
+        // A component that instantiates but is not a Krate app: it exports
+        // more than `run`. Nothing before the validator objects to it, so
+        // this is the case that proves admission runs the validator and not
+        // merely the header check (IC-210).
+        let chatty = krate_of(&[
+            ("manifest.toml", MANIFEST.as_bytes()),
+            (
+                "code.wasm",
+                include_bytes!("../../bundle/tests/fixtures/extra-export.wasm"),
+            ),
+        ]);
+        let refusal = looks_like_krate(&chatty).expect_err("an extra export must be refused");
+        assert!(
+            refusal.contains("exports more than `run`") && refusal.contains("debug-hook"),
+            "and refused in the validator's words: {refusal}"
         );
 
         // A compression bomb, and specifically a FORGED one: its source
