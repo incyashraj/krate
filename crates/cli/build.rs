@@ -4,11 +4,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn main() {
-    println!("cargo:rerun-if-changed=../../.git/HEAD");
+    watch_git_head();
 
     let rustc = command_output("rustc", &["-V"]).unwrap_or_else(|| "unknown".to_owned());
-    let git_sha = command_output("git", &["rev-parse", "--short=12", "HEAD"])
-        .unwrap_or_else(|| "unknown".to_owned());
+    let git_sha = git_build_identity();
 
     println!("cargo:rustc-env=KRATE_RUSTC_VERSION={rustc}");
     println!("cargo:rustc-env=KRATE_GIT_SHA={git_sha}");
@@ -201,6 +200,73 @@ fn standalone_bindings_cargo_toml(path: &Path) -> String {
 
 fn env(key: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| panic!("{key} not set"))
+}
+
+/// Tell cargo which files make the commit stamp go stale (K-276).
+///
+/// This used to be one line watching `../../.git/HEAD`, and it was wrong in
+/// every state except the one nobody develops in. On a branch that file
+/// holds a REF, not a SHA:
+///
+///     $ cat .git/HEAD
+///     ref: refs/heads/main
+///
+/// It does not change when a commit lands, so cargo never re-ran this script
+/// and the binary reported a commit fourteen behind the source it was built
+/// from. Measured on this checkout: `.git/HEAD` last moved in August while
+/// `.git/refs/heads/main` moved the same day.
+///
+/// Detached HEAD was the exception -- there the file does hold a SHA -- which
+/// is exactly why it survived so long.
+///
+/// So the paths are asked FOR rather than assumed. `git rev-parse --git-path`
+/// resolves them properly, including from a worktree, where `.git` is a file
+/// pointing elsewhere and the old relative path resolved to nothing.
+fn watch_git_head() {
+    let mut watched = Vec::new();
+
+    if let Some(head) = command_output("git", &["rev-parse", "--git-path", "HEAD"]) {
+        watched.push(head);
+    }
+    // The ref HEAD points at, when it points at one. This is the file that
+    // actually moves as commits land.
+    if let Some(reference) = command_output("git", &["symbolic-ref", "-q", "HEAD"]) {
+        if let Some(path) = command_output("git", &["rev-parse", "--git-path", &reference]) {
+            watched.push(path);
+        }
+    }
+    // A packed ref has no loose file at all, so the pack itself is the thing
+    // that changes.
+    if let Some(packed) = command_output("git", &["rev-parse", "--git-path", "packed-refs"]) {
+        watched.push(packed);
+    }
+
+    if watched.is_empty() {
+        // No git at all -- a published crate, a tarball. Nothing to watch and
+        // nothing to stamp; the identity below says "unknown" and that is
+        // honest.
+        return;
+    }
+    for path in watched {
+        println!("cargo:rerun-if-changed={path}");
+    }
+}
+
+/// The commit this binary was built from, and whether the tree was clean.
+///
+/// A bug report quotes this number, so it has to be true. A build from
+/// edited, uncommitted source used to report the last commit as though it
+/// were that source; it now says so (K-276).
+fn git_build_identity() -> String {
+    let Some(sha) = command_output("git", &["rev-parse", "--short=12", "HEAD"]) else {
+        return "unknown".to_owned();
+    };
+    // Empty output means a clean tree. Anything else means the source that
+    // produced this binary is not the source that commit names.
+    match command_output("git", &["status", "--porcelain"]) {
+        Some(status) if !status.is_empty() => format!("{sha}-dirty"),
+        _ => sha,
+    }
 }
 
 fn command_output(program: &str, args: &[&str]) -> Option<String> {
