@@ -169,13 +169,13 @@ pub(crate) use __export_app_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 242] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07y\x01A\x02\x01A\x04\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 238] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07u\x01A\x02\x01A\x04\x01\
 B\x04\x01@\x01\x03msgs\x01\0\x04\0\x05print\x01\0\x01@\x01\x04codez\x01\0\x04\0\x04\
-exit\x01\x01\x03\0\x19krate:phase1/host@0.0.1\x05\0\x01@\0\x01\0\x04\0\x03run\x01\
-\x01\x04\0\x18krate:phase1/app@0.0.1\x04\0\x0b\x09\x01\0\x03app\x03\0\0\0G\x09\
-producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rus\
-t\x060.41.0";
+exit\x01\x01\x03\0\x17krate:phase1/host@0.0.1\x05\0\x01@\0\x01\0\x04\0\x03run\x01\
+\x01\x04\0\x16krate:phase1/app@0.0.1\x04\0\x0b\x09\x01\0\x03app\x03\0\0\0G\x09pr\
+oducers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x06\
+0.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {

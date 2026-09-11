@@ -3733,6 +3733,535 @@ pub mod krate {
                 }
             }
         }
+        /// Live two-way connections: WebSocket, ws:// and wss://.
+        ///
+        /// The permission story is the same one HTTP has: opening a connection is a
+        /// `net.connect` to that host and port, checked at `open` on the calling
+        /// thread, before anything dials. There is no separate capability to declare
+        /// -- an app granted `net.connect:example.com:443` may fetch from it and may
+        /// hold a socket to it, which is the same promise to the person either way.
+        ///
+        /// Everything here returns immediately. The connection lives on a host
+        /// thread; the guest polls for events from its own loop exactly as it polls
+        /// `http-client` fetches, so a stalled server can never freeze a frame.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod ws {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
+            use super::super::super::_rt;
+            pub type NetError = super::super::super::krate::net::types::NetError;
+            /// One message, either direction.
+            #[derive(Clone)]
+            pub enum WsMessage {
+                /// UTF-8 text.
+                Text(_rt::String),
+                /// Raw bytes.
+                Binary(_rt::Vec<u8>),
+            }
+            impl ::core::fmt::Debug for WsMessage {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    match self {
+                        WsMessage::Text(e) => {
+                            f.debug_tuple("WsMessage::Text").field(e).finish()
+                        }
+                        WsMessage::Binary(e) => {
+                            f.debug_tuple("WsMessage::Binary").field(e).finish()
+                        }
+                    }
+                }
+            }
+            /// What `poll` found.
+            #[derive(Clone)]
+            pub enum WsEvent {
+                /// Nothing new. The normal answer; keep drawing and ask later.
+                Pending,
+                /// The handshake finished; the connection is live. Reported once.
+                Opened,
+                /// The server sent a message.
+                Message(WsMessage),
+                /// The connection closed cleanly. Terminal; the handle is retired.
+                Closed,
+                /// The connection failed, with the reason. Terminal; the handle is
+                /// retired.
+                Failed(_rt::String),
+                /// Never opened, or already closed, cancelled, or retired.
+                UnknownHandle,
+            }
+            impl ::core::fmt::Debug for WsEvent {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    match self {
+                        WsEvent::Pending => f.debug_tuple("WsEvent::Pending").finish(),
+                        WsEvent::Opened => f.debug_tuple("WsEvent::Opened").finish(),
+                        WsEvent::Message(e) => {
+                            f.debug_tuple("WsEvent::Message").field(e).finish()
+                        }
+                        WsEvent::Closed => f.debug_tuple("WsEvent::Closed").finish(),
+                        WsEvent::Failed(e) => {
+                            f.debug_tuple("WsEvent::Failed").field(e).finish()
+                        }
+                        WsEvent::UnknownHandle => {
+                            f.debug_tuple("WsEvent::UnknownHandle").finish()
+                        }
+                    }
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Open a connection to a `ws://` or `wss://` URL and return a handle.
+            ///
+            /// The capability check happens here: the URL's host and port must be
+            /// covered by a `net.connect` grant, exactly as for a fetch. `wss://`
+            /// verifies certificates, always; there is no way to ask it not to.
+            pub fn open(url: &str) -> Result<u64, NetError> {
+                unsafe {
+                    #[repr(align(8))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 16 + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 16
+                            + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = url;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:net/ws@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "open"]
+                        fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result22 = match l3 {
+                        0 => {
+                            let e = {
+                                let l4 = *ptr1.add(8).cast::<i64>();
+                                l4 as u64
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l5 = i32::from(*ptr1.add(8).cast::<u8>());
+                                use super::super::super::krate::net::types::NetError as V21;
+                                let v21 = match l5 {
+                                    0 => V21::InvalidUrl,
+                                    1 => {
+                                        let e21 = {
+                                            let l6 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l7 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len8 = l7;
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
+                                            _rt::string_lift(bytes8)
+                                        };
+                                        V21::DnsFailure(e21)
+                                    }
+                                    2 => {
+                                        let e21 = {
+                                            let l9 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l10 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len11 = l10;
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
+                                            _rt::string_lift(bytes11)
+                                        };
+                                        V21::ConnectFailure(e21)
+                                    }
+                                    3 => {
+                                        let e21 = {
+                                            let l12 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l13 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len14 = l13;
+                                            let bytes14 = _rt::Vec::from_raw_parts(
+                                                l12.cast(),
+                                                len14,
+                                                len14,
+                                            );
+                                            _rt::string_lift(bytes14)
+                                        };
+                                        V21::TlsFailure(e21)
+                                    }
+                                    4 => V21::Timeout,
+                                    5 => V21::BodyTooLarge,
+                                    6 => V21::PermissionDenied,
+                                    7 => {
+                                        let e21 = {
+                                            let l15 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l16 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len17 = l16;
+                                            let bytes17 = _rt::Vec::from_raw_parts(
+                                                l15.cast(),
+                                                len17,
+                                                len17,
+                                            );
+                                            _rt::string_lift(bytes17)
+                                        };
+                                        V21::Protocol(e21)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 8, "invalid enum discriminant");
+                                        let e21 = {
+                                            let l18 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l19 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len20 = l19;
+                                            let bytes20 = _rt::Vec::from_raw_parts(
+                                                l18.cast(),
+                                                len20,
+                                                len20,
+                                            );
+                                            _rt::string_lift(bytes20)
+                                        };
+                                        V21::Other(e21)
+                                    }
+                                };
+                                v21
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result22
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Queue one message to send. Returns immediately; the host thread
+            /// delivers it in order. Sending on a connection that has not finished
+            /// opening queues the message for when it has.
+            pub fn send(handle: u64, message: &WsMessage) -> Result<(), NetError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let (result2_0, result2_1, result2_2) = match message {
+                        WsMessage::Text(e) => {
+                            let vec0 = e;
+                            let ptr0 = vec0.as_ptr().cast::<u8>();
+                            let len0 = vec0.len();
+                            (0i32, ptr0.cast_mut(), len0)
+                        }
+                        WsMessage::Binary(e) => {
+                            let vec1 = e;
+                            let ptr1 = vec1.as_ptr().cast::<u8>();
+                            let len1 = vec1.len();
+                            (1i32, ptr1.cast_mut(), len1)
+                        }
+                    };
+                    let ptr3 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:net/ws@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "send"]
+                        fn wit_import4(_: i64, _: i32, _: *mut u8, _: usize, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import4(
+                        _: i64,
+                        _: i32,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import4(
+                            _rt::as_i64(&handle),
+                            result2_0,
+                            result2_1,
+                            result2_2,
+                            ptr3,
+                        )
+                    };
+                    let l5 = i32::from(*ptr3.add(0).cast::<u8>());
+                    let result23 = match l5 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l6 = i32::from(
+                                    *ptr3.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                use super::super::super::krate::net::types::NetError as V22;
+                                let v22 = match l6 {
+                                    0 => V22::InvalidUrl,
+                                    1 => {
+                                        let e22 = {
+                                            let l7 = *ptr3
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l8 = *ptr3
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len9 = l8;
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
+                                            _rt::string_lift(bytes9)
+                                        };
+                                        V22::DnsFailure(e22)
+                                    }
+                                    2 => {
+                                        let e22 = {
+                                            let l10 = *ptr3
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l11 = *ptr3
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len12 = l11;
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
+                                            _rt::string_lift(bytes12)
+                                        };
+                                        V22::ConnectFailure(e22)
+                                    }
+                                    3 => {
+                                        let e22 = {
+                                            let l13 = *ptr3
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l14 = *ptr3
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len15 = l14;
+                                            let bytes15 = _rt::Vec::from_raw_parts(
+                                                l13.cast(),
+                                                len15,
+                                                len15,
+                                            );
+                                            _rt::string_lift(bytes15)
+                                        };
+                                        V22::TlsFailure(e22)
+                                    }
+                                    4 => V22::Timeout,
+                                    5 => V22::BodyTooLarge,
+                                    6 => V22::PermissionDenied,
+                                    7 => {
+                                        let e22 = {
+                                            let l16 = *ptr3
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l17 = *ptr3
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len18 = l17;
+                                            let bytes18 = _rt::Vec::from_raw_parts(
+                                                l16.cast(),
+                                                len18,
+                                                len18,
+                                            );
+                                            _rt::string_lift(bytes18)
+                                        };
+                                        V22::Protocol(e22)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 8, "invalid enum discriminant");
+                                        let e22 = {
+                                            let l19 = *ptr3
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l20 = *ptr3
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len21 = l20;
+                                            let bytes21 = _rt::Vec::from_raw_parts(
+                                                l19.cast(),
+                                                len21,
+                                                len21,
+                                            );
+                                            _rt::string_lift(bytes21)
+                                        };
+                                        V22::Other(e22)
+                                    }
+                                };
+                                v22
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result23
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Ask for the next event. Returns immediately, always; `pending` is the
+            /// normal answer. Messages arrive in order. A terminal event retires the
+            /// handle.
+            pub fn poll(handle: u64) -> WsEvent {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:net/ws@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "poll"]
+                        fn wit_import1(_: i64, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(_rt::as_i64(&handle), ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let v14 = match l2 {
+                        0 => WsEvent::Pending,
+                        1 => WsEvent::Opened,
+                        2 => {
+                            let e14 = {
+                                let l3 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v10 = match l3 {
+                                    0 => {
+                                        let e10 = {
+                                            let l4 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l5 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len6 = l5;
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
+                                            _rt::string_lift(bytes6)
+                                        };
+                                        WsMessage::Text(e10)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 1, "invalid enum discriminant");
+                                        let e10 = {
+                                            let l7 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l8 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len9 = l8;
+                                            _rt::Vec::from_raw_parts(l7.cast(), len9, len9)
+                                        };
+                                        WsMessage::Binary(e10)
+                                    }
+                                };
+                                v10
+                            };
+                            WsEvent::Message(e14)
+                        }
+                        3 => WsEvent::Closed,
+                        4 => {
+                            let e14 = {
+                                let l11 = *ptr0
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l12 = *ptr0
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let len13 = l12;
+                                let bytes13 = _rt::Vec::from_raw_parts(
+                                    l11.cast(),
+                                    len13,
+                                    len13,
+                                );
+                                _rt::string_lift(bytes13)
+                            };
+                            WsEvent::Failed(e14)
+                        }
+                        n => {
+                            debug_assert_eq!(n, 5, "invalid enum discriminant");
+                            WsEvent::UnknownHandle
+                        }
+                    };
+                    let result15 = v14;
+                    result15
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Close the connection politely. Safe on a handle already retired; the
+            /// final `closed` event still arrives through `poll`.
+            pub fn close(handle: u64) -> () {
+                unsafe {
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:net/ws@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "close"]
+                        fn wit_import0(_: i64);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import0(_: i64) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import0(_rt::as_i64(&handle)) };
+                }
+            }
+        }
     }
     pub mod random {
         /// Random bytes from the operating system.
@@ -5980,6 +6509,870 @@ pub mod krate {
                 }
             }
         }
+        /// A key-value bucket shared between the machines that hold its invite code.
+        ///
+        /// This is how an app becomes a household app -- a shopping list two people
+        /// see, a meal plan a family edits -- without the app author running a
+        /// backend and without anyone creating an account. The person who creates a
+        /// share gets a ten-character code; anyone they give it to sees the same
+        /// data. Possession of the code IS the membership, exactly like a shared
+        /// album link, and the consent dialog says so in those words.
+        ///
+        /// The store is local-first: reads and writes always work against the copy
+        /// on this machine, `sync` exchanges changes with krate.tech when the
+        /// network allows, and the newest write of a key wins. Bounded like a list,
+        /// not a database: hundreds of keys, kilobytes per value.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod shared {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
+            use super::super::super::_rt;
+            /// Error returned by a shared-store operation.
+            #[derive(Clone)]
+            pub enum SharedError {
+                /// The app did not receive the `store.shared` capability.
+                Denied,
+                /// No share has been created or joined yet.
+                NotJoined,
+                /// The invite code was not a share that exists.
+                NoSuchShare,
+                /// The key was empty, too long, or used unsupported syntax.
+                InvalidName,
+                /// The value is larger than the runtime's bounded limit.
+                TooLarge,
+                /// The store could not be read or written.
+                Io(_rt::String),
+            }
+            impl ::core::fmt::Debug for SharedError {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    match self {
+                        SharedError::Denied => {
+                            f.debug_tuple("SharedError::Denied").finish()
+                        }
+                        SharedError::NotJoined => {
+                            f.debug_tuple("SharedError::NotJoined").finish()
+                        }
+                        SharedError::NoSuchShare => {
+                            f.debug_tuple("SharedError::NoSuchShare").finish()
+                        }
+                        SharedError::InvalidName => {
+                            f.debug_tuple("SharedError::InvalidName").finish()
+                        }
+                        SharedError::TooLarge => {
+                            f.debug_tuple("SharedError::TooLarge").finish()
+                        }
+                        SharedError::Io(e) => {
+                            f.debug_tuple("SharedError::Io").field(e).finish()
+                        }
+                    }
+                }
+            }
+            impl ::core::fmt::Display for SharedError {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    write!(f, "{:?}", self)
+                }
+            }
+            impl std::error::Error for SharedError {}
+            #[allow(unused_unsafe, clippy::all)]
+            /// The invite code of this app's share, or `none` before create or join.
+            pub fn code() -> Result<Option<_rt::String>, SharedError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/shared@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "code"]
+                        fn wit_import1(_: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result12 = match l2 {
+                        0 => {
+                            let e = {
+                                let l3 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                match l3 {
+                                    0 => None,
+                                    1 => {
+                                        let e = {
+                                            let l4 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l5 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len6 = l5;
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
+                                            _rt::string_lift(bytes6)
+                                        };
+                                        Some(e)
+                                    }
+                                    _ => _rt::invalid_enum_discriminant(),
+                                }
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l7 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v11 = match l7 {
+                                    0 => SharedError::Denied,
+                                    1 => SharedError::NotJoined,
+                                    2 => SharedError::NoSuchShare,
+                                    3 => SharedError::InvalidName,
+                                    4 => SharedError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 5, "invalid enum discriminant");
+                                        let e11 = {
+                                            let l8 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l9 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len10 = l9;
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
+                                            _rt::string_lift(bytes10)
+                                        };
+                                        SharedError::Io(e11)
+                                    }
+                                };
+                                v11
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result12
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Create a fresh share and return its invite code. Requires the network;
+            /// the code is minted by krate.tech so it is unique.
+            pub fn create() -> Result<_rt::String, SharedError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/shared@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "create"]
+                        fn wit_import1(_: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result11 = match l2 {
+                        0 => {
+                            let e = {
+                                let l3 = *ptr0
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l4 = *ptr0
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let len5 = l4;
+                                let bytes5 = _rt::Vec::from_raw_parts(
+                                    l3.cast(),
+                                    len5,
+                                    len5,
+                                );
+                                _rt::string_lift(bytes5)
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l6 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v10 = match l6 {
+                                    0 => SharedError::Denied,
+                                    1 => SharedError::NotJoined,
+                                    2 => SharedError::NoSuchShare,
+                                    3 => SharedError::InvalidName,
+                                    4 => SharedError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 5, "invalid enum discriminant");
+                                        let e10 = {
+                                            let l7 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l8 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len9 = l8;
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
+                                            _rt::string_lift(bytes9)
+                                        };
+                                        SharedError::Io(e10)
+                                    }
+                                };
+                                v10
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result11
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Join an existing share by its invite code. Local keys are kept and
+            /// merged: the newest write of each key wins.
+            pub fn join(code: &str) -> Result<(), SharedError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = code;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/shared@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "join"]
+                        fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result9 = match l3 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v8 = match l4 {
+                                    0 => SharedError::Denied,
+                                    1 => SharedError::NotJoined,
+                                    2 => SharedError::NoSuchShare,
+                                    3 => SharedError::InvalidName,
+                                    4 => SharedError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 5, "invalid enum discriminant");
+                                        let e8 = {
+                                            let l5 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
+                                            _rt::string_lift(bytes7)
+                                        };
+                                        SharedError::Io(e8)
+                                    }
+                                };
+                                v8
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result9
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Leave the share: keeps the local copy, stops syncing, forgets the code.
+            pub fn leave() -> Result<(), SharedError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/shared@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "leave"]
+                        fn wit_import1(_: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result8 = match l2 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l3 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v7 = match l3 {
+                                    0 => SharedError::Denied,
+                                    1 => SharedError::NotJoined,
+                                    2 => SharedError::NoSuchShare,
+                                    3 => SharedError::InvalidName,
+                                    4 => SharedError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 5, "invalid enum discriminant");
+                                        let e7 = {
+                                            let l4 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l5 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len6 = l5;
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
+                                            _rt::string_lift(bytes6)
+                                        };
+                                        SharedError::Io(e7)
+                                    }
+                                };
+                                v7
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result8
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Read one key from the local copy. Never touches the network.
+            pub fn get(key: &str) -> Result<Option<_rt::Vec<u8>>, SharedError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = key;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/shared@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "get"]
+                        fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result13 = match l3 {
+                        0 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                match l4 {
+                                    0 => None,
+                                    1 => {
+                                        let e = {
+                                            let l5 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+                                            _rt::Vec::from_raw_parts(l5.cast(), len7, len7)
+                                        };
+                                        Some(e)
+                                    }
+                                    _ => _rt::invalid_enum_discriminant(),
+                                }
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l8 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v12 = match l8 {
+                                    0 => SharedError::Denied,
+                                    1 => SharedError::NotJoined,
+                                    2 => SharedError::NoSuchShare,
+                                    3 => SharedError::InvalidName,
+                                    4 => SharedError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 5, "invalid enum discriminant");
+                                        let e12 = {
+                                            let l9 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l10 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len11 = l10;
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
+                                            _rt::string_lift(bytes11)
+                                        };
+                                        SharedError::Io(e12)
+                                    }
+                                };
+                                v12
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result13
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Write one key locally and queue it for sync.
+            pub fn set(key: &str, value: &[u8]) -> Result<(), SharedError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = key;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let vec1 = value;
+                    let ptr1 = vec1.as_ptr().cast::<u8>();
+                    let len1 = vec1.len();
+                    let ptr2 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/shared@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "set"]
+                        fn wit_import3(
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                        );
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import3(
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import3(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1, ptr2)
+                    };
+                    let l4 = i32::from(*ptr2.add(0).cast::<u8>());
+                    let result10 = match l4 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l5 = i32::from(
+                                    *ptr2.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v9 = match l5 {
+                                    0 => SharedError::Denied,
+                                    1 => SharedError::NotJoined,
+                                    2 => SharedError::NoSuchShare,
+                                    3 => SharedError::InvalidName,
+                                    4 => SharedError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 5, "invalid enum discriminant");
+                                        let e9 = {
+                                            let l6 = *ptr2
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l7 = *ptr2
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len8 = l7;
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
+                                            _rt::string_lift(bytes8)
+                                        };
+                                        SharedError::Io(e9)
+                                    }
+                                };
+                                v9
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result10
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Delete one key locally and queue the removal for sync.
+            pub fn delete(key: &str) -> Result<(), SharedError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = key;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/shared@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "delete"]
+                        fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result9 = match l3 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v8 = match l4 {
+                                    0 => SharedError::Denied,
+                                    1 => SharedError::NotJoined,
+                                    2 => SharedError::NoSuchShare,
+                                    3 => SharedError::InvalidName,
+                                    4 => SharedError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 5, "invalid enum discriminant");
+                                        let e8 = {
+                                            let l5 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
+                                            _rt::string_lift(bytes7)
+                                        };
+                                        SharedError::Io(e8)
+                                    }
+                                };
+                                v8
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result9
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// The keys present in the local copy.
+            pub fn keys() -> Result<_rt::Vec<_rt::String>, SharedError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/shared@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "keys"]
+                        fn wit_import1(_: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result14 = match l2 {
+                        0 => {
+                            let e = {
+                                let l3 = *ptr0
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l4 = *ptr0
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let base8 = l3;
+                                let len8 = l4;
+                                let mut result8 = _rt::Vec::with_capacity(len8);
+                                for i in 0..len8 {
+                                    let base = base8
+                                        .add(i * (2 * ::core::mem::size_of::<*const u8>()));
+                                    let e8 = {
+                                        let l5 = *base.add(0).cast::<*mut u8>();
+                                        let l6 = *base
+                                            .add(::core::mem::size_of::<*const u8>())
+                                            .cast::<usize>();
+                                        let len7 = l6;
+                                        let bytes7 = _rt::Vec::from_raw_parts(
+                                            l5.cast(),
+                                            len7,
+                                            len7,
+                                        );
+                                        _rt::string_lift(bytes7)
+                                    };
+                                    result8.push(e8);
+                                }
+                                _rt::cabi_dealloc(
+                                    base8,
+                                    len8 * (2 * ::core::mem::size_of::<*const u8>()),
+                                    ::core::mem::size_of::<*const u8>(),
+                                );
+                                result8
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l9 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v13 = match l9 {
+                                    0 => SharedError::Denied,
+                                    1 => SharedError::NotJoined,
+                                    2 => SharedError::NoSuchShare,
+                                    3 => SharedError::InvalidName,
+                                    4 => SharedError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 5, "invalid enum discriminant");
+                                        let e13 = {
+                                            let l10 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l11 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len12 = l11;
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
+                                            _rt::string_lift(bytes12)
+                                        };
+                                        SharedError::Io(e13)
+                                    }
+                                };
+                                v13
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result14
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Exchange changes with krate.tech now: push queued writes, pull what
+            /// other machines wrote. Returns `true` when the local copy changed, so
+            /// the app knows to redraw. Offline is not an error -- it returns `false`
+            /// and the queue keeps waiting. Call it on launch, after writes, and on a
+            /// timer of ten seconds or more; the host rate-limits anything faster.
+            pub fn sync() -> Result<bool, SharedError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/shared@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "sync"]
+                        fn wit_import1(_: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result9 = match l2 {
+                        0 => {
+                            let e = {
+                                let l3 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                _rt::bool_lift(l3 as u8)
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v8 = match l4 {
+                                    0 => SharedError::Denied,
+                                    1 => SharedError::NotJoined,
+                                    2 => SharedError::NoSuchShare,
+                                    3 => SharedError::InvalidName,
+                                    4 => SharedError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 5, "invalid enum discriminant");
+                                        let e8 = {
+                                            let l5 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
+                                            _rt::string_lift(bytes7)
+                                        };
+                                        SharedError::Io(e8)
+                                    }
+                                };
+                                v8
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result9
+                }
+            }
+        }
     }
     pub mod time {
         /// Host clock reads.
@@ -6305,106 +7698,121 @@ pub(crate) use __export_cli_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 4259] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xa9\x20\x01A\x02\x01\
-A6\x01B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x09log-lev\
-el\x03\0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eof\0\0\x0cin\
-valid-utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x14krate:io/typ\
-es@0.1.0\x05\0\x02\x03\0\0\x08io-error\x01B\x15\x02\x03\x02\x01\x01\x04\0\x08io-\
-error\x03\0\0\x04\0\x0cinput-stream\x03\x01\x04\0\x0doutput-stream\x03\x01\x01h\x02\
-\x01p}\x01j\x01\x05\x01\x01\x01@\x02\x04self\x04\x01ny\0\x06\x04\0\x19[method]in\
-put-stream.read\x01\x07\x01j\x01s\x01\x01\x01@\x01\x04self\x04\0\x08\x04\0#[meth\
-od]input-stream.read-to-string\x01\x09\x01h\x03\x01j\x01y\x01\x01\x01@\x02\x04se\
-lf\x0a\x05bytes\x05\0\x0b\x04\0\x1b[method]output-stream.write\x01\x0c\x01j\0\x01\
-\x01\x01@\x02\x04self\x0a\x05bytes\x05\0\x0d\x04\0\x1f[method]output-stream.writ\
-e-all\x01\x0e\x01@\x01\x04self\x0a\0\x0d\x04\0\x1b[method]output-stream.flush\x01\
-\x0f\x03\0\x16krate:io/streams@0.1.0\x05\x02\x02\x03\0\x01\x0cinput-stream\x02\x03\
-\0\x01\x0doutput-stream\x01B\x0b\x02\x03\x02\x01\x03\x04\0\x0cinput-stream\x03\0\
-\0\x02\x03\x02\x01\x04\x04\0\x0doutput-stream\x03\0\x02\x01i\x01\x01@\0\0\x04\x04\
-\0\x05stdin\x01\x05\x01i\x03\x01@\0\0\x06\x04\0\x06stdout\x01\x07\x04\0\x06stder\
-r\x01\x07\x03\0\x14krate:io/stdio@0.1.0\x05\x05\x01B\x02\x01@\0\0s\x04\0\x03raw\x01\
-\0\x03\0\x13krate:io/args@0.1.0\x05\x06\x02\x03\0\0\x09log-level\x01B\x07\x02\x03\
-\x02\x01\x07\x04\0\x09log-level\x03\0\0\x01r\x02\x03keys\x05values\x04\0\x05fiel\
-d\x03\0\x02\x01p\x03\x01@\x03\x05level\x01\x07messages\x06fields\x04\x01\0\x04\0\
-\x04emit\x01\x05\x03\0\x12krate:io/log@0.1.0\x05\x08\x01B\x06\x01r\x03\x04sizew\x0f\
-modified-millisw\x06is-dir\x7f\x04\0\x09file-stat\x03\0\0\x01q\x04\x04read\0\0\x05\
-write\0\0\x0aread-write\0\0\x06append\0\0\x04\0\x09open-mode\x03\0\x02\x01q\x07\x09\
-not-found\0\0\x11permission-denied\0\0\x0ealready-exists\0\0\x0cinvalid-path\0\0\
-\x0fnot-a-directory\0\0\x0eis-a-directory\0\0\x02io\x01s\0\x04\0\x08fs-error\x03\
-\0\x04\x03\0\x14krate:fs/types@0.1.0\x05\x09\x02\x03\0\x05\x09file-stat\x02\x03\0\
-\x05\x09open-mode\x02\x03\0\x05\x08fs-error\x01B*\x02\x03\x02\x01\x0a\x04\0\x09f\
-ile-stat\x03\0\0\x02\x03\x02\x01\x0b\x04\0\x09open-mode\x03\0\x02\x02\x03\x02\x01\
-\x0c\x04\0\x08fs-error\x03\0\x04\x04\0\x04file\x03\x01\x01h\x06\x01p}\x01j\x01\x08\
-\x01\x05\x01@\x02\x04self\x07\x01ny\0\x09\x04\0\x11[method]file.read\x01\x0a\x01\
-j\x01y\x01\x05\x01@\x02\x04self\x07\x05bytes\x08\0\x0b\x04\0\x12[method]file.wri\
-te\x01\x0c\x01j\x01w\x01\x05\x01@\x02\x04self\x07\x03posw\0\x0d\x04\0\x15[method\
-]file.seek-set\x01\x0e\x01@\x01\x04self\x07\0\x0d\x04\0\x15[method]file.seek-end\
-\x01\x0f\x01j\x01\x01\x01\x05\x01@\x01\x04self\x07\0\x10\x04\0\x11[method]file.s\
-tat\x01\x11\x01i\x06\x01j\x01\x12\x01\x05\x01@\x02\x04paths\x04mode\x03\0\x13\x04\
-\0\x04open\x01\x14\x01@\x02\x05tokens\x04mode\x03\0\x13\x04\0\x0bopen-chosen\x01\
-\x15\x01@\x01\x04paths\0\x10\x04\0\x04stat\x01\x16\x01ps\x01j\x01\x17\x01\x05\x01\
-@\x01\x04paths\0\x18\x04\0\x04list\x01\x19\x01j\0\x01\x05\x01@\x01\x04paths\0\x1a\
-\x04\0\x0bremove-file\x01\x1b\x04\0\x0aremove-dir\x01\x1b\x04\0\x05mkdir\x01\x1b\
-\x01@\x02\x04froms\x02tos\0\x1a\x04\0\x06rename\x01\x1c\x03\0\x14krate:fs/files@\
-0.1.0\x05\x0d\x01B\x0f\x01m\x07\x03get\x04post\x03put\x06delete\x05patch\x04head\
-\x07options\x04\0\x0bhttp-method\x03\0\0\x01r\x02\x04names\x05values\x04\0\x06he\
-ader\x03\0\x02\x01p\x03\x01p}\x01ky\x01r\x05\x06method\x01\x03urls\x07headers\x04\
-\x04body\x05\x0etimeout-millis\x06\x04\0\x07request\x03\0\x07\x01r\x03\x06status\
-{\x07headers\x04\x04body\x05\x04\0\x08response\x03\0\x09\x01q\x09\x0binvalid-url\
-\0\0\x0bdns-failure\x01s\0\x0fconnect-failure\x01s\0\x0btls-failure\x01s\0\x07ti\
-meout\0\0\x0ebody-too-large\0\0\x11permission-denied\0\0\x08protocol\x01s\0\x05o\
-ther\x01s\0\x04\0\x09net-error\x03\0\x0b\x01q\x04\x07pending\0\0\x05ready\x01\x0a\
-\0\x06failed\x01\x0c\0\x0eunknown-handle\0\0\x04\0\x0cfetch-status\x03\0\x0d\x03\
-\0\x15krate:net/types@0.1.0\x05\x0e\x02\x03\0\x07\x07request\x02\x03\0\x07\x08re\
-sponse\x02\x03\0\x07\x09net-error\x02\x03\0\x07\x0cfetch-status\x01B\x16\x02\x03\
-\x02\x01\x0f\x04\0\x07request\x03\0\0\x02\x03\x02\x01\x10\x04\0\x08response\x03\0\
-\x02\x02\x03\x02\x01\x11\x04\0\x09net-error\x03\0\x04\x02\x03\x02\x01\x12\x04\0\x0c\
-fetch-status\x03\0\x06\x01p}\x01j\x01\x08\x01\x05\x01@\x01\x03urls\0\x09\x04\0\x03\
-get\x01\x0a\x01j\x01\x03\x01\x05\x01@\x01\x03req\x01\0\x0b\x04\0\x05fetch\x01\x0c\
-\x01j\x01w\x01\x05\x01@\x01\x03req\x01\0\x0d\x04\0\x05begin\x01\x0e\x01@\x01\x06\
-handlew\0\x07\x04\0\x04poll\x01\x0f\x01@\x01\x06handlew\x01\0\x04\0\x06cancel\x01\
-\x10\x03\0\x1bkrate:net/http-client@0.1.0\x05\x13\x01B\x03\x01@\0\0w\x04\0\x0ano\
-w-millis\x01\0\x04\0\x0fmonotonic-nanos\x01\0\x03\0\x16krate:time/clock@0.1.0\x05\
-\x14\x01B\x02\x01@\x01\x06millisy\x01\0\x04\0\x0csleep-millis\x01\0\x03\0\x16kra\
-te:time/sleep@0.1.0\x05\x15\x01B\x06\x01r\x01\x05bcp47s\x04\0\x09locale-id\x03\0\
-\0\x01m\x04\x05short\x06medium\x04long\x04full\x04\0\x0adate-style\x03\0\x02\x01\
-m\x03\x07decimal\x07percent\x08currency\x04\0\x0cnumber-style\x03\0\x04\x03\0\x18\
-krate:locale/types@0.1.0\x05\x16\x02\x03\0\x0b\x09locale-id\x01B\x06\x02\x03\x02\
-\x01\x17\x04\0\x09locale-id\x03\0\0\x01@\0\0\x01\x04\0\x07current\x01\x02\x01@\0\
-\0s\x04\0\x08timezone\x01\x03\x03\0\x17krate:locale/info@0.1.0\x05\x18\x02\x03\0\
-\x0b\x0adate-style\x02\x03\0\x0b\x0cnumber-style\x01B\x0a\x02\x03\x02\x01\x17\x04\
-\0\x09locale-id\x03\0\0\x02\x03\x02\x01\x19\x04\0\x0adate-style\x03\0\x02\x02\x03\
-\x02\x01\x1a\x04\0\x0cnumber-style\x03\0\x04\x01@\x04\x06millisw\x02tzs\x05style\
-\x03\x03loc\x01\0s\x04\0\x0bformat-date\x01\x06\x01@\x03\x05valueu\x05style\x05\x03\
-loc\x01\0s\x04\0\x0dformat-number\x01\x07\x03\0\x19krate:locale/format@0.1.0\x05\
-\x1b\x01B\x0a\x01q\x04\x09not-found\0\0\x0cinvalid-path\0\0\x09too-large\0\0\x02\
-io\x01s\0\x04\0\x0eresource-error\x03\0\0\x01p}\x01j\x01\x02\x01\x01\x01@\x01\x04\
-paths\0\x03\x04\0\x04read\x01\x04\x01ps\x01j\x01\x05\x01\x01\x01@\x01\x04paths\0\
-\x06\x04\0\x04list\x01\x07\x03\0\x1ckrate:resources/assets@0.1.0\x05\x1c\x01B\x12\
-\x01q\x04\x06denied\0\0\x0binvalid-key\0\0\x09too-large\0\0\x02io\x01s\0\x04\0\x0b\
-store-error\x03\0\0\x01p}\x01k\x02\x01j\x01\x03\x01\x01\x01@\x01\x03keys\0\x04\x04\
-\0\x03get\x01\x05\x01j\0\x01\x01\x01@\x02\x03keys\x05value\x02\0\x06\x04\0\x03se\
-t\x01\x07\x01@\x01\x03keys\0\x06\x04\0\x06delete\x01\x08\x01ps\x01j\x01\x09\x01\x01\
-\x01@\0\0\x0a\x04\0\x04keys\x01\x0b\x01@\0\0\x06\x04\0\x05clear\x01\x0c\x03\0\x14\
-krate:store/kv@0.1.0\x05\x1d\x01B\x15\x01p}\x01q\x05\x04null\0\0\x07integer\x01x\
-\0\x04real\x01u\0\x04text\x01s\0\x04blob\x01\0\0\x04\0\x05value\x03\0\x01\x01q\x05\
-\x06denied\0\0\x11invalid-statement\x01s\0\x09forbidden\x01s\0\x09too-large\0\0\x02\
-io\x01s\0\x04\0\x09sql-error\x03\0\x03\x01p\x02\x01r\x01\x06values\x05\x04\0\x03\
-row\x03\0\x06\x01ps\x01p\x07\x01r\x02\x07columns\x08\x04rows\x09\x04\0\x0cquery-\
-result\x03\0\x0a\x01j\x01\x0b\x01\x04\x01@\x02\x09statements\x06params\x05\0\x0c\
-\x04\0\x05query\x01\x0d\x01j\x01w\x01\x04\x01@\x02\x09statements\x06params\x05\0\
-\x0e\x04\0\x07execute\x01\x0f\x01j\0\x01\x04\x01@\x01\x0astatements\x08\0\x10\x04\
-\0\x0btransaction\x01\x11\x03\0\x15krate:store/sql@0.1.0\x05\x1e\x01B\x10\x01q\x04\
-\x06denied\0\0\x0cinvalid-name\0\0\x09too-large\0\0\x02io\x01s\0\x04\0\x0csecret\
--error\x03\0\0\x01p}\x01k\x02\x01j\x01\x03\x01\x01\x01@\x01\x04names\0\x04\x04\0\
-\x03get\x01\x05\x01j\0\x01\x01\x01@\x02\x04names\x06secret\x02\0\x06\x04\0\x03se\
-t\x01\x07\x01@\x01\x04names\0\x06\x04\0\x06delete\x01\x08\x01ps\x01j\x01\x09\x01\
-\x01\x01@\0\0\x0a\x04\0\x05names\x01\x0b\x03\0\x18krate:store/secret@0.1.0\x05\x1f\
-\x01B\x0b\x01q\x04\x06denied\0\0\x09too-large\0\0\x0bempty-range\0\0\x0bunavaila\
-ble\x01s\0\x04\0\x0crandom-error\x03\0\0\x01p}\x01j\x01\x02\x01\x01\x01@\x01\x05\
-county\0\x03\x04\0\x03get\x01\x04\x01j\x01w\x01\x01\x01@\0\0\x05\x04\0\x08next-u\
-64\x01\x06\x01@\x01\x05boundw\0\x05\x04\0\x05below\x01\x07\x03\0\x18krate:random\
-/bytes@0.1.0\x05\x20\x01@\0\0z\x04\0\x03run\x01!\x04\0\x13krate:app/cli@0.1.0\x04\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 4862] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x84%\x01A\x02\x01A:\x01\
+B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x09log-level\x03\
+\0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eof\0\0\x0cinvalid-\
+utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x14krate:io/types@0.1\
+.0\x05\0\x02\x03\0\0\x08io-error\x01B\x15\x02\x03\x02\x01\x01\x04\0\x08io-error\x03\
+\0\0\x04\0\x0cinput-stream\x03\x01\x04\0\x0doutput-stream\x03\x01\x01h\x02\x01p}\
+\x01j\x01\x05\x01\x01\x01@\x02\x04self\x04\x01ny\0\x06\x04\0\x19[method]input-st\
+ream.read\x01\x07\x01j\x01s\x01\x01\x01@\x01\x04self\x04\0\x08\x04\0#[method]inp\
+ut-stream.read-to-string\x01\x09\x01h\x03\x01j\x01y\x01\x01\x01@\x02\x04self\x0a\
+\x05bytes\x05\0\x0b\x04\0\x1b[method]output-stream.write\x01\x0c\x01j\0\x01\x01\x01\
+@\x02\x04self\x0a\x05bytes\x05\0\x0d\x04\0\x1f[method]output-stream.write-all\x01\
+\x0e\x01@\x01\x04self\x0a\0\x0d\x04\0\x1b[method]output-stream.flush\x01\x0f\x03\
+\0\x16krate:io/streams@0.1.0\x05\x02\x02\x03\0\x01\x0cinput-stream\x02\x03\0\x01\
+\x0doutput-stream\x01B\x0b\x02\x03\x02\x01\x03\x04\0\x0cinput-stream\x03\0\0\x02\
+\x03\x02\x01\x04\x04\0\x0doutput-stream\x03\0\x02\x01i\x01\x01@\0\0\x04\x04\0\x05\
+stdin\x01\x05\x01i\x03\x01@\0\0\x06\x04\0\x06stdout\x01\x07\x04\0\x06stderr\x01\x07\
+\x03\0\x14krate:io/stdio@0.1.0\x05\x05\x01B\x02\x01@\0\0s\x04\0\x03raw\x01\0\x03\
+\0\x13krate:io/args@0.1.0\x05\x06\x02\x03\0\0\x09log-level\x01B\x07\x02\x03\x02\x01\
+\x07\x04\0\x09log-level\x03\0\0\x01r\x02\x03keys\x05values\x04\0\x05field\x03\0\x02\
+\x01p\x03\x01@\x03\x05level\x01\x07messages\x06fields\x04\x01\0\x04\0\x04emit\x01\
+\x05\x03\0\x12krate:io/log@0.1.0\x05\x08\x01B\x06\x01r\x03\x04sizew\x0fmodified-\
+millisw\x06is-dir\x7f\x04\0\x09file-stat\x03\0\0\x01q\x04\x04read\0\0\x05write\0\
+\0\x0aread-write\0\0\x06append\0\0\x04\0\x09open-mode\x03\0\x02\x01q\x07\x09not-\
+found\0\0\x11permission-denied\0\0\x0ealready-exists\0\0\x0cinvalid-path\0\0\x0f\
+not-a-directory\0\0\x0eis-a-directory\0\0\x02io\x01s\0\x04\0\x08fs-error\x03\0\x04\
+\x03\0\x14krate:fs/types@0.1.0\x05\x09\x02\x03\0\x05\x09file-stat\x02\x03\0\x05\x09\
+open-mode\x02\x03\0\x05\x08fs-error\x01B*\x02\x03\x02\x01\x0a\x04\0\x09file-stat\
+\x03\0\0\x02\x03\x02\x01\x0b\x04\0\x09open-mode\x03\0\x02\x02\x03\x02\x01\x0c\x04\
+\0\x08fs-error\x03\0\x04\x04\0\x04file\x03\x01\x01h\x06\x01p}\x01j\x01\x08\x01\x05\
+\x01@\x02\x04self\x07\x01ny\0\x09\x04\0\x11[method]file.read\x01\x0a\x01j\x01y\x01\
+\x05\x01@\x02\x04self\x07\x05bytes\x08\0\x0b\x04\0\x12[method]file.write\x01\x0c\
+\x01j\x01w\x01\x05\x01@\x02\x04self\x07\x03posw\0\x0d\x04\0\x15[method]file.seek\
+-set\x01\x0e\x01@\x01\x04self\x07\0\x0d\x04\0\x15[method]file.seek-end\x01\x0f\x01\
+j\x01\x01\x01\x05\x01@\x01\x04self\x07\0\x10\x04\0\x11[method]file.stat\x01\x11\x01\
+i\x06\x01j\x01\x12\x01\x05\x01@\x02\x04paths\x04mode\x03\0\x13\x04\0\x04open\x01\
+\x14\x01@\x02\x05tokens\x04mode\x03\0\x13\x04\0\x0bopen-chosen\x01\x15\x01@\x01\x04\
+paths\0\x10\x04\0\x04stat\x01\x16\x01ps\x01j\x01\x17\x01\x05\x01@\x01\x04paths\0\
+\x18\x04\0\x04list\x01\x19\x01j\0\x01\x05\x01@\x01\x04paths\0\x1a\x04\0\x0bremov\
+e-file\x01\x1b\x04\0\x0aremove-dir\x01\x1b\x04\0\x05mkdir\x01\x1b\x01@\x02\x04fr\
+oms\x02tos\0\x1a\x04\0\x06rename\x01\x1c\x03\0\x14krate:fs/files@0.1.0\x05\x0d\x01\
+B\x0f\x01m\x07\x03get\x04post\x03put\x06delete\x05patch\x04head\x07options\x04\0\
+\x0bhttp-method\x03\0\0\x01r\x02\x04names\x05values\x04\0\x06header\x03\0\x02\x01\
+p\x03\x01p}\x01ky\x01r\x05\x06method\x01\x03urls\x07headers\x04\x04body\x05\x0et\
+imeout-millis\x06\x04\0\x07request\x03\0\x07\x01r\x03\x06status{\x07headers\x04\x04\
+body\x05\x04\0\x08response\x03\0\x09\x01q\x09\x0binvalid-url\0\0\x0bdns-failure\x01\
+s\0\x0fconnect-failure\x01s\0\x0btls-failure\x01s\0\x07timeout\0\0\x0ebody-too-l\
+arge\0\0\x11permission-denied\0\0\x08protocol\x01s\0\x05other\x01s\0\x04\0\x09ne\
+t-error\x03\0\x0b\x01q\x04\x07pending\0\0\x05ready\x01\x0a\0\x06failed\x01\x0c\0\
+\x0eunknown-handle\0\0\x04\0\x0cfetch-status\x03\0\x0d\x03\0\x15krate:net/types@\
+0.1.0\x05\x0e\x02\x03\0\x07\x07request\x02\x03\0\x07\x08response\x02\x03\0\x07\x09\
+net-error\x02\x03\0\x07\x0cfetch-status\x01B\x16\x02\x03\x02\x01\x0f\x04\0\x07re\
+quest\x03\0\0\x02\x03\x02\x01\x10\x04\0\x08response\x03\0\x02\x02\x03\x02\x01\x11\
+\x04\0\x09net-error\x03\0\x04\x02\x03\x02\x01\x12\x04\0\x0cfetch-status\x03\0\x06\
+\x01p}\x01j\x01\x08\x01\x05\x01@\x01\x03urls\0\x09\x04\0\x03get\x01\x0a\x01j\x01\
+\x03\x01\x05\x01@\x01\x03req\x01\0\x0b\x04\0\x05fetch\x01\x0c\x01j\x01w\x01\x05\x01\
+@\x01\x03req\x01\0\x0d\x04\0\x05begin\x01\x0e\x01@\x01\x06handlew\0\x07\x04\0\x04\
+poll\x01\x0f\x01@\x01\x06handlew\x01\0\x04\0\x06cancel\x01\x10\x03\0\x1bkrate:ne\
+t/http-client@0.1.0\x05\x13\x01B\x11\x02\x03\x02\x01\x11\x04\0\x09net-error\x03\0\
+\0\x01p}\x01q\x02\x04text\x01s\0\x06binary\x01\x02\0\x04\0\x0aws-message\x03\0\x03\
+\x01q\x06\x07pending\0\0\x06opened\0\0\x07message\x01\x04\0\x06closed\0\0\x06fai\
+led\x01s\0\x0eunknown-handle\0\0\x04\0\x08ws-event\x03\0\x05\x01j\x01w\x01\x01\x01\
+@\x01\x03urls\0\x07\x04\0\x04open\x01\x08\x01j\0\x01\x01\x01@\x02\x06handlew\x07\
+message\x04\0\x09\x04\0\x04send\x01\x0a\x01@\x01\x06handlew\0\x06\x04\0\x04poll\x01\
+\x0b\x01@\x01\x06handlew\x01\0\x04\0\x05close\x01\x0c\x03\0\x12krate:net/ws@0.1.\
+0\x05\x14\x01B\x03\x01@\0\0w\x04\0\x0anow-millis\x01\0\x04\0\x0fmonotonic-nanos\x01\
+\0\x03\0\x16krate:time/clock@0.1.0\x05\x15\x01B\x02\x01@\x01\x06millisy\x01\0\x04\
+\0\x0csleep-millis\x01\0\x03\0\x16krate:time/sleep@0.1.0\x05\x16\x01B\x06\x01r\x01\
+\x05bcp47s\x04\0\x09locale-id\x03\0\0\x01m\x04\x05short\x06medium\x04long\x04ful\
+l\x04\0\x0adate-style\x03\0\x02\x01m\x03\x07decimal\x07percent\x08currency\x04\0\
+\x0cnumber-style\x03\0\x04\x03\0\x18krate:locale/types@0.1.0\x05\x17\x02\x03\0\x0c\
+\x09locale-id\x01B\x06\x02\x03\x02\x01\x18\x04\0\x09locale-id\x03\0\0\x01@\0\0\x01\
+\x04\0\x07current\x01\x02\x01@\0\0s\x04\0\x08timezone\x01\x03\x03\0\x17krate:loc\
+ale/info@0.1.0\x05\x19\x02\x03\0\x0c\x0adate-style\x02\x03\0\x0c\x0cnumber-style\
+\x01B\x0a\x02\x03\x02\x01\x18\x04\0\x09locale-id\x03\0\0\x02\x03\x02\x01\x1a\x04\
+\0\x0adate-style\x03\0\x02\x02\x03\x02\x01\x1b\x04\0\x0cnumber-style\x03\0\x04\x01\
+@\x04\x06millisw\x02tzs\x05style\x03\x03loc\x01\0s\x04\0\x0bformat-date\x01\x06\x01\
+@\x03\x05valueu\x05style\x05\x03loc\x01\0s\x04\0\x0dformat-number\x01\x07\x03\0\x19\
+krate:locale/format@0.1.0\x05\x1c\x01B\x0a\x01q\x04\x09not-found\0\0\x0cinvalid-\
+path\0\0\x09too-large\0\0\x02io\x01s\0\x04\0\x0eresource-error\x03\0\0\x01p}\x01\
+j\x01\x02\x01\x01\x01@\x01\x04paths\0\x03\x04\0\x04read\x01\x04\x01ps\x01j\x01\x05\
+\x01\x01\x01@\x01\x04paths\0\x06\x04\0\x04list\x01\x07\x03\0\x1ckrate:resources/\
+assets@0.1.0\x05\x1d\x01B\x12\x01q\x04\x06denied\0\0\x0binvalid-key\0\0\x09too-l\
+arge\0\0\x02io\x01s\0\x04\0\x0bstore-error\x03\0\0\x01p}\x01k\x02\x01j\x01\x03\x01\
+\x01\x01@\x01\x03keys\0\x04\x04\0\x03get\x01\x05\x01j\0\x01\x01\x01@\x02\x03keys\
+\x05value\x02\0\x06\x04\0\x03set\x01\x07\x01@\x01\x03keys\0\x06\x04\0\x06delete\x01\
+\x08\x01ps\x01j\x01\x09\x01\x01\x01@\0\0\x0a\x04\0\x04keys\x01\x0b\x01@\0\0\x06\x04\
+\0\x05clear\x01\x0c\x03\0\x14krate:store/kv@0.1.0\x05\x1e\x01B\x15\x01p}\x01q\x05\
+\x04null\0\0\x07integer\x01x\0\x04real\x01u\0\x04text\x01s\0\x04blob\x01\0\0\x04\
+\0\x05value\x03\0\x01\x01q\x05\x06denied\0\0\x11invalid-statement\x01s\0\x09forb\
+idden\x01s\0\x09too-large\0\0\x02io\x01s\0\x04\0\x09sql-error\x03\0\x03\x01p\x02\
+\x01r\x01\x06values\x05\x04\0\x03row\x03\0\x06\x01ps\x01p\x07\x01r\x02\x07column\
+s\x08\x04rows\x09\x04\0\x0cquery-result\x03\0\x0a\x01j\x01\x0b\x01\x04\x01@\x02\x09\
+statements\x06params\x05\0\x0c\x04\0\x05query\x01\x0d\x01j\x01w\x01\x04\x01@\x02\
+\x09statements\x06params\x05\0\x0e\x04\0\x07execute\x01\x0f\x01j\0\x01\x04\x01@\x01\
+\x0astatements\x08\0\x10\x04\0\x0btransaction\x01\x11\x03\0\x15krate:store/sql@0\
+.1.0\x05\x1f\x01B\x10\x01q\x04\x06denied\0\0\x0cinvalid-name\0\0\x09too-large\0\0\
+\x02io\x01s\0\x04\0\x0csecret-error\x03\0\0\x01p}\x01k\x02\x01j\x01\x03\x01\x01\x01\
+@\x01\x04names\0\x04\x04\0\x03get\x01\x05\x01j\0\x01\x01\x01@\x02\x04names\x06se\
+cret\x02\0\x06\x04\0\x03set\x01\x07\x01@\x01\x04names\0\x06\x04\0\x06delete\x01\x08\
+\x01ps\x01j\x01\x09\x01\x01\x01@\0\0\x0a\x04\0\x05names\x01\x0b\x03\0\x18krate:s\
+tore/secret@0.1.0\x05\x20\x01B\x1e\x01q\x06\x06denied\0\0\x0anot-joined\0\0\x0dn\
+o-such-share\0\0\x0cinvalid-name\0\0\x09too-large\0\0\x02io\x01s\0\x04\0\x0cshar\
+ed-error\x03\0\0\x01ks\x01j\x01\x02\x01\x01\x01@\0\0\x03\x04\0\x04code\x01\x04\x01\
+j\x01s\x01\x01\x01@\0\0\x05\x04\0\x06create\x01\x06\x01j\0\x01\x01\x01@\x01\x04c\
+odes\0\x07\x04\0\x04join\x01\x08\x01@\0\0\x07\x04\0\x05leave\x01\x09\x01p}\x01k\x0a\
+\x01j\x01\x0b\x01\x01\x01@\x01\x03keys\0\x0c\x04\0\x03get\x01\x0d\x01@\x02\x03ke\
+ys\x05value\x0a\0\x07\x04\0\x03set\x01\x0e\x01@\x01\x03keys\0\x07\x04\0\x06delet\
+e\x01\x0f\x01ps\x01j\x01\x10\x01\x01\x01@\0\0\x11\x04\0\x04keys\x01\x12\x01j\x01\
+\x7f\x01\x01\x01@\0\0\x13\x04\0\x04sync\x01\x14\x03\0\x18krate:store/shared@0.1.\
+0\x05!\x01B\x0b\x01q\x04\x06denied\0\0\x09too-large\0\0\x0bempty-range\0\0\x0bun\
+available\x01s\0\x04\0\x0crandom-error\x03\0\0\x01p}\x01j\x01\x02\x01\x01\x01@\x01\
+\x05county\0\x03\x04\0\x03get\x01\x04\x01j\x01w\x01\x01\x01@\0\0\x05\x04\0\x08ne\
+xt-u64\x01\x06\x01@\x01\x05boundw\0\x05\x04\0\x05below\x01\x07\x03\0\x18krate:ra\
+ndom/bytes@0.1.0\x05\"\x01@\0\0z\x04\0\x03run\x01#\x04\0\x13krate:app/cli@0.1.0\x04\
 \0\x0b\x09\x01\0\x03cli\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-c\
 omponent\x070.227.1\x10wit-bindgen-rust\x060.41.0";
 #[inline(never)]
