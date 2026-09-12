@@ -369,7 +369,16 @@ def decide(sha, ci_findings, fuzz, advisories, claims, bugs, accepted, registry=
 NOT_ASSESSED_EVER = [
     "whether any two tests duplicate one requirement, or any required journey has none",
     "the installer, update and rollback paths, beyond what the lanes above exercise",
-    "that published download artifacts byte-match what CI built (arrives with CP1 signing)",
+    # Narrowed, not removed. scripts/release-lineage.py now records every
+    # published artifact by digest and re-checks it against the live release
+    # (IC-612), so "nothing knows what was published" is no longer true. What
+    # is still unproven is the harder half: that those bytes are the ones CI
+    # built. Proving that needs a reproducible build, and until there is one,
+    # a digest recorded after the fact says what was published and not where
+    # it came from.
+    "that published artifacts byte-match what CI built -- their digests are "
+    "recorded (evidence/lineage/), but matching them to the build needs a "
+    "reproducible build, which does not exist",
     "example apps beyond the ones the full suite replays",
 ]
 
