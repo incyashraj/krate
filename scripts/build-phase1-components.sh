@@ -11,7 +11,9 @@ ROOT="${REPO_ROOT}"
 for fixture in hello-world print-loop; do
   (
     cd "${REPO_ROOT}/test/integration/${fixture}"
-    cargo-component build --release --locked
+    . "$ROOT/scripts/check-lock-current.sh"
+krate_check_lock_current "$PWD"
+cargo-component build --release --locked
   )
 done
 

@@ -9,6 +9,8 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 . "$ROOT/scripts/rust-env.sh"
 
 cd "$ROOT/apps/krate-bigscroll"
+. "$ROOT/scripts/check-lock-current.sh"
+krate_check_lock_current "$PWD"
 cargo-component build --release --locked
 
 echo "$ROOT/apps/krate-bigscroll/target/wasm32-wasip1/release/krate_bigscroll.wasm"
