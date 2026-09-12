@@ -4776,6 +4776,93 @@ fn a_run_that_painted_nothing_does_not_report_a_frame() {
     );
 }
 
+/// An installed app carries a signature that describes IT, not the engine
+/// it was built around (IC-396).
+///
+/// The launcher is a hard link to the engine, so the wrapper arrived
+/// carrying the engine's own ad-hoc signature -- whose identifier and
+/// resource rules are about the engine. `codesign --verify --strict`
+/// therefore failed on every installed app with "code has no resources
+/// but signature indicates they must be present", which is macOS
+/// correctly saying the signature is not about this thing.
+///
+/// Ad-hoc is what a local wrapper can honestly have: a real identity
+/// would need a certificate Krate does not hold on the person's machine.
+/// What it buys is a signature that matches the bundle.
+#[test]
+#[cfg(target_os = "macos")]
+fn an_installed_app_is_signed_as_itself() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let prefix = tempfile::tempdir().expect("prefix");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(
+        &wasm,
+        include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm"),
+    )
+    .expect("component");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        "[app]\nid = \"dev.krate.signedwrapper\"\nname = \"Signed Wrapper\"\n\
+         version = \"1.0.0\"\nentry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n",
+    )
+    .expect("manifest");
+    let bundle = dir.path().join("app.krate");
+    assert!(krate()
+        .args(["pack"])
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .status()
+        .expect("pack")
+        .success());
+    assert!(krate()
+        .arg("install")
+        .arg(&bundle)
+        .arg("--prefix")
+        .arg(prefix.path())
+        .output()
+        .expect("install")
+        .status
+        .success());
+
+    let installed = std::fs::read_dir(prefix.path())
+        .expect("read prefix")
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| p.extension().is_some_and(|e| e == "app"))
+        .expect("an .app was installed");
+
+    let verify = std::process::Command::new("codesign")
+        .args(["--verify", "--strict"])
+        .arg(&installed)
+        .output();
+    let Ok(verify) = verify else {
+        eprintln!("skipping: codesign is not available on this machine");
+        return;
+    };
+    assert!(
+        verify.status.success(),
+        "the installed app must pass a strict signature check: {}",
+        String::from_utf8_lossy(&verify.stderr)
+    );
+
+    // And the signature must be ABOUT this app: inheriting the engine's
+    // identifier is exactly the state that failed strict verification.
+    let described = std::process::Command::new("codesign")
+        .args(["-dv"])
+        .arg(&installed)
+        .output()
+        .expect("codesign -dv");
+    let text = String::from_utf8_lossy(&described.stderr);
+    assert!(
+        text.contains("Identifier=dev.krate.app.dev.krate.signedwrapper"),
+        "the signature must name this app, not the engine: {text}"
+    );
+}
+
 /// Installing over an app that is already there never leaves the person
 /// with neither (IC-278).
 ///

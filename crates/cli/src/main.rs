@@ -12727,6 +12727,45 @@ fn install_bundle(bundle_path: &Path, prefix: &Path) -> Result<PathBuf> {
         ),
     )?;
 
+    // Sign the finished wrapper, ad-hoc, before it is published (IC-396).
+    //
+    // The launcher is a hard link to the engine, so it arrives carrying the
+    // ENGINE's signature -- whose identifier and resource rules describe the
+    // engine, not this app bundle. `codesign --verify --strict` on an
+    // installed app therefore failed with "code has no resources but
+    // signature indicates they must be present", which is macOS correctly
+    // saying the signature is not about this thing.
+    //
+    // Ad-hoc, not a Developer ID: this is a local wrapper built on the
+    // person's own machine around an app they already chose to install, and
+    // a real identity would have to come from a certificate Krate does not
+    // have here. What ad-hoc buys is a signature that DESCRIBES the bundle,
+    // so a strict check passes and the identifier names the app.
+    //
+    // codesign replaces the file rather than writing through it, which
+    // breaks the hard link -- measured: the launcher gets a new inode and
+    // the engine binary is untouched. That costs this one file its share of
+    // the engine's disk space and is the right trade; signing through a
+    // shared inode would have rewritten the engine every install.
+    //
+    // Best effort: a machine without codesign, or one where signing fails,
+    // still gets a working app -- the wrapper runs either way, and refusing
+    // to install because a local signature could not be applied would be
+    // the wrong trade.
+    let signing_identifier = format!("dev.krate.app.{}", manifest.app.id.replace('/', "."));
+    let _ = std::process::Command::new("codesign")
+        .args([
+            "--force",
+            "--sign",
+            "-",
+            "--identifier",
+            &signing_identifier,
+        ])
+        .arg(&staging)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+
     // Everything is written. Swap the finished wrapper into place: the old
     // app exists until this moment and is replaced by a complete one, so
     // there is no instant at which the person has neither.
