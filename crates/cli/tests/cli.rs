@@ -4718,6 +4718,64 @@ fn a_grant_survives_an_update_and_a_widened_one_is_asked_again() {
     );
 }
 
+/// A run asked to paint a frame does not report success when it painted
+/// nothing (IC-743, tests 1504 and 1505).
+///
+/// The frame is written by the GUI host, which an app with no window
+/// never reaches, so `--shoot` on a CLI app exited 0 and produced no
+/// file. Every caller that trusted the exit code believed a picture had
+/// been painted -- check-app's painting stage among them, which proved
+/// only that the run ended. An app's own clean exit is not evidence
+/// about a picture.
+#[test]
+fn a_run_that_painted_nothing_does_not_report_a_frame() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(
+        &wasm,
+        include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm"),
+    )
+    .expect("component");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        "[app]\nid = \"dev.krate.noframe\"\nname = \"No Frame\"\nversion = \"1.0.0\"\n\
+         entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n",
+    )
+    .expect("manifest");
+    let frame = dir.path().join("frame.png");
+
+    let output = krate()
+        .arg("run")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .args(["--auto-grant", "--headless"])
+        .arg("--shoot")
+        .arg(&frame)
+        .output()
+        .expect("run --shoot");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "a run that painted nothing must not report success: {stderr}"
+    );
+    assert!(
+        !frame.exists() || std::fs::metadata(&frame).map(|m| m.len()).unwrap_or(0) == 0,
+        "the fixture must actually paint nothing, or this proves something else"
+    );
+    assert!(
+        stderr.contains("none was painted"),
+        "and it must say what did not happen: {stderr}"
+    );
+    assert!(
+        stderr.contains("drop --shoot"),
+        "and what to do about it -- a CLI app has no window to photograph: {stderr}"
+    );
+}
+
 /// Installing over an app that is already there never leaves the person
 /// with neither (IC-278).
 ///

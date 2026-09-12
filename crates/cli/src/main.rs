@@ -12042,7 +12042,30 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
     }
 
     match runtime.run_file_for_world(&request.file, &config, runtime_world) {
-        Ok(RunOutcome::Exited(code)) => Ok(code.clamp(0, 255) as u8),
+        Ok(RunOutcome::Exited(code)) => {
+            // A screenshot that was asked for and never taken is a failure
+            // of this run, not a silent nothing (IC-743, tests 1504/1505).
+            //
+            // The frame is written by the GUI host, which a CLI app never
+            // reaches -- so `--shoot` on an app with no window exited 0 and
+            // produced no file, and every caller that trusted the exit code
+            // believed a picture had been painted. check-app's painting
+            // stage was one of them: it proved only that the run ended.
+            if let Some(path) = request.screenshot_path.as_ref() {
+                let painted = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+                if painted == 0 {
+                    eprintln!(
+                        "asked for a frame at {} and none was painted.",
+                        path.display()
+                    );
+                    eprintln!();
+                    eprintln!("Only an app with a window paints. A CLI app has none,");
+                    eprintln!("so there is nothing to photograph -- drop --shoot for it.");
+                    return Ok(2);
+                }
+            }
+            Ok(code.clamp(0, 255) as u8)
+        }
         Ok(RunOutcome::LimitExceeded(message)) => {
             eprintln!("limit exceeded: {message}");
             Ok(4)
@@ -15143,6 +15166,47 @@ fn run_check_app(
             });
         }
         unsafe { std::env::remove_var("KRATE_LAYOUT_REPORT") };
+
+        // The stage exists to prove the app PAINTED, and it used to prove
+        // only that the run exited 0 (IC-743, tests 1504/1505). `krate run
+        // --shoot` now fails when it painted nothing, so the child's exit
+        // code already carries that -- this is the second reading of the
+        // same fact, kept because the two can drift: a future change to
+        // the run path would otherwise make this stage silently accept an
+        // unpainted app again, and the stage is where the claim is made.
+        //
+        // It is deliberately NOT covered by its own test: the run-level
+        // guard is what the regression test drives, and a test here could
+        // only reach this line by first defeating that one.
+        let painted = fs::metadata(png).map(|m| m.len()).unwrap_or(0);
+        if painted == 0 {
+            return Err(CheckFailure {
+                stage: CheckStage::Shoot,
+                detail: if png.exists() {
+                    "the app exited cleanly and wrote an empty frame".to_string()
+                } else {
+                    "the app exited cleanly and never wrote a frame at all".to_string()
+                },
+                fix: "This app declares a window (ui.window) but painted nothing. \
+                      A window app draws in its run loop; check that it creates a \
+                      window and presents at least one frame before returning."
+                    .to_string(),
+            });
+        }
+        // A PNG, not merely some bytes: the eight-byte signature. A file of
+        // the right size and the wrong kind is the shape a broken writer
+        // produces, and it would otherwise read as a painted frame.
+        let header = fs::read(png).ok().filter(|bytes| bytes.len() >= 8);
+        if header.is_none_or(|bytes| bytes[..8] != [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a])
+        {
+            return Err(CheckFailure {
+                stage: CheckStage::Shoot,
+                detail: format!("the frame at {} is not a PNG", png.display()),
+                fix: "The run reported success but what it wrote is not an image. \
+                      This is a Krate defect rather than an app one -- please report it."
+                    .to_string(),
+            });
+        }
         // A collision is a note, not a failure. It is a real defect and worth
         // saying out loud, but the app builds, runs and paints -- refusing it
         // here would block work on a judgement call the person can see for
