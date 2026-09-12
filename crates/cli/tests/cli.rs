@@ -4883,18 +4883,46 @@ fn every_adversarial_archive_is_refused_by_the_binary_people_run() {
         );
     }
 
-    // 1486: a rejection leaves nothing behind. Every refusal above unpacked
-    // into a temporary directory first, and none of them may survive it.
-    let leftovers: Vec<String> = std::fs::read_dir(std::env::temp_dir())
-        .expect("temp dir")
+    // 1486: a rejection leaves nothing behind.
+    //
+    // Measured in a temp directory of this test's own, handed to the child
+    // through TMPDIR. Two earlier versions counted `krate-open-*` in the
+    // SYSTEM temp directory and both were wrong for the same reason: 38
+    // tests in this suite run a bundle, cargo runs them in parallel, and
+    // their live extractions are in flight throughout. "Is it empty"
+    // failed on the Linux lane; "did the count grow" failed locally two
+    // runs in three. A shared directory cannot answer a question about one
+    // test.
+    //
+    // Private, it answers exactly: every archive below is refused after the
+    // opener has begun unpacking, so anything left here afterwards is an
+    // extraction that was not cleaned up.
+    let private_tmp = dir.path().join("extraction-probe");
+    std::fs::create_dir_all(&private_tmp).expect("private temp dir");
+    for (what, bytes, _) in committed {
+        let path = dir
+            .path()
+            .join(format!("recheck-{}.krate", what.replace(' ', "-")));
+        std::fs::write(&path, bytes).expect("write fixture");
+        let _ = krate()
+            .arg("run")
+            .arg(&path)
+            .args(["--headless", "--auto-grant"])
+            .env("TMPDIR", &private_tmp)
+            .output()
+            .expect("run");
+    }
+    let leftovers: Vec<String> = std::fs::read_dir(&private_tmp)
+        .expect("read the private temp dir")
         .flatten()
         .map(|e| e.file_name().to_string_lossy().to_string())
-        .filter(|name| name.starts_with("krate-open-"))
         .collect();
     assert!(
         leftovers.is_empty(),
-        "a refused archive must clean up its extraction: {leftovers:?}"
+        "refusing {} archives left extraction state behind: {leftovers:?}",
+        committed.len(),
     );
+
     assert!(
         !std::path::Path::new("/tmp/krate-test-escape").exists(),
         "no traversal may write outside the extraction directory"
