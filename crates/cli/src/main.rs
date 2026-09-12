@@ -7195,6 +7195,110 @@ fn report_refusal(
 /// or an agent command), build it to a component, check it imports only Krate
 /// APIs, pack it, and verify its permission wall by running the packed bundle
 /// with and without its gating capability. A transcript records every step.
+/// A bundle built beside its destination and moved there only once it has
+/// passed every check (IC-397, test 491).
+///
+/// `krate revise app.krate "make the button blue"` writes its result back to
+/// `app.krate` -- that is what revising means. Packing directly there meant
+/// the person's existing app was replaced before anything had judged the new
+/// one, so a failed permission wall or an app that built something other
+/// than what was asked for still cost them the version that worked.
+///
+/// The old file is untouched until `promote` succeeds. If anything between
+/// pack and promote returns early, Drop removes the staging file and the
+/// original is exactly as it was -- which is the property the E8 pack
+/// atomicity work established one layer down, applied to the whole
+/// build-and-check sequence rather than to the write alone.
+struct StagedOutput {
+    path: PathBuf,
+    destination: PathBuf,
+    promoted: bool,
+}
+
+impl StagedOutput {
+    /// A staging path beside `destination`, on the same filesystem so the
+    /// final move is a rename and not a copy.
+    ///
+    /// The name carries the process id so two `krate` runs writing the same
+    /// output do not stage over each other. It does not make them safe --
+    /// whichever promotes last still wins, and that race is K-310 -- but it
+    /// does stop one run's half-built bundle being promoted by the other.
+    fn beside(destination: &Path) -> Result<Self> {
+        let parent = destination.parent().filter(|p| !p.as_os_str().is_empty());
+        let name = destination
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "app.krate".to_string());
+        let staged = format!(".{name}.building-{}", std::process::id());
+        let path = match parent {
+            Some(dir) => {
+                // The destination's directory must exist before anything is
+                // staged in it: `krate create out/app.krate` in a fresh
+                // checkout is an ordinary thing to type.
+                fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
+                dir.join(staged)
+            }
+            None => PathBuf::from(staged),
+        };
+        // A leftover from a killed run is not a reason to refuse; it is
+        // ours to replace, and it was never the person's file.
+        if path.exists() {
+            let _ = fs::remove_file(&path);
+        }
+        Ok(Self {
+            path,
+            destination: destination.to_path_buf(),
+            promoted: false,
+        })
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Move the checked bundle onto its destination. After this the old file
+    /// is gone, which is the point -- it has earned the replacement.
+    fn promote(&mut self) -> Result<()> {
+        fs::rename(&self.path, &self.destination).with_context(|| {
+            format!("move the finished bundle to {}", self.destination.display())
+        })?;
+        self.promoted = true;
+        Ok(())
+    }
+}
+
+/// Whether a finished build should take the destination's place
+/// (IC-397, test 491).
+///
+/// Two situations wear the same exit code and want opposite answers.
+///
+/// Creating an app that does not serve the request still produces a real,
+/// working bundle, and handing it over is right: there was nothing at that
+/// path to lose, and a person can open it and see what was built.
+///
+/// Revising is the opposite. `krate revise app.krate "..."` writes back to
+/// the file it read, so promoting a build that failed its own acceptance
+/// check replaces an app that works with one that does not. The person
+/// asked for a change, not for a downgrade.
+///
+/// Kept as a function so the decision can be tested on its own. Inlined at
+/// the call site it was one boolean expression that nothing exercised.
+fn should_commit(accepted: bool, replacing_existing: bool) -> bool {
+    accepted || !replacing_existing
+}
+
+impl Drop for StagedOutput {
+    fn drop(&mut self) {
+        if self.promoted {
+            return;
+        }
+        // Nothing was promised, so nothing is left behind. A failure to
+        // remove is not worth a message: the file is hidden, named for a
+        // process that has ended, and the next run replaces it.
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
 /// Keeps the temp workspace alive if `create` fails, so the transcript the
 /// error points at still exists when the person goes to read it.
 ///
@@ -7501,6 +7605,23 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     // person who asked for it will want it changed -- without this the
     // bundle is a dead end and "make a change" has nothing to work from.
     // This was the one pack call that still dropped it.
+    // Packed BESIDE the destination, not onto it (IC-397, test 491).
+    //
+    // `krate revise app.krate "..."` defaults its output to the input file,
+    // so packing straight to req.output overwrites the app the person
+    // already has -- and the checks that decide whether the new one is any
+    // good run AFTER the pack. A revision whose permission wall failed, or
+    // that built something other than what was asked for, had already
+    // replaced a working signed bundle by the time anyone found out.
+    //
+    // pack_with_sdk is itself transactional, so the old file was never left
+    // half-written. The problem was never a torn write; it was committing
+    // before judging. So the pack lands on a staging sibling, every check
+    // runs against those bytes, and the rename happens only once they pass.
+    //
+    // A sibling rather than a temp dir, because the rename at the end has to
+    // be atomic and a rename across filesystems is not.
+    let mut staged = StagedOutput::beside(&req.output)?;
     let size = krate_bundle::pack_with_source(
         &packed_manifest,
         &code,
@@ -7509,7 +7630,7 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
             .join("Cargo.toml")
             .is_file()
             .then_some(app_dir.as_path()),
-        &req.output,
+        staged.path(),
     )
     .with_context(|| format!("pack {}", req.output.display()))?;
     steps.push(serde_json::json!({"step": "pack", "detail": format!("{} bytes", size)}));
@@ -7533,7 +7654,10 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     // and hang or fail intermittently. Canonicalize the file's parent (which
     // exists) and rejoin the file name, and fall back to a manual absolute join
     // if the current directory itself is unreadable.
-    let bundle_abs = absolute_output_path(&req.output)?;
+    // The STAGED bytes, not the destination. Checking the destination would
+    // be checking the old app -- or, once the pack moved there, checking a
+    // commit that had already happened (IC-397).
+    let bundle_abs = absolute_output_path(staged.path())?;
 
     // The wall check, without spending anyone's real authority (IC-364).
     // This used to be `--auto-grant`: the freshly authored app was handed
@@ -7572,6 +7696,25 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
         "step": "serves-request",
         "detail": acceptance.summary.clone(),
     }));
+
+    // Commit, or keep what was already there (IC-397, test 491).
+    //
+    // Two different situations wear the same exit code. Creating an app that
+    // does not serve the request still produces a real, working bundle, and
+    // the messages below are right to hand it over: there was nothing at
+    // that path to lose, and a person can look at what was built.
+    //
+    // Revising is the opposite. The destination already holds an app that
+    // works, and replacing it with one that failed its own acceptance check
+    // is a straight downgrade of something the person relied on. So when
+    // there is an existing bundle in the way, a rejected build does not take
+    // its place -- it is discarded with Drop and the old file stays exactly
+    // as it was.
+    let replacing_existing = req.output.exists();
+    let committed = should_commit(acceptance.accepted, replacing_existing);
+    if committed {
+        staged.promote()?;
+    }
 
     // The transcript: request, app, requested permissions, verification.
     let requested: Vec<String> = manifest
@@ -7638,9 +7781,12 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
         // an app that builds but does not serve the request is not ok.
         let mut out = transcript;
         out["ok"] = serde_json::Value::Bool(acceptance.accepted);
+        // Whether the file at `output` is the one this run built, or the one
+        // that was already there (IC-397). An agent reading `ok: false` used
+        // to have no way to tell those apart, and they call for opposite
+        // next moves: inspect what was built, or notice nothing changed.
+        out["committed"] = serde_json::Value::Bool(committed);
         println!("{}", serde_json::to_string(&out)?);
-        // The file is still on disk and still real -- the exit code says the
-        // request was not served, not that nothing was produced.
         keeper.disarm();
         return Ok(if acceptance.accepted { 0 } else { 6 });
     }
@@ -7648,7 +7794,7 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     println!();
     if acceptance.accepted {
         println!("Created {}", req.output.display());
-    } else {
+    } else if committed {
         // The app exists and works. What it does not do is the thing that was
         // asked for, and that is the first thing to say -- not a footnote
         // under a "Created" line that reads as success.
@@ -7664,6 +7810,19 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
         println!();
         println!("  The file is there and it runs. Try again with more detail about");
         println!("  what it should do, or open it to see what was built.");
+    } else {
+        // A revision that did not do what was asked does not get to replace
+        // an app that works. Say what was kept as well as what failed: the
+        // useful fact here is that nothing was lost (IC-397).
+        println!("The change did not do what you asked, so it was not applied.");
+        println!();
+        for failure in acceptance.failures() {
+            println!("  asked for: {}", failure.text.trim());
+            println!("  but       {}", failure.detail);
+        }
+        println!();
+        println!("  {} is unchanged.", req.output.display());
+        println!("  Try again with more detail about what should be different.");
     }
     if let Some(note) = &caveat {
         // Printed with the success, not instead of it: the app was built and
@@ -19750,6 +19909,157 @@ mod revise_transaction_tests {
                 let _ = fs::remove_dir_all(parent);
             }
         }
+    }
+
+    /// A build that is never promoted leaves the old app exactly as it was
+    /// (IC-397, test 491).
+    ///
+    /// This is the shape the old code got wrong: pack wrote straight to the
+    /// destination, and the checks that decide whether the new bundle is any
+    /// good ran afterwards. Revising defaults its output to the input file,
+    /// so a revision that failed its own acceptance check had already
+    /// replaced a working app.
+    #[test]
+    fn an_unpromoted_build_leaves_the_previous_app_untouched() {
+        let dir = tempfile::tempdir().expect("dir");
+        let out = dir.path().join("app.krate");
+        fs::write(&out, b"the app that already works").expect("write");
+        let before = fs::read(&out).expect("read");
+
+        let staged_path;
+        {
+            let mut staged = StagedOutput::beside(&out).expect("stage");
+            staged_path = staged.path().to_path_buf();
+            assert_ne!(staged.path(), out, "staging must not be the destination");
+            assert_eq!(
+                staged.path().parent(),
+                out.parent(),
+                "staging is a sibling, so the promote is a rename and not a copy",
+            );
+            fs::write(staged.path(), b"a worse app").expect("write staged");
+            assert!(staged.path().exists());
+            // The checks fail, so promote is never called and Drop runs.
+            let _ = &mut staged;
+        }
+
+        assert_eq!(
+            fs::read(&out).expect("read after"),
+            before,
+            "the old app was replaced by a build that was never promoted",
+        );
+        // And the rejected build is not left sitting beside the app it
+        // failed to replace. Asserted separately because the old file being
+        // intact says nothing about what else is in the folder.
+        assert!(
+            !staged_path.exists(),
+            "a build that was never promoted must not be left at {}",
+            staged_path.display(),
+        );
+    }
+
+    /// Promotion replaces the old app, and nothing is left behind.
+    #[test]
+    fn a_promoted_build_replaces_the_old_app_and_leaves_no_staging_file() {
+        let dir = tempfile::tempdir().expect("dir");
+        let out = dir.path().join("app.krate");
+        fs::write(&out, b"old").expect("write");
+
+        let staged_path;
+        {
+            let mut staged = StagedOutput::beside(&out).expect("stage");
+            staged_path = staged.path().to_path_buf();
+            fs::write(staged.path(), b"new and checked").expect("write staged");
+            staged.promote().expect("promote");
+        }
+
+        assert_eq!(fs::read(&out).expect("read"), b"new and checked");
+        assert!(
+            !staged_path.exists(),
+            "the staging file must be gone once it has been promoted",
+        );
+    }
+
+    /// Staging into a directory that does not exist yet works: `krate create
+    /// out/app.krate` in a fresh checkout is an ordinary thing to type, and
+    /// the pack used to create that directory itself.
+    #[test]
+    fn staging_creates_the_destination_directory() {
+        let dir = tempfile::tempdir().expect("dir");
+        let out = dir.path().join("nested/deeper/app.krate");
+        let mut staged = StagedOutput::beside(&out).expect("stage");
+        fs::write(staged.path(), b"built").expect("write staged");
+        staged.promote().expect("promote");
+        assert_eq!(fs::read(&out).expect("read"), b"built");
+    }
+
+    /// A leftover staging file from a killed run is replaced, not treated as
+    /// an error. It was never the person's file.
+    #[test]
+    fn a_leftover_staging_file_does_not_stop_the_next_build() {
+        let dir = tempfile::tempdir().expect("dir");
+        let out = dir.path().join("app.krate");
+        {
+            let staged = StagedOutput::beside(&out).expect("stage");
+            fs::write(staged.path(), b"litter from a killed run").expect("write");
+            std::mem::forget(staged); // a hard kill runs no destructors
+        }
+        let mut staged = StagedOutput::beside(&out).expect("stage again");
+        assert_eq!(
+            fs::read(staged.path()).map(|b| b.len()).unwrap_or(0),
+            0,
+            "the leftover must be cleared rather than appended to",
+        );
+        fs::write(staged.path(), b"fresh").expect("write");
+        staged.promote().expect("promote");
+        assert_eq!(fs::read(&out).expect("read"), b"fresh");
+    }
+
+    /// The commit decision, on its own (IC-397, test 491).
+    ///
+    /// All four combinations, because the whole point is that two of them
+    /// used to be treated alike. The one that matters is the last: a
+    /// revision that did not do what was asked must not replace an app that
+    /// works.
+    #[test]
+    fn a_rejected_build_only_commits_when_there_is_nothing_to_lose() {
+        assert!(should_commit(true, false), "an accepted new app is written",);
+        assert!(
+            should_commit(true, true),
+            "an accepted revision replaces the old app -- that is what revising is",
+        );
+        assert!(
+            should_commit(false, false),
+            "a new app that missed the request is still handed over: \
+             there was nothing at that path to lose, and it can be looked at",
+        );
+        assert!(
+            !should_commit(false, true),
+            "a revision that missed the request must NOT replace a working app",
+        );
+    }
+
+    /// Two runs writing the same output do not stage over each other's
+    /// half-built bundle. Which one wins the promote is a separate problem
+    /// (K-310); this is only that neither can promote the other's bytes.
+    #[test]
+    fn a_staging_name_is_private_to_the_process() {
+        let dir = tempfile::tempdir().expect("dir");
+        let out = dir.path().join("app.krate");
+        let staged = StagedOutput::beside(&out).expect("stage");
+        let name = staged
+            .path()
+            .file_name()
+            .expect("name")
+            .to_string_lossy()
+            .into_owned();
+        assert!(
+            name.contains(&std::process::id().to_string()),
+            "the staging name must carry the process id, got {name}",
+        );
+        assert!(
+            name.starts_with('.'),
+            "a build in progress is not something to show in a folder listing, got {name}",
+        );
     }
 }
 
