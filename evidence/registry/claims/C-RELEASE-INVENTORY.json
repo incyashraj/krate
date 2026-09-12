@@ -1,0 +1,39 @@
+{
+ "id": "C-RELEASE-INVENTORY",
+ "sentence": "Release v0.3.0 publishes 11 artifacts across six targets, and each one's bytes are named by a digest that still matches the file you can download.",
+ "audience": "anyone deciding whether a downloaded Krate release is the published one",
+ "surfaces": [
+  "release"
+ ],
+ "subject": {
+  "commit": "364ebc7a1"
+ },
+ "requires": {
+  "evidence_classes": [
+   "execution"
+  ],
+  "platforms": [
+   "macos-arm64"
+  ],
+  "environment": "any",
+  "same_bytes": false
+ },
+ "evidence": [
+  "E-LINEAGE-v0.3.0"
+ ],
+ "declared_state": "PROVED",
+ "exclusions": [
+  "that the published bytes came from the CI run the record names -- that needs a reproducible build and is not claimed",
+  "that any artifact is signed",
+  "every other release: this sentence is about v0.3.0 only"
+ ],
+ "owner": "lead",
+ "approval": null,
+ "expiry": {
+  "triggers": [
+   "source-change"
+  ]
+ },
+ "revision": 1,
+ "history": []
+}

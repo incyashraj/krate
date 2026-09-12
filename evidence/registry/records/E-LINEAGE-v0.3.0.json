@@ -1,0 +1,80 @@
+{
+ "id": "E-LINEAGE-v0.3.0",
+ "claims": [
+  "C-RELEASE-INVENTORY"
+ ],
+ "subject": {
+  "kind": "archive",
+  "source": {
+   "commit": "364ebc7a15c6d18329986f3138157ccc4b7ec532",
+   "tree": "4f822fb6873f031ef134bf5cf081dd73cbab9bdf"
+  },
+  "binary_digest": "8a58b8103f1f04ce9d6a72bbd19a6c3642292c077fd21bdb6192b289d19f6d63",
+  "package_digest": "1466c9b2f2e07e7cd6ee37749dc0a8763148059ac28d0afc866634c96164ce28",
+  "relationship": "the release v0.3.0 was published from this commit; the lineage record names every artifact it carries"
+ },
+ "environment": {
+  "kind": "native",
+  "os": "macos",
+  "arch": "arm64"
+ },
+ "toolchain": {
+  "rust": "1.94.1"
+ },
+ "command": "python3 scripts/release-lineage.py verify v0.3.0",
+ "inputs": {
+  "prerequisites": [
+   "gh, authenticated",
+   "network reachable"
+  ]
+ },
+ "oracle": {
+  "class": "execution",
+  "description": "the record's artifact set, digests and sizes are compared against the live release; any added, removed, replaced or resized artifact is reported and the check fails. One artifact was additionally downloaded and hashed on this machine, and its sha256 equalled the recorded digest"
+ },
+ "raw_result": {
+  "artifacts": 11,
+  "bytes": 286269711,
+  "targets": [
+   "aarch64-apple-darwin",
+   "aarch64-pc-windows-msvc",
+   "universal-apple-darwin",
+   "x86_64-apple-darwin",
+   "x86_64-pc-windows-msvc",
+   "x86_64-unknown-linux-gnu"
+  ],
+  "independent_check": "shasum -a 256 of krate-app-0.3.0-aarch64-apple-darwin.zip equalled 8a58b8103f1f...d19f6d63, the recorded digest",
+  "location": "https://github.com/incyashraj/krate/releases/tag/v0.3.0"
+ },
+ "outcome": "pass",
+ "scope": {
+  "supports": "the 11 files published under v0.3.0 are these bytes, and the record naming them still describes the live release",
+  "exclusions": [
+   "that those bytes were produced by the CI run named in the record -- proving that needs a reproducible build, which does not exist",
+   "whether any artifact is signed: the record says nobody looked",
+   "anything about how the artifacts behave once run"
+  ]
+ },
+ "independence": "local reproduction",
+ "time": {
+  "start": "2026-09-12T17:15:34Z",
+  "finish": "2026-09-12T17:15:34Z"
+ },
+ "operator": "release-lineage.py on the founder's machine",
+ "privacy": {
+  "audience": "public",
+  "redact": []
+ },
+ "retention": {
+  "raw": "evidence/lineage/v0.3.0.json",
+  "until": "the tag is deleted"
+ },
+ "expiry": {
+  "triggers": [
+   "source-change"
+  ],
+  "on": null
+ },
+ "supersedes": null,
+ "invalidated_by": null
+}
