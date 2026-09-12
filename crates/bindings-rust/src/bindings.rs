@@ -4,12 +4,14 @@
 //   * runtime_path: "wit_bindgen_rt"
 #[doc(hidden)]
 #[allow(non_snake_case)]
-pub unsafe fn _export_run_cabi<T: Guest>() -> i32 {#[cfg(target_arch="wasm32")]
-_rt::run_ctors_once();let result0 = T::run();
-_rt::as_i32(result0)
+pub unsafe fn _export_run_cabi<T: Guest>() -> i32 {
+    #[cfg(target_arch = "wasm32")]
+    _rt::run_ctors_once();
+    let result0 = T::run();
+    _rt::as_i32(result0)
 }
 pub trait Guest {
-  fn run() -> i32;
+    fn run() -> i32;
 }
 #[doc(hidden)]
 
@@ -26,6664 +28,7383 @@ macro_rules! __export_world_cli_cabi{
 pub(crate) use __export_world_cli_cabi;
 #[allow(dead_code, clippy::all)]
 pub mod krate {
-  pub mod fs {
-    /// Shared filesystem records, modes, and errors.
-    #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
-    pub mod types {
-      #[used]
-      #[doc(hidden)]
-      static __FORCE_SECTION_REF: fn() =
-      super::super::super::__link_custom_section_describing_imports;
-      
-      use super::super::super::_rt;
-      /// Metadata returned for files and directories.
-      #[repr(C)]
-      #[derive(Clone, Copy)]
-      pub struct FileStat {
-        /// Size in bytes for files. Directory size is host-defined.
-        pub size: u64,
-        /// Last modified time in Unix epoch milliseconds.
-        pub modified_millis: u64,
-        /// True when the path is a directory.
-        pub is_dir: bool,
-      }
-      impl ::core::fmt::Debug for FileStat {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          f.debug_struct("FileStat").field("size", &self.size).field("modified-millis", &self.modified_millis).field("is-dir", &self.is_dir).finish()
-        }
-      }
-      /// How a file should be opened.
-      #[derive(Clone, Copy)]
-      pub enum OpenMode {
-        /// Open for reads.
-        Read,
-        /// Open for writes, creating or truncating according to host policy.
-        Write,
-        /// Open for both reads and writes.
-        ReadWrite,
-        /// Open for appending writes.
-        Append,
-      }
-      impl ::core::fmt::Debug for OpenMode {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          match self {
-            OpenMode::Read => {
-              f.debug_tuple("OpenMode::Read").finish()
+    pub mod fs {
+        /// Shared filesystem records, modes, and errors.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod types {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() =
+                super::super::super::__link_custom_section_describing_imports;
+
+            use super::super::super::_rt;
+            /// Metadata returned for files and directories.
+            #[repr(C)]
+            #[derive(Clone, Copy)]
+            pub struct FileStat {
+                /// Size in bytes for files. Directory size is host-defined.
+                pub size: u64,
+                /// Last modified time in Unix epoch milliseconds.
+                pub modified_millis: u64,
+                /// True when the path is a directory.
+                pub is_dir: bool,
             }
-            OpenMode::Write => {
-              f.debug_tuple("OpenMode::Write").finish()
-            }
-            OpenMode::ReadWrite => {
-              f.debug_tuple("OpenMode::ReadWrite").finish()
-            }
-            OpenMode::Append => {
-              f.debug_tuple("OpenMode::Append").finish()
-            }
-          }
-        }
-      }
-      /// Filesystem error shape used by path and file-handle calls.
-      #[derive(Clone)]
-      pub enum FsError {
-        /// Path does not exist.
-        NotFound,
-        /// Capability policy or sandbox rules denied the operation.
-        PermissionDenied,
-        /// The target already exists.
-        AlreadyExists,
-        /// Path text is not accepted by the Phase 2 path rules.
-        InvalidPath,
-        /// Operation needed a directory but found something else.
-        NotADirectory,
-        /// Operation needed a file but found a directory.
-        IsADirectory,
-        /// Host-specific filesystem error text.
-        Io(_rt::String),
-      }
-      impl ::core::fmt::Debug for FsError {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          match self {
-            FsError::NotFound => {
-              f.debug_tuple("FsError::NotFound").finish()
-            }
-            FsError::PermissionDenied => {
-              f.debug_tuple("FsError::PermissionDenied").finish()
-            }
-            FsError::AlreadyExists => {
-              f.debug_tuple("FsError::AlreadyExists").finish()
-            }
-            FsError::InvalidPath => {
-              f.debug_tuple("FsError::InvalidPath").finish()
-            }
-            FsError::NotADirectory => {
-              f.debug_tuple("FsError::NotADirectory").finish()
-            }
-            FsError::IsADirectory => {
-              f.debug_tuple("FsError::IsADirectory").finish()
-            }
-            FsError::Io(e) => {
-              f.debug_tuple("FsError::Io").field(e).finish()
-            }
-          }
-        }
-      }
-      impl ::core::fmt::Display for FsError {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          write!(f, "{:?}", self)
-        }
-      }
-
-      #[cfg(feature = "std")]
-      impl std::error::Error for FsError {}
-
-    }
-
-    /// Filesystem functions and file resources.
-    #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
-    pub mod files {
-      #[used]
-      #[doc(hidden)]
-      static __FORCE_SECTION_REF: fn() =
-      super::super::super::__link_custom_section_describing_imports;
-      
-      use super::super::super::_rt;
-      pub type FileStat = super::super::super::krate::fs::types::FileStat;
-      pub type OpenMode = super::super::super::krate::fs::types::OpenMode;
-      pub type FsError = super::super::super::krate::fs::types::FsError;
-      /// Open file resource.
-
-      #[derive(Debug)]
-      #[repr(transparent)]
-      pub struct File{
-        handle: _rt::Resource<File>,
-      }
-
-      impl File{
-        #[doc(hidden)]
-        pub unsafe fn from_handle(handle: u32) -> Self {
-          Self {
-            handle: unsafe { _rt::Resource::from_handle(handle) },
-          }
-        }
-
-        #[doc(hidden)]
-        pub fn take_handle(&self) -> u32 {
-          _rt::Resource::take_handle(&self.handle)
-        }
-
-        #[doc(hidden)]
-        pub fn handle(&self) -> u32 {
-          _rt::Resource::handle(&self.handle)
-        }
-      }
-      
-
-      unsafe impl _rt::WasmResource for File{
-        #[inline]
-        unsafe fn drop(_handle: u32) {
-          #[cfg(not(target_arch = "wasm32"))]
-          unreachable!();
-
-          #[cfg(target_arch = "wasm32")]
-          {
-            #[link(wasm_import_module = "krate:fs/files@0.1.0")]
-            unsafe extern "C" {
-              #[link_name = "[resource-drop]file"]
-              fn drop(_: u32);
-            }
-
-            unsafe { drop(_handle) };
-          }
-        }
-      }
-      
-      impl File {
-        #[allow(unused_unsafe, clippy::all)]
-        /// Read up to `n` bytes from the current file cursor.
-        pub fn read(&self,n: u32,) -> Result<_rt::Vec::<u8>,FsError>{
-          unsafe {
-
-            #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-            #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-            struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-            let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-            let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
-            #[cfg(target_arch = "wasm32")]
-            #[link(wasm_import_module = "krate:fs/files@0.1.0")]
-            unsafe extern "C" {
-              #[link_name = "[method]file.read"]
-              fn wit_import1(_: i32, _: i32, _: *mut u8, );
-            }
-
-            #[cfg(not(target_arch = "wasm32"))]
-            unsafe extern "C" fn wit_import1(_: i32, _: i32, _: *mut u8, ){ unreachable!() }
-            unsafe { wit_import1((self).handle() as i32, _rt::as_i32(&n), ptr0) };
-            let l2 = i32::from(*ptr0.add(0).cast::<u8>());
-            let result11 = match l2 {
-              0 => {
-                let e = {
-                  let l3 = *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                  let l4 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                  let len5 = l4;
-
-                  _rt::Vec::from_raw_parts(l3.cast(), len5, len5)
-                };
-                Ok(e)
-              }
-              1 => {
-                let e = {
-                  let l6 = i32::from(*ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                  use super::super::super::krate::fs::types::FsError as V10;
-                  let v10 = match l6 {
-                    0 => {
-                      V10::NotFound
-                    }
-                    1 => {
-                      V10::PermissionDenied
-                    }
-                    2 => {
-                      V10::AlreadyExists
-                    }
-                    3 => {
-                      V10::InvalidPath
-                    }
-                    4 => {
-                      V10::NotADirectory
-                    }
-                    5 => {
-                      V10::IsADirectory
-                    }
-                    n => {
-                      debug_assert_eq!(n, 6, "invalid enum discriminant");
-                      let e10 = {
-                        let l7 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                        let l8 = *ptr0.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                        let len9 = l8;
-                        let bytes9 = _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
-                        _rt::string_lift(bytes9)
-                      };
-                      V10::Io(e10)
-                    }
-                  };
-
-                  v10
-                };
-                Err(e)
-              }
-              _ => _rt::invalid_enum_discriminant(),
-            };
-            result11
-          }
-        }
-      }
-      impl File {
-        #[allow(unused_unsafe, clippy::all)]
-        /// Write bytes at the current file cursor.
-        pub fn write(&self,bytes: &[u8],) -> Result<u32,FsError>{
-          unsafe {
-
-            #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-            #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-            struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-            let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-            let vec0 = bytes;
-            let ptr0 = vec0.as_ptr().cast::<u8>();
-            let len0 = vec0.len();
-            let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
-            #[cfg(target_arch = "wasm32")]
-            #[link(wasm_import_module = "krate:fs/files@0.1.0")]
-            unsafe extern "C" {
-              #[link_name = "[method]file.write"]
-              fn wit_import2(_: i32, _: *mut u8, _: usize, _: *mut u8, );
-            }
-
-            #[cfg(not(target_arch = "wasm32"))]
-            unsafe extern "C" fn wit_import2(_: i32, _: *mut u8, _: usize, _: *mut u8, ){ unreachable!() }
-            unsafe { wit_import2((self).handle() as i32, ptr0.cast_mut(), len0, ptr1) };
-            let l3 = i32::from(*ptr1.add(0).cast::<u8>());
-            let result10 = match l3 {
-              0 => {
-                let e = {
-                  let l4 = *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<i32>();
-
-                  l4 as u32
-                };
-                Ok(e)
-              }
-              1 => {
-                let e = {
-                  let l5 = i32::from(*ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                  use super::super::super::krate::fs::types::FsError as V9;
-                  let v9 = match l5 {
-                    0 => {
-                      V9::NotFound
-                    }
-                    1 => {
-                      V9::PermissionDenied
-                    }
-                    2 => {
-                      V9::AlreadyExists
-                    }
-                    3 => {
-                      V9::InvalidPath
-                    }
-                    4 => {
-                      V9::NotADirectory
-                    }
-                    5 => {
-                      V9::IsADirectory
-                    }
-                    n => {
-                      debug_assert_eq!(n, 6, "invalid enum discriminant");
-                      let e9 = {
-                        let l6 = *ptr1.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                        let l7 = *ptr1.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                        let len8 = l7;
-                        let bytes8 = _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
-                        _rt::string_lift(bytes8)
-                      };
-                      V9::Io(e9)
-                    }
-                  };
-
-                  v9
-                };
-                Err(e)
-              }
-              _ => _rt::invalid_enum_discriminant(),
-            };
-            result10
-          }
-        }
-      }
-      impl File {
-        #[allow(unused_unsafe, clippy::all)]
-        /// Seek to an absolute byte position.
-        pub fn seek_set(&self,pos: u64,) -> Result<u64,FsError>{
-          unsafe {
-
-            #[repr(align(8))]
-            struct RetArea([::core::mem::MaybeUninit::<u8>; 16+2*::core::mem::size_of::<*const u8>()]);
-            let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 16+2*::core::mem::size_of::<*const u8>()]);
-            let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
-            #[cfg(target_arch = "wasm32")]
-            #[link(wasm_import_module = "krate:fs/files@0.1.0")]
-            unsafe extern "C" {
-              #[link_name = "[method]file.seek-set"]
-              fn wit_import1(_: i32, _: i64, _: *mut u8, );
-            }
-
-            #[cfg(not(target_arch = "wasm32"))]
-            unsafe extern "C" fn wit_import1(_: i32, _: i64, _: *mut u8, ){ unreachable!() }
-            unsafe { wit_import1((self).handle() as i32, _rt::as_i64(&pos), ptr0) };
-            let l2 = i32::from(*ptr0.add(0).cast::<u8>());
-            let result9 = match l2 {
-              0 => {
-                let e = {
-                  let l3 = *ptr0.add(8).cast::<i64>();
-
-                  l3 as u64
-                };
-                Ok(e)
-              }
-              1 => {
-                let e = {
-                  let l4 = i32::from(*ptr0.add(8).cast::<u8>());
-                  use super::super::super::krate::fs::types::FsError as V8;
-                  let v8 = match l4 {
-                    0 => {
-                      V8::NotFound
-                    }
-                    1 => {
-                      V8::PermissionDenied
-                    }
-                    2 => {
-                      V8::AlreadyExists
-                    }
-                    3 => {
-                      V8::InvalidPath
-                    }
-                    4 => {
-                      V8::NotADirectory
-                    }
-                    5 => {
-                      V8::IsADirectory
-                    }
-                    n => {
-                      debug_assert_eq!(n, 6, "invalid enum discriminant");
-                      let e8 = {
-                        let l5 = *ptr0.add(8+1*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                        let l6 = *ptr0.add(8+2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                        let len7 = l6;
-                        let bytes7 = _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
-                        _rt::string_lift(bytes7)
-                      };
-                      V8::Io(e8)
-                    }
-                  };
-
-                  v8
-                };
-                Err(e)
-              }
-              _ => _rt::invalid_enum_discriminant(),
-            };
-            result9
-          }
-        }
-      }
-      impl File {
-        #[allow(unused_unsafe, clippy::all)]
-        /// Seek to the end of the file.
-        pub fn seek_end(&self,) -> Result<u64,FsError>{
-          unsafe {
-
-            #[repr(align(8))]
-            struct RetArea([::core::mem::MaybeUninit::<u8>; 16+2*::core::mem::size_of::<*const u8>()]);
-            let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 16+2*::core::mem::size_of::<*const u8>()]);
-            let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
-            #[cfg(target_arch = "wasm32")]
-            #[link(wasm_import_module = "krate:fs/files@0.1.0")]
-            unsafe extern "C" {
-              #[link_name = "[method]file.seek-end"]
-              fn wit_import1(_: i32, _: *mut u8, );
-            }
-
-            #[cfg(not(target_arch = "wasm32"))]
-            unsafe extern "C" fn wit_import1(_: i32, _: *mut u8, ){ unreachable!() }
-            unsafe { wit_import1((self).handle() as i32, ptr0) };
-            let l2 = i32::from(*ptr0.add(0).cast::<u8>());
-            let result9 = match l2 {
-              0 => {
-                let e = {
-                  let l3 = *ptr0.add(8).cast::<i64>();
-
-                  l3 as u64
-                };
-                Ok(e)
-              }
-              1 => {
-                let e = {
-                  let l4 = i32::from(*ptr0.add(8).cast::<u8>());
-                  use super::super::super::krate::fs::types::FsError as V8;
-                  let v8 = match l4 {
-                    0 => {
-                      V8::NotFound
-                    }
-                    1 => {
-                      V8::PermissionDenied
-                    }
-                    2 => {
-                      V8::AlreadyExists
-                    }
-                    3 => {
-                      V8::InvalidPath
-                    }
-                    4 => {
-                      V8::NotADirectory
-                    }
-                    5 => {
-                      V8::IsADirectory
-                    }
-                    n => {
-                      debug_assert_eq!(n, 6, "invalid enum discriminant");
-                      let e8 = {
-                        let l5 = *ptr0.add(8+1*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                        let l6 = *ptr0.add(8+2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                        let len7 = l6;
-                        let bytes7 = _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
-                        _rt::string_lift(bytes7)
-                      };
-                      V8::Io(e8)
-                    }
-                  };
-
-                  v8
-                };
-                Err(e)
-              }
-              _ => _rt::invalid_enum_discriminant(),
-            };
-            result9
-          }
-        }
-      }
-      impl File {
-        #[allow(unused_unsafe, clippy::all)]
-        /// Read metadata for this open file handle.
-        pub fn stat(&self,) -> Result<FileStat,FsError>{
-          unsafe {
-
-            #[repr(align(8))]
-            struct RetArea([::core::mem::MaybeUninit::<u8>; 32]);
-            let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 32]);
-            let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
-            #[cfg(target_arch = "wasm32")]
-            #[link(wasm_import_module = "krate:fs/files@0.1.0")]
-            unsafe extern "C" {
-              #[link_name = "[method]file.stat"]
-              fn wit_import1(_: i32, _: *mut u8, );
-            }
-
-            #[cfg(not(target_arch = "wasm32"))]
-            unsafe extern "C" fn wit_import1(_: i32, _: *mut u8, ){ unreachable!() }
-            unsafe { wit_import1((self).handle() as i32, ptr0) };
-            let l2 = i32::from(*ptr0.add(0).cast::<u8>());
-            let result11 = match l2 {
-              0 => {
-                let e = {
-                  let l3 = *ptr0.add(8).cast::<i64>();
-                  let l4 = *ptr0.add(16).cast::<i64>();
-                  let l5 = i32::from(*ptr0.add(24).cast::<u8>());
-
-                  super::super::super::krate::fs::types::FileStat{
-                    size: l3 as u64,
-                    modified_millis: l4 as u64,
-                    is_dir: _rt::bool_lift(l5 as u8),
-                  }
-                };
-                Ok(e)
-              }
-              1 => {
-                let e = {
-                  let l6 = i32::from(*ptr0.add(8).cast::<u8>());
-                  use super::super::super::krate::fs::types::FsError as V10;
-                  let v10 = match l6 {
-                    0 => {
-                      V10::NotFound
-                    }
-                    1 => {
-                      V10::PermissionDenied
-                    }
-                    2 => {
-                      V10::AlreadyExists
-                    }
-                    3 => {
-                      V10::InvalidPath
-                    }
-                    4 => {
-                      V10::NotADirectory
-                    }
-                    5 => {
-                      V10::IsADirectory
-                    }
-                    n => {
-                      debug_assert_eq!(n, 6, "invalid enum discriminant");
-                      let e10 = {
-                        let l7 = *ptr0.add(8+1*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                        let l8 = *ptr0.add(8+2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                        let len9 = l8;
-                        let bytes9 = _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
-                        _rt::string_lift(bytes9)
-                      };
-                      V10::Io(e10)
-                    }
-                  };
-
-                  v10
-                };
-                Err(e)
-              }
-              _ => _rt::invalid_enum_discriminant(),
-            };
-            result11
-          }
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Open a path and return a file resource.
-      pub fn open(path: &str,mode: OpenMode,) -> Result<File,FsError>{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let vec0 = path;
-          let ptr0 = vec0.as_ptr().cast::<u8>();
-          let len0 = vec0.len();
-          use super::super::super::krate::fs::types::OpenMode as V1;
-          let result2 = match mode {
-            V1::Read=> {
-              0i32
-            }
-            V1::Write=> {
-              1i32
-            }
-            V1::ReadWrite=> {
-              2i32
-            }
-            V1::Append=> {
-              3i32
-            }
-          };
-          let ptr3 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:fs/files@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "open"]
-            fn wit_import4(_: *mut u8, _: usize, _: i32, _: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import4(_: *mut u8, _: usize, _: i32, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import4(ptr0.cast_mut(), len0, result2, ptr3) };
-          let l5 = i32::from(*ptr3.add(0).cast::<u8>());
-          let result12 = match l5 {
-            0 => {
-              let e = {
-                let l6 = *ptr3.add(::core::mem::size_of::<*const u8>()).cast::<i32>();
-
-                unsafe { File::from_handle(l6 as u32) }
-              };
-              Ok(e)
-            }
-            1 => {
-              let e = {
-                let l7 = i32::from(*ptr3.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                use super::super::super::krate::fs::types::FsError as V11;
-                let v11 = match l7 {
-                  0 => {
-                    V11::NotFound
-                  }
-                  1 => {
-                    V11::PermissionDenied
-                  }
-                  2 => {
-                    V11::AlreadyExists
-                  }
-                  3 => {
-                    V11::InvalidPath
-                  }
-                  4 => {
-                    V11::NotADirectory
-                  }
-                  5 => {
-                    V11::IsADirectory
-                  }
-                  n => {
-                    debug_assert_eq!(n, 6, "invalid enum discriminant");
-                    let e11 = {
-                      let l8 = *ptr3.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l9 = *ptr3.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len10 = l9;
-                      let bytes10 = _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
-                      _rt::string_lift(bytes10)
-                    };
-                    V11::Io(e11)
-                  }
-                };
-
-                v11
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result12
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Open a file the person chose in a dialog, by its token.
-      ///
-      /// The counterpart to `ui.dialog.open-file`. It takes a token rather than a
-      /// path because the app never learns the path: the person's click granted
-      /// this one file, not the folder it happens to sit in, and handing over a
-      /// path would let the app walk to its siblings.
-      ///
-      /// A token belongs to one run. It is refused after the run that produced it,
-      /// so an app cannot store one and come back later for a file nobody offered
-      /// again.
-      pub fn open_chosen(token: &str,mode: OpenMode,) -> Result<File,FsError>{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let vec0 = token;
-          let ptr0 = vec0.as_ptr().cast::<u8>();
-          let len0 = vec0.len();
-          use super::super::super::krate::fs::types::OpenMode as V1;
-          let result2 = match mode {
-            V1::Read=> {
-              0i32
-            }
-            V1::Write=> {
-              1i32
-            }
-            V1::ReadWrite=> {
-              2i32
-            }
-            V1::Append=> {
-              3i32
-            }
-          };
-          let ptr3 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:fs/files@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "open-chosen"]
-            fn wit_import4(_: *mut u8, _: usize, _: i32, _: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import4(_: *mut u8, _: usize, _: i32, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import4(ptr0.cast_mut(), len0, result2, ptr3) };
-          let l5 = i32::from(*ptr3.add(0).cast::<u8>());
-          let result12 = match l5 {
-            0 => {
-              let e = {
-                let l6 = *ptr3.add(::core::mem::size_of::<*const u8>()).cast::<i32>();
-
-                unsafe { File::from_handle(l6 as u32) }
-              };
-              Ok(e)
-            }
-            1 => {
-              let e = {
-                let l7 = i32::from(*ptr3.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                use super::super::super::krate::fs::types::FsError as V11;
-                let v11 = match l7 {
-                  0 => {
-                    V11::NotFound
-                  }
-                  1 => {
-                    V11::PermissionDenied
-                  }
-                  2 => {
-                    V11::AlreadyExists
-                  }
-                  3 => {
-                    V11::InvalidPath
-                  }
-                  4 => {
-                    V11::NotADirectory
-                  }
-                  5 => {
-                    V11::IsADirectory
-                  }
-                  n => {
-                    debug_assert_eq!(n, 6, "invalid enum discriminant");
-                    let e11 = {
-                      let l8 = *ptr3.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l9 = *ptr3.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len10 = l9;
-                      let bytes10 = _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
-                      _rt::string_lift(bytes10)
-                    };
-                    V11::Io(e11)
-                  }
-                };
-
-                v11
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result12
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Read metadata for a path without opening it as a file resource.
-      pub fn stat(path: &str,) -> Result<FileStat,FsError>{
-        unsafe {
-
-          #[repr(align(8))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 32]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 32]);
-          let vec0 = path;
-          let ptr0 = vec0.as_ptr().cast::<u8>();
-          let len0 = vec0.len();
-          let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:fs/files@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "stat"]
-            fn wit_import2(_: *mut u8, _: usize, _: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
-          let l3 = i32::from(*ptr1.add(0).cast::<u8>());
-          let result12 = match l3 {
-            0 => {
-              let e = {
-                let l4 = *ptr1.add(8).cast::<i64>();
-                let l5 = *ptr1.add(16).cast::<i64>();
-                let l6 = i32::from(*ptr1.add(24).cast::<u8>());
-
-                super::super::super::krate::fs::types::FileStat{
-                  size: l4 as u64,
-                  modified_millis: l5 as u64,
-                  is_dir: _rt::bool_lift(l6 as u8),
+            impl ::core::fmt::Debug for FileStat {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    f.debug_struct("FileStat")
+                        .field("size", &self.size)
+                        .field("modified-millis", &self.modified_millis)
+                        .field("is-dir", &self.is_dir)
+                        .finish()
                 }
-              };
-              Ok(e)
             }
-            1 => {
-              let e = {
-                let l7 = i32::from(*ptr1.add(8).cast::<u8>());
-                use super::super::super::krate::fs::types::FsError as V11;
-                let v11 = match l7 {
-                  0 => {
-                    V11::NotFound
-                  }
-                  1 => {
-                    V11::PermissionDenied
-                  }
-                  2 => {
-                    V11::AlreadyExists
-                  }
-                  3 => {
-                    V11::InvalidPath
-                  }
-                  4 => {
-                    V11::NotADirectory
-                  }
-                  5 => {
-                    V11::IsADirectory
-                  }
-                  n => {
-                    debug_assert_eq!(n, 6, "invalid enum discriminant");
-                    let e11 = {
-                      let l8 = *ptr1.add(8+1*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l9 = *ptr1.add(8+2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len10 = l9;
-                      let bytes10 = _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
-                      _rt::string_lift(bytes10)
-                    };
-                    V11::Io(e11)
-                  }
-                };
-
-                v11
-              };
-              Err(e)
+            /// How a file should be opened.
+            #[derive(Clone, Copy)]
+            pub enum OpenMode {
+                /// Open for reads.
+                Read,
+                /// Open for writes, creating or truncating according to host policy.
+                Write,
+                /// Open for both reads and writes.
+                ReadWrite,
+                /// Open for appending writes.
+                Append,
             }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result12
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// List directory entry names for a path.
-      pub fn list(path: &str,) -> Result<_rt::Vec::<_rt::String>,FsError>{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let vec0 = path;
-          let ptr0 = vec0.as_ptr().cast::<u8>();
-          let len0 = vec0.len();
-          let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:fs/files@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "list"]
-            fn wit_import2(_: *mut u8, _: usize, _: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
-          let l3 = i32::from(*ptr1.add(0).cast::<u8>());
-          let result15 = match l3 {
-            0 => {
-              let e = {
-                let l4 = *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                let l5 = *ptr1.add(2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                let base9 = l4;
-                let len9 = l5;
-                let mut result9 = _rt::Vec::with_capacity(len9);
-                for i in 0..len9 {
-                  let base = base9.add(i * (2*::core::mem::size_of::<*const u8>()));
-                  let e9 = {
-                    let l6 = *base.add(0).cast::<*mut u8>();
-                    let l7 = *base.add(::core::mem::size_of::<*const u8>()).cast::<usize>();
-                    let len8 = l7;
-                    let bytes8 = _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
-                    _rt::string_lift(bytes8)
-                  };
-                  result9.push(e9);
+            impl ::core::fmt::Debug for OpenMode {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    match self {
+                        OpenMode::Read => f.debug_tuple("OpenMode::Read").finish(),
+                        OpenMode::Write => f.debug_tuple("OpenMode::Write").finish(),
+                        OpenMode::ReadWrite => f.debug_tuple("OpenMode::ReadWrite").finish(),
+                        OpenMode::Append => f.debug_tuple("OpenMode::Append").finish(),
+                    }
                 }
-                _rt::cabi_dealloc(base9, len9 * (2*::core::mem::size_of::<*const u8>()), ::core::mem::size_of::<*const u8>());
-
-                result9
-              };
-              Ok(e)
             }
-            1 => {
-              let e = {
-                let l10 = i32::from(*ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                use super::super::super::krate::fs::types::FsError as V14;
-                let v14 = match l10 {
-                  0 => {
-                    V14::NotFound
-                  }
-                  1 => {
-                    V14::PermissionDenied
-                  }
-                  2 => {
-                    V14::AlreadyExists
-                  }
-                  3 => {
-                    V14::InvalidPath
-                  }
-                  4 => {
-                    V14::NotADirectory
-                  }
-                  5 => {
-                    V14::IsADirectory
-                  }
-                  n => {
-                    debug_assert_eq!(n, 6, "invalid enum discriminant");
-                    let e14 = {
-                      let l11 = *ptr1.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l12 = *ptr1.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len13 = l12;
-                      let bytes13 = _rt::Vec::from_raw_parts(l11.cast(), len13, len13);
-
-                      _rt::string_lift(bytes13)
-                    };
-                    V14::Io(e14)
-                  }
-                };
-
-                v14
-              };
-              Err(e)
+            /// Filesystem error shape used by path and file-handle calls.
+            #[derive(Clone)]
+            pub enum FsError {
+                /// Path does not exist.
+                NotFound,
+                /// Capability policy or sandbox rules denied the operation.
+                PermissionDenied,
+                /// The target already exists.
+                AlreadyExists,
+                /// Path text is not accepted by the Phase 2 path rules.
+                InvalidPath,
+                /// Operation needed a directory but found something else.
+                NotADirectory,
+                /// Operation needed a file but found a directory.
+                IsADirectory,
+                /// Host-specific filesystem error text.
+                Io(_rt::String),
             }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result15
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Remove one file.
-      pub fn remove_file(path: &str,) -> Result<(),FsError>{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let vec0 = path;
-          let ptr0 = vec0.as_ptr().cast::<u8>();
-          let len0 = vec0.len();
-          let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:fs/files@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "remove-file"]
-            fn wit_import2(_: *mut u8, _: usize, _: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
-          let l3 = i32::from(*ptr1.add(0).cast::<u8>());
-          let result9 = match l3 {
-            0 => {
-              let e = ();
-              Ok(e)
-            }
-            1 => {
-              let e = {
-                let l4 = i32::from(*ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                use super::super::super::krate::fs::types::FsError as V8;
-                let v8 = match l4 {
-                  0 => {
-                    V8::NotFound
-                  }
-                  1 => {
-                    V8::PermissionDenied
-                  }
-                  2 => {
-                    V8::AlreadyExists
-                  }
-                  3 => {
-                    V8::InvalidPath
-                  }
-                  4 => {
-                    V8::NotADirectory
-                  }
-                  5 => {
-                    V8::IsADirectory
-                  }
-                  n => {
-                    debug_assert_eq!(n, 6, "invalid enum discriminant");
-                    let e8 = {
-                      let l5 = *ptr1.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l6 = *ptr1.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len7 = l6;
-                      let bytes7 = _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
-                      _rt::string_lift(bytes7)
-                    };
-                    V8::Io(e8)
-                  }
-                };
-
-                v8
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result9
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Remove one directory.
-      pub fn remove_dir(path: &str,) -> Result<(),FsError>{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let vec0 = path;
-          let ptr0 = vec0.as_ptr().cast::<u8>();
-          let len0 = vec0.len();
-          let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:fs/files@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "remove-dir"]
-            fn wit_import2(_: *mut u8, _: usize, _: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
-          let l3 = i32::from(*ptr1.add(0).cast::<u8>());
-          let result9 = match l3 {
-            0 => {
-              let e = ();
-              Ok(e)
-            }
-            1 => {
-              let e = {
-                let l4 = i32::from(*ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                use super::super::super::krate::fs::types::FsError as V8;
-                let v8 = match l4 {
-                  0 => {
-                    V8::NotFound
-                  }
-                  1 => {
-                    V8::PermissionDenied
-                  }
-                  2 => {
-                    V8::AlreadyExists
-                  }
-                  3 => {
-                    V8::InvalidPath
-                  }
-                  4 => {
-                    V8::NotADirectory
-                  }
-                  5 => {
-                    V8::IsADirectory
-                  }
-                  n => {
-                    debug_assert_eq!(n, 6, "invalid enum discriminant");
-                    let e8 = {
-                      let l5 = *ptr1.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l6 = *ptr1.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len7 = l6;
-                      let bytes7 = _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
-                      _rt::string_lift(bytes7)
-                    };
-                    V8::Io(e8)
-                  }
-                };
-
-                v8
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result9
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Create one directory.
-      pub fn mkdir(path: &str,) -> Result<(),FsError>{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let vec0 = path;
-          let ptr0 = vec0.as_ptr().cast::<u8>();
-          let len0 = vec0.len();
-          let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:fs/files@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "mkdir"]
-            fn wit_import2(_: *mut u8, _: usize, _: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
-          let l3 = i32::from(*ptr1.add(0).cast::<u8>());
-          let result9 = match l3 {
-            0 => {
-              let e = ();
-              Ok(e)
-            }
-            1 => {
-              let e = {
-                let l4 = i32::from(*ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                use super::super::super::krate::fs::types::FsError as V8;
-                let v8 = match l4 {
-                  0 => {
-                    V8::NotFound
-                  }
-                  1 => {
-                    V8::PermissionDenied
-                  }
-                  2 => {
-                    V8::AlreadyExists
-                  }
-                  3 => {
-                    V8::InvalidPath
-                  }
-                  4 => {
-                    V8::NotADirectory
-                  }
-                  5 => {
-                    V8::IsADirectory
-                  }
-                  n => {
-                    debug_assert_eq!(n, 6, "invalid enum discriminant");
-                    let e8 = {
-                      let l5 = *ptr1.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l6 = *ptr1.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len7 = l6;
-                      let bytes7 = _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
-                      _rt::string_lift(bytes7)
-                    };
-                    V8::Io(e8)
-                  }
-                };
-
-                v8
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result9
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Rename or move a path.
-      pub fn rename(from: &str,to: &str,) -> Result<(),FsError>{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let vec0 = from;
-          let ptr0 = vec0.as_ptr().cast::<u8>();
-          let len0 = vec0.len();
-          let vec1 = to;
-          let ptr1 = vec1.as_ptr().cast::<u8>();
-          let len1 = vec1.len();
-          let ptr2 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:fs/files@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "rename"]
-            fn wit_import3(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import3(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import3(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1, ptr2) };
-          let l4 = i32::from(*ptr2.add(0).cast::<u8>());
-          let result10 = match l4 {
-            0 => {
-              let e = ();
-              Ok(e)
-            }
-            1 => {
-              let e = {
-                let l5 = i32::from(*ptr2.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                use super::super::super::krate::fs::types::FsError as V9;
-                let v9 = match l5 {
-                  0 => {
-                    V9::NotFound
-                  }
-                  1 => {
-                    V9::PermissionDenied
-                  }
-                  2 => {
-                    V9::AlreadyExists
-                  }
-                  3 => {
-                    V9::InvalidPath
-                  }
-                  4 => {
-                    V9::NotADirectory
-                  }
-                  5 => {
-                    V9::IsADirectory
-                  }
-                  n => {
-                    debug_assert_eq!(n, 6, "invalid enum discriminant");
-                    let e9 = {
-                      let l6 = *ptr2.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l7 = *ptr2.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len8 = l7;
-                      let bytes8 = _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
-                      _rt::string_lift(bytes8)
-                    };
-                    V9::Io(e9)
-                  }
-                };
-
-                v9
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result10
-        }
-      }
-
-    }
-
-  }
-  pub mod io {
-    /// Shared IO records and errors.
-    #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
-    pub mod types {
-      #[used]
-      #[doc(hidden)]
-      static __FORCE_SECTION_REF: fn() =
-      super::super::super::__link_custom_section_describing_imports;
-      
-      use super::super::super::_rt;
-      /// Severity level for app log events.
-      #[repr(u8)]
-      #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
-      pub enum LogLevel {
-        /// Very detailed diagnostic data.
-        Trace,
-        /// Developer-focused diagnostic data.
-        Debug,
-        /// Normal informational event.
-        Info,
-        /// Something unexpected happened, but the app can continue.
-        Warn,
-        /// The app hit an error condition.
-        Error,
-      }
-      impl ::core::fmt::Debug for LogLevel {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          match self {
-            LogLevel::Trace => {
-              f.debug_tuple("LogLevel::Trace").finish()
-            }
-            LogLevel::Debug => {
-              f.debug_tuple("LogLevel::Debug").finish()
-            }
-            LogLevel::Info => {
-              f.debug_tuple("LogLevel::Info").finish()
-            }
-            LogLevel::Warn => {
-              f.debug_tuple("LogLevel::Warn").finish()
-            }
-            LogLevel::Error => {
-              f.debug_tuple("LogLevel::Error").finish()
-            }
-          }
-        }
-      }
-
-      impl LogLevel{
-        #[doc(hidden)]
-        pub unsafe fn _lift(val: u8) -> LogLevel{
-          if !cfg!(debug_assertions) {
-            return ::core::mem::transmute(val);
-          }
-
-          match val {
-            0 => LogLevel::Trace,
-            1 => LogLevel::Debug,
-            2 => LogLevel::Info,
-            3 => LogLevel::Warn,
-            4 => LogLevel::Error,
-
-            _ => panic!("invalid enum discriminant"),
-          }
-        }
-      }
-
-      /// Error shape for byte streams and text stream helpers.
-      #[derive(Clone)]
-      pub enum IoError {
-        /// The stream was already closed.
-        Closed,
-        /// The host interrupted the operation.
-        Interrupted,
-        /// The stream ended before enough bytes were read.
-        UnexpectedEof,
-        /// Bytes could not be decoded as UTF-8 text.
-        InvalidUtf8,
-        /// Host-specific IO error text.
-        Other(_rt::String),
-      }
-      impl ::core::fmt::Debug for IoError {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          match self {
-            IoError::Closed => {
-              f.debug_tuple("IoError::Closed").finish()
-            }
-            IoError::Interrupted => {
-              f.debug_tuple("IoError::Interrupted").finish()
-            }
-            IoError::UnexpectedEof => {
-              f.debug_tuple("IoError::UnexpectedEof").finish()
-            }
-            IoError::InvalidUtf8 => {
-              f.debug_tuple("IoError::InvalidUtf8").finish()
-            }
-            IoError::Other(e) => {
-              f.debug_tuple("IoError::Other").field(e).finish()
-            }
-          }
-        }
-      }
-      impl ::core::fmt::Display for IoError {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          write!(f, "{:?}", self)
-        }
-      }
-
-      #[cfg(feature = "std")]
-      impl std::error::Error for IoError {}
-
-    }
-
-    /// Byte stream resources used by stdio and future IO surfaces.
-    #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
-    pub mod streams {
-      #[used]
-      #[doc(hidden)]
-      static __FORCE_SECTION_REF: fn() =
-      super::super::super::__link_custom_section_describing_imports;
-      
-      use super::super::super::_rt;
-      pub type IoError = super::super::super::krate::io::types::IoError;
-      /// Readable byte stream owned by the runtime.
-
-      #[derive(Debug)]
-      #[repr(transparent)]
-      pub struct InputStream{
-        handle: _rt::Resource<InputStream>,
-      }
-
-      impl InputStream{
-        #[doc(hidden)]
-        pub unsafe fn from_handle(handle: u32) -> Self {
-          Self {
-            handle: unsafe { _rt::Resource::from_handle(handle) },
-          }
-        }
-
-        #[doc(hidden)]
-        pub fn take_handle(&self) -> u32 {
-          _rt::Resource::take_handle(&self.handle)
-        }
-
-        #[doc(hidden)]
-        pub fn handle(&self) -> u32 {
-          _rt::Resource::handle(&self.handle)
-        }
-      }
-      
-
-      unsafe impl _rt::WasmResource for InputStream{
-        #[inline]
-        unsafe fn drop(_handle: u32) {
-          #[cfg(not(target_arch = "wasm32"))]
-          unreachable!();
-
-          #[cfg(target_arch = "wasm32")]
-          {
-            #[link(wasm_import_module = "krate:io/streams@0.1.0")]
-            unsafe extern "C" {
-              #[link_name = "[resource-drop]input-stream"]
-              fn drop(_: u32);
-            }
-
-            unsafe { drop(_handle) };
-          }
-        }
-      }
-      
-      /// Writable byte stream owned by the runtime.
-
-      #[derive(Debug)]
-      #[repr(transparent)]
-      pub struct OutputStream{
-        handle: _rt::Resource<OutputStream>,
-      }
-
-      impl OutputStream{
-        #[doc(hidden)]
-        pub unsafe fn from_handle(handle: u32) -> Self {
-          Self {
-            handle: unsafe { _rt::Resource::from_handle(handle) },
-          }
-        }
-
-        #[doc(hidden)]
-        pub fn take_handle(&self) -> u32 {
-          _rt::Resource::take_handle(&self.handle)
-        }
-
-        #[doc(hidden)]
-        pub fn handle(&self) -> u32 {
-          _rt::Resource::handle(&self.handle)
-        }
-      }
-      
-
-      unsafe impl _rt::WasmResource for OutputStream{
-        #[inline]
-        unsafe fn drop(_handle: u32) {
-          #[cfg(not(target_arch = "wasm32"))]
-          unreachable!();
-
-          #[cfg(target_arch = "wasm32")]
-          {
-            #[link(wasm_import_module = "krate:io/streams@0.1.0")]
-            unsafe extern "C" {
-              #[link_name = "[resource-drop]output-stream"]
-              fn drop(_: u32);
-            }
-
-            unsafe { drop(_handle) };
-          }
-        }
-      }
-      
-      impl InputStream {
-        #[allow(unused_unsafe, clippy::all)]
-        /// Read up to `n` bytes from the stream.
-        pub fn read(&self,n: u32,) -> Result<_rt::Vec::<u8>,IoError>{
-          unsafe {
-
-            #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-            #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-            struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-            let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-            let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
-            #[cfg(target_arch = "wasm32")]
-            #[link(wasm_import_module = "krate:io/streams@0.1.0")]
-            unsafe extern "C" {
-              #[link_name = "[method]input-stream.read"]
-              fn wit_import1(_: i32, _: i32, _: *mut u8, );
-            }
-
-            #[cfg(not(target_arch = "wasm32"))]
-            unsafe extern "C" fn wit_import1(_: i32, _: i32, _: *mut u8, ){ unreachable!() }
-            unsafe { wit_import1((self).handle() as i32, _rt::as_i32(&n), ptr0) };
-            let l2 = i32::from(*ptr0.add(0).cast::<u8>());
-            let result11 = match l2 {
-              0 => {
-                let e = {
-                  let l3 = *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                  let l4 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                  let len5 = l4;
-
-                  _rt::Vec::from_raw_parts(l3.cast(), len5, len5)
-                };
-                Ok(e)
-              }
-              1 => {
-                let e = {
-                  let l6 = i32::from(*ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                  use super::super::super::krate::io::types::IoError as V10;
-                  let v10 = match l6 {
-                    0 => {
-                      V10::Closed
+            impl ::core::fmt::Debug for FsError {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    match self {
+                        FsError::NotFound => f.debug_tuple("FsError::NotFound").finish(),
+                        FsError::PermissionDenied => {
+                            f.debug_tuple("FsError::PermissionDenied").finish()
+                        }
+                        FsError::AlreadyExists => f.debug_tuple("FsError::AlreadyExists").finish(),
+                        FsError::InvalidPath => f.debug_tuple("FsError::InvalidPath").finish(),
+                        FsError::NotADirectory => f.debug_tuple("FsError::NotADirectory").finish(),
+                        FsError::IsADirectory => f.debug_tuple("FsError::IsADirectory").finish(),
+                        FsError::Io(e) => f.debug_tuple("FsError::Io").field(e).finish(),
                     }
-                    1 => {
-                      V10::Interrupted
-                    }
-                    2 => {
-                      V10::UnexpectedEof
-                    }
-                    3 => {
-                      V10::InvalidUtf8
-                    }
-                    n => {
-                      debug_assert_eq!(n, 4, "invalid enum discriminant");
-                      let e10 = {
-                        let l7 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                        let l8 = *ptr0.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                        let len9 = l8;
-                        let bytes9 = _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
-                        _rt::string_lift(bytes9)
-                      };
-                      V10::Other(e10)
-                    }
-                  };
-
-                  v10
-                };
-                Err(e)
-              }
-              _ => _rt::invalid_enum_discriminant(),
-            };
-            result11
-          }
-        }
-      }
-      impl InputStream {
-        #[allow(unused_unsafe, clippy::all)]
-        /// Read the stream as UTF-8 text.
-        pub fn read_to_string(&self,) -> Result<_rt::String,IoError>{
-          unsafe {
-
-            #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-            #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-            struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-            let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-            let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
-            #[cfg(target_arch = "wasm32")]
-            #[link(wasm_import_module = "krate:io/streams@0.1.0")]
-            unsafe extern "C" {
-              #[link_name = "[method]input-stream.read-to-string"]
-              fn wit_import1(_: i32, _: *mut u8, );
-            }
-
-            #[cfg(not(target_arch = "wasm32"))]
-            unsafe extern "C" fn wit_import1(_: i32, _: *mut u8, ){ unreachable!() }
-            unsafe { wit_import1((self).handle() as i32, ptr0) };
-            let l2 = i32::from(*ptr0.add(0).cast::<u8>());
-            let result11 = match l2 {
-              0 => {
-                let e = {
-                  let l3 = *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                  let l4 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                  let len5 = l4;
-                  let bytes5 = _rt::Vec::from_raw_parts(l3.cast(), len5, len5);
-
-                  _rt::string_lift(bytes5)
-                };
-                Ok(e)
-              }
-              1 => {
-                let e = {
-                  let l6 = i32::from(*ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                  use super::super::super::krate::io::types::IoError as V10;
-                  let v10 = match l6 {
-                    0 => {
-                      V10::Closed
-                    }
-                    1 => {
-                      V10::Interrupted
-                    }
-                    2 => {
-                      V10::UnexpectedEof
-                    }
-                    3 => {
-                      V10::InvalidUtf8
-                    }
-                    n => {
-                      debug_assert_eq!(n, 4, "invalid enum discriminant");
-                      let e10 = {
-                        let l7 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                        let l8 = *ptr0.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                        let len9 = l8;
-                        let bytes9 = _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
-                        _rt::string_lift(bytes9)
-                      };
-                      V10::Other(e10)
-                    }
-                  };
-
-                  v10
-                };
-                Err(e)
-              }
-              _ => _rt::invalid_enum_discriminant(),
-            };
-            result11
-          }
-        }
-      }
-      impl OutputStream {
-        #[allow(unused_unsafe, clippy::all)]
-        /// Write some bytes and return the number accepted by the host.
-        pub fn write(&self,bytes: &[u8],) -> Result<u32,IoError>{
-          unsafe {
-
-            #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-            #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-            struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-            let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-            let vec0 = bytes;
-            let ptr0 = vec0.as_ptr().cast::<u8>();
-            let len0 = vec0.len();
-            let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
-            #[cfg(target_arch = "wasm32")]
-            #[link(wasm_import_module = "krate:io/streams@0.1.0")]
-            unsafe extern "C" {
-              #[link_name = "[method]output-stream.write"]
-              fn wit_import2(_: i32, _: *mut u8, _: usize, _: *mut u8, );
-            }
-
-            #[cfg(not(target_arch = "wasm32"))]
-            unsafe extern "C" fn wit_import2(_: i32, _: *mut u8, _: usize, _: *mut u8, ){ unreachable!() }
-            unsafe { wit_import2((self).handle() as i32, ptr0.cast_mut(), len0, ptr1) };
-            let l3 = i32::from(*ptr1.add(0).cast::<u8>());
-            let result10 = match l3 {
-              0 => {
-                let e = {
-                  let l4 = *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<i32>();
-
-                  l4 as u32
-                };
-                Ok(e)
-              }
-              1 => {
-                let e = {
-                  let l5 = i32::from(*ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                  use super::super::super::krate::io::types::IoError as V9;
-                  let v9 = match l5 {
-                    0 => {
-                      V9::Closed
-                    }
-                    1 => {
-                      V9::Interrupted
-                    }
-                    2 => {
-                      V9::UnexpectedEof
-                    }
-                    3 => {
-                      V9::InvalidUtf8
-                    }
-                    n => {
-                      debug_assert_eq!(n, 4, "invalid enum discriminant");
-                      let e9 = {
-                        let l6 = *ptr1.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                        let l7 = *ptr1.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                        let len8 = l7;
-                        let bytes8 = _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
-                        _rt::string_lift(bytes8)
-                      };
-                      V9::Other(e9)
-                    }
-                  };
-
-                  v9
-                };
-                Err(e)
-              }
-              _ => _rt::invalid_enum_discriminant(),
-            };
-            result10
-          }
-        }
-      }
-      impl OutputStream {
-        #[allow(unused_unsafe, clippy::all)]
-        /// Write the whole byte buffer or return an error.
-        pub fn write_all(&self,bytes: &[u8],) -> Result<(),IoError>{
-          unsafe {
-
-            #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-            #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-            struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-            let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-            let vec0 = bytes;
-            let ptr0 = vec0.as_ptr().cast::<u8>();
-            let len0 = vec0.len();
-            let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
-            #[cfg(target_arch = "wasm32")]
-            #[link(wasm_import_module = "krate:io/streams@0.1.0")]
-            unsafe extern "C" {
-              #[link_name = "[method]output-stream.write-all"]
-              fn wit_import2(_: i32, _: *mut u8, _: usize, _: *mut u8, );
-            }
-
-            #[cfg(not(target_arch = "wasm32"))]
-            unsafe extern "C" fn wit_import2(_: i32, _: *mut u8, _: usize, _: *mut u8, ){ unreachable!() }
-            unsafe { wit_import2((self).handle() as i32, ptr0.cast_mut(), len0, ptr1) };
-            let l3 = i32::from(*ptr1.add(0).cast::<u8>());
-            let result9 = match l3 {
-              0 => {
-                let e = ();
-                Ok(e)
-              }
-              1 => {
-                let e = {
-                  let l4 = i32::from(*ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                  use super::super::super::krate::io::types::IoError as V8;
-                  let v8 = match l4 {
-                    0 => {
-                      V8::Closed
-                    }
-                    1 => {
-                      V8::Interrupted
-                    }
-                    2 => {
-                      V8::UnexpectedEof
-                    }
-                    3 => {
-                      V8::InvalidUtf8
-                    }
-                    n => {
-                      debug_assert_eq!(n, 4, "invalid enum discriminant");
-                      let e8 = {
-                        let l5 = *ptr1.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                        let l6 = *ptr1.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                        let len7 = l6;
-                        let bytes7 = _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
-                        _rt::string_lift(bytes7)
-                      };
-                      V8::Other(e8)
-                    }
-                  };
-
-                  v8
-                };
-                Err(e)
-              }
-              _ => _rt::invalid_enum_discriminant(),
-            };
-            result9
-          }
-        }
-      }
-      impl OutputStream {
-        #[allow(unused_unsafe, clippy::all)]
-        /// Flush host-side output buffers.
-        pub fn flush(&self,) -> Result<(),IoError>{
-          unsafe {
-
-            #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-            #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-            struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-            let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-            let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
-            #[cfg(target_arch = "wasm32")]
-            #[link(wasm_import_module = "krate:io/streams@0.1.0")]
-            unsafe extern "C" {
-              #[link_name = "[method]output-stream.flush"]
-              fn wit_import1(_: i32, _: *mut u8, );
-            }
-
-            #[cfg(not(target_arch = "wasm32"))]
-            unsafe extern "C" fn wit_import1(_: i32, _: *mut u8, ){ unreachable!() }
-            unsafe { wit_import1((self).handle() as i32, ptr0) };
-            let l2 = i32::from(*ptr0.add(0).cast::<u8>());
-            let result8 = match l2 {
-              0 => {
-                let e = ();
-                Ok(e)
-              }
-              1 => {
-                let e = {
-                  let l3 = i32::from(*ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                  use super::super::super::krate::io::types::IoError as V7;
-                  let v7 = match l3 {
-                    0 => {
-                      V7::Closed
-                    }
-                    1 => {
-                      V7::Interrupted
-                    }
-                    2 => {
-                      V7::UnexpectedEof
-                    }
-                    3 => {
-                      V7::InvalidUtf8
-                    }
-                    n => {
-                      debug_assert_eq!(n, 4, "invalid enum discriminant");
-                      let e7 = {
-                        let l4 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                        let l5 = *ptr0.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                        let len6 = l5;
-                        let bytes6 = _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
-                        _rt::string_lift(bytes6)
-                      };
-                      V7::Other(e7)
-                    }
-                  };
-
-                  v7
-                };
-                Err(e)
-              }
-              _ => _rt::invalid_enum_discriminant(),
-            };
-            result8
-          }
-        }
-      }
-
-    }
-
-    /// Standard streams for CLI-style apps.
-    #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
-    pub mod stdio {
-      #[used]
-      #[doc(hidden)]
-      static __FORCE_SECTION_REF: fn() =
-      super::super::super::__link_custom_section_describing_imports;
-      
-      pub type InputStream = super::super::super::krate::io::streams::InputStream;
-      pub type OutputStream = super::super::super::krate::io::streams::OutputStream;
-      #[allow(unused_unsafe, clippy::all)]
-      /// Host standard input.
-      pub fn stdin() -> InputStream{
-        unsafe {
-
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:io/stdio@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "stdin"]
-            fn wit_import0() -> i32;
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import0() -> i32{ unreachable!() }
-          let ret = unsafe { wit_import0() };
-          unsafe { super::super::super::krate::io::streams::InputStream::from_handle(ret as u32) }
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Host standard output for normal app output.
-      pub fn stdout() -> OutputStream{
-        unsafe {
-
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:io/stdio@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "stdout"]
-            fn wit_import0() -> i32;
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import0() -> i32{ unreachable!() }
-          let ret = unsafe { wit_import0() };
-          unsafe { super::super::super::krate::io::streams::OutputStream::from_handle(ret as u32) }
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Host standard error for diagnostics.
-      pub fn stderr() -> OutputStream{
-        unsafe {
-
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:io/stdio@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "stderr"]
-            fn wit_import0() -> i32;
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import0() -> i32{ unreachable!() }
-          let ret = unsafe { wit_import0() };
-          unsafe { super::super::super::krate::io::streams::OutputStream::from_handle(ret as u32) }
-        }
-      }
-
-    }
-
-    /// App arguments passed by the Krate launcher.
-    #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
-    pub mod args {
-      #[used]
-      #[doc(hidden)]
-      static __FORCE_SECTION_REF: fn() =
-      super::super::super::__link_custom_section_describing_imports;
-      
-      use super::super::super::_rt;
-      #[allow(unused_unsafe, clippy::all)]
-      /// Raw argument payload for the current CLI slice.
-      ///
-      /// The Phase 2 host encodes arguments as newline-separated text. SDKs should
-      /// expose friendlier argument helpers over this raw transport.
-      pub fn raw() -> _rt::String{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 2*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 2*::core::mem::size_of::<*const u8>()]);
-          let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:io/args@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "raw"]
-            fn wit_import1(_: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import1(_: *mut u8, ){ unreachable!() }
-          unsafe { wit_import1(ptr0) };
-          let l2 = *ptr0.add(0).cast::<*mut u8>();
-          let l3 = *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<usize>();
-          let len4 = l3;
-          let bytes4 = _rt::Vec::from_raw_parts(l2.cast(), len4, len4);
-          let result5 = _rt::string_lift(bytes4);
-          result5
-        }
-      }
-
-    }
-
-    /// Structured app logging.
-    #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
-    pub mod log {
-      #[used]
-      #[doc(hidden)]
-      static __FORCE_SECTION_REF: fn() =
-      super::super::super::__link_custom_section_describing_imports;
-      
-      use super::super::super::_rt;
-      pub type LogLevel = super::super::super::krate::io::types::LogLevel;
-      /// One key/value pair attached to a log event.
-      #[derive(Clone)]
-      pub struct Field {
-        /// Field name.
-        pub key: _rt::String,
-        /// Field value rendered as text.
-        pub value: _rt::String,
-      }
-      impl ::core::fmt::Debug for Field {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          f.debug_struct("Field").field("key", &self.key).field("value", &self.value).finish()
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Emit one structured log event to the host.
-      pub fn emit(level: LogLevel,message: &str,fields: &[Field],) -> (){
-        unsafe {
-          let vec0 = message;
-          let ptr0 = vec0.as_ptr().cast::<u8>();
-          let len0 = vec0.len();
-          let vec4 = fields;
-          let len4 = vec4.len();
-          let layout4 = _rt::alloc::Layout::from_size_align_unchecked(vec4.len() * (4*::core::mem::size_of::<*const u8>()), ::core::mem::size_of::<*const u8>());
-          let result4 = if layout4.size() != 0 {
-            let ptr = _rt::alloc::alloc(layout4).cast::<u8>();
-            if ptr.is_null()
-            {
-              _rt::alloc::handle_alloc_error(layout4);
-            }
-            ptr
-          }else {
-            ::core::ptr::null_mut()
-          };
-          for (i, e) in vec4.into_iter().enumerate() {
-            let base = result4.add(i * (4*::core::mem::size_of::<*const u8>()));
-            {
-              let Field{ key:key1, value:value1, } = e;
-              let vec2 = key1;
-              let ptr2 = vec2.as_ptr().cast::<u8>();
-              let len2 = vec2.len();
-              *base.add(::core::mem::size_of::<*const u8>()).cast::<usize>() = len2;
-              *base.add(0).cast::<*mut u8>() = ptr2.cast_mut();
-              let vec3 = value1;
-              let ptr3 = vec3.as_ptr().cast::<u8>();
-              let len3 = vec3.len();
-              *base.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>() = len3;
-              *base.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>() = ptr3.cast_mut();
-            }
-          }
-
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:io/log@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "emit"]
-            fn wit_import5(_: i32, _: *mut u8, _: usize, _: *mut u8, _: usize, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import5(_: i32, _: *mut u8, _: usize, _: *mut u8, _: usize, ){ unreachable!() }
-          unsafe { wit_import5(level.clone() as i32, ptr0.cast_mut(), len0, result4, len4) };
-          if layout4.size() != 0 {
-            _rt::alloc::dealloc(result4.cast(), layout4);
-          }
-        }
-      }
-
-    }
-
-  }
-  pub mod locale {
-    /// Locale and formatting type definitions.
-    #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
-    pub mod types {
-      #[used]
-      #[doc(hidden)]
-      static __FORCE_SECTION_REF: fn() =
-      super::super::super::__link_custom_section_describing_imports;
-      
-      use super::super::super::_rt;
-      /// Host locale identifier using a BCP 47 language tag.
-      #[derive(Clone)]
-      pub struct LocaleId {
-        /// Canonicalized BCP 47 locale tag, for example `en-US`.
-        pub bcp47: _rt::String,
-      }
-      impl ::core::fmt::Debug for LocaleId {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          f.debug_struct("LocaleId").field("bcp47", &self.bcp47).finish()
-        }
-      }
-      /// Date rendering style requested from the host.
-      #[repr(u8)]
-      #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
-      pub enum DateStyle {
-        /// Compact numeric date form.
-        Short,
-        /// Medium-length date form.
-        Medium,
-        /// Long date form.
-        Long,
-        /// Full date form.
-        Full,
-      }
-      impl ::core::fmt::Debug for DateStyle {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          match self {
-            DateStyle::Short => {
-              f.debug_tuple("DateStyle::Short").finish()
-            }
-            DateStyle::Medium => {
-              f.debug_tuple("DateStyle::Medium").finish()
-            }
-            DateStyle::Long => {
-              f.debug_tuple("DateStyle::Long").finish()
-            }
-            DateStyle::Full => {
-              f.debug_tuple("DateStyle::Full").finish()
-            }
-          }
-        }
-      }
-
-      impl DateStyle{
-        #[doc(hidden)]
-        pub unsafe fn _lift(val: u8) -> DateStyle{
-          if !cfg!(debug_assertions) {
-            return ::core::mem::transmute(val);
-          }
-
-          match val {
-            0 => DateStyle::Short,
-            1 => DateStyle::Medium,
-            2 => DateStyle::Long,
-            3 => DateStyle::Full,
-
-            _ => panic!("invalid enum discriminant"),
-          }
-        }
-      }
-
-      /// Number rendering style requested from the host.
-      #[repr(u8)]
-      #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
-      pub enum NumberStyle {
-        /// Decimal number formatting.
-        Decimal,
-        /// Percent formatting.
-        Percent,
-        /// Currency formatting. Currency code selection remains future work.
-        Currency,
-      }
-      impl ::core::fmt::Debug for NumberStyle {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          match self {
-            NumberStyle::Decimal => {
-              f.debug_tuple("NumberStyle::Decimal").finish()
-            }
-            NumberStyle::Percent => {
-              f.debug_tuple("NumberStyle::Percent").finish()
-            }
-            NumberStyle::Currency => {
-              f.debug_tuple("NumberStyle::Currency").finish()
-            }
-          }
-        }
-      }
-
-      impl NumberStyle{
-        #[doc(hidden)]
-        pub unsafe fn _lift(val: u8) -> NumberStyle{
-          if !cfg!(debug_assertions) {
-            return ::core::mem::transmute(val);
-          }
-
-          match val {
-            0 => NumberStyle::Decimal,
-            1 => NumberStyle::Percent,
-            2 => NumberStyle::Currency,
-
-            _ => panic!("invalid enum discriminant"),
-          }
-        }
-      }
-
-
-    }
-
-    /// Host locale and timezone discovery.
-    #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
-    pub mod info {
-      #[used]
-      #[doc(hidden)]
-      static __FORCE_SECTION_REF: fn() =
-      super::super::super::__link_custom_section_describing_imports;
-      
-      use super::super::super::_rt;
-      pub type LocaleId = super::super::super::krate::locale::types::LocaleId;
-      #[allow(unused_unsafe, clippy::all)]
-      /// The user's preferred locale as reported by the host.
-      pub fn current() -> LocaleId{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 2*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 2*::core::mem::size_of::<*const u8>()]);
-          let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:locale/info@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "current"]
-            fn wit_import1(_: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import1(_: *mut u8, ){ unreachable!() }
-          unsafe { wit_import1(ptr0) };
-          let l2 = *ptr0.add(0).cast::<*mut u8>();
-          let l3 = *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<usize>();
-          let len4 = l3;
-          let bytes4 = _rt::Vec::from_raw_parts(l2.cast(), len4, len4);
-          let result5 = super::super::super::krate::locale::types::LocaleId{
-            bcp47: _rt::string_lift(bytes4),
-          };
-          result5
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// IANA timezone name, for example "Asia/Singapore".
-      pub fn timezone() -> _rt::String{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 2*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 2*::core::mem::size_of::<*const u8>()]);
-          let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:locale/info@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "timezone"]
-            fn wit_import1(_: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import1(_: *mut u8, ){ unreachable!() }
-          unsafe { wit_import1(ptr0) };
-          let l2 = *ptr0.add(0).cast::<*mut u8>();
-          let l3 = *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<usize>();
-          let len4 = l3;
-          let bytes4 = _rt::Vec::from_raw_parts(l2.cast(), len4, len4);
-          let result5 = _rt::string_lift(bytes4);
-          result5
-        }
-      }
-
-    }
-
-    /// Host-backed date and number formatting.
-    #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
-    pub mod format {
-      #[used]
-      #[doc(hidden)]
-      static __FORCE_SECTION_REF: fn() =
-      super::super::super::__link_custom_section_describing_imports;
-      
-      use super::super::super::_rt;
-      pub type LocaleId = super::super::super::krate::locale::types::LocaleId;
-      pub type DateStyle = super::super::super::krate::locale::types::DateStyle;
-      pub type NumberStyle = super::super::super::krate::locale::types::NumberStyle;
-      #[allow(unused_unsafe, clippy::all)]
-      /// Format Unix epoch milliseconds using a timezone, style, and locale.
-      pub fn format_date(millis: u64,tz: &str,style: DateStyle,loc: &LocaleId,) -> _rt::String{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 2*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 2*::core::mem::size_of::<*const u8>()]);
-          let vec0 = tz;
-          let ptr0 = vec0.as_ptr().cast::<u8>();
-          let len0 = vec0.len();
-          let super::super::super::krate::locale::types::LocaleId{ bcp47:bcp471, } = loc;
-          let vec2 = bcp471;
-          let ptr2 = vec2.as_ptr().cast::<u8>();
-          let len2 = vec2.len();
-          let ptr3 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:locale/format@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "format-date"]
-            fn wit_import4(_: i64, _: *mut u8, _: usize, _: i32, _: *mut u8, _: usize, _: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import4(_: i64, _: *mut u8, _: usize, _: i32, _: *mut u8, _: usize, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import4(_rt::as_i64(&millis), ptr0.cast_mut(), len0, style.clone() as i32, ptr2.cast_mut(), len2, ptr3) };
-          let l5 = *ptr3.add(0).cast::<*mut u8>();
-          let l6 = *ptr3.add(::core::mem::size_of::<*const u8>()).cast::<usize>();
-          let len7 = l6;
-          let bytes7 = _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-          let result8 = _rt::string_lift(bytes7);
-          result8
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Format a number using a style and locale.
-      pub fn format_number(value: f64,style: NumberStyle,loc: &LocaleId,) -> _rt::String{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 2*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 2*::core::mem::size_of::<*const u8>()]);
-          let super::super::super::krate::locale::types::LocaleId{ bcp47:bcp470, } = loc;
-          let vec1 = bcp470;
-          let ptr1 = vec1.as_ptr().cast::<u8>();
-          let len1 = vec1.len();
-          let ptr2 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:locale/format@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "format-number"]
-            fn wit_import3(_: f64, _: i32, _: *mut u8, _: usize, _: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import3(_: f64, _: i32, _: *mut u8, _: usize, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import3(_rt::as_f64(&value), style.clone() as i32, ptr1.cast_mut(), len1, ptr2) };
-          let l4 = *ptr2.add(0).cast::<*mut u8>();
-          let l5 = *ptr2.add(::core::mem::size_of::<*const u8>()).cast::<usize>();
-          let len6 = l5;
-          let bytes6 = _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-          let result7 = _rt::string_lift(bytes6);
-          result7
-        }
-      }
-
-    }
-
-  }
-  pub mod net {
-    /// Shared network request, response, and error types.
-    #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
-    pub mod types {
-      #[used]
-      #[doc(hidden)]
-      static __FORCE_SECTION_REF: fn() =
-      super::super::super::__link_custom_section_describing_imports;
-      
-      use super::super::super::_rt;
-      /// HTTP method for Phase 2 client requests.
-      #[repr(u8)]
-      #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
-      pub enum HttpMethod {
-        /// HTTP GET.
-        Get,
-        /// HTTP POST.
-        Post,
-        /// HTTP PUT.
-        Put,
-        /// HTTP DELETE.
-        Delete,
-        /// HTTP PATCH.
-        Patch,
-        /// HTTP HEAD.
-        Head,
-        /// HTTP OPTIONS.
-        Options,
-      }
-      impl ::core::fmt::Debug for HttpMethod {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          match self {
-            HttpMethod::Get => {
-              f.debug_tuple("HttpMethod::Get").finish()
-            }
-            HttpMethod::Post => {
-              f.debug_tuple("HttpMethod::Post").finish()
-            }
-            HttpMethod::Put => {
-              f.debug_tuple("HttpMethod::Put").finish()
-            }
-            HttpMethod::Delete => {
-              f.debug_tuple("HttpMethod::Delete").finish()
-            }
-            HttpMethod::Patch => {
-              f.debug_tuple("HttpMethod::Patch").finish()
-            }
-            HttpMethod::Head => {
-              f.debug_tuple("HttpMethod::Head").finish()
-            }
-            HttpMethod::Options => {
-              f.debug_tuple("HttpMethod::Options").finish()
-            }
-          }
-        }
-      }
-
-      impl HttpMethod{
-        #[doc(hidden)]
-        pub unsafe fn _lift(val: u8) -> HttpMethod{
-          if !cfg!(debug_assertions) {
-            return ::core::mem::transmute(val);
-          }
-
-          match val {
-            0 => HttpMethod::Get,
-            1 => HttpMethod::Post,
-            2 => HttpMethod::Put,
-            3 => HttpMethod::Delete,
-            4 => HttpMethod::Patch,
-            5 => HttpMethod::Head,
-            6 => HttpMethod::Options,
-
-            _ => panic!("invalid enum discriminant"),
-          }
-        }
-      }
-
-      /// One HTTP header field.
-      #[derive(Clone)]
-      pub struct Header {
-        /// Header name.
-        pub name: _rt::String,
-        /// Header value.
-        pub value: _rt::String,
-      }
-      impl ::core::fmt::Debug for Header {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          f.debug_struct("Header").field("name", &self.name).field("value", &self.value).finish()
-        }
-      }
-      /// Buffered HTTP request shape.
-      #[derive(Clone)]
-      pub struct Request {
-        /// Request method.
-        pub method: HttpMethod,
-        /// Absolute request URL.
-        pub url: _rt::String,
-        /// App-provided headers. Host-controlled transport headers are rejected.
-        pub headers: _rt::Vec::<Header>,
-        /// Buffered request body.
-        pub body: _rt::Vec::<u8>,
-        /// Optional timeout in milliseconds for this request.
-        pub timeout_millis: Option<u32>,
-      }
-      impl ::core::fmt::Debug for Request {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          f.debug_struct("Request").field("method", &self.method).field("url", &self.url).field("headers", &self.headers).field("body", &self.body).field("timeout-millis", &self.timeout_millis).finish()
-        }
-      }
-      /// Buffered HTTP response shape.
-      #[derive(Clone)]
-      pub struct Response {
-        /// Numeric HTTP status code.
-        pub status: u16,
-        /// Response headers accepted by the host adapter.
-        pub headers: _rt::Vec::<Header>,
-        /// Buffered response body.
-        pub body: _rt::Vec::<u8>,
-      }
-      impl ::core::fmt::Debug for Response {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          f.debug_struct("Response").field("status", &self.status).field("headers", &self.headers).field("body", &self.body).finish()
-        }
-      }
-      /// Network error shape returned by HTTP client calls.
-      #[derive(Clone)]
-      pub enum NetError {
-        /// URL syntax or unsupported Phase 2 URL shape.
-        InvalidUrl,
-        /// Hostname resolution failed.
-        DnsFailure(_rt::String),
-        /// Socket connection failed.
-        ConnectFailure(_rt::String),
-        /// TLS setup failed. HTTPS is not yet implemented in the first Phase 2 adapter slice.
-        TlsFailure(_rt::String),
-        /// Request timed out.
-        Timeout,
-        /// Response exceeded the configured body-size limit.
-        BodyTooLarge,
-        /// Capability policy denied the request before socket access.
-        PermissionDenied,
-        /// Response framing or protocol parsing failed.
-        Protocol(_rt::String),
-        /// Host-specific network error text.
-        Other(_rt::String),
-      }
-      impl ::core::fmt::Debug for NetError {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          match self {
-            NetError::InvalidUrl => {
-              f.debug_tuple("NetError::InvalidUrl").finish()
-            }
-            NetError::DnsFailure(e) => {
-              f.debug_tuple("NetError::DnsFailure").field(e).finish()
-            }
-            NetError::ConnectFailure(e) => {
-              f.debug_tuple("NetError::ConnectFailure").field(e).finish()
-            }
-            NetError::TlsFailure(e) => {
-              f.debug_tuple("NetError::TlsFailure").field(e).finish()
-            }
-            NetError::Timeout => {
-              f.debug_tuple("NetError::Timeout").finish()
-            }
-            NetError::BodyTooLarge => {
-              f.debug_tuple("NetError::BodyTooLarge").finish()
-            }
-            NetError::PermissionDenied => {
-              f.debug_tuple("NetError::PermissionDenied").finish()
-            }
-            NetError::Protocol(e) => {
-              f.debug_tuple("NetError::Protocol").field(e).finish()
-            }
-            NetError::Other(e) => {
-              f.debug_tuple("NetError::Other").field(e).finish()
-            }
-          }
-        }
-      }
-      impl ::core::fmt::Display for NetError {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          write!(f, "{:?}", self)
-        }
-      }
-
-      #[cfg(feature = "std")]
-      impl std::error::Error for NetError {}
-      /// What became of a request started with `http-client.begin`.
-      ///
-      /// One shape rather than a result, because "not finished yet" is a normal
-      /// answer here and not an error. `pending` is the only non-terminal
-      /// variant: the other three retire the handle.
-      #[derive(Clone)]
-      pub enum FetchStatus {
-        /// Still working. Draw a frame and ask again.
-        Pending,
-        /// Finished, with the response.
-        Ready(Response),
-        /// Finished, badly. The same errors `fetch` can return.
-        Failed(NetError),
-        /// This handle was never issued, or has already been answered or
-        /// cancelled. Distinct from `failed` so a double-poll is not mistaken
-        /// for a network problem.
-        UnknownHandle,
-      }
-      impl ::core::fmt::Debug for FetchStatus {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          match self {
-            FetchStatus::Pending => {
-              f.debug_tuple("FetchStatus::Pending").finish()
-            }
-            FetchStatus::Ready(e) => {
-              f.debug_tuple("FetchStatus::Ready").field(e).finish()
-            }
-            FetchStatus::Failed(e) => {
-              f.debug_tuple("FetchStatus::Failed").field(e).finish()
-            }
-            FetchStatus::UnknownHandle => {
-              f.debug_tuple("FetchStatus::UnknownHandle").finish()
-            }
-          }
-        }
-      }
-
-    }
-
-    /// HTTP client calls for CLI components.
-    /// Buffered HTTP requests to hosts the person allowed.
-    ///
-    /// **Redirects are not followed.** A 3xx comes back with its `location` header
-    /// for the app to act on, and following it means making another request -- one
-    /// that is checked against `net.connect` for the new host.
-    ///
-    /// That is deliberate rather than unfinished. `net.connect` is granted per
-    /// host, so a client that followed redirects itself would let a granted
-    /// `api.example.com` send the app's request anywhere it liked, with the
-    /// person's permission prompt saying only "api.example.com". Leaving the
-    /// decision to the app keeps every host the request reaches one the person
-    /// actually approved.
-    #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
-    pub mod http_client {
-      #[used]
-      #[doc(hidden)]
-      static __FORCE_SECTION_REF: fn() =
-      super::super::super::__link_custom_section_describing_imports;
-      
-      use super::super::super::_rt;
-      pub type Request = super::super::super::krate::net::types::Request;
-      pub type Response = super::super::super::krate::net::types::Response;
-      pub type NetError = super::super::super::krate::net::types::NetError;
-      pub type FetchStatus = super::super::super::krate::net::types::FetchStatus;
-      #[allow(unused_unsafe, clippy::all)]
-      /// Perform a simple GET request and return only the response body.
-      pub fn get(url: &str,) -> Result<_rt::Vec::<u8>,NetError>{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let vec0 = url;
-          let ptr0 = vec0.as_ptr().cast::<u8>();
-          let len0 = vec0.len();
-          let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:net/http-client@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "get"]
-            fn wit_import2(_: *mut u8, _: usize, _: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
-          let l3 = i32::from(*ptr1.add(0).cast::<u8>());
-          let result24 = match l3 {
-            0 => {
-              let e = {
-                let l4 = *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                let l5 = *ptr1.add(2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                let len6 = l5;
-
-                _rt::Vec::from_raw_parts(l4.cast(), len6, len6)
-              };
-              Ok(e)
-            }
-            1 => {
-              let e = {
-                let l7 = i32::from(*ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                use super::super::super::krate::net::types::NetError as V23;
-                let v23 = match l7 {
-                  0 => {
-                    V23::InvalidUrl
-                  }
-                  1 => {
-                    let e23 = {
-                      let l8 = *ptr1.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l9 = *ptr1.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len10 = l9;
-                      let bytes10 = _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
-                      _rt::string_lift(bytes10)
-                    };
-                    V23::DnsFailure(e23)
-                  }
-                  2 => {
-                    let e23 = {
-                      let l11 = *ptr1.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l12 = *ptr1.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len13 = l12;
-                      let bytes13 = _rt::Vec::from_raw_parts(l11.cast(), len13, len13);
-
-                      _rt::string_lift(bytes13)
-                    };
-                    V23::ConnectFailure(e23)
-                  }
-                  3 => {
-                    let e23 = {
-                      let l14 = *ptr1.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l15 = *ptr1.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len16 = l15;
-                      let bytes16 = _rt::Vec::from_raw_parts(l14.cast(), len16, len16);
-
-                      _rt::string_lift(bytes16)
-                    };
-                    V23::TlsFailure(e23)
-                  }
-                  4 => {
-                    V23::Timeout
-                  }
-                  5 => {
-                    V23::BodyTooLarge
-                  }
-                  6 => {
-                    V23::PermissionDenied
-                  }
-                  7 => {
-                    let e23 = {
-                      let l17 = *ptr1.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l18 = *ptr1.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len19 = l18;
-                      let bytes19 = _rt::Vec::from_raw_parts(l17.cast(), len19, len19);
-
-                      _rt::string_lift(bytes19)
-                    };
-                    V23::Protocol(e23)
-                  }
-                  n => {
-                    debug_assert_eq!(n, 8, "invalid enum discriminant");
-                    let e23 = {
-                      let l20 = *ptr1.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l21 = *ptr1.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len22 = l21;
-                      let bytes22 = _rt::Vec::from_raw_parts(l20.cast(), len22, len22);
-
-                      _rt::string_lift(bytes22)
-                    };
-                    V23::Other(e23)
-                  }
-                };
-
-                v23
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result24
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Perform a buffered HTTP request and return status, headers, and body.
-      pub fn fetch(req: &Request,) -> Result<Response,NetError>{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 6*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 6*::core::mem::size_of::<*const u8>()]);
-          let super::super::super::krate::net::types::Request{ method:method0, url:url0, headers:headers0, body:body0, timeout_millis:timeout_millis0, } = req;
-          let vec1 = url0;
-          let ptr1 = vec1.as_ptr().cast::<u8>();
-          let len1 = vec1.len();
-          let vec5 = headers0;
-          let len5 = vec5.len();
-          let layout5 = _rt::alloc::Layout::from_size_align_unchecked(vec5.len() * (4*::core::mem::size_of::<*const u8>()), ::core::mem::size_of::<*const u8>());
-          let result5 = if layout5.size() != 0 {
-            let ptr = _rt::alloc::alloc(layout5).cast::<u8>();
-            if ptr.is_null()
-            {
-              _rt::alloc::handle_alloc_error(layout5);
-            }
-            ptr
-          }else {
-            ::core::ptr::null_mut()
-          };
-          for (i, e) in vec5.into_iter().enumerate() {
-            let base = result5.add(i * (4*::core::mem::size_of::<*const u8>()));
-            {
-              let super::super::super::krate::net::types::Header{ name:name2, value:value2, } = e;
-              let vec3 = name2;
-              let ptr3 = vec3.as_ptr().cast::<u8>();
-              let len3 = vec3.len();
-              *base.add(::core::mem::size_of::<*const u8>()).cast::<usize>() = len3;
-              *base.add(0).cast::<*mut u8>() = ptr3.cast_mut();
-              let vec4 = value2;
-              let ptr4 = vec4.as_ptr().cast::<u8>();
-              let len4 = vec4.len();
-              *base.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>() = len4;
-              *base.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>() = ptr4.cast_mut();
-            }
-          }
-          let vec6 = body0;
-          let ptr6 = vec6.as_ptr().cast::<u8>();
-          let len6 = vec6.len();
-          let (result7_0,result7_1,) = match timeout_millis0 {
-            Some(e) => (1i32, _rt::as_i32(e)),
-            None => {
-              (0i32, 0i32)
-            },
-          };let ptr8 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:net/http-client@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "fetch"]
-            fn wit_import9(_: i32, _: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8, _: usize, _: i32, _: i32, _: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import9(_: i32, _: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8, _: usize, _: i32, _: i32, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import9(method0.clone() as i32, ptr1.cast_mut(), len1, result5, len5, ptr6.cast_mut(), len6, result7_0, result7_1, ptr8) };
-          let l10 = i32::from(*ptr8.add(0).cast::<u8>());
-          let result41 = match l10 {
-            0 => {
-              let e = {
-                let l11 = i32::from(*ptr8.add(::core::mem::size_of::<*const u8>()).cast::<u16>());
-                let l12 = *ptr8.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                let l13 = *ptr8.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                let base20 = l12;
-                let len20 = l13;
-                let mut result20 = _rt::Vec::with_capacity(len20);
-                for i in 0..len20 {
-                  let base = base20.add(i * (4*::core::mem::size_of::<*const u8>()));
-                  let e20 = {
-                    let l14 = *base.add(0).cast::<*mut u8>();
-                    let l15 = *base.add(::core::mem::size_of::<*const u8>()).cast::<usize>();
-                    let len16 = l15;
-                    let bytes16 = _rt::Vec::from_raw_parts(l14.cast(), len16, len16);
-                    let l17 = *base.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                    let l18 = *base.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                    let len19 = l18;
-                    let bytes19 = _rt::Vec::from_raw_parts(l17.cast(), len19, len19);
-
-                    super::super::super::krate::net::types::Header{
-                      name: _rt::string_lift(bytes16),
-                      value: _rt::string_lift(bytes19),
-                    }
-                  };
-                  result20.push(e20);
                 }
-                _rt::cabi_dealloc(base20, len20 * (4*::core::mem::size_of::<*const u8>()), ::core::mem::size_of::<*const u8>());
-                let l21 = *ptr8.add(4*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                let l22 = *ptr8.add(5*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                let len23 = l22;
-
-                super::super::super::krate::net::types::Response{
-                  status: l11 as u16,
-                  headers: result20,
-                  body: _rt::Vec::from_raw_parts(l21.cast(), len23, len23),
+            }
+            impl ::core::fmt::Display for FsError {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    write!(f, "{:?}", self)
                 }
-              };
-              Ok(e)
             }
-            1 => {
-              let e = {
-                let l24 = i32::from(*ptr8.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                use super::super::super::krate::net::types::NetError as V40;
-                let v40 = match l24 {
-                  0 => {
-                    V40::InvalidUrl
-                  }
-                  1 => {
-                    let e40 = {
-                      let l25 = *ptr8.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l26 = *ptr8.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len27 = l26;
-                      let bytes27 = _rt::Vec::from_raw_parts(l25.cast(), len27, len27);
 
-                      _rt::string_lift(bytes27)
-                    };
-                    V40::DnsFailure(e40)
-                  }
-                  2 => {
-                    let e40 = {
-                      let l28 = *ptr8.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l29 = *ptr8.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len30 = l29;
-                      let bytes30 = _rt::Vec::from_raw_parts(l28.cast(), len30, len30);
-
-                      _rt::string_lift(bytes30)
-                    };
-                    V40::ConnectFailure(e40)
-                  }
-                  3 => {
-                    let e40 = {
-                      let l31 = *ptr8.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l32 = *ptr8.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len33 = l32;
-                      let bytes33 = _rt::Vec::from_raw_parts(l31.cast(), len33, len33);
-
-                      _rt::string_lift(bytes33)
-                    };
-                    V40::TlsFailure(e40)
-                  }
-                  4 => {
-                    V40::Timeout
-                  }
-                  5 => {
-                    V40::BodyTooLarge
-                  }
-                  6 => {
-                    V40::PermissionDenied
-                  }
-                  7 => {
-                    let e40 = {
-                      let l34 = *ptr8.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l35 = *ptr8.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len36 = l35;
-                      let bytes36 = _rt::Vec::from_raw_parts(l34.cast(), len36, len36);
-
-                      _rt::string_lift(bytes36)
-                    };
-                    V40::Protocol(e40)
-                  }
-                  n => {
-                    debug_assert_eq!(n, 8, "invalid enum discriminant");
-                    let e40 = {
-                      let l37 = *ptr8.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l38 = *ptr8.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len39 = l38;
-                      let bytes39 = _rt::Vec::from_raw_parts(l37.cast(), len39, len39);
-
-                      _rt::string_lift(bytes39)
-                    };
-                    V40::Other(e40)
-                  }
-                };
-
-                v40
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          if layout5.size() != 0 {
-            _rt::alloc::dealloc(result5.cast(), layout5);
-          }
-          result41
+            #[cfg(feature = "std")]
+            impl std::error::Error for FsError {}
         }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Start a request and return immediately with a handle.
-      ///
-      /// The work happens on a host thread while the guest keeps its own loop
-      /// turning, so the app can draw a spinner, animate, answer a click, or
-      /// offer a cancel button while the network is slow. This is the whole
-      /// point: a blocking `fetch` against a server that stalls three seconds
-      /// froze a real app for the full three seconds (K-101).
-      ///
-      /// The capability check happens here, at `begin`, exactly as it does for
-      /// `fetch` -- a handle is only ever issued for a host the person granted.
-      /// Failing that check fails this call, not the later `poll`.
-      ///
-      /// The handle is valid until `poll` returns a terminal answer or `cancel`
-      /// is called. Handles do not survive the run.
-      pub fn begin(req: &Request,) -> Result<u64,NetError>{
-        unsafe {
 
-          #[repr(align(8))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 16+2*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 16+2*::core::mem::size_of::<*const u8>()]);
-          let super::super::super::krate::net::types::Request{ method:method0, url:url0, headers:headers0, body:body0, timeout_millis:timeout_millis0, } = req;
-          let vec1 = url0;
-          let ptr1 = vec1.as_ptr().cast::<u8>();
-          let len1 = vec1.len();
-          let vec5 = headers0;
-          let len5 = vec5.len();
-          let layout5 = _rt::alloc::Layout::from_size_align_unchecked(vec5.len() * (4*::core::mem::size_of::<*const u8>()), ::core::mem::size_of::<*const u8>());
-          let result5 = if layout5.size() != 0 {
-            let ptr = _rt::alloc::alloc(layout5).cast::<u8>();
-            if ptr.is_null()
-            {
-              _rt::alloc::handle_alloc_error(layout5);
+        /// Filesystem functions and file resources.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod files {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() =
+                super::super::super::__link_custom_section_describing_imports;
+
+            use super::super::super::_rt;
+            pub type FileStat = super::super::super::krate::fs::types::FileStat;
+            pub type OpenMode = super::super::super::krate::fs::types::OpenMode;
+            pub type FsError = super::super::super::krate::fs::types::FsError;
+            /// Open file resource.
+
+            #[derive(Debug)]
+            #[repr(transparent)]
+            pub struct File {
+                handle: _rt::Resource<File>,
             }
-            ptr
-          }else {
-            ::core::ptr::null_mut()
-          };
-          for (i, e) in vec5.into_iter().enumerate() {
-            let base = result5.add(i * (4*::core::mem::size_of::<*const u8>()));
-            {
-              let super::super::super::krate::net::types::Header{ name:name2, value:value2, } = e;
-              let vec3 = name2;
-              let ptr3 = vec3.as_ptr().cast::<u8>();
-              let len3 = vec3.len();
-              *base.add(::core::mem::size_of::<*const u8>()).cast::<usize>() = len3;
-              *base.add(0).cast::<*mut u8>() = ptr3.cast_mut();
-              let vec4 = value2;
-              let ptr4 = vec4.as_ptr().cast::<u8>();
-              let len4 = vec4.len();
-              *base.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>() = len4;
-              *base.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>() = ptr4.cast_mut();
-            }
-          }
-          let vec6 = body0;
-          let ptr6 = vec6.as_ptr().cast::<u8>();
-          let len6 = vec6.len();
-          let (result7_0,result7_1,) = match timeout_millis0 {
-            Some(e) => (1i32, _rt::as_i32(e)),
-            None => {
-              (0i32, 0i32)
-            },
-          };let ptr8 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:net/http-client@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "begin"]
-            fn wit_import9(_: i32, _: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8, _: usize, _: i32, _: i32, _: *mut u8, );
-          }
 
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import9(_: i32, _: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8, _: usize, _: i32, _: i32, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import9(method0.clone() as i32, ptr1.cast_mut(), len1, result5, len5, ptr6.cast_mut(), len6, result7_0, result7_1, ptr8) };
-          let l10 = i32::from(*ptr8.add(0).cast::<u8>());
-          let result29 = match l10 {
-            0 => {
-              let e = {
-                let l11 = *ptr8.add(8).cast::<i64>();
-
-                l11 as u64
-              };
-              Ok(e)
-            }
-            1 => {
-              let e = {
-                let l12 = i32::from(*ptr8.add(8).cast::<u8>());
-                use super::super::super::krate::net::types::NetError as V28;
-                let v28 = match l12 {
-                  0 => {
-                    V28::InvalidUrl
-                  }
-                  1 => {
-                    let e28 = {
-                      let l13 = *ptr8.add(8+1*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l14 = *ptr8.add(8+2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len15 = l14;
-                      let bytes15 = _rt::Vec::from_raw_parts(l13.cast(), len15, len15);
-
-                      _rt::string_lift(bytes15)
-                    };
-                    V28::DnsFailure(e28)
-                  }
-                  2 => {
-                    let e28 = {
-                      let l16 = *ptr8.add(8+1*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l17 = *ptr8.add(8+2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len18 = l17;
-                      let bytes18 = _rt::Vec::from_raw_parts(l16.cast(), len18, len18);
-
-                      _rt::string_lift(bytes18)
-                    };
-                    V28::ConnectFailure(e28)
-                  }
-                  3 => {
-                    let e28 = {
-                      let l19 = *ptr8.add(8+1*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l20 = *ptr8.add(8+2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len21 = l20;
-                      let bytes21 = _rt::Vec::from_raw_parts(l19.cast(), len21, len21);
-
-                      _rt::string_lift(bytes21)
-                    };
-                    V28::TlsFailure(e28)
-                  }
-                  4 => {
-                    V28::Timeout
-                  }
-                  5 => {
-                    V28::BodyTooLarge
-                  }
-                  6 => {
-                    V28::PermissionDenied
-                  }
-                  7 => {
-                    let e28 = {
-                      let l22 = *ptr8.add(8+1*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l23 = *ptr8.add(8+2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len24 = l23;
-                      let bytes24 = _rt::Vec::from_raw_parts(l22.cast(), len24, len24);
-
-                      _rt::string_lift(bytes24)
-                    };
-                    V28::Protocol(e28)
-                  }
-                  n => {
-                    debug_assert_eq!(n, 8, "invalid enum discriminant");
-                    let e28 = {
-                      let l25 = *ptr8.add(8+1*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l26 = *ptr8.add(8+2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len27 = l26;
-                      let bytes27 = _rt::Vec::from_raw_parts(l25.cast(), len27, len27);
-
-                      _rt::string_lift(bytes27)
-                    };
-                    V28::Other(e28)
-                  }
-                };
-
-                v28
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          if layout5.size() != 0 {
-            _rt::alloc::dealloc(result5.cast(), layout5);
-          }
-          result29
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Ask what happened to a request started with `begin`.
-      ///
-      /// Returns immediately, always. `pending` means keep going -- draw a
-      /// frame and ask again later. Anything else is terminal and retires the
-      /// handle, so polling a finished request answers `unknown-handle`.
-      pub fn poll(handle: u64,) -> FetchStatus{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 6*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 6*::core::mem::size_of::<*const u8>()]);
-          let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:net/http-client@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "poll"]
-            fn wit_import1(_: i64, _: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import1(_: i64, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import1(_rt::as_i64(&handle), ptr0) };
-          let l2 = i32::from(*ptr0.add(0).cast::<u8>());
-          use super::super::super::krate::net::types::FetchStatus as V33;
-          let v33 = match l2 {
-            0 => {
-              V33::Pending
-            }
-            1 => {
-              let e33 = {
-                let l3 = i32::from(*ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u16>());
-                let l4 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                let l5 = *ptr0.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                let base12 = l4;
-                let len12 = l5;
-                let mut result12 = _rt::Vec::with_capacity(len12);
-                for i in 0..len12 {
-                  let base = base12.add(i * (4*::core::mem::size_of::<*const u8>()));
-                  let e12 = {
-                    let l6 = *base.add(0).cast::<*mut u8>();
-                    let l7 = *base.add(::core::mem::size_of::<*const u8>()).cast::<usize>();
-                    let len8 = l7;
-                    let bytes8 = _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-                    let l9 = *base.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                    let l10 = *base.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                    let len11 = l10;
-                    let bytes11 = _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
-                    super::super::super::krate::net::types::Header{
-                      name: _rt::string_lift(bytes8),
-                      value: _rt::string_lift(bytes11),
+            impl File {
+                #[doc(hidden)]
+                pub unsafe fn from_handle(handle: u32) -> Self {
+                    Self {
+                        handle: unsafe { _rt::Resource::from_handle(handle) },
                     }
-                  };
-                  result12.push(e12);
                 }
-                _rt::cabi_dealloc(base12, len12 * (4*::core::mem::size_of::<*const u8>()), ::core::mem::size_of::<*const u8>());
-                let l13 = *ptr0.add(4*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                let l14 = *ptr0.add(5*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                let len15 = l14;
 
-                super::super::super::krate::net::types::Response{
-                  status: l3 as u16,
-                  headers: result12,
-                  body: _rt::Vec::from_raw_parts(l13.cast(), len15, len15),
+                #[doc(hidden)]
+                pub fn take_handle(&self) -> u32 {
+                    _rt::Resource::take_handle(&self.handle)
                 }
-              };
-              V33::Ready(e33)
-            }
-            2 => {
-              let e33 = {
-                let l16 = i32::from(*ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                use super::super::super::krate::net::types::NetError as V32;
-                let v32 = match l16 {
-                  0 => {
-                    V32::InvalidUrl
-                  }
-                  1 => {
-                    let e32 = {
-                      let l17 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l18 = *ptr0.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len19 = l18;
-                      let bytes19 = _rt::Vec::from_raw_parts(l17.cast(), len19, len19);
 
-                      _rt::string_lift(bytes19)
-                    };
-                    V32::DnsFailure(e32)
-                  }
-                  2 => {
-                    let e32 = {
-                      let l20 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l21 = *ptr0.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len22 = l21;
-                      let bytes22 = _rt::Vec::from_raw_parts(l20.cast(), len22, len22);
-
-                      _rt::string_lift(bytes22)
-                    };
-                    V32::ConnectFailure(e32)
-                  }
-                  3 => {
-                    let e32 = {
-                      let l23 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l24 = *ptr0.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len25 = l24;
-                      let bytes25 = _rt::Vec::from_raw_parts(l23.cast(), len25, len25);
-
-                      _rt::string_lift(bytes25)
-                    };
-                    V32::TlsFailure(e32)
-                  }
-                  4 => {
-                    V32::Timeout
-                  }
-                  5 => {
-                    V32::BodyTooLarge
-                  }
-                  6 => {
-                    V32::PermissionDenied
-                  }
-                  7 => {
-                    let e32 = {
-                      let l26 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l27 = *ptr0.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len28 = l27;
-                      let bytes28 = _rt::Vec::from_raw_parts(l26.cast(), len28, len28);
-
-                      _rt::string_lift(bytes28)
-                    };
-                    V32::Protocol(e32)
-                  }
-                  n => {
-                    debug_assert_eq!(n, 8, "invalid enum discriminant");
-                    let e32 = {
-                      let l29 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l30 = *ptr0.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len31 = l30;
-                      let bytes31 = _rt::Vec::from_raw_parts(l29.cast(), len31, len31);
-
-                      _rt::string_lift(bytes31)
-                    };
-                    V32::Other(e32)
-                  }
-                };
-
-                v32
-              };
-              V33::Failed(e33)
-            }
-            n => {
-              debug_assert_eq!(n, 3, "invalid enum discriminant");
-              V33::UnknownHandle
-            }
-          };
-          let result34 = v33;
-          result34
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Abandon a request. The handle is retired whether or not the work had
-      /// finished, and any response already in flight is dropped.
-      ///
-      /// This is what a cancel button calls. It is safe on a handle that has
-      /// already been retired.
-      pub fn cancel(handle: u64,) -> (){
-        unsafe {
-
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:net/http-client@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "cancel"]
-            fn wit_import0(_: i64, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import0(_: i64, ){ unreachable!() }
-          unsafe { wit_import0(_rt::as_i64(&handle)) };
-        }
-      }
-
-    }
-
-    /// Live two-way connections: WebSocket, ws:// and wss://.
-    ///
-    /// The permission story is the same one HTTP has: opening a connection is a
-    /// `net.connect` to that host and port, checked at `open` on the calling
-    /// thread, before anything dials. There is no separate capability to declare
-    /// -- an app granted `net.connect:example.com:443` may fetch from it and may
-    /// hold a socket to it, which is the same promise to the person either way.
-    ///
-    /// Everything here returns immediately. The connection lives on a host
-    /// thread; the guest polls for events from its own loop exactly as it polls
-    /// `http-client` fetches, so a stalled server can never freeze a frame.
-    #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
-    pub mod ws {
-      #[used]
-      #[doc(hidden)]
-      static __FORCE_SECTION_REF: fn() =
-      super::super::super::__link_custom_section_describing_imports;
-      
-      use super::super::super::_rt;
-      pub type NetError = super::super::super::krate::net::types::NetError;
-      /// One message, either direction.
-      #[derive(Clone)]
-      pub enum WsMessage {
-        /// UTF-8 text.
-        Text(_rt::String),
-        /// Raw bytes.
-        Binary(_rt::Vec::<u8>),
-      }
-      impl ::core::fmt::Debug for WsMessage {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          match self {
-            WsMessage::Text(e) => {
-              f.debug_tuple("WsMessage::Text").field(e).finish()
-            }
-            WsMessage::Binary(e) => {
-              f.debug_tuple("WsMessage::Binary").field(e).finish()
-            }
-          }
-        }
-      }
-      /// What `poll` found.
-      #[derive(Clone)]
-      pub enum WsEvent {
-        /// Nothing new. The normal answer; keep drawing and ask later.
-        Pending,
-        /// The handshake finished; the connection is live. Reported once.
-        Opened,
-        /// The server sent a message.
-        Message(WsMessage),
-        /// The connection closed cleanly. Terminal; the handle is retired.
-        Closed,
-        /// The connection failed, with the reason. Terminal; the handle is
-        /// retired.
-        Failed(_rt::String),
-        /// Never opened, or already closed, cancelled, or retired.
-        UnknownHandle,
-      }
-      impl ::core::fmt::Debug for WsEvent {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          match self {
-            WsEvent::Pending => {
-              f.debug_tuple("WsEvent::Pending").finish()
-            }
-            WsEvent::Opened => {
-              f.debug_tuple("WsEvent::Opened").finish()
-            }
-            WsEvent::Message(e) => {
-              f.debug_tuple("WsEvent::Message").field(e).finish()
-            }
-            WsEvent::Closed => {
-              f.debug_tuple("WsEvent::Closed").finish()
-            }
-            WsEvent::Failed(e) => {
-              f.debug_tuple("WsEvent::Failed").field(e).finish()
-            }
-            WsEvent::UnknownHandle => {
-              f.debug_tuple("WsEvent::UnknownHandle").finish()
-            }
-          }
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Open a connection to a `ws://` or `wss://` URL and return a handle.
-      ///
-      /// The capability check happens here: the URL's host and port must be
-      /// covered by a `net.connect` grant, exactly as for a fetch. `wss://`
-      /// verifies certificates, always; there is no way to ask it not to.
-      pub fn open(url: &str,) -> Result<u64,NetError>{
-        unsafe {
-
-          #[repr(align(8))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 16+2*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 16+2*::core::mem::size_of::<*const u8>()]);
-          let vec0 = url;
-          let ptr0 = vec0.as_ptr().cast::<u8>();
-          let len0 = vec0.len();
-          let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:net/ws@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "open"]
-            fn wit_import2(_: *mut u8, _: usize, _: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
-          let l3 = i32::from(*ptr1.add(0).cast::<u8>());
-          let result22 = match l3 {
-            0 => {
-              let e = {
-                let l4 = *ptr1.add(8).cast::<i64>();
-
-                l4 as u64
-              };
-              Ok(e)
-            }
-            1 => {
-              let e = {
-                let l5 = i32::from(*ptr1.add(8).cast::<u8>());
-                use super::super::super::krate::net::types::NetError as V21;
-                let v21 = match l5 {
-                  0 => {
-                    V21::InvalidUrl
-                  }
-                  1 => {
-                    let e21 = {
-                      let l6 = *ptr1.add(8+1*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l7 = *ptr1.add(8+2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len8 = l7;
-                      let bytes8 = _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
-                      _rt::string_lift(bytes8)
-                    };
-                    V21::DnsFailure(e21)
-                  }
-                  2 => {
-                    let e21 = {
-                      let l9 = *ptr1.add(8+1*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l10 = *ptr1.add(8+2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len11 = l10;
-                      let bytes11 = _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
-                      _rt::string_lift(bytes11)
-                    };
-                    V21::ConnectFailure(e21)
-                  }
-                  3 => {
-                    let e21 = {
-                      let l12 = *ptr1.add(8+1*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l13 = *ptr1.add(8+2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len14 = l13;
-                      let bytes14 = _rt::Vec::from_raw_parts(l12.cast(), len14, len14);
-
-                      _rt::string_lift(bytes14)
-                    };
-                    V21::TlsFailure(e21)
-                  }
-                  4 => {
-                    V21::Timeout
-                  }
-                  5 => {
-                    V21::BodyTooLarge
-                  }
-                  6 => {
-                    V21::PermissionDenied
-                  }
-                  7 => {
-                    let e21 = {
-                      let l15 = *ptr1.add(8+1*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l16 = *ptr1.add(8+2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len17 = l16;
-                      let bytes17 = _rt::Vec::from_raw_parts(l15.cast(), len17, len17);
-
-                      _rt::string_lift(bytes17)
-                    };
-                    V21::Protocol(e21)
-                  }
-                  n => {
-                    debug_assert_eq!(n, 8, "invalid enum discriminant");
-                    let e21 = {
-                      let l18 = *ptr1.add(8+1*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l19 = *ptr1.add(8+2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len20 = l19;
-                      let bytes20 = _rt::Vec::from_raw_parts(l18.cast(), len20, len20);
-
-                      _rt::string_lift(bytes20)
-                    };
-                    V21::Other(e21)
-                  }
-                };
-
-                v21
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result22
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Queue one message to send. Returns immediately; the host thread
-      /// delivers it in order. Sending on a connection that has not finished
-      /// opening queues the message for when it has.
-      pub fn send(handle: u64,message: &WsMessage,) -> Result<(),NetError>{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let (result2_0,result2_1,result2_2,) = match message {
-            WsMessage::Text(e) => {
-              let vec0 = e;
-              let ptr0 = vec0.as_ptr().cast::<u8>();
-              let len0 = vec0.len();
-
-              (0i32, ptr0.cast_mut(), len0)
-            },
-            WsMessage::Binary(e) => {
-              let vec1 = e;
-              let ptr1 = vec1.as_ptr().cast::<u8>();
-              let len1 = vec1.len();
-
-              (1i32, ptr1.cast_mut(), len1)
-            },
-          };
-          let ptr3 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:net/ws@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "send"]
-            fn wit_import4(_: i64, _: i32, _: *mut u8, _: usize, _: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import4(_: i64, _: i32, _: *mut u8, _: usize, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import4(_rt::as_i64(&handle), result2_0, result2_1, result2_2, ptr3) };
-          let l5 = i32::from(*ptr3.add(0).cast::<u8>());
-          let result23 = match l5 {
-            0 => {
-              let e = ();
-              Ok(e)
-            }
-            1 => {
-              let e = {
-                let l6 = i32::from(*ptr3.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                use super::super::super::krate::net::types::NetError as V22;
-                let v22 = match l6 {
-                  0 => {
-                    V22::InvalidUrl
-                  }
-                  1 => {
-                    let e22 = {
-                      let l7 = *ptr3.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l8 = *ptr3.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len9 = l8;
-                      let bytes9 = _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
-                      _rt::string_lift(bytes9)
-                    };
-                    V22::DnsFailure(e22)
-                  }
-                  2 => {
-                    let e22 = {
-                      let l10 = *ptr3.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l11 = *ptr3.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len12 = l11;
-                      let bytes12 = _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
-
-                      _rt::string_lift(bytes12)
-                    };
-                    V22::ConnectFailure(e22)
-                  }
-                  3 => {
-                    let e22 = {
-                      let l13 = *ptr3.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l14 = *ptr3.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len15 = l14;
-                      let bytes15 = _rt::Vec::from_raw_parts(l13.cast(), len15, len15);
-
-                      _rt::string_lift(bytes15)
-                    };
-                    V22::TlsFailure(e22)
-                  }
-                  4 => {
-                    V22::Timeout
-                  }
-                  5 => {
-                    V22::BodyTooLarge
-                  }
-                  6 => {
-                    V22::PermissionDenied
-                  }
-                  7 => {
-                    let e22 = {
-                      let l16 = *ptr3.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l17 = *ptr3.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len18 = l17;
-                      let bytes18 = _rt::Vec::from_raw_parts(l16.cast(), len18, len18);
-
-                      _rt::string_lift(bytes18)
-                    };
-                    V22::Protocol(e22)
-                  }
-                  n => {
-                    debug_assert_eq!(n, 8, "invalid enum discriminant");
-                    let e22 = {
-                      let l19 = *ptr3.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l20 = *ptr3.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len21 = l20;
-                      let bytes21 = _rt::Vec::from_raw_parts(l19.cast(), len21, len21);
-
-                      _rt::string_lift(bytes21)
-                    };
-                    V22::Other(e22)
-                  }
-                };
-
-                v22
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result23
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Ask for the next event. Returns immediately, always; `pending` is the
-      /// normal answer. Messages arrive in order. A terminal event retires the
-      /// handle.
-      pub fn poll(handle: u64,) -> WsEvent{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:net/ws@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "poll"]
-            fn wit_import1(_: i64, _: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import1(_: i64, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import1(_rt::as_i64(&handle), ptr0) };
-          let l2 = i32::from(*ptr0.add(0).cast::<u8>());
-          let v14 = match l2 {
-            0 => {
-              WsEvent::Pending
-            }
-            1 => {
-              WsEvent::Opened
-            }
-            2 => {
-              let e14 = {
-                let l3 = i32::from(*ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                let v10 = match l3 {
-                  0 => {
-                    let e10 = {
-                      let l4 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l5 = *ptr0.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len6 = l5;
-                      let bytes6 = _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
-                      _rt::string_lift(bytes6)
-                    };
-                    WsMessage::Text(e10)
-                  }
-                  n => {
-                    debug_assert_eq!(n, 1, "invalid enum discriminant");
-                    let e10 = {
-                      let l7 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l8 = *ptr0.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len9 = l8;
-
-                      _rt::Vec::from_raw_parts(l7.cast(), len9, len9)
-                    };
-                    WsMessage::Binary(e10)
-                  }
-                };
-
-                v10
-              };
-              WsEvent::Message(e14)
-            }
-            3 => {
-              WsEvent::Closed
-            }
-            4 => {
-              let e14 = {
-                let l11 = *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                let l12 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                let len13 = l12;
-                let bytes13 = _rt::Vec::from_raw_parts(l11.cast(), len13, len13);
-
-                _rt::string_lift(bytes13)
-              };
-              WsEvent::Failed(e14)
-            }
-            n => {
-              debug_assert_eq!(n, 5, "invalid enum discriminant");
-              WsEvent::UnknownHandle
-            }
-          };
-          let result15 = v14;
-          result15
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Close the connection politely. Safe on a handle already retired; the
-      /// final `closed` event still arrives through `poll`.
-      pub fn close(handle: u64,) -> (){
-        unsafe {
-
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:net/ws@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "close"]
-            fn wit_import0(_: i64, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import0(_: i64, ){ unreachable!() }
-          unsafe { wit_import0(_rt::as_i64(&handle)) };
-        }
-      }
-
-    }
-
-  }
-  pub mod random {
-    /// Random bytes from the operating system.
-    ///
-    /// `getrandom` is the third most-downloaded crate in all of Rust, and `rand`
-    /// and `uuid` sit directly on top of it. A great many ordinary programs need
-    /// this -- anything that shuffles a list, picks a sample, generates an id, or
-    /// assigns a colour -- and without it those programs cannot be ported at all.
-    /// It was the largest single gap between what real apps need and what Krate
-    /// offered.
-    ///
-    /// Every byte comes from the operating system's entropy pool. There is no
-    /// seeded generator and no way to ask for one: an app handed a predictable
-    /// stream while believing it is random is worse off than an app that cannot get
-    /// random numbers at all, because nothing in its output looks wrong.
-    ///
-    /// This is its own capability rather than something every app receives.
-    /// Entropy is cheap to grant and safe to refuse, but an app that wants it
-    /// should have to say so, and a person reading the permission list should see
-    /// it named.
-    #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
-    pub mod bytes {
-      #[used]
-      #[doc(hidden)]
-      static __FORCE_SECTION_REF: fn() =
-      super::super::super::__link_custom_section_describing_imports;
-      
-      use super::super::super::_rt;
-      /// Error returned by a request for random bytes.
-      #[derive(Clone)]
-      pub enum RandomError {
-        /// The app did not receive the `random.bytes` capability.
-        Denied,
-        /// More bytes were asked for than one call may return.
-        TooLarge,
-        /// `below` was given a bound of zero, which names an empty range.
-        ///
-        /// Its own variant rather than reusing `too-large`, which would say the
-        /// opposite of what happened, or returning zero, which is indistinguishable
-        /// from a legitimate draw.
-        EmptyRange,
-        /// The operating system had no entropy to give.
-        ///
-        /// Reported rather than worked around. A caller that receives this knows
-        /// it got nothing; a caller handed weak bytes it believes are strong has no
-        /// way to find out.
-        Unavailable(_rt::String),
-      }
-      impl ::core::fmt::Debug for RandomError {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          match self {
-            RandomError::Denied => {
-              f.debug_tuple("RandomError::Denied").finish()
-            }
-            RandomError::TooLarge => {
-              f.debug_tuple("RandomError::TooLarge").finish()
-            }
-            RandomError::EmptyRange => {
-              f.debug_tuple("RandomError::EmptyRange").finish()
-            }
-            RandomError::Unavailable(e) => {
-              f.debug_tuple("RandomError::Unavailable").field(e).finish()
-            }
-          }
-        }
-      }
-      impl ::core::fmt::Display for RandomError {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          write!(f, "{:?}", self)
-        }
-      }
-
-      #[cfg(feature = "std")]
-      impl std::error::Error for RandomError {}
-      #[allow(unused_unsafe, clippy::all)]
-      /// Return exactly `count` random bytes.
-      ///
-      /// A request for zero bytes succeeds and returns nothing, so a caller
-      /// computing a length does not have to special-case the empty case.
-      pub fn get(count: u32,) -> Result<_rt::Vec::<u8>,RandomError>{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:random/bytes@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "get"]
-            fn wit_import1(_: i32, _: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import1(_: i32, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import1(_rt::as_i32(&count), ptr0) };
-          let l2 = i32::from(*ptr0.add(0).cast::<u8>());
-          let result11 = match l2 {
-            0 => {
-              let e = {
-                let l3 = *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                let l4 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                let len5 = l4;
-
-                _rt::Vec::from_raw_parts(l3.cast(), len5, len5)
-              };
-              Ok(e)
-            }
-            1 => {
-              let e = {
-                let l6 = i32::from(*ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                let v10 = match l6 {
-                  0 => {
-                    RandomError::Denied
-                  }
-                  1 => {
-                    RandomError::TooLarge
-                  }
-                  2 => {
-                    RandomError::EmptyRange
-                  }
-                  n => {
-                    debug_assert_eq!(n, 3, "invalid enum discriminant");
-                    let e10 = {
-                      let l7 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l8 = *ptr0.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len9 = l8;
-                      let bytes9 = _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
-                      _rt::string_lift(bytes9)
-                    };
-                    RandomError::Unavailable(e10)
-                  }
-                };
-
-                v10
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result11
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// A uniformly distributed 64-bit value.
-      ///
-      /// Offered alongside `get` because drawing a number is the common case, and
-      /// assembling one from bytes by hand is somewhere an app can get the byte
-      /// order wrong without ever noticing.
-      pub fn next_u64() -> Result<u64,RandomError>{
-        unsafe {
-
-          #[repr(align(8))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 16+2*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 16+2*::core::mem::size_of::<*const u8>()]);
-          let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:random/bytes@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "next-u64"]
-            fn wit_import1(_: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import1(_: *mut u8, ){ unreachable!() }
-          unsafe { wit_import1(ptr0) };
-          let l2 = i32::from(*ptr0.add(0).cast::<u8>());
-          let result9 = match l2 {
-            0 => {
-              let e = {
-                let l3 = *ptr0.add(8).cast::<i64>();
-
-                l3 as u64
-              };
-              Ok(e)
-            }
-            1 => {
-              let e = {
-                let l4 = i32::from(*ptr0.add(8).cast::<u8>());
-                let v8 = match l4 {
-                  0 => {
-                    RandomError::Denied
-                  }
-                  1 => {
-                    RandomError::TooLarge
-                  }
-                  2 => {
-                    RandomError::EmptyRange
-                  }
-                  n => {
-                    debug_assert_eq!(n, 3, "invalid enum discriminant");
-                    let e8 = {
-                      let l5 = *ptr0.add(8+1*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l6 = *ptr0.add(8+2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len7 = l6;
-                      let bytes7 = _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
-                      _rt::string_lift(bytes7)
-                    };
-                    RandomError::Unavailable(e8)
-                  }
-                };
-
-                v8
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result9
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// A uniform integer in `[0, bound)`, or an error when `bound` is zero.
-      ///
-      /// Provided because the obvious way to write this -- take a random number
-      /// modulo `bound` -- is subtly wrong whenever `bound` does not divide the
-      /// range evenly: the low values come up more often. A shuffled deck would
-      /// deal some cards more than others and the output would still look random.
-      /// The host draws again instead of taking a remainder.
-      pub fn below(bound: u64,) -> Result<u64,RandomError>{
-        unsafe {
-
-          #[repr(align(8))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 16+2*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 16+2*::core::mem::size_of::<*const u8>()]);
-          let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:random/bytes@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "below"]
-            fn wit_import1(_: i64, _: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import1(_: i64, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import1(_rt::as_i64(&bound), ptr0) };
-          let l2 = i32::from(*ptr0.add(0).cast::<u8>());
-          let result9 = match l2 {
-            0 => {
-              let e = {
-                let l3 = *ptr0.add(8).cast::<i64>();
-
-                l3 as u64
-              };
-              Ok(e)
-            }
-            1 => {
-              let e = {
-                let l4 = i32::from(*ptr0.add(8).cast::<u8>());
-                let v8 = match l4 {
-                  0 => {
-                    RandomError::Denied
-                  }
-                  1 => {
-                    RandomError::TooLarge
-                  }
-                  2 => {
-                    RandomError::EmptyRange
-                  }
-                  n => {
-                    debug_assert_eq!(n, 3, "invalid enum discriminant");
-                    let e8 = {
-                      let l5 = *ptr0.add(8+1*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l6 = *ptr0.add(8+2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len7 = l6;
-                      let bytes7 = _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
-                      _rt::string_lift(bytes7)
-                    };
-                    RandomError::Unavailable(e8)
-                  }
-                };
-
-                v8
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result9
-        }
-      }
-
-    }
-
-  }
-  pub mod resources {
-    /// Read-only files carried inside the `.krate` application itself.
-    ///
-    /// These are application resources, not files from the user's computer, so
-    /// reading them does not require a filesystem capability grant.
-    #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
-    pub mod assets {
-      #[used]
-      #[doc(hidden)]
-      static __FORCE_SECTION_REF: fn() =
-      super::super::super::__link_custom_section_describing_imports;
-      
-      use super::super::super::_rt;
-      /// Error returned while resolving an application-bundled resource.
-      #[derive(Clone)]
-      pub enum ResourceError {
-        /// No bundled asset exists at the requested path.
-        NotFound,
-        /// The path was absolute, escaped the asset root, or used unsupported syntax.
-        InvalidPath,
-        /// The asset is larger than the runtime's bounded read limit.
-        TooLarge,
-        /// The host could not read the asset.
-        Io(_rt::String),
-      }
-      impl ::core::fmt::Debug for ResourceError {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          match self {
-            ResourceError::NotFound => {
-              f.debug_tuple("ResourceError::NotFound").finish()
-            }
-            ResourceError::InvalidPath => {
-              f.debug_tuple("ResourceError::InvalidPath").finish()
-            }
-            ResourceError::TooLarge => {
-              f.debug_tuple("ResourceError::TooLarge").finish()
-            }
-            ResourceError::Io(e) => {
-              f.debug_tuple("ResourceError::Io").field(e).finish()
-            }
-          }
-        }
-      }
-      impl ::core::fmt::Display for ResourceError {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          write!(f, "{:?}", self)
-        }
-      }
-
-      #[cfg(feature = "std")]
-      impl std::error::Error for ResourceError {}
-      #[allow(unused_unsafe, clippy::all)]
-      /// Read one asset by its path relative to the bundle's `assets/` directory.
-      pub fn read(path: &str,) -> Result<_rt::Vec::<u8>,ResourceError>{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let vec0 = path;
-          let ptr0 = vec0.as_ptr().cast::<u8>();
-          let len0 = vec0.len();
-          let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:resources/assets@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "read"]
-            fn wit_import2(_: *mut u8, _: usize, _: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
-          let l3 = i32::from(*ptr1.add(0).cast::<u8>());
-          let result12 = match l3 {
-            0 => {
-              let e = {
-                let l4 = *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                let l5 = *ptr1.add(2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                let len6 = l5;
-
-                _rt::Vec::from_raw_parts(l4.cast(), len6, len6)
-              };
-              Ok(e)
-            }
-            1 => {
-              let e = {
-                let l7 = i32::from(*ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                let v11 = match l7 {
-                  0 => {
-                    ResourceError::NotFound
-                  }
-                  1 => {
-                    ResourceError::InvalidPath
-                  }
-                  2 => {
-                    ResourceError::TooLarge
-                  }
-                  n => {
-                    debug_assert_eq!(n, 3, "invalid enum discriminant");
-                    let e11 = {
-                      let l8 = *ptr1.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l9 = *ptr1.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len10 = l9;
-                      let bytes10 = _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
-                      _rt::string_lift(bytes10)
-                    };
-                    ResourceError::Io(e11)
-                  }
-                };
-
-                v11
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result12
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// List direct children below a relative directory.
-      pub fn list(path: &str,) -> Result<_rt::Vec::<_rt::String>,ResourceError>{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let vec0 = path;
-          let ptr0 = vec0.as_ptr().cast::<u8>();
-          let len0 = vec0.len();
-          let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:resources/assets@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "list"]
-            fn wit_import2(_: *mut u8, _: usize, _: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
-          let l3 = i32::from(*ptr1.add(0).cast::<u8>());
-          let result15 = match l3 {
-            0 => {
-              let e = {
-                let l4 = *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                let l5 = *ptr1.add(2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                let base9 = l4;
-                let len9 = l5;
-                let mut result9 = _rt::Vec::with_capacity(len9);
-                for i in 0..len9 {
-                  let base = base9.add(i * (2*::core::mem::size_of::<*const u8>()));
-                  let e9 = {
-                    let l6 = *base.add(0).cast::<*mut u8>();
-                    let l7 = *base.add(::core::mem::size_of::<*const u8>()).cast::<usize>();
-                    let len8 = l7;
-                    let bytes8 = _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
-                    _rt::string_lift(bytes8)
-                  };
-                  result9.push(e9);
+                #[doc(hidden)]
+                pub fn handle(&self) -> u32 {
+                    _rt::Resource::handle(&self.handle)
                 }
-                _rt::cabi_dealloc(base9, len9 * (2*::core::mem::size_of::<*const u8>()), ::core::mem::size_of::<*const u8>());
-
-                result9
-              };
-              Ok(e)
             }
-            1 => {
-              let e = {
-                let l10 = i32::from(*ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                let v14 = match l10 {
-                  0 => {
-                    ResourceError::NotFound
-                  }
-                  1 => {
-                    ResourceError::InvalidPath
-                  }
-                  2 => {
-                    ResourceError::TooLarge
-                  }
-                  n => {
-                    debug_assert_eq!(n, 3, "invalid enum discriminant");
-                    let e14 = {
-                      let l11 = *ptr1.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l12 = *ptr1.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len13 = l12;
-                      let bytes13 = _rt::Vec::from_raw_parts(l11.cast(), len13, len13);
 
-                      _rt::string_lift(bytes13)
-                    };
-                    ResourceError::Io(e14)
-                  }
-                };
+            unsafe impl _rt::WasmResource for File {
+                #[inline]
+                unsafe fn drop(_handle: u32) {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unreachable!();
 
-                v14
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result15
-        }
-      }
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        #[link(wasm_import_module = "krate:fs/files@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[resource-drop]file"]
+                            fn drop(_: u32);
+                        }
 
-    }
-
-  }
-  pub mod store {
-    /// Durable key-value storage scoped to one application.
-    ///
-    /// Every app that remembers anything -- a window size, a signed-in name, a
-    /// list of items, the last folder you opened -- needs this, and today the only
-    /// way to have it is `fs.read` and `fs.write` plus hand-written parsing. That
-    /// costs an app real code to get right, and it makes the permission prompt say
-    /// "read files in checklist" when the honest answer is "remember your settings".
-    ///
-    /// The store is the app's own. It is not a path on the user's computer: the app
-    /// never learns where the data lives and cannot name a location outside it, so
-    /// granting storage cannot become a way to read the user's documents. That is
-    /// why this is a separate capability from the filesystem rather than a
-    /// convenience built on top of one.
-    #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
-    pub mod kv {
-      #[used]
-      #[doc(hidden)]
-      static __FORCE_SECTION_REF: fn() =
-      super::super::super::__link_custom_section_describing_imports;
-      
-      use super::super::super::_rt;
-      /// Error returned by a store operation.
-      #[derive(Clone)]
-      pub enum StoreError {
-        /// The app did not receive the `store.kv` capability.
-        Denied,
-        /// The key was empty, too long, or used unsupported syntax.
-        InvalidKey,
-        /// The value is larger than the runtime's bounded write limit.
-        TooLarge,
-        /// The store could not be read or written.
-        Io(_rt::String),
-      }
-      impl ::core::fmt::Debug for StoreError {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          match self {
-            StoreError::Denied => {
-              f.debug_tuple("StoreError::Denied").finish()
-            }
-            StoreError::InvalidKey => {
-              f.debug_tuple("StoreError::InvalidKey").finish()
-            }
-            StoreError::TooLarge => {
-              f.debug_tuple("StoreError::TooLarge").finish()
-            }
-            StoreError::Io(e) => {
-              f.debug_tuple("StoreError::Io").field(e).finish()
-            }
-          }
-        }
-      }
-      impl ::core::fmt::Display for StoreError {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          write!(f, "{:?}", self)
-        }
-      }
-
-      #[cfg(feature = "std")]
-      impl std::error::Error for StoreError {}
-      #[allow(unused_unsafe, clippy::all)]
-      /// Read one value. A key that was never set reads as `none` rather than an
-      /// error, because "nothing saved yet" is the normal first run.
-      pub fn get(key: &str,) -> Result<Option<_rt::Vec::<u8>>,StoreError>{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let vec0 = key;
-          let ptr0 = vec0.as_ptr().cast::<u8>();
-          let len0 = vec0.len();
-          let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:store/kv@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "get"]
-            fn wit_import2(_: *mut u8, _: usize, _: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
-          let l3 = i32::from(*ptr1.add(0).cast::<u8>());
-          let result13 = match l3 {
-            0 => {
-              let e = {
-                let l4 = i32::from(*ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-
-                match l4 {
-                  0 => None,
-                  1 => {
-                    let e = {
-                      let l5 = *ptr1.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l6 = *ptr1.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len7 = l6;
-
-                      _rt::Vec::from_raw_parts(l5.cast(), len7, len7)
-                    };
-                    Some(e)
-                  }
-                  _ => _rt::invalid_enum_discriminant(),
+                        unsafe { drop(_handle) };
+                    }
                 }
-              };
-              Ok(e)
             }
-            1 => {
-              let e = {
-                let l8 = i32::from(*ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                let v12 = match l8 {
-                  0 => {
-                    StoreError::Denied
-                  }
-                  1 => {
-                    StoreError::InvalidKey
-                  }
-                  2 => {
-                    StoreError::TooLarge
-                  }
-                  n => {
-                    debug_assert_eq!(n, 3, "invalid enum discriminant");
-                    let e12 = {
-                      let l9 = *ptr1.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l10 = *ptr1.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len11 = l10;
-                      let bytes11 = _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
 
-                      _rt::string_lift(bytes11)
-                    };
-                    StoreError::Io(e12)
-                  }
-                };
+            impl File {
+                #[allow(unused_unsafe, clippy::all)]
+                /// Read up to `n` bytes from the current file cursor.
+                pub fn read(&self, n: u32) -> Result<_rt::Vec<u8>, FsError> {
+                    unsafe {
+                        #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                        #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                        struct RetArea(
+                            [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        );
+                        let mut ret_area = RetArea(
+                            [::core::mem::MaybeUninit::uninit();
+                                4 * ::core::mem::size_of::<*const u8>()],
+                        );
+                        let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "krate:fs/files@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[method]file.read"]
+                            fn wit_import1(_: i32, _: i32, _: *mut u8);
+                        }
 
-                v12
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result13
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Write one value, replacing whatever was there.
-      pub fn set(key: &str,value: &[u8],) -> Result<(),StoreError>{
-        unsafe {
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import1(_: i32, _: i32, _: *mut u8) {
+                            unreachable!()
+                        }
+                        unsafe { wit_import1((self).handle() as i32, _rt::as_i32(&n), ptr0) };
+                        let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                        let result11 = match l2 {
+                            0 => {
+                                let e = {
+                                    let l3 = *ptr0
+                                        .add(::core::mem::size_of::<*const u8>())
+                                        .cast::<*mut u8>();
+                                    let l4 = *ptr0
+                                        .add(2 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<usize>();
+                                    let len5 = l4;
 
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let vec0 = key;
-          let ptr0 = vec0.as_ptr().cast::<u8>();
-          let len0 = vec0.len();
-          let vec1 = value;
-          let ptr1 = vec1.as_ptr().cast::<u8>();
-          let len1 = vec1.len();
-          let ptr2 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:store/kv@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "set"]
-            fn wit_import3(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8, );
-          }
+                                    _rt::Vec::from_raw_parts(l3.cast(), len5, len5)
+                                };
+                                Ok(e)
+                            }
+                            1 => {
+                                let e = {
+                                    let l6 = i32::from(
+                                        *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                    );
+                                    use super::super::super::krate::fs::types::FsError as V10;
+                                    let v10 = match l6 {
+                                        0 => V10::NotFound,
+                                        1 => V10::PermissionDenied,
+                                        2 => V10::AlreadyExists,
+                                        3 => V10::InvalidPath,
+                                        4 => V10::NotADirectory,
+                                        5 => V10::IsADirectory,
+                                        n => {
+                                            debug_assert_eq!(n, 6, "invalid enum discriminant");
+                                            let e10 = {
+                                                let l7 = *ptr0
+                                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<*mut u8>();
+                                                let l8 = *ptr0
+                                                    .add(3 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<usize>();
+                                                let len9 = l8;
+                                                let bytes9 =
+                                                    _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
 
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import3(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import3(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1, ptr2) };
-          let l4 = i32::from(*ptr2.add(0).cast::<u8>());
-          let result10 = match l4 {
-            0 => {
-              let e = ();
-              Ok(e)
-            }
-            1 => {
-              let e = {
-                let l5 = i32::from(*ptr2.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                let v9 = match l5 {
-                  0 => {
-                    StoreError::Denied
-                  }
-                  1 => {
-                    StoreError::InvalidKey
-                  }
-                  2 => {
-                    StoreError::TooLarge
-                  }
-                  n => {
-                    debug_assert_eq!(n, 3, "invalid enum discriminant");
-                    let e9 = {
-                      let l6 = *ptr2.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l7 = *ptr2.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len8 = l7;
-                      let bytes8 = _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
+                                                _rt::string_lift(bytes9)
+                                            };
+                                            V10::Io(e10)
+                                        }
+                                    };
 
-                      _rt::string_lift(bytes8)
-                    };
-                    StoreError::Io(e9)
-                  }
-                };
-
-                v9
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result10
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Remove one key. Removing a key that is not present succeeds: the caller
-      /// wanted it gone, and it is gone.
-      pub fn delete(key: &str,) -> Result<(),StoreError>{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let vec0 = key;
-          let ptr0 = vec0.as_ptr().cast::<u8>();
-          let len0 = vec0.len();
-          let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:store/kv@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "delete"]
-            fn wit_import2(_: *mut u8, _: usize, _: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
-          let l3 = i32::from(*ptr1.add(0).cast::<u8>());
-          let result9 = match l3 {
-            0 => {
-              let e = ();
-              Ok(e)
-            }
-            1 => {
-              let e = {
-                let l4 = i32::from(*ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                let v8 = match l4 {
-                  0 => {
-                    StoreError::Denied
-                  }
-                  1 => {
-                    StoreError::InvalidKey
-                  }
-                  2 => {
-                    StoreError::TooLarge
-                  }
-                  n => {
-                    debug_assert_eq!(n, 3, "invalid enum discriminant");
-                    let e8 = {
-                      let l5 = *ptr1.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l6 = *ptr1.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len7 = l6;
-                      let bytes7 = _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
-                      _rt::string_lift(bytes7)
-                    };
-                    StoreError::Io(e8)
-                  }
-                };
-
-                v8
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result9
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Every key currently set, in sorted order so a listing is stable across
-      /// runs and across operating systems.
-      pub fn keys() -> Result<_rt::Vec::<_rt::String>,StoreError>{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:store/kv@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "keys"]
-            fn wit_import1(_: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import1(_: *mut u8, ){ unreachable!() }
-          unsafe { wit_import1(ptr0) };
-          let l2 = i32::from(*ptr0.add(0).cast::<u8>());
-          let result14 = match l2 {
-            0 => {
-              let e = {
-                let l3 = *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                let l4 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                let base8 = l3;
-                let len8 = l4;
-                let mut result8 = _rt::Vec::with_capacity(len8);
-                for i in 0..len8 {
-                  let base = base8.add(i * (2*::core::mem::size_of::<*const u8>()));
-                  let e8 = {
-                    let l5 = *base.add(0).cast::<*mut u8>();
-                    let l6 = *base.add(::core::mem::size_of::<*const u8>()).cast::<usize>();
-                    let len7 = l6;
-                    let bytes7 = _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
-                    _rt::string_lift(bytes7)
-                  };
-                  result8.push(e8);
-                }
-                _rt::cabi_dealloc(base8, len8 * (2*::core::mem::size_of::<*const u8>()), ::core::mem::size_of::<*const u8>());
-
-                result8
-              };
-              Ok(e)
-            }
-            1 => {
-              let e = {
-                let l9 = i32::from(*ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                let v13 = match l9 {
-                  0 => {
-                    StoreError::Denied
-                  }
-                  1 => {
-                    StoreError::InvalidKey
-                  }
-                  2 => {
-                    StoreError::TooLarge
-                  }
-                  n => {
-                    debug_assert_eq!(n, 3, "invalid enum discriminant");
-                    let e13 = {
-                      let l10 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l11 = *ptr0.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len12 = l11;
-                      let bytes12 = _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
-
-                      _rt::string_lift(bytes12)
-                    };
-                    StoreError::Io(e13)
-                  }
-                };
-
-                v13
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result14
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Remove everything. Separate from `delete` because "forget all of it" is a
-      /// deliberate action an app should have to name.
-      pub fn clear() -> Result<(),StoreError>{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:store/kv@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "clear"]
-            fn wit_import1(_: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import1(_: *mut u8, ){ unreachable!() }
-          unsafe { wit_import1(ptr0) };
-          let l2 = i32::from(*ptr0.add(0).cast::<u8>());
-          let result8 = match l2 {
-            0 => {
-              let e = ();
-              Ok(e)
-            }
-            1 => {
-              let e = {
-                let l3 = i32::from(*ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                let v7 = match l3 {
-                  0 => {
-                    StoreError::Denied
-                  }
-                  1 => {
-                    StoreError::InvalidKey
-                  }
-                  2 => {
-                    StoreError::TooLarge
-                  }
-                  n => {
-                    debug_assert_eq!(n, 3, "invalid enum discriminant");
-                    let e7 = {
-                      let l4 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l5 = *ptr0.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len6 = l5;
-                      let bytes6 = _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
-                      _rt::string_lift(bytes6)
-                    };
-                    StoreError::Io(e7)
-                  }
-                };
-
-                v7
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result8
-        }
-      }
-
-    }
-
-    /// A real database, scoped to one application.
-    ///
-    /// The key-value store above holds settings and small collections. An app with
-    /// a growing list, a search box, or anything it needs to query rather than read
-    /// whole needs a database, and rewriting one on top of files is where a port
-    /// stops being worth doing.
-    ///
-    /// The app gets SQL, not a file. It never learns a path, never opens a
-    /// connection to somewhere else, and cannot attach another database, so this
-    /// stays a capability the runtime fully mediates rather than a hole in the
-    /// filesystem boundary.
-    #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
-    pub mod sql {
-      #[used]
-      #[doc(hidden)]
-      static __FORCE_SECTION_REF: fn() =
-      super::super::super::__link_custom_section_describing_imports;
-      
-      use super::super::super::_rt;
-      /// One value in a row or a query parameter.
-      ///
-      /// A closed set rather than an open one: every value crossing the boundary
-      /// has a known shape, so the host never has to interpret app-supplied text as
-      /// a type declaration.
-      #[derive(Clone)]
-      pub enum Value {
-        /// SQL NULL.
-        Null,
-        /// A 64-bit signed integer.
-        Integer(i64),
-        /// A double-precision float.
-        Real(f64),
-        /// Text.
-        Text(_rt::String),
-        /// Arbitrary bytes.
-        Blob(_rt::Vec::<u8>),
-      }
-      impl ::core::fmt::Debug for Value {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          match self {
-            Value::Null => {
-              f.debug_tuple("Value::Null").finish()
-            }
-            Value::Integer(e) => {
-              f.debug_tuple("Value::Integer").field(e).finish()
-            }
-            Value::Real(e) => {
-              f.debug_tuple("Value::Real").field(e).finish()
-            }
-            Value::Text(e) => {
-              f.debug_tuple("Value::Text").field(e).finish()
-            }
-            Value::Blob(e) => {
-              f.debug_tuple("Value::Blob").field(e).finish()
-            }
-          }
-        }
-      }
-      /// Error returned by a database operation.
-      #[derive(Clone)]
-      pub enum SqlError {
-        /// The app did not receive the `store.sql` capability.
-        Denied,
-        /// The statement could not be parsed or refers to something missing.
-        InvalidStatement(_rt::String),
-        /// The statement is one this interface does not permit, such as attaching
-        /// another database or reading a file from the host.
-        Forbidden(_rt::String),
-        /// The result, or the database as a whole, exceeded its bound.
-        TooLarge,
-        /// The database could not be read or written.
-        Io(_rt::String),
-      }
-      impl ::core::fmt::Debug for SqlError {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          match self {
-            SqlError::Denied => {
-              f.debug_tuple("SqlError::Denied").finish()
-            }
-            SqlError::InvalidStatement(e) => {
-              f.debug_tuple("SqlError::InvalidStatement").field(e).finish()
-            }
-            SqlError::Forbidden(e) => {
-              f.debug_tuple("SqlError::Forbidden").field(e).finish()
-            }
-            SqlError::TooLarge => {
-              f.debug_tuple("SqlError::TooLarge").finish()
-            }
-            SqlError::Io(e) => {
-              f.debug_tuple("SqlError::Io").field(e).finish()
-            }
-          }
-        }
-      }
-      impl ::core::fmt::Display for SqlError {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          write!(f, "{:?}", self)
-        }
-      }
-
-      #[cfg(feature = "std")]
-      impl std::error::Error for SqlError {}
-      /// One returned row, in the column order of the query.
-      #[derive(Clone)]
-      pub struct Row {
-        /// The row's values, in the column order of the query.
-        pub values: _rt::Vec::<Value>,
-      }
-      impl ::core::fmt::Debug for Row {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          f.debug_struct("Row").field("values", &self.values).finish()
-        }
-      }
-      /// The result of a query.
-      #[derive(Clone)]
-      pub struct QueryResult {
-        /// Column names in the order the values appear, so a caller can address
-        /// results by name without a second round trip.
-        pub columns: _rt::Vec::<_rt::String>,
-        /// The rows the query matched, in the order the database returned them.
-        pub rows: _rt::Vec::<Row>,
-      }
-      impl ::core::fmt::Debug for QueryResult {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          f.debug_struct("QueryResult").field("columns", &self.columns).field("rows", &self.rows).finish()
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Run a statement that returns rows.
-      ///
-      /// Parameters are bound, never substituted into the text, so an app cannot
-      /// build an injection out of its own user's input by accident.
-      pub fn query(statement: &str,params: &[Value],) -> Result<QueryResult,SqlError>{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 5*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 5*::core::mem::size_of::<*const u8>()]);
-          let vec0 = statement;
-          let ptr0 = vec0.as_ptr().cast::<u8>();
-          let len0 = vec0.len();
-          let vec3 = params;
-          let len3 = vec3.len();
-          let layout3 = _rt::alloc::Layout::from_size_align_unchecked(vec3.len() * (8+2*::core::mem::size_of::<*const u8>()), 8);
-          let result3 = if layout3.size() != 0 {
-            let ptr = _rt::alloc::alloc(layout3).cast::<u8>();
-            if ptr.is_null()
-            {
-              _rt::alloc::handle_alloc_error(layout3);
-            }
-            ptr
-          }else {
-            ::core::ptr::null_mut()
-          };
-          for (i, e) in vec3.into_iter().enumerate() {
-            let base = result3.add(i * (8+2*::core::mem::size_of::<*const u8>()));
-            {
-              match e {
-                Value::Null=> {
-                  {
-                    *base.add(0).cast::<u8>() = (0i32) as u8;
-                  }
-                }
-                Value::Integer(e) => {
-                  *base.add(0).cast::<u8>() = (1i32) as u8;
-                  *base.add(8).cast::<i64>() = _rt::as_i64(e);
-                },
-                Value::Real(e) => {
-                  *base.add(0).cast::<u8>() = (2i32) as u8;
-                  *base.add(8).cast::<f64>() = _rt::as_f64(e);
-                },
-                Value::Text(e) => {
-                  *base.add(0).cast::<u8>() = (3i32) as u8;
-                  let vec1 = e;
-                  let ptr1 = vec1.as_ptr().cast::<u8>();
-                  let len1 = vec1.len();
-                  *base.add(8+1*::core::mem::size_of::<*const u8>()).cast::<usize>() = len1;
-                  *base.add(8).cast::<*mut u8>() = ptr1.cast_mut();
-                },
-                Value::Blob(e) => {
-                  *base.add(0).cast::<u8>() = (4i32) as u8;
-                  let vec2 = e;
-                  let ptr2 = vec2.as_ptr().cast::<u8>();
-                  let len2 = vec2.len();
-                  *base.add(8+1*::core::mem::size_of::<*const u8>()).cast::<usize>() = len2;
-                  *base.add(8).cast::<*mut u8>() = ptr2.cast_mut();
-                },
-              }
-            }
-          }
-          let ptr4 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:store/sql@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "query"]
-            fn wit_import5(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import5(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import5(ptr0.cast_mut(), len0, result3, len3, ptr4) };
-          let l6 = i32::from(*ptr4.add(0).cast::<u8>());
-          let result40 = match l6 {
-            0 => {
-              let e = {
-                let l7 = *ptr4.add(::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                let l8 = *ptr4.add(2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                let base12 = l7;
-                let len12 = l8;
-                let mut result12 = _rt::Vec::with_capacity(len12);
-                for i in 0..len12 {
-                  let base = base12.add(i * (2*::core::mem::size_of::<*const u8>()));
-                  let e12 = {
-                    let l9 = *base.add(0).cast::<*mut u8>();
-                    let l10 = *base.add(::core::mem::size_of::<*const u8>()).cast::<usize>();
-                    let len11 = l10;
-                    let bytes11 = _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
-                    _rt::string_lift(bytes11)
-                  };
-                  result12.push(e12);
-                }
-                _rt::cabi_dealloc(base12, len12 * (2*::core::mem::size_of::<*const u8>()), ::core::mem::size_of::<*const u8>());
-                let l13 = *ptr4.add(3*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                let l14 = *ptr4.add(4*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                let base28 = l13;
-                let len28 = l14;
-                let mut result28 = _rt::Vec::with_capacity(len28);
-                for i in 0..len28 {
-                  let base = base28.add(i * (2*::core::mem::size_of::<*const u8>()));
-                  let e28 = {
-                    let l15 = *base.add(0).cast::<*mut u8>();
-                    let l16 = *base.add(::core::mem::size_of::<*const u8>()).cast::<usize>();
-                    let base27 = l15;
-                    let len27 = l16;
-                    let mut result27 = _rt::Vec::with_capacity(len27);
-                    for i in 0..len27 {
-                      let base = base27.add(i * (8+2*::core::mem::size_of::<*const u8>()));
-                      let e27 = {
-                        let l17 = i32::from(*base.add(0).cast::<u8>());
-                        let v26 = match l17 {
-                          0 => {
-                            Value::Null
-                          }
-                          1 => {
-                            let e26 = {
-                              let l18 = *base.add(8).cast::<i64>();
-
-                              l18
-                            };
-                            Value::Integer(e26)
-                          }
-                          2 => {
-                            let e26 = {
-                              let l19 = *base.add(8).cast::<f64>();
-
-                              l19
-                            };
-                            Value::Real(e26)
-                          }
-                          3 => {
-                            let e26 = {
-                              let l20 = *base.add(8).cast::<*mut u8>();
-                              let l21 = *base.add(8+1*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                              let len22 = l21;
-                              let bytes22 = _rt::Vec::from_raw_parts(l20.cast(), len22, len22);
-
-                              _rt::string_lift(bytes22)
-                            };
-                            Value::Text(e26)
-                          }
-                          n => {
-                            debug_assert_eq!(n, 4, "invalid enum discriminant");
-                            let e26 = {
-                              let l23 = *base.add(8).cast::<*mut u8>();
-                              let l24 = *base.add(8+1*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                              let len25 = l24;
-
-                              _rt::Vec::from_raw_parts(l23.cast(), len25, len25)
-                            };
-                            Value::Blob(e26)
-                          }
+                                    v10
+                                };
+                                Err(e)
+                            }
+                            _ => _rt::invalid_enum_discriminant(),
                         };
-
-                        v26
-                      };
-                      result27.push(e27);
+                        result11
                     }
-                    _rt::cabi_dealloc(base27, len27 * (8+2*::core::mem::size_of::<*const u8>()), 8);
+                }
+            }
+            impl File {
+                #[allow(unused_unsafe, clippy::all)]
+                /// Write bytes at the current file cursor.
+                pub fn write(&self, bytes: &[u8]) -> Result<u32, FsError> {
+                    unsafe {
+                        #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                        #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                        struct RetArea(
+                            [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        );
+                        let mut ret_area = RetArea(
+                            [::core::mem::MaybeUninit::uninit();
+                                4 * ::core::mem::size_of::<*const u8>()],
+                        );
+                        let vec0 = bytes;
+                        let ptr0 = vec0.as_ptr().cast::<u8>();
+                        let len0 = vec0.len();
+                        let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "krate:fs/files@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[method]file.write"]
+                            fn wit_import2(_: i32, _: *mut u8, _: usize, _: *mut u8);
+                        }
 
-                    Row{
-                      values: result27,
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import2(_: i32, _: *mut u8, _: usize, _: *mut u8) {
+                            unreachable!()
+                        }
+                        unsafe { wit_import2((self).handle() as i32, ptr0.cast_mut(), len0, ptr1) };
+                        let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                        let result10 = match l3 {
+                            0 => {
+                                let e = {
+                                    let l4 = *ptr1
+                                        .add(::core::mem::size_of::<*const u8>())
+                                        .cast::<i32>();
+
+                                    l4 as u32
+                                };
+                                Ok(e)
+                            }
+                            1 => {
+                                let e = {
+                                    let l5 = i32::from(
+                                        *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                    );
+                                    use super::super::super::krate::fs::types::FsError as V9;
+                                    let v9 = match l5 {
+                                        0 => V9::NotFound,
+                                        1 => V9::PermissionDenied,
+                                        2 => V9::AlreadyExists,
+                                        3 => V9::InvalidPath,
+                                        4 => V9::NotADirectory,
+                                        5 => V9::IsADirectory,
+                                        n => {
+                                            debug_assert_eq!(n, 6, "invalid enum discriminant");
+                                            let e9 = {
+                                                let l6 = *ptr1
+                                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<*mut u8>();
+                                                let l7 = *ptr1
+                                                    .add(3 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<usize>();
+                                                let len8 = l7;
+                                                let bytes8 =
+                                                    _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
+
+                                                _rt::string_lift(bytes8)
+                                            };
+                                            V9::Io(e9)
+                                        }
+                                    };
+
+                                    v9
+                                };
+                                Err(e)
+                            }
+                            _ => _rt::invalid_enum_discriminant(),
+                        };
+                        result10
                     }
-                  };
-                  result28.push(e28);
                 }
-                _rt::cabi_dealloc(base28, len28 * (2*::core::mem::size_of::<*const u8>()), ::core::mem::size_of::<*const u8>());
+            }
+            impl File {
+                #[allow(unused_unsafe, clippy::all)]
+                /// Seek to an absolute byte position.
+                pub fn seek_set(&self, pos: u64) -> Result<u64, FsError> {
+                    unsafe {
+                        #[repr(align(8))]
+                        struct RetArea(
+                            [::core::mem::MaybeUninit<u8>;
+                                16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        );
+                        let mut ret_area = RetArea(
+                            [::core::mem::MaybeUninit::uninit();
+                                16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        );
+                        let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "krate:fs/files@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[method]file.seek-set"]
+                            fn wit_import1(_: i32, _: i64, _: *mut u8);
+                        }
 
-                QueryResult{
-                  columns: result12,
-                  rows: result28,
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import1(_: i32, _: i64, _: *mut u8) {
+                            unreachable!()
+                        }
+                        unsafe { wit_import1((self).handle() as i32, _rt::as_i64(&pos), ptr0) };
+                        let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                        let result9 = match l2 {
+                            0 => {
+                                let e = {
+                                    let l3 = *ptr0.add(8).cast::<i64>();
+
+                                    l3 as u64
+                                };
+                                Ok(e)
+                            }
+                            1 => {
+                                let e = {
+                                    let l4 = i32::from(*ptr0.add(8).cast::<u8>());
+                                    use super::super::super::krate::fs::types::FsError as V8;
+                                    let v8 = match l4 {
+                                        0 => V8::NotFound,
+                                        1 => V8::PermissionDenied,
+                                        2 => V8::AlreadyExists,
+                                        3 => V8::InvalidPath,
+                                        4 => V8::NotADirectory,
+                                        5 => V8::IsADirectory,
+                                        n => {
+                                            debug_assert_eq!(n, 6, "invalid enum discriminant");
+                                            let e8 = {
+                                                let l5 = *ptr0
+                                                    .add(
+                                                        8 + 1 * ::core::mem::size_of::<*const u8>(),
+                                                    )
+                                                    .cast::<*mut u8>();
+                                                let l6 = *ptr0
+                                                    .add(
+                                                        8 + 2 * ::core::mem::size_of::<*const u8>(),
+                                                    )
+                                                    .cast::<usize>();
+                                                let len7 = l6;
+                                                let bytes7 =
+                                                    _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
+
+                                                _rt::string_lift(bytes7)
+                                            };
+                                            V8::Io(e8)
+                                        }
+                                    };
+
+                                    v8
+                                };
+                                Err(e)
+                            }
+                            _ => _rt::invalid_enum_discriminant(),
+                        };
+                        result9
+                    }
                 }
-              };
-              Ok(e)
             }
-            1 => {
-              let e = {
-                let l29 = i32::from(*ptr4.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                let v39 = match l29 {
-                  0 => {
-                    SqlError::Denied
-                  }
-                  1 => {
-                    let e39 = {
-                      let l30 = *ptr4.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l31 = *ptr4.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len32 = l31;
-                      let bytes32 = _rt::Vec::from_raw_parts(l30.cast(), len32, len32);
+            impl File {
+                #[allow(unused_unsafe, clippy::all)]
+                /// Seek to the end of the file.
+                pub fn seek_end(&self) -> Result<u64, FsError> {
+                    unsafe {
+                        #[repr(align(8))]
+                        struct RetArea(
+                            [::core::mem::MaybeUninit<u8>;
+                                16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        );
+                        let mut ret_area = RetArea(
+                            [::core::mem::MaybeUninit::uninit();
+                                16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        );
+                        let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "krate:fs/files@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[method]file.seek-end"]
+                            fn wit_import1(_: i32, _: *mut u8);
+                        }
 
-                      _rt::string_lift(bytes32)
-                    };
-                    SqlError::InvalidStatement(e39)
-                  }
-                  2 => {
-                    let e39 = {
-                      let l33 = *ptr4.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l34 = *ptr4.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len35 = l34;
-                      let bytes35 = _rt::Vec::from_raw_parts(l33.cast(), len35, len35);
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import1(_: i32, _: *mut u8) {
+                            unreachable!()
+                        }
+                        unsafe { wit_import1((self).handle() as i32, ptr0) };
+                        let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                        let result9 = match l2 {
+                            0 => {
+                                let e = {
+                                    let l3 = *ptr0.add(8).cast::<i64>();
 
-                      _rt::string_lift(bytes35)
-                    };
-                    SqlError::Forbidden(e39)
-                  }
-                  3 => {
-                    SqlError::TooLarge
-                  }
-                  n => {
-                    debug_assert_eq!(n, 4, "invalid enum discriminant");
-                    let e39 = {
-                      let l36 = *ptr4.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l37 = *ptr4.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len38 = l37;
-                      let bytes38 = _rt::Vec::from_raw_parts(l36.cast(), len38, len38);
+                                    l3 as u64
+                                };
+                                Ok(e)
+                            }
+                            1 => {
+                                let e = {
+                                    let l4 = i32::from(*ptr0.add(8).cast::<u8>());
+                                    use super::super::super::krate::fs::types::FsError as V8;
+                                    let v8 = match l4 {
+                                        0 => V8::NotFound,
+                                        1 => V8::PermissionDenied,
+                                        2 => V8::AlreadyExists,
+                                        3 => V8::InvalidPath,
+                                        4 => V8::NotADirectory,
+                                        5 => V8::IsADirectory,
+                                        n => {
+                                            debug_assert_eq!(n, 6, "invalid enum discriminant");
+                                            let e8 = {
+                                                let l5 = *ptr0
+                                                    .add(
+                                                        8 + 1 * ::core::mem::size_of::<*const u8>(),
+                                                    )
+                                                    .cast::<*mut u8>();
+                                                let l6 = *ptr0
+                                                    .add(
+                                                        8 + 2 * ::core::mem::size_of::<*const u8>(),
+                                                    )
+                                                    .cast::<usize>();
+                                                let len7 = l6;
+                                                let bytes7 =
+                                                    _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
 
-                      _rt::string_lift(bytes38)
-                    };
-                    SqlError::Io(e39)
-                  }
-                };
+                                                _rt::string_lift(bytes7)
+                                            };
+                                            V8::Io(e8)
+                                        }
+                                    };
 
-                v39
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          if layout3.size() != 0 {
-            _rt::alloc::dealloc(result3.cast(), layout3);
-          }
-          result40
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Run a statement that changes data, returning the number of rows affected.
-      pub fn execute(statement: &str,params: &[Value],) -> Result<u64,SqlError>{
-        unsafe {
-
-          #[repr(align(8))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 16+2*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 16+2*::core::mem::size_of::<*const u8>()]);
-          let vec0 = statement;
-          let ptr0 = vec0.as_ptr().cast::<u8>();
-          let len0 = vec0.len();
-          let vec3 = params;
-          let len3 = vec3.len();
-          let layout3 = _rt::alloc::Layout::from_size_align_unchecked(vec3.len() * (8+2*::core::mem::size_of::<*const u8>()), 8);
-          let result3 = if layout3.size() != 0 {
-            let ptr = _rt::alloc::alloc(layout3).cast::<u8>();
-            if ptr.is_null()
-            {
-              _rt::alloc::handle_alloc_error(layout3);
-            }
-            ptr
-          }else {
-            ::core::ptr::null_mut()
-          };
-          for (i, e) in vec3.into_iter().enumerate() {
-            let base = result3.add(i * (8+2*::core::mem::size_of::<*const u8>()));
-            {
-              match e {
-                Value::Null=> {
-                  {
-                    *base.add(0).cast::<u8>() = (0i32) as u8;
-                  }
+                                    v8
+                                };
+                                Err(e)
+                            }
+                            _ => _rt::invalid_enum_discriminant(),
+                        };
+                        result9
+                    }
                 }
-                Value::Integer(e) => {
-                  *base.add(0).cast::<u8>() = (1i32) as u8;
-                  *base.add(8).cast::<i64>() = _rt::as_i64(e);
-                },
-                Value::Real(e) => {
-                  *base.add(0).cast::<u8>() = (2i32) as u8;
-                  *base.add(8).cast::<f64>() = _rt::as_f64(e);
-                },
-                Value::Text(e) => {
-                  *base.add(0).cast::<u8>() = (3i32) as u8;
-                  let vec1 = e;
-                  let ptr1 = vec1.as_ptr().cast::<u8>();
-                  let len1 = vec1.len();
-                  *base.add(8+1*::core::mem::size_of::<*const u8>()).cast::<usize>() = len1;
-                  *base.add(8).cast::<*mut u8>() = ptr1.cast_mut();
-                },
-                Value::Blob(e) => {
-                  *base.add(0).cast::<u8>() = (4i32) as u8;
-                  let vec2 = e;
-                  let ptr2 = vec2.as_ptr().cast::<u8>();
-                  let len2 = vec2.len();
-                  *base.add(8+1*::core::mem::size_of::<*const u8>()).cast::<usize>() = len2;
-                  *base.add(8).cast::<*mut u8>() = ptr2.cast_mut();
-                },
-              }
             }
-          }
-          let ptr4 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:store/sql@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "execute"]
-            fn wit_import5(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8, );
-          }
+            impl File {
+                #[allow(unused_unsafe, clippy::all)]
+                /// Read metadata for this open file handle.
+                pub fn stat(&self) -> Result<FileStat, FsError> {
+                    unsafe {
+                        #[repr(align(8))]
+                        struct RetArea([::core::mem::MaybeUninit<u8>; 32]);
+                        let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 32]);
+                        let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "krate:fs/files@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[method]file.stat"]
+                            fn wit_import1(_: i32, _: *mut u8);
+                        }
 
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import5(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import5(ptr0.cast_mut(), len0, result3, len3, ptr4) };
-          let l6 = i32::from(*ptr4.add(0).cast::<u8>());
-          let result19 = match l6 {
-            0 => {
-              let e = {
-                let l7 = *ptr4.add(8).cast::<i64>();
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import1(_: i32, _: *mut u8) {
+                            unreachable!()
+                        }
+                        unsafe { wit_import1((self).handle() as i32, ptr0) };
+                        let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                        let result11 = match l2 {
+                            0 => {
+                                let e = {
+                                    let l3 = *ptr0.add(8).cast::<i64>();
+                                    let l4 = *ptr0.add(16).cast::<i64>();
+                                    let l5 = i32::from(*ptr0.add(24).cast::<u8>());
 
-                l7 as u64
-              };
-              Ok(e)
+                                    super::super::super::krate::fs::types::FileStat {
+                                        size: l3 as u64,
+                                        modified_millis: l4 as u64,
+                                        is_dir: _rt::bool_lift(l5 as u8),
+                                    }
+                                };
+                                Ok(e)
+                            }
+                            1 => {
+                                let e = {
+                                    let l6 = i32::from(*ptr0.add(8).cast::<u8>());
+                                    use super::super::super::krate::fs::types::FsError as V10;
+                                    let v10 = match l6 {
+                                        0 => V10::NotFound,
+                                        1 => V10::PermissionDenied,
+                                        2 => V10::AlreadyExists,
+                                        3 => V10::InvalidPath,
+                                        4 => V10::NotADirectory,
+                                        5 => V10::IsADirectory,
+                                        n => {
+                                            debug_assert_eq!(n, 6, "invalid enum discriminant");
+                                            let e10 = {
+                                                let l7 = *ptr0
+                                                    .add(
+                                                        8 + 1 * ::core::mem::size_of::<*const u8>(),
+                                                    )
+                                                    .cast::<*mut u8>();
+                                                let l8 = *ptr0
+                                                    .add(
+                                                        8 + 2 * ::core::mem::size_of::<*const u8>(),
+                                                    )
+                                                    .cast::<usize>();
+                                                let len9 = l8;
+                                                let bytes9 =
+                                                    _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
+
+                                                _rt::string_lift(bytes9)
+                                            };
+                                            V10::Io(e10)
+                                        }
+                                    };
+
+                                    v10
+                                };
+                                Err(e)
+                            }
+                            _ => _rt::invalid_enum_discriminant(),
+                        };
+                        result11
+                    }
+                }
             }
-            1 => {
-              let e = {
-                let l8 = i32::from(*ptr4.add(8).cast::<u8>());
-                let v18 = match l8 {
-                  0 => {
-                    SqlError::Denied
-                  }
-                  1 => {
-                    let e18 = {
-                      let l9 = *ptr4.add(8+1*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l10 = *ptr4.add(8+2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len11 = l10;
-                      let bytes11 = _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
-                      _rt::string_lift(bytes11)
+            #[allow(unused_unsafe, clippy::all)]
+            /// Open a path and return a file resource.
+            pub fn open(path: &str, mode: OpenMode) -> Result<File, FsError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = path;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    use super::super::super::krate::fs::types::OpenMode as V1;
+                    let result2 = match mode {
+                        V1::Read => 0i32,
+                        V1::Write => 1i32,
+                        V1::ReadWrite => 2i32,
+                        V1::Append => 3i32,
                     };
-                    SqlError::InvalidStatement(e18)
-                  }
-                  2 => {
-                    let e18 = {
-                      let l12 = *ptr4.add(8+1*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l13 = *ptr4.add(8+2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len14 = l13;
-                      let bytes14 = _rt::Vec::from_raw_parts(l12.cast(), len14, len14);
+                    let ptr3 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:fs/files@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "open"]
+                        fn wit_import4(_: *mut u8, _: usize, _: i32, _: *mut u8);
+                    }
 
-                      _rt::string_lift(bytes14)
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import4(_: *mut u8, _: usize, _: i32, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import4(ptr0.cast_mut(), len0, result2, ptr3) };
+                    let l5 = i32::from(*ptr3.add(0).cast::<u8>());
+                    let result12 = match l5 {
+                        0 => {
+                            let e = {
+                                let l6 =
+                                    *ptr3.add(::core::mem::size_of::<*const u8>()).cast::<i32>();
+
+                                unsafe { File::from_handle(l6 as u32) }
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l7 = i32::from(
+                                    *ptr3.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                use super::super::super::krate::fs::types::FsError as V11;
+                                let v11 = match l7 {
+                                    0 => V11::NotFound,
+                                    1 => V11::PermissionDenied,
+                                    2 => V11::AlreadyExists,
+                                    3 => V11::InvalidPath,
+                                    4 => V11::NotADirectory,
+                                    5 => V11::IsADirectory,
+                                    n => {
+                                        debug_assert_eq!(n, 6, "invalid enum discriminant");
+                                        let e11 = {
+                                            let l8 = *ptr3
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l9 = *ptr3
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len10 = l9;
+                                            let bytes10 =
+                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
+
+                                            _rt::string_lift(bytes10)
+                                        };
+                                        V11::Io(e11)
+                                    }
+                                };
+
+                                v11
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
                     };
-                    SqlError::Forbidden(e18)
-                  }
-                  3 => {
-                    SqlError::TooLarge
-                  }
-                  n => {
-                    debug_assert_eq!(n, 4, "invalid enum discriminant");
-                    let e18 = {
-                      let l15 = *ptr4.add(8+1*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l16 = *ptr4.add(8+2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len17 = l16;
-                      let bytes17 = _rt::Vec::from_raw_parts(l15.cast(), len17, len17);
-
-                      _rt::string_lift(bytes17)
-                    };
-                    SqlError::Io(e18)
-                  }
-                };
-
-                v18
-              };
-              Err(e)
+                    result12
+                }
             }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          if layout3.size() != 0 {
-            _rt::alloc::dealloc(result3.cast(), layout3);
-          }
-          result19
+            #[allow(unused_unsafe, clippy::all)]
+            /// Open a file the person chose in a dialog, by its token.
+            ///
+            /// The counterpart to `ui.dialog.open-file`. It takes a token rather than a
+            /// path because the app never learns the path: the person's click granted
+            /// this one file, not the folder it happens to sit in, and handing over a
+            /// path would let the app walk to its siblings.
+            ///
+            /// A token belongs to one run. It is refused after the run that produced it,
+            /// so an app cannot store one and come back later for a file nobody offered
+            /// again.
+            pub fn open_chosen(token: &str, mode: OpenMode) -> Result<File, FsError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = token;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    use super::super::super::krate::fs::types::OpenMode as V1;
+                    let result2 = match mode {
+                        V1::Read => 0i32,
+                        V1::Write => 1i32,
+                        V1::ReadWrite => 2i32,
+                        V1::Append => 3i32,
+                    };
+                    let ptr3 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:fs/files@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "open-chosen"]
+                        fn wit_import4(_: *mut u8, _: usize, _: i32, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import4(_: *mut u8, _: usize, _: i32, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import4(ptr0.cast_mut(), len0, result2, ptr3) };
+                    let l5 = i32::from(*ptr3.add(0).cast::<u8>());
+                    let result12 = match l5 {
+                        0 => {
+                            let e = {
+                                let l6 =
+                                    *ptr3.add(::core::mem::size_of::<*const u8>()).cast::<i32>();
+
+                                unsafe { File::from_handle(l6 as u32) }
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l7 = i32::from(
+                                    *ptr3.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                use super::super::super::krate::fs::types::FsError as V11;
+                                let v11 = match l7 {
+                                    0 => V11::NotFound,
+                                    1 => V11::PermissionDenied,
+                                    2 => V11::AlreadyExists,
+                                    3 => V11::InvalidPath,
+                                    4 => V11::NotADirectory,
+                                    5 => V11::IsADirectory,
+                                    n => {
+                                        debug_assert_eq!(n, 6, "invalid enum discriminant");
+                                        let e11 = {
+                                            let l8 = *ptr3
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l9 = *ptr3
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len10 = l9;
+                                            let bytes10 =
+                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
+
+                                            _rt::string_lift(bytes10)
+                                        };
+                                        V11::Io(e11)
+                                    }
+                                };
+
+                                v11
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result12
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Read metadata for a path without opening it as a file resource.
+            pub fn stat(path: &str) -> Result<FileStat, FsError> {
+                unsafe {
+                    #[repr(align(8))]
+                    struct RetArea([::core::mem::MaybeUninit<u8>; 32]);
+                    let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 32]);
+                    let vec0 = path;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:fs/files@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "stat"]
+                        fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result12 = match l3 {
+                        0 => {
+                            let e = {
+                                let l4 = *ptr1.add(8).cast::<i64>();
+                                let l5 = *ptr1.add(16).cast::<i64>();
+                                let l6 = i32::from(*ptr1.add(24).cast::<u8>());
+
+                                super::super::super::krate::fs::types::FileStat {
+                                    size: l4 as u64,
+                                    modified_millis: l5 as u64,
+                                    is_dir: _rt::bool_lift(l6 as u8),
+                                }
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l7 = i32::from(*ptr1.add(8).cast::<u8>());
+                                use super::super::super::krate::fs::types::FsError as V11;
+                                let v11 = match l7 {
+                                    0 => V11::NotFound,
+                                    1 => V11::PermissionDenied,
+                                    2 => V11::AlreadyExists,
+                                    3 => V11::InvalidPath,
+                                    4 => V11::NotADirectory,
+                                    5 => V11::IsADirectory,
+                                    n => {
+                                        debug_assert_eq!(n, 6, "invalid enum discriminant");
+                                        let e11 = {
+                                            let l8 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l9 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len10 = l9;
+                                            let bytes10 =
+                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
+
+                                            _rt::string_lift(bytes10)
+                                        };
+                                        V11::Io(e11)
+                                    }
+                                };
+
+                                v11
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result12
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// List directory entry names for a path.
+            pub fn list(path: &str) -> Result<_rt::Vec<_rt::String>, FsError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = path;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:fs/files@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "list"]
+                        fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result15 = match l3 {
+                        0 => {
+                            let e = {
+                                let l4 = *ptr1
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l5 = *ptr1
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let base9 = l4;
+                                let len9 = l5;
+                                let mut result9 = _rt::Vec::with_capacity(len9);
+                                for i in 0..len9 {
+                                    let base =
+                                        base9.add(i * (2 * ::core::mem::size_of::<*const u8>()));
+                                    let e9 = {
+                                        let l6 = *base.add(0).cast::<*mut u8>();
+                                        let l7 = *base
+                                            .add(::core::mem::size_of::<*const u8>())
+                                            .cast::<usize>();
+                                        let len8 = l7;
+                                        let bytes8 =
+                                            _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
+
+                                        _rt::string_lift(bytes8)
+                                    };
+                                    result9.push(e9);
+                                }
+                                _rt::cabi_dealloc(
+                                    base9,
+                                    len9 * (2 * ::core::mem::size_of::<*const u8>()),
+                                    ::core::mem::size_of::<*const u8>(),
+                                );
+
+                                result9
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l10 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                use super::super::super::krate::fs::types::FsError as V14;
+                                let v14 = match l10 {
+                                    0 => V14::NotFound,
+                                    1 => V14::PermissionDenied,
+                                    2 => V14::AlreadyExists,
+                                    3 => V14::InvalidPath,
+                                    4 => V14::NotADirectory,
+                                    5 => V14::IsADirectory,
+                                    n => {
+                                        debug_assert_eq!(n, 6, "invalid enum discriminant");
+                                        let e14 = {
+                                            let l11 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l12 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len13 = l12;
+                                            let bytes13 =
+                                                _rt::Vec::from_raw_parts(l11.cast(), len13, len13);
+
+                                            _rt::string_lift(bytes13)
+                                        };
+                                        V14::Io(e14)
+                                    }
+                                };
+
+                                v14
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result15
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Remove one file.
+            pub fn remove_file(path: &str) -> Result<(), FsError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = path;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:fs/files@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "remove-file"]
+                        fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result9 = match l3 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                use super::super::super::krate::fs::types::FsError as V8;
+                                let v8 = match l4 {
+                                    0 => V8::NotFound,
+                                    1 => V8::PermissionDenied,
+                                    2 => V8::AlreadyExists,
+                                    3 => V8::InvalidPath,
+                                    4 => V8::NotADirectory,
+                                    5 => V8::IsADirectory,
+                                    n => {
+                                        debug_assert_eq!(n, 6, "invalid enum discriminant");
+                                        let e8 = {
+                                            let l5 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+                                            let bytes7 =
+                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
+
+                                            _rt::string_lift(bytes7)
+                                        };
+                                        V8::Io(e8)
+                                    }
+                                };
+
+                                v8
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result9
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Remove one directory.
+            pub fn remove_dir(path: &str) -> Result<(), FsError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = path;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:fs/files@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "remove-dir"]
+                        fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result9 = match l3 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                use super::super::super::krate::fs::types::FsError as V8;
+                                let v8 = match l4 {
+                                    0 => V8::NotFound,
+                                    1 => V8::PermissionDenied,
+                                    2 => V8::AlreadyExists,
+                                    3 => V8::InvalidPath,
+                                    4 => V8::NotADirectory,
+                                    5 => V8::IsADirectory,
+                                    n => {
+                                        debug_assert_eq!(n, 6, "invalid enum discriminant");
+                                        let e8 = {
+                                            let l5 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+                                            let bytes7 =
+                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
+
+                                            _rt::string_lift(bytes7)
+                                        };
+                                        V8::Io(e8)
+                                    }
+                                };
+
+                                v8
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result9
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Create one directory.
+            pub fn mkdir(path: &str) -> Result<(), FsError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = path;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:fs/files@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "mkdir"]
+                        fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result9 = match l3 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                use super::super::super::krate::fs::types::FsError as V8;
+                                let v8 = match l4 {
+                                    0 => V8::NotFound,
+                                    1 => V8::PermissionDenied,
+                                    2 => V8::AlreadyExists,
+                                    3 => V8::InvalidPath,
+                                    4 => V8::NotADirectory,
+                                    5 => V8::IsADirectory,
+                                    n => {
+                                        debug_assert_eq!(n, 6, "invalid enum discriminant");
+                                        let e8 = {
+                                            let l5 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+                                            let bytes7 =
+                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
+
+                                            _rt::string_lift(bytes7)
+                                        };
+                                        V8::Io(e8)
+                                    }
+                                };
+
+                                v8
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result9
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Rename or move a path.
+            pub fn rename(from: &str, to: &str) -> Result<(), FsError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = from;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let vec1 = to;
+                    let ptr1 = vec1.as_ptr().cast::<u8>();
+                    let len1 = vec1.len();
+                    let ptr2 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:fs/files@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "rename"]
+                        fn wit_import3(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import3(
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import3(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1, ptr2) };
+                    let l4 = i32::from(*ptr2.add(0).cast::<u8>());
+                    let result10 = match l4 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l5 = i32::from(
+                                    *ptr2.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                use super::super::super::krate::fs::types::FsError as V9;
+                                let v9 = match l5 {
+                                    0 => V9::NotFound,
+                                    1 => V9::PermissionDenied,
+                                    2 => V9::AlreadyExists,
+                                    3 => V9::InvalidPath,
+                                    4 => V9::NotADirectory,
+                                    5 => V9::IsADirectory,
+                                    n => {
+                                        debug_assert_eq!(n, 6, "invalid enum discriminant");
+                                        let e9 = {
+                                            let l6 = *ptr2
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l7 = *ptr2
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len8 = l7;
+                                            let bytes8 =
+                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
+
+                                            _rt::string_lift(bytes8)
+                                        };
+                                        V9::Io(e9)
+                                    }
+                                };
+
+                                v9
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result10
+                }
+            }
         }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Run several statements as one unit, so a half-applied change cannot
-      /// survive a crash. Any failure rolls the whole batch back.
-      pub fn transaction(statements: &[_rt::String],) -> Result<(),SqlError>{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let vec1 = statements;
-          let len1 = vec1.len();
-          let layout1 = _rt::alloc::Layout::from_size_align_unchecked(vec1.len() * (2*::core::mem::size_of::<*const u8>()), ::core::mem::size_of::<*const u8>());
-          let result1 = if layout1.size() != 0 {
-            let ptr = _rt::alloc::alloc(layout1).cast::<u8>();
-            if ptr.is_null()
-            {
-              _rt::alloc::handle_alloc_error(layout1);
-            }
-            ptr
-          }else {
-            ::core::ptr::null_mut()
-          };
-          for (i, e) in vec1.into_iter().enumerate() {
-            let base = result1.add(i * (2*::core::mem::size_of::<*const u8>()));
-            {
-              let vec0 = e;
-              let ptr0 = vec0.as_ptr().cast::<u8>();
-              let len0 = vec0.len();
-              *base.add(::core::mem::size_of::<*const u8>()).cast::<usize>() = len0;
-              *base.add(0).cast::<*mut u8>() = ptr0.cast_mut();
-            }
-          }
-          let ptr2 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:store/sql@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "transaction"]
-            fn wit_import3(_: *mut u8, _: usize, _: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import3(_: *mut u8, _: usize, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import3(result1, len1, ptr2) };
-          let l4 = i32::from(*ptr2.add(0).cast::<u8>());
-          let result16 = match l4 {
-            0 => {
-              let e = ();
-              Ok(e)
-            }
-            1 => {
-              let e = {
-                let l5 = i32::from(*ptr2.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                let v15 = match l5 {
-                  0 => {
-                    SqlError::Denied
-                  }
-                  1 => {
-                    let e15 = {
-                      let l6 = *ptr2.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l7 = *ptr2.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len8 = l7;
-                      let bytes8 = _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
-                      _rt::string_lift(bytes8)
-                    };
-                    SqlError::InvalidStatement(e15)
-                  }
-                  2 => {
-                    let e15 = {
-                      let l9 = *ptr2.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l10 = *ptr2.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len11 = l10;
-                      let bytes11 = _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
-                      _rt::string_lift(bytes11)
-                    };
-                    SqlError::Forbidden(e15)
-                  }
-                  3 => {
-                    SqlError::TooLarge
-                  }
-                  n => {
-                    debug_assert_eq!(n, 4, "invalid enum discriminant");
-                    let e15 = {
-                      let l12 = *ptr2.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l13 = *ptr2.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len14 = l13;
-                      let bytes14 = _rt::Vec::from_raw_parts(l12.cast(), len14, len14);
-
-                      _rt::string_lift(bytes14)
-                    };
-                    SqlError::Io(e15)
-                  }
-                };
-
-                v15
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          if layout1.size() != 0 {
-            _rt::alloc::dealloc(result1.cast(), layout1);
-          }
-          result16
-        }
-      }
-
     }
+    pub mod io {
+        /// Shared IO records and errors.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod types {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() =
+                super::super::super::__link_custom_section_describing_imports;
 
-    /// Secrets an app keeps for itself, such as a sign-in token.
-    ///
-    /// Without this an app that signs in has to write its token to a plain file
-    /// behind an `fs.write` grant, which puts the token beside the user's documents
-    /// in the permission prompt and in the clear on disk.
-    ///
-    /// Secrets are encrypted at rest with a key the runtime derives per machine and
-    /// per app, so a backup or a copied file does not carry usable secrets to
-    /// another computer, and one app cannot read another's. This is not the
-    /// operating system's keychain: Linux's requires a running daemon that servers
-    /// and minimal desktops do not have, and an app that works on one computer and
-    /// fails on another is the failure Krate exists to remove. It protects secrets
-    /// at rest, not from code already running as the same user.
-    #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
-    pub mod secret {
-      #[used]
-      #[doc(hidden)]
-      static __FORCE_SECTION_REF: fn() =
-      super::super::super::__link_custom_section_describing_imports;
-      
-      use super::super::super::_rt;
-      /// Error returned by a secret operation.
-      #[derive(Clone)]
-      pub enum SecretError {
-        /// The app did not receive the `store.secret` capability.
-        Denied,
-        /// The name was empty, too long, or used unsupported syntax.
-        InvalidName,
-        /// The secret is larger than the runtime's bounded limit.
-        TooLarge,
-        /// The secret store could not be read or written.
-        Io(_rt::String),
-      }
-      impl ::core::fmt::Debug for SecretError {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          match self {
-            SecretError::Denied => {
-              f.debug_tuple("SecretError::Denied").finish()
+            use super::super::super::_rt;
+            /// Severity level for app log events.
+            #[repr(u8)]
+            #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+            pub enum LogLevel {
+                /// Very detailed diagnostic data.
+                Trace,
+                /// Developer-focused diagnostic data.
+                Debug,
+                /// Normal informational event.
+                Info,
+                /// Something unexpected happened, but the app can continue.
+                Warn,
+                /// The app hit an error condition.
+                Error,
             }
-            SecretError::InvalidName => {
-              f.debug_tuple("SecretError::InvalidName").finish()
-            }
-            SecretError::TooLarge => {
-              f.debug_tuple("SecretError::TooLarge").finish()
-            }
-            SecretError::Io(e) => {
-              f.debug_tuple("SecretError::Io").field(e).finish()
-            }
-          }
-        }
-      }
-      impl ::core::fmt::Display for SecretError {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          write!(f, "{:?}", self)
-        }
-      }
-
-      #[cfg(feature = "std")]
-      impl std::error::Error for SecretError {}
-      #[allow(unused_unsafe, clippy::all)]
-      /// Read one secret. A name that was never set reads as `none`.
-      pub fn get(name: &str,) -> Result<Option<_rt::Vec::<u8>>,SecretError>{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let vec0 = name;
-          let ptr0 = vec0.as_ptr().cast::<u8>();
-          let len0 = vec0.len();
-          let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:store/secret@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "get"]
-            fn wit_import2(_: *mut u8, _: usize, _: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
-          let l3 = i32::from(*ptr1.add(0).cast::<u8>());
-          let result13 = match l3 {
-            0 => {
-              let e = {
-                let l4 = i32::from(*ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-
-                match l4 {
-                  0 => None,
-                  1 => {
-                    let e = {
-                      let l5 = *ptr1.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l6 = *ptr1.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len7 = l6;
-
-                      _rt::Vec::from_raw_parts(l5.cast(), len7, len7)
-                    };
-                    Some(e)
-                  }
-                  _ => _rt::invalid_enum_discriminant(),
+            impl ::core::fmt::Debug for LogLevel {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    match self {
+                        LogLevel::Trace => f.debug_tuple("LogLevel::Trace").finish(),
+                        LogLevel::Debug => f.debug_tuple("LogLevel::Debug").finish(),
+                        LogLevel::Info => f.debug_tuple("LogLevel::Info").finish(),
+                        LogLevel::Warn => f.debug_tuple("LogLevel::Warn").finish(),
+                        LogLevel::Error => f.debug_tuple("LogLevel::Error").finish(),
+                    }
                 }
-              };
-              Ok(e)
             }
-            1 => {
-              let e = {
-                let l8 = i32::from(*ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                let v12 = match l8 {
-                  0 => {
-                    SecretError::Denied
-                  }
-                  1 => {
-                    SecretError::InvalidName
-                  }
-                  2 => {
-                    SecretError::TooLarge
-                  }
-                  n => {
-                    debug_assert_eq!(n, 3, "invalid enum discriminant");
-                    let e12 = {
-                      let l9 = *ptr1.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l10 = *ptr1.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len11 = l10;
-                      let bytes11 = _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
 
-                      _rt::string_lift(bytes11)
-                    };
-                    SecretError::Io(e12)
-                  }
-                };
+            impl LogLevel {
+                #[doc(hidden)]
+                pub unsafe fn _lift(val: u8) -> LogLevel {
+                    if !cfg!(debug_assertions) {
+                        return ::core::mem::transmute(val);
+                    }
 
-                v12
-              };
-              Err(e)
+                    match val {
+                        0 => LogLevel::Trace,
+                        1 => LogLevel::Debug,
+                        2 => LogLevel::Info,
+                        3 => LogLevel::Warn,
+                        4 => LogLevel::Error,
+
+                        _ => panic!("invalid enum discriminant"),
+                    }
+                }
             }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result13
+
+            /// Error shape for byte streams and text stream helpers.
+            #[derive(Clone)]
+            pub enum IoError {
+                /// The stream was already closed.
+                Closed,
+                /// The host interrupted the operation.
+                Interrupted,
+                /// The stream ended before enough bytes were read.
+                UnexpectedEof,
+                /// Bytes could not be decoded as UTF-8 text.
+                InvalidUtf8,
+                /// Host-specific IO error text.
+                Other(_rt::String),
+            }
+            impl ::core::fmt::Debug for IoError {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    match self {
+                        IoError::Closed => f.debug_tuple("IoError::Closed").finish(),
+                        IoError::Interrupted => f.debug_tuple("IoError::Interrupted").finish(),
+                        IoError::UnexpectedEof => f.debug_tuple("IoError::UnexpectedEof").finish(),
+                        IoError::InvalidUtf8 => f.debug_tuple("IoError::InvalidUtf8").finish(),
+                        IoError::Other(e) => f.debug_tuple("IoError::Other").field(e).finish(),
+                    }
+                }
+            }
+            impl ::core::fmt::Display for IoError {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    write!(f, "{:?}", self)
+                }
+            }
+
+            #[cfg(feature = "std")]
+            impl std::error::Error for IoError {}
         }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Store one secret, replacing whatever was there.
-      pub fn set(name: &str,secret: &[u8],) -> Result<(),SecretError>{
-        unsafe {
 
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let vec0 = name;
-          let ptr0 = vec0.as_ptr().cast::<u8>();
-          let len0 = vec0.len();
-          let vec1 = secret;
-          let ptr1 = vec1.as_ptr().cast::<u8>();
-          let len1 = vec1.len();
-          let ptr2 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:store/secret@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "set"]
-            fn wit_import3(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8, );
-          }
+        /// Byte stream resources used by stdio and future IO surfaces.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod streams {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() =
+                super::super::super::__link_custom_section_describing_imports;
 
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import3(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import3(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1, ptr2) };
-          let l4 = i32::from(*ptr2.add(0).cast::<u8>());
-          let result10 = match l4 {
-            0 => {
-              let e = ();
-              Ok(e)
+            use super::super::super::_rt;
+            pub type IoError = super::super::super::krate::io::types::IoError;
+            /// Readable byte stream owned by the runtime.
+
+            #[derive(Debug)]
+            #[repr(transparent)]
+            pub struct InputStream {
+                handle: _rt::Resource<InputStream>,
             }
-            1 => {
-              let e = {
-                let l5 = i32::from(*ptr2.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                let v9 = match l5 {
-                  0 => {
-                    SecretError::Denied
-                  }
-                  1 => {
-                    SecretError::InvalidName
-                  }
-                  2 => {
-                    SecretError::TooLarge
-                  }
-                  n => {
-                    debug_assert_eq!(n, 3, "invalid enum discriminant");
-                    let e9 = {
-                      let l6 = *ptr2.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l7 = *ptr2.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len8 = l7;
-                      let bytes8 = _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
 
-                      _rt::string_lift(bytes8)
-                    };
-                    SecretError::Io(e9)
-                  }
-                };
+            impl InputStream {
+                #[doc(hidden)]
+                pub unsafe fn from_handle(handle: u32) -> Self {
+                    Self {
+                        handle: unsafe { _rt::Resource::from_handle(handle) },
+                    }
+                }
 
-                v9
-              };
-              Err(e)
+                #[doc(hidden)]
+                pub fn take_handle(&self) -> u32 {
+                    _rt::Resource::take_handle(&self.handle)
+                }
+
+                #[doc(hidden)]
+                pub fn handle(&self) -> u32 {
+                    _rt::Resource::handle(&self.handle)
+                }
             }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result10
+
+            unsafe impl _rt::WasmResource for InputStream {
+                #[inline]
+                unsafe fn drop(_handle: u32) {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unreachable!();
+
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        #[link(wasm_import_module = "krate:io/streams@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[resource-drop]input-stream"]
+                            fn drop(_: u32);
+                        }
+
+                        unsafe { drop(_handle) };
+                    }
+                }
+            }
+
+            /// Writable byte stream owned by the runtime.
+
+            #[derive(Debug)]
+            #[repr(transparent)]
+            pub struct OutputStream {
+                handle: _rt::Resource<OutputStream>,
+            }
+
+            impl OutputStream {
+                #[doc(hidden)]
+                pub unsafe fn from_handle(handle: u32) -> Self {
+                    Self {
+                        handle: unsafe { _rt::Resource::from_handle(handle) },
+                    }
+                }
+
+                #[doc(hidden)]
+                pub fn take_handle(&self) -> u32 {
+                    _rt::Resource::take_handle(&self.handle)
+                }
+
+                #[doc(hidden)]
+                pub fn handle(&self) -> u32 {
+                    _rt::Resource::handle(&self.handle)
+                }
+            }
+
+            unsafe impl _rt::WasmResource for OutputStream {
+                #[inline]
+                unsafe fn drop(_handle: u32) {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unreachable!();
+
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        #[link(wasm_import_module = "krate:io/streams@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[resource-drop]output-stream"]
+                            fn drop(_: u32);
+                        }
+
+                        unsafe { drop(_handle) };
+                    }
+                }
+            }
+
+            impl InputStream {
+                #[allow(unused_unsafe, clippy::all)]
+                /// Read up to `n` bytes from the stream.
+                pub fn read(&self, n: u32) -> Result<_rt::Vec<u8>, IoError> {
+                    unsafe {
+                        #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                        #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                        struct RetArea(
+                            [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        );
+                        let mut ret_area = RetArea(
+                            [::core::mem::MaybeUninit::uninit();
+                                4 * ::core::mem::size_of::<*const u8>()],
+                        );
+                        let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "krate:io/streams@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[method]input-stream.read"]
+                            fn wit_import1(_: i32, _: i32, _: *mut u8);
+                        }
+
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import1(_: i32, _: i32, _: *mut u8) {
+                            unreachable!()
+                        }
+                        unsafe { wit_import1((self).handle() as i32, _rt::as_i32(&n), ptr0) };
+                        let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                        let result11 = match l2 {
+                            0 => {
+                                let e = {
+                                    let l3 = *ptr0
+                                        .add(::core::mem::size_of::<*const u8>())
+                                        .cast::<*mut u8>();
+                                    let l4 = *ptr0
+                                        .add(2 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<usize>();
+                                    let len5 = l4;
+
+                                    _rt::Vec::from_raw_parts(l3.cast(), len5, len5)
+                                };
+                                Ok(e)
+                            }
+                            1 => {
+                                let e = {
+                                    let l6 = i32::from(
+                                        *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                    );
+                                    use super::super::super::krate::io::types::IoError as V10;
+                                    let v10 = match l6 {
+                                        0 => V10::Closed,
+                                        1 => V10::Interrupted,
+                                        2 => V10::UnexpectedEof,
+                                        3 => V10::InvalidUtf8,
+                                        n => {
+                                            debug_assert_eq!(n, 4, "invalid enum discriminant");
+                                            let e10 = {
+                                                let l7 = *ptr0
+                                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<*mut u8>();
+                                                let l8 = *ptr0
+                                                    .add(3 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<usize>();
+                                                let len9 = l8;
+                                                let bytes9 =
+                                                    _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
+
+                                                _rt::string_lift(bytes9)
+                                            };
+                                            V10::Other(e10)
+                                        }
+                                    };
+
+                                    v10
+                                };
+                                Err(e)
+                            }
+                            _ => _rt::invalid_enum_discriminant(),
+                        };
+                        result11
+                    }
+                }
+            }
+            impl InputStream {
+                #[allow(unused_unsafe, clippy::all)]
+                /// Read the stream as UTF-8 text.
+                pub fn read_to_string(&self) -> Result<_rt::String, IoError> {
+                    unsafe {
+                        #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                        #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                        struct RetArea(
+                            [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        );
+                        let mut ret_area = RetArea(
+                            [::core::mem::MaybeUninit::uninit();
+                                4 * ::core::mem::size_of::<*const u8>()],
+                        );
+                        let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "krate:io/streams@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[method]input-stream.read-to-string"]
+                            fn wit_import1(_: i32, _: *mut u8);
+                        }
+
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import1(_: i32, _: *mut u8) {
+                            unreachable!()
+                        }
+                        unsafe { wit_import1((self).handle() as i32, ptr0) };
+                        let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                        let result11 = match l2 {
+                            0 => {
+                                let e = {
+                                    let l3 = *ptr0
+                                        .add(::core::mem::size_of::<*const u8>())
+                                        .cast::<*mut u8>();
+                                    let l4 = *ptr0
+                                        .add(2 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<usize>();
+                                    let len5 = l4;
+                                    let bytes5 = _rt::Vec::from_raw_parts(l3.cast(), len5, len5);
+
+                                    _rt::string_lift(bytes5)
+                                };
+                                Ok(e)
+                            }
+                            1 => {
+                                let e = {
+                                    let l6 = i32::from(
+                                        *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                    );
+                                    use super::super::super::krate::io::types::IoError as V10;
+                                    let v10 = match l6 {
+                                        0 => V10::Closed,
+                                        1 => V10::Interrupted,
+                                        2 => V10::UnexpectedEof,
+                                        3 => V10::InvalidUtf8,
+                                        n => {
+                                            debug_assert_eq!(n, 4, "invalid enum discriminant");
+                                            let e10 = {
+                                                let l7 = *ptr0
+                                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<*mut u8>();
+                                                let l8 = *ptr0
+                                                    .add(3 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<usize>();
+                                                let len9 = l8;
+                                                let bytes9 =
+                                                    _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
+
+                                                _rt::string_lift(bytes9)
+                                            };
+                                            V10::Other(e10)
+                                        }
+                                    };
+
+                                    v10
+                                };
+                                Err(e)
+                            }
+                            _ => _rt::invalid_enum_discriminant(),
+                        };
+                        result11
+                    }
+                }
+            }
+            impl OutputStream {
+                #[allow(unused_unsafe, clippy::all)]
+                /// Write some bytes and return the number accepted by the host.
+                pub fn write(&self, bytes: &[u8]) -> Result<u32, IoError> {
+                    unsafe {
+                        #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                        #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                        struct RetArea(
+                            [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        );
+                        let mut ret_area = RetArea(
+                            [::core::mem::MaybeUninit::uninit();
+                                4 * ::core::mem::size_of::<*const u8>()],
+                        );
+                        let vec0 = bytes;
+                        let ptr0 = vec0.as_ptr().cast::<u8>();
+                        let len0 = vec0.len();
+                        let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "krate:io/streams@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[method]output-stream.write"]
+                            fn wit_import2(_: i32, _: *mut u8, _: usize, _: *mut u8);
+                        }
+
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import2(_: i32, _: *mut u8, _: usize, _: *mut u8) {
+                            unreachable!()
+                        }
+                        unsafe { wit_import2((self).handle() as i32, ptr0.cast_mut(), len0, ptr1) };
+                        let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                        let result10 = match l3 {
+                            0 => {
+                                let e = {
+                                    let l4 = *ptr1
+                                        .add(::core::mem::size_of::<*const u8>())
+                                        .cast::<i32>();
+
+                                    l4 as u32
+                                };
+                                Ok(e)
+                            }
+                            1 => {
+                                let e = {
+                                    let l5 = i32::from(
+                                        *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                    );
+                                    use super::super::super::krate::io::types::IoError as V9;
+                                    let v9 = match l5 {
+                                        0 => V9::Closed,
+                                        1 => V9::Interrupted,
+                                        2 => V9::UnexpectedEof,
+                                        3 => V9::InvalidUtf8,
+                                        n => {
+                                            debug_assert_eq!(n, 4, "invalid enum discriminant");
+                                            let e9 = {
+                                                let l6 = *ptr1
+                                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<*mut u8>();
+                                                let l7 = *ptr1
+                                                    .add(3 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<usize>();
+                                                let len8 = l7;
+                                                let bytes8 =
+                                                    _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
+
+                                                _rt::string_lift(bytes8)
+                                            };
+                                            V9::Other(e9)
+                                        }
+                                    };
+
+                                    v9
+                                };
+                                Err(e)
+                            }
+                            _ => _rt::invalid_enum_discriminant(),
+                        };
+                        result10
+                    }
+                }
+            }
+            impl OutputStream {
+                #[allow(unused_unsafe, clippy::all)]
+                /// Write the whole byte buffer or return an error.
+                pub fn write_all(&self, bytes: &[u8]) -> Result<(), IoError> {
+                    unsafe {
+                        #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                        #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                        struct RetArea(
+                            [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        );
+                        let mut ret_area = RetArea(
+                            [::core::mem::MaybeUninit::uninit();
+                                4 * ::core::mem::size_of::<*const u8>()],
+                        );
+                        let vec0 = bytes;
+                        let ptr0 = vec0.as_ptr().cast::<u8>();
+                        let len0 = vec0.len();
+                        let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "krate:io/streams@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[method]output-stream.write-all"]
+                            fn wit_import2(_: i32, _: *mut u8, _: usize, _: *mut u8);
+                        }
+
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import2(_: i32, _: *mut u8, _: usize, _: *mut u8) {
+                            unreachable!()
+                        }
+                        unsafe { wit_import2((self).handle() as i32, ptr0.cast_mut(), len0, ptr1) };
+                        let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                        let result9 = match l3 {
+                            0 => {
+                                let e = ();
+                                Ok(e)
+                            }
+                            1 => {
+                                let e = {
+                                    let l4 = i32::from(
+                                        *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                    );
+                                    use super::super::super::krate::io::types::IoError as V8;
+                                    let v8 = match l4 {
+                                        0 => V8::Closed,
+                                        1 => V8::Interrupted,
+                                        2 => V8::UnexpectedEof,
+                                        3 => V8::InvalidUtf8,
+                                        n => {
+                                            debug_assert_eq!(n, 4, "invalid enum discriminant");
+                                            let e8 = {
+                                                let l5 = *ptr1
+                                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<*mut u8>();
+                                                let l6 = *ptr1
+                                                    .add(3 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<usize>();
+                                                let len7 = l6;
+                                                let bytes7 =
+                                                    _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
+
+                                                _rt::string_lift(bytes7)
+                                            };
+                                            V8::Other(e8)
+                                        }
+                                    };
+
+                                    v8
+                                };
+                                Err(e)
+                            }
+                            _ => _rt::invalid_enum_discriminant(),
+                        };
+                        result9
+                    }
+                }
+            }
+            impl OutputStream {
+                #[allow(unused_unsafe, clippy::all)]
+                /// Flush host-side output buffers.
+                pub fn flush(&self) -> Result<(), IoError> {
+                    unsafe {
+                        #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                        #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                        struct RetArea(
+                            [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        );
+                        let mut ret_area = RetArea(
+                            [::core::mem::MaybeUninit::uninit();
+                                4 * ::core::mem::size_of::<*const u8>()],
+                        );
+                        let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                        #[cfg(target_arch = "wasm32")]
+                        #[link(wasm_import_module = "krate:io/streams@0.1.0")]
+                        unsafe extern "C" {
+                            #[link_name = "[method]output-stream.flush"]
+                            fn wit_import1(_: i32, _: *mut u8);
+                        }
+
+                        #[cfg(not(target_arch = "wasm32"))]
+                        unsafe extern "C" fn wit_import1(_: i32, _: *mut u8) {
+                            unreachable!()
+                        }
+                        unsafe { wit_import1((self).handle() as i32, ptr0) };
+                        let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                        let result8 = match l2 {
+                            0 => {
+                                let e = ();
+                                Ok(e)
+                            }
+                            1 => {
+                                let e = {
+                                    let l3 = i32::from(
+                                        *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                    );
+                                    use super::super::super::krate::io::types::IoError as V7;
+                                    let v7 = match l3 {
+                                        0 => V7::Closed,
+                                        1 => V7::Interrupted,
+                                        2 => V7::UnexpectedEof,
+                                        3 => V7::InvalidUtf8,
+                                        n => {
+                                            debug_assert_eq!(n, 4, "invalid enum discriminant");
+                                            let e7 = {
+                                                let l4 = *ptr0
+                                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<*mut u8>();
+                                                let l5 = *ptr0
+                                                    .add(3 * ::core::mem::size_of::<*const u8>())
+                                                    .cast::<usize>();
+                                                let len6 = l5;
+                                                let bytes6 =
+                                                    _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
+
+                                                _rt::string_lift(bytes6)
+                                            };
+                                            V7::Other(e7)
+                                        }
+                                    };
+
+                                    v7
+                                };
+                                Err(e)
+                            }
+                            _ => _rt::invalid_enum_discriminant(),
+                        };
+                        result8
+                    }
+                }
+            }
         }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Remove one secret. Removing one that is absent succeeds.
-      pub fn delete(name: &str,) -> Result<(),SecretError>{
-        unsafe {
 
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let vec0 = name;
-          let ptr0 = vec0.as_ptr().cast::<u8>();
-          let len0 = vec0.len();
-          let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:store/secret@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "delete"]
-            fn wit_import2(_: *mut u8, _: usize, _: *mut u8, );
-          }
+        /// Standard streams for CLI-style apps.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod stdio {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() =
+                super::super::super::__link_custom_section_describing_imports;
 
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
-          let l3 = i32::from(*ptr1.add(0).cast::<u8>());
-          let result9 = match l3 {
-            0 => {
-              let e = ();
-              Ok(e)
+            pub type InputStream = super::super::super::krate::io::streams::InputStream;
+            pub type OutputStream = super::super::super::krate::io::streams::OutputStream;
+            #[allow(unused_unsafe, clippy::all)]
+            /// Host standard input.
+            pub fn stdin() -> InputStream {
+                unsafe {
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:io/stdio@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "stdin"]
+                        fn wit_import0() -> i32;
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import0() -> i32 {
+                        unreachable!()
+                    }
+                    let ret = unsafe { wit_import0() };
+                    unsafe {
+                        super::super::super::krate::io::streams::InputStream::from_handle(
+                            ret as u32,
+                        )
+                    }
+                }
             }
-            1 => {
-              let e = {
-                let l4 = i32::from(*ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                let v8 = match l4 {
-                  0 => {
-                    SecretError::Denied
-                  }
-                  1 => {
-                    SecretError::InvalidName
-                  }
-                  2 => {
-                    SecretError::TooLarge
-                  }
-                  n => {
-                    debug_assert_eq!(n, 3, "invalid enum discriminant");
-                    let e8 = {
-                      let l5 = *ptr1.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l6 = *ptr1.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len7 = l6;
-                      let bytes7 = _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
+            #[allow(unused_unsafe, clippy::all)]
+            /// Host standard output for normal app output.
+            pub fn stdout() -> OutputStream {
+                unsafe {
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:io/stdio@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "stdout"]
+                        fn wit_import0() -> i32;
+                    }
 
-                      _rt::string_lift(bytes7)
-                    };
-                    SecretError::Io(e8)
-                  }
-                };
-
-                v8
-              };
-              Err(e)
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import0() -> i32 {
+                        unreachable!()
+                    }
+                    let ret = unsafe { wit_import0() };
+                    unsafe {
+                        super::super::super::krate::io::streams::OutputStream::from_handle(
+                            ret as u32,
+                        )
+                    }
+                }
             }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result9
+            #[allow(unused_unsafe, clippy::all)]
+            /// Host standard error for diagnostics.
+            pub fn stderr() -> OutputStream {
+                unsafe {
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:io/stdio@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "stderr"]
+                        fn wit_import0() -> i32;
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import0() -> i32 {
+                        unreachable!()
+                    }
+                    let ret = unsafe { wit_import0() };
+                    unsafe {
+                        super::super::super::krate::io::streams::OutputStream::from_handle(
+                            ret as u32,
+                        )
+                    }
+                }
+            }
         }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// The names of stored secrets, never their values, so a listing cannot
-      /// become a way to read everything at once.
-      pub fn names() -> Result<_rt::Vec::<_rt::String>,SecretError>{
-        unsafe {
 
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:store/secret@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "names"]
-            fn wit_import1(_: *mut u8, );
-          }
+        /// App arguments passed by the Krate launcher.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod args {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() =
+                super::super::super::__link_custom_section_describing_imports;
 
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import1(_: *mut u8, ){ unreachable!() }
-          unsafe { wit_import1(ptr0) };
-          let l2 = i32::from(*ptr0.add(0).cast::<u8>());
-          let result14 = match l2 {
-            0 => {
-              let e = {
-                let l3 = *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                let l4 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                let base8 = l3;
-                let len8 = l4;
-                let mut result8 = _rt::Vec::with_capacity(len8);
-                for i in 0..len8 {
-                  let base = base8.add(i * (2*::core::mem::size_of::<*const u8>()));
-                  let e8 = {
-                    let l5 = *base.add(0).cast::<*mut u8>();
-                    let l6 = *base.add(::core::mem::size_of::<*const u8>()).cast::<usize>();
+            use super::super::super::_rt;
+            #[allow(unused_unsafe, clippy::all)]
+            /// Raw argument payload for the current CLI slice.
+            ///
+            /// The Phase 2 host encodes arguments as newline-separated text. SDKs should
+            /// expose friendlier argument helpers over this raw transport.
+            pub fn raw() -> _rt::String {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:io/args@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "raw"]
+                        fn wit_import1(_: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(ptr0) };
+                    let l2 = *ptr0.add(0).cast::<*mut u8>();
+                    let l3 = *ptr0
+                        .add(::core::mem::size_of::<*const u8>())
+                        .cast::<usize>();
+                    let len4 = l3;
+                    let bytes4 = _rt::Vec::from_raw_parts(l2.cast(), len4, len4);
+                    let result5 = _rt::string_lift(bytes4);
+                    result5
+                }
+            }
+        }
+
+        /// Structured app logging.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod log {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() =
+                super::super::super::__link_custom_section_describing_imports;
+
+            use super::super::super::_rt;
+            pub type LogLevel = super::super::super::krate::io::types::LogLevel;
+            /// One key/value pair attached to a log event.
+            #[derive(Clone)]
+            pub struct Field {
+                /// Field name.
+                pub key: _rt::String,
+                /// Field value rendered as text.
+                pub value: _rt::String,
+            }
+            impl ::core::fmt::Debug for Field {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    f.debug_struct("Field")
+                        .field("key", &self.key)
+                        .field("value", &self.value)
+                        .finish()
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Emit one structured log event to the host.
+            pub fn emit(level: LogLevel, message: &str, fields: &[Field]) -> () {
+                unsafe {
+                    let vec0 = message;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let vec4 = fields;
+                    let len4 = vec4.len();
+                    let layout4 = _rt::alloc::Layout::from_size_align_unchecked(
+                        vec4.len() * (4 * ::core::mem::size_of::<*const u8>()),
+                        ::core::mem::size_of::<*const u8>(),
+                    );
+                    let result4 = if layout4.size() != 0 {
+                        let ptr = _rt::alloc::alloc(layout4).cast::<u8>();
+                        if ptr.is_null() {
+                            _rt::alloc::handle_alloc_error(layout4);
+                        }
+                        ptr
+                    } else {
+                        ::core::ptr::null_mut()
+                    };
+                    for (i, e) in vec4.into_iter().enumerate() {
+                        let base = result4.add(i * (4 * ::core::mem::size_of::<*const u8>()));
+                        {
+                            let Field {
+                                key: key1,
+                                value: value1,
+                            } = e;
+                            let vec2 = key1;
+                            let ptr2 = vec2.as_ptr().cast::<u8>();
+                            let len2 = vec2.len();
+                            *base
+                                .add(::core::mem::size_of::<*const u8>())
+                                .cast::<usize>() = len2;
+                            *base.add(0).cast::<*mut u8>() = ptr2.cast_mut();
+                            let vec3 = value1;
+                            let ptr3 = vec3.as_ptr().cast::<u8>();
+                            let len3 = vec3.len();
+                            *base
+                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                .cast::<usize>() = len3;
+                            *base
+                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                .cast::<*mut u8>() = ptr3.cast_mut();
+                        }
+                    }
+
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:io/log@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "emit"]
+                        fn wit_import5(_: i32, _: *mut u8, _: usize, _: *mut u8, _: usize);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import5(
+                        _: i32,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                        _: usize,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import5(level.clone() as i32, ptr0.cast_mut(), len0, result4, len4)
+                    };
+                    if layout4.size() != 0 {
+                        _rt::alloc::dealloc(result4.cast(), layout4);
+                    }
+                }
+            }
+        }
+    }
+    pub mod locale {
+        /// Locale and formatting type definitions.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod types {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() =
+                super::super::super::__link_custom_section_describing_imports;
+
+            use super::super::super::_rt;
+            /// Host locale identifier using a BCP 47 language tag.
+            #[derive(Clone)]
+            pub struct LocaleId {
+                /// Canonicalized BCP 47 locale tag, for example `en-US`.
+                pub bcp47: _rt::String,
+            }
+            impl ::core::fmt::Debug for LocaleId {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    f.debug_struct("LocaleId")
+                        .field("bcp47", &self.bcp47)
+                        .finish()
+                }
+            }
+            /// Date rendering style requested from the host.
+            #[repr(u8)]
+            #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+            pub enum DateStyle {
+                /// Compact numeric date form.
+                Short,
+                /// Medium-length date form.
+                Medium,
+                /// Long date form.
+                Long,
+                /// Full date form.
+                Full,
+            }
+            impl ::core::fmt::Debug for DateStyle {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    match self {
+                        DateStyle::Short => f.debug_tuple("DateStyle::Short").finish(),
+                        DateStyle::Medium => f.debug_tuple("DateStyle::Medium").finish(),
+                        DateStyle::Long => f.debug_tuple("DateStyle::Long").finish(),
+                        DateStyle::Full => f.debug_tuple("DateStyle::Full").finish(),
+                    }
+                }
+            }
+
+            impl DateStyle {
+                #[doc(hidden)]
+                pub unsafe fn _lift(val: u8) -> DateStyle {
+                    if !cfg!(debug_assertions) {
+                        return ::core::mem::transmute(val);
+                    }
+
+                    match val {
+                        0 => DateStyle::Short,
+                        1 => DateStyle::Medium,
+                        2 => DateStyle::Long,
+                        3 => DateStyle::Full,
+
+                        _ => panic!("invalid enum discriminant"),
+                    }
+                }
+            }
+
+            /// Number rendering style requested from the host.
+            #[repr(u8)]
+            #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+            pub enum NumberStyle {
+                /// Decimal number formatting.
+                Decimal,
+                /// Percent formatting.
+                Percent,
+                /// Currency formatting. Currency code selection remains future work.
+                Currency,
+            }
+            impl ::core::fmt::Debug for NumberStyle {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    match self {
+                        NumberStyle::Decimal => f.debug_tuple("NumberStyle::Decimal").finish(),
+                        NumberStyle::Percent => f.debug_tuple("NumberStyle::Percent").finish(),
+                        NumberStyle::Currency => f.debug_tuple("NumberStyle::Currency").finish(),
+                    }
+                }
+            }
+
+            impl NumberStyle {
+                #[doc(hidden)]
+                pub unsafe fn _lift(val: u8) -> NumberStyle {
+                    if !cfg!(debug_assertions) {
+                        return ::core::mem::transmute(val);
+                    }
+
+                    match val {
+                        0 => NumberStyle::Decimal,
+                        1 => NumberStyle::Percent,
+                        2 => NumberStyle::Currency,
+
+                        _ => panic!("invalid enum discriminant"),
+                    }
+                }
+            }
+        }
+
+        /// Host locale and timezone discovery.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod info {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() =
+                super::super::super::__link_custom_section_describing_imports;
+
+            use super::super::super::_rt;
+            pub type LocaleId = super::super::super::krate::locale::types::LocaleId;
+            #[allow(unused_unsafe, clippy::all)]
+            /// The user's preferred locale as reported by the host.
+            pub fn current() -> LocaleId {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:locale/info@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "current"]
+                        fn wit_import1(_: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(ptr0) };
+                    let l2 = *ptr0.add(0).cast::<*mut u8>();
+                    let l3 = *ptr0
+                        .add(::core::mem::size_of::<*const u8>())
+                        .cast::<usize>();
+                    let len4 = l3;
+                    let bytes4 = _rt::Vec::from_raw_parts(l2.cast(), len4, len4);
+                    let result5 = super::super::super::krate::locale::types::LocaleId {
+                        bcp47: _rt::string_lift(bytes4),
+                    };
+                    result5
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// IANA timezone name, for example "Asia/Singapore".
+            pub fn timezone() -> _rt::String {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:locale/info@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "timezone"]
+                        fn wit_import1(_: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(ptr0) };
+                    let l2 = *ptr0.add(0).cast::<*mut u8>();
+                    let l3 = *ptr0
+                        .add(::core::mem::size_of::<*const u8>())
+                        .cast::<usize>();
+                    let len4 = l3;
+                    let bytes4 = _rt::Vec::from_raw_parts(l2.cast(), len4, len4);
+                    let result5 = _rt::string_lift(bytes4);
+                    result5
+                }
+            }
+        }
+
+        /// Host-backed date and number formatting.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod format {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() =
+                super::super::super::__link_custom_section_describing_imports;
+
+            use super::super::super::_rt;
+            pub type LocaleId = super::super::super::krate::locale::types::LocaleId;
+            pub type DateStyle = super::super::super::krate::locale::types::DateStyle;
+            pub type NumberStyle = super::super::super::krate::locale::types::NumberStyle;
+            #[allow(unused_unsafe, clippy::all)]
+            /// Format Unix epoch milliseconds using a timezone, style, and locale.
+            pub fn format_date(
+                millis: u64,
+                tz: &str,
+                style: DateStyle,
+                loc: &LocaleId,
+            ) -> _rt::String {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = tz;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let super::super::super::krate::locale::types::LocaleId { bcp47: bcp471 } = loc;
+                    let vec2 = bcp471;
+                    let ptr2 = vec2.as_ptr().cast::<u8>();
+                    let len2 = vec2.len();
+                    let ptr3 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:locale/format@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "format-date"]
+                        fn wit_import4(
+                            _: i64,
+                            _: *mut u8,
+                            _: usize,
+                            _: i32,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                        );
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import4(
+                        _: i64,
+                        _: *mut u8,
+                        _: usize,
+                        _: i32,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import4(
+                            _rt::as_i64(&millis),
+                            ptr0.cast_mut(),
+                            len0,
+                            style.clone() as i32,
+                            ptr2.cast_mut(),
+                            len2,
+                            ptr3,
+                        )
+                    };
+                    let l5 = *ptr3.add(0).cast::<*mut u8>();
+                    let l6 = *ptr3
+                        .add(::core::mem::size_of::<*const u8>())
+                        .cast::<usize>();
                     let len7 = l6;
                     let bytes7 = _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
-                    _rt::string_lift(bytes7)
-                  };
-                  result8.push(e8);
+                    let result8 = _rt::string_lift(bytes7);
+                    result8
                 }
-                _rt::cabi_dealloc(base8, len8 * (2*::core::mem::size_of::<*const u8>()), ::core::mem::size_of::<*const u8>());
-
-                result8
-              };
-              Ok(e)
             }
-            1 => {
-              let e = {
-                let l9 = i32::from(*ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                let v13 = match l9 {
-                  0 => {
-                    SecretError::Denied
-                  }
-                  1 => {
-                    SecretError::InvalidName
-                  }
-                  2 => {
-                    SecretError::TooLarge
-                  }
-                  n => {
-                    debug_assert_eq!(n, 3, "invalid enum discriminant");
-                    let e13 = {
-                      let l10 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l11 = *ptr0.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len12 = l11;
-                      let bytes12 = _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
+            #[allow(unused_unsafe, clippy::all)]
+            /// Format a number using a style and locale.
+            pub fn format_number(value: f64, style: NumberStyle, loc: &LocaleId) -> _rt::String {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let super::super::super::krate::locale::types::LocaleId { bcp47: bcp470 } = loc;
+                    let vec1 = bcp470;
+                    let ptr1 = vec1.as_ptr().cast::<u8>();
+                    let len1 = vec1.len();
+                    let ptr2 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:locale/format@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "format-number"]
+                        fn wit_import3(_: f64, _: i32, _: *mut u8, _: usize, _: *mut u8);
+                    }
 
-                      _rt::string_lift(bytes12)
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import3(
+                        _: f64,
+                        _: i32,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import3(
+                            _rt::as_f64(&value),
+                            style.clone() as i32,
+                            ptr1.cast_mut(),
+                            len1,
+                            ptr2,
+                        )
                     };
-                    SecretError::Io(e13)
-                  }
-                };
-
-                v13
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result14
-        }
-      }
-
-    }
-
-    /// A key-value bucket shared between the machines that hold its invite code.
-    ///
-    /// This is how an app becomes a household app -- a shopping list two people
-    /// see, a meal plan a family edits -- without the app author running a
-    /// backend and without anyone creating an account. The person who creates a
-    /// share gets a ten-character code; anyone they give it to sees the same
-    /// data. Possession of the code IS the membership, exactly like a shared
-    /// album link, and the consent dialog says so in those words.
-    ///
-    /// The store is local-first: reads and writes always work against the copy
-    /// on this machine, `sync` exchanges changes with krate.tech when the
-    /// network allows, and the newest write of a key wins. Bounded like a list,
-    /// not a database: hundreds of keys, kilobytes per value.
-    #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
-    pub mod shared {
-      #[used]
-      #[doc(hidden)]
-      static __FORCE_SECTION_REF: fn() =
-      super::super::super::__link_custom_section_describing_imports;
-      
-      use super::super::super::_rt;
-      /// Error returned by a shared-store operation.
-      #[derive(Clone)]
-      pub enum SharedError {
-        /// The app did not receive the `store.shared` capability.
-        Denied,
-        /// No share has been created or joined yet.
-        NotJoined,
-        /// The invite code was not a share that exists.
-        NoSuchShare,
-        /// The key was empty, too long, or used unsupported syntax.
-        InvalidName,
-        /// The value is larger than the runtime's bounded limit.
-        TooLarge,
-        /// The store could not be read or written.
-        Io(_rt::String),
-      }
-      impl ::core::fmt::Debug for SharedError {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          match self {
-            SharedError::Denied => {
-              f.debug_tuple("SharedError::Denied").finish()
-            }
-            SharedError::NotJoined => {
-              f.debug_tuple("SharedError::NotJoined").finish()
-            }
-            SharedError::NoSuchShare => {
-              f.debug_tuple("SharedError::NoSuchShare").finish()
-            }
-            SharedError::InvalidName => {
-              f.debug_tuple("SharedError::InvalidName").finish()
-            }
-            SharedError::TooLarge => {
-              f.debug_tuple("SharedError::TooLarge").finish()
-            }
-            SharedError::Io(e) => {
-              f.debug_tuple("SharedError::Io").field(e).finish()
-            }
-          }
-        }
-      }
-      impl ::core::fmt::Display for SharedError {
-        fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-          write!(f, "{:?}", self)
-        }
-      }
-
-      #[cfg(feature = "std")]
-      impl std::error::Error for SharedError {}
-      #[allow(unused_unsafe, clippy::all)]
-      /// The invite code of this app's share, or `none` before create or join.
-      pub fn code() -> Result<Option<_rt::String>,SharedError>{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:store/shared@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "code"]
-            fn wit_import1(_: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import1(_: *mut u8, ){ unreachable!() }
-          unsafe { wit_import1(ptr0) };
-          let l2 = i32::from(*ptr0.add(0).cast::<u8>());
-          let result12 = match l2 {
-            0 => {
-              let e = {
-                let l3 = i32::from(*ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-
-                match l3 {
-                  0 => None,
-                  1 => {
-                    let e = {
-                      let l4 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l5 = *ptr0.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len6 = l5;
-                      let bytes6 = _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
-                      _rt::string_lift(bytes6)
-                    };
-                    Some(e)
-                  }
-                  _ => _rt::invalid_enum_discriminant(),
+                    let l4 = *ptr2.add(0).cast::<*mut u8>();
+                    let l5 = *ptr2
+                        .add(::core::mem::size_of::<*const u8>())
+                        .cast::<usize>();
+                    let len6 = l5;
+                    let bytes6 = _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
+                    let result7 = _rt::string_lift(bytes6);
+                    result7
                 }
-              };
-              Ok(e)
             }
-            1 => {
-              let e = {
-                let l7 = i32::from(*ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                let v11 = match l7 {
-                  0 => {
-                    SharedError::Denied
-                  }
-                  1 => {
-                    SharedError::NotJoined
-                  }
-                  2 => {
-                    SharedError::NoSuchShare
-                  }
-                  3 => {
-                    SharedError::InvalidName
-                  }
-                  4 => {
-                    SharedError::TooLarge
-                  }
-                  n => {
-                    debug_assert_eq!(n, 5, "invalid enum discriminant");
-                    let e11 = {
-                      let l8 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l9 = *ptr0.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len10 = l9;
-                      let bytes10 = _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
-                      _rt::string_lift(bytes10)
-                    };
-                    SharedError::Io(e11)
-                  }
-                };
-
-                v11
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result12
         }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Create a fresh share and return its invite code. Requires the network;
-      /// the code is minted by krate.tech so it is unique.
-      pub fn create() -> Result<_rt::String,SharedError>{
-        unsafe {
+    }
+    pub mod net {
+        /// Shared network request, response, and error types.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod types {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() =
+                super::super::super::__link_custom_section_describing_imports;
 
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:store/shared@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "create"]
-            fn wit_import1(_: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import1(_: *mut u8, ){ unreachable!() }
-          unsafe { wit_import1(ptr0) };
-          let l2 = i32::from(*ptr0.add(0).cast::<u8>());
-          let result11 = match l2 {
-            0 => {
-              let e = {
-                let l3 = *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                let l4 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                let len5 = l4;
-                let bytes5 = _rt::Vec::from_raw_parts(l3.cast(), len5, len5);
-
-                _rt::string_lift(bytes5)
-              };
-              Ok(e)
+            use super::super::super::_rt;
+            /// HTTP method for Phase 2 client requests.
+            #[repr(u8)]
+            #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+            pub enum HttpMethod {
+                /// HTTP GET.
+                Get,
+                /// HTTP POST.
+                Post,
+                /// HTTP PUT.
+                Put,
+                /// HTTP DELETE.
+                Delete,
+                /// HTTP PATCH.
+                Patch,
+                /// HTTP HEAD.
+                Head,
+                /// HTTP OPTIONS.
+                Options,
             }
-            1 => {
-              let e = {
-                let l6 = i32::from(*ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                let v10 = match l6 {
-                  0 => {
-                    SharedError::Denied
-                  }
-                  1 => {
-                    SharedError::NotJoined
-                  }
-                  2 => {
-                    SharedError::NoSuchShare
-                  }
-                  3 => {
-                    SharedError::InvalidName
-                  }
-                  4 => {
-                    SharedError::TooLarge
-                  }
-                  n => {
-                    debug_assert_eq!(n, 5, "invalid enum discriminant");
-                    let e10 = {
-                      let l7 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l8 = *ptr0.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len9 = l8;
-                      let bytes9 = _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
-                      _rt::string_lift(bytes9)
-                    };
-                    SharedError::Io(e10)
-                  }
-                };
-
-                v10
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result11
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Join an existing share by its invite code. Local keys are kept and
-      /// merged: the newest write of each key wins.
-      pub fn join(code: &str,) -> Result<(),SharedError>{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let vec0 = code;
-          let ptr0 = vec0.as_ptr().cast::<u8>();
-          let len0 = vec0.len();
-          let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:store/shared@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "join"]
-            fn wit_import2(_: *mut u8, _: usize, _: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
-          let l3 = i32::from(*ptr1.add(0).cast::<u8>());
-          let result9 = match l3 {
-            0 => {
-              let e = ();
-              Ok(e)
-            }
-            1 => {
-              let e = {
-                let l4 = i32::from(*ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                let v8 = match l4 {
-                  0 => {
-                    SharedError::Denied
-                  }
-                  1 => {
-                    SharedError::NotJoined
-                  }
-                  2 => {
-                    SharedError::NoSuchShare
-                  }
-                  3 => {
-                    SharedError::InvalidName
-                  }
-                  4 => {
-                    SharedError::TooLarge
-                  }
-                  n => {
-                    debug_assert_eq!(n, 5, "invalid enum discriminant");
-                    let e8 = {
-                      let l5 = *ptr1.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l6 = *ptr1.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len7 = l6;
-                      let bytes7 = _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
-                      _rt::string_lift(bytes7)
-                    };
-                    SharedError::Io(e8)
-                  }
-                };
-
-                v8
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result9
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Leave the share: keeps the local copy, stops syncing, forgets the code.
-      pub fn leave() -> Result<(),SharedError>{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:store/shared@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "leave"]
-            fn wit_import1(_: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import1(_: *mut u8, ){ unreachable!() }
-          unsafe { wit_import1(ptr0) };
-          let l2 = i32::from(*ptr0.add(0).cast::<u8>());
-          let result8 = match l2 {
-            0 => {
-              let e = ();
-              Ok(e)
-            }
-            1 => {
-              let e = {
-                let l3 = i32::from(*ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                let v7 = match l3 {
-                  0 => {
-                    SharedError::Denied
-                  }
-                  1 => {
-                    SharedError::NotJoined
-                  }
-                  2 => {
-                    SharedError::NoSuchShare
-                  }
-                  3 => {
-                    SharedError::InvalidName
-                  }
-                  4 => {
-                    SharedError::TooLarge
-                  }
-                  n => {
-                    debug_assert_eq!(n, 5, "invalid enum discriminant");
-                    let e7 = {
-                      let l4 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l5 = *ptr0.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len6 = l5;
-                      let bytes6 = _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
-                      _rt::string_lift(bytes6)
-                    };
-                    SharedError::Io(e7)
-                  }
-                };
-
-                v7
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result8
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Read one key from the local copy. Never touches the network.
-      pub fn get(key: &str,) -> Result<Option<_rt::Vec::<u8>>,SharedError>{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let vec0 = key;
-          let ptr0 = vec0.as_ptr().cast::<u8>();
-          let len0 = vec0.len();
-          let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:store/shared@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "get"]
-            fn wit_import2(_: *mut u8, _: usize, _: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
-          let l3 = i32::from(*ptr1.add(0).cast::<u8>());
-          let result13 = match l3 {
-            0 => {
-              let e = {
-                let l4 = i32::from(*ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-
-                match l4 {
-                  0 => None,
-                  1 => {
-                    let e = {
-                      let l5 = *ptr1.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l6 = *ptr1.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len7 = l6;
-
-                      _rt::Vec::from_raw_parts(l5.cast(), len7, len7)
-                    };
-                    Some(e)
-                  }
-                  _ => _rt::invalid_enum_discriminant(),
+            impl ::core::fmt::Debug for HttpMethod {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    match self {
+                        HttpMethod::Get => f.debug_tuple("HttpMethod::Get").finish(),
+                        HttpMethod::Post => f.debug_tuple("HttpMethod::Post").finish(),
+                        HttpMethod::Put => f.debug_tuple("HttpMethod::Put").finish(),
+                        HttpMethod::Delete => f.debug_tuple("HttpMethod::Delete").finish(),
+                        HttpMethod::Patch => f.debug_tuple("HttpMethod::Patch").finish(),
+                        HttpMethod::Head => f.debug_tuple("HttpMethod::Head").finish(),
+                        HttpMethod::Options => f.debug_tuple("HttpMethod::Options").finish(),
+                    }
                 }
-              };
-              Ok(e)
             }
-            1 => {
-              let e = {
-                let l8 = i32::from(*ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                let v12 = match l8 {
-                  0 => {
-                    SharedError::Denied
-                  }
-                  1 => {
-                    SharedError::NotJoined
-                  }
-                  2 => {
-                    SharedError::NoSuchShare
-                  }
-                  3 => {
-                    SharedError::InvalidName
-                  }
-                  4 => {
-                    SharedError::TooLarge
-                  }
-                  n => {
-                    debug_assert_eq!(n, 5, "invalid enum discriminant");
-                    let e12 = {
-                      let l9 = *ptr1.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l10 = *ptr1.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len11 = l10;
-                      let bytes11 = _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
 
-                      _rt::string_lift(bytes11)
-                    };
-                    SharedError::Io(e12)
-                  }
-                };
+            impl HttpMethod {
+                #[doc(hidden)]
+                pub unsafe fn _lift(val: u8) -> HttpMethod {
+                    if !cfg!(debug_assertions) {
+                        return ::core::mem::transmute(val);
+                    }
 
-                v12
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result13
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Write one key locally and queue it for sync.
-      pub fn set(key: &str,value: &[u8],) -> Result<(),SharedError>{
-        unsafe {
+                    match val {
+                        0 => HttpMethod::Get,
+                        1 => HttpMethod::Post,
+                        2 => HttpMethod::Put,
+                        3 => HttpMethod::Delete,
+                        4 => HttpMethod::Patch,
+                        5 => HttpMethod::Head,
+                        6 => HttpMethod::Options,
 
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let vec0 = key;
-          let ptr0 = vec0.as_ptr().cast::<u8>();
-          let len0 = vec0.len();
-          let vec1 = value;
-          let ptr1 = vec1.as_ptr().cast::<u8>();
-          let len1 = vec1.len();
-          let ptr2 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:store/shared@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "set"]
-            fn wit_import3(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import3(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import3(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1, ptr2) };
-          let l4 = i32::from(*ptr2.add(0).cast::<u8>());
-          let result10 = match l4 {
-            0 => {
-              let e = ();
-              Ok(e)
-            }
-            1 => {
-              let e = {
-                let l5 = i32::from(*ptr2.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                let v9 = match l5 {
-                  0 => {
-                    SharedError::Denied
-                  }
-                  1 => {
-                    SharedError::NotJoined
-                  }
-                  2 => {
-                    SharedError::NoSuchShare
-                  }
-                  3 => {
-                    SharedError::InvalidName
-                  }
-                  4 => {
-                    SharedError::TooLarge
-                  }
-                  n => {
-                    debug_assert_eq!(n, 5, "invalid enum discriminant");
-                    let e9 = {
-                      let l6 = *ptr2.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l7 = *ptr2.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len8 = l7;
-                      let bytes8 = _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
-                      _rt::string_lift(bytes8)
-                    };
-                    SharedError::Io(e9)
-                  }
-                };
-
-                v9
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result10
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Delete one key locally and queue the removal for sync.
-      pub fn delete(key: &str,) -> Result<(),SharedError>{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let vec0 = key;
-          let ptr0 = vec0.as_ptr().cast::<u8>();
-          let len0 = vec0.len();
-          let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:store/shared@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "delete"]
-            fn wit_import2(_: *mut u8, _: usize, _: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8, ){ unreachable!() }
-          unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
-          let l3 = i32::from(*ptr1.add(0).cast::<u8>());
-          let result9 = match l3 {
-            0 => {
-              let e = ();
-              Ok(e)
-            }
-            1 => {
-              let e = {
-                let l4 = i32::from(*ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                let v8 = match l4 {
-                  0 => {
-                    SharedError::Denied
-                  }
-                  1 => {
-                    SharedError::NotJoined
-                  }
-                  2 => {
-                    SharedError::NoSuchShare
-                  }
-                  3 => {
-                    SharedError::InvalidName
-                  }
-                  4 => {
-                    SharedError::TooLarge
-                  }
-                  n => {
-                    debug_assert_eq!(n, 5, "invalid enum discriminant");
-                    let e8 = {
-                      let l5 = *ptr1.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l6 = *ptr1.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len7 = l6;
-                      let bytes7 = _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
-                      _rt::string_lift(bytes7)
-                    };
-                    SharedError::Io(e8)
-                  }
-                };
-
-                v8
-              };
-              Err(e)
-            }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result9
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// The keys present in the local copy.
-      pub fn keys() -> Result<_rt::Vec::<_rt::String>,SharedError>{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:store/shared@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "keys"]
-            fn wit_import1(_: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import1(_: *mut u8, ){ unreachable!() }
-          unsafe { wit_import1(ptr0) };
-          let l2 = i32::from(*ptr0.add(0).cast::<u8>());
-          let result14 = match l2 {
-            0 => {
-              let e = {
-                let l3 = *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                let l4 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                let base8 = l3;
-                let len8 = l4;
-                let mut result8 = _rt::Vec::with_capacity(len8);
-                for i in 0..len8 {
-                  let base = base8.add(i * (2*::core::mem::size_of::<*const u8>()));
-                  let e8 = {
-                    let l5 = *base.add(0).cast::<*mut u8>();
-                    let l6 = *base.add(::core::mem::size_of::<*const u8>()).cast::<usize>();
-                    let len7 = l6;
-                    let bytes7 = _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
-                    _rt::string_lift(bytes7)
-                  };
-                  result8.push(e8);
+                        _ => panic!("invalid enum discriminant"),
+                    }
                 }
-                _rt::cabi_dealloc(base8, len8 * (2*::core::mem::size_of::<*const u8>()), ::core::mem::size_of::<*const u8>());
-
-                result8
-              };
-              Ok(e)
             }
-            1 => {
-              let e = {
-                let l9 = i32::from(*ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                let v13 = match l9 {
-                  0 => {
-                    SharedError::Denied
-                  }
-                  1 => {
-                    SharedError::NotJoined
-                  }
-                  2 => {
-                    SharedError::NoSuchShare
-                  }
-                  3 => {
-                    SharedError::InvalidName
-                  }
-                  4 => {
-                    SharedError::TooLarge
-                  }
-                  n => {
-                    debug_assert_eq!(n, 5, "invalid enum discriminant");
-                    let e13 = {
-                      let l10 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l11 = *ptr0.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len12 = l11;
-                      let bytes12 = _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
 
-                      _rt::string_lift(bytes12)
+            /// One HTTP header field.
+            #[derive(Clone)]
+            pub struct Header {
+                /// Header name.
+                pub name: _rt::String,
+                /// Header value.
+                pub value: _rt::String,
+            }
+            impl ::core::fmt::Debug for Header {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    f.debug_struct("Header")
+                        .field("name", &self.name)
+                        .field("value", &self.value)
+                        .finish()
+                }
+            }
+            /// Buffered HTTP request shape.
+            #[derive(Clone)]
+            pub struct Request {
+                /// Request method.
+                pub method: HttpMethod,
+                /// Absolute request URL.
+                pub url: _rt::String,
+                /// App-provided headers. Host-controlled transport headers are rejected.
+                pub headers: _rt::Vec<Header>,
+                /// Buffered request body.
+                pub body: _rt::Vec<u8>,
+                /// Optional timeout in milliseconds for this request.
+                pub timeout_millis: Option<u32>,
+            }
+            impl ::core::fmt::Debug for Request {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    f.debug_struct("Request")
+                        .field("method", &self.method)
+                        .field("url", &self.url)
+                        .field("headers", &self.headers)
+                        .field("body", &self.body)
+                        .field("timeout-millis", &self.timeout_millis)
+                        .finish()
+                }
+            }
+            /// Buffered HTTP response shape.
+            #[derive(Clone)]
+            pub struct Response {
+                /// Numeric HTTP status code.
+                pub status: u16,
+                /// Response headers accepted by the host adapter.
+                pub headers: _rt::Vec<Header>,
+                /// Buffered response body.
+                pub body: _rt::Vec<u8>,
+            }
+            impl ::core::fmt::Debug for Response {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    f.debug_struct("Response")
+                        .field("status", &self.status)
+                        .field("headers", &self.headers)
+                        .field("body", &self.body)
+                        .finish()
+                }
+            }
+            /// Network error shape returned by HTTP client calls.
+            #[derive(Clone)]
+            pub enum NetError {
+                /// URL syntax or unsupported Phase 2 URL shape.
+                InvalidUrl,
+                /// Hostname resolution failed.
+                DnsFailure(_rt::String),
+                /// Socket connection failed.
+                ConnectFailure(_rt::String),
+                /// TLS setup failed. HTTPS is not yet implemented in the first Phase 2 adapter slice.
+                TlsFailure(_rt::String),
+                /// Request timed out.
+                Timeout,
+                /// Response exceeded the configured body-size limit.
+                BodyTooLarge,
+                /// Capability policy denied the request before socket access.
+                PermissionDenied,
+                /// Response framing or protocol parsing failed.
+                Protocol(_rt::String),
+                /// Host-specific network error text.
+                Other(_rt::String),
+            }
+            impl ::core::fmt::Debug for NetError {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    match self {
+                        NetError::InvalidUrl => f.debug_tuple("NetError::InvalidUrl").finish(),
+                        NetError::DnsFailure(e) => {
+                            f.debug_tuple("NetError::DnsFailure").field(e).finish()
+                        }
+                        NetError::ConnectFailure(e) => {
+                            f.debug_tuple("NetError::ConnectFailure").field(e).finish()
+                        }
+                        NetError::TlsFailure(e) => {
+                            f.debug_tuple("NetError::TlsFailure").field(e).finish()
+                        }
+                        NetError::Timeout => f.debug_tuple("NetError::Timeout").finish(),
+                        NetError::BodyTooLarge => f.debug_tuple("NetError::BodyTooLarge").finish(),
+                        NetError::PermissionDenied => {
+                            f.debug_tuple("NetError::PermissionDenied").finish()
+                        }
+                        NetError::Protocol(e) => {
+                            f.debug_tuple("NetError::Protocol").field(e).finish()
+                        }
+                        NetError::Other(e) => f.debug_tuple("NetError::Other").field(e).finish(),
+                    }
+                }
+            }
+            impl ::core::fmt::Display for NetError {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    write!(f, "{:?}", self)
+                }
+            }
+
+            #[cfg(feature = "std")]
+            impl std::error::Error for NetError {}
+            /// What became of a request started with `http-client.begin`.
+            ///
+            /// One shape rather than a result, because "not finished yet" is a normal
+            /// answer here and not an error. `pending` is the only non-terminal
+            /// variant: the other three retire the handle.
+            #[derive(Clone)]
+            pub enum FetchStatus {
+                /// Still working. Draw a frame and ask again.
+                Pending,
+                /// Finished, with the response.
+                Ready(Response),
+                /// Finished, badly. The same errors `fetch` can return.
+                Failed(NetError),
+                /// This handle was never issued, or has already been answered or
+                /// cancelled. Distinct from `failed` so a double-poll is not mistaken
+                /// for a network problem.
+                UnknownHandle,
+            }
+            impl ::core::fmt::Debug for FetchStatus {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    match self {
+                        FetchStatus::Pending => f.debug_tuple("FetchStatus::Pending").finish(),
+                        FetchStatus::Ready(e) => {
+                            f.debug_tuple("FetchStatus::Ready").field(e).finish()
+                        }
+                        FetchStatus::Failed(e) => {
+                            f.debug_tuple("FetchStatus::Failed").field(e).finish()
+                        }
+                        FetchStatus::UnknownHandle => {
+                            f.debug_tuple("FetchStatus::UnknownHandle").finish()
+                        }
+                    }
+                }
+            }
+        }
+
+        /// HTTP client calls for CLI components.
+        /// Buffered HTTP requests to hosts the person allowed.
+        ///
+        /// **Redirects are not followed.** A 3xx comes back with its `location` header
+        /// for the app to act on, and following it means making another request -- one
+        /// that is checked against `net.connect` for the new host.
+        ///
+        /// That is deliberate rather than unfinished. `net.connect` is granted per
+        /// host, so a client that followed redirects itself would let a granted
+        /// `api.example.com` send the app's request anywhere it liked, with the
+        /// person's permission prompt saying only "api.example.com". Leaving the
+        /// decision to the app keeps every host the request reaches one the person
+        /// actually approved.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod http_client {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() =
+                super::super::super::__link_custom_section_describing_imports;
+
+            use super::super::super::_rt;
+            pub type Request = super::super::super::krate::net::types::Request;
+            pub type Response = super::super::super::krate::net::types::Response;
+            pub type NetError = super::super::super::krate::net::types::NetError;
+            pub type FetchStatus = super::super::super::krate::net::types::FetchStatus;
+            #[allow(unused_unsafe, clippy::all)]
+            /// Perform a simple GET request and return only the response body.
+            pub fn get(url: &str) -> Result<_rt::Vec<u8>, NetError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = url;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:net/http-client@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "get"]
+                        fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result24 = match l3 {
+                        0 => {
+                            let e = {
+                                let l4 = *ptr1
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l5 = *ptr1
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let len6 = l5;
+
+                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6)
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l7 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                use super::super::super::krate::net::types::NetError as V23;
+                                let v23 = match l7 {
+                                    0 => V23::InvalidUrl,
+                                    1 => {
+                                        let e23 = {
+                                            let l8 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l9 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len10 = l9;
+                                            let bytes10 =
+                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
+
+                                            _rt::string_lift(bytes10)
+                                        };
+                                        V23::DnsFailure(e23)
+                                    }
+                                    2 => {
+                                        let e23 = {
+                                            let l11 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l12 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len13 = l12;
+                                            let bytes13 =
+                                                _rt::Vec::from_raw_parts(l11.cast(), len13, len13);
+
+                                            _rt::string_lift(bytes13)
+                                        };
+                                        V23::ConnectFailure(e23)
+                                    }
+                                    3 => {
+                                        let e23 = {
+                                            let l14 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l15 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len16 = l15;
+                                            let bytes16 =
+                                                _rt::Vec::from_raw_parts(l14.cast(), len16, len16);
+
+                                            _rt::string_lift(bytes16)
+                                        };
+                                        V23::TlsFailure(e23)
+                                    }
+                                    4 => V23::Timeout,
+                                    5 => V23::BodyTooLarge,
+                                    6 => V23::PermissionDenied,
+                                    7 => {
+                                        let e23 = {
+                                            let l17 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l18 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len19 = l18;
+                                            let bytes19 =
+                                                _rt::Vec::from_raw_parts(l17.cast(), len19, len19);
+
+                                            _rt::string_lift(bytes19)
+                                        };
+                                        V23::Protocol(e23)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 8, "invalid enum discriminant");
+                                        let e23 = {
+                                            let l20 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l21 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len22 = l21;
+                                            let bytes22 =
+                                                _rt::Vec::from_raw_parts(l20.cast(), len22, len22);
+
+                                            _rt::string_lift(bytes22)
+                                        };
+                                        V23::Other(e23)
+                                    }
+                                };
+
+                                v23
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
                     };
-                    SharedError::Io(e13)
-                  }
-                };
-
-                v13
-              };
-              Err(e)
+                    result24
+                }
             }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result14
-        }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Exchange changes with krate.tech now: push queued writes, pull what
-      /// other machines wrote. Returns `true` when the local copy changed, so
-      /// the app knows to redraw. Offline is not an error -- it returns `false`
-      /// and the queue keeps waiting. Call it on launch, after writes, and on a
-      /// timer of ten seconds or more; the host rate-limits anything faster.
-      pub fn sync() -> Result<bool,SharedError>{
-        unsafe {
-
-          #[cfg_attr(target_pointer_width="64", repr(align(8)))]
-          #[cfg_attr(target_pointer_width="32", repr(align(4)))]
-          struct RetArea([::core::mem::MaybeUninit::<u8>; 4*::core::mem::size_of::<*const u8>()]);
-          let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 4*::core::mem::size_of::<*const u8>()]);
-          let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:store/shared@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "sync"]
-            fn wit_import1(_: *mut u8, );
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import1(_: *mut u8, ){ unreachable!() }
-          unsafe { wit_import1(ptr0) };
-          let l2 = i32::from(*ptr0.add(0).cast::<u8>());
-          let result9 = match l2 {
-            0 => {
-              let e = {
-                let l3 = i32::from(*ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-
-                _rt::bool_lift(l3 as u8)
-              };
-              Ok(e)
-            }
-            1 => {
-              let e = {
-                let l4 = i32::from(*ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>());
-                let v8 = match l4 {
-                  0 => {
-                    SharedError::Denied
-                  }
-                  1 => {
-                    SharedError::NotJoined
-                  }
-                  2 => {
-                    SharedError::NoSuchShare
-                  }
-                  3 => {
-                    SharedError::InvalidName
-                  }
-                  4 => {
-                    SharedError::TooLarge
-                  }
-                  n => {
-                    debug_assert_eq!(n, 5, "invalid enum discriminant");
-                    let e8 = {
-                      let l5 = *ptr0.add(2*::core::mem::size_of::<*const u8>()).cast::<*mut u8>();
-                      let l6 = *ptr0.add(3*::core::mem::size_of::<*const u8>()).cast::<usize>();
-                      let len7 = l6;
-                      let bytes7 = _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
-                      _rt::string_lift(bytes7)
+            #[allow(unused_unsafe, clippy::all)]
+            /// Perform a buffered HTTP request and return status, headers, and body.
+            pub fn fetch(req: &Request) -> Result<Response, NetError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 6 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            6 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let super::super::super::krate::net::types::Request {
+                        method: method0,
+                        url: url0,
+                        headers: headers0,
+                        body: body0,
+                        timeout_millis: timeout_millis0,
+                    } = req;
+                    let vec1 = url0;
+                    let ptr1 = vec1.as_ptr().cast::<u8>();
+                    let len1 = vec1.len();
+                    let vec5 = headers0;
+                    let len5 = vec5.len();
+                    let layout5 = _rt::alloc::Layout::from_size_align_unchecked(
+                        vec5.len() * (4 * ::core::mem::size_of::<*const u8>()),
+                        ::core::mem::size_of::<*const u8>(),
+                    );
+                    let result5 = if layout5.size() != 0 {
+                        let ptr = _rt::alloc::alloc(layout5).cast::<u8>();
+                        if ptr.is_null() {
+                            _rt::alloc::handle_alloc_error(layout5);
+                        }
+                        ptr
+                    } else {
+                        ::core::ptr::null_mut()
                     };
-                    SharedError::Io(e8)
-                  }
-                };
+                    for (i, e) in vec5.into_iter().enumerate() {
+                        let base = result5.add(i * (4 * ::core::mem::size_of::<*const u8>()));
+                        {
+                            let super::super::super::krate::net::types::Header {
+                                name: name2,
+                                value: value2,
+                            } = e;
+                            let vec3 = name2;
+                            let ptr3 = vec3.as_ptr().cast::<u8>();
+                            let len3 = vec3.len();
+                            *base
+                                .add(::core::mem::size_of::<*const u8>())
+                                .cast::<usize>() = len3;
+                            *base.add(0).cast::<*mut u8>() = ptr3.cast_mut();
+                            let vec4 = value2;
+                            let ptr4 = vec4.as_ptr().cast::<u8>();
+                            let len4 = vec4.len();
+                            *base
+                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                .cast::<usize>() = len4;
+                            *base
+                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                .cast::<*mut u8>() = ptr4.cast_mut();
+                        }
+                    }
+                    let vec6 = body0;
+                    let ptr6 = vec6.as_ptr().cast::<u8>();
+                    let len6 = vec6.len();
+                    let (result7_0, result7_1) = match timeout_millis0 {
+                        Some(e) => (1i32, _rt::as_i32(e)),
+                        None => (0i32, 0i32),
+                    };
+                    let ptr8 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:net/http-client@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "fetch"]
+                        fn wit_import9(
+                            _: i32,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                            _: i32,
+                            _: i32,
+                            _: *mut u8,
+                        );
+                    }
 
-                v8
-              };
-              Err(e)
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import9(
+                        _: i32,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                        _: usize,
+                        _: i32,
+                        _: i32,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import9(
+                            method0.clone() as i32,
+                            ptr1.cast_mut(),
+                            len1,
+                            result5,
+                            len5,
+                            ptr6.cast_mut(),
+                            len6,
+                            result7_0,
+                            result7_1,
+                            ptr8,
+                        )
+                    };
+                    let l10 = i32::from(*ptr8.add(0).cast::<u8>());
+                    let result41 = match l10 {
+                        0 => {
+                            let e = {
+                                let l11 = i32::from(
+                                    *ptr8.add(::core::mem::size_of::<*const u8>()).cast::<u16>(),
+                                );
+                                let l12 = *ptr8
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l13 = *ptr8
+                                    .add(3 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let base20 = l12;
+                                let len20 = l13;
+                                let mut result20 = _rt::Vec::with_capacity(len20);
+                                for i in 0..len20 {
+                                    let base =
+                                        base20.add(i * (4 * ::core::mem::size_of::<*const u8>()));
+                                    let e20 = {
+                                        let l14 = *base.add(0).cast::<*mut u8>();
+                                        let l15 = *base
+                                            .add(::core::mem::size_of::<*const u8>())
+                                            .cast::<usize>();
+                                        let len16 = l15;
+                                        let bytes16 =
+                                            _rt::Vec::from_raw_parts(l14.cast(), len16, len16);
+                                        let l17 = *base
+                                            .add(2 * ::core::mem::size_of::<*const u8>())
+                                            .cast::<*mut u8>();
+                                        let l18 = *base
+                                            .add(3 * ::core::mem::size_of::<*const u8>())
+                                            .cast::<usize>();
+                                        let len19 = l18;
+                                        let bytes19 =
+                                            _rt::Vec::from_raw_parts(l17.cast(), len19, len19);
+
+                                        super::super::super::krate::net::types::Header {
+                                            name: _rt::string_lift(bytes16),
+                                            value: _rt::string_lift(bytes19),
+                                        }
+                                    };
+                                    result20.push(e20);
+                                }
+                                _rt::cabi_dealloc(
+                                    base20,
+                                    len20 * (4 * ::core::mem::size_of::<*const u8>()),
+                                    ::core::mem::size_of::<*const u8>(),
+                                );
+                                let l21 = *ptr8
+                                    .add(4 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l22 = *ptr8
+                                    .add(5 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let len23 = l22;
+
+                                super::super::super::krate::net::types::Response {
+                                    status: l11 as u16,
+                                    headers: result20,
+                                    body: _rt::Vec::from_raw_parts(l21.cast(), len23, len23),
+                                }
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l24 = i32::from(
+                                    *ptr8.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                use super::super::super::krate::net::types::NetError as V40;
+                                let v40 = match l24 {
+                                    0 => V40::InvalidUrl,
+                                    1 => {
+                                        let e40 = {
+                                            let l25 = *ptr8
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l26 = *ptr8
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len27 = l26;
+                                            let bytes27 =
+                                                _rt::Vec::from_raw_parts(l25.cast(), len27, len27);
+
+                                            _rt::string_lift(bytes27)
+                                        };
+                                        V40::DnsFailure(e40)
+                                    }
+                                    2 => {
+                                        let e40 = {
+                                            let l28 = *ptr8
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l29 = *ptr8
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len30 = l29;
+                                            let bytes30 =
+                                                _rt::Vec::from_raw_parts(l28.cast(), len30, len30);
+
+                                            _rt::string_lift(bytes30)
+                                        };
+                                        V40::ConnectFailure(e40)
+                                    }
+                                    3 => {
+                                        let e40 = {
+                                            let l31 = *ptr8
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l32 = *ptr8
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len33 = l32;
+                                            let bytes33 =
+                                                _rt::Vec::from_raw_parts(l31.cast(), len33, len33);
+
+                                            _rt::string_lift(bytes33)
+                                        };
+                                        V40::TlsFailure(e40)
+                                    }
+                                    4 => V40::Timeout,
+                                    5 => V40::BodyTooLarge,
+                                    6 => V40::PermissionDenied,
+                                    7 => {
+                                        let e40 = {
+                                            let l34 = *ptr8
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l35 = *ptr8
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len36 = l35;
+                                            let bytes36 =
+                                                _rt::Vec::from_raw_parts(l34.cast(), len36, len36);
+
+                                            _rt::string_lift(bytes36)
+                                        };
+                                        V40::Protocol(e40)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 8, "invalid enum discriminant");
+                                        let e40 = {
+                                            let l37 = *ptr8
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l38 = *ptr8
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len39 = l38;
+                                            let bytes39 =
+                                                _rt::Vec::from_raw_parts(l37.cast(), len39, len39);
+
+                                            _rt::string_lift(bytes39)
+                                        };
+                                        V40::Other(e40)
+                                    }
+                                };
+
+                                v40
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    if layout5.size() != 0 {
+                        _rt::alloc::dealloc(result5.cast(), layout5);
+                    }
+                    result41
+                }
             }
-            _ => _rt::invalid_enum_discriminant(),
-          };
-          result9
-        }
-      }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Start a request and return immediately with a handle.
+            ///
+            /// The work happens on a host thread while the guest keeps its own loop
+            /// turning, so the app can draw a spinner, animate, answer a click, or
+            /// offer a cancel button while the network is slow. This is the whole
+            /// point: a blocking `fetch` against a server that stalls three seconds
+            /// froze a real app for the full three seconds (K-101).
+            ///
+            /// The capability check happens here, at `begin`, exactly as it does for
+            /// `fetch` -- a handle is only ever issued for a host the person granted.
+            /// Failing that check fails this call, not the later `poll`.
+            ///
+            /// The handle is valid until `poll` returns a terminal answer or `cancel`
+            /// is called. Handles do not survive the run.
+            pub fn begin(req: &Request) -> Result<u64, NetError> {
+                unsafe {
+                    #[repr(align(8))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>;
+                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let super::super::super::krate::net::types::Request {
+                        method: method0,
+                        url: url0,
+                        headers: headers0,
+                        body: body0,
+                        timeout_millis: timeout_millis0,
+                    } = req;
+                    let vec1 = url0;
+                    let ptr1 = vec1.as_ptr().cast::<u8>();
+                    let len1 = vec1.len();
+                    let vec5 = headers0;
+                    let len5 = vec5.len();
+                    let layout5 = _rt::alloc::Layout::from_size_align_unchecked(
+                        vec5.len() * (4 * ::core::mem::size_of::<*const u8>()),
+                        ::core::mem::size_of::<*const u8>(),
+                    );
+                    let result5 = if layout5.size() != 0 {
+                        let ptr = _rt::alloc::alloc(layout5).cast::<u8>();
+                        if ptr.is_null() {
+                            _rt::alloc::handle_alloc_error(layout5);
+                        }
+                        ptr
+                    } else {
+                        ::core::ptr::null_mut()
+                    };
+                    for (i, e) in vec5.into_iter().enumerate() {
+                        let base = result5.add(i * (4 * ::core::mem::size_of::<*const u8>()));
+                        {
+                            let super::super::super::krate::net::types::Header {
+                                name: name2,
+                                value: value2,
+                            } = e;
+                            let vec3 = name2;
+                            let ptr3 = vec3.as_ptr().cast::<u8>();
+                            let len3 = vec3.len();
+                            *base
+                                .add(::core::mem::size_of::<*const u8>())
+                                .cast::<usize>() = len3;
+                            *base.add(0).cast::<*mut u8>() = ptr3.cast_mut();
+                            let vec4 = value2;
+                            let ptr4 = vec4.as_ptr().cast::<u8>();
+                            let len4 = vec4.len();
+                            *base
+                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                .cast::<usize>() = len4;
+                            *base
+                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                .cast::<*mut u8>() = ptr4.cast_mut();
+                        }
+                    }
+                    let vec6 = body0;
+                    let ptr6 = vec6.as_ptr().cast::<u8>();
+                    let len6 = vec6.len();
+                    let (result7_0, result7_1) = match timeout_millis0 {
+                        Some(e) => (1i32, _rt::as_i32(e)),
+                        None => (0i32, 0i32),
+                    };
+                    let ptr8 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:net/http-client@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "begin"]
+                        fn wit_import9(
+                            _: i32,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                            _: i32,
+                            _: i32,
+                            _: *mut u8,
+                        );
+                    }
 
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import9(
+                        _: i32,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                        _: usize,
+                        _: i32,
+                        _: i32,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import9(
+                            method0.clone() as i32,
+                            ptr1.cast_mut(),
+                            len1,
+                            result5,
+                            len5,
+                            ptr6.cast_mut(),
+                            len6,
+                            result7_0,
+                            result7_1,
+                            ptr8,
+                        )
+                    };
+                    let l10 = i32::from(*ptr8.add(0).cast::<u8>());
+                    let result29 = match l10 {
+                        0 => {
+                            let e = {
+                                let l11 = *ptr8.add(8).cast::<i64>();
+
+                                l11 as u64
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l12 = i32::from(*ptr8.add(8).cast::<u8>());
+                                use super::super::super::krate::net::types::NetError as V28;
+                                let v28 = match l12 {
+                                    0 => V28::InvalidUrl,
+                                    1 => {
+                                        let e28 = {
+                                            let l13 = *ptr8
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l14 = *ptr8
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len15 = l14;
+                                            let bytes15 =
+                                                _rt::Vec::from_raw_parts(l13.cast(), len15, len15);
+
+                                            _rt::string_lift(bytes15)
+                                        };
+                                        V28::DnsFailure(e28)
+                                    }
+                                    2 => {
+                                        let e28 = {
+                                            let l16 = *ptr8
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l17 = *ptr8
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len18 = l17;
+                                            let bytes18 =
+                                                _rt::Vec::from_raw_parts(l16.cast(), len18, len18);
+
+                                            _rt::string_lift(bytes18)
+                                        };
+                                        V28::ConnectFailure(e28)
+                                    }
+                                    3 => {
+                                        let e28 = {
+                                            let l19 = *ptr8
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l20 = *ptr8
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len21 = l20;
+                                            let bytes21 =
+                                                _rt::Vec::from_raw_parts(l19.cast(), len21, len21);
+
+                                            _rt::string_lift(bytes21)
+                                        };
+                                        V28::TlsFailure(e28)
+                                    }
+                                    4 => V28::Timeout,
+                                    5 => V28::BodyTooLarge,
+                                    6 => V28::PermissionDenied,
+                                    7 => {
+                                        let e28 = {
+                                            let l22 = *ptr8
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l23 = *ptr8
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len24 = l23;
+                                            let bytes24 =
+                                                _rt::Vec::from_raw_parts(l22.cast(), len24, len24);
+
+                                            _rt::string_lift(bytes24)
+                                        };
+                                        V28::Protocol(e28)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 8, "invalid enum discriminant");
+                                        let e28 = {
+                                            let l25 = *ptr8
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l26 = *ptr8
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len27 = l26;
+                                            let bytes27 =
+                                                _rt::Vec::from_raw_parts(l25.cast(), len27, len27);
+
+                                            _rt::string_lift(bytes27)
+                                        };
+                                        V28::Other(e28)
+                                    }
+                                };
+
+                                v28
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    if layout5.size() != 0 {
+                        _rt::alloc::dealloc(result5.cast(), layout5);
+                    }
+                    result29
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Ask what happened to a request started with `begin`.
+            ///
+            /// Returns immediately, always. `pending` means keep going -- draw a
+            /// frame and ask again later. Anything else is terminal and retires the
+            /// handle, so polling a finished request answers `unknown-handle`.
+            pub fn poll(handle: u64) -> FetchStatus {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 6 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            6 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:net/http-client@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "poll"]
+                        fn wit_import1(_: i64, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(_rt::as_i64(&handle), ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    use super::super::super::krate::net::types::FetchStatus as V33;
+                    let v33 = match l2 {
+                        0 => V33::Pending,
+                        1 => {
+                            let e33 = {
+                                let l3 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u16>(),
+                                );
+                                let l4 = *ptr0
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l5 = *ptr0
+                                    .add(3 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let base12 = l4;
+                                let len12 = l5;
+                                let mut result12 = _rt::Vec::with_capacity(len12);
+                                for i in 0..len12 {
+                                    let base =
+                                        base12.add(i * (4 * ::core::mem::size_of::<*const u8>()));
+                                    let e12 = {
+                                        let l6 = *base.add(0).cast::<*mut u8>();
+                                        let l7 = *base
+                                            .add(::core::mem::size_of::<*const u8>())
+                                            .cast::<usize>();
+                                        let len8 = l7;
+                                        let bytes8 =
+                                            _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
+                                        let l9 = *base
+                                            .add(2 * ::core::mem::size_of::<*const u8>())
+                                            .cast::<*mut u8>();
+                                        let l10 = *base
+                                            .add(3 * ::core::mem::size_of::<*const u8>())
+                                            .cast::<usize>();
+                                        let len11 = l10;
+                                        let bytes11 =
+                                            _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
+
+                                        super::super::super::krate::net::types::Header {
+                                            name: _rt::string_lift(bytes8),
+                                            value: _rt::string_lift(bytes11),
+                                        }
+                                    };
+                                    result12.push(e12);
+                                }
+                                _rt::cabi_dealloc(
+                                    base12,
+                                    len12 * (4 * ::core::mem::size_of::<*const u8>()),
+                                    ::core::mem::size_of::<*const u8>(),
+                                );
+                                let l13 = *ptr0
+                                    .add(4 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l14 = *ptr0
+                                    .add(5 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let len15 = l14;
+
+                                super::super::super::krate::net::types::Response {
+                                    status: l3 as u16,
+                                    headers: result12,
+                                    body: _rt::Vec::from_raw_parts(l13.cast(), len15, len15),
+                                }
+                            };
+                            V33::Ready(e33)
+                        }
+                        2 => {
+                            let e33 = {
+                                let l16 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                use super::super::super::krate::net::types::NetError as V32;
+                                let v32 = match l16 {
+                                    0 => V32::InvalidUrl,
+                                    1 => {
+                                        let e32 = {
+                                            let l17 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l18 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len19 = l18;
+                                            let bytes19 =
+                                                _rt::Vec::from_raw_parts(l17.cast(), len19, len19);
+
+                                            _rt::string_lift(bytes19)
+                                        };
+                                        V32::DnsFailure(e32)
+                                    }
+                                    2 => {
+                                        let e32 = {
+                                            let l20 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l21 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len22 = l21;
+                                            let bytes22 =
+                                                _rt::Vec::from_raw_parts(l20.cast(), len22, len22);
+
+                                            _rt::string_lift(bytes22)
+                                        };
+                                        V32::ConnectFailure(e32)
+                                    }
+                                    3 => {
+                                        let e32 = {
+                                            let l23 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l24 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len25 = l24;
+                                            let bytes25 =
+                                                _rt::Vec::from_raw_parts(l23.cast(), len25, len25);
+
+                                            _rt::string_lift(bytes25)
+                                        };
+                                        V32::TlsFailure(e32)
+                                    }
+                                    4 => V32::Timeout,
+                                    5 => V32::BodyTooLarge,
+                                    6 => V32::PermissionDenied,
+                                    7 => {
+                                        let e32 = {
+                                            let l26 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l27 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len28 = l27;
+                                            let bytes28 =
+                                                _rt::Vec::from_raw_parts(l26.cast(), len28, len28);
+
+                                            _rt::string_lift(bytes28)
+                                        };
+                                        V32::Protocol(e32)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 8, "invalid enum discriminant");
+                                        let e32 = {
+                                            let l29 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l30 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len31 = l30;
+                                            let bytes31 =
+                                                _rt::Vec::from_raw_parts(l29.cast(), len31, len31);
+
+                                            _rt::string_lift(bytes31)
+                                        };
+                                        V32::Other(e32)
+                                    }
+                                };
+
+                                v32
+                            };
+                            V33::Failed(e33)
+                        }
+                        n => {
+                            debug_assert_eq!(n, 3, "invalid enum discriminant");
+                            V33::UnknownHandle
+                        }
+                    };
+                    let result34 = v33;
+                    result34
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Abandon a request. The handle is retired whether or not the work had
+            /// finished, and any response already in flight is dropped.
+            ///
+            /// This is what a cancel button calls. It is safe on a handle that has
+            /// already been retired.
+            pub fn cancel(handle: u64) -> () {
+                unsafe {
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:net/http-client@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "cancel"]
+                        fn wit_import0(_: i64);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import0(_: i64) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import0(_rt::as_i64(&handle)) };
+                }
+            }
+        }
+
+        /// Live two-way connections: WebSocket, ws:// and wss://.
+        ///
+        /// The permission story is the same one HTTP has: opening a connection is a
+        /// `net.connect` to that host and port, checked at `open` on the calling
+        /// thread, before anything dials. There is no separate capability to declare
+        /// -- an app granted `net.connect:example.com:443` may fetch from it and may
+        /// hold a socket to it, which is the same promise to the person either way.
+        ///
+        /// Everything here returns immediately. The connection lives on a host
+        /// thread; the guest polls for events from its own loop exactly as it polls
+        /// `http-client` fetches, so a stalled server can never freeze a frame.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod ws {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() =
+                super::super::super::__link_custom_section_describing_imports;
+
+            use super::super::super::_rt;
+            pub type NetError = super::super::super::krate::net::types::NetError;
+            /// One message, either direction.
+            #[derive(Clone)]
+            pub enum WsMessage {
+                /// UTF-8 text.
+                Text(_rt::String),
+                /// Raw bytes.
+                Binary(_rt::Vec<u8>),
+            }
+            impl ::core::fmt::Debug for WsMessage {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    match self {
+                        WsMessage::Text(e) => f.debug_tuple("WsMessage::Text").field(e).finish(),
+                        WsMessage::Binary(e) => {
+                            f.debug_tuple("WsMessage::Binary").field(e).finish()
+                        }
+                    }
+                }
+            }
+            /// What `poll` found.
+            #[derive(Clone)]
+            pub enum WsEvent {
+                /// Nothing new. The normal answer; keep drawing and ask later.
+                Pending,
+                /// The handshake finished; the connection is live. Reported once.
+                Opened,
+                /// The server sent a message.
+                Message(WsMessage),
+                /// The connection closed cleanly. Terminal; the handle is retired.
+                Closed,
+                /// The connection failed, with the reason. Terminal; the handle is
+                /// retired.
+                Failed(_rt::String),
+                /// Never opened, or already closed, cancelled, or retired.
+                UnknownHandle,
+            }
+            impl ::core::fmt::Debug for WsEvent {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    match self {
+                        WsEvent::Pending => f.debug_tuple("WsEvent::Pending").finish(),
+                        WsEvent::Opened => f.debug_tuple("WsEvent::Opened").finish(),
+                        WsEvent::Message(e) => f.debug_tuple("WsEvent::Message").field(e).finish(),
+                        WsEvent::Closed => f.debug_tuple("WsEvent::Closed").finish(),
+                        WsEvent::Failed(e) => f.debug_tuple("WsEvent::Failed").field(e).finish(),
+                        WsEvent::UnknownHandle => f.debug_tuple("WsEvent::UnknownHandle").finish(),
+                    }
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Open a connection to a `ws://` or `wss://` URL and return a handle.
+            ///
+            /// The capability check happens here: the URL's host and port must be
+            /// covered by a `net.connect` grant, exactly as for a fetch. `wss://`
+            /// verifies certificates, always; there is no way to ask it not to.
+            pub fn open(url: &str) -> Result<u64, NetError> {
+                unsafe {
+                    #[repr(align(8))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>;
+                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = url;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:net/ws@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "open"]
+                        fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result22 = match l3 {
+                        0 => {
+                            let e = {
+                                let l4 = *ptr1.add(8).cast::<i64>();
+
+                                l4 as u64
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l5 = i32::from(*ptr1.add(8).cast::<u8>());
+                                use super::super::super::krate::net::types::NetError as V21;
+                                let v21 = match l5 {
+                                    0 => V21::InvalidUrl,
+                                    1 => {
+                                        let e21 = {
+                                            let l6 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l7 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len8 = l7;
+                                            let bytes8 =
+                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
+
+                                            _rt::string_lift(bytes8)
+                                        };
+                                        V21::DnsFailure(e21)
+                                    }
+                                    2 => {
+                                        let e21 = {
+                                            let l9 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l10 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len11 = l10;
+                                            let bytes11 =
+                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
+
+                                            _rt::string_lift(bytes11)
+                                        };
+                                        V21::ConnectFailure(e21)
+                                    }
+                                    3 => {
+                                        let e21 = {
+                                            let l12 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l13 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len14 = l13;
+                                            let bytes14 =
+                                                _rt::Vec::from_raw_parts(l12.cast(), len14, len14);
+
+                                            _rt::string_lift(bytes14)
+                                        };
+                                        V21::TlsFailure(e21)
+                                    }
+                                    4 => V21::Timeout,
+                                    5 => V21::BodyTooLarge,
+                                    6 => V21::PermissionDenied,
+                                    7 => {
+                                        let e21 = {
+                                            let l15 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l16 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len17 = l16;
+                                            let bytes17 =
+                                                _rt::Vec::from_raw_parts(l15.cast(), len17, len17);
+
+                                            _rt::string_lift(bytes17)
+                                        };
+                                        V21::Protocol(e21)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 8, "invalid enum discriminant");
+                                        let e21 = {
+                                            let l18 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l19 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len20 = l19;
+                                            let bytes20 =
+                                                _rt::Vec::from_raw_parts(l18.cast(), len20, len20);
+
+                                            _rt::string_lift(bytes20)
+                                        };
+                                        V21::Other(e21)
+                                    }
+                                };
+
+                                v21
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result22
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Queue one message to send. Returns immediately; the host thread
+            /// delivers it in order. Sending on a connection that has not finished
+            /// opening queues the message for when it has.
+            pub fn send(handle: u64, message: &WsMessage) -> Result<(), NetError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let (result2_0, result2_1, result2_2) = match message {
+                        WsMessage::Text(e) => {
+                            let vec0 = e;
+                            let ptr0 = vec0.as_ptr().cast::<u8>();
+                            let len0 = vec0.len();
+
+                            (0i32, ptr0.cast_mut(), len0)
+                        }
+                        WsMessage::Binary(e) => {
+                            let vec1 = e;
+                            let ptr1 = vec1.as_ptr().cast::<u8>();
+                            let len1 = vec1.len();
+
+                            (1i32, ptr1.cast_mut(), len1)
+                        }
+                    };
+                    let ptr3 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:net/ws@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "send"]
+                        fn wit_import4(_: i64, _: i32, _: *mut u8, _: usize, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import4(
+                        _: i64,
+                        _: i32,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import4(_rt::as_i64(&handle), result2_0, result2_1, result2_2, ptr3)
+                    };
+                    let l5 = i32::from(*ptr3.add(0).cast::<u8>());
+                    let result23 = match l5 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l6 = i32::from(
+                                    *ptr3.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                use super::super::super::krate::net::types::NetError as V22;
+                                let v22 = match l6 {
+                                    0 => V22::InvalidUrl,
+                                    1 => {
+                                        let e22 = {
+                                            let l7 = *ptr3
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l8 = *ptr3
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len9 = l8;
+                                            let bytes9 =
+                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
+
+                                            _rt::string_lift(bytes9)
+                                        };
+                                        V22::DnsFailure(e22)
+                                    }
+                                    2 => {
+                                        let e22 = {
+                                            let l10 = *ptr3
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l11 = *ptr3
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len12 = l11;
+                                            let bytes12 =
+                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
+
+                                            _rt::string_lift(bytes12)
+                                        };
+                                        V22::ConnectFailure(e22)
+                                    }
+                                    3 => {
+                                        let e22 = {
+                                            let l13 = *ptr3
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l14 = *ptr3
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len15 = l14;
+                                            let bytes15 =
+                                                _rt::Vec::from_raw_parts(l13.cast(), len15, len15);
+
+                                            _rt::string_lift(bytes15)
+                                        };
+                                        V22::TlsFailure(e22)
+                                    }
+                                    4 => V22::Timeout,
+                                    5 => V22::BodyTooLarge,
+                                    6 => V22::PermissionDenied,
+                                    7 => {
+                                        let e22 = {
+                                            let l16 = *ptr3
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l17 = *ptr3
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len18 = l17;
+                                            let bytes18 =
+                                                _rt::Vec::from_raw_parts(l16.cast(), len18, len18);
+
+                                            _rt::string_lift(bytes18)
+                                        };
+                                        V22::Protocol(e22)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 8, "invalid enum discriminant");
+                                        let e22 = {
+                                            let l19 = *ptr3
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l20 = *ptr3
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len21 = l20;
+                                            let bytes21 =
+                                                _rt::Vec::from_raw_parts(l19.cast(), len21, len21);
+
+                                            _rt::string_lift(bytes21)
+                                        };
+                                        V22::Other(e22)
+                                    }
+                                };
+
+                                v22
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result23
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Ask for the next event. Returns immediately, always; `pending` is the
+            /// normal answer. Messages arrive in order. A terminal event retires the
+            /// handle.
+            pub fn poll(handle: u64) -> WsEvent {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:net/ws@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "poll"]
+                        fn wit_import1(_: i64, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(_rt::as_i64(&handle), ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let v14 = match l2 {
+                        0 => WsEvent::Pending,
+                        1 => WsEvent::Opened,
+                        2 => {
+                            let e14 = {
+                                let l3 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v10 = match l3 {
+                                    0 => {
+                                        let e10 = {
+                                            let l4 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l5 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len6 = l5;
+                                            let bytes6 =
+                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
+
+                                            _rt::string_lift(bytes6)
+                                        };
+                                        WsMessage::Text(e10)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 1, "invalid enum discriminant");
+                                        let e10 = {
+                                            let l7 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l8 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len9 = l8;
+
+                                            _rt::Vec::from_raw_parts(l7.cast(), len9, len9)
+                                        };
+                                        WsMessage::Binary(e10)
+                                    }
+                                };
+
+                                v10
+                            };
+                            WsEvent::Message(e14)
+                        }
+                        3 => WsEvent::Closed,
+                        4 => {
+                            let e14 = {
+                                let l11 = *ptr0
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l12 = *ptr0
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let len13 = l12;
+                                let bytes13 = _rt::Vec::from_raw_parts(l11.cast(), len13, len13);
+
+                                _rt::string_lift(bytes13)
+                            };
+                            WsEvent::Failed(e14)
+                        }
+                        n => {
+                            debug_assert_eq!(n, 5, "invalid enum discriminant");
+                            WsEvent::UnknownHandle
+                        }
+                    };
+                    let result15 = v14;
+                    result15
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Close the connection politely. Safe on a handle already retired; the
+            /// final `closed` event still arrives through `poll`.
+            pub fn close(handle: u64) -> () {
+                unsafe {
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:net/ws@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "close"]
+                        fn wit_import0(_: i64);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import0(_: i64) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import0(_rt::as_i64(&handle)) };
+                }
+            }
+        }
     }
+    pub mod random {
+        /// Random bytes from the operating system.
+        ///
+        /// `getrandom` is the third most-downloaded crate in all of Rust, and `rand`
+        /// and `uuid` sit directly on top of it. A great many ordinary programs need
+        /// this -- anything that shuffles a list, picks a sample, generates an id, or
+        /// assigns a colour -- and without it those programs cannot be ported at all.
+        /// It was the largest single gap between what real apps need and what Krate
+        /// offered.
+        ///
+        /// Every byte comes from the operating system's entropy pool. There is no
+        /// seeded generator and no way to ask for one: an app handed a predictable
+        /// stream while believing it is random is worse off than an app that cannot get
+        /// random numbers at all, because nothing in its output looks wrong.
+        ///
+        /// This is its own capability rather than something every app receives.
+        /// Entropy is cheap to grant and safe to refuse, but an app that wants it
+        /// should have to say so, and a person reading the permission list should see
+        /// it named.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod bytes {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() =
+                super::super::super::__link_custom_section_describing_imports;
 
-  }
-  pub mod time {
-    /// Host clock reads.
-    #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
-    pub mod clock {
-      #[used]
-      #[doc(hidden)]
-      static __FORCE_SECTION_REF: fn() =
-      super::super::super::__link_custom_section_describing_imports;
-      
-      #[allow(unused_unsafe, clippy::all)]
-      /// Milliseconds since Unix epoch. Wall-clock; can jump.
-      pub fn now_millis() -> u64{
-        unsafe {
+            use super::super::super::_rt;
+            /// Error returned by a request for random bytes.
+            #[derive(Clone)]
+            pub enum RandomError {
+                /// The app did not receive the `random.bytes` capability.
+                Denied,
+                /// More bytes were asked for than one call may return.
+                TooLarge,
+                /// `below` was given a bound of zero, which names an empty range.
+                ///
+                /// Its own variant rather than reusing `too-large`, which would say the
+                /// opposite of what happened, or returning zero, which is indistinguishable
+                /// from a legitimate draw.
+                EmptyRange,
+                /// The operating system had no entropy to give.
+                ///
+                /// Reported rather than worked around. A caller that receives this knows
+                /// it got nothing; a caller handed weak bytes it believes are strong has no
+                /// way to find out.
+                Unavailable(_rt::String),
+            }
+            impl ::core::fmt::Debug for RandomError {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    match self {
+                        RandomError::Denied => f.debug_tuple("RandomError::Denied").finish(),
+                        RandomError::TooLarge => f.debug_tuple("RandomError::TooLarge").finish(),
+                        RandomError::EmptyRange => {
+                            f.debug_tuple("RandomError::EmptyRange").finish()
+                        }
+                        RandomError::Unavailable(e) => {
+                            f.debug_tuple("RandomError::Unavailable").field(e).finish()
+                        }
+                    }
+                }
+            }
+            impl ::core::fmt::Display for RandomError {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    write!(f, "{:?}", self)
+                }
+            }
 
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:time/clock@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "now-millis"]
-            fn wit_import0() -> i64;
-          }
+            #[cfg(feature = "std")]
+            impl std::error::Error for RandomError {}
+            #[allow(unused_unsafe, clippy::all)]
+            /// Return exactly `count` random bytes.
+            ///
+            /// A request for zero bytes succeeds and returns nothing, so a caller
+            /// computing a length does not have to special-case the empty case.
+            pub fn get(count: u32) -> Result<_rt::Vec<u8>, RandomError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:random/bytes@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "get"]
+                        fn wit_import1(_: i32, _: *mut u8);
+                    }
 
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import0() -> i64{ unreachable!() }
-          let ret = unsafe { wit_import0() };
-          ret as u64
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: i32, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(_rt::as_i32(&count), ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result11 = match l2 {
+                        0 => {
+                            let e = {
+                                let l3 = *ptr0
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l4 = *ptr0
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let len5 = l4;
+
+                                _rt::Vec::from_raw_parts(l3.cast(), len5, len5)
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l6 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v10 = match l6 {
+                                    0 => RandomError::Denied,
+                                    1 => RandomError::TooLarge,
+                                    2 => RandomError::EmptyRange,
+                                    n => {
+                                        debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                        let e10 = {
+                                            let l7 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l8 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len9 = l8;
+                                            let bytes9 =
+                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
+
+                                            _rt::string_lift(bytes9)
+                                        };
+                                        RandomError::Unavailable(e10)
+                                    }
+                                };
+
+                                v10
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result11
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// A uniformly distributed 64-bit value.
+            ///
+            /// Offered alongside `get` because drawing a number is the common case, and
+            /// assembling one from bytes by hand is somewhere an app can get the byte
+            /// order wrong without ever noticing.
+            pub fn next_u64() -> Result<u64, RandomError> {
+                unsafe {
+                    #[repr(align(8))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>;
+                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:random/bytes@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "next-u64"]
+                        fn wit_import1(_: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result9 = match l2 {
+                        0 => {
+                            let e = {
+                                let l3 = *ptr0.add(8).cast::<i64>();
+
+                                l3 as u64
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l4 = i32::from(*ptr0.add(8).cast::<u8>());
+                                let v8 = match l4 {
+                                    0 => RandomError::Denied,
+                                    1 => RandomError::TooLarge,
+                                    2 => RandomError::EmptyRange,
+                                    n => {
+                                        debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                        let e8 = {
+                                            let l5 = *ptr0
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr0
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+                                            let bytes7 =
+                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
+
+                                            _rt::string_lift(bytes7)
+                                        };
+                                        RandomError::Unavailable(e8)
+                                    }
+                                };
+
+                                v8
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result9
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// A uniform integer in `[0, bound)`, or an error when `bound` is zero.
+            ///
+            /// Provided because the obvious way to write this -- take a random number
+            /// modulo `bound` -- is subtly wrong whenever `bound` does not divide the
+            /// range evenly: the low values come up more often. A shuffled deck would
+            /// deal some cards more than others and the output would still look random.
+            /// The host draws again instead of taking a remainder.
+            pub fn below(bound: u64) -> Result<u64, RandomError> {
+                unsafe {
+                    #[repr(align(8))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>;
+                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:random/bytes@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "below"]
+                        fn wit_import1(_: i64, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(_rt::as_i64(&bound), ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result9 = match l2 {
+                        0 => {
+                            let e = {
+                                let l3 = *ptr0.add(8).cast::<i64>();
+
+                                l3 as u64
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l4 = i32::from(*ptr0.add(8).cast::<u8>());
+                                let v8 = match l4 {
+                                    0 => RandomError::Denied,
+                                    1 => RandomError::TooLarge,
+                                    2 => RandomError::EmptyRange,
+                                    n => {
+                                        debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                        let e8 = {
+                                            let l5 = *ptr0
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr0
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+                                            let bytes7 =
+                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
+
+                                            _rt::string_lift(bytes7)
+                                        };
+                                        RandomError::Unavailable(e8)
+                                    }
+                                };
+
+                                v8
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result9
+                }
+            }
         }
-      }
-      #[allow(unused_unsafe, clippy::all)]
-      /// Monotonic nanoseconds since an arbitrary origin.
-      /// Guaranteed non-decreasing; suitable for measuring intervals.
-      pub fn monotonic_nanos() -> u64{
-        unsafe {
-
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:time/clock@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "monotonic-nanos"]
-            fn wit_import0() -> i64;
-          }
-
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import0() -> i64{ unreachable!() }
-          let ret = unsafe { wit_import0() };
-          ret as u64
-        }
-      }
-
     }
+    pub mod resources {
+        /// Read-only files carried inside the `.krate` application itself.
+        ///
+        /// These are application resources, not files from the user's computer, so
+        /// reading them does not require a filesystem capability grant.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod assets {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() =
+                super::super::super::__link_custom_section_describing_imports;
 
-    /// Blocking sleep support for CLI components.
-    #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
-    pub mod sleep {
-      #[used]
-      #[doc(hidden)]
-      static __FORCE_SECTION_REF: fn() =
-      super::super::super::__link_custom_section_describing_imports;
-      
-      use super::super::super::_rt;
-      #[allow(unused_unsafe, clippy::all)]
-      /// Block the calling task for at least `millis` milliseconds.
-      pub fn sleep_millis(millis: u32,) -> (){
-        unsafe {
+            use super::super::super::_rt;
+            /// Error returned while resolving an application-bundled resource.
+            #[derive(Clone)]
+            pub enum ResourceError {
+                /// No bundled asset exists at the requested path.
+                NotFound,
+                /// The path was absolute, escaped the asset root, or used unsupported syntax.
+                InvalidPath,
+                /// The asset is larger than the runtime's bounded read limit.
+                TooLarge,
+                /// The host could not read the asset.
+                Io(_rt::String),
+            }
+            impl ::core::fmt::Debug for ResourceError {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    match self {
+                        ResourceError::NotFound => {
+                            f.debug_tuple("ResourceError::NotFound").finish()
+                        }
+                        ResourceError::InvalidPath => {
+                            f.debug_tuple("ResourceError::InvalidPath").finish()
+                        }
+                        ResourceError::TooLarge => {
+                            f.debug_tuple("ResourceError::TooLarge").finish()
+                        }
+                        ResourceError::Io(e) => {
+                            f.debug_tuple("ResourceError::Io").field(e).finish()
+                        }
+                    }
+                }
+            }
+            impl ::core::fmt::Display for ResourceError {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    write!(f, "{:?}", self)
+                }
+            }
 
-          #[cfg(target_arch = "wasm32")]
-          #[link(wasm_import_module = "krate:time/sleep@0.1.0")]
-          unsafe extern "C" {
-            #[link_name = "sleep-millis"]
-            fn wit_import0(_: i32, );
-          }
+            #[cfg(feature = "std")]
+            impl std::error::Error for ResourceError {}
+            #[allow(unused_unsafe, clippy::all)]
+            /// Read one asset by its path relative to the bundle's `assets/` directory.
+            pub fn read(path: &str) -> Result<_rt::Vec<u8>, ResourceError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = path;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:resources/assets@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "read"]
+                        fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
+                    }
 
-          #[cfg(not(target_arch = "wasm32"))]
-          unsafe extern "C" fn wit_import0(_: i32, ){ unreachable!() }
-          unsafe { wit_import0(_rt::as_i32(&millis)) };
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result12 = match l3 {
+                        0 => {
+                            let e = {
+                                let l4 = *ptr1
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l5 = *ptr1
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let len6 = l5;
+
+                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6)
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l7 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v11 = match l7 {
+                                    0 => ResourceError::NotFound,
+                                    1 => ResourceError::InvalidPath,
+                                    2 => ResourceError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                        let e11 = {
+                                            let l8 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l9 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len10 = l9;
+                                            let bytes10 =
+                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
+
+                                            _rt::string_lift(bytes10)
+                                        };
+                                        ResourceError::Io(e11)
+                                    }
+                                };
+
+                                v11
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result12
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// List direct children below a relative directory.
+            pub fn list(path: &str) -> Result<_rt::Vec<_rt::String>, ResourceError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = path;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:resources/assets@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "list"]
+                        fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result15 = match l3 {
+                        0 => {
+                            let e = {
+                                let l4 = *ptr1
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l5 = *ptr1
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let base9 = l4;
+                                let len9 = l5;
+                                let mut result9 = _rt::Vec::with_capacity(len9);
+                                for i in 0..len9 {
+                                    let base =
+                                        base9.add(i * (2 * ::core::mem::size_of::<*const u8>()));
+                                    let e9 = {
+                                        let l6 = *base.add(0).cast::<*mut u8>();
+                                        let l7 = *base
+                                            .add(::core::mem::size_of::<*const u8>())
+                                            .cast::<usize>();
+                                        let len8 = l7;
+                                        let bytes8 =
+                                            _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
+
+                                        _rt::string_lift(bytes8)
+                                    };
+                                    result9.push(e9);
+                                }
+                                _rt::cabi_dealloc(
+                                    base9,
+                                    len9 * (2 * ::core::mem::size_of::<*const u8>()),
+                                    ::core::mem::size_of::<*const u8>(),
+                                );
+
+                                result9
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l10 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v14 = match l10 {
+                                    0 => ResourceError::NotFound,
+                                    1 => ResourceError::InvalidPath,
+                                    2 => ResourceError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                        let e14 = {
+                                            let l11 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l12 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len13 = l12;
+                                            let bytes13 =
+                                                _rt::Vec::from_raw_parts(l11.cast(), len13, len13);
+
+                                            _rt::string_lift(bytes13)
+                                        };
+                                        ResourceError::Io(e14)
+                                    }
+                                };
+
+                                v14
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result15
+                }
+            }
         }
-      }
-
     }
+    pub mod store {
+        /// Durable key-value storage scoped to one application.
+        ///
+        /// Every app that remembers anything -- a window size, a signed-in name, a
+        /// list of items, the last folder you opened -- needs this, and today the only
+        /// way to have it is `fs.read` and `fs.write` plus hand-written parsing. That
+        /// costs an app real code to get right, and it makes the permission prompt say
+        /// "read files in checklist" when the honest answer is "remember your settings".
+        ///
+        /// The store is the app's own. It is not a path on the user's computer: the app
+        /// never learns where the data lives and cannot name a location outside it, so
+        /// granting storage cannot become a way to read the user's documents. That is
+        /// why this is a separate capability from the filesystem rather than a
+        /// convenience built on top of one.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod kv {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() =
+                super::super::super::__link_custom_section_describing_imports;
 
-  }
+            use super::super::super::_rt;
+            /// Error returned by a store operation.
+            #[derive(Clone)]
+            pub enum StoreError {
+                /// The app did not receive the `store.kv` capability.
+                Denied,
+                /// The key was empty, too long, or used unsupported syntax.
+                InvalidKey,
+                /// The value is larger than the runtime's bounded write limit.
+                TooLarge,
+                /// The store could not be read or written.
+                Io(_rt::String),
+            }
+            impl ::core::fmt::Debug for StoreError {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    match self {
+                        StoreError::Denied => f.debug_tuple("StoreError::Denied").finish(),
+                        StoreError::InvalidKey => f.debug_tuple("StoreError::InvalidKey").finish(),
+                        StoreError::TooLarge => f.debug_tuple("StoreError::TooLarge").finish(),
+                        StoreError::Io(e) => f.debug_tuple("StoreError::Io").field(e).finish(),
+                    }
+                }
+            }
+            impl ::core::fmt::Display for StoreError {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    write!(f, "{:?}", self)
+                }
+            }
+
+            #[cfg(feature = "std")]
+            impl std::error::Error for StoreError {}
+            #[allow(unused_unsafe, clippy::all)]
+            /// Read one value. A key that was never set reads as `none` rather than an
+            /// error, because "nothing saved yet" is the normal first run.
+            pub fn get(key: &str) -> Result<Option<_rt::Vec<u8>>, StoreError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = key;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/kv@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "get"]
+                        fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result13 = match l3 {
+                        0 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+
+                                match l4 {
+                                    0 => None,
+                                    1 => {
+                                        let e = {
+                                            let l5 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+
+                                            _rt::Vec::from_raw_parts(l5.cast(), len7, len7)
+                                        };
+                                        Some(e)
+                                    }
+                                    _ => _rt::invalid_enum_discriminant(),
+                                }
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l8 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v12 = match l8 {
+                                    0 => StoreError::Denied,
+                                    1 => StoreError::InvalidKey,
+                                    2 => StoreError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                        let e12 = {
+                                            let l9 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l10 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len11 = l10;
+                                            let bytes11 =
+                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
+
+                                            _rt::string_lift(bytes11)
+                                        };
+                                        StoreError::Io(e12)
+                                    }
+                                };
+
+                                v12
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result13
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Write one value, replacing whatever was there.
+            pub fn set(key: &str, value: &[u8]) -> Result<(), StoreError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = key;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let vec1 = value;
+                    let ptr1 = vec1.as_ptr().cast::<u8>();
+                    let len1 = vec1.len();
+                    let ptr2 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/kv@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "set"]
+                        fn wit_import3(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import3(
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import3(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1, ptr2) };
+                    let l4 = i32::from(*ptr2.add(0).cast::<u8>());
+                    let result10 = match l4 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l5 = i32::from(
+                                    *ptr2.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v9 = match l5 {
+                                    0 => StoreError::Denied,
+                                    1 => StoreError::InvalidKey,
+                                    2 => StoreError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                        let e9 = {
+                                            let l6 = *ptr2
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l7 = *ptr2
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len8 = l7;
+                                            let bytes8 =
+                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
+
+                                            _rt::string_lift(bytes8)
+                                        };
+                                        StoreError::Io(e9)
+                                    }
+                                };
+
+                                v9
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result10
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Remove one key. Removing a key that is not present succeeds: the caller
+            /// wanted it gone, and it is gone.
+            pub fn delete(key: &str) -> Result<(), StoreError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = key;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/kv@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "delete"]
+                        fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result9 = match l3 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v8 = match l4 {
+                                    0 => StoreError::Denied,
+                                    1 => StoreError::InvalidKey,
+                                    2 => StoreError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                        let e8 = {
+                                            let l5 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+                                            let bytes7 =
+                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
+
+                                            _rt::string_lift(bytes7)
+                                        };
+                                        StoreError::Io(e8)
+                                    }
+                                };
+
+                                v8
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result9
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Every key currently set, in sorted order so a listing is stable across
+            /// runs and across operating systems.
+            pub fn keys() -> Result<_rt::Vec<_rt::String>, StoreError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/kv@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "keys"]
+                        fn wit_import1(_: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result14 = match l2 {
+                        0 => {
+                            let e = {
+                                let l3 = *ptr0
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l4 = *ptr0
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let base8 = l3;
+                                let len8 = l4;
+                                let mut result8 = _rt::Vec::with_capacity(len8);
+                                for i in 0..len8 {
+                                    let base =
+                                        base8.add(i * (2 * ::core::mem::size_of::<*const u8>()));
+                                    let e8 = {
+                                        let l5 = *base.add(0).cast::<*mut u8>();
+                                        let l6 = *base
+                                            .add(::core::mem::size_of::<*const u8>())
+                                            .cast::<usize>();
+                                        let len7 = l6;
+                                        let bytes7 =
+                                            _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
+
+                                        _rt::string_lift(bytes7)
+                                    };
+                                    result8.push(e8);
+                                }
+                                _rt::cabi_dealloc(
+                                    base8,
+                                    len8 * (2 * ::core::mem::size_of::<*const u8>()),
+                                    ::core::mem::size_of::<*const u8>(),
+                                );
+
+                                result8
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l9 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v13 = match l9 {
+                                    0 => StoreError::Denied,
+                                    1 => StoreError::InvalidKey,
+                                    2 => StoreError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                        let e13 = {
+                                            let l10 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l11 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len12 = l11;
+                                            let bytes12 =
+                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
+
+                                            _rt::string_lift(bytes12)
+                                        };
+                                        StoreError::Io(e13)
+                                    }
+                                };
+
+                                v13
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result14
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Remove everything. Separate from `delete` because "forget all of it" is a
+            /// deliberate action an app should have to name.
+            pub fn clear() -> Result<(), StoreError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/kv@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "clear"]
+                        fn wit_import1(_: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result8 = match l2 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l3 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v7 = match l3 {
+                                    0 => StoreError::Denied,
+                                    1 => StoreError::InvalidKey,
+                                    2 => StoreError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                        let e7 = {
+                                            let l4 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l5 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len6 = l5;
+                                            let bytes6 =
+                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
+
+                                            _rt::string_lift(bytes6)
+                                        };
+                                        StoreError::Io(e7)
+                                    }
+                                };
+
+                                v7
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result8
+                }
+            }
+        }
+
+        /// A real database, scoped to one application.
+        ///
+        /// The key-value store above holds settings and small collections. An app with
+        /// a growing list, a search box, or anything it needs to query rather than read
+        /// whole needs a database, and rewriting one on top of files is where a port
+        /// stops being worth doing.
+        ///
+        /// The app gets SQL, not a file. It never learns a path, never opens a
+        /// connection to somewhere else, and cannot attach another database, so this
+        /// stays a capability the runtime fully mediates rather than a hole in the
+        /// filesystem boundary.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod sql {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() =
+                super::super::super::__link_custom_section_describing_imports;
+
+            use super::super::super::_rt;
+            /// One value in a row or a query parameter.
+            ///
+            /// A closed set rather than an open one: every value crossing the boundary
+            /// has a known shape, so the host never has to interpret app-supplied text as
+            /// a type declaration.
+            #[derive(Clone)]
+            pub enum Value {
+                /// SQL NULL.
+                Null,
+                /// A 64-bit signed integer.
+                Integer(i64),
+                /// A double-precision float.
+                Real(f64),
+                /// Text.
+                Text(_rt::String),
+                /// Arbitrary bytes.
+                Blob(_rt::Vec<u8>),
+            }
+            impl ::core::fmt::Debug for Value {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    match self {
+                        Value::Null => f.debug_tuple("Value::Null").finish(),
+                        Value::Integer(e) => f.debug_tuple("Value::Integer").field(e).finish(),
+                        Value::Real(e) => f.debug_tuple("Value::Real").field(e).finish(),
+                        Value::Text(e) => f.debug_tuple("Value::Text").field(e).finish(),
+                        Value::Blob(e) => f.debug_tuple("Value::Blob").field(e).finish(),
+                    }
+                }
+            }
+            /// Error returned by a database operation.
+            #[derive(Clone)]
+            pub enum SqlError {
+                /// The app did not receive the `store.sql` capability.
+                Denied,
+                /// The statement could not be parsed or refers to something missing.
+                InvalidStatement(_rt::String),
+                /// The statement is one this interface does not permit, such as attaching
+                /// another database or reading a file from the host.
+                Forbidden(_rt::String),
+                /// The result, or the database as a whole, exceeded its bound.
+                TooLarge,
+                /// The database could not be read or written.
+                Io(_rt::String),
+            }
+            impl ::core::fmt::Debug for SqlError {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    match self {
+                        SqlError::Denied => f.debug_tuple("SqlError::Denied").finish(),
+                        SqlError::InvalidStatement(e) => f
+                            .debug_tuple("SqlError::InvalidStatement")
+                            .field(e)
+                            .finish(),
+                        SqlError::Forbidden(e) => {
+                            f.debug_tuple("SqlError::Forbidden").field(e).finish()
+                        }
+                        SqlError::TooLarge => f.debug_tuple("SqlError::TooLarge").finish(),
+                        SqlError::Io(e) => f.debug_tuple("SqlError::Io").field(e).finish(),
+                    }
+                }
+            }
+            impl ::core::fmt::Display for SqlError {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    write!(f, "{:?}", self)
+                }
+            }
+
+            #[cfg(feature = "std")]
+            impl std::error::Error for SqlError {}
+            /// One returned row, in the column order of the query.
+            #[derive(Clone)]
+            pub struct Row {
+                /// The row's values, in the column order of the query.
+                pub values: _rt::Vec<Value>,
+            }
+            impl ::core::fmt::Debug for Row {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    f.debug_struct("Row").field("values", &self.values).finish()
+                }
+            }
+            /// The result of a query.
+            #[derive(Clone)]
+            pub struct QueryResult {
+                /// Column names in the order the values appear, so a caller can address
+                /// results by name without a second round trip.
+                pub columns: _rt::Vec<_rt::String>,
+                /// The rows the query matched, in the order the database returned them.
+                pub rows: _rt::Vec<Row>,
+            }
+            impl ::core::fmt::Debug for QueryResult {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    f.debug_struct("QueryResult")
+                        .field("columns", &self.columns)
+                        .field("rows", &self.rows)
+                        .finish()
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Run a statement that returns rows.
+            ///
+            /// Parameters are bound, never substituted into the text, so an app cannot
+            /// build an injection out of its own user's input by accident.
+            pub fn query(statement: &str, params: &[Value]) -> Result<QueryResult, SqlError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 5 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            5 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = statement;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let vec3 = params;
+                    let len3 = vec3.len();
+                    let layout3 = _rt::alloc::Layout::from_size_align_unchecked(
+                        vec3.len() * (8 + 2 * ::core::mem::size_of::<*const u8>()),
+                        8,
+                    );
+                    let result3 = if layout3.size() != 0 {
+                        let ptr = _rt::alloc::alloc(layout3).cast::<u8>();
+                        if ptr.is_null() {
+                            _rt::alloc::handle_alloc_error(layout3);
+                        }
+                        ptr
+                    } else {
+                        ::core::ptr::null_mut()
+                    };
+                    for (i, e) in vec3.into_iter().enumerate() {
+                        let base = result3.add(i * (8 + 2 * ::core::mem::size_of::<*const u8>()));
+                        {
+                            match e {
+                                Value::Null => {
+                                    *base.add(0).cast::<u8>() = (0i32) as u8;
+                                }
+                                Value::Integer(e) => {
+                                    *base.add(0).cast::<u8>() = (1i32) as u8;
+                                    *base.add(8).cast::<i64>() = _rt::as_i64(e);
+                                }
+                                Value::Real(e) => {
+                                    *base.add(0).cast::<u8>() = (2i32) as u8;
+                                    *base.add(8).cast::<f64>() = _rt::as_f64(e);
+                                }
+                                Value::Text(e) => {
+                                    *base.add(0).cast::<u8>() = (3i32) as u8;
+                                    let vec1 = e;
+                                    let ptr1 = vec1.as_ptr().cast::<u8>();
+                                    let len1 = vec1.len();
+                                    *base
+                                        .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<usize>() = len1;
+                                    *base.add(8).cast::<*mut u8>() = ptr1.cast_mut();
+                                }
+                                Value::Blob(e) => {
+                                    *base.add(0).cast::<u8>() = (4i32) as u8;
+                                    let vec2 = e;
+                                    let ptr2 = vec2.as_ptr().cast::<u8>();
+                                    let len2 = vec2.len();
+                                    *base
+                                        .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<usize>() = len2;
+                                    *base.add(8).cast::<*mut u8>() = ptr2.cast_mut();
+                                }
+                            }
+                        }
+                    }
+                    let ptr4 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/sql@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "query"]
+                        fn wit_import5(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import5(
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import5(ptr0.cast_mut(), len0, result3, len3, ptr4) };
+                    let l6 = i32::from(*ptr4.add(0).cast::<u8>());
+                    let result40 = match l6 {
+                        0 => {
+                            let e = {
+                                let l7 = *ptr4
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l8 = *ptr4
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let base12 = l7;
+                                let len12 = l8;
+                                let mut result12 = _rt::Vec::with_capacity(len12);
+                                for i in 0..len12 {
+                                    let base =
+                                        base12.add(i * (2 * ::core::mem::size_of::<*const u8>()));
+                                    let e12 = {
+                                        let l9 = *base.add(0).cast::<*mut u8>();
+                                        let l10 = *base
+                                            .add(::core::mem::size_of::<*const u8>())
+                                            .cast::<usize>();
+                                        let len11 = l10;
+                                        let bytes11 =
+                                            _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
+
+                                        _rt::string_lift(bytes11)
+                                    };
+                                    result12.push(e12);
+                                }
+                                _rt::cabi_dealloc(
+                                    base12,
+                                    len12 * (2 * ::core::mem::size_of::<*const u8>()),
+                                    ::core::mem::size_of::<*const u8>(),
+                                );
+                                let l13 = *ptr4
+                                    .add(3 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l14 = *ptr4
+                                    .add(4 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let base28 = l13;
+                                let len28 = l14;
+                                let mut result28 = _rt::Vec::with_capacity(len28);
+                                for i in 0..len28 {
+                                    let base =
+                                        base28.add(i * (2 * ::core::mem::size_of::<*const u8>()));
+                                    let e28 = {
+                                        let l15 = *base.add(0).cast::<*mut u8>();
+                                        let l16 = *base
+                                            .add(::core::mem::size_of::<*const u8>())
+                                            .cast::<usize>();
+                                        let base27 = l15;
+                                        let len27 = l16;
+                                        let mut result27 = _rt::Vec::with_capacity(len27);
+                                        for i in 0..len27 {
+                                            let base = base27.add(
+                                                i * (8 + 2 * ::core::mem::size_of::<*const u8>()),
+                                            );
+                                            let e27 = {
+                                                let l17 = i32::from(*base.add(0).cast::<u8>());
+                                                let v26 = match l17 {
+                                                    0 => Value::Null,
+                                                    1 => {
+                                                        let e26 = {
+                                                            let l18 = *base.add(8).cast::<i64>();
+
+                                                            l18
+                                                        };
+                                                        Value::Integer(e26)
+                                                    }
+                                                    2 => {
+                                                        let e26 = {
+                                                            let l19 = *base.add(8).cast::<f64>();
+
+                                                            l19
+                                                        };
+                                                        Value::Real(e26)
+                                                    }
+                                                    3 => {
+                                                        let e26 = {
+                                                            let l20 =
+                                                                *base.add(8).cast::<*mut u8>();
+                                                            let l21 = *base
+                                                                .add(
+                                                                    8 + 1 * ::core::mem::size_of::<
+                                                                        *const u8,
+                                                                    >(
+                                                                    ),
+                                                                )
+                                                                .cast::<usize>();
+                                                            let len22 = l21;
+                                                            let bytes22 = _rt::Vec::from_raw_parts(
+                                                                l20.cast(),
+                                                                len22,
+                                                                len22,
+                                                            );
+
+                                                            _rt::string_lift(bytes22)
+                                                        };
+                                                        Value::Text(e26)
+                                                    }
+                                                    n => {
+                                                        debug_assert_eq!(
+                                                            n, 4,
+                                                            "invalid enum discriminant"
+                                                        );
+                                                        let e26 = {
+                                                            let l23 =
+                                                                *base.add(8).cast::<*mut u8>();
+                                                            let l24 = *base
+                                                                .add(
+                                                                    8 + 1 * ::core::mem::size_of::<
+                                                                        *const u8,
+                                                                    >(
+                                                                    ),
+                                                                )
+                                                                .cast::<usize>();
+                                                            let len25 = l24;
+
+                                                            _rt::Vec::from_raw_parts(
+                                                                l23.cast(),
+                                                                len25,
+                                                                len25,
+                                                            )
+                                                        };
+                                                        Value::Blob(e26)
+                                                    }
+                                                };
+
+                                                v26
+                                            };
+                                            result27.push(e27);
+                                        }
+                                        _rt::cabi_dealloc(
+                                            base27,
+                                            len27 * (8 + 2 * ::core::mem::size_of::<*const u8>()),
+                                            8,
+                                        );
+
+                                        Row { values: result27 }
+                                    };
+                                    result28.push(e28);
+                                }
+                                _rt::cabi_dealloc(
+                                    base28,
+                                    len28 * (2 * ::core::mem::size_of::<*const u8>()),
+                                    ::core::mem::size_of::<*const u8>(),
+                                );
+
+                                QueryResult {
+                                    columns: result12,
+                                    rows: result28,
+                                }
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l29 = i32::from(
+                                    *ptr4.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v39 = match l29 {
+                                    0 => SqlError::Denied,
+                                    1 => {
+                                        let e39 = {
+                                            let l30 = *ptr4
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l31 = *ptr4
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len32 = l31;
+                                            let bytes32 =
+                                                _rt::Vec::from_raw_parts(l30.cast(), len32, len32);
+
+                                            _rt::string_lift(bytes32)
+                                        };
+                                        SqlError::InvalidStatement(e39)
+                                    }
+                                    2 => {
+                                        let e39 = {
+                                            let l33 = *ptr4
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l34 = *ptr4
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len35 = l34;
+                                            let bytes35 =
+                                                _rt::Vec::from_raw_parts(l33.cast(), len35, len35);
+
+                                            _rt::string_lift(bytes35)
+                                        };
+                                        SqlError::Forbidden(e39)
+                                    }
+                                    3 => SqlError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 4, "invalid enum discriminant");
+                                        let e39 = {
+                                            let l36 = *ptr4
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l37 = *ptr4
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len38 = l37;
+                                            let bytes38 =
+                                                _rt::Vec::from_raw_parts(l36.cast(), len38, len38);
+
+                                            _rt::string_lift(bytes38)
+                                        };
+                                        SqlError::Io(e39)
+                                    }
+                                };
+
+                                v39
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    if layout3.size() != 0 {
+                        _rt::alloc::dealloc(result3.cast(), layout3);
+                    }
+                    result40
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Run a statement that changes data, returning the number of rows affected.
+            pub fn execute(statement: &str, params: &[Value]) -> Result<u64, SqlError> {
+                unsafe {
+                    #[repr(align(8))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>;
+                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = statement;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let vec3 = params;
+                    let len3 = vec3.len();
+                    let layout3 = _rt::alloc::Layout::from_size_align_unchecked(
+                        vec3.len() * (8 + 2 * ::core::mem::size_of::<*const u8>()),
+                        8,
+                    );
+                    let result3 = if layout3.size() != 0 {
+                        let ptr = _rt::alloc::alloc(layout3).cast::<u8>();
+                        if ptr.is_null() {
+                            _rt::alloc::handle_alloc_error(layout3);
+                        }
+                        ptr
+                    } else {
+                        ::core::ptr::null_mut()
+                    };
+                    for (i, e) in vec3.into_iter().enumerate() {
+                        let base = result3.add(i * (8 + 2 * ::core::mem::size_of::<*const u8>()));
+                        {
+                            match e {
+                                Value::Null => {
+                                    *base.add(0).cast::<u8>() = (0i32) as u8;
+                                }
+                                Value::Integer(e) => {
+                                    *base.add(0).cast::<u8>() = (1i32) as u8;
+                                    *base.add(8).cast::<i64>() = _rt::as_i64(e);
+                                }
+                                Value::Real(e) => {
+                                    *base.add(0).cast::<u8>() = (2i32) as u8;
+                                    *base.add(8).cast::<f64>() = _rt::as_f64(e);
+                                }
+                                Value::Text(e) => {
+                                    *base.add(0).cast::<u8>() = (3i32) as u8;
+                                    let vec1 = e;
+                                    let ptr1 = vec1.as_ptr().cast::<u8>();
+                                    let len1 = vec1.len();
+                                    *base
+                                        .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<usize>() = len1;
+                                    *base.add(8).cast::<*mut u8>() = ptr1.cast_mut();
+                                }
+                                Value::Blob(e) => {
+                                    *base.add(0).cast::<u8>() = (4i32) as u8;
+                                    let vec2 = e;
+                                    let ptr2 = vec2.as_ptr().cast::<u8>();
+                                    let len2 = vec2.len();
+                                    *base
+                                        .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<usize>() = len2;
+                                    *base.add(8).cast::<*mut u8>() = ptr2.cast_mut();
+                                }
+                            }
+                        }
+                    }
+                    let ptr4 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/sql@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "execute"]
+                        fn wit_import5(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import5(
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import5(ptr0.cast_mut(), len0, result3, len3, ptr4) };
+                    let l6 = i32::from(*ptr4.add(0).cast::<u8>());
+                    let result19 = match l6 {
+                        0 => {
+                            let e = {
+                                let l7 = *ptr4.add(8).cast::<i64>();
+
+                                l7 as u64
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l8 = i32::from(*ptr4.add(8).cast::<u8>());
+                                let v18 = match l8 {
+                                    0 => SqlError::Denied,
+                                    1 => {
+                                        let e18 = {
+                                            let l9 = *ptr4
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l10 = *ptr4
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len11 = l10;
+                                            let bytes11 =
+                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
+
+                                            _rt::string_lift(bytes11)
+                                        };
+                                        SqlError::InvalidStatement(e18)
+                                    }
+                                    2 => {
+                                        let e18 = {
+                                            let l12 = *ptr4
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l13 = *ptr4
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len14 = l13;
+                                            let bytes14 =
+                                                _rt::Vec::from_raw_parts(l12.cast(), len14, len14);
+
+                                            _rt::string_lift(bytes14)
+                                        };
+                                        SqlError::Forbidden(e18)
+                                    }
+                                    3 => SqlError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 4, "invalid enum discriminant");
+                                        let e18 = {
+                                            let l15 = *ptr4
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l16 = *ptr4
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len17 = l16;
+                                            let bytes17 =
+                                                _rt::Vec::from_raw_parts(l15.cast(), len17, len17);
+
+                                            _rt::string_lift(bytes17)
+                                        };
+                                        SqlError::Io(e18)
+                                    }
+                                };
+
+                                v18
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    if layout3.size() != 0 {
+                        _rt::alloc::dealloc(result3.cast(), layout3);
+                    }
+                    result19
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Run several statements as one unit, so a half-applied change cannot
+            /// survive a crash. Any failure rolls the whole batch back.
+            pub fn transaction(statements: &[_rt::String]) -> Result<(), SqlError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec1 = statements;
+                    let len1 = vec1.len();
+                    let layout1 = _rt::alloc::Layout::from_size_align_unchecked(
+                        vec1.len() * (2 * ::core::mem::size_of::<*const u8>()),
+                        ::core::mem::size_of::<*const u8>(),
+                    );
+                    let result1 = if layout1.size() != 0 {
+                        let ptr = _rt::alloc::alloc(layout1).cast::<u8>();
+                        if ptr.is_null() {
+                            _rt::alloc::handle_alloc_error(layout1);
+                        }
+                        ptr
+                    } else {
+                        ::core::ptr::null_mut()
+                    };
+                    for (i, e) in vec1.into_iter().enumerate() {
+                        let base = result1.add(i * (2 * ::core::mem::size_of::<*const u8>()));
+                        {
+                            let vec0 = e;
+                            let ptr0 = vec0.as_ptr().cast::<u8>();
+                            let len0 = vec0.len();
+                            *base
+                                .add(::core::mem::size_of::<*const u8>())
+                                .cast::<usize>() = len0;
+                            *base.add(0).cast::<*mut u8>() = ptr0.cast_mut();
+                        }
+                    }
+                    let ptr2 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/sql@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "transaction"]
+                        fn wit_import3(_: *mut u8, _: usize, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import3(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import3(result1, len1, ptr2) };
+                    let l4 = i32::from(*ptr2.add(0).cast::<u8>());
+                    let result16 = match l4 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l5 = i32::from(
+                                    *ptr2.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v15 = match l5 {
+                                    0 => SqlError::Denied,
+                                    1 => {
+                                        let e15 = {
+                                            let l6 = *ptr2
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l7 = *ptr2
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len8 = l7;
+                                            let bytes8 =
+                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
+
+                                            _rt::string_lift(bytes8)
+                                        };
+                                        SqlError::InvalidStatement(e15)
+                                    }
+                                    2 => {
+                                        let e15 = {
+                                            let l9 = *ptr2
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l10 = *ptr2
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len11 = l10;
+                                            let bytes11 =
+                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
+
+                                            _rt::string_lift(bytes11)
+                                        };
+                                        SqlError::Forbidden(e15)
+                                    }
+                                    3 => SqlError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 4, "invalid enum discriminant");
+                                        let e15 = {
+                                            let l12 = *ptr2
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l13 = *ptr2
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len14 = l13;
+                                            let bytes14 =
+                                                _rt::Vec::from_raw_parts(l12.cast(), len14, len14);
+
+                                            _rt::string_lift(bytes14)
+                                        };
+                                        SqlError::Io(e15)
+                                    }
+                                };
+
+                                v15
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    if layout1.size() != 0 {
+                        _rt::alloc::dealloc(result1.cast(), layout1);
+                    }
+                    result16
+                }
+            }
+        }
+
+        /// Secrets an app keeps for itself, such as a sign-in token.
+        ///
+        /// Without this an app that signs in has to write its token to a plain file
+        /// behind an `fs.write` grant, which puts the token beside the user's documents
+        /// in the permission prompt and in the clear on disk.
+        ///
+        /// Secrets are encrypted at rest with a key the runtime derives per machine and
+        /// per app, so a backup or a copied file does not carry usable secrets to
+        /// another computer, and one app cannot read another's. This is not the
+        /// operating system's keychain: Linux's requires a running daemon that servers
+        /// and minimal desktops do not have, and an app that works on one computer and
+        /// fails on another is the failure Krate exists to remove. It protects secrets
+        /// at rest, not from code already running as the same user.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod secret {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() =
+                super::super::super::__link_custom_section_describing_imports;
+
+            use super::super::super::_rt;
+            /// Error returned by a secret operation.
+            #[derive(Clone)]
+            pub enum SecretError {
+                /// The app did not receive the `store.secret` capability.
+                Denied,
+                /// The name was empty, too long, or used unsupported syntax.
+                InvalidName,
+                /// The secret is larger than the runtime's bounded limit.
+                TooLarge,
+                /// The secret store could not be read or written.
+                Io(_rt::String),
+            }
+            impl ::core::fmt::Debug for SecretError {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    match self {
+                        SecretError::Denied => f.debug_tuple("SecretError::Denied").finish(),
+                        SecretError::InvalidName => {
+                            f.debug_tuple("SecretError::InvalidName").finish()
+                        }
+                        SecretError::TooLarge => f.debug_tuple("SecretError::TooLarge").finish(),
+                        SecretError::Io(e) => f.debug_tuple("SecretError::Io").field(e).finish(),
+                    }
+                }
+            }
+            impl ::core::fmt::Display for SecretError {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    write!(f, "{:?}", self)
+                }
+            }
+
+            #[cfg(feature = "std")]
+            impl std::error::Error for SecretError {}
+            #[allow(unused_unsafe, clippy::all)]
+            /// Read one secret. A name that was never set reads as `none`.
+            pub fn get(name: &str) -> Result<Option<_rt::Vec<u8>>, SecretError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = name;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/secret@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "get"]
+                        fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result13 = match l3 {
+                        0 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+
+                                match l4 {
+                                    0 => None,
+                                    1 => {
+                                        let e = {
+                                            let l5 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+
+                                            _rt::Vec::from_raw_parts(l5.cast(), len7, len7)
+                                        };
+                                        Some(e)
+                                    }
+                                    _ => _rt::invalid_enum_discriminant(),
+                                }
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l8 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v12 = match l8 {
+                                    0 => SecretError::Denied,
+                                    1 => SecretError::InvalidName,
+                                    2 => SecretError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                        let e12 = {
+                                            let l9 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l10 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len11 = l10;
+                                            let bytes11 =
+                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
+
+                                            _rt::string_lift(bytes11)
+                                        };
+                                        SecretError::Io(e12)
+                                    }
+                                };
+
+                                v12
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result13
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Store one secret, replacing whatever was there.
+            pub fn set(name: &str, secret: &[u8]) -> Result<(), SecretError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = name;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let vec1 = secret;
+                    let ptr1 = vec1.as_ptr().cast::<u8>();
+                    let len1 = vec1.len();
+                    let ptr2 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/secret@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "set"]
+                        fn wit_import3(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import3(
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import3(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1, ptr2) };
+                    let l4 = i32::from(*ptr2.add(0).cast::<u8>());
+                    let result10 = match l4 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l5 = i32::from(
+                                    *ptr2.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v9 = match l5 {
+                                    0 => SecretError::Denied,
+                                    1 => SecretError::InvalidName,
+                                    2 => SecretError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                        let e9 = {
+                                            let l6 = *ptr2
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l7 = *ptr2
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len8 = l7;
+                                            let bytes8 =
+                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
+
+                                            _rt::string_lift(bytes8)
+                                        };
+                                        SecretError::Io(e9)
+                                    }
+                                };
+
+                                v9
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result10
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Remove one secret. Removing one that is absent succeeds.
+            pub fn delete(name: &str) -> Result<(), SecretError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = name;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/secret@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "delete"]
+                        fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result9 = match l3 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v8 = match l4 {
+                                    0 => SecretError::Denied,
+                                    1 => SecretError::InvalidName,
+                                    2 => SecretError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                        let e8 = {
+                                            let l5 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+                                            let bytes7 =
+                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
+
+                                            _rt::string_lift(bytes7)
+                                        };
+                                        SecretError::Io(e8)
+                                    }
+                                };
+
+                                v8
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result9
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// The names of stored secrets, never their values, so a listing cannot
+            /// become a way to read everything at once.
+            pub fn names() -> Result<_rt::Vec<_rt::String>, SecretError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/secret@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "names"]
+                        fn wit_import1(_: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result14 = match l2 {
+                        0 => {
+                            let e = {
+                                let l3 = *ptr0
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l4 = *ptr0
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let base8 = l3;
+                                let len8 = l4;
+                                let mut result8 = _rt::Vec::with_capacity(len8);
+                                for i in 0..len8 {
+                                    let base =
+                                        base8.add(i * (2 * ::core::mem::size_of::<*const u8>()));
+                                    let e8 = {
+                                        let l5 = *base.add(0).cast::<*mut u8>();
+                                        let l6 = *base
+                                            .add(::core::mem::size_of::<*const u8>())
+                                            .cast::<usize>();
+                                        let len7 = l6;
+                                        let bytes7 =
+                                            _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
+
+                                        _rt::string_lift(bytes7)
+                                    };
+                                    result8.push(e8);
+                                }
+                                _rt::cabi_dealloc(
+                                    base8,
+                                    len8 * (2 * ::core::mem::size_of::<*const u8>()),
+                                    ::core::mem::size_of::<*const u8>(),
+                                );
+
+                                result8
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l9 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v13 = match l9 {
+                                    0 => SecretError::Denied,
+                                    1 => SecretError::InvalidName,
+                                    2 => SecretError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                        let e13 = {
+                                            let l10 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l11 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len12 = l11;
+                                            let bytes12 =
+                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
+
+                                            _rt::string_lift(bytes12)
+                                        };
+                                        SecretError::Io(e13)
+                                    }
+                                };
+
+                                v13
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result14
+                }
+            }
+        }
+
+        /// A key-value bucket shared between the machines that hold its invite code.
+        ///
+        /// This is how an app becomes a household app -- a shopping list two people
+        /// see, a meal plan a family edits -- without the app author running a
+        /// backend and without anyone creating an account. The person who creates a
+        /// share gets a ten-character code; anyone they give it to sees the same
+        /// data. Possession of the code IS the membership, exactly like a shared
+        /// album link, and the consent dialog says so in those words.
+        ///
+        /// The store is local-first: reads and writes always work against the copy
+        /// on this machine, `sync` exchanges changes with krate.tech when the
+        /// network allows, and the newest write of a key wins. Bounded like a list,
+        /// not a database: hundreds of keys, kilobytes per value.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod shared {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() =
+                super::super::super::__link_custom_section_describing_imports;
+
+            use super::super::super::_rt;
+            /// Error returned by a shared-store operation.
+            #[derive(Clone)]
+            pub enum SharedError {
+                /// The app did not receive the `store.shared` capability.
+                Denied,
+                /// No share has been created or joined yet.
+                NotJoined,
+                /// The invite code was not a share that exists.
+                NoSuchShare,
+                /// The key was empty, too long, or used unsupported syntax.
+                InvalidName,
+                /// The value is larger than the runtime's bounded limit.
+                TooLarge,
+                /// The store could not be read or written.
+                Io(_rt::String),
+            }
+            impl ::core::fmt::Debug for SharedError {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    match self {
+                        SharedError::Denied => f.debug_tuple("SharedError::Denied").finish(),
+                        SharedError::NotJoined => f.debug_tuple("SharedError::NotJoined").finish(),
+                        SharedError::NoSuchShare => {
+                            f.debug_tuple("SharedError::NoSuchShare").finish()
+                        }
+                        SharedError::InvalidName => {
+                            f.debug_tuple("SharedError::InvalidName").finish()
+                        }
+                        SharedError::TooLarge => f.debug_tuple("SharedError::TooLarge").finish(),
+                        SharedError::Io(e) => f.debug_tuple("SharedError::Io").field(e).finish(),
+                    }
+                }
+            }
+            impl ::core::fmt::Display for SharedError {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    write!(f, "{:?}", self)
+                }
+            }
+
+            #[cfg(feature = "std")]
+            impl std::error::Error for SharedError {}
+            #[allow(unused_unsafe, clippy::all)]
+            /// The invite code of this app's share, or `none` before create or join.
+            pub fn code() -> Result<Option<_rt::String>, SharedError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/shared@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "code"]
+                        fn wit_import1(_: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result12 = match l2 {
+                        0 => {
+                            let e = {
+                                let l3 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+
+                                match l3 {
+                                    0 => None,
+                                    1 => {
+                                        let e = {
+                                            let l4 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l5 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len6 = l5;
+                                            let bytes6 =
+                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
+
+                                            _rt::string_lift(bytes6)
+                                        };
+                                        Some(e)
+                                    }
+                                    _ => _rt::invalid_enum_discriminant(),
+                                }
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l7 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v11 = match l7 {
+                                    0 => SharedError::Denied,
+                                    1 => SharedError::NotJoined,
+                                    2 => SharedError::NoSuchShare,
+                                    3 => SharedError::InvalidName,
+                                    4 => SharedError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 5, "invalid enum discriminant");
+                                        let e11 = {
+                                            let l8 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l9 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len10 = l9;
+                                            let bytes10 =
+                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
+
+                                            _rt::string_lift(bytes10)
+                                        };
+                                        SharedError::Io(e11)
+                                    }
+                                };
+
+                                v11
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result12
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Create a fresh share and return its invite code. Requires the network;
+            /// the code is minted by krate.tech so it is unique.
+            pub fn create() -> Result<_rt::String, SharedError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/shared@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "create"]
+                        fn wit_import1(_: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result11 = match l2 {
+                        0 => {
+                            let e = {
+                                let l3 = *ptr0
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l4 = *ptr0
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let len5 = l4;
+                                let bytes5 = _rt::Vec::from_raw_parts(l3.cast(), len5, len5);
+
+                                _rt::string_lift(bytes5)
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l6 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v10 = match l6 {
+                                    0 => SharedError::Denied,
+                                    1 => SharedError::NotJoined,
+                                    2 => SharedError::NoSuchShare,
+                                    3 => SharedError::InvalidName,
+                                    4 => SharedError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 5, "invalid enum discriminant");
+                                        let e10 = {
+                                            let l7 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l8 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len9 = l8;
+                                            let bytes9 =
+                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
+
+                                            _rt::string_lift(bytes9)
+                                        };
+                                        SharedError::Io(e10)
+                                    }
+                                };
+
+                                v10
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result11
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Join an existing share by its invite code. Local keys are kept and
+            /// merged: the newest write of each key wins.
+            pub fn join(code: &str) -> Result<(), SharedError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = code;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/shared@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "join"]
+                        fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result9 = match l3 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v8 = match l4 {
+                                    0 => SharedError::Denied,
+                                    1 => SharedError::NotJoined,
+                                    2 => SharedError::NoSuchShare,
+                                    3 => SharedError::InvalidName,
+                                    4 => SharedError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 5, "invalid enum discriminant");
+                                        let e8 = {
+                                            let l5 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+                                            let bytes7 =
+                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
+
+                                            _rt::string_lift(bytes7)
+                                        };
+                                        SharedError::Io(e8)
+                                    }
+                                };
+
+                                v8
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result9
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Leave the share: keeps the local copy, stops syncing, forgets the code.
+            pub fn leave() -> Result<(), SharedError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/shared@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "leave"]
+                        fn wit_import1(_: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result8 = match l2 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l3 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v7 = match l3 {
+                                    0 => SharedError::Denied,
+                                    1 => SharedError::NotJoined,
+                                    2 => SharedError::NoSuchShare,
+                                    3 => SharedError::InvalidName,
+                                    4 => SharedError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 5, "invalid enum discriminant");
+                                        let e7 = {
+                                            let l4 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l5 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len6 = l5;
+                                            let bytes6 =
+                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
+
+                                            _rt::string_lift(bytes6)
+                                        };
+                                        SharedError::Io(e7)
+                                    }
+                                };
+
+                                v7
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result8
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Read one key from the local copy. Never touches the network.
+            pub fn get(key: &str) -> Result<Option<_rt::Vec<u8>>, SharedError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = key;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/shared@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "get"]
+                        fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result13 = match l3 {
+                        0 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+
+                                match l4 {
+                                    0 => None,
+                                    1 => {
+                                        let e = {
+                                            let l5 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+
+                                            _rt::Vec::from_raw_parts(l5.cast(), len7, len7)
+                                        };
+                                        Some(e)
+                                    }
+                                    _ => _rt::invalid_enum_discriminant(),
+                                }
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l8 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v12 = match l8 {
+                                    0 => SharedError::Denied,
+                                    1 => SharedError::NotJoined,
+                                    2 => SharedError::NoSuchShare,
+                                    3 => SharedError::InvalidName,
+                                    4 => SharedError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 5, "invalid enum discriminant");
+                                        let e12 = {
+                                            let l9 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l10 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len11 = l10;
+                                            let bytes11 =
+                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
+
+                                            _rt::string_lift(bytes11)
+                                        };
+                                        SharedError::Io(e12)
+                                    }
+                                };
+
+                                v12
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result13
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Write one key locally and queue it for sync.
+            pub fn set(key: &str, value: &[u8]) -> Result<(), SharedError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = key;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let vec1 = value;
+                    let ptr1 = vec1.as_ptr().cast::<u8>();
+                    let len1 = vec1.len();
+                    let ptr2 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/shared@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "set"]
+                        fn wit_import3(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import3(
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import3(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1, ptr2) };
+                    let l4 = i32::from(*ptr2.add(0).cast::<u8>());
+                    let result10 = match l4 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l5 = i32::from(
+                                    *ptr2.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v9 = match l5 {
+                                    0 => SharedError::Denied,
+                                    1 => SharedError::NotJoined,
+                                    2 => SharedError::NoSuchShare,
+                                    3 => SharedError::InvalidName,
+                                    4 => SharedError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 5, "invalid enum discriminant");
+                                        let e9 = {
+                                            let l6 = *ptr2
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l7 = *ptr2
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len8 = l7;
+                                            let bytes8 =
+                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
+
+                                            _rt::string_lift(bytes8)
+                                        };
+                                        SharedError::Io(e9)
+                                    }
+                                };
+
+                                v9
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result10
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Delete one key locally and queue the removal for sync.
+            pub fn delete(key: &str) -> Result<(), SharedError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = key;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/shared@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "delete"]
+                        fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result9 = match l3 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v8 = match l4 {
+                                    0 => SharedError::Denied,
+                                    1 => SharedError::NotJoined,
+                                    2 => SharedError::NoSuchShare,
+                                    3 => SharedError::InvalidName,
+                                    4 => SharedError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 5, "invalid enum discriminant");
+                                        let e8 = {
+                                            let l5 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+                                            let bytes7 =
+                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
+
+                                            _rt::string_lift(bytes7)
+                                        };
+                                        SharedError::Io(e8)
+                                    }
+                                };
+
+                                v8
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result9
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// The keys present in the local copy.
+            pub fn keys() -> Result<_rt::Vec<_rt::String>, SharedError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/shared@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "keys"]
+                        fn wit_import1(_: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result14 = match l2 {
+                        0 => {
+                            let e = {
+                                let l3 = *ptr0
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l4 = *ptr0
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let base8 = l3;
+                                let len8 = l4;
+                                let mut result8 = _rt::Vec::with_capacity(len8);
+                                for i in 0..len8 {
+                                    let base =
+                                        base8.add(i * (2 * ::core::mem::size_of::<*const u8>()));
+                                    let e8 = {
+                                        let l5 = *base.add(0).cast::<*mut u8>();
+                                        let l6 = *base
+                                            .add(::core::mem::size_of::<*const u8>())
+                                            .cast::<usize>();
+                                        let len7 = l6;
+                                        let bytes7 =
+                                            _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
+
+                                        _rt::string_lift(bytes7)
+                                    };
+                                    result8.push(e8);
+                                }
+                                _rt::cabi_dealloc(
+                                    base8,
+                                    len8 * (2 * ::core::mem::size_of::<*const u8>()),
+                                    ::core::mem::size_of::<*const u8>(),
+                                );
+
+                                result8
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l9 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v13 = match l9 {
+                                    0 => SharedError::Denied,
+                                    1 => SharedError::NotJoined,
+                                    2 => SharedError::NoSuchShare,
+                                    3 => SharedError::InvalidName,
+                                    4 => SharedError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 5, "invalid enum discriminant");
+                                        let e13 = {
+                                            let l10 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l11 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len12 = l11;
+                                            let bytes12 =
+                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
+
+                                            _rt::string_lift(bytes12)
+                                        };
+                                        SharedError::Io(e13)
+                                    }
+                                };
+
+                                v13
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result14
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Exchange changes with krate.tech now: push queued writes, pull what
+            /// other machines wrote. Returns `true` when the local copy changed, so
+            /// the app knows to redraw. Offline is not an error -- it returns `false`
+            /// and the queue keeps waiting. Call it on launch, after writes, and on a
+            /// timer of ten seconds or more; the host rate-limits anything faster.
+            pub fn sync() -> Result<bool, SharedError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/shared@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "sync"]
+                        fn wit_import1(_: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result9 = match l2 {
+                        0 => {
+                            let e = {
+                                let l3 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+
+                                _rt::bool_lift(l3 as u8)
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v8 = match l4 {
+                                    0 => SharedError::Denied,
+                                    1 => SharedError::NotJoined,
+                                    2 => SharedError::NoSuchShare,
+                                    3 => SharedError::InvalidName,
+                                    4 => SharedError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 5, "invalid enum discriminant");
+                                        let e8 = {
+                                            let l5 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+                                            let bytes7 =
+                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
+
+                                            _rt::string_lift(bytes7)
+                                        };
+                                        SharedError::Io(e8)
+                                    }
+                                };
+
+                                v8
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result9
+                }
+            }
+        }
+    }
+    pub mod time {
+        /// Host clock reads.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod clock {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() =
+                super::super::super::__link_custom_section_describing_imports;
+
+            #[allow(unused_unsafe, clippy::all)]
+            /// Milliseconds since Unix epoch. Wall-clock; can jump.
+            pub fn now_millis() -> u64 {
+                unsafe {
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:time/clock@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "now-millis"]
+                        fn wit_import0() -> i64;
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import0() -> i64 {
+                        unreachable!()
+                    }
+                    let ret = unsafe { wit_import0() };
+                    ret as u64
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Monotonic nanoseconds since an arbitrary origin.
+            /// Guaranteed non-decreasing; suitable for measuring intervals.
+            pub fn monotonic_nanos() -> u64 {
+                unsafe {
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:time/clock@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "monotonic-nanos"]
+                        fn wit_import0() -> i64;
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import0() -> i64 {
+                        unreachable!()
+                    }
+                    let ret = unsafe { wit_import0() };
+                    ret as u64
+                }
+            }
+        }
+
+        /// Blocking sleep support for CLI components.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod sleep {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() =
+                super::super::super::__link_custom_section_describing_imports;
+
+            use super::super::super::_rt;
+            #[allow(unused_unsafe, clippy::all)]
+            /// Block the calling task for at least `millis` milliseconds.
+            pub fn sleep_millis(millis: u32) -> () {
+                unsafe {
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:time/sleep@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "sleep-millis"]
+                        fn wit_import0(_: i32);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import0(_: i32) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import0(_rt::as_i32(&millis)) };
+                }
+            }
+        }
+    }
 }
 mod _rt {
-  #![allow(dead_code, clippy::all)]
-  pub use alloc_crate::string::String;
+    #![allow(dead_code, clippy::all)]
+    pub use alloc_crate::string::String;
 
+    use core::fmt;
+    use core::marker;
+    use core::sync::atomic::{AtomicU32, Ordering::Relaxed};
 
-  use core::fmt;
-  use core::marker;
-  use core::sync::atomic::{AtomicU32, Ordering::Relaxed};
-
-  /// A type which represents a component model resource, either imported or
-  /// exported into this component.
-  ///
-  /// This is a low-level wrapper which handles the lifetime of the resource
-  /// (namely this has a destructor). The `T` provided defines the component model
-  /// intrinsics that this wrapper uses.
-  ///
-  /// One of the chief purposes of this type is to provide `Deref` implementations
-  /// to access the underlying data when it is owned.
-  ///
-  /// This type is primarily used in generated code for exported and imported
-  /// resources.
-  #[repr(transparent)]
-  pub struct Resource<T: WasmResource> {
-    // NB: This would ideally be `u32` but it is not. The fact that this has
-    // interior mutability is not exposed in the API of this type except for the
-    // `take_handle` method which is supposed to in theory be private.
-    //
-    // This represents, almost all the time, a valid handle value. When it's
-    // invalid it's stored as `u32::MAX`.
-    handle: AtomicU32,
-    _marker: marker::PhantomData<T>,
-  }
-
-  /// A trait which all wasm resources implement, namely providing the ability to
-  /// drop a resource.
-  ///
-  /// This generally is implemented by generated code, not user-facing code.
-  #[allow(clippy::missing_safety_doc)]
-  pub unsafe trait WasmResource {
-    /// Invokes the `[resource-drop]...` intrinsic.
-    unsafe fn drop(handle: u32);
-  }
-
-  impl<T: WasmResource> Resource<T> {
-    #[doc(hidden)]
-    pub unsafe fn from_handle(handle: u32) -> Self {
-      debug_assert!(handle != u32::MAX);
-      Self {
-        handle: AtomicU32::new(handle),
-        _marker: marker::PhantomData,
-      }
-    }
-
-    /// Takes ownership of the handle owned by `resource`.
+    /// A type which represents a component model resource, either imported or
+    /// exported into this component.
     ///
-    /// Note that this ideally would be `into_handle` taking `Resource<T>` by
-    /// ownership. The code generator does not enable that in all situations,
-    /// unfortunately, so this is provided instead.
+    /// This is a low-level wrapper which handles the lifetime of the resource
+    /// (namely this has a destructor). The `T` provided defines the component model
+    /// intrinsics that this wrapper uses.
     ///
-    /// Also note that `take_handle` is in theory only ever called on values
-    /// owned by a generated function. For example a generated function might
-    /// take `Resource<T>` as an argument but then call `take_handle` on a
-    /// reference to that argument. In that sense the dynamic nature of
-    /// `take_handle` should only be exposed internally to generated code, not
-    /// to user code.
-    #[doc(hidden)]
-    pub fn take_handle(resource: &Resource<T>) -> u32 {
-      resource.handle.swap(u32::MAX, Relaxed)
+    /// One of the chief purposes of this type is to provide `Deref` implementations
+    /// to access the underlying data when it is owned.
+    ///
+    /// This type is primarily used in generated code for exported and imported
+    /// resources.
+    #[repr(transparent)]
+    pub struct Resource<T: WasmResource> {
+        // NB: This would ideally be `u32` but it is not. The fact that this has
+        // interior mutability is not exposed in the API of this type except for the
+        // `take_handle` method which is supposed to in theory be private.
+        //
+        // This represents, almost all the time, a valid handle value. When it's
+        // invalid it's stored as `u32::MAX`.
+        handle: AtomicU32,
+        _marker: marker::PhantomData<T>,
     }
 
-    #[doc(hidden)]
-    pub fn handle(resource: &Resource<T>) -> u32 {
-      resource.handle.load(Relaxed)
+    /// A trait which all wasm resources implement, namely providing the ability to
+    /// drop a resource.
+    ///
+    /// This generally is implemented by generated code, not user-facing code.
+    #[allow(clippy::missing_safety_doc)]
+    pub unsafe trait WasmResource {
+        /// Invokes the `[resource-drop]...` intrinsic.
+        unsafe fn drop(handle: u32);
     }
-  }
 
-  impl<T: WasmResource> fmt::Debug for Resource<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-      f.debug_struct("Resource")
-      .field("handle", &self.handle)
-      .finish()
-    }
-  }
-
-  impl<T: WasmResource> Drop for Resource<T> {
-    fn drop(&mut self) {
-      unsafe {
-        match self.handle.load(Relaxed) {
-          // If this handle was "taken" then don't do anything in the
-          // destructor.
-          u32::MAX => {}
-
-          // ... but otherwise do actually destroy it with the imported
-          // component model intrinsic as defined through `T`.
-          other => T::drop(other),
+    impl<T: WasmResource> Resource<T> {
+        #[doc(hidden)]
+        pub unsafe fn from_handle(handle: u32) -> Self {
+            debug_assert!(handle != u32::MAX);
+            Self {
+                handle: AtomicU32::new(handle),
+                _marker: marker::PhantomData,
+            }
         }
-      }
-    }
-  }
-  pub use alloc_crate::vec::Vec;
 
-  pub fn as_i32<T: AsI32>(t: T) -> i32 {
-    t.as_i32()
-  }
+        /// Takes ownership of the handle owned by `resource`.
+        ///
+        /// Note that this ideally would be `into_handle` taking `Resource<T>` by
+        /// ownership. The code generator does not enable that in all situations,
+        /// unfortunately, so this is provided instead.
+        ///
+        /// Also note that `take_handle` is in theory only ever called on values
+        /// owned by a generated function. For example a generated function might
+        /// take `Resource<T>` as an argument but then call `take_handle` on a
+        /// reference to that argument. In that sense the dynamic nature of
+        /// `take_handle` should only be exposed internally to generated code, not
+        /// to user code.
+        #[doc(hidden)]
+        pub fn take_handle(resource: &Resource<T>) -> u32 {
+            resource.handle.swap(u32::MAX, Relaxed)
+        }
 
-  pub trait AsI32 {
-    fn as_i32(self) -> i32;
-  }
+        #[doc(hidden)]
+        pub fn handle(resource: &Resource<T>) -> u32 {
+            resource.handle.load(Relaxed)
+        }
+    }
 
-  impl<'a, T: Copy + AsI32> AsI32 for &'a T {
-    fn as_i32(self) -> i32 {
-      (*self).as_i32()
+    impl<T: WasmResource> fmt::Debug for Resource<T> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.debug_struct("Resource")
+                .field("handle", &self.handle)
+                .finish()
+        }
     }
-  }
-  
-  impl AsI32 for i32 {
-    #[inline]
-    fn as_i32(self) -> i32 {
-      self as i32
-    }
-  }
-  
-  impl AsI32 for u32 {
-    #[inline]
-    fn as_i32(self) -> i32 {
-      self as i32
-    }
-  }
-  
-  impl AsI32 for i16 {
-    #[inline]
-    fn as_i32(self) -> i32 {
-      self as i32
-    }
-  }
-  
-  impl AsI32 for u16 {
-    #[inline]
-    fn as_i32(self) -> i32 {
-      self as i32
-    }
-  }
-  
-  impl AsI32 for i8 {
-    #[inline]
-    fn as_i32(self) -> i32 {
-      self as i32
-    }
-  }
-  
-  impl AsI32 for u8 {
-    #[inline]
-    fn as_i32(self) -> i32 {
-      self as i32
-    }
-  }
-  
-  impl AsI32 for char {
-    #[inline]
-    fn as_i32(self) -> i32 {
-      self as i32
-    }
-  }
-  
-  impl AsI32 for usize {
-    #[inline]
-    fn as_i32(self) -> i32 {
-      self as i32
-    }
-  }
-  pub unsafe fn string_lift(bytes: Vec<u8>) -> String {
-    if cfg!(debug_assertions) {
-      String::from_utf8(bytes).unwrap()
-    } else {
-      String::from_utf8_unchecked(bytes)
-    }
-  }
-  pub unsafe fn invalid_enum_discriminant<T>() -> T {
-    if cfg!(debug_assertions) {
-      panic!("invalid enum discriminant")
-    } else {
-      unsafe { core::hint::unreachable_unchecked() }
-    }
-  }
-  pub use alloc_crate::alloc;
 
-  pub fn as_i64<T: AsI64>(t: T) -> i64 {
-    t.as_i64()
-  }
+    impl<T: WasmResource> Drop for Resource<T> {
+        fn drop(&mut self) {
+            unsafe {
+                match self.handle.load(Relaxed) {
+                    // If this handle was "taken" then don't do anything in the
+                    // destructor.
+                    u32::MAX => {}
 
-  pub trait AsI64 {
-    fn as_i64(self) -> i64;
-  }
+                    // ... but otherwise do actually destroy it with the imported
+                    // component model intrinsic as defined through `T`.
+                    other => T::drop(other),
+                }
+            }
+        }
+    }
+    pub use alloc_crate::vec::Vec;
 
-  impl<'a, T: Copy + AsI64> AsI64 for &'a T {
-    fn as_i64(self) -> i64 {
-      (*self).as_i64()
+    pub fn as_i32<T: AsI32>(t: T) -> i32 {
+        t.as_i32()
     }
-  }
-  
-  impl AsI64 for i64 {
-    #[inline]
-    fn as_i64(self) -> i64 {
-      self as i64
-    }
-  }
-  
-  impl AsI64 for u64 {
-    #[inline]
-    fn as_i64(self) -> i64 {
-      self as i64
-    }
-  }
-  pub unsafe fn bool_lift(val: u8) -> bool {
-    if cfg!(debug_assertions) {
-      match val {
-        0 => false,
-        1 => true,
-        _ => panic!("invalid bool discriminant"),
-      }
-    } else {
-      val != 0
-    }
-  }
-  pub unsafe fn cabi_dealloc(ptr: *mut u8, size: usize, align: usize) {
-    if size == 0 {
-      return;
-    }
-    let layout = alloc::Layout::from_size_align_unchecked(size, align);
-    alloc::dealloc(ptr, layout);
-  }
-  
-  pub fn as_f64<T: AsF64>(t: T) -> f64 {
-    t.as_f64()
-  }
 
-  pub trait AsF64 {
-    fn as_f64(self) -> f64;
-  }
+    pub trait AsI32 {
+        fn as_i32(self) -> i32;
+    }
 
-  impl<'a, T: Copy + AsF64> AsF64 for &'a T {
-    fn as_f64(self) -> f64 {
-      (*self).as_f64()
+    impl<'a, T: Copy + AsI32> AsI32 for &'a T {
+        fn as_i32(self) -> i32 {
+            (*self).as_i32()
+        }
     }
-  }
-  
-  impl AsF64 for f64 {
-    #[inline]
-    fn as_f64(self) -> f64 {
-      self as f64
+
+    impl AsI32 for i32 {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
     }
-  }
-  
-  #[cfg(target_arch = "wasm32")]
-  pub fn run_ctors_once() {
-    wit_bindgen_rt::run_ctors_once();
-  }
-  extern crate alloc as alloc_crate;
+
+    impl AsI32 for u32 {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
+    }
+
+    impl AsI32 for i16 {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
+    }
+
+    impl AsI32 for u16 {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
+    }
+
+    impl AsI32 for i8 {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
+    }
+
+    impl AsI32 for u8 {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
+    }
+
+    impl AsI32 for char {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
+    }
+
+    impl AsI32 for usize {
+        #[inline]
+        fn as_i32(self) -> i32 {
+            self as i32
+        }
+    }
+    pub unsafe fn string_lift(bytes: Vec<u8>) -> String {
+        if cfg!(debug_assertions) {
+            String::from_utf8(bytes).unwrap()
+        } else {
+            String::from_utf8_unchecked(bytes)
+        }
+    }
+    pub unsafe fn invalid_enum_discriminant<T>() -> T {
+        if cfg!(debug_assertions) {
+            panic!("invalid enum discriminant")
+        } else {
+            unsafe { core::hint::unreachable_unchecked() }
+        }
+    }
+    pub use alloc_crate::alloc;
+
+    pub fn as_i64<T: AsI64>(t: T) -> i64 {
+        t.as_i64()
+    }
+
+    pub trait AsI64 {
+        fn as_i64(self) -> i64;
+    }
+
+    impl<'a, T: Copy + AsI64> AsI64 for &'a T {
+        fn as_i64(self) -> i64 {
+            (*self).as_i64()
+        }
+    }
+
+    impl AsI64 for i64 {
+        #[inline]
+        fn as_i64(self) -> i64 {
+            self as i64
+        }
+    }
+
+    impl AsI64 for u64 {
+        #[inline]
+        fn as_i64(self) -> i64 {
+            self as i64
+        }
+    }
+    pub unsafe fn bool_lift(val: u8) -> bool {
+        if cfg!(debug_assertions) {
+            match val {
+                0 => false,
+                1 => true,
+                _ => panic!("invalid bool discriminant"),
+            }
+        } else {
+            val != 0
+        }
+    }
+    pub unsafe fn cabi_dealloc(ptr: *mut u8, size: usize, align: usize) {
+        if size == 0 {
+            return;
+        }
+        let layout = alloc::Layout::from_size_align_unchecked(size, align);
+        alloc::dealloc(ptr, layout);
+    }
+
+    pub fn as_f64<T: AsF64>(t: T) -> f64 {
+        t.as_f64()
+    }
+
+    pub trait AsF64 {
+        fn as_f64(self) -> f64;
+    }
+
+    impl<'a, T: Copy + AsF64> AsF64 for &'a T {
+        fn as_f64(self) -> f64 {
+            (*self).as_f64()
+        }
+    }
+
+    impl AsF64 for f64 {
+        #[inline]
+        fn as_f64(self) -> f64 {
+            self as f64
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn run_ctors_once() {
+        wit_bindgen_rt::run_ctors_once();
+    }
+    extern crate alloc as alloc_crate;
 }
 
 /// Generates `#[unsafe(no_mangle)]` functions to export the specified type as
@@ -6839,6 +7560,5 @@ omponent\x070.227.1\x10wit-bindgen-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {
-  wit_bindgen_rt::maybe_link_cabi_realloc();
+    wit_bindgen_rt::maybe_link_cabi_realloc();
 }
-

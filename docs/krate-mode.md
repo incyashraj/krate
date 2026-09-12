@@ -310,6 +310,12 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 - `Image` -- a picture; fill it with `image::set_pixels`, see "Showing a picture"
 - `Canvas` -- a region the app positions children in
 
+### `assets`
+
+- `assets::list(path: &str) -> Result<Vec<String>, ResourceError>`
+- `assets::read(path: &str) -> Result<Vec<u8>, ResourceError>`
+- `assets::read_text(path: &str) -> Result<String, ResourceError>`
+
 ### `fs`
 
 - `fs::list(path: &str) -> Result<Vec<String>, FsError>`
@@ -366,6 +372,14 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 - `net::get_text(url: &str) -> Result<String, NetError>`
 - `net::poll(handle: u64) -> FetchStatus`
 
+### `net::ws`
+
+- `net::ws::close(handle: u64) -> ()`
+- `net::ws::open(url: &str) -> Result<u64, NetError>`
+- `net::ws::send(handle: u64, message: WsMessage) -> Result<(), NetError>`
+- `net::ws::send_binary(handle: u64, bytes: &[u8]) -> Result<(), NetError>`
+- `net::ws::send_text(handle: u64, text: &str) -> Result<(), NetError>`
+
 ### `random`
 
 - `random::below(bound: u64) -> Result<u64, RandomError>`
@@ -382,6 +396,20 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 - `secret::names() -> Result<Vec<String>, SecretError>`
 - `secret::set(name: &str, secret: &[u8]) -> Result<(), SecretError>`
 - `secret::set_text(name: &str, secret: &str) -> Result<(), SecretError>`
+
+### `shared`
+
+- `shared::code() -> Result<Option<String>, SharedError>`
+- `shared::create() -> Result<String, SharedError>`
+- `shared::delete(key: &str) -> Result<(), SharedError>`
+- `shared::get(key: &str) -> Result<Option<Vec<u8>>, SharedError>`
+- `shared::get_text(key: &str) -> Result<Option<String>, SharedError>`
+- `shared::join(code: &str) -> Result<(), SharedError>`
+- `shared::keys() -> Result<Vec<String>, SharedError>`
+- `shared::leave() -> Result<(), SharedError>`
+- `shared::set(key: &str, value: &[u8]) -> Result<(), SharedError>`
+- `shared::set_text(key: &str, value: &str) -> Result<(), SharedError>`
+- `shared::sync() -> Result<bool, SharedError>`
 
 ### `sql`
 

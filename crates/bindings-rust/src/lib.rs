@@ -890,8 +890,8 @@ pub mod net {
     /// request to it needs -- a socket that stays open is not a wider
     /// permission than one that closes.
     pub mod ws {
-        pub use crate::bindings::krate::net::ws::{WsEvent, WsMessage};
         use super::NetError;
+        pub use crate::bindings::krate::net::ws::{WsEvent, WsMessage};
         use alloc::string::String;
         use alloc::vec::Vec;
 
