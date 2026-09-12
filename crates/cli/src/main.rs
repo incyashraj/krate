@@ -12558,7 +12558,19 @@ fn launch_target(bundle: &Path) -> Result<PathBuf> {
             .map(|d| d.as_nanos())
             .unwrap_or(0),
     ));
-    fs::write(&staged, &bytes).with_context(|| format!("writing {}", staged.display()))?;
+    // A failed WRITE leaves debris too, not just a failed rename (IC-393,
+    // the "full disk" case).
+    //
+    // Only the rename was cleaned up. `fs::write` creates the file and then
+    // fills it, so ENOSPC leaves a truncated staging file behind -- measured
+    // on a 1 MB filesystem: errno 28, and a 0-byte `.partial` still on disk.
+    // Nothing ever sweeps this directory, so every out-of-space download
+    // left one there for good, and the disk that was already full got a
+    // little fuller.
+    if let Err(err) = fs::write(&staged, &bytes) {
+        let _ = fs::remove_file(&staged);
+        return Err(err).with_context(|| format!("writing {}", staged.display()));
+    }
     if let Err(err) = fs::rename(&staged, &dest) {
         // Leave no debris behind a failed publish.
         let _ = fs::remove_file(&staged);
@@ -20115,8 +20127,16 @@ mod url_cache_tests {
         let start = source
             .find("fn launch_target(")
             .expect("launch_target exists");
-        let body = &source[start..start + 4000.min(source.len() - start)];
-        let code: String = body
+        // To the function's own closing brace, not a fixed number of
+        // characters. A 4000-char window used to stand in for "the body",
+        // and the function grew past it: the last statement fell outside
+        // and a guard checking for it read as absent. A window that has to
+        // be widened by hand is a window that silently narrows.
+        let end = source[start..]
+            .find("\n}\n")
+            .map(|offset| start + offset)
+            .expect("launch_target has a closing brace");
+        let code: String = source[start..end]
             .lines()
             .map(str::trim_start)
             .filter(|line| !line.starts_with("//"))
@@ -20145,6 +20165,26 @@ mod url_cache_tests {
             staged_line.contains("process::id") || code.contains("std::process::id()"),
             "the staging name must be private to this process, or two downloads \
              of the same app share one temporary file: {staged_line}",
+        );
+
+        // Neither failure leaves debris (IC-393, the "full disk" case).
+        //
+        // Only the rename was cleaned up. fs::write creates the file and
+        // then fills it, so ENOSPC left a truncated .partial behind, and
+        // nothing ever sweeps this directory. Measured end to end on a 1 MB
+        // filesystem: without the cleanup, `krate launch` of a 3 MB body
+        // failed with "No space left on device" and left one orphan; with
+        // it, the cache directory was empty.
+        //
+        // Counted rather than matched on shape: what matters is that BOTH
+        // fallible steps remove the staging file, and a single remove_file
+        // reads the same as two to any looser check.
+        let removals = code.matches("fs::remove_file(&staged)").count();
+        assert!(
+            removals >= 2,
+            "both the write and the rename must remove the staging file on \
+             failure -- found {removals} cleanup(s) in launch_target, so an \
+             out-of-space download leaves an orphan in the cache forever",
         );
     }
 
