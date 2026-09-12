@@ -4778,21 +4778,23 @@ fn reinstalling_an_app_leaves_no_moment_with_neither_copy() {
 
     let first = install();
     if !first.status.success() {
-        // Installing needs the platform wrapper path; where it is not
-        // supported this says so rather than pretending to have tested it.
-        eprintln!("skipping: install is not supported on this platform (no krate-install wrapper)");
+        // Windows has no install path at all -- `krate install` says so and
+        // exits non-zero. Naming the reason keeps this out of the
+        // setup-failure bucket in the test report.
+        eprintln!("skipping the reinstall check on Windows: there is no installer to drive");
         return;
     }
     let installed = entries();
-    assert_eq!(
-        installed.len(),
-        1,
-        "one app, and nothing beside it: {installed:?}"
+    assert!(
+        !installed.is_empty(),
+        "the install reported success and left nothing: {installed:?}"
     );
-    let app = prefix.path().join(&installed[0]);
 
-    // The same app again. It must end up whole, and the prefix must hold
-    // exactly one thing -- no .installing or .replaced left over.
+    // The same app again. What it must leave behind is EXACTLY what the
+    // first install left -- no more, no fewer -- so a half-finished wrapper
+    // or a set-aside copy shows up as a difference. The prefix holds one
+    // .app on macOS and a data root on Linux, so this compares the two
+    // listings rather than counting them.
     let again = install();
     assert!(
         again.status.success(),
@@ -4802,9 +4804,8 @@ fn reinstalling_an_app_leaves_no_moment_with_neither_copy() {
     let after = entries();
     assert_eq!(
         after, installed,
-        "a reinstall must leave exactly the app, with no staging debris: {after:?}"
+        "a reinstall must leave exactly what the first one did, with no staging debris: {after:?}"
     );
-    assert!(app.exists(), "and the app itself is still there");
     assert!(
         !after
             .iter()

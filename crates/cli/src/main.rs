@@ -20251,6 +20251,9 @@ mod storage_identity_tests {
     /// Two apps that share a display name do not share an installed path
     /// (IC-278, K-292).
     ///
+    /// macOS and Linux only: Windows has no install path, so the helpers
+    /// this exercises do not exist there.
+    ///
     /// The path used to be the display name alone, so "Notes" by one
     /// publisher and "Notes" by another landed on one directory and
     /// installing the second silently replaced the first. Storage already
@@ -20258,6 +20261,7 @@ mod storage_identity_tests {
     /// installed object that collided, which is the shape that loses
     /// somebody an app they installed.
     #[test]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     fn two_apps_with_one_name_do_not_share_an_installed_path() {
         let manifest = |id: &str, name: &str| {
             krate_manifest::Manifest::parse(&format!(
