@@ -1012,6 +1012,33 @@ enum Command {
         dry_run: bool,
     },
 
+    /// Remove an installed app. Its saved data is kept unless you say
+    /// otherwise, because uninstalling an app and losing what you wrote in
+    /// it are different decisions.
+    Uninstall {
+        /// The installed app's id, as `krate installed` lists it.
+        app_id: String,
+
+        /// Look here instead of the default install location.
+        #[arg(long)]
+        prefix: Option<PathBuf>,
+
+        /// Also delete the app's saved data. Irreversible.
+        #[arg(long)]
+        delete_data: bool,
+
+        /// Print what would be removed and stop.
+        #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// List the apps installed on this machine.
+    Installed {
+        /// Look here instead of the default install location.
+        #[arg(long)]
+        prefix: Option<PathBuf>,
+    },
+
     /// Change an app that already exists. The .krate carries its own source,
     /// so the AI edits the app you have rather than rebuilding it from a
     /// description -- "make the button blue" touches one function, not the
@@ -1603,6 +1630,13 @@ fn run() -> Result<u8> {
             extend.as_deref(),
             &output,
         ),
+        Command::Uninstall {
+            app_id,
+            prefix,
+            delete_data,
+            dry_run,
+        } => uninstall_app(&app_id, prefix.as_deref(), delete_data, dry_run),
+        Command::Installed { prefix } => list_installed(prefix.as_deref()),
         Command::Permissions { forget, forget_all } => {
             permissions_command(forget.as_deref(), forget_all)
         }
@@ -12522,6 +12556,188 @@ fn engine_fingerprint() -> String {
         env!("CARGO_PKG_VERSION"),
         env!("KRATE_GIT_SHA"),
     )
+}
+
+/// Where installed apps live by default on this machine.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn install_root(prefix: Option<&Path>) -> Result<PathBuf> {
+    if let Some(prefix) = prefix {
+        return Ok(prefix.to_path_buf());
+    }
+    // One expression, not two cfg blocks: written as two, the first
+    // compiles as a statement that falls through and the function returns
+    // (). Caught by compiling the Linux path on macOS before it reached CI.
+    #[cfg(target_os = "macos")]
+    let relative = "Applications";
+    #[cfg(target_os = "linux")]
+    let relative = ".local/share";
+    home_dir()
+        .map(|home| home.join(relative))
+        .context("no home directory")
+}
+
+/// Every app installed under `root`, as (app id, name, the thing to
+/// remove) (IC-278, IC-396).
+///
+/// Read from each wrapper's own payload rather than from a list kept
+/// beside them: a separate index is a second source of truth that goes
+/// stale the moment somebody moves a folder in Finder, and the payload is
+/// already there and already authoritative.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn installed_apps(root: &Path) -> Vec<(String, String, PathBuf)> {
+    let mut found = Vec::new();
+    let Ok(entries) = fs::read_dir(root) else {
+        return found;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        // The payload each platform's installer writes.
+        #[cfg(target_os = "macos")]
+        let payload = path.join("Contents/Resources/app.krate");
+        #[cfg(target_os = "linux")]
+        let payload = path.join("app.krate");
+        if !payload.is_file() {
+            continue;
+        }
+        if let Ok(opened) = krate_bundle::open(&payload) {
+            let manifest = opened.manifest();
+            found.push((
+                manifest.app.id.clone(),
+                manifest.app.name.clone(),
+                path.clone(),
+            ));
+        }
+    }
+    // On Linux the wrappers sit under krate/apps/<slug>, one level down.
+    #[cfg(target_os = "linux")]
+    {
+        let apps = root.join("krate/apps");
+        if apps.is_dir() && apps != *root {
+            found.extend(installed_apps(&apps));
+        }
+    }
+    found.sort();
+    found
+}
+
+/// `krate installed`: what is on this machine.
+fn list_installed(prefix: Option<&Path>) -> Result<u8> {
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        let _ = prefix;
+        println!("Installing apps is not supported on this system yet.");
+        println!("Open a .krate directly instead -- that is the ordinary way to run one.");
+        Ok(0)
+    }
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        let root = install_root(prefix)?;
+        let apps = installed_apps(&root);
+        if apps.is_empty() {
+            println!("No Krate apps are installed in {}.", root.display());
+            return Ok(0);
+        }
+        for (id, name, path) in &apps {
+            println!("{id}");
+            println!("  {name}");
+            println!("  {}", path.display());
+        }
+        println!();
+        println!("Remove one with: krate uninstall <app id>");
+        Ok(0)
+    }
+}
+
+/// `krate uninstall`: remove an installed app, keeping its data by default.
+fn uninstall_app(
+    app_id: &str,
+    prefix: Option<&Path>,
+    delete_data: bool,
+    dry_run: bool,
+) -> Result<u8> {
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        let _ = (app_id, prefix, delete_data, dry_run);
+        bail!("installing apps is not supported on this system, so there is nothing to uninstall")
+    }
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        let root = install_root(prefix)?;
+        let matches: Vec<_> = installed_apps(&root)
+            .into_iter()
+            .filter(|(id, _, _)| id == app_id)
+            .collect();
+        if matches.is_empty() {
+            eprintln!(
+                "no app with the id {app_id} is installed in {}.",
+                root.display()
+            );
+            eprintln!("`krate installed` lists what is there.");
+            return Ok(1);
+        }
+
+        // The data is found the way the runtime finds it, from the payload's
+        // own lineage -- not guessed from the id, which an unsigned file can
+        // claim (IC-874). An app whose data lives under a publisher stays
+        // separate from an impostor's.
+        let mut data_paths = Vec::new();
+        if delete_data {
+            for (_, _, path) in &matches {
+                #[cfg(target_os = "macos")]
+                let payload = path.join("Contents/Resources/app.krate");
+                #[cfg(target_os = "linux")]
+                let payload = path.join("app.krate");
+                let Ok(opened) = krate_bundle::open(&payload) else {
+                    continue;
+                };
+                let principal = storage_principal(
+                    opened.manifest(),
+                    opened.signature_envelope().ok().flatten().as_ref(),
+                    opened
+                        .full_verdict(&revocations_known_here(
+                            opened.signing_authority().ok().flatten().as_deref(),
+                        ))
+                        .ok()
+                        .flatten()
+                        .as_ref(),
+                );
+                let base = principal_store_path_in(&krate_home(), &principal);
+                for extension in ["kv", "sqlite", "secrets", "shared.json"] {
+                    let candidate = base.with_extension(extension);
+                    if candidate.exists() {
+                        data_paths.push(candidate);
+                    }
+                }
+            }
+        }
+
+        if dry_run {
+            for (_, _, path) in &matches {
+                println!("{}", path.display());
+            }
+            for path in &data_paths {
+                println!("{}", path.display());
+            }
+            return Ok(0);
+        }
+
+        for (id, name, path) in &matches {
+            fs::remove_dir_all(path).with_context(|| format!("removing {}", path.display()))?;
+            println!("Removed {name} ({id}).");
+        }
+        if delete_data {
+            for path in &data_paths {
+                let _ = fs::remove_file(path);
+            }
+            println!("Its saved data is deleted too.");
+        } else {
+            // Said out loud, because the opposite assumption is the one
+            // that loses somebody's work: an uninstall that silently took
+            // the data with it cannot be undone.
+            println!("Its saved data is kept. Delete it with --delete-data.");
+        }
+        Ok(0)
+    }
 }
 
 /// Where an app installs, decided once (IC-278).

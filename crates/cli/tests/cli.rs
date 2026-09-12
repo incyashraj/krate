@@ -4776,6 +4776,173 @@ fn a_run_that_painted_nothing_does_not_report_a_frame() {
     );
 }
 
+/// Uninstalling removes the app and keeps what the person wrote in it,
+/// unless they ask otherwise (IC-278, IC-396).
+///
+/// Those are two decisions and were one command's silence: there was no
+/// uninstall at all, so the only way to remove an installed app was to
+/// delete a folder and guess what else belonged to it. Keeping data is
+/// the default because the opposite assumption cannot be undone.
+#[test]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn uninstalling_removes_the_app_and_keeps_the_data_unless_told_otherwise() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let prefix = tempfile::tempdir().expect("prefix");
+    let home = tempfile::tempdir().expect("home");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(
+        &wasm,
+        include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm"),
+    )
+    .expect("component");
+
+    let pack = |id: &str| {
+        let manifest = dir.path().join(format!("{id}.toml"));
+        std::fs::write(
+            &manifest,
+            format!(
+                "[app]\nid = \"{id}\"\nname = \"{id}\"\nversion = \"1.0.0\"\n\
+                 entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n"
+            ),
+        )
+        .expect("manifest");
+        let bundle = dir.path().join(format!("{id}.krate"));
+        assert!(krate()
+            .args(["pack"])
+            .arg(&wasm)
+            .arg("--manifest")
+            .arg(&manifest)
+            .arg("-o")
+            .arg(&bundle)
+            .status()
+            .expect("pack")
+            .success());
+        bundle
+    };
+    let install = |bundle: &std::path::Path| {
+        krate()
+            .arg("install")
+            .arg(bundle)
+            .arg("--prefix")
+            .arg(prefix.path())
+            .env("HOME", home.path())
+            .output()
+            .expect("install")
+    };
+
+    let keep = pack("dev.krate.keep");
+    let drop = pack("dev.krate.drop");
+    if !install(&keep).status.success() {
+        eprintln!("skipping the uninstall check: this platform has no installer");
+        return;
+    }
+    assert!(
+        install(&drop).status.success(),
+        "the second app must install"
+    );
+
+    // Both are listed, by id.
+    let listed = krate()
+        .arg("installed")
+        .arg("--prefix")
+        .arg(prefix.path())
+        .env("HOME", home.path())
+        .output()
+        .expect("installed");
+    let text = String::from_utf8_lossy(&listed.stdout);
+    assert!(
+        text.contains("dev.krate.keep") && text.contains("dev.krate.drop"),
+        "both installed apps must be listed: {text}"
+    );
+
+    // Data the person made. Written where the runtime keeps an unsigned
+    // app's store, which is what these fixtures are.
+    let store = home.path().join(".krate/store");
+    std::fs::create_dir_all(&store).expect("store dir");
+    let notes = store.join("dev.krate.drop.kv");
+    std::fs::write(&notes, b"what the person wrote").expect("their data");
+
+    // Removing one app leaves the other, and leaves the data.
+    let out = krate()
+        .args(["uninstall", "dev.krate.drop"])
+        .arg("--prefix")
+        .arg(prefix.path())
+        .env("HOME", home.path())
+        .output()
+        .expect("uninstall");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        said.contains("saved data is kept"),
+        "it must say the data was kept, or the person cannot know: {said}"
+    );
+    assert!(
+        notes.exists(),
+        "uninstalling must not take the person's data with it"
+    );
+
+    let listed = krate()
+        .arg("installed")
+        .arg("--prefix")
+        .arg(prefix.path())
+        .env("HOME", home.path())
+        .output()
+        .expect("installed");
+    let text = String::from_utf8_lossy(&listed.stdout);
+    assert!(
+        text.contains("dev.krate.keep"),
+        "the other app stays: {text}"
+    );
+    assert!(
+        !text.contains("dev.krate.drop"),
+        "the removed one is gone: {text}"
+    );
+
+    // Asking for the data to go removes it.
+    assert!(
+        install(&drop).status.success(),
+        "reinstall for the second half"
+    );
+    let out = krate()
+        .args(["uninstall", "dev.krate.drop", "--delete-data"])
+        .arg("--prefix")
+        .arg(prefix.path())
+        .env("HOME", home.path())
+        .output()
+        .expect("uninstall --delete-data");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        !notes.exists(),
+        "--delete-data must actually delete it, or the flag is a lie"
+    );
+
+    // An app that is not installed is a clear refusal, not a silent success.
+    let out = krate()
+        .args(["uninstall", "dev.krate.never"])
+        .arg("--prefix")
+        .arg(prefix.path())
+        .env("HOME", home.path())
+        .output()
+        .expect("uninstall missing");
+    assert_ne!(
+        out.status.code(),
+        Some(0),
+        "removing nothing is not a success"
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("dev.krate.never"),
+        "and it names what it could not find"
+    );
+}
+
 /// An installed app carries a signature that describes IT, not the engine
 /// it was built around (IC-396).
 ///
