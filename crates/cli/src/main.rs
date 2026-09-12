@@ -532,6 +532,79 @@ enum Command {
         /// establish.
         #[arg(long)]
         namespace: String,
+
+        /// A delegation written by `krate delegate`, when --key is a release
+        /// key the publisher root authorised rather than the root itself.
+        /// It travels inside the bundle so the chain checks offline.
+        #[arg(long, value_name = "FILE")]
+        delegation: Option<PathBuf>,
+    },
+
+    /// Authorise a release key to sign for a namespace, with the publisher
+    /// root. Writes a delegation file to attach with `krate sign --delegation`.
+    Delegate {
+        /// PKCS#8 Ed25519 publisher root key.
+        #[arg(long)]
+        root: PathBuf,
+
+        /// PKCS#8 Ed25519 release key being authorised. Only its public half
+        /// is read.
+        #[arg(long)]
+        key: PathBuf,
+
+        /// Namespace the key may sign for: exact, or a range like `acme/*`.
+        #[arg(long)]
+        namespace: String,
+
+        /// How many days from now the delegation lasts.
+        #[arg(long, default_value_t = 365)]
+        days: u64,
+
+        /// Where to write the delegation.
+        #[arg(short, long)]
+        output: PathBuf,
+    },
+
+    /// Withdraw a release key, with the publisher root. Writes (or extends) a
+    /// signed revocation list that recipients import with `krate revocations`.
+    Revoke {
+        /// PKCS#8 Ed25519 publisher root key.
+        #[arg(long)]
+        root: PathBuf,
+
+        /// The release key to withdraw: its PKCS#8 file, or its public key
+        /// in hex if the file is gone -- which, for a stolen key, it may be.
+        #[arg(long)]
+        key: String,
+
+        /// Unix seconds from which signatures by the key are not honoured.
+        /// "now" for a retired key; the moment of theft for a stolen one,
+        /// which may be well before it was noticed. Releases signed before
+        /// this instant stay valid.
+        #[arg(long, default_value = "now")]
+        compromised_from: String,
+
+        /// Why, in your own words. Shown to people, never parsed.
+        #[arg(long)]
+        reason: String,
+
+        /// An existing list from the same root to extend, so one publisher
+        /// has one list.
+        #[arg(long, value_name = "FILE")]
+        extend: Option<PathBuf>,
+
+        /// Where to write the signed list.
+        #[arg(short, long)]
+        output: PathBuf,
+    },
+
+    /// What this machine knows about withdrawn signing keys, and import a
+    /// publisher's signed revocation list.
+    Revocations {
+        /// A signed revocation list to import. Refused unless its own root
+        /// signed it, and unless it is newer than the one already held.
+        #[arg(long, value_name = "FILE")]
+        import: Option<PathBuf>,
     },
 
     /// Pack a component and its manifest into one shareable .krate bundle.
@@ -1477,7 +1550,31 @@ fn run() -> Result<u8> {
             key,
             generate_key,
             namespace,
-        } => sign_bundle_command(&file, &key, generate_key, &namespace),
+            delegation,
+        } => sign_bundle_command(&file, &key, generate_key, &namespace, delegation.as_deref()),
+        Command::Delegate {
+            root,
+            key,
+            namespace,
+            days,
+            output,
+        } => delegate_command(&root, &key, &namespace, days, &output),
+        Command::Revoke {
+            root,
+            key,
+            compromised_from,
+            reason,
+            extend,
+            output,
+        } => revoke_command(
+            &root,
+            &key,
+            &compromised_from,
+            &reason,
+            extend.as_deref(),
+            &output,
+        ),
+        Command::Revocations { import } => revocations_command(import.as_deref()),
         Command::Identity {
             isolate,
             share,
@@ -4204,20 +4301,295 @@ pub(crate) fn recent_apps() -> Vec<PathBuf> {
 }
 
 /// Write a `.krate` bundle from a component and its manifest.
-/// What this machine knows about withdrawn signing keys.
+/// What this machine knows about withdrawn signing keys for one publisher
+/// root: the signed list imported with `krate revocations --import`, if any.
 ///
-/// Krate has no revocation feed yet (ADR-0016 designs one and it is
-/// deliberately unbuilt), so the honest answer is "not checked" rather than
-/// an empty list. Those are different claims: an empty list says every key is
-/// fine, and this machine cannot say that.
-///
-/// The consequence is visible rather than hidden -- a delegated release
-/// verifies with UnknownRevocationState, and the trust screen says whether
-/// the key has since been withdrawn could not be checked from here.
-fn revocations_known_here() -> krate_bundle::delegation::RevocationState {
-    krate_bundle::delegation::RevocationState::Unknown {
-        last_known: Vec::new(),
+/// A list is consulted only after its own root's signature over it verifies
+/// again, here, on every read -- a file somebody edited on disk is not a
+/// list. With no list for this root the answer is "not checked", never an
+/// empty list: an empty list says every key is fine, and this machine
+/// cannot say that. The network feed that would refresh lists on its own
+/// schedule is ADR-0016's, gated on measurements; until then a list arrives
+/// by file, and a delegated release with no list on this machine verifies
+/// with UnknownRevocationState, which the trust screen says out loud.
+fn revocations_known_here(root: Option<&str>) -> krate_bundle::delegation::RevocationState {
+    use krate_bundle::delegation::RevocationState;
+    let Some(root) = root else {
+        return RevocationState::Unknown {
+            last_known: Vec::new(),
+        };
+    };
+    match stored_revocation_list(root) {
+        Some(signed) => match signed.verify() {
+            Ok(list) => RevocationState::Known(list.revocations.clone()),
+            Err(_) => RevocationState::Unknown {
+                last_known: Vec::new(),
+            },
+        },
+        None => RevocationState::Unknown {
+            last_known: Vec::new(),
+        },
     }
+}
+
+/// Where a root's imported revocation list lives. The root is hex, so the
+/// name cannot carry a path separator.
+fn revocation_list_path(root: &str) -> Option<PathBuf> {
+    if root.is_empty() || !root.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    Some(
+        krate_home()
+            .join("revocations")
+            .join(format!("{root}.json")),
+    )
+}
+
+fn stored_revocation_list(root: &str) -> Option<krate_bundle::delegation::SignedRevocationList> {
+    let path = revocation_list_path(root)?;
+    let text = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+fn load_pkcs8_key(path: &Path, what: &str) -> Result<krate_bundle::signing::SigningKey> {
+    let bytes = fs::read(path)
+        .with_context(|| format!("could not read the {what} at {}", path.display()))?;
+    krate_bundle::signing::SigningKey::from_pkcs8(&bytes)
+        .map_err(|err| anyhow::anyhow!("{} is not a PKCS#8 Ed25519 key: {err}", path.display()))
+}
+
+fn hex_of(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// `krate delegate`: the root authorises a release key for a namespace.
+fn delegate_command(
+    root_path: &Path,
+    key_path: &Path,
+    namespace: &str,
+    days: u64,
+    output: &Path,
+) -> Result<u8> {
+    use krate_bundle::delegation::{Delegation, Purpose, SignedDelegation, DELEGATION_SCHEMA};
+    let root = load_pkcs8_key(root_path, "publisher root key")?;
+    let release = load_pkcs8_key(key_path, "release key")?;
+    let now = unix_now();
+    let slip = SignedDelegation::create(
+        &root,
+        Delegation {
+            schema: DELEGATION_SCHEMA.to_string(),
+            root: hex_of(&root.public_key()),
+            namespace: namespace.to_string(),
+            key: hex_of(&release.public_key()),
+            purpose: Purpose::Release,
+            // A minute of slack backwards, so a signature made on a machine
+            // whose clock is a little behind this one is not "not yet valid".
+            not_before: now.saturating_sub(60),
+            expires: now + days * 86_400,
+            approvers: Vec::new(),
+        },
+    );
+    fs::write(output, serde_json::to_vec_pretty(&slip)?)
+        .with_context(|| format!("could not write {}", output.display()))?;
+    println!(
+        "delegated {} to key {}",
+        namespace,
+        &slip.delegation.key[..16]
+    );
+    println!("  root     {}", &slip.delegation.root[..16]);
+    println!("  expires  in {days} day(s)");
+    println!("  written  {}", output.display());
+    println!(
+        "Attach it when signing: krate sign <file> --key <release key> --delegation {}",
+        output.display()
+    );
+    Ok(0)
+}
+
+/// `krate revoke`: the root withdraws a release key into a signed list.
+fn revoke_command(
+    root_path: &Path,
+    key: &str,
+    compromised_from: &str,
+    reason: &str,
+    extend: Option<&Path>,
+    output: &Path,
+) -> Result<u8> {
+    use krate_bundle::delegation::{Revocation, RevocationList, SignedRevocationList};
+    let root = load_pkcs8_key(root_path, "publisher root key")?;
+    let root_hex = hex_of(&root.public_key());
+
+    // The key: a file if one is there, otherwise the hex a delegation names.
+    let key_hex = if Path::new(key).is_file() {
+        hex_of(&load_pkcs8_key(Path::new(key), "release key")?.public_key())
+    } else if !key.is_empty() && key.len() == 64 && key.bytes().all(|b| b.is_ascii_hexdigit()) {
+        key.to_ascii_lowercase()
+    } else {
+        anyhow::bail!("--key must be a PKCS#8 key file or the release key's 64-hex public key");
+    };
+    let from = if compromised_from == "now" {
+        unix_now()
+    } else {
+        compromised_from
+            .parse::<u64>()
+            .context("--compromised-from must be unix seconds, or \"now\"")?
+    };
+    if reason.trim().is_empty() {
+        anyhow::bail!("--reason must say why; a person reads it when an app is refused");
+    }
+
+    // Extending: the existing list must be this root's and must verify, or
+    // whatever it says is not something to carry forward.
+    let mut revocations = Vec::new();
+    if let Some(path) = extend {
+        let text = fs::read_to_string(path)
+            .with_context(|| format!("could not read the list at {}", path.display()))?;
+        let existing: SignedRevocationList = serde_json::from_str(&text).with_context(|| {
+            format!(
+                "{} is not a revocation list written by `krate revoke`",
+                path.display()
+            )
+        })?;
+        let list = existing
+            .verify()
+            .map_err(|err| anyhow::anyhow!("{}: {err}", path.display()))?;
+        if list.root != root_hex {
+            anyhow::bail!(
+                "{} was issued by a different root; one list per root, and this key cannot extend that one",
+                path.display()
+            );
+        }
+        revocations = list.revocations.clone();
+    }
+    // One entry per key: withdrawing a key twice keeps the EARLIER
+    // compromise time, because the later call cannot make a theft later
+    // than it was.
+    if let Some(existing) = revocations.iter_mut().find(|r| r.key == key_hex) {
+        existing.compromised_from = existing.compromised_from.min(from);
+        existing.reason = reason.to_string();
+    } else {
+        revocations.push(Revocation {
+            key: key_hex.clone(),
+            compromised_from: from,
+            reason: reason.to_string(),
+        });
+    }
+    let signed = SignedRevocationList::create(
+        &root,
+        RevocationList {
+            schema: String::new(),
+            root: String::new(),
+            issued_at: unix_now(),
+            revocations,
+        },
+    );
+    fs::write(output, serde_json::to_vec_pretty(&signed)?)
+        .with_context(|| format!("could not write {}", output.display()))?;
+    println!("withdrew key {} from {from}", &key_hex[..16]);
+    println!("  root     {}", &root_hex[..16]);
+    println!(
+        "  list     {} key(s) withdrawn, written to {}",
+        signed.list.revocations.len(),
+        output.display()
+    );
+    println!(
+        "Recipients import it with: krate revocations --import {}",
+        output.display()
+    );
+    Ok(0)
+}
+
+/// `krate revocations`: show what is held, or import a publisher's list.
+fn revocations_command(import: Option<&Path>) -> Result<u8> {
+    use krate_bundle::delegation::SignedRevocationList;
+    if let Some(path) = import {
+        let text = fs::read_to_string(path)
+            .with_context(|| format!("could not read {}", path.display()))?;
+        let signed: SignedRevocationList = serde_json::from_str(&text).with_context(|| {
+            format!(
+                "{} is not a revocation list written by `krate revoke`",
+                path.display()
+            )
+        })?;
+        let list = signed
+            .verify()
+            .map_err(|err| anyhow::anyhow!("{} was not imported: {err}", path.display()))?;
+        let Some(dest) = revocation_list_path(&list.root) else {
+            anyhow::bail!("the list names a root that is not hex; not imported");
+        };
+        // Newer replaces older; older never replaces newer. A list rolled
+        // back to before a revocation would un-revoke the key.
+        if let Some(held) = stored_revocation_list(&list.root) {
+            if let Ok(held_list) = held.verify() {
+                if held_list.issued_at > list.issued_at {
+                    anyhow::bail!(
+                        "the list at {} is OLDER than the one already held for this root ({} < {}); \
+                         an older list would forget revocations, so it is not imported",
+                        path.display(),
+                        list.issued_at,
+                        held_list.issued_at
+                    );
+                }
+            }
+        }
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&dest, serde_json::to_vec_pretty(&signed)?)?;
+        println!(
+            "imported {} withdrawn key(s) for root {}",
+            list.revocations.len(),
+            &list.root[..16]
+        );
+        return Ok(0);
+    }
+    let dir = krate_home().join("revocations");
+    let mut shown = 0;
+    if let Ok(entries) = fs::read_dir(&dir) {
+        let now = unix_now();
+        let mut paths: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
+        paths.sort();
+        for path in paths {
+            let Ok(text) = fs::read_to_string(&path) else {
+                continue;
+            };
+            let Ok(signed) = serde_json::from_str::<SignedRevocationList>(&text) else {
+                println!("{}: not a revocation list (ignored)", path.display());
+                continue;
+            };
+            match signed.verify() {
+                Ok(list) => {
+                    shown += 1;
+                    let age_days = now.saturating_sub(list.issued_at) / 86_400;
+                    println!(
+                        "root {}: {} withdrawn key(s), list issued {age_days} day(s) ago",
+                        &list.root[..16],
+                        list.revocations.len()
+                    );
+                    for r in &list.revocations {
+                        println!(
+                            "  - key {} from {}: {}",
+                            &r.key[..16],
+                            r.compromised_from,
+                            r.reason
+                        );
+                    }
+                }
+                Err(err) => println!("{}: held but NOT trusted -- {err}", path.display()),
+            }
+        }
+    }
+    if shown == 0 {
+        println!("no revocation lists held; a delegated release verifies here with its revocation state unknown");
+    }
+    Ok(0)
 }
 
 /// Show and set this machine's development identity (IC-737).
@@ -4310,6 +4682,7 @@ fn sign_bundle_command(
     key_path: &Path,
     generate_key: bool,
     namespace: &str,
+    delegation: Option<&Path>,
 ) -> Result<u8> {
     if generate_key {
         // Never silently. A signing key is the publisher's identity, and
@@ -4361,8 +4734,39 @@ fn sign_bundle_command(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let envelope = krate_bundle::sign_bundle(file, &key, namespace, &version, signed_at)
-        .map_err(|err| anyhow::anyhow!("{err}"))?;
+    let envelope = match delegation {
+        None => krate_bundle::sign_bundle(file, &key, namespace, &version, signed_at)
+            .map_err(|err| anyhow::anyhow!("{err}"))?,
+        Some(path) => {
+            let text = fs::read_to_string(path)
+                .with_context(|| format!("could not read the delegation at {}", path.display()))?;
+            let slip: krate_bundle::delegation::SignedDelegation = serde_json::from_str(&text)
+                .with_context(|| {
+                    format!(
+                        "{} is not a delegation written by `krate delegate`",
+                        path.display()
+                    )
+                })?;
+            // Attaching a slip that does not cover this key or namespace is
+            // caught here, where the publisher can fix it, rather than on
+            // every recipient's screen.
+            let verdict = krate_bundle::delegation::verify_chain(
+                &slip,
+                namespace,
+                &key.public_key(),
+                signed_at,
+                &krate_bundle::delegation::RevocationState::Known(Vec::new()),
+            );
+            if !verdict.is_authorised() {
+                anyhow::bail!(
+                    "the delegation at {} does not authorise this key for {namespace}: {verdict}",
+                    path.display()
+                );
+            }
+            krate_bundle::sign_bundle_delegated(file, &key, namespace, &version, signed_at, slip)
+                .map_err(|err| anyhow::anyhow!("{err}"))?
+        }
+    };
     println!("signed {}", file.display());
     println!("  namespace {}", envelope.namespace);
     println!("  version   {}", envelope.version);
@@ -10998,14 +11402,19 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
     // to enforce a promise nobody has made yet. A bad or unreadable signature
     // is also not a refusal: it proves the signer is wrong or absent, which is
     // the same position as unsigned.
-    if let Some(krate_bundle::signing::Verdict::Tampered { problems }) = bundle
-        .as_ref()
-        .and_then(|bundle| bundle.full_verdict(&revocations_known_here()).ok())
-        .flatten()
-        .map(|full| full.signature)
+    let full_verdict = bundle.as_ref().and_then(|bundle| {
+        bundle
+            .full_verdict(&revocations_known_here(
+                bundle.signing_authority().ok().flatten().as_deref(),
+            ))
+            .ok()
+            .flatten()
+    });
+    if let Some(krate_bundle::signing::Verdict::Tampered { problems }) =
+        full_verdict.as_ref().map(|full| &full.signature)
     {
         eprintln!("error: this app was changed after it was signed");
-        for problem in &problems {
+        for problem in problems {
             eprintln!("  - {problem}");
         }
         eprintln!();
@@ -11013,6 +11422,30 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
         eprintln!("Ask them for a fresh copy.");
         // 5, the same code the permission wall uses: the product refusing on
         // purpose, not a defect and not a crash.
+        return Ok(5);
+    }
+    // A key the publisher withdrew BEFORE this was signed is the other
+    // refusal (IC-015). The signature is genuine, and that is the problem:
+    // whoever holds a stolen key can sign, and the publisher has said in a
+    // list they signed themselves that from this moment those signatures
+    // are not theirs. Running it would be running the thief's release
+    // under the publisher's name. A release signed before the compromise
+    // still runs: revoking a lost laptop must not take back every honest
+    // release it ever made.
+    if let Some(krate_bundle::delegation::ChainVerdict::RevokedAtSigning {
+        compromised_from,
+        signed_at,
+        reason,
+    }) = full_verdict.as_ref().and_then(|full| full.chain.as_ref())
+    {
+        eprintln!("error: this app was signed with a key its publisher had withdrawn");
+        eprintln!("  - withdrawn from {compromised_from}, signed at {signed_at}");
+        if !reason.is_empty() {
+            eprintln!("  - the publisher's reason: {reason}");
+        }
+        eprintln!();
+        eprintln!("A release signed after the publisher withdrew the key is not theirs.");
+        eprintln!("Ask them for a copy signed with a current key.");
         return Ok(5);
     }
 
@@ -11075,7 +11508,13 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
                     .and_then(|bundle| bundle.project_digest().ok()),
                 signature: bundle
                     .as_ref()
-                    .and_then(|bundle| bundle.full_verdict(&revocations_known_here()).ok())
+                    .and_then(|bundle| {
+                        bundle
+                            .full_verdict(&revocations_known_here(
+                                bundle.signing_authority().ok().flatten().as_deref(),
+                            ))
+                            .ok()
+                    })
                     .flatten(),
                 storage: manifest.map(|manifest| {
                     let envelope = bundle
@@ -11084,7 +11523,13 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
                         .flatten();
                     let verdict = bundle
                         .as_ref()
-                        .and_then(|bundle| bundle.full_verdict(&revocations_known_here()).ok())
+                        .and_then(|bundle| {
+                            bundle
+                                .full_verdict(&revocations_known_here(
+                                    bundle.signing_authority().ok().flatten().as_deref(),
+                                ))
+                                .ok()
+                        })
                         .flatten();
                     storage_principal(manifest, envelope.as_ref(), verdict.as_ref())
                 }),
@@ -11249,7 +11694,13 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
             .flatten();
         let verdict = bundle
             .as_ref()
-            .and_then(|bundle| bundle.full_verdict(&revocations_known_here()).ok())
+            .and_then(|bundle| {
+                bundle
+                    .full_verdict(&revocations_known_here(
+                        bundle.signing_authority().ok().flatten().as_deref(),
+                    ))
+                    .ok()
+            })
             .flatten();
         storage_principal(manifest, envelope.as_ref(), verdict.as_ref())
     });

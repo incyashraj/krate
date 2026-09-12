@@ -486,6 +486,147 @@ pub enum SigningError {
     BadKey,
 }
 
+/// Known-answer vectors (IC-015): one fixed key, one statement, one
+/// delegation and one revocation list, with the signatures they must
+/// produce. Committed at crates/bundle/tests/fixtures/signing-vectors.json
+/// and checked on every target the library tests run on, so a change in
+/// canonical bytes, in hashing, or in the signing primitive shows up as a
+/// vector that no longer verifies -- on Windows and Linux too, not only
+/// on the machine that made the change.
+#[cfg(test)]
+mod vectors {
+    use super::*;
+    use crate::delegation::{
+        Delegation, Purpose, Revocation, RevocationList, SignedDelegation, SignedRevocationList,
+        DELEGATION_SCHEMA,
+    };
+    use std::collections::BTreeMap;
+
+    const PATH: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/signing-vectors.json"
+    );
+
+    fn unhex(text: &str) -> Vec<u8> {
+        (0..text.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&text[i..i + 2], 16).expect("hex"))
+            .collect()
+    }
+
+    fn entries() -> BTreeMap<String, Vec<u8>> {
+        let mut entries = BTreeMap::new();
+        entries.insert("manifest.toml".to_string(), b"[app]\nid = \"v\"\n".to_vec());
+        entries.insert("code.wasm".to_string(), b"\0asm\x0d\0\x01\0".to_vec());
+        entries.insert("source/lib.rs".to_string(), b"fn main() {}".to_vec());
+        entries
+    }
+
+    fn delegation(root: &SigningKey, release: &SigningKey) -> Delegation {
+        Delegation {
+            schema: DELEGATION_SCHEMA.to_string(),
+            root: hex(&root.public_key()),
+            namespace: "vectors/*".to_string(),
+            key: hex(&release.public_key()),
+            purpose: Purpose::Release,
+            not_before: 1_700_000_000,
+            expires: 1_800_000_000,
+            approvers: vec!["alice".to_string()],
+        }
+    }
+
+    fn list() -> RevocationList {
+        RevocationList {
+            schema: String::new(),
+            root: String::new(),
+            issued_at: 1_750_000_000,
+            revocations: vec![Revocation {
+                key: "ab".repeat(32),
+                compromised_from: 1_740_000_000,
+                reason: "vector".to_string(),
+            }],
+        }
+    }
+
+    /// Writes the vectors. Run by hand when the format changes ON PURPOSE:
+    /// `cargo test -p krate-bundle --lib regenerate_signing_vectors -- --ignored`
+    /// and commit the file with the change that moved it.
+    #[test]
+    #[ignore = "regenerates the committed vectors; run deliberately"]
+    fn regenerate_signing_vectors() {
+        let root_pkcs8 = SigningKey::generate_pkcs8().expect("root");
+        let release_pkcs8 = SigningKey::generate_pkcs8().expect("release");
+        let root = SigningKey::from_pkcs8(&root_pkcs8).expect("load");
+        let release = SigningKey::from_pkcs8(&release_pkcs8).expect("load");
+        let statement = SignedStatement::build("vectors/app", "1.2.3", 1_760_000_000, &entries());
+        let signature = release.sign(&statement);
+        let slip = SignedDelegation::create(&root, delegation(&root, &release));
+        let signed_list = SignedRevocationList::create(&root, list());
+        let json = serde_json::json!({
+            "note": "Known-answer vectors for Krate signing. Ed25519 is deterministic, so signing these inputs with these keys must reproduce these signatures on every platform. Regenerate only with a deliberate format change.",
+            "root_pkcs8": hex(&root_pkcs8),
+            "release_pkcs8": hex(&release_pkcs8),
+            "statement": {
+                "namespace": "vectors/app", "version": "1.2.3", "signed_at": 1_760_000_000u64,
+                "canonical_sha256": statement.digest(),
+                "signature": hex(&signature.bytes),
+            },
+            "delegation_signature": slip.signature,
+            "revocation_list_signature": signed_list.signature,
+        });
+        std::fs::write(
+            PATH,
+            serde_json::to_string_pretty(&json).expect("json") + "\n",
+        )
+        .expect("write");
+    }
+
+    #[test]
+    fn the_committed_vectors_still_verify_and_still_reproduce() {
+        let text = std::fs::read_to_string(PATH).expect("the vectors file is committed");
+        let v: serde_json::Value = serde_json::from_str(&text).expect("json");
+        let root = SigningKey::from_pkcs8(&unhex(v["root_pkcs8"].as_str().unwrap())).expect("root");
+        let release =
+            SigningKey::from_pkcs8(&unhex(v["release_pkcs8"].as_str().unwrap())).expect("release");
+
+        // The statement: same canonical bytes, same signature, and it verifies.
+        let statement = SignedStatement::build("vectors/app", "1.2.3", 1_760_000_000, &entries());
+        assert_eq!(
+            statement.digest(),
+            v["statement"]["canonical_sha256"],
+            "canonical bytes moved"
+        );
+        let expected = unhex(v["statement"]["signature"].as_str().unwrap());
+        assert_eq!(
+            release.sign(&statement).bytes,
+            expected,
+            "the signature is no longer reproduced"
+        );
+        let signature = Signature {
+            schema: SIGNATURE_SCHEMA.to_string(),
+            public_key: release.public_key(),
+            bytes: expected,
+        };
+        assert!(matches!(
+            verify(&statement, &signature, &entries()),
+            Verdict::Valid { .. }
+        ));
+
+        // The delegation and the revocation list, likewise.
+        let slip = SignedDelegation::create(&root, delegation(&root, &release));
+        assert_eq!(
+            slip.signature, v["delegation_signature"],
+            "delegation bytes moved"
+        );
+        let signed_list = SignedRevocationList::create(&root, list());
+        assert_eq!(
+            signed_list.signature, v["revocation_list_signature"],
+            "revocation list bytes moved"
+        );
+        assert!(signed_list.verify().is_ok());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

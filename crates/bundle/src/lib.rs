@@ -856,6 +856,25 @@ impl OpenBundle {
         Ok(Some(signing::verify_full(&envelope, &entries, revocations)))
     }
 
+    /// The publisher root whose revocation list applies to this bundle.
+    ///
+    /// The root named in the delegation, or the signing key itself when the
+    /// publisher signed directly with their root. `None` for an unsigned
+    /// bundle. It comes from the envelope, which is attacker-supplied --
+    /// but the only thing it selects is WHICH list to consult, and a list
+    /// is trusted only when signed by the root it names, so pointing at a
+    /// different root gains nothing except a list that says nothing about
+    /// this key.
+    pub fn signing_authority(&self) -> Result<Option<String>> {
+        Ok(self.signature_envelope()?.map(|envelope| {
+            envelope
+                .delegation
+                .as_ref()
+                .map(|d| d.delegation.root.clone())
+                .unwrap_or(envelope.public_key)
+        }))
+    }
+
     /// The raw envelope, when the bundle carries one that parses.
     ///
     /// A bundle whose signature will not parse yields `None` here, the same
@@ -1007,6 +1026,70 @@ pub fn sign_bundle(
     }
     fs::rename(&temporary, bundle_path).map_err(|err| io_err(bundle_path, err))?;
     Ok(envelope)
+}
+
+/// Sign a bundle with a delegated release key and ship the root's
+/// permission slip inside it, so a recipient can check the chain offline.
+///
+/// The delegation is attached exactly as given; whether it actually covers
+/// this key and namespace is the verifier's question, answered on every
+/// open. Signing with a slip that does not fit produces a bundle that says
+/// so wherever it is opened, which is better than refusing here and having
+/// the publisher attach it by hand.
+pub fn sign_bundle_delegated(
+    bundle_path: &Path,
+    key: &signing::SigningKey,
+    namespace: &str,
+    version: &str,
+    signed_at: u64,
+    delegation: delegation::SignedDelegation,
+) -> Result<signing::SignatureEnvelope> {
+    let mut envelope = sign_bundle(bundle_path, key, namespace, version, signed_at)?;
+    envelope.delegation = Some(delegation);
+    let json = serde_json::to_vec_pretty(&envelope)
+        .map_err(|err| BundleError::Manifest(err.to_string()))?;
+    replace_entry(bundle_path, SIGNATURE_ENTRY, &json)?;
+    Ok(envelope)
+}
+
+/// Rewrite one entry of a bundle in place, copying every other entry
+/// through untouched. Written beside the bundle and renamed over it.
+fn replace_entry(bundle_path: &Path, entry_name: &str, bytes: &[u8]) -> Result<()> {
+    let source = fs::read(bundle_path).map_err(|err| io_err(bundle_path, err))?;
+    let mut archive = ZipArchive::new(io::Cursor::new(&source))?;
+    let temporary = bundle_path.with_extension("krate.signing");
+    {
+        let file = File::create(&temporary).map_err(|err| io_err(&temporary, err))?;
+        let mut writer = ZipWriter::new(file);
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+        for index in 0..archive.len() {
+            let mut entry = archive.by_index(index)?;
+            let name = entry.name().to_string();
+            if name == entry_name {
+                continue;
+            }
+            let mut body = Vec::new();
+            entry
+                .read_to_end(&mut body)
+                .map_err(|err| BundleError::Io {
+                    path: PathBuf::from(&name),
+                    source: err,
+                })?;
+            writer.start_file(name.clone(), options)?;
+            writer.write_all(&body).map_err(|err| BundleError::Io {
+                path: PathBuf::from(&name),
+                source: err,
+            })?;
+        }
+        writer.start_file(entry_name, options)?;
+        writer.write_all(bytes).map_err(|err| BundleError::Io {
+            path: PathBuf::from(entry_name),
+            source: err,
+        })?;
+        writer.finish()?;
+    }
+    fs::rename(&temporary, bundle_path).map_err(|err| io_err(bundle_path, err))?;
+    Ok(())
 }
 
 /// Open a bundle from disk, extracting it into a temporary directory.

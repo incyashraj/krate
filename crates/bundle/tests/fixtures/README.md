@@ -43,3 +43,16 @@ is a component that could never run, and is now refused for exactly that.
 Tests in this crate, the hub and the CLI that only need "a real component"
 include these bytes; tests that need "a different but still valid component"
 swap in the second.
+
+# Signing vectors
+
+`signing-vectors.json` holds one fixed publisher root and release key, one
+statement over three entries, one delegation and one revocation list, and
+the signatures they must produce (IC-015). Ed25519 is deterministic, so the
+library test `the_committed_vectors_still_verify_and_still_reproduce`
+recomputes every signature on every platform the library tests run on and
+compares. A change to canonical bytes, hashing or the signing primitive
+shows up there -- on Windows and Linux too. Regenerate only with a
+deliberate format change:
+
+    cargo test -p krate-bundle --lib regenerate_signing_vectors -- --ignored

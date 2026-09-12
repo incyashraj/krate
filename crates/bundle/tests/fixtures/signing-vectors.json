@@ -1,0 +1,14 @@
+{
+  "delegation_signature": "32941e62ab7519f72ce72294af72c963a4a6185dc814628d823541212d9748a165e0a71311ea4e50d930db31a2e951dfefc43136af6849f5f2ad957f5387ec02",
+  "note": "Known-answer vectors for Krate signing. Ed25519 is deterministic, so signing these inputs with these keys must reproduce these signatures on every platform. Regenerate only with a deliberate format change.",
+  "release_pkcs8": "3051020101300506032b65700422042019c38dca72bade25d56dd61c2c60bc475e80e26922f8b24b071242feec09e2318121009b50a5cf3edc90b1a40fa8fe8458b99fe10d57d80f85de2fe8be7a451b4ee467",
+  "revocation_list_signature": "a1df70681b3e96b92a360decad9a29d33e054a9150995c4d052047513c6f0de1b69f14414b8181849bce3acb5b38bcd2c36a43056450be6917b51dbfbf8b6207",
+  "root_pkcs8": "3051020101300506032b6570042204206de5b4f1a7e8fc11b35ec20a766178f7aaa9ee20a63d40b6c0c07b503cb9168b812100352fe0d792e9f16525444f7b0fc7f72653040f13148a811176cf5103507e9256",
+  "statement": {
+    "canonical_sha256": "579ee06349ad22c88d9643a3f472aff9bc83bc03e5774006adb0b3e03555650c",
+    "namespace": "vectors/app",
+    "signature": "9aff1948cf40998c2bcbef4fddb72edc7b463b33016ec005dd9e01a55a92155777ac4dff783d1f79d587c3d53fefcafc507d901f603ac22a70844fbb88bed506",
+    "signed_at": 1760000000,
+    "version": "1.2.3"
+  }
+}

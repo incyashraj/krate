@@ -161,6 +161,109 @@ pub struct Revocation {
     pub reason: String,
 }
 
+pub const REVOCATION_LIST_SCHEMA: &str = "krate.revocations.v1";
+
+/// Every key a publisher root has withdrawn, as one signed record.
+///
+/// One list per root, signed by that root, so the only party who can
+/// revoke a release key is the party who delegated it -- and the only party
+/// who can hide a revocation is one who can stop the list reaching the
+/// machine, which is the "could not check" state and never "checked and
+/// clean". The list ships whole and is consulted locally (ADR-0016: no
+/// per-app request, ever); how it is refreshed over the network is the
+/// feed that ADR gates on measurements, and this record is what that feed
+/// will carry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RevocationList {
+    pub schema: String,
+    /// The publisher root that issued this list, lowercase hex.
+    pub root: String,
+    /// Unix seconds. A newer list replaces an older one; an older one
+    /// arriving later is a rollback and is refused by the importer.
+    pub issued_at: u64,
+    pub revocations: Vec<Revocation>,
+}
+
+impl RevocationList {
+    /// The exact bytes the root signs. Length-prefixed, like a delegation,
+    /// and opening with a different schema so the two can never be one
+    /// another's bytes.
+    pub fn canonical_bytes(&self) -> Vec<u8> {
+        fn field(out: &mut Vec<u8>, bytes: &[u8]) {
+            out.extend_from_slice(&(bytes.len() as u64).to_le_bytes());
+            out.extend_from_slice(bytes);
+        }
+        let mut out = Vec::new();
+        field(&mut out, self.schema.as_bytes());
+        field(&mut out, self.root.as_bytes());
+        out.extend_from_slice(&self.issued_at.to_le_bytes());
+        out.extend_from_slice(&(self.revocations.len() as u64).to_le_bytes());
+        for revocation in &self.revocations {
+            field(&mut out, revocation.key.as_bytes());
+            out.extend_from_slice(&revocation.compromised_from.to_le_bytes());
+            field(&mut out, revocation.reason.as_bytes());
+        }
+        out
+    }
+}
+
+/// A revocation list with the root's signature over it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignedRevocationList {
+    pub list: RevocationList,
+    /// Lowercase hex signature by the root key named in the list.
+    pub signature: String,
+}
+
+/// Why a revocation list is not accepted.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum RevocationListError {
+    #[error("this revocation list was written by a newer Krate ({schema}); update to read it")]
+    UnknownSchema { schema: String },
+    #[error("the revocation list's signature does not verify against the root it names; it was altered or forged")]
+    Forged,
+    #[error("the revocation list names a root that is not a valid key")]
+    BadRoot,
+}
+
+impl SignedRevocationList {
+    /// Sign a list with the publisher root. The list's `root` field is set
+    /// from the key, so a list can never name a root other than its signer.
+    pub fn create(root: &SigningKey, mut list: RevocationList) -> SignedRevocationList {
+        list.schema = REVOCATION_LIST_SCHEMA.to_string();
+        list.root = hex(&root.public_key());
+        let signature = root.sign_delegation_bytes(&list.canonical_bytes());
+        SignedRevocationList {
+            list,
+            signature: hex(&signature),
+        }
+    }
+
+    /// Check the root's signature. Nothing in the list is read for any
+    /// decision before this passes.
+    pub fn verify(&self) -> Result<&RevocationList, RevocationListError> {
+        if self.list.schema != REVOCATION_LIST_SCHEMA {
+            return Err(RevocationListError::UnknownSchema {
+                schema: self.list.schema.clone(),
+            });
+        }
+        let Some(root_key) = unhex(&self.list.root) else {
+            return Err(RevocationListError::BadRoot);
+        };
+        let Some(signature) = unhex(&self.signature) else {
+            return Err(RevocationListError::Forged);
+        };
+        let root = ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, &root_key);
+        if root
+            .verify(&self.list.canonical_bytes(), &signature)
+            .is_err()
+        {
+            return Err(RevocationListError::Forged);
+        }
+        Ok(&self.list)
+    }
+}
+
 /// What is known about revocations right now.
 ///
 /// The distinction the contract requires is between "checked, and this key is
@@ -460,6 +563,78 @@ mod tests {
 
     fn clean() -> RevocationState {
         RevocationState::Known(Vec::new())
+    }
+
+    /// A revocation list is honoured only when its own root signed it, and
+    /// its bytes are never a delegation's (IC-015).
+    #[test]
+    fn a_revocation_list_is_trusted_only_from_the_root_that_signed_it() {
+        let root = key();
+        let other = key();
+        let release = key();
+        let list = RevocationList {
+            schema: String::new(), // set by create
+            root: String::new(),
+            issued_at: SIGNED_AT,
+            revocations: vec![Revocation {
+                key: hex(&release.public_key()),
+                compromised_from: SIGNED_AT - HOUR,
+                reason: "laptop stolen".to_string(),
+            }],
+        };
+        let signed = SignedRevocationList::create(&root, list.clone());
+        assert_eq!(
+            signed.list.root,
+            hex(&root.public_key()),
+            "the signer is the root, not a field"
+        );
+        let verified = signed.verify().expect("the root's own list verifies");
+        assert_eq!(verified.revocations.len(), 1);
+
+        // Altered after signing: the reason, the key, the time -- any of it.
+        let mut altered = signed.clone();
+        altered.list.revocations[0].compromised_from += 1;
+        assert_eq!(altered.verify(), Err(RevocationListError::Forged));
+        let mut renamed = signed.clone();
+        renamed.list.revocations[0].key = hex(&other.public_key());
+        assert_eq!(renamed.verify(), Err(RevocationListError::Forged));
+
+        // Signed by somebody who is not the root it names.
+        let mut forged = SignedRevocationList::create(&other, list.clone());
+        forged.list.root = hex(&root.public_key());
+        assert_eq!(forged.verify(), Err(RevocationListError::Forged));
+
+        // From a newer Krate: refused, not guessed at.
+        let mut future = signed.clone();
+        future.list.schema = "krate.revocations.v9".to_string();
+        assert!(matches!(
+            future.verify(),
+            Err(RevocationListError::UnknownSchema { .. })
+        ));
+
+        // The signed bytes of a list and of a delegation from the same root
+        // can never coincide: the schema opens both and differs.
+        let delegation = delegation_for(&root, &release, "acme/*");
+        assert_ne!(signed.list.canonical_bytes(), delegation.canonical_bytes());
+        assert_ne!(
+            &signed.list.canonical_bytes()[..8 + REVOCATION_LIST_SCHEMA.len()],
+            &delegation.canonical_bytes()[..8 + REVOCATION_LIST_SCHEMA.len()]
+        );
+
+        // And once known, the chain applies it exactly as before.
+        let signed_delegation = SignedDelegation::create(&root, delegation);
+        let state = RevocationState::Known(verified.revocations.clone());
+        let verdict = verify_chain(
+            &signed_delegation,
+            "acme/notes",
+            &release.public_key(),
+            SIGNED_AT,
+            &state,
+        );
+        assert!(
+            matches!(verdict, ChainVerdict::RevokedAtSigning { .. }),
+            "{verdict:?}"
+        );
     }
 
     #[test]

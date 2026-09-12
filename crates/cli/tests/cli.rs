@@ -4335,6 +4335,231 @@ fn a_loose_component_that_fits_no_world_is_refused_before_it_runs() {
     );
 }
 
+/// A publisher withdraws a release key, and every machine that imports the
+/// signed list refuses what that key signed after the theft -- and nothing
+/// it signed before (IC-015, revocation).
+///
+/// Driven entirely through the CLI, the way a publisher and a recipient
+/// would do it: the root delegates a release key, the release key signs,
+/// the root withdraws it into a signed list, the recipient imports the
+/// list. The list is honoured only from the root that signed it, an older
+/// list never replaces a newer one, and an edited list is not a list.
+#[test]
+fn a_withdrawn_key_is_refused_only_for_what_it_signed_after_the_compromise() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let home = tempfile::tempdir().expect("home");
+    let write = |name: &str, bytes: &[u8]| {
+        let path = dir.path().join(name);
+        std::fs::write(&path, bytes).expect("write");
+        path
+    };
+    let root = write(
+        "root.pkcs8",
+        &krate_bundle::signing::SigningKey::generate_pkcs8().expect("root"),
+    );
+    let release = write(
+        "release.pkcs8",
+        &krate_bundle::signing::SigningKey::generate_pkcs8().expect("release"),
+    );
+    let manifest = write("manifest.toml", BUNDLE_MANIFEST.as_bytes());
+    let wasm = write(
+        "code.wasm",
+        include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm"),
+    );
+    let bundle = dir.path().join("app.krate");
+    let ok = |output: std::process::Output, what: &str| {
+        assert!(
+            output.status.success(),
+            "{what} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        output
+    };
+    ok(
+        krate()
+            .args(["pack"])
+            .arg(&wasm)
+            .arg("--manifest")
+            .arg(&manifest)
+            .arg("-o")
+            .arg(&bundle)
+            .output()
+            .expect("pack"),
+        "pack",
+    );
+
+    // The root authorises the release key, and the release key signs.
+    let delegation = dir.path().join("delegation.json");
+    ok(
+        krate()
+            .args(["delegate", "--namespace", "acme/*", "--days", "30"])
+            .arg("--root")
+            .arg(&root)
+            .arg("--key")
+            .arg(&release)
+            .arg("-o")
+            .arg(&delegation)
+            .output()
+            .expect("delegate"),
+        "delegate",
+    );
+    ok(
+        krate()
+            .arg("sign")
+            .arg(&bundle)
+            .arg("--key")
+            .arg(&release)
+            .args(["--namespace", "acme/demo"])
+            .arg("--delegation")
+            .arg(&delegation)
+            .output()
+            .expect("sign"),
+        "sign with a delegation",
+    );
+    let signed_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_secs();
+
+    let run = || {
+        krate()
+            .arg("run")
+            .arg(&bundle)
+            .args(["--headless", "--auto-grant"])
+            .env("HOME", home.path())
+            .output()
+            .expect("run")
+    };
+    // No list on this machine: the release runs, its revocation state unknown.
+    let before = run();
+    assert_eq!(
+        before.status.code(),
+        Some(0),
+        "with no list held, a delegated release runs: {}",
+        String::from_utf8_lossy(&before.stderr)
+    );
+
+    // The publisher withdraws the key as of an hour BEFORE it signed.
+    let stolen = dir.path().join("revocations.json");
+    ok(
+        krate()
+            .arg("revoke")
+            .arg("--root")
+            .arg(&root)
+            .arg("--key")
+            .arg(&release)
+            .args(["--compromised-from", &(signed_at - 3600).to_string()])
+            .args(["--reason", "laptop stolen"])
+            .arg("-o")
+            .arg(&stolen)
+            .output()
+            .expect("revoke"),
+        "revoke",
+    );
+    ok(
+        krate()
+            .args(["revocations", "--import"])
+            .arg(&stolen)
+            .env("HOME", home.path())
+            .output()
+            .expect("import"),
+        "import",
+    );
+    let shown = ok(
+        krate()
+            .arg("revocations")
+            .env("HOME", home.path())
+            .output()
+            .expect("show"),
+        "revocations",
+    );
+    let listing = String::from_utf8_lossy(&shown.stdout);
+    assert!(
+        listing.contains("1 withdrawn key") && listing.contains("laptop stolen"),
+        "the machine must show what it holds: {listing}"
+    );
+
+    let refused = run();
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert_eq!(
+        refused.status.code(),
+        Some(5),
+        "a release signed after the theft is refused: {stderr}"
+    );
+    assert!(
+        stderr.contains("withdrawn") && stderr.contains("laptop stolen"),
+        "the refusal names the withdrawal and the publisher's reason: {stderr}"
+    );
+
+    // A newer list that puts the compromise AFTER the signing: the release
+    // was made honestly and runs again.
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    let later = dir.path().join("later.json");
+    ok(
+        krate()
+            .arg("revoke")
+            .arg("--root")
+            .arg(&root)
+            .arg("--key")
+            .arg(&release)
+            .args(["--compromised-from", &(signed_at + 3600).to_string()])
+            .args(["--reason", "retired"])
+            .arg("-o")
+            .arg(&later)
+            .output()
+            .expect("revoke later"),
+        "revoke (later)",
+    );
+    ok(
+        krate()
+            .args(["revocations", "--import"])
+            .arg(&later)
+            .env("HOME", home.path())
+            .output()
+            .expect("import later"),
+        "import (later)",
+    );
+    let honest = run();
+    assert_eq!(
+        honest.status.code(),
+        Some(0),
+        "a release signed before the compromise still runs: {}",
+        String::from_utf8_lossy(&honest.stderr)
+    );
+
+    // Rolling back to the older list would forget nothing here but would in
+    // general: refused on its date, not its contents.
+    let rollback = krate()
+        .args(["revocations", "--import"])
+        .arg(&stolen)
+        .env("HOME", home.path())
+        .output()
+        .expect("import old");
+    assert!(
+        !rollback.status.success() && String::from_utf8_lossy(&rollback.stderr).contains("OLDER"),
+        "an older list must not replace a newer one: {}",
+        String::from_utf8_lossy(&rollback.stderr)
+    );
+
+    // An edited list is not a list, however plausible the edit.
+    let edited_text = std::fs::read_to_string(&later)
+        .expect("read")
+        .replace("retired", "retired early");
+    let edited = write("edited.json", edited_text.as_bytes());
+    let forged = krate()
+        .args(["revocations", "--import"])
+        .arg(&edited)
+        .env("HOME", home.path())
+        .output()
+        .expect("import edited");
+    assert!(
+        !forged.status.success()
+            && String::from_utf8_lossy(&forged.stderr).contains("altered or forged"),
+        "an edited list must be refused as such: {}",
+        String::from_utf8_lossy(&forged.stderr)
+    );
+}
+
 /// The validator and the runtime agree (IC-210, "runtime-validator parity").
 ///
 /// One function judges a component at every door -- pack, open, and so run,
