@@ -4741,6 +4741,127 @@ required = true
         assert!(matches!(err, BundleError::UnsafeAssetPath { .. }));
     }
 
+    /// Mark one central-directory entry as a unix symlink, in finished zip
+    /// bytes.
+    ///
+    /// The writer API cannot express this -- `unix_permissions` masks with
+    /// `& 0o777` and drops the file-type bits -- and a reader derives the
+    /// mode from `external_attributes >> 16`. So the four attribute bytes
+    /// are rewritten in place: find the central-directory header (`PK\x01\x02`)
+    /// whose name matches, set its external attributes to the mode, and set
+    /// the creator-system byte to unix so the reader interprets them as a
+    /// unix mode rather than DOS flags.
+    ///
+    /// Offsets are from APPNOTE 4.3.12: version-made-by at +4 (high byte is
+    /// the system), name length at +28, extra at +30, comment at +32,
+    /// external attributes at +38, name at +46.
+    fn mark_entry_as_symlink(mut bytes: Vec<u8>, entry: &str) -> Vec<u8> {
+        const CENTRAL: &[u8] = b"PK\x01\x02";
+        let mut at = 0;
+        while at + 46 <= bytes.len() {
+            if &bytes[at..at + 4] != CENTRAL {
+                at += 1;
+                continue;
+            }
+            let name_len = u16::from_le_bytes([bytes[at + 28], bytes[at + 29]]) as usize;
+            let extra_len = u16::from_le_bytes([bytes[at + 30], bytes[at + 31]]) as usize;
+            let comment_len = u16::from_le_bytes([bytes[at + 32], bytes[at + 33]]) as usize;
+            let name = &bytes[at + 46..at + 46 + name_len];
+            if name == entry.as_bytes() {
+                bytes[at + 5] = 3; // creator system: unix
+                bytes[at + 38..at + 42].copy_from_slice(&(0o120_777_u32 << 16).to_le_bytes());
+                return bytes;
+            }
+            at += 46 + name_len + extra_len + comment_len;
+        }
+        panic!("no central-directory entry named {entry}");
+    }
+
+    /// A source entry marked as a symlink is extracted as a FILE (IC-397).
+    ///
+    /// Packing refuses a symlink in the developer's tree, and the path guard
+    /// refuses a hostile entry NAME. Neither covers this shape: a perfectly
+    /// ordinary name -- `source/lib.rs`, nothing to object to -- carrying
+    /// zip's symlink mode bits, whose content is the path it points at.
+    ///
+    /// An extractor that honours those bits writes a link to /etc/passwd
+    /// into the extracted tree, and every later reader that opens
+    /// `source/lib.rs` reads a file the bundle never carried. Krate's
+    /// extractor calls File::create and nothing else, so the bits are
+    /// ignored and the target path lands as ordinary bytes.
+    ///
+    /// That is the safe behaviour, and it is safe by construction rather
+    /// than by a check -- which is exactly why it needs a test. There is no
+    /// guard here to delete by accident; a future extractor that "adds
+    /// symlink support" would silently become vulnerable, and this is what
+    /// would stop it.
+    ///
+    /// The archive cannot be built with the writer's own API: measured,
+    /// `unix_permissions` stores `mode & 0o777`, so 0o120777 goes in and
+    /// 0o100777 comes out -- the file-type bits are dropped and the archive
+    /// holds no link at all. The first version of this test did exactly
+    /// that and was worthless: an extractor sabotaged to honour symlink bits
+    /// still passed it, because there were none to honour. So the external
+    /// attributes are patched into the finished bytes, and the fixture
+    /// asserts the bits survived before anything else is checked.
+    #[test]
+    fn a_source_entry_claiming_to_be_a_symlink_extracts_as_a_file() {
+        let dir = TempDir::new().expect("tempdir");
+        let mut buffer = Cursor::new(Vec::new());
+        {
+            let mut zip = ZipWriter::new(&mut buffer);
+            let opts = SimpleFileOptions::default();
+            zip.start_file(MANIFEST_ENTRY, opts)
+                .expect("start manifest");
+            zip.write_all(MANIFEST.as_bytes()).expect("write manifest");
+            zip.start_file(COMPONENT_ENTRY, opts).expect("start wasm");
+            zip.write_all(MINIMAL_COMPONENT).expect("write wasm");
+            zip.start_file("source/lib.rs", opts).expect("start link");
+            zip.write_all(b"/etc/passwd").expect("write target");
+            zip.finish().expect("finish");
+        }
+        // 0o120777 is S_IFLNK plus permissions: exactly how a symlink is
+        // stored in a zip, with the target path as the entry's body.
+        let bytes = mark_entry_as_symlink(buffer.into_inner(), "source/lib.rs");
+
+        // The fixture is only worth anything if the bits are really there.
+        {
+            let mut check = ZipArchive::new(Cursor::new(bytes.clone())).expect("reopen");
+            let mode = check
+                .by_name("source/lib.rs")
+                .expect("entry")
+                .unix_mode()
+                .expect("a mode is recorded");
+            assert_eq!(
+                mode & 0o170_000,
+                0o120_000,
+                "the fixture must actually claim to be a symlink, got mode {mode:o}",
+            );
+        }
+
+        let bundle = dir.path().join("link.krate");
+        fs::write(&bundle, &bytes).expect("write bundle");
+
+        let opened = open(&bundle).expect("a link-shaped entry does not stop the bundle opening");
+        let source = opened.source_path().expect("source was extracted");
+        let extracted = source.join("lib.rs");
+
+        let meta = fs::symlink_metadata(&extracted).expect("the entry was extracted");
+        assert!(
+            !meta.file_type().is_symlink(),
+            "a symlink was created on disk from an archive's mode bits; \
+             every later read of {} would follow it out of the tree",
+            extracted.display(),
+        );
+        assert!(meta.file_type().is_file(), "it is an ordinary file");
+        // The target path is content, not a destination.
+        assert_eq!(
+            fs::read(&extracted).expect("read"),
+            b"/etc/passwd",
+            "the link target must land as bytes, not be followed",
+        );
+    }
+
     #[test]
     fn a_windows_sdk_path_is_rewritten_to_the_placeholder() {
         // The exact line from a real Windows-built bundle whose source could
