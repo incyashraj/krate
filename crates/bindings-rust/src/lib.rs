@@ -538,6 +538,111 @@ pub mod store {
     }
 }
 
+/// A store two people's copies of one app can both see (IC-298).
+///
+/// Separate from [`store`] on purpose: that one is private to this app on
+/// this machine, and this one is explicitly shared with whoever holds the
+/// code. Nothing moves between them, and nothing is shared until an app
+/// calls `create` or `join` -- a store that synced by default would be a
+/// decision made for the person rather than by them.
+///
+/// Requires the `store.shared` capability.
+pub mod shared {
+    pub use crate::bindings::krate::store::shared::SharedError;
+    use alloc::string::String;
+    use alloc::vec::Vec;
+
+    /// The code this app is currently joined to, or `None` when it is not
+    /// sharing at all -- which is the normal state.
+    pub fn code() -> Result<Option<String>, SharedError> {
+        crate::bindings::krate::store::shared::code()
+    }
+
+    /// Start sharing and return the code to hand to somebody else.
+    pub fn create() -> Result<String, SharedError> {
+        crate::bindings::krate::store::shared::create()
+    }
+
+    /// Join the share that code names.
+    pub fn join(code: &str) -> Result<(), SharedError> {
+        crate::bindings::krate::store::shared::join(code)
+    }
+
+    /// Stop sharing. What was written stays in the share for whoever else
+    /// is in it; this copy simply stops following it.
+    pub fn leave() -> Result<(), SharedError> {
+        crate::bindings::krate::store::shared::leave()
+    }
+
+    /// Read one shared value. A key nobody has set reads as `None`.
+    pub fn get(key: &str) -> Result<Option<Vec<u8>>, SharedError> {
+        crate::bindings::krate::store::shared::get(key)
+    }
+
+    /// Read one shared value as UTF-8 text.
+    pub fn get_text(key: &str) -> Result<Option<String>, SharedError> {
+        match get(key)? {
+            Some(bytes) => Ok(String::from_utf8(bytes).ok()),
+            None => Ok(None),
+        }
+    }
+
+    /// Write one shared value.
+    pub fn set(key: &str, value: &[u8]) -> Result<(), SharedError> {
+        crate::bindings::krate::store::shared::set(key, value)
+    }
+
+    /// Write one shared value as UTF-8 text.
+    pub fn set_text(key: &str, value: &str) -> Result<(), SharedError> {
+        set(key, value.as_bytes())
+    }
+
+    /// Remove one shared key.
+    pub fn delete(key: &str) -> Result<(), SharedError> {
+        crate::bindings::krate::store::shared::delete(key)
+    }
+
+    /// Every shared key currently set, sorted.
+    pub fn keys() -> Result<Vec<String>, SharedError> {
+        crate::bindings::krate::store::shared::keys()
+    }
+
+    /// Exchange changes with the others now, returning whether anything
+    /// arrived. Called when the app wants to, not on a timer the app
+    /// cannot see.
+    pub fn sync() -> Result<bool, SharedError> {
+        crate::bindings::krate::store::shared::sync()
+    }
+}
+
+/// Files the app ships inside its own bundle (IC-298).
+///
+/// Read-only and always available: these travel in the `.krate`, so an
+/// icon or a data table an app needs to draw itself needs no capability
+/// and no filesystem grant. Paths are relative to the bundle's `assets/`
+/// directory and cannot escape it.
+pub mod assets {
+    pub use crate::bindings::krate::resources::assets::ResourceError;
+    use alloc::string::String;
+    use alloc::vec::Vec;
+
+    /// Read one bundled asset.
+    pub fn read(path: &str) -> Result<Vec<u8>, ResourceError> {
+        crate::bindings::krate::resources::assets::read(path)
+    }
+
+    /// Read one bundled asset as UTF-8 text.
+    pub fn read_text(path: &str) -> Result<String, ResourceError> {
+        String::from_utf8(read(path)?)
+            .map_err(|_| ResourceError::Io(String::from("asset is not valid UTF-8")))
+    }
+
+    /// The direct children below a relative directory.
+    pub fn list(path: &str) -> Result<Vec<String>, ResourceError> {
+        crate::bindings::krate::resources::assets::list(path)
+    }
+}
+
 /// Secrets the app keeps for itself, such as a sign-in token.
 ///
 /// Encrypted at rest with a key derived per machine and per app, so a copied
@@ -772,6 +877,57 @@ pub mod net {
     pub fn get_text(url: &str) -> Result<String, NetError> {
         String::from_utf8(get(url)?)
             .map_err(|_| NetError::Other("response body is not valid UTF-8".to_string()))
+    }
+
+    /// A two-way connection that stays open (IC-298).
+    ///
+    /// Unlike `get`, nothing here blocks: `poll` answers `Pending` when
+    /// there is nothing new, so an app keeps drawing between messages
+    /// instead of freezing on the socket. That is the whole shape of the
+    /// interface, and the reason it is a handle rather than a stream.
+    ///
+    /// Requires `net.connect` for the host, the same grant an HTTP
+    /// request to it needs -- a socket that stays open is not a wider
+    /// permission than one that closes.
+    pub mod ws {
+        pub use crate::bindings::krate::net::ws::{WsEvent, WsMessage};
+        use super::NetError;
+        use alloc::string::String;
+        use alloc::vec::Vec;
+
+        /// Open a connection. The handle is live once `poll` reports
+        /// `Opened`; sending before then is refused rather than queued,
+        /// because a queue would hide a handshake that never finished.
+        pub fn open(url: &str) -> Result<u64, NetError> {
+            crate::bindings::krate::net::ws::open(url)
+        }
+
+        /// Send one message.
+        pub fn send(handle: u64, message: WsMessage) -> Result<(), NetError> {
+            crate::bindings::krate::net::ws::send(handle, &message)
+        }
+
+        /// Send one text message, which is what most protocols carry.
+        pub fn send_text(handle: u64, text: &str) -> Result<(), NetError> {
+            send(handle, WsMessage::Text(String::from(text)))
+        }
+
+        /// Send one binary message.
+        pub fn send_binary(handle: u64, bytes: &[u8]) -> Result<(), NetError> {
+            send(handle, WsMessage::Binary(Vec::from(bytes)))
+        }
+
+        /// What has happened since the last call. Never blocks.
+        pub fn poll(handle: u64) -> WsEvent {
+            crate::bindings::krate::net::ws::poll(handle)
+        }
+
+        /// Close the connection. Closing a handle that is already closed,
+        /// or was never opened, does nothing -- so an app tidying up does
+        /// not have to remember which.
+        pub fn close(handle: u64) {
+            crate::bindings::krate::net::ws::close(handle)
+        }
     }
 
     /// Send a lower-level HTTP or HTTPS request record.
