@@ -4975,6 +4975,56 @@ required = true
         );
     }
 
+    /// Where two readers would disagree about what an archive contains,
+    /// Krate refuses it rather than pick one (IC-714, test 1477).
+    ///
+    /// A duplicate central-directory record is exactly that disagreement.
+    /// An independent reader that walks the records sees BOTH copies;
+    /// `ZipArchive` keys by name and folds them to one, keeping the last.
+    /// So "what is in this file" has two answers, and a reviewer reading
+    /// one copy is not reading what runs.
+    ///
+    /// The record count is where the disagreement is visible, and the
+    /// refusal is built on it: the end-of-central-directory count says
+    /// four, the parser resolves three, and the difference is the
+    /// duplicate. Asserting that gap here is what keeps the guard honest
+    /// -- if a future zip crate started folding silently at a different
+    /// layer, this would still see it.
+    #[test]
+    fn an_archive_two_readers_would_read_differently_is_refused() {
+        const DUPLICATE: &[u8] =
+            include_bytes!("../tests/fixtures/duplicate-from-another-writer.krate");
+
+        // What the archive DECLARES it contains, read from its own
+        // end-of-central-directory record -- the number an independent
+        // reader walking the records would agree with.
+        let declared = central_directory_record_count(DUPLICATE)
+            .expect("the fixture has a readable end-of-central-directory record");
+        // What the parser resolves, folding by name.
+        let parsed = ZipArchive::new(io::Cursor::new(DUPLICATE))
+            .expect("it is a readable zip")
+            .len();
+
+        assert!(
+            declared > parsed,
+            "the fixture must actually carry the disagreement this is about: \
+             declared {declared}, parsed {parsed}",
+        );
+        assert_eq!(declared, 4, "four records were written");
+        assert_eq!(
+            parsed, 3,
+            "three survive the fold, so one copy is invisible"
+        );
+
+        // And Krate refuses it rather than choosing a reading.
+        let err = open_bytes(DUPLICATE).expect_err("the disagreement must be refused");
+        let message = err.user_message().unwrap_or_else(|| err.to_string());
+        assert!(
+            message.contains("names the same file twice"),
+            "and say which disagreement it is: {message}"
+        );
+    }
+
     /// An entry nobody can read without a password is refused, and told
     /// apart from a compression method we do not support (IC-833, 1833).
     ///
