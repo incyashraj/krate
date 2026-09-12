@@ -12571,13 +12571,21 @@ fn install_bundle(bundle_path: &Path, prefix: &Path) -> Result<PathBuf> {
     // The lineage tag is what keeps two publishers' "Notes" apart (K-292).
     let app_dir = prefix.join(format!("{}.app", install_directory_name(&opened)));
 
-    let macos_dir = app_dir.join("Contents/MacOS");
-    let resources = app_dir.join("Contents/Resources");
-    // A fresh wrapper each time: leftovers from an older version of the same
-    // app would otherwise sit beside the new one inside the bundle.
-    if app_dir.exists() {
-        fs::remove_dir_all(&app_dir).with_context(|| format!("replacing {}", app_dir.display()))?;
-    }
+    // Built beside the target and swapped in at the end, never in place
+    // (IC-278). Removing the installed app first and writing the new one
+    // after leaves a window -- a full disk, a crash, a killed terminal --
+    // where the person has no app at all: the one they had is gone and
+    // the one replacing it was never finished. A staging directory turns
+    // that into "the old app is still there and the install failed",
+    // which is the honest outcome and the recoverable one.
+    //
+    // Beside the target rather than in the system temp directory, because
+    // a rename is only atomic within one filesystem and /tmp is often a
+    // different one.
+    let staging = prefix.join(format!(".{}.installing", install_directory_name(&opened)));
+    let _ = fs::remove_dir_all(&staging);
+    let macos_dir = staging.join("Contents/MacOS");
+    let resources = staging.join("Contents/Resources");
     fs::create_dir_all(&macos_dir).with_context(|| format!("creating {}", macos_dir.display()))?;
     fs::create_dir_all(&resources)?;
 
@@ -12636,7 +12644,7 @@ fn install_bundle(bundle_path: &Path, prefix: &Path) -> Result<PathBuf> {
     // different apps to Launch Services rather than one overwriting the other.
     let ident = format!("dev.krate.app.{}", manifest.app.id.replace('/', "."));
     fs::write(
-        app_dir.join("Contents/Info.plist"),
+        staging.join("Contents/Info.plist"),
         format!(
             r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -12670,6 +12678,31 @@ fn install_bundle(bundle_path: &Path, prefix: &Path) -> Result<PathBuf> {
             version = xml_escape(&manifest.app.version),
         ),
     )?;
+
+    // Everything is written. Swap the finished wrapper into place: the old
+    // app exists until this moment and is replaced by a complete one, so
+    // there is no instant at which the person has neither.
+    //
+    // The old directory is moved aside first rather than deleted, so a
+    // failed rename still leaves something to put back; it is removed only
+    // once the new one is in place.
+    let previous = prefix.join(format!(".{}.replaced", install_directory_name(&opened)));
+    let _ = fs::remove_dir_all(&previous);
+    let had_previous = app_dir.exists();
+    if had_previous {
+        fs::rename(&app_dir, &previous)
+            .with_context(|| format!("setting aside the installed {}", app_dir.display()))?;
+    }
+    if let Err(err) = fs::rename(&staging, &app_dir) {
+        // Put the old one back before reporting, or a failure here would
+        // itself be the thing that loses the app.
+        if had_previous {
+            let _ = fs::rename(&previous, &app_dir);
+        }
+        let _ = fs::remove_dir_all(&staging);
+        return Err(err).with_context(|| format!("installing {}", app_dir.display()));
+    }
+    let _ = fs::remove_dir_all(&previous);
 
     // Tell Launch Services, so it appears in Launchpad and Spotlight now
     // rather than whenever the system next rescans.

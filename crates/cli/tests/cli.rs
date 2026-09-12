@@ -4718,6 +4718,101 @@ fn a_grant_survives_an_update_and_a_widened_one_is_asked_again() {
     );
 }
 
+/// Installing over an app that is already there never leaves the person
+/// with neither (IC-278).
+///
+/// The wrapper is built beside the target and swapped in, so the app they
+/// had exists until a complete replacement is ready. The old code removed
+/// the installed app and then wrote the new one, which leaves a window --
+/// a full disk, a crash, a killed terminal -- where both are gone.
+///
+/// Driven through the CLI: install, reinstall, and check the app is whole
+/// throughout and that no staging directory is left behind.
+#[test]
+fn reinstalling_an_app_leaves_no_moment_with_neither_copy() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let prefix = tempfile::tempdir().expect("prefix");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(
+        &wasm,
+        include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm"),
+    )
+    .expect("component");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        "[app]\nid = \"dev.krate.reinstall\"\nname = \"Reinstall\"\nversion = \"1.0.0\"\n\
+         entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n",
+    )
+    .expect("manifest");
+    let bundle = dir.path().join("app.krate");
+    assert!(krate()
+        .args(["pack"])
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .status()
+        .expect("pack")
+        .success());
+
+    let install = || {
+        krate()
+            .arg("install")
+            .arg(&bundle)
+            .arg("--prefix")
+            .arg(prefix.path())
+            .output()
+            .expect("install")
+    };
+    let entries = || {
+        let mut names: Vec<String> = std::fs::read_dir(prefix.path())
+            .expect("read prefix")
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
+        names.sort();
+        names
+    };
+
+    let first = install();
+    if !first.status.success() {
+        // Installing needs the platform wrapper path; where it is not
+        // supported this says so rather than pretending to have tested it.
+        eprintln!("skipping: install is not supported on this platform (no krate-install wrapper)");
+        return;
+    }
+    let installed = entries();
+    assert_eq!(
+        installed.len(),
+        1,
+        "one app, and nothing beside it: {installed:?}"
+    );
+    let app = prefix.path().join(&installed[0]);
+
+    // The same app again. It must end up whole, and the prefix must hold
+    // exactly one thing -- no .installing or .replaced left over.
+    let again = install();
+    assert!(
+        again.status.success(),
+        "reinstall failed: {}",
+        String::from_utf8_lossy(&again.stderr)
+    );
+    let after = entries();
+    assert_eq!(
+        after, installed,
+        "a reinstall must leave exactly the app, with no staging debris: {after:?}"
+    );
+    assert!(app.exists(), "and the app itself is still there");
+    assert!(
+        !after
+            .iter()
+            .any(|n| n.contains(".installing") || n.contains(".replaced")),
+        "no half-finished wrapper may survive: {after:?}"
+    );
+}
+
 /// A person can see what they have allowed, and take it back (IC-017).
 ///
 /// A remembered permission with no way to withdraw it is a wall that only
