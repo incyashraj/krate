@@ -12333,8 +12333,14 @@ fn launch_target(bundle: &Path) -> Result<PathBuf> {
     let dest = dir.join(format!("{digest}.krate"));
 
     // Already have these exact bytes: nothing to write.
-    if fs::metadata(&dest)
-        .map(|meta| meta.len() as usize == bytes.len())
+    //
+    // The check is the DIGEST, not the length (K-296). Comparing sizes
+    // says only that something of the right size is there, so a cache
+    // entry holding different bytes of the same length was served
+    // forever and nothing ever re-read it. The file's name is a claim
+    // about its content; this is what makes the claim true.
+    if fs::read(&dest)
+        .map(|found| krate_bundle::provenance::digest_archive_bytes(&found).digest == digest)
         .unwrap_or(false)
     {
         return Ok(dest);
@@ -12343,9 +12349,28 @@ fn launch_target(bundle: &Path) -> Result<PathBuf> {
     // Written through a temporary file and renamed, so an interrupted
     // download cannot leave a half-file under a name that claims to be a
     // complete app -- the name is a promise about the content.
-    let staged = dir.join(format!(".{digest}.partial"));
+    //
+    // The temporary name is unique per process and per call, not per
+    // digest (K-296). Two downloads of the same app produce the same
+    // digest and so shared one staging path: the second writer replaced
+    // the first's file mid-write, the first renamed it into place, and
+    // the cache ended up holding the wrong bytes under the right name.
+    // A private name means each download either completes its own file or
+    // leaves nothing, and whichever renames last wins with a whole file.
+    let staged = dir.join(format!(
+        ".{digest}.{}.{:x}.partial",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0),
+    ));
     fs::write(&staged, &bytes).with_context(|| format!("writing {}", staged.display()))?;
-    fs::rename(&staged, &dest).with_context(|| format!("writing {}", dest.display()))?;
+    if let Err(err) = fs::rename(&staged, &dest) {
+        // Leave no debris behind a failed publish.
+        let _ = fs::remove_file(&staged);
+        return Err(err).with_context(|| format!("writing {}", dest.display()));
+    }
     Ok(dest)
 }
 
@@ -19502,6 +19527,60 @@ mod url_cache_tests {
         // not by the compiler that happened to build Krate.
         assert_eq!(one.digest.len(), 64);
         assert!(one.digest.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    /// A cache entry is trusted for its CONTENT, not its size, and two
+    /// downloads never share a staging file (K-296, IC-393).
+    ///
+    /// Both halves were real. The reuse check compared lengths, so an
+    /// entry holding different bytes of the same size was served forever
+    /// and never re-read. And the staging path was `.{digest}.partial` --
+    /// one name per content -- so two processes fetching the same app
+    /// wrote the same temporary file: the second replaced the first's
+    /// mid-write, the first renamed it into place, and the cache held the
+    /// wrong bytes under the right name.
+    ///
+    /// The decisions are exercised through the same source the function
+    /// uses, scoped to its body and with comments stripped, because the
+    /// function itself does network I/O. Sabotaging either line makes
+    /// this fail.
+    #[test]
+    fn a_cache_entry_is_trusted_for_its_content_and_staged_privately() {
+        let source = include_str!("main.rs");
+        let start = source
+            .find("fn launch_target(")
+            .expect("launch_target exists");
+        let body = &source[start..start + 4000.min(source.len() - start)];
+        let code: String = body
+            .lines()
+            .map(str::trim_start)
+            .filter(|line| !line.starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        // A hit is decided by re-reading the file and re-digesting it.
+        assert!(
+            code.contains("fs::read(&dest)") && code.contains("digest_archive_bytes(&found)"),
+            "a cache hit must re-read the entry and check its digest; comparing \
+             lengths serves whatever is there of the right size",
+        );
+        assert!(
+            !code.contains("meta.len() as usize == bytes.len()"),
+            "the length-only hit check must not come back: it cannot tell one \
+             app from another of the same size",
+        );
+
+        // The staging name carries something private to this call, so two
+        // downloads of one app cannot write the same temporary file.
+        let staged_line = code
+            .lines()
+            .find(|line| line.contains(".partial"))
+            .expect("launch_target stages through a .partial file");
+        assert!(
+            staged_line.contains("process::id") || code.contains("std::process::id()"),
+            "the staging name must be private to this process, or two downloads \
+             of the same app share one temporary file: {staged_line}",
+        );
     }
 
     /// The cache path `launch_target` actually writes is the content digest.
