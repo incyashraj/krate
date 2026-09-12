@@ -1,0 +1,70 @@
+{
+ "id": "P-NOTES-BATTERY-MACOS",
+ "title": "The notes-app battery on macOS: what it measures and which of it the public figures depend on",
+ "claims": ["C-NOTES-PERFORMANCE", "C-NOTES-ENERGY"],
+ "frozen_at": "2026-08-16T09:00:00Z",
+ "note": [
+  "The plan for the run recorded in evidence/benchmarks/2026-08-16-notes-battery-macos.md,",
+  "written down after the fact from that note rather than before it -- said plainly here",
+  "because the point of frozen_at is that it precedes the run, and for this one it did not.",
+  "Later profiles are frozen first; this one is the existing measurement expressed in the",
+  "shape the audit can read, so its rejected energy leg stops being a sentence in a",
+  "document and becomes a cell that blocks a claim (IC-828)."
+ ],
+ "cells": [
+  {
+   "name": "app-file-size",
+   "status": "required",
+   "claims": ["C-NOTES-PERFORMANCE"],
+   "unit": "bytes",
+   "definition": "the app file itself, not its installed footprint",
+   "fixture": "notes-replica",
+   "arch": "arm64"
+  },
+  {
+   "name": "memory-50k",
+   "status": "required",
+   "claims": ["C-NOTES-PERFORMANCE"],
+   "unit": "bytes",
+   "definition": "resident memory with a 50,000-line document open, summed across processes",
+   "fixture": "notes-50k",
+   "arch": "arm64"
+  },
+  {
+   "name": "warm-start-50k",
+   "status": "required",
+   "claims": ["C-NOTES-PERFORMANCE"],
+   "unit": "seconds",
+   "definition": "time from launch to a visible window, second and later launches, 50,000 lines",
+   "fixture": "notes-50k",
+   "arch": "arm64"
+  },
+  {
+   "name": "idle-cpu-50k",
+   "status": "required",
+   "claims": ["C-NOTES-PERFORMANCE"],
+   "unit": "percent of a core",
+   "definition": "CPU with the document open and nothing happening, 50,000 lines",
+   "fixture": "notes-50k",
+   "arch": "arm64"
+  },
+  {
+   "name": "scroll-pacing",
+   "status": "required",
+   "claims": ["C-NOTES-PERFORMANCE"],
+   "unit": "milliseconds per frame",
+   "definition": "p50 and p99 frame interval while scrolling; Krate only, no comparison instrument exists on macOS",
+   "fixture": "notes-50k",
+   "arch": "arm64"
+  },
+  {
+   "name": "energy-scroll-leg",
+   "status": "required",
+   "claims": ["C-NOTES-ENERGY"],
+   "unit": "joules",
+   "definition": "energy drawn over the scroll leg, from the platform power meter",
+   "fixture": "notes-50k",
+   "arch": "arm64"
+  }
+ ]
+}

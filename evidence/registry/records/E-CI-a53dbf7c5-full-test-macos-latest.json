@@ -1,0 +1,70 @@
+{
+ "id": "E-CI-a53dbf7c5-full-test-macos-latest",
+ "claims": [
+  "C-RELEASE-GATES"
+ ],
+ "subject": {
+  "kind": "source tree",
+  "source": {
+   "commit": "a53dbf7c5796984ee97fe0cb1292025b674cf64f",
+   "tree": "aa2e69f00108be90f70c78e2ef2ff2e1c11f5fc7"
+  },
+  "binary_digest": null,
+  "package_digest": null,
+  "relationship": "the CI workflow checked out this commit and built it inside the lane"
+ },
+ "environment": {
+  "kind": "hosted",
+  "os": "macos",
+  "arch": "arm64",
+  "runner": "GitHub-hosted"
+ },
+ "toolchain": {
+  "rust": "as pinned by .github/workflows/ci.yml at this commit"
+ },
+ "command": "GitHub Actions job 'Full test (macos-latest)' of CI run 34673211534",
+ "inputs": {
+  "prerequisites": []
+ },
+ "oracle": {
+  "class": "execution",
+  "description": "the whole workspace test suite plus the replay and open-every-bundle steps ran and reported no failure"
+ },
+ "raw_result": {
+  "conclusion": "missing",
+  "run_id": "34673211534",
+  "location": "https://github.com/incyashraj/krate/actions/runs/34673211534",
+  "note": "this lane never ran on the commit -- a platform gap, not a pass"
+ },
+ "outcome": "blocked",
+ "scope": {
+  "supports": "Full test (macos-latest) concluded missing on commit a53dbf7c5",
+  "exclusions": [
+   "anything the lane does not exercise",
+   "clean recipients",
+   "published artifacts"
+  ]
+ },
+ "independence": "first-party API observation",
+ "time": {
+  "start": "2026-09-12T05:09:17Z",
+  "finish": "2026-09-12T05:09:17Z"
+ },
+ "operator": "GitHub Actions, CI workflow",
+ "privacy": {
+  "audience": "public",
+  "redact": []
+ },
+ "retention": {
+  "raw": "the GitHub Actions run log",
+  "until": "GitHub's log retention"
+ },
+ "expiry": {
+  "triggers": [
+   "source-change"
+  ],
+  "on": null
+ },
+ "supersedes": null,
+ "invalidated_by": null
+}

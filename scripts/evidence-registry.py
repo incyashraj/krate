@@ -7,6 +7,7 @@
     scripts/evidence-registry.py publication       # refuse an unsupported or expired material claim
     scripts/evidence-registry.py export DIR        # public-safe JSON + Markdown, no secrets, no private paths
     scripts/evidence-registry.py summary           # counts that keep their denominators
+    scripts/evidence-registry.py audit             # measurement cells against the plan they were promised
     scripts/evidence-registry.py --self-test
 
 An evidence record says what happened: to which exact subject, in which
@@ -50,7 +51,31 @@ CLAIM_ID = re.compile(r"^C-[A-Za-z0-9][A-Za-z0-9.-]{3,}$")
 COMMIT = re.compile(r"^[0-9a-f]{7,40}$")
 DIGEST = re.compile(r"^[0-9a-f]{64}$")
 
-OUTCOMES = {"pass", "fail", "skipped", "blocked", "flaky", "incomplete", "informational"}
+OUTCOMES = {
+    "pass",
+    "fail",
+    # A cell whose measurement RAN and whose result was thrown out: the
+    # instrument was wrong, the permission was missing, the machine was
+    # contaminated. Distinct from "skipped" (never attempted) and from
+    # "fail" (the thing measured is bad) because the fix differs and
+    # because a rejected required cell must block a claim rather than
+    # quietly leave a gap (IC-828, tests 1782 and 1815).
+    "rejected",
+    "skipped",
+    "blocked",
+    "flaky",
+    "incomplete",
+    "informational",
+}
+# What a cell's outcome means for a claim that needs it.
+#
+# Only ONE state is neutral, and only when the cell was optional: a cell
+# nobody required and nobody ran says nothing either way. Every other
+# absence is a hole, because the alternative -- treating a missing number
+# as a zero, or a rejected row as "no problem found" -- is how an
+# unmeasured thing becomes a published claim (IC-828).
+NEUTRAL_OUTCOMES = {"not-run"}
+SUPPORTING_OUTCOMES = {"pass"}
 SUBJECT_KINDS = {
     "source tree", "binary", "archive", "installer", ".krate", "service",
     "protocol", "document", "policy",
@@ -108,10 +133,38 @@ def load_dir(directory, id_pattern, what):
     return items, problems
 
 
+PROFILE_ID = re.compile(r"^P-[A-Za-z0-9][A-Za-z0-9.-]{2,}$")
+
+
 def load(registry=REGISTRY):
     records, r_problems = load_dir(registry / "records", RECORD_ID, "record")
     claims, c_problems = load_dir(registry / "claims", CLAIM_ID, "claim")
     return records, claims, r_problems + c_problems
+
+
+def load_profiles(registry=REGISTRY):
+    """Measurement profiles and the runs made against them.
+
+    A profile is the plan, frozen before the run; a results file names the
+    profile it was produced against. They are separate files because they
+    are written at different times by different people, and the audit's
+    whole job is to compare them (IC-828)."""
+    profiles, problems = load_dir(registry / "profiles", PROFILE_ID, "profile")
+    runs = {}
+    results_dir = registry / "results"
+    if results_dir.is_dir():
+        for path in sorted(results_dir.glob("*.json")):
+            try:
+                data = json.loads(path.read_text())
+            except (OSError, ValueError) as err:
+                problems.append(f"{path.name}: unreadable results: {err}")
+                continue
+            profile_id = data.get("profile")
+            if not isinstance(profile_id, str) or not PROFILE_ID.match(profile_id):
+                problems.append(f"{path.name}: results must name the profile they were run against")
+                continue
+            runs.setdefault(profile_id, []).append((path.name, data))
+    return profiles, runs, problems
 
 
 # ---- validation ------------------------------------------------------------
@@ -476,6 +529,164 @@ def publication_gate(claims, records, today=None):
     return refusals
 
 
+# ---- the measurement matrix (IC-828) --------------------------------------
+
+# A measurement profile is a set of CELLS: one number each, every one
+# either required for the claim the profile backs or optional. The profile
+# is chosen BEFORE the run, and the audit compares what came back against
+# what was asked for -- so a cell cannot be quietly dropped from the
+# required list after its result is seen (1803).
+CELL_STATUSES = {"required", "optional"}
+CELL_OUTCOMES = OUTCOMES | NEUTRAL_OUTCOMES
+
+
+def validate_profile(profile, claims=None):
+    """A measurement profile, as a plan: what will be measured, which of it
+    the claim depends on, and against which fixture and tools.
+
+    `claims` is the claim registry when there is one, so a profile cannot
+    name a claim that does not exist -- a dangling name would let the
+    audit report "blocks C-SOMETHING" about nothing at all."""
+    p = []
+    ident = profile.get("id", "?")
+    pre = f"profile {ident}"
+    if not isinstance(ident, str) or not ident:
+        p.append(f"{pre}: a profile needs a stable id")
+    named = profile.get("claims")
+    if not isinstance(named, list) or not named:
+        p.append(f"{pre}: a profile exists to back claims; name them")
+    elif claims is not None:
+        for claim in named:
+            if claim not in claims:
+                p.append(f"{pre}: names {claim}, which is not a claim in the registry")
+    # Frozen before the run: the digest of the cell plan, recorded when the
+    # plan was made. Checked again at audit, so weakening a cell from
+    # required to optional after seeing a failure changes the digest and
+    # the audit says so (1803).
+    if not isinstance(profile.get("frozen_at"), str) or not _is_iso(profile.get("frozen_at")):
+        p.append(f"{pre}: frozen_at must be the ISO-8601 instant the plan was fixed (1803)")
+    cells = profile.get("cells")
+    if not isinstance(cells, list) or not cells:
+        p.append(f"{pre}: a profile with no cells measures nothing")
+        return p
+    seen = set()
+    for cell in cells:
+        name = cell.get("name")
+        if not isinstance(name, str) or not name:
+            p.append(f"{pre}: every cell needs a name")
+            continue
+        if name in seen:
+            p.append(f"{pre}: cell {name} appears twice")
+        seen.add(name)
+        if cell.get("status") not in CELL_STATUSES:
+            p.append(f"{pre}/{name}: status must be required or optional (IC-828)")
+        # Units and definition travel with the cell, not with the prose
+        # that quotes it: a number whose unit lives in a sentence
+        # somewhere else is a number that gets requoted wrongly (1805).
+        for field in ("unit", "definition"):
+            if not cell.get(field):
+                p.append(f"{pre}/{name}: {field} is required -- a bare number cannot be read back (1805)")
+    return p
+
+
+def audit_profile(profile, results):
+    """Compare what a run produced against what the profile asked for.
+
+    Returns (ok, findings). It fails closed: a required cell that is
+    missing from the results, malformed, rejected, or that reports no work
+    at all is a finding, and so is a result for a cell the profile never
+    named (1806). Only an OPTIONAL cell that did not run is neutral.
+    """
+    findings = []
+    cells = {cell["name"]: cell for cell in profile.get("cells", [])}
+    by_name = {}
+    for row in results.get("cells", []):
+        name = row.get("name")
+        if name in by_name:
+            findings.append(f"{name}: reported twice; which one is the measurement?")
+        by_name[name] = row
+
+    # A result for something nobody asked for is not a bonus: it means the
+    # run and the plan disagree about what was being measured.
+    for name in by_name:
+        if name not in cells:
+            findings.append(f"{name}: reported, but the profile never named it (1806)")
+
+    for name, cell in cells.items():
+        required = cell.get("status") == "required"
+        row = by_name.get(name)
+        if row is None:
+            if required:
+                findings.append(f"{name}: REQUIRED and missing from the results (1806)")
+            continue
+        outcome = row.get("outcome")
+        if outcome not in CELL_OUTCOMES:
+            findings.append(f"{name}: outcome {outcome!r} is not one this audit understands (1806)")
+            continue
+        if outcome in NEUTRAL_OUTCOMES:
+            if required:
+                findings.append(f"{name}: REQUIRED and did not run (1806)")
+            continue
+        if outcome == "rejected":
+            why = row.get("rejection_reason") or "no reason recorded"
+            # 1782/1815: a rejected row is not an absence to be tidied
+            # away. It appears in the report, and if the claim needed it,
+            # it blocks the claim.
+            findings.append(f"{name}: REJECTED -- {why}" + (" (blocks the claim)" if required else " (optional)"))
+            continue
+        if outcome == "pass":
+            # 1806: zero work is not a measurement. A cell that reports a
+            # sample count of zero, or no value at all, passed nothing.
+            if row.get("value") is None:
+                findings.append(f"{name}: passed with no value -- a cell with no number measured nothing (1806)")
+            elif row.get("samples") is not None and int(row.get("samples")) <= 0:
+                findings.append(f"{name}: passed with {row.get('samples')} samples -- zero work is not a result (1806)")
+            # The measurement has to be OF the thing the profile named.
+            for field in ("tool_version", "fixture", "arch"):
+                wanted = cell.get(field)
+                got = row.get(field)
+                if wanted and got != wanted:
+                    findings.append(
+                        f"{name}: {field} was {got!r}, the profile asked for {wanted!r} (1806)"
+                    )
+            continue
+        # fail, skipped, blocked, flaky, incomplete, informational
+        if required:
+            findings.append(f"{name}: REQUIRED and {outcome} (1806)")
+
+    # 1803: the plan cannot be weakened after the fact.
+    if results.get("profile_frozen_at") and results["profile_frozen_at"] != profile.get("frozen_at"):
+        findings.append(
+            "the results were produced against a different version of this profile "
+            f"({results['profile_frozen_at']} vs {profile.get('frozen_at')}) -- a profile "
+            "cannot be reopened after seeing the run (1803)"
+        )
+    return (not findings), findings
+
+
+def claims_blocked_by(profile, results):
+    """Which of the profile's claims this run cannot support.
+
+    A claim is blocked when any cell it depends on is not a clean pass.
+    Stated separately from the audit findings because a person asks two
+    different questions: "is this run sound" and "may I say the sentence".
+    """
+    ok, _ = audit_profile(profile, results)
+    if ok:
+        return []
+    by_name = {row.get("name"): row for row in results.get("cells", [])}
+    blocked = []
+    for cell in profile.get("cells", []):
+        if cell.get("status") != "required":
+            continue
+        row = by_name.get(cell["name"])
+        if row is None or row.get("outcome") not in SUPPORTING_OUTCOMES:
+            for claim in cell.get("claims", profile.get("claims", [])):
+                if claim not in blocked:
+                    blocked.append(claim)
+    return blocked
+
+
 def summary(records):
     """1346: counts that keep their denominators. Skipped and ignored are
     shown beside passes, never folded into them."""
@@ -784,6 +995,111 @@ def self_test():
     v = assess(both, {mac["id"]: mac, win["id"]: win}, today)
     expect(v["state"] == "UNSUPPORTED" and any("1499" in r for r in v["reasons"]), f"1499: different bytes cannot prove a same-file claim: {v}")
 
+    # ---- the measurement matrix (IC-828) ----------------------------------
+    def profile(**over):
+        base = {
+            "id": "P-SCROLL",
+            "claims": ["C-SCROLL"],
+            "frozen_at": "2026-09-12T09:00:00Z",
+            "cells": [
+                {"name": "scroll-cpu", "status": "required", "unit": "percent",
+                 "definition": "mean CPU while scrolling 50k lines", "tool_version": "instruments-16",
+                 "fixture": "notes-50k", "arch": "arm64"},
+                {"name": "energy", "status": "required", "unit": "joules",
+                 "definition": "energy over the scroll leg"},
+                {"name": "gpu-time", "status": "optional", "unit": "ms",
+                 "definition": "mean GPU frame time"},
+            ],
+        }
+        base.update(over)
+        return base
+
+    def results(cells, **over):
+        base = {"profile_frozen_at": "2026-09-12T09:00:00Z", "cells": cells}
+        base.update(over)
+        return base
+
+    good = [
+        {"name": "scroll-cpu", "outcome": "pass", "value": 4.1, "samples": 30,
+         "tool_version": "instruments-16", "fixture": "notes-50k", "arch": "arm64"},
+        {"name": "energy", "outcome": "pass", "value": 91.0, "samples": 5},
+    ]
+    expect(validate_profile(profile()) == [], f"a good profile validates: {validate_profile(profile())}")
+    ok, findings = audit_profile(profile(), results(good))
+    expect(ok, f"every required cell passing is a clean audit: {findings}")
+    expect(claims_blocked_by(profile(), results(good)) == [], "and nothing is blocked")
+
+    # Only an OPTIONAL not-run cell is neutral. The optional gpu-time cell
+    # is absent above and the audit is still clean; a required one absent
+    # is not.
+    missing_required = [row for row in good if row["name"] != "energy"]
+    ok, findings = audit_profile(profile(), results(missing_required))
+    expect(not ok and any("REQUIRED and missing" in f for f in findings),
+           f"1806: a missing required cell must fail the audit: {findings}")
+    expect(claims_blocked_by(profile(), results(missing_required)) == ["C-SCROLL"],
+           "and block the claim it backed")
+    not_run = good + [{"name": "gpu-time", "outcome": "not-run"}]
+    ok, _ = audit_profile(profile(), results(not_run))
+    expect(ok, "an optional cell that did not run is the one neutral state")
+    required_not_run = [good[0], {"name": "energy", "outcome": "not-run"}]
+    ok, findings = audit_profile(profile(), results(required_not_run))
+    expect(not ok and any("did not run" in f for f in findings),
+           f"a REQUIRED cell that did not run is not neutral: {findings}")
+
+    # 1782 / 1815: a rejected row appears in the report and blocks the claim.
+    # It is not a zero and it is not an absence.
+    rejected = [good[0], {"name": "energy", "outcome": "rejected",
+                          "rejection_reason": "Accessibility permission missing, so the leg measured nothing"}]
+    ok, findings = audit_profile(profile(), results(rejected))
+    expect(not ok, "1782: a rejected required cell fails the audit")
+    expect(any("REJECTED" in f and "Accessibility" in f for f in findings),
+           f"1815: the rejected row and its reason appear in the report: {findings}")
+    expect(claims_blocked_by(profile(), results(rejected)) == ["C-SCROLL"],
+           "1815: and it blocks the claim it would have supported")
+    expect(
+        not any(str(f).strip().endswith(": 0") or "0.0" in str(f) for f in findings),
+        "a rejected cell must never be rendered as a zero result (1782)",
+    )
+
+    # 1806: zero work, wrong tool, wrong architecture, wrong fixture.
+    zero_work = [dict(good[0], samples=0), good[1]]
+    ok, findings = audit_profile(profile(), results(zero_work))
+    expect(not ok and any("zero work" in f for f in findings), f"1806: {findings}")
+    no_value = [dict(good[0], value=None), good[1]]
+    ok, findings = audit_profile(profile(), results(no_value))
+    expect(not ok and any("no value" in f for f in findings), f"1806: {findings}")
+    for field, wrong in [("tool_version", "instruments-9"), ("arch", "x86_64"), ("fixture", "notes-5k")]:
+        ok, findings = audit_profile(profile(), results([dict(good[0], **{field: wrong}), good[1]]))
+        expect(not ok and any(field in f for f in findings),
+               f"1806: a {field} mismatch must fail the audit: {findings}")
+    ok, findings = audit_profile(profile(), results(good + [{"name": "invented", "outcome": "pass", "value": 1}]))
+    expect(not ok and any("never named it" in f for f in findings),
+           f"1806: a result nobody asked for means the plan and the run disagree: {findings}")
+
+    # 1803: the plan is frozen before the run and cannot be weakened after.
+    weakened = profile(cells=[
+        dict(profile()["cells"][0]),
+        dict(profile()["cells"][1], status="optional"),
+        dict(profile()["cells"][2]),
+    ], frozen_at="2026-09-12T18:00:00Z")
+    ok, findings = audit_profile(weakened, results(missing_required))
+    expect(not ok and any("cannot be reopened" in f for f in findings),
+           f"1803: demoting a required cell after the run must be caught: {findings}")
+
+    # A profile cannot name a claim that does not exist: "blocks C-GHOST"
+    # would read as a real consequence and mean nothing.
+    dangling = validate_profile(profile(), {"C-REAL": {}})
+    expect(any("not a claim in the registry" in p for p in dangling),
+           f"a profile naming an unknown claim must be refused: {dangling}")
+    expect(validate_profile(profile(), {"C-SCROLL": {}}) == [],
+           "and a profile naming a real one validates")
+
+    # 1805: units and definitions travel with the cell.
+    bare = profile(cells=[{"name": "scroll-cpu", "status": "required"}])
+    problems = validate_profile(bare)
+    expect(any("unit" in p for p in problems) and any("definition" in p for p in problems),
+           f"1805: a cell without a unit or a definition cannot be read back: {problems}")
+
     # 1500: the export needs no account and no service -- the script talks to
     # nothing but the filesystem.
     source = Path(__file__).read_text()
@@ -795,6 +1111,10 @@ def self_test():
         for f in failures:
             print(f"  {f}")
         return 1
+    print("OK -- the measurement matrix fails closed: only an optional not-run cell")
+    print("is neutral, a rejected row appears with its reason and blocks the claim,")
+    print("zero work and wrong tool/arch/fixture fail the audit, and a frozen plan")
+    print("cannot be weakened after the run.")
     print("OK -- records need a stable id, a source commit AND tree, separate binary")
     print("and package digests, a named oracle and environment kind; a no-op cannot")
     print("pass; a failure stands until a clean pass names it; expired, invalidated,")
@@ -810,7 +1130,10 @@ def main(argv):
         return self_test()
     if not argv:
         print(__doc__.strip().splitlines()[0])
-        print("usage: evidence-registry.py validate|state|card|publication|export|summary|--self-test")
+        print(
+        "usage: evidence-registry.py "
+        "validate|state|card|publication|export|summary|audit|--self-test"
+    )
         return 2
     command, args = argv[0], argv[1:]
     records, claims, load_problems = load()
@@ -869,6 +1192,42 @@ def main(argv):
     if command == "summary":
         print(summary(records))
         return 0
+    if command == "audit":
+        profiles, runs, problems = load_profiles()
+        if problems:
+            print("measurement profiles: NOT VALID")
+            for problem in problems:
+                print(f"  - {problem}")
+            return 1
+        for profile in profiles.values():
+            problems.extend(validate_profile(profile, claims))
+        if problems:
+            print("measurement profiles: NOT VALID")
+            for problem in problems:
+                print(f"  - {problem}")
+            return 1
+        if not profiles:
+            print("no measurement profiles yet.")
+            print("A profile is the plan for a set of measurements, frozen before the run:")
+            print(f"  {(REGISTRY / 'profiles').relative_to(ROOT)}/P-<name>.json")
+            return 0
+        clean = True
+        for pid, profile in sorted(profiles.items()):
+            for name, result in runs.get(pid, []):
+                ok, findings = audit_profile(profile, result)
+                blocked = claims_blocked_by(profile, result)
+                status = "clean" if ok else "FAILS"
+                print(f"{pid} <- {name}: {status}")
+                for finding in findings:
+                    print(f"  - {finding}")
+                for claim in blocked:
+                    print(f"  blocks {claim}")
+                if not ok:
+                    clean = False
+            if pid not in runs:
+                print(f"{pid}: no run recorded against this profile")
+                clean = False
+        return 0 if clean else 1
     print(f"unknown command {command}")
     return 2
 

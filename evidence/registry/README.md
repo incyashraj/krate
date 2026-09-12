@@ -123,3 +123,45 @@ is skipped, a lane that never ran is `blocked`). Re-running on the same commit
 after a re-run of CI writes a new record that supersedes the old one; nothing
 is overwritten. Hand-written records are for runs a person made; they follow
 the same shape and the same rules.
+
+## Measurement profiles and the audit
+
+```
+profiles/P-*.json   the plan: which cells, which are required, in what units
+results/*.json      what a run produced, naming the profile it ran against
+```
+
+```
+python3 scripts/evidence-registry.py audit
+```
+
+A **cell** is one number. Each is `required` for the claims it backs or
+`optional`. The audit compares a run against the plan and fails closed
+(IC-828):
+
+- A required cell that is missing, did not run, failed, was skipped or was
+  **rejected** is a finding, and blocks the claims that depend on it.
+- **Only an optional cell that did not run is neutral.** Every other
+  absence is a hole, because the alternative -- reading a missing number
+  as a zero, or a thrown-out row as "no problem found" -- is how an
+  unmeasured thing becomes a published claim.
+- A cell that "passed" with no value, or with zero samples, measured
+  nothing and is refused.
+- A result whose tool version, architecture or fixture is not the one the
+  profile named is refused: it is a measurement of something else.
+- A result for a cell the profile never named means the plan and the run
+  disagree about what was being measured.
+- The plan is frozen before the run. Results carry the `frozen_at` they
+  were produced against, so a required cell cannot be demoted to optional
+  after its failure is seen.
+
+`rejected` is its own outcome, separate from `skipped` (never attempted)
+and `fail` (the thing measured is bad). It means the measurement ran and
+its result was thrown out -- a missing permission, a contaminated leg, the
+wrong instrument. The reason is recorded and shown, because a rejected row
+that vanishes from the report is indistinguishable from one that passed.
+
+The seeded profile is the real case: the 2026-08-16 notes battery, whose
+energy leg was contaminated by live trackpad input and rejected. The audit
+therefore exits 1 today and names the blocked claim, which is the correct
+answer and the reason `check-claims.py` forbids battery wording.

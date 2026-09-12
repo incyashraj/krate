@@ -1,0 +1,59 @@
+{
+ "profile": "P-NOTES-BATTERY-MACOS",
+ "profile_frozen_at": "2026-08-16T09:00:00Z",
+ "ran_at": "2026-08-16T00:00:00Z",
+ "source": "evidence/benchmarks/2026-08-16-notes-battery-macos.md",
+ "environment": {"kind": "native", "os": "macos", "arch": "arm64", "version": "27"},
+ "cells": [
+  {
+   "name": "app-file-size",
+   "outcome": "pass",
+   "value": 37888,
+   "samples": 1,
+   "fixture": "notes-replica",
+   "arch": "arm64",
+   "note": "37 KB; the compared package was 271 MB installed, x86_64"
+  },
+  {
+   "name": "memory-50k",
+   "outcome": "pass",
+   "value": 99614720,
+   "samples": 3,
+   "fixture": "notes-50k",
+   "arch": "arm64",
+   "note": "95 MB in one process; the compared app used 2.3 GB across five"
+  },
+  {
+   "name": "warm-start-50k",
+   "outcome": "pass",
+   "value": 0.2,
+   "samples": 5,
+   "fixture": "notes-50k",
+   "arch": "arm64"
+  },
+  {
+   "name": "idle-cpu-50k",
+   "outcome": "pass",
+   "value": 0.8,
+   "samples": 3,
+   "fixture": "notes-50k",
+   "arch": "arm64"
+  },
+  {
+   "name": "scroll-pacing",
+   "outcome": "pass",
+   "value": 17.6,
+   "samples": 2,
+   "fixture": "notes-50k",
+   "arch": "arm64",
+   "note": "p50 17.6 ms, p99 17.9 ms at 50k. Krate only: there is no comparison instrument, so this must never be written as a head-to-head win"
+  },
+  {
+   "name": "energy-scroll-leg",
+   "outcome": "rejected",
+   "rejection_reason": "live trackpad input contaminated the leg and produced a fake 45.7%; the battery counts stray input events and threw the leg out",
+   "fixture": "notes-50k",
+   "arch": "arm64"
+  }
+ ]
+}

@@ -1,0 +1,21 @@
+{
+ "id": "C-NOTES-ENERGY",
+ "sentence": "A Krate notes app uses less energy than the compared Electron app over the same scrolling work.",
+ "audience": "nobody: this sentence is not published anywhere and must not be",
+ "surfaces": ["website"],
+ "subject": {"commit": "a53dbf7c5"},
+ "requires": {
+  "evidence_classes": ["execution"],
+  "platforms": ["macos-arm64"],
+  "environment": "native",
+  "same_bytes": false
+ },
+ "evidence": [],
+ "declared_state": "UNSUPPORTED",
+ "exclusions": ["everything: no energy measurement survives"],
+ "owner": "lead",
+ "approval": null,
+ "expiry": {"triggers": ["source-change"]},
+ "revision": 1,
+ "history": []
+}

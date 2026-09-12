@@ -1,0 +1,39 @@
+{
+ "id": "C-NOTES-PERFORMANCE",
+ "sentence": "A Krate notes app opens a 50,000-line document in about 0.2 seconds, holds about 95 MB in one process, and idles at 0.8% of a core.",
+ "audience": "developers reading the README",
+ "surfaces": [
+  "website"
+ ],
+ "subject": {
+  "commit": "a53dbf7c5"
+ },
+ "requires": {
+  "evidence_classes": [
+   "execution"
+  ],
+  "platforms": [
+   "macos-arm64"
+  ],
+  "environment": "native",
+  "same_bytes": false
+ },
+ "evidence": [],
+ "declared_state": "OBSERVED",
+ "exclusions": [
+  "every other operating system and architecture",
+  "energy and battery life, whose leg was rejected",
+  "scroll pacing as a head-to-head comparison: there is no comparison instrument on macOS"
+ ],
+ "owner": "lead",
+ "approval": null,
+ "expiry": {
+  "triggers": [
+   "source-change",
+   "time"
+  ]
+ },
+ "revision": 1,
+ "history": [],
+ "note": "evidence is empty on purpose: the measurement exists as a benchmark note and as a run under results/, but not yet as a retained evidence record with its raw material and digests. Until it does, the gate reads UNSUPPORTED, which is the honest answer -- the numbers are real and nothing in the registry can check them. Linking it is IC-829's work (immutable retained evidence and independent reproduction), not IC-828's."
+}

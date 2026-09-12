@@ -1623,6 +1623,14 @@ jobs:
         run: python3 scripts/evidence-registry.py validate
       - name: Prove the evidence gate still refuses
         run: python3 scripts/evidence-registry.py --self-test
+      # The measurement matrix (IC-828). `audit` exits 1 while any required
+      # cell is missing, rejected or zero-work -- which is true today: the
+      # notes battery's energy leg was contaminated and thrown out, and no
+      # energy claim may stand on it. So this reports rather than gates,
+      # and the thing that MUST hold is that the audit still refuses what
+      # it should, which is what --self-test proves above.
+      - name: Show the measurement audit
+        run: python3 scripts/evidence-registry.py audit || true
       # The fundraising documents are private, so CI cannot read them. What CI
       # can do is prove the checker still works, so that when it runs on the
       # founder's machine before anything is sent, it means something (IC-655).
