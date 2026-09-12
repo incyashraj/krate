@@ -276,9 +276,22 @@ fn handle_publish(
         let _ = std::fs::write(&meta_path, meta.to_json());
     }
 
-    let url = format!("{}/a/{hash}", config.public_base.trim_end_matches('/'));
-    let json = format!("{{\"url\":\"{url}\",\"id\":\"{hash}\"}}");
+    let json = publish_response(&config.public_base, &hash, &body);
     write_response(stream, 200, "application/json", json.as_bytes())
+}
+
+/// What a publisher gets back, with each number named for what it is
+/// (IC-212). `id` is the STORE KEY: a plain sha256 over the uploaded bytes,
+/// which is also the path under /a/. `archive` is the archive identity the
+/// client computes for the same bytes -- the value `krate run --json` and
+/// the trust screen show -- so a person can match the file in their hand
+/// to the one at the URL without knowing that the two hashes differ by a
+/// schema tag. Neither is the execution identity: what runs is a third
+/// number, and the hub does not pretend to know it.
+fn publish_response(public_base: &str, hash: &str, body: &[u8]) -> String {
+    let url = format!("{}/a/{hash}", public_base.trim_end_matches('/'));
+    let archive = krate_bundle::provenance::digest_archive_bytes(body).digest;
+    format!("{{\"url\":\"{url}\",\"id\":\"{hash}\",\"archive\":\"{archive}\"}}")
 }
 
 /// What a published app carries beyond its bytes.
@@ -746,6 +759,37 @@ mod tests {
     #[test]
     fn rejects_non_zip() {
         assert!(looks_like_krate(b"not a zip at all").is_err());
+    }
+
+    /// The hub names the same archive identity the client computes, beside
+    /// its own store key, and identical bytes are one artifact: same key,
+    /// same URL, same identity, however many times or from wherever they
+    /// arrive (IC-212: "identical bytes at two URLs" cannot happen here,
+    /// because the URL IS the bytes).
+    #[test]
+    fn the_hub_names_the_archive_identity_the_client_computes() {
+        let body = make_krate(true, true);
+        let hash = sha256_hex(&body);
+        let first = publish_response("https://hub.example", &hash, &body);
+        let again = publish_response("https://hub.example/", &sha256_hex(&body), &body);
+        assert_eq!(
+            first, again,
+            "the same bytes get the same answer every time"
+        );
+        let expected = krate_bundle::provenance::digest_archive_bytes(&body).digest;
+        assert!(
+            first.contains(&format!("\"archive\":\"{expected}\"")),
+            "the archive identity must be the client's number: {first}"
+        );
+        assert!(
+            first.contains(&format!("\"id\":\"{hash}\""))
+                && first.contains(&format!("/a/{hash}\"")),
+            "the store key and the URL are the raw sha256: {first}"
+        );
+        assert_ne!(
+            hash, expected,
+            "store key and archive identity are two numbers, and both are named"
+        );
     }
 
     #[test]

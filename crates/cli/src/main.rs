@@ -5986,6 +5986,22 @@ fn publish_bundle(
     }
     println!("Published. Anyone can run it with:");
     println!("  krate run {url}");
+    // The archive identity, computed HERE from the bytes that were sent, so
+    // a person can match the file in their hand to the one at the URL --
+    // it is the same number `krate run --json` reports as identity.archive
+    // and the hub echoes back (IC-212). The URL's own hash is the hub's
+    // store key, a different number over the same bytes; naming both is
+    // what stops one being mistaken for the other.
+    let archive = krate_bundle::provenance::digest_archive_bytes(&bytes).digest;
+    println!("  archive identity {archive}  (the exact file bytes)");
+    if let Some(echoed) = extract_json_string(&body, "archive") {
+        if echoed != archive {
+            println!(
+                "  note: the hub reports a different archive identity ({echoed}); \
+                 what it stored is not byte-for-byte what was sent"
+            );
+        }
+    }
     Ok(0)
 }
 

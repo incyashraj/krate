@@ -4560,6 +4560,166 @@ fn a_withdrawn_key_is_refused_only_for_what_it_signed_after_the_compromise() {
     );
 }
 
+/// The three identities move exactly as their labels say, on the surface a
+/// person reads them from (IC-212).
+///
+/// archive is the exact file bytes; execution is what runs (manifest,
+/// component, assets); project is what can be rebuilt (adds source and
+/// SDK). Each change below moves the identities it should and none it
+/// should not, measured through `krate run --json` rather than the library,
+/// because the number a person compares is the one the product prints.
+#[test]
+fn each_identity_moves_only_when_what_it_names_changes() {
+    const MANIFEST: &str = "[app]\nid = \"com.example.layers\"\nname = \"Layers\"\n\
+                            version = \"1.0.0\"\nentry = \"code.wasm\"\n\
+                            world = \"krate:app/cli@0.1.0\"\n";
+    let dir = tempfile::tempdir().expect("tempdir");
+    let minimal = include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm");
+    let identity = |name: &str, bytes: &[u8]| -> (String, String, serde_json::Value) {
+        let path = dir.path().join(name);
+        std::fs::write(&path, bytes).expect("write");
+        let output = krate()
+            .args(["run", "--json", "--headless", "--auto-grant"])
+            .arg(&path)
+            .output()
+            .expect("run --json");
+        let payload: serde_json::Value =
+            serde_json::from_slice(&output.stdout).unwrap_or_else(|_| {
+                panic!(
+                    "{name}: no JSON report: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                )
+            });
+        let id = &payload["identity"];
+        (
+            id["archive"]
+                .as_str()
+                .unwrap_or_else(|| panic!("{name}: archive: {payload}"))
+                .to_string(),
+            id["execution"]
+                .as_str()
+                .unwrap_or_else(|| panic!("{name}: execution: {payload}"))
+                .to_string(),
+            id["project"].clone(),
+        )
+    };
+
+    let (archive0, execution0, project0) =
+        identity("base.krate", &raw_bundle(MANIFEST, minimal, &[]));
+    assert!(
+        project0.is_null(),
+        "no source: no project identity to claim"
+    );
+
+    // Raw repack, reordered and recompressed: the same app in a different
+    // file. `krate pack` deflates what the raw writer stored.
+    let manifest_path = dir.path().join("manifest.toml");
+    std::fs::write(&manifest_path, MANIFEST).expect("manifest");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, minimal).expect("component");
+    let packed = dir.path().join("packed.krate");
+    assert!(krate()
+        .args(["pack"])
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest_path)
+        .arg("-o")
+        .arg(&packed)
+        .status()
+        .expect("pack")
+        .success());
+    let packed_bytes = std::fs::read(&packed).expect("read");
+    let (archive1, execution1, _) = identity("packed-copy.krate", &packed_bytes);
+    assert_ne!(archive1, archive0, "a repack is a different file");
+    assert_eq!(execution1, execution0, "a repack is the same app");
+
+    // Manifest whitespace: the same manifest with Windows line endings.
+    let crlf = MANIFEST.replace('\n', "\r\n");
+    let (archive2, execution2, _) = identity("crlf.krate", &raw_bundle(&crlf, minimal, &[]));
+    assert_ne!(archive2, archive0);
+    assert_eq!(
+        execution2, execution0,
+        "line endings are not a different app (K-265)"
+    );
+
+    // Manifest semantic change: a different name is a different app.
+    let renamed = MANIFEST.replace("Layers", "Renamed");
+    let (_, execution3, _) = identity("renamed.krate", &raw_bundle(&renamed, minimal, &[]));
+    assert_ne!(
+        execution3, execution0,
+        "a semantic manifest change moves what runs"
+    );
+
+    // Code mutation moves what runs.
+    let other = include_bytes!("../../bundle/tests/fixtures/minimal-run-other.wasm");
+    let (_, execution4, _) = identity("other.krate", &raw_bundle(MANIFEST, other, &[]));
+    assert_ne!(execution4, execution0, "different code is a different app");
+
+    // Asset mutation moves what runs; source mutation moves only the project.
+    let with_asset = raw_bundle(
+        MANIFEST,
+        minimal,
+        &[("assets/logo.png".to_string(), b"PNG1".to_vec())],
+    );
+    let (_, execution5, _) = identity("asset.krate", &with_asset);
+    assert_ne!(execution5, execution0, "an asset is part of what runs");
+    let with_source = raw_bundle(
+        MANIFEST,
+        minimal,
+        &[("source/lib.rs".to_string(), b"fn a() {}".to_vec())],
+    );
+    let (_, execution6, project6) = identity("source.krate", &with_source);
+    assert_eq!(execution6, execution0, "source is not part of what runs");
+    let project6 = project6
+        .as_str()
+        .expect("with source there is a project identity")
+        .to_string();
+    let with_other_source = raw_bundle(
+        MANIFEST,
+        minimal,
+        &[("source/lib.rs".to_string(), b"fn b() {}".to_vec())],
+    );
+    let (_, execution7, project7) = identity("source2.krate", &with_other_source);
+    assert_eq!(execution7, execution0);
+    assert_ne!(
+        project7.as_str().expect("project"),
+        project6,
+        "changed source is a different project"
+    );
+    let with_sdk = raw_bundle(
+        MANIFEST,
+        minimal,
+        &[
+            ("source/lib.rs".to_string(), b"fn a() {}".to_vec()),
+            ("sdk/krate.wit".to_string(), b"package krate:x;".to_vec()),
+        ],
+    );
+    let (_, execution8, project8) = identity("sdk.krate", &with_sdk);
+    assert_eq!(execution8, execution0, "the SDK is not part of what runs");
+    assert_ne!(
+        project8.as_str().expect("project"),
+        project6,
+        "a different SDK is a different project"
+    );
+
+    // A signature changes the file and nothing else.
+    let key = dir.path().join("key.pkcs8");
+    assert!(krate()
+        .arg("sign")
+        .arg(&packed)
+        .arg("--key")
+        .arg(&key)
+        .args(["--generate-key", "--namespace", "layers/app"])
+        .status()
+        .expect("sign")
+        .success());
+    let signed_bytes = std::fs::read(&packed).expect("read");
+    let (archive9, execution9, project9) = identity("signed-copy.krate", &signed_bytes);
+    assert_ne!(archive9, archive1, "signing writes into the file");
+    assert_eq!(execution9, execution0, "signing does not change what runs");
+    assert!(project9.is_null(), "signing does not invent a project");
+}
+
 /// The validator and the runtime agree (IC-210, "runtime-validator parity").
 ///
 /// One function judges a component at every door -- pack, open, and so run,
@@ -4676,9 +4836,14 @@ fn archive_with_component(component: &[u8], extra: &[(String, Vec<u8>)]) -> Vec<
     const MANIFEST: &str = "[app]\nid = \"com.example.adversarial\"\nname = \"Adversarial\"\n\
                             version = \"1.0.0\"\nentry = \"code.wasm\"\n\
                             world = \"krate:app/cli@0.1.0\"\n";
+    raw_bundle(MANIFEST, component, extra)
+}
 
+/// A hand-assembled archive (every entry stored, no compression) around
+/// exactly these bytes: the shape another writer, or an attacker, produces.
+fn raw_bundle(manifest: &str, component: &[u8], extra: &[(String, Vec<u8>)]) -> Vec<u8> {
     let entries: Vec<(String, Vec<u8>)> = [
-        ("manifest.toml".to_string(), MANIFEST.as_bytes().to_vec()),
+        ("manifest.toml".to_string(), manifest.as_bytes().to_vec()),
         // A real component with a `run` export. `\0asm\x01\0\0\0` is a
         // core MODULE, which is what almost every fixture used until pack
         // learned to tell them apart (K-272); a bare component header is a
