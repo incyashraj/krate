@@ -286,10 +286,34 @@ async function publish(request, env) {
     );
   }
 
+  // Refuse a declared length before reading a byte (IC-833).
+  //
+  // `await request.arrayBuffer()` materialises the whole body in memory and
+  // only then is its length checked, so a client that announces 500 MB is
+  // allocated 500 MB before being told 5 MiB is the limit. The ceiling was
+  // real but it was enforced after the cost it exists to prevent.
+  //
+  // Content-Length is the client's claim, not a fact -- it can lie, be
+  // absent, or arrive chunked. So this is a fast refusal for the honest
+  // oversized upload and the cheap half of an attack, and the check below
+  // still stands for everything else. Two checks, not one moved: a
+  // Content-Length that undercounts must not buy a bigger body.
+  const declared = request.headers.get("content-length");
+  if (declared !== null) {
+    const n = Number(declared);
+    if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
+      return text("content-length is not a length", 400);
+    }
+    if (n > MAX_UPLOAD_BYTES) {
+      return text("bundle too large (5 MiB max)", 413);
+    }
+  }
+
   const body = new Uint8Array(await request.arrayBuffer());
   if (body.length === 0) {
     return text("empty body", 400);
   }
+  // The body that actually arrived, whatever the header said.
   if (body.length > MAX_UPLOAD_BYTES) {
     return text("bundle too large (5 MiB max)", 413);
   }
