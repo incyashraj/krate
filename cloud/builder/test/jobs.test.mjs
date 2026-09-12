@@ -295,9 +295,17 @@ assert.strictEqual(
   "krate-failed",
   `an engine failure is recorded as krate-failed, free to retry: ${JSON.stringify(failedAttempt)}`,
 );
+// Asked of the failed build's OWN case, not of a window at the end of the
+// list. The first shape of this assertion looked at the last three calls,
+// which is a count and not an identity: the successful build's legitimate
+// "made" slides into that window whenever one of the intervening opens is
+// late or absent, and the Linux runner did exactly that (run 34705934809).
+// The case id is on every call, so ask the question directly.
+const failedCase = failedAttempt.body.id;
+assert.ok(failedCase, `the failed attempt names its case: ${JSON.stringify(failedAttempt)}`);
 assert.ok(
-  !caseCalls.slice(-3).some((c) => c.body.outcome === "made"),
-  "a failed build must never record made",
+  !caseCalls.some((c) => c.body.id === failedCase && c.body.outcome === "made"),
+  `a failed build must never record made against its own case ${failedCase}: ${JSON.stringify(caseCalls)}`,
 );
 
 builder.kill("SIGKILL");
