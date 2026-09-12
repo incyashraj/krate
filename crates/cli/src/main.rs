@@ -12481,6 +12481,77 @@ fn installed_app_for(bundle_path: &Path) -> Option<PathBuf> {
 /// Resolve a launch target that may be a Krate Cloud URL: download the
 /// bundle to a cache file and launch that. Downloading grants nothing --
 /// the fetched app meets the same permission wall as any local file.
+/// The content digest a Krate link names, when it names one (IC-393).
+///
+/// The hub serves at `/a/<hash>`, where the hash is the plain sha256 of the
+/// stored bytes. That makes the link a claim about its own content, and a
+/// claim is worth checking.
+///
+/// Deliberately narrow. It returns Some only for a full 64-character
+/// lowercase hex segment directly after `/a/`:
+///
+///   * a SHORT link (`/a/1a2b3c4d`) is an alias the hub resolves to a
+///     different value, so its prefix is not the digest of anything. Testing
+///     it as one would refuse every short link in existence.
+///   * a link with no `/a/` segment carries no claim, and a download from it
+///     is no worse off than before.
+///   * uppercase hex is not accepted rather than lowercased, because the
+///     hub only ever emits lowercase: anything else did not come from the
+///     hub, and quietly normalising it would be guessing at intent.
+///
+/// Query and fragment are dropped first so `/a/<hash>?dl=1` still reads.
+fn url_content_digest(url: &str) -> Option<String> {
+    let without_query = url.split(['?', '#']).next().unwrap_or(url);
+    let candidate = without_query.split("/a/").nth(1)?;
+    // Only the segment itself: /a/<hash>/anything names a path under the
+    // hash, not the hash.
+    let segment = candidate.split('/').next()?;
+    let is_full_hex = segment.len() == 64
+        && segment
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+    is_full_hex.then(|| segment.to_string())
+}
+
+/// Refuse bytes that are not the ones the link named (IC-393, "hash
+/// mismatch").
+///
+/// The hub serves bundles at `/a/<sha256-of-the-bytes>`, so a full Krate
+/// link already carries the expected digest -- and nothing checked it.
+/// Whatever arrived was cached under its own digest and run, so a
+/// compromised CDN, a poisoned cache, or a hub bug could serve different
+/// bytes at a link that states, in the link itself, exactly which bytes it
+/// is.
+///
+/// The comparison is against the PLAIN sha256 the hub stores under, not
+/// Krate's archive identity: those differ by a schema tag (IC-212), and
+/// comparing the wrong two numbers would refuse every honest download.
+///
+/// A link that names no full hash is not weakened by this. It simply has
+/// nothing to check, and is exactly as trusted as it was before.
+///
+/// Split out so the decision can be tested for real. Inline in
+/// `launch_target` it sat behind a network fetch, and the only available
+/// check was reading the source -- which passed happily with the branch
+/// disabled.
+fn verify_link_claim(url: &str, bytes: &[u8]) -> Result<()> {
+    let Some(expected) = url_content_digest(url) else {
+        return Ok(());
+    };
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    let actual = format!("{:x}", hasher.finalize());
+    if actual != expected {
+        anyhow::bail!(
+            "{url} served different bytes than it names.\n\
+             the link says  {expected}\n\
+             what arrived   {actual}\n\
+             Nothing was saved or run. Ask whoever sent it for the link again.",
+        );
+    }
+    Ok(())
+}
+
 fn launch_target(bundle: &Path) -> Result<PathBuf> {
     let raw = bundle.to_string_lossy();
     if !krate_bundle::is_url(&raw) {
@@ -12505,6 +12576,26 @@ fn launch_target(bundle: &Path) -> Result<PathBuf> {
             .read_to_end(&mut bytes)
             .context("reading the download")?;
     }
+
+    // A link that names its content must deliver it (IC-393, "hash
+    // mismatch").
+    //
+    // The hub serves bundles at /a/<sha256-of-the-bytes>, so a full Krate
+    // link already carries the expected digest -- and nothing checked it.
+    // Whatever arrived was cached under its own digest and run, so a
+    // compromised CDN, a cache poisoning, or a hub bug could serve
+    // different bytes at a link that says, in the link itself, exactly
+    // which bytes it is.
+    //
+    // This is the plain sha256 the hub stores under, NOT Krate's archive
+    // identity: those differ by a schema tag (IC-212), and comparing the
+    // wrong two numbers would refuse every honest download.
+    //
+    // Only a full 64-hex segment is treated as a claim. A short link is an
+    // alias the hub resolves, so its prefix is not a digest of anything and
+    // must not be checked as one -- and a URL that names no hash is not
+    // weakened by this, it simply has nothing to check.
+    verify_link_claim(&raw, &bytes)?;
 
     // Named for the BYTES, not the URL (K-251, IC-212).
     //
@@ -20077,6 +20168,8 @@ mod revise_transaction_tests {
 
 #[cfg(test)]
 mod url_cache_tests {
+    use super::{url_content_digest, verify_link_claim, Digest, Sha256};
+
     /// A downloaded app is cached under its BYTES, never its URL (K-251).
     ///
     /// Keying on the URL meant republishing at the same link served every
@@ -20188,6 +20281,184 @@ mod url_cache_tests {
         );
     }
 
+    /// Which links carry a checkable claim about their own content
+    /// (IC-393, "hash mismatch").
+    ///
+    /// The narrowness is the point. Too eager and every short link is
+    /// refused; too lax and the check never fires.
+    #[test]
+    fn only_a_full_hash_in_a_link_is_a_claim_about_its_content() {
+        let full = "a".repeat(64);
+
+        assert_eq!(
+            url_content_digest(&format!("https://krate.tech/a/{full}")).as_deref(),
+            Some(full.as_str()),
+            "a full content address is a claim and must be checked",
+        );
+        // The hub's own download link shape.
+        assert_eq!(
+            url_content_digest(&format!("https://krate.tech/a/{full}?dl=1")).as_deref(),
+            Some(full.as_str()),
+            "a query string does not stop the path naming the content",
+        );
+        assert_eq!(
+            url_content_digest(&format!("https://krate.tech/a/{full}#anchor")).as_deref(),
+            Some(full.as_str()),
+        );
+
+        // A short link is an ALIAS: the hub resolves it to a different
+        // value, so the prefix is not the digest of anything. Checking it
+        // would refuse every short link there is.
+        assert_eq!(url_content_digest("https://krate.tech/a/1a2b3c4d"), None);
+        assert_eq!(
+            url_content_digest(&format!("https://krate.tech/a/{}", "a".repeat(32))),
+            None,
+            "32 hex characters is the longest alias the hub accepts, not a digest",
+        );
+        assert_eq!(
+            url_content_digest(&format!("https://krate.tech/a/{}", "a".repeat(63))),
+            None,
+            "one character short is not a sha256",
+        );
+        assert_eq!(
+            url_content_digest(&format!("https://krate.tech/a/{}", "a".repeat(65))),
+            None,
+            "one character long is not a sha256",
+        );
+
+        // Uppercase is not from the hub, and normalising it would be
+        // guessing at what someone meant.
+        assert_eq!(
+            url_content_digest(&format!("https://krate.tech/a/{}", "A".repeat(64))),
+            None,
+        );
+        // Hex only: 'g' is not.
+        assert_eq!(
+            url_content_digest(&format!("https://krate.tech/a/{}g", "a".repeat(63))),
+            None,
+        );
+
+        // A path UNDER the hash names something else, not the hash.
+        assert_eq!(
+            url_content_digest(&format!("https://krate.tech/a/{full}/icon.png")).as_deref(),
+            Some(full.as_str()),
+            "the segment is still the hash; what follows is a path under it",
+        );
+
+        // Links that name nothing are unaffected -- they are no worse off
+        // than before this check existed.
+        assert_eq!(url_content_digest("https://example.com/app.krate"), None);
+        assert_eq!(url_content_digest("https://example.com/"), None);
+        assert_eq!(url_content_digest("not a url at all"), None);
+    }
+
+    /// The refusal itself, driven rather than read (IC-393).
+    ///
+    /// The first version of this test read launch_target's source for the
+    /// comparison. It passed with the whole branch disabled by a
+    /// `.filter(|_| false)`, which is the shape a source match cannot see.
+    /// The decision is pure, so it is called.
+    #[test]
+    fn bytes_that_are_not_what_the_link_named_are_refused() {
+        let bytes = b"the bytes the link names";
+        let honest = {
+            let mut hasher = Sha256::new();
+            hasher.update(bytes);
+            format!("{:x}", hasher.finalize())
+        };
+
+        // The matching case passes, or the check refuses every real download.
+        verify_link_claim(&format!("https://krate.tech/a/{honest}"), bytes)
+            .expect("a link that names these bytes accepts them");
+
+        // Different bytes at that link are refused, and the message shows
+        // both numbers so a person can see which one is wrong.
+        let err = verify_link_claim(&format!("https://krate.tech/a/{honest}"), b"other bytes")
+            .expect_err("different bytes must be refused");
+        let text = err.to_string();
+        assert!(
+            text.contains(&honest),
+            "the message names the expected digest: {text}"
+        );
+        assert!(
+            text.contains("Nothing was saved or run"),
+            "the message must say the download was discarded: {text}",
+        );
+
+        // One flipped byte is enough.
+        let mut nearly = bytes.to_vec();
+        nearly[0] ^= 1;
+        verify_link_claim(&format!("https://krate.tech/a/{honest}"), &nearly)
+            .expect_err("one changed byte must be refused");
+
+        // A link that names nothing has nothing to check, and is not
+        // refused: most links in the world are this shape.
+        verify_link_claim("https://example.com/app.krate", b"anything")
+            .expect("a link with no content address carries no claim");
+        // A short link is an alias, not a digest.
+        verify_link_claim("https://krate.tech/a/1a2b3c4d", b"anything")
+            .expect("a short link is resolved by the hub, not checked here");
+    }
+
+    /// The check compares the hub's plain sha256, not Krate's archive
+    /// identity. They are different numbers for the same bytes (IC-212), so
+    /// using the wrong one would refuse every honest download -- which is a
+    /// mistake a reader of the code could easily make.
+    #[test]
+    fn the_link_check_uses_the_hubs_digest_not_the_archive_identity() {
+        let bytes = b"some bundle bytes";
+        let plain = {
+            let mut hasher = Sha256::new();
+            hasher.update(bytes);
+            format!("{:x}", hasher.finalize())
+        };
+        let archive = krate_bundle::provenance::digest_archive_bytes(bytes).digest;
+        assert_ne!(
+            plain, archive,
+            "the two identities must differ, or this test proves nothing",
+        );
+
+        verify_link_claim(&format!("https://krate.tech/a/{plain}"), bytes)
+            .expect("the hub's own digest must be the one accepted");
+        verify_link_claim(&format!("https://krate.tech/a/{archive}"), bytes)
+            .expect_err("the archive identity is not what /a/ names");
+    }
+
+    /// The download path does not merely call the check -- it acts on it.
+    ///
+    /// A correct function whose result the caller discards is the one shape
+    /// the behavioural tests above cannot see: `let _ = verify_link_claim(
+    /// ..)` passes every one of them. So this reads the call site, which is
+    /// the thing at issue, scoped to launch_target's own body with comments
+    /// stripped.
+    #[test]
+    fn the_download_path_stops_on_a_link_that_lied() {
+        let source = include_str!("main.rs");
+        let start = source
+            .find("fn launch_target(")
+            .expect("launch_target exists");
+        let end = source[start..]
+            .find("\n}\n")
+            .map(|offset| start + offset)
+            .expect("closing brace");
+        let code: String = source[start..end]
+            .lines()
+            .map(str::trim_start)
+            .filter(|line| !line.starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let call = code
+            .lines()
+            .find(|line| line.contains("verify_link_claim("))
+            .expect("launch_target checks what the link claimed");
+        assert!(
+            call.contains("?;"),
+            "the download must STOP when the link lied, not note it and carry \
+             on caching and running the bytes: {call}",
+        );
+    }
+
     /// The cache path `launch_target` actually writes is the content digest.
     ///
     /// Asserting only that the digest function works proved nothing about
@@ -20201,7 +20472,14 @@ mod url_cache_tests {
         let start = source
             .find("fn launch_target(")
             .expect("launch_target exists");
-        let body = &source[start..start + 3000.min(source.len() - start)];
+        // To the closing brace, not a character count: a fixed window
+        // silently narrows as the function grows, and this one already had
+        // (the cleanup and digest checks fell outside it).
+        let body = &source[start
+            ..source[start..]
+                .find("\n}\n")
+                .map(|offset| start + offset)
+                .expect("launch_target has a closing brace")];
 
         assert!(
             body.contains("digest_archive_bytes(&bytes)"),
