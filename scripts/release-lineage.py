@@ -523,6 +523,100 @@ def cmd_record(args):
     return 0
 
 
+def digest_file(path, chunk=1 << 20):
+    """sha256 of a file, read in chunks so a 100 MB AppImage is not held."""
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for block in iter(lambda: fh.read(chunk), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def cmd_check(args):
+    """Check a file already on disk against the committed record.
+
+    This is the part the installers cannot do for themselves. `install.sh`
+    verifies a download against a SHA256SUMS fetched from the same release,
+    chosen by the same resolution step -- so whoever controls the resolution
+    controls the expectation, and a suppressed sums fetch downgrades the
+    install to no verification at all (K-307).
+
+    The record is different: it is committed to this repository, so its
+    digest travels by a path the download does not. Checking against it is
+    an expectation the release origin did not supply.
+    """
+    path = Path(args.file)
+    if not path.is_file():
+        print(f"{path} is not a file.", file=sys.stderr)
+        return 2
+
+    rec_path = path_for(args.tag)
+    if not rec_path.exists():
+        print(f"no lineage record for {args.tag}, so there is nothing independent\n"
+              f"to check against. This is not a pass.", file=sys.stderr)
+        return 2
+    try:
+        record = json.loads(rec_path.read_text())
+    except json.JSONDecodeError as e:
+        print(f"{rec_path.name} is not readable JSON: {e}", file=sys.stderr)
+        return 2
+
+    problems = validate(record)
+    if problems:
+        print(f"the record for {args.tag} is not valid, so it cannot be trusted "
+              "as an expectation:", file=sys.stderr)
+        for problem in problems:
+            print(f"  {problem}", file=sys.stderr)
+        return 2
+
+    name = args.name or path.name
+    wanted = next(
+        (a for a in record["artifacts"] if a["name"] == name), None
+    )
+    if wanted is None:
+        print(f"{args.tag} publishes no artifact named {name}.\n"
+              f"Names in the record: "
+              f"{', '.join(a['name'] for a in record['artifacts'])}",
+              file=sys.stderr)
+        return 2
+    if wanted.get("digest") is None:
+        print(f"{name} carries no digest in the record, so it cannot be checked.",
+              file=sys.stderr)
+        return 2
+
+    actual = digest_file(path)
+    if actual != wanted["digest"]:
+        print(
+            f"{name} is NOT the published artifact.\n"
+            f"  the record says {wanted['digest']}\n"
+            f"  this file is    {actual}\n"
+            "Do not run it.",
+            file=sys.stderr,
+        )
+        return 1
+
+    size = path.stat().st_size
+    if wanted.get("size") is not None and size != wanted["size"]:
+        # Cannot happen with a matching digest, and saying so is cheap: if it
+        # ever does, the record is internally inconsistent and the digest
+        # match means less than it appears to.
+        print(
+            f"{name}: the digest matches but the size does not "
+            f"({size} here, {wanted['size']} recorded). The record disagrees "
+            "with itself; do not rely on either number.",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(f"OK -- {name} is the artifact {args.tag} published.")
+    print(f"  {actual}")
+    print(f"  checked against evidence/lineage/{args.tag}.json, which travels "
+          "with the source and not with the download")
+    if wanted.get("signed") == "unknown":
+        print("  this says nothing about whether it is signed: nobody looked")
+    return 0
+
+
 def cmd_verify(args):
     import tempfile
 
@@ -777,6 +871,64 @@ def self_test():
     check("a duplicated artifact is refused",
           any("listed twice" in p for p in validate(dupe)))
 
+    # `check` against a file on disk: the independent expectation. Written
+    # with real bytes and a real record so the digest is computed, not
+    # asserted.
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        payload = b"the bytes a release would publish"
+        real = hashlib.sha256(payload).hexdigest()
+        f = tmp / "krate-9.9.9-x86_64-unknown-linux-gnu.tar.gz"
+        f.write_bytes(payload)
+        check("digest_file hashes the bytes on disk", digest_file(f) == real,
+              f"{digest_file(f)} != {real}")
+
+        saved = OUT_DIR / "v9.9.9.json"
+        rec = _good()
+        by = {a["name"]: a for a in rec["artifacts"]}
+        by[f.name]["digest"] = real
+        by[f.name]["size"] = len(payload)
+        rec["content_sha256"] = content_digest(rec)
+        existed = saved.exists()
+        backup = saved.read_bytes() if existed else None
+        try:
+            OUT_DIR.mkdir(parents=True, exist_ok=True)
+            saved.write_text(json.dumps(rec, indent=1) + "\n")
+
+            class A:
+                tag, file, name = "v9.9.9", str(f), None
+
+            check("a matching file is accepted", cmd_check(A()) == 0)
+
+            f.write_bytes(payload + b"!")
+            check("a file that is not the published one is refused",
+                  cmd_check(A()) == 1)
+
+            f.write_bytes(payload)
+
+            class B(A):
+                name = "not-published.zip"
+
+            check("a name the release never published is refused",
+                  cmd_check(B()) == 2)
+
+            class C(A):
+                name = "SHA256SUMS"
+
+            check("an artifact with no digest cannot be checked",
+                  cmd_check(C()) == 2)
+
+            class D(A):
+                tag = "v0.0.0-absent"
+
+            check("no record means no pass", cmd_check(D()) == 2)
+        finally:
+            if backup is not None:
+                saved.write_bytes(backup)
+            elif saved.exists():
+                saved.unlink()
+
     if failures:
         print("release-lineage self-test FAILED:\n")
         for f in failures:
@@ -808,6 +960,18 @@ def main(argv=None):
     p_ver = sub.add_parser("verify", help="check the record still describes the release")
     p_ver.add_argument("tag")
     p_ver.set_defaults(func=cmd_verify)
+
+    p_chk = sub.add_parser(
+        "check",
+        help="check a downloaded file against the committed record",
+    )
+    p_chk.add_argument("tag")
+    p_chk.add_argument("file", help="the downloaded file to check")
+    p_chk.add_argument(
+        "--name", default=None,
+        help="the published name, when the local file was renamed",
+    )
+    p_chk.set_defaults(func=cmd_check)
 
     p_inv = sub.add_parser("inventory", help="list every artifact and byte")
     p_inv.add_argument("tag")
