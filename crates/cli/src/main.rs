@@ -19607,6 +19607,59 @@ mod storage_identity_tests {
         );
     }
 
+    /// Lineage, application id, and the names people read stay separate
+    /// (IC-874, test 1909).
+    ///
+    /// The storage key is built from exactly two things: the verified
+    /// publisher root and the declared application id. The display name,
+    /// the version, and the file's own bytes are NOT in it -- each of them
+    /// changes for reasons that must not move a person's data, and each
+    /// was a plausible thing to include. Rename the app, ship an update,
+    /// repack the file: the data stays. Change the id or the publisher and
+    /// it is a different app, on purpose.
+    #[test]
+    fn the_names_people_read_are_not_the_lineage_that_keys_the_data() {
+        let root = "aa".repeat(32);
+        let principal = |app_id: &str| StoragePrincipal::Verified {
+            publisher: root.clone(),
+            app_id: app_id.to_string(),
+        };
+
+        // Two manifests differing ONLY in display name and version resolve
+        // to the same principal, because neither field is an input.
+        let before = krate_manifest::Manifest::parse(
+            "[app]\nid = \"dev.krate.notes\"\nname = \"Notes\"\nversion = \"1.0.0\"\n\
+             entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n",
+        )
+        .expect("manifest");
+        let after = krate_manifest::Manifest::parse(
+            "[app]\nid = \"dev.krate.notes\"\nname = \"Daily Journal\"\nversion = \"2.5.0\"\n\
+             entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n",
+        )
+        .expect("manifest");
+        assert_ne!(
+            before.app.name, after.app.name,
+            "the fixture must actually rename it"
+        );
+        assert_eq!(
+            principal(&before.app.id).storage_key(),
+            principal(&after.app.id).storage_key(),
+            "a rename and an update must not lose somebody's notes",
+        );
+
+        // The key is exactly the app id and the publisher root, and nothing
+        // else. Asserting the WHOLE string rather than "does not contain the
+        // name" is what makes this bite: a name is often a substring of the
+        // id it belongs to ("Notes" inside "dev.krate.notes"), so a contains
+        // check would fail on a correct key and pass on a wrong one.
+        let key = principal("dev.krate.notes").storage_key();
+        assert_eq!(
+            key,
+            format!("dev.krate.notes@{}", &root[..16]),
+            "a third input would have to show up here",
+        );
+    }
+
     /// A hostile id cannot place a store outside the store directory, which
     /// is the part of this that IS enforced today.
     #[test]
