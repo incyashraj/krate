@@ -208,6 +208,17 @@ enum Command {
         #[arg(long, conflicts_with = "native_window")]
         headless: bool,
 
+        /// Which local data profile the app's saved data lives in.
+        ///
+        /// `default` is the person's own data. Any other name keeps every
+        /// store (files, database, secrets, shared) under
+        /// ~/.krate/profiles/<name>/, so a preview, a test run or an analysis
+        /// never touches what a person keeps in the app (IC-245). Krate's own
+        /// verification runs use `analysis`; a screenshot run uses `preview`
+        /// unless told otherwise. Letters, digits and dashes, up to 32.
+        #[arg(long, default_value = "default", value_name = "NAME")]
+        profile: String,
+
         /// Allow fetching a bundle over plain http. Intended for a local test
         /// server; https is required otherwise.
         #[arg(long)]
@@ -1471,6 +1482,7 @@ fn run() -> Result<u8> {
             grant,
             auto_grant,
             for_screenshot,
+            profile,
             prompt,
             consent,
             native_window,
@@ -1509,6 +1521,7 @@ fn run() -> Result<u8> {
             grants: grant,
             auto_grant,
             for_screenshot,
+            profile,
             prompt,
             consent,
             // A screenshot is a headless render by definition: there is no way
@@ -3449,6 +3462,8 @@ struct RunRequest {
     auto_grant: bool,
     /// Only what is needed to paint a frame. See `SessionPolicy::for_screenshot`.
     for_screenshot: bool,
+    /// The local data profile (IC-245). See `Command::Run::profile`.
+    profile: String,
     prompt: bool,
     consent: bool,
     /// How this run should present a GUI: a real window, headless, or a
@@ -4238,6 +4253,7 @@ pub(crate) fn run_bundle_inline(bundle: &Path) -> Result<()> {
         grants: Vec::new(),
         auto_grant: true,
         for_screenshot: false,
+        profile: "default".to_string(),
         prompt: false,
         consent: false,
         ui_mode: krate_runtime::phase3_ui::Phase3HostUiMode::NativeWithHeadlessFallback,
@@ -11016,6 +11032,9 @@ fn verify_permission_wall(
     // The allow half: run with everything that stays inside the sandbox.
     let mut allow_args: Vec<String> = vec![
         "run".into(),
+        // Krate is checking the app, not a person using it (IC-245).
+        "--profile".into(),
+        "analysis".into(),
         bundle.into(),
         "--untrusted".into(),
         "--headless".into(),
@@ -11077,6 +11096,9 @@ fn verify_permission_wall(
 
         let mut deny_args: Vec<String> = vec![
             "run".into(),
+            // Krate is checking the app, not a person using it (IC-245).
+            "--profile".into(),
+            "analysis".into(),
             bundle.into(),
             "--json".into(),
             "--headless".into(),
@@ -11371,7 +11393,48 @@ fn check_window_libraries() -> Result<()> {
     Ok(())
 }
 
+/// Where a profile's stores live. `default` is the home itself, so the paths
+/// people already have are untouched; anything else is a folder under
+/// profiles/, named by the profile.
+fn profile_home(home: &Path, profile: &str) -> PathBuf {
+    if profile == "default" {
+        home.to_path_buf()
+    } else {
+        home.join("profiles").join(profile)
+    }
+}
+
+/// A profile name is a folder name and a word on the trust screen: short,
+/// plain, no path characters.
+fn profile_name_problem(profile: &str) -> Option<String> {
+    if profile.is_empty() || profile.len() > 32 {
+        return Some("a profile name is 1 to 32 characters".to_string());
+    }
+    if !profile
+        .bytes()
+        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    {
+        return Some("a profile name uses lowercase letters, digits and dashes only".to_string());
+    }
+    None
+}
+
 fn run_component_inner(request: RunRequest) -> Result<u8> {
+    if let Some(problem) = profile_name_problem(&request.profile) {
+        eprintln!("--profile {:?}: {problem}", request.profile);
+        return Ok(2);
+    }
+    // The data profile (IC-245). A preview or a verification run must never
+    // read or write what a person keeps in the app, so anything but
+    // `default` gets its own home for every store. A screenshot run that
+    // named no profile is a preview: nobody is using the app, a picture is
+    // being taken of it.
+    let profile = if request.profile == "default" && request.for_screenshot {
+        "preview".to_string()
+    } else {
+        request.profile.clone()
+    };
+    let store_home = profile_home(&krate_home(), &profile);
     validate_app_args(&request.app_args)?;
 
     // Held for the whole run: dropping it removes the extracted bundle.
@@ -11514,6 +11577,7 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
             &policy,
             request.dump_caps_format,
             TrustFacts {
+                profile: profile.clone(),
                 // A bundle's identity belongs on the screen where someone
                 // decides whether to trust it. Without it, "the app I was
                 // told to verify" and "the app I am about to run" are the
@@ -11762,13 +11826,15 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
         // Binding the store to the bundle digest was considered and
         // rejected: the digest covers the component, so every update would
         // strand the person's data -- worse than the defect.
-        app_store_path: storage.as_ref().map(principal_store_path),
+        app_store_path: storage
+            .as_ref()
+            .map(|p| principal_store_path_in(&store_home, p)),
         app_database_path: storage
             .as_ref()
-            .map(|p| principal_store_path(p).with_extension("sqlite")),
+            .map(|p| principal_store_path_in(&store_home, p).with_extension("sqlite")),
         app_secrets: storage.as_ref().map(|principal| {
             (
-                principal_store_path(principal).with_extension("secrets"),
+                principal_store_path_in(&store_home, principal).with_extension("secrets"),
                 // The secret store derives its key from this string, so it
                 // must be the principal too. Leaving the bare id here would
                 // isolate an app's files while letting an impostor derive
@@ -11779,7 +11845,7 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
         }),
         app_shared: storage.as_ref().map(|p| {
             (
-                principal_store_path(p).with_extension("shared.json"),
+                principal_store_path_in(&store_home, p).with_extension("shared.json"),
                 shared_hub_url(),
             )
         }),
@@ -12823,6 +12889,7 @@ fn open_app(direct: Option<PathBuf>) -> Result<u8> {
         grants: Vec::new(),
         auto_grant: false,
         for_screenshot: false,
+        profile: "default".to_string(),
         prompt: false,
         consent: true,
         ui_mode: krate_runtime::phase3_ui::Phase3HostUiMode::NativePrototype,
@@ -13331,6 +13398,8 @@ struct TrustFacts {
     project_digest: Option<krate_bundle::provenance::BundleDigest>,
     signature: Option<krate_bundle::signing::FullVerdict>,
     storage: Option<StoragePrincipal>,
+    /// The local data profile the stores live in (IC-245).
+    profile: String,
 }
 
 fn print_effective_capabilities(
@@ -13345,6 +13414,7 @@ fn print_effective_capabilities(
         project_digest,
         signature,
         storage,
+        profile,
     } = trust;
     if format == OutputFormat::Json {
         let dump = RunCapsDump {
@@ -13470,6 +13540,13 @@ fn print_effective_capabilities(
         println!();
     }
 
+    // The profile applies whether the app is signed or not, so it is said
+    // outside both branches: a preview of a signed app is still a preview.
+    if profile != "default" && digest.is_some() {
+        println!("Data profile");
+        println!("  - its saved data is kept in the {profile} profile, apart from your own");
+        println!();
+    }
     println!("Effective capabilities");
     for cap in policy.grants() {
         println!("  - {cap}");
@@ -14488,6 +14565,9 @@ fn run_check_app(
         .unwrap_or_else(|| "quick".to_string());
     let mut run_args: Vec<String> = vec![
         "run".into(),
+        // Krate is checking the app, not a person using it (IC-245).
+        "--profile".into(),
+        "analysis".into(),
         wasm_str.clone(),
         "--manifest".into(),
         manifest_str.clone(),
@@ -14546,6 +14626,9 @@ fn run_check_app(
         let png_str = absolute_from_cwd(png).to_string_lossy().into_owned();
         let mut shoot_args: Vec<String> = vec![
             "run".into(),
+            // Krate is checking the app, not a person using it (IC-245).
+            "--profile".into(),
+            "analysis".into(),
             wasm_str.clone(),
             "--manifest".into(),
             manifest_str.clone(),
@@ -14657,6 +14740,9 @@ fn run_usability_stage(
     // every app look like one that closes by itself.
     let args: Vec<String> = vec![
         "run".into(),
+        // Krate is checking the app, not a person using it (IC-245).
+        "--profile".into(),
+        "analysis".into(),
         wasm_str.to_string(),
         "--manifest".into(),
         manifest_str.to_string(),
@@ -16519,14 +16605,18 @@ fn group_store_path(principal: &StoragePrincipal, group: &str) -> PathBuf {
 /// A verified app gets its own directory named for the publisher, so it can
 /// never collide with the unsigned file of the same id nor with a second
 /// publisher shipping the same app name.
-fn principal_store_path(principal: &StoragePrincipal) -> PathBuf {
-    principal_store_path_in(&krate_home(), principal)
-}
-
 /// The same decision against a named root, so the fallback ladder below can
 /// be tested without touching the real `~/.krate` (IC-017). The ladder is
 /// exactly the kind of logic that silently loses data when it regresses,
 /// and the real home is exactly the place not to rehearse that.
+/// The default profile's path for a principal. Production runs go through
+/// `principal_store_path_in` with the run's profile home; the tests that
+/// pin the pre-profile paths still ask for the bare default.
+#[cfg(test)]
+fn principal_store_path(principal: &StoragePrincipal) -> PathBuf {
+    principal_store_path_in(&krate_home(), principal)
+}
+
 fn principal_store_path_in(home: &Path, principal: &StoragePrincipal) -> PathBuf {
     match principal {
         // Unchanged from before, byte for byte: an unsigned app must find
@@ -19212,6 +19302,70 @@ mod storage_identity_tests {
             storage_principal(&manifest, Some(&envelope), Some(&good)).is_verified(),
             "a genuinely authorised release must get its publisher storage",
         );
+    }
+
+    /// A local data profile moves EVERY store, and the default profile is
+    /// the path people already have (IC-245): a preview or a verification
+    /// run never reads or writes a person's own data, and nobody's notes
+    /// move because profiles now exist.
+    #[test]
+    fn a_profile_keeps_every_store_apart_and_default_stays_where_it_was() {
+        let home = tempfile::tempdir().expect("home");
+        let home = home.path();
+        assert_eq!(
+            profile_home(home, "default"),
+            home,
+            "default is the existing home"
+        );
+        assert_eq!(
+            profile_home(home, "preview"),
+            home.join("profiles").join("preview"),
+            "a named profile is its own folder"
+        );
+        let principals = [
+            StoragePrincipal::Unverified {
+                app_id: "dev.krate.notes".into(),
+            },
+            StoragePrincipal::Verified {
+                publisher: "ab".repeat(32),
+                app_id: "dev.krate.notes".into(),
+            },
+            StoragePrincipal::Development {
+                developer: "cd".repeat(32),
+                app_id: "dev.krate.notes".into(),
+            },
+        ];
+        for principal in &principals {
+            let own = principal_store_path_in(&profile_home(home, "default"), principal);
+            let preview = principal_store_path_in(&profile_home(home, "preview"), principal);
+            let analysis = principal_store_path_in(&profile_home(home, "analysis"), principal);
+            assert_eq!(
+                own,
+                principal_store_path_in(home, principal),
+                "default must be exactly the pre-profile path: {principal:?}"
+            );
+            assert_ne!(own, preview, "{principal:?}");
+            assert_ne!(preview, analysis, "{principal:?}");
+            assert!(
+                preview.starts_with(home.join("profiles").join("preview")),
+                "every store of a profile lives under it: {preview:?}"
+            );
+            // The derived stores follow the same path, so a profile cannot
+            // isolate the files while sharing the database or the secrets.
+            for ext in ["sqlite", "secrets", "shared.json"] {
+                assert_ne!(own.with_extension(ext), preview.with_extension(ext));
+            }
+        }
+        // Names: a folder and a word on the trust screen.
+        for good in ["default", "preview", "analysis", "test-2"] {
+            assert!(profile_name_problem(good).is_none(), "{good}");
+        }
+        for bad in ["", "Default", "../escape", "with space", &"x".repeat(33)] {
+            assert!(
+                profile_name_problem(bad).is_some(),
+                "{bad:?} must be refused"
+            );
+        }
     }
 
     #[test]

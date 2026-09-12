@@ -4560,6 +4560,50 @@ fn a_withdrawn_key_is_refused_only_for_what_it_signed_after_the_compromise() {
     );
 }
 
+/// A data profile is named on the trust screen, a bad name is refused before
+/// anything runs, and a screenshot run is a preview by default (IC-245).
+#[test]
+fn a_profile_is_named_on_the_trust_screen_and_a_bad_name_is_refused() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let bundle = dir.path().join("app.krate");
+    std::fs::write(&bundle, archive_carrying(&[])).expect("write");
+
+    let shown = krate()
+        .args(["run", "--dump-caps", "--profile", "preview"])
+        .arg(&bundle)
+        .output()
+        .expect("dump caps");
+    let stdout = String::from_utf8_lossy(&shown.stdout);
+    assert!(
+        stdout.contains("kept in the preview profile"),
+        "the trust screen must say where the data goes: {stdout}"
+    );
+    let default = krate()
+        .args(["run", "--dump-caps"])
+        .arg(&bundle)
+        .output()
+        .expect("dump caps");
+    assert!(
+        !String::from_utf8_lossy(&default.stdout).contains("profile"),
+        "the default profile is not a thing to announce"
+    );
+
+    for bad in ["../escape", "Default", "with space"] {
+        let refused = krate()
+            .args(["run", "--profile", bad])
+            .arg(&bundle)
+            .args(["--headless", "--auto-grant"])
+            .output()
+            .expect("run");
+        let stderr = String::from_utf8_lossy(&refused.stderr);
+        assert_eq!(refused.status.code(), Some(2), "{bad:?}: {stderr}");
+        assert!(
+            stderr.contains("--profile"),
+            "{bad:?}: the refusal names the flag: {stderr}"
+        );
+    }
+}
+
 /// The three identities move exactly as their labels say, on the surface a
 /// person reads them from (IC-212).
 ///
