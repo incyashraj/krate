@@ -609,6 +609,22 @@ enum Command {
         output: PathBuf,
     },
 
+    /// What you have allowed apps to do, and take it back.
+    ///
+    /// A permission you granted once is remembered so the next release of
+    /// the same app does not ask again. This is where you see what that
+    /// amounts to, and undo it.
+    Permissions {
+        /// Forget what was allowed for this app id. It is asked for again
+        /// the next time the app runs.
+        #[arg(long, value_name = "APP_ID")]
+        forget: Option<String>,
+
+        /// Forget everything every app was allowed.
+        #[arg(long, conflicts_with = "forget")]
+        forget_all: bool,
+    },
+
     /// What this machine knows about withdrawn signing keys, and import a
     /// publisher's signed revocation list.
     Revocations {
@@ -1587,6 +1603,9 @@ fn run() -> Result<u8> {
             extend.as_deref(),
             &output,
         ),
+        Command::Permissions { forget, forget_all } => {
+            permissions_command(forget.as_deref(), forget_all)
+        }
         Command::Revocations { import } => revocations_command(import.as_deref()),
         Command::Identity {
             isolate,
@@ -4519,6 +4538,82 @@ fn revoke_command(
         "Recipients import it with: krate revocations --import {}",
         output.display()
     );
+    Ok(0)
+}
+
+/// `krate permissions`: what apps have been allowed, and taking it back.
+///
+/// A remembered grant with no way to see or withdraw it is a wall that
+/// only ever opens. The file name carries the app id and the publisher,
+/// which is what a person recognises; the capabilities inside are shown in
+/// the same words the consent prompt used.
+fn permissions_command(forget: Option<&str>, forget_all: bool) -> Result<u8> {
+    let dir = profile_home(&krate_home(), "default").join("grants");
+    if forget_all {
+        match fs::remove_dir_all(&dir) {
+            Ok(()) => println!("Forgot every permission. Apps will ask again."),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                println!("Nothing was remembered.")
+            }
+            Err(err) => anyhow::bail!("could not forget: {err}"),
+        }
+        return Ok(0);
+    }
+
+    let mut entries: Vec<PathBuf> = match fs::read_dir(&dir) {
+        Ok(read) => read.flatten().map(|e| e.path()).collect(),
+        Err(_) => Vec::new(),
+    };
+    entries.sort();
+
+    if let Some(app_id) = forget {
+        // The file name is "<app id>@<publisher>", and one app id can have
+        // more than one publisher. Forgetting by id forgets every one of
+        // them, which is what a person asking to forget an app means.
+        let mut forgotten = 0;
+        for path in &entries {
+            let name = path.file_stem().unwrap_or_default().to_string_lossy();
+            let id = name.split('@').next().unwrap_or_default();
+            if id == sanitize_storage_name(app_id) && fs::remove_file(path).is_ok() {
+                forgotten += 1;
+            }
+        }
+        if forgotten == 0 {
+            println!("Nothing was remembered for {app_id}.");
+        } else {
+            println!("Forgot what {app_id} was allowed. It will ask again.");
+        }
+        return Ok(0);
+    }
+
+    let mut shown = 0;
+    for path in &entries {
+        let Ok(text) = fs::read_to_string(path) else {
+            continue;
+        };
+        let Ok(record) = serde_json::from_str::<RememberedGrants>(&text) else {
+            continue;
+        };
+        shown += 1;
+        let (app_id, publisher) = record
+            .principal
+            .split_once('@')
+            .unwrap_or((record.principal.as_str(), ""));
+        println!("{app_id}");
+        if !publisher.is_empty() {
+            println!("  published by {publisher}");
+        }
+        for cap in &record.granted {
+            println!("  - {cap}");
+        }
+    }
+    if shown == 0 {
+        println!("No app has been allowed anything yet.");
+        println!("A permission you grant is remembered, so the next version does not ask again.");
+    } else {
+        println!();
+        println!("Take one back with: krate permissions --forget <app id>");
+    }
     Ok(0)
 }
 
@@ -11618,18 +11713,72 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
         return Ok(0);
     }
 
+    // Who this app is, for storage and for remembered grants. Computed
+    // once here because consent needs it before the run is configured.
+    let storage = manifest.map(|manifest| {
+        let envelope = bundle
+            .as_ref()
+            .and_then(|bundle| bundle.signature_envelope().ok())
+            .flatten();
+        let verdict = bundle
+            .as_ref()
+            .and_then(|bundle| {
+                bundle
+                    .full_verdict(&revocations_known_here(
+                        bundle.signing_authority().ok().flatten().as_deref(),
+                    ))
+                    .ok()
+            })
+            .flatten();
+        storage_principal(manifest, envelope.as_ref(), verdict.as_ref())
+    });
+
     if let Some(manifest) = manifest {
+        // What this person already granted this app, carried across the
+        // update (IC-017). `SessionPolicy::allows` decides what a
+        // remembered grant covers, so a new release asking for the same or
+        // a narrower capability is answered by the old yes, and a broader
+        // one is not -- the policy's own comparison, not a second opinion
+        // about what "the same permission" means.
+        //
+        // Remembered against the verified principal only, and only when
+        // the person could have been asked: an --auto-grant run is Krate
+        // granting to itself, and recording that as a person's decision
+        // would let a verification run widen what the next real run
+        // silently allows.
         let can_prompt = request.prompt || request.consent || io::stdin().is_terminal();
+        let remembering = storage.as_ref().filter(|_| !request.auto_grant);
+        if let Some(principal) = remembering {
+            let remembered = load_remembered_grants(&store_home, principal);
+            if !remembered.is_empty() {
+                policy =
+                    SessionPolicy::from_grants(policy.grants().iter().cloned().chain(remembered));
+            }
+        }
         let missing = policy.missing_required_for_manifest(manifest)?;
         if !missing.is_empty() && can_prompt && !request.auto_grant {
             // A double-clicked bundle asks in a native window; a terminal run
             // asks in the terminal. The two paths fold the same grant set into
             // the same SessionPolicy, so enforcement downstream is identical.
+            let before = policy.grants().clone();
             policy = if request.consent {
                 consent_for_session_grants(manifest, &policy)?
             } else {
                 prompt_for_session_grants(manifest, &policy)?
             };
+            // Only what the person just said yes to, and only for an app
+            // whose lineage can be checked again next time.
+            if let Some(principal) = remembering {
+                let fresh: Vec<Capability> = policy
+                    .grants()
+                    .iter()
+                    .filter(|cap| !before.contains(*cap))
+                    .cloned()
+                    .collect();
+                if !fresh.is_empty() {
+                    remember_grants(&store_home, principal, &fresh);
+                }
+            }
         }
 
         let missing = policy.missing_required_for_manifest(manifest)?;
@@ -11767,24 +11916,6 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
     // Computed once so all four stores -- kv, sql, secrets, shared -- agree:
     // a principal that differed between them would isolate an app's notes
     // while leaving its passwords reachable.
-    let storage = manifest.map(|manifest| {
-        let envelope = bundle
-            .as_ref()
-            .and_then(|bundle| bundle.signature_envelope().ok())
-            .flatten();
-        let verdict = bundle
-            .as_ref()
-            .and_then(|bundle| {
-                bundle
-                    .full_verdict(&revocations_known_here(
-                        bundle.signing_authority().ok().flatten().as_deref(),
-                    ))
-                    .ok()
-            })
-            .flatten();
-        storage_principal(manifest, envelope.as_ref(), verdict.as_ref())
-    });
-
     let config = Config {
         fuel: request.fuel,
         memory_bytes: request
@@ -13134,6 +13265,98 @@ fn prompt_for_session_grants(manifest: &Manifest, policy: &SessionPolicy) -> Res
     let grants = policy.grants().iter().cloned().chain(selected);
 
     Ok(SessionPolicy::from_grants(grants))
+}
+
+/// Grants a person has already given this app, kept between runs (IC-017).
+///
+/// Remembered ONLY for a verified principal. An unsigned app's id is
+/// author-controlled: anyone can ship a file claiming `dev.krate.notes`,
+/// so a grant remembered against that id would be inherited by whoever
+/// claimed it next -- the permission wall handing over the thing it exists
+/// to protect. A development identity is this machine's own, so it is
+/// remembered too; the bare unverified id is not.
+///
+/// What is carried forward is bounded by what the person actually gave.
+/// A new release asking for the SAME or a NARROWER capability reuses the
+/// answer, because the person already said yes to at least that much. A
+/// BROADER or unrelated capability is asked again, every time, however
+/// small the widening looks: `fs.read:notes/**` is not `fs.read:**`, and
+/// the difference is the whole point of naming a path.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct RememberedGrants {
+    schema: String,
+    /// The storage key of the principal these were given to, so a file
+    /// that cannot show the same lineage cannot read them.
+    principal: String,
+    /// Each capability exactly as the person granted it.
+    granted: Vec<String>,
+}
+
+const REMEMBERED_GRANTS_SCHEMA: &str = "krate.grants.v1";
+
+fn remembered_grants_path(home: &Path, principal: &StoragePrincipal) -> Option<PathBuf> {
+    match principal {
+        // An unverified id is not an identity: see the type's own comment.
+        StoragePrincipal::Unverified { .. } => None,
+        _ => Some(
+            home.join("grants")
+                .join(format!("{}.json", principal.storage_key())),
+        ),
+    }
+}
+
+/// What this person has already granted this app, as a policy.
+///
+/// A file that does not parse, or that names a different principal, is
+/// ignored rather than trusted: the safe reading of "I cannot tell what
+/// was granted" is "nothing was", which asks again.
+fn load_remembered_grants(home: &Path, principal: &StoragePrincipal) -> Vec<Capability> {
+    let Some(path) = remembered_grants_path(home, principal) else {
+        return Vec::new();
+    };
+    let Ok(text) = fs::read_to_string(&path) else {
+        return Vec::new();
+    };
+    let Ok(record) = serde_json::from_str::<RememberedGrants>(&text) else {
+        return Vec::new();
+    };
+    if record.schema != REMEMBERED_GRANTS_SCHEMA || record.principal != principal.storage_key() {
+        return Vec::new();
+    }
+    record
+        .granted
+        .iter()
+        .filter_map(|cap| cap.parse::<Capability>().ok())
+        .collect()
+}
+
+/// Remember what was granted, adding to what was already there.
+///
+/// Best effort: a machine that cannot write here still ran the app, and
+/// refusing the run because a convenience could not be saved would be the
+/// wrong trade. The next run simply asks again.
+fn remember_grants(home: &Path, principal: &StoragePrincipal, granted: &[Capability]) {
+    let Some(path) = remembered_grants_path(home, principal) else {
+        return;
+    };
+    let mut all: std::collections::BTreeSet<String> = load_remembered_grants(home, principal)
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    all.extend(granted.iter().map(ToString::to_string));
+    let record = RememberedGrants {
+        schema: REMEMBERED_GRANTS_SCHEMA.to_string(),
+        principal: principal.storage_key(),
+        granted: all.into_iter().collect(),
+    };
+    if let Some(parent) = path.parent() {
+        if fs::create_dir_all(parent).is_err() {
+            return;
+        }
+    }
+    if let Ok(json) = serde_json::to_vec_pretty(&record) {
+        let _ = fs::write(&path, json);
+    }
 }
 
 /// Ask for missing capabilities in a native consent window instead of the
@@ -19657,6 +19880,122 @@ mod storage_identity_tests {
             key,
             format!("dev.krate.notes@{}", &root[..16]),
             "a third input would have to show up here",
+        );
+    }
+
+    /// A grant follows the app's lineage, and only as far as the person's
+    /// answer actually reached (IC-017).
+    ///
+    /// The four relations, across an update: the same capability and a
+    /// narrower one are already covered by what was said yes to; a broader
+    /// one and an unrelated one are not, and must be asked again. The
+    /// comparison is `SessionPolicy::allows`, the same function the wall
+    /// enforces with, so "what a remembered grant covers" and "what a
+    /// grant permits at runtime" cannot drift apart.
+    #[test]
+    fn a_remembered_grant_covers_the_same_and_narrower_but_never_broader() {
+        let home = tempfile::tempdir().expect("home");
+        let home = home.path();
+        let principal = StoragePrincipal::Verified {
+            publisher: "aa".repeat(32),
+            app_id: "dev.krate.notes".into(),
+        };
+        let cap = |text: &str| text.parse::<Capability>().expect(text);
+
+        assert!(
+            load_remembered_grants(home, &principal).is_empty(),
+            "a machine that has been asked nothing remembers nothing",
+        );
+        remember_grants(home, &principal, &[cap("fs.read:notes/**")]);
+
+        let policy = SessionPolicy::from_grants(load_remembered_grants(home, &principal));
+        assert!(
+            policy.allows(&cap("fs.read:notes/**")),
+            "same: the person said yes to this"
+        );
+        assert!(
+            policy.allows(&cap("fs.read:notes/today.txt")),
+            "narrower: already inside what they allowed",
+        );
+        assert!(
+            !policy.allows(&cap("fs.read:**")),
+            "broader: reading every file is not what was granted, however small the edit looks",
+        );
+        assert!(
+            !policy.allows(&cap("fs.write:notes/**")),
+            "incomparable: writing is not reading",
+        );
+        assert!(
+            !policy.allows(&cap("net.connect:example.com:443")),
+            "unrelated: a new capability is a new question",
+        );
+
+        // Adding to the record keeps what was there: a second session's yes
+        // does not erase the first.
+        remember_grants(home, &principal, &[cap("net.connect:example.com:443")]);
+        let policy = SessionPolicy::from_grants(load_remembered_grants(home, &principal));
+        assert!(
+            policy.allows(&cap("fs.read:notes/**"))
+                && policy.allows(&cap("net.connect:example.com:443"))
+        );
+    }
+
+    /// An unsigned app inherits nothing, and one lineage's answer is not
+    /// another's (IC-017).
+    ///
+    /// The id in a manifest is author-controlled: anyone can ship a file
+    /// claiming `dev.krate.notes`. Remembering a grant against that id
+    /// would mean the next file claiming it inherits the permission -- the
+    /// wall handing over exactly what it exists to protect.
+    #[test]
+    fn a_remembered_grant_is_never_inherited_by_whoever_claims_the_id() {
+        let home = tempfile::tempdir().expect("home");
+        let home = home.path();
+        let cap = |text: &str| text.parse::<Capability>().expect(text);
+        let publisher = StoragePrincipal::Verified {
+            publisher: "aa".repeat(32),
+            app_id: "dev.krate.notes".into(),
+        };
+        let impostor = StoragePrincipal::Unverified {
+            app_id: "dev.krate.notes".into(),
+        };
+        let rival = StoragePrincipal::Verified {
+            publisher: "bb".repeat(32),
+            app_id: "dev.krate.notes".into(),
+        };
+
+        remember_grants(home, &publisher, &[cap("fs.read:notes/**")]);
+        assert!(
+            load_remembered_grants(home, &impostor).is_empty(),
+            "an unsigned file claiming the id must inherit nothing",
+        );
+        assert!(
+            load_remembered_grants(home, &rival).is_empty(),
+            "another publisher's app of the same name is another app",
+        );
+
+        // An unsigned app's own answers are not written down at all: there
+        // is no identity to write them against.
+        remember_grants(home, &impostor, &[cap("fs.read:anything/**")]);
+        assert!(
+            remembered_grants_path(home, &impostor).is_none(),
+            "there is no file for an unverified principal to read back",
+        );
+        assert!(load_remembered_grants(home, &impostor).is_empty());
+
+        // A record naming a different principal is ignored, not trusted:
+        // moving the file does not move the permission.
+        let stolen = remembered_grants_path(home, &rival).expect("rival has a path");
+        std::fs::create_dir_all(stolen.parent().expect("parent")).expect("mkdir");
+        std::fs::copy(
+            remembered_grants_path(home, &publisher).expect("publisher has a path"),
+            &stolen,
+        )
+        .expect("copy");
+        assert!(
+            load_remembered_grants(home, &rival).is_empty(),
+            "a grants file carries the principal it was written for, and a \
+             copy into another app's place is refused by it",
         );
     }
 

@@ -4560,6 +4560,271 @@ fn a_withdrawn_key_is_refused_only_for_what_it_signed_after_the_compromise() {
     );
 }
 
+/// A person answers once, and the next release of the same app does not ask
+/// again -- unless it wants more (IC-017).
+///
+/// Driven through the CLI with a terminal answer piped in, which is the
+/// path a person on a terminal actually takes. The update is a genuinely
+/// new file: repacked, re-signed, a new version, and in the third case a
+/// widened capability.
+#[test]
+fn a_grant_survives_an_update_and_a_widened_one_is_asked_again() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let home = tempfile::tempdir().expect("home");
+    let minimal = include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, minimal).expect("component");
+    let key = dir.path().join("key.pkcs8");
+    let mut generated = false;
+
+    // Build, sign and run one release. Returns what the run printed on
+    // stderr, where the prompt appears.
+    let mut release_of = |app_id: &str,
+                          version: &str,
+                          caps: &[&str],
+                          answer: &str|
+     -> (Option<i32>, String) {
+        let manifest = dir.path().join("manifest.toml");
+        let declared: String = caps
+            .iter()
+            .map(|cap| {
+                format!(
+                    "\n[[capabilities]]\ncap = \"{cap}\"\nrationale = \"the app's work\"\nrequired = true\n"
+                )
+            })
+            .collect();
+        std::fs::write(
+            &manifest,
+            format!(
+                "[app]\nid = \"{app_id}\"\nname = \"Grants\"\nversion = \"{version}\"\n\
+                 entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n{declared}"
+            ),
+        )
+        .expect("manifest");
+        let bundle = dir.path().join(format!("{app_id}-v{version}.krate"));
+        assert!(krate()
+            .args(["pack"])
+            .arg(&wasm)
+            .arg("--manifest")
+            .arg(&manifest)
+            .arg("-o")
+            .arg(&bundle)
+            .status()
+            .expect("pack")
+            .success());
+        let mut sign = krate();
+        sign.arg("sign").arg(&bundle).arg("--key").arg(&key);
+        if !generated {
+            sign.arg("--generate-key");
+            generated = true;
+        }
+        assert!(
+            sign.args(["--namespace", "grants/app"])
+                .output()
+                .expect("sign")
+                .status
+                .success(),
+            "sign must succeed"
+        );
+
+        let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_krate"))
+            .arg("run")
+            .arg(&bundle)
+            .args(["--headless", "--prompt"])
+            .env("HOME", home.path())
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("spawn");
+        use std::io::Write;
+        child
+            .stdin
+            .as_mut()
+            .expect("stdin")
+            .write_all(answer.as_bytes())
+            .expect("answer");
+        let out = child.wait_with_output().expect("wait");
+        (
+            out.status.code(),
+            String::from_utf8_lossy(&out.stderr).to_string()
+                + &String::from_utf8_lossy(&out.stdout),
+        )
+    };
+
+    let (code, first) = release_of("dev.krate.grants", "1.0.0", &["fs.read:notes/**"], "A\n");
+    assert_eq!(code, Some(0), "the app runs once allowed: {first}");
+    assert!(
+        first.contains("fs.read:notes/**"),
+        "the first run must ASK for the capability: {first}"
+    );
+
+    // Second run: a new release of the same app, the same capability, and
+    // no answer on stdin at all. It must not need one.
+    let (code, second) = release_of("dev.krate.grants", "2.0.0", &["fs.read:notes/**"], "");
+    assert_eq!(
+        code,
+        Some(0),
+        "an update asking for what was already granted must not ask again: {second}"
+    );
+
+    // Third: the update wants every file instead of the notes folder. That
+    // is a different question and must be asked, and with no answer piped
+    // in the run is refused rather than allowed.
+    let (code, third) = release_of("dev.krate.grants", "3.0.0", &["fs.read:**"], "");
+    assert_ne!(
+        code,
+        Some(0),
+        "a widened capability must not ride in on the old yes: {third}"
+    );
+    assert!(
+        third.contains("fs.read:**"),
+        "and the person must be told what the new ask is: {third}"
+    );
+
+    // A PARTIAL answer is remembered partially. Two capabilities are asked
+    // for and the person picks only the first; the next release must still
+    // ask about the second. Remembering everything the manifest DECLARED
+    // instead of what was granted would turn "allow just this one" into
+    // "allow both, from now on" -- silently, on the next run.
+    //
+    // Both capabilities have to be ones the prompt actually asks about:
+    // a default-granted capability like time.clock never appears, so a
+    // pair including it cannot express a partial answer at all. The first
+    // draft of this used one, and the run it expected to be refused was
+    // correctly allowed.
+    let pair = &["fs.read:partial/**", "net.connect:example.com:443"];
+    // Both are required, so granting only the first leaves the run refused
+    // -- and that refusal is beside the point here. What matters is that
+    // the yes to the first was recorded and the no to the second was not.
+    let (_, fourth) = release_of("dev.krate.partial", "1.0.0", pair, "1\n");
+    assert!(
+        fourth.contains("fs.read:partial/**") && fourth.contains("net.connect:example.com:443"),
+        "both must be asked the first time, or a partial answer means nothing: {fourth}"
+    );
+    let (code, fifth) = release_of("dev.krate.partial", "2.0.0", pair, "");
+    assert_ne!(
+        code,
+        Some(0),
+        "the capability the person did NOT pick must still be asked about: {fifth}"
+    );
+    assert!(
+        fifth.contains("net.connect:example.com:443"),
+        "and it is the unpicked one that is asked: {fifth}"
+    );
+    assert!(
+        !fifth.contains("fs.read:partial/**"),
+        "while the one they did pick is not asked again: {fifth}"
+    );
+}
+
+/// A person can see what they have allowed, and take it back (IC-017).
+///
+/// A remembered permission with no way to withdraw it is a wall that only
+/// ever opens. This drives the whole loop through the CLI: grant, see it
+/// listed, forget it, and be asked again.
+#[test]
+fn what_was_allowed_can_be_seen_and_taken_back() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let home = tempfile::tempdir().expect("home");
+    let minimal = include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, minimal).expect("component");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        "[app]\nid = \"dev.krate.takeback\"\nname = \"Takeback\"\nversion = \"1.0.0\"\n\
+         entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+         [[capabilities]]\ncap = \"fs.read:taken/**\"\nrationale = \"the app's work\"\n\
+         required = true\n",
+    )
+    .expect("manifest");
+    let bundle = dir.path().join("app.krate");
+    assert!(krate()
+        .args(["pack"])
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .status()
+        .expect("pack")
+        .success());
+    let key = dir.path().join("key.pkcs8");
+    assert!(krate()
+        .arg("sign")
+        .arg(&bundle)
+        .arg("--key")
+        .arg(&key)
+        .args(["--generate-key", "--namespace", "takeback/app"])
+        .output()
+        .expect("sign")
+        .status
+        .success());
+
+    let permissions = |args: &[&str]| -> String {
+        let out = krate()
+            .arg("permissions")
+            .args(args)
+            .env("HOME", home.path())
+            .output()
+            .expect("permissions");
+        assert!(
+            out.status.success(),
+            "permissions failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).to_string()
+    };
+    let run = |answer: &str| -> Option<i32> {
+        use std::io::Write;
+        let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_krate"))
+            .arg("run")
+            .arg(&bundle)
+            .args(["--headless", "--prompt"])
+            .env("HOME", home.path())
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("spawn");
+        child
+            .stdin
+            .as_mut()
+            .expect("stdin")
+            .write_all(answer.as_bytes())
+            .expect("answer");
+        child.wait().expect("wait").code()
+    };
+
+    let empty = permissions(&[]);
+    assert!(
+        empty.contains("No app has been allowed anything yet"),
+        "a fresh machine says so plainly: {empty}"
+    );
+
+    assert_eq!(run("A\n"), Some(0), "granted, so it runs");
+    assert_eq!(run(""), Some(0), "and is not asked again");
+
+    let listed = permissions(&[]);
+    assert!(
+        listed.contains("dev.krate.takeback") && listed.contains("fs.read:taken/**"),
+        "what was allowed must be visible, in the words it was asked in: {listed}"
+    );
+
+    let forgotten = permissions(&["--forget", "dev.krate.takeback"]);
+    assert!(forgotten.contains("will ask again"), "{forgotten}");
+    assert_ne!(
+        run(""),
+        Some(0),
+        "after taking it back the app must ask again, and be refused with no answer"
+    );
+    assert!(
+        !permissions(&[]).contains("fs.read:taken/**"),
+        "and it is gone from the list"
+    );
+}
+
 /// A data profile is named on the trust screen, a bad name is refused before
 /// anything runs, and a screenshot run is a preview by default (IC-245).
 #[test]
