@@ -56,3 +56,40 @@ shows up there -- on Windows and Linux too. Regenerate only with a
 deliberate format change:
 
     cargo test -p krate-bundle --lib regenerate_signing_vectors -- --ignored
+
+# A locked entry
+
+`locked-entry.krate` carries a `source/hidden.rs` whose encryption bit is
+set, so no reader can see it without a password. Krate refuses it: every
+part of a Krate app is meant to be readable by whoever receives it, which
+is what makes the file reviewable, and a locked entry is a payload the
+recipient, the hub and any reviewer are all shut out of.
+
+The `zip` crate's writer cannot produce one, so it is built by Python's
+zipfile and then byte-patched -- the same reason `duplicate-from-another-writer.krate`
+exists. Regenerate with:
+
+    python3 - <<'PY'
+    import zipfile, struct, pathlib
+    out = pathlib.Path('locked-entry.krate')
+    MAN = (b'[app]\nid = "com.example.locked"\nname = "Locked"\n'
+           b'version = "1.0.0"\nentry = "code.wasm"\n'
+           b'world = "krate:app/cli@0.1.0"\n')
+    comp = pathlib.Path('minimal-run.wasm').read_bytes()
+    z = zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED)
+    z.writestr('manifest.toml', MAN)
+    z.writestr('code.wasm', comp)
+    z.writestr('source/hidden.rs', b'// what the recipient may not read')
+    z.close()
+    raw = bytearray(out.read_bytes())
+    for sig, flag_off, nlen_off, name_off in ((b'PK\x03\x04', 6, 26, 30), (b'PK\x01\x02', 8, 28, 46)):
+        i = 0
+        while True:
+            i = raw.find(sig, i)
+            if i < 0: break
+            nlen = struct.unpack_from('<H', raw, i + nlen_off)[0]
+            if bytes(raw[i + name_off:i + name_off + nlen]) == b'source/hidden.rs':
+                raw[i + flag_off] |= 0x01
+            i += 4
+    out.write_bytes(bytes(raw))
+    PY

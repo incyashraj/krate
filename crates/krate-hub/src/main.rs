@@ -719,6 +719,16 @@ mod tests {
                 include_bytes!("../../bundle/tests/fixtures/extra-export.wasm"),
             ),
         ]);
+        // A locked entry: something the recipient, the hub and any
+        // reviewer are all shut out of. Admission runs the same opener, so
+        // what the client refuses the server refuses (IC-833).
+        const LOCKED: &[u8] = include_bytes!("../../bundle/tests/fixtures/locked-entry.krate");
+        let refusal = looks_like_krate(LOCKED).expect_err("a locked entry must be refused");
+        assert!(
+            refusal.contains("locked entry"),
+            "and refused as locked, not as bad packing: {refusal}"
+        );
+
         let refusal = looks_like_krate(&chatty).expect_err("an extra export must be refused");
         assert!(
             refusal.contains("exports more than `run`") && refusal.contains("debug-hook"),

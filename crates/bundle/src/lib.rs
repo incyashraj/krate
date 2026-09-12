@@ -347,6 +347,27 @@ impl BundleError {
             // Saying "not a Krate app, or damaged" here is simply false, and
             // it sends whoever packed it to rebuild a file that is fine
             // (K-259). The one fact that helps them is the one to give.
+            // An entry nobody can read without a password. The zip layer
+            // reports it through the same variant as an unsupported
+            // compression method, and the two need opposite answers: one
+            // says "pack it again", which is right for compression and
+            // useless here. A Krate app with a locked entry is not a
+            // packing mistake -- it carries something the recipient, the
+            // hub and any reviewer are all shut out of, and Krate has no
+            // password to offer. Refused as its own thing (IC-833, 1833).
+            BundleError::Archive(zip::result::ZipError::UnsupportedArchive(detail))
+                if detail.to_lowercase().contains("password")
+                    || detail.to_lowercase().contains("encrypt") =>
+            {
+                Some(
+                    "this app has a locked entry inside it, and Krate does not open \
+                     locked entries.\n\n  \
+                     Everything in a Krate app is meant to be readable by whoever \
+                     receives it -- that is what makes the file reviewable. Pack it \
+                     again without encryption."
+                        .to_string(),
+                )
+            }
             BundleError::Archive(zip::result::ZipError::UnsupportedArchive(detail)) => {
                 Some(format!(
                     "this Krate app is packed a way this version cannot read ({detail}). \
@@ -4893,6 +4914,51 @@ required = true
         assert!(
             err.to_string().contains("stopped responding"),
             "and say so in words a person can act on: {err}"
+        );
+    }
+
+    /// An entry nobody can read without a password is refused, and told
+    /// apart from a compression method we do not support (IC-833, 1833).
+    ///
+    /// Both arrive from the zip layer as the same "unsupported archive"
+    /// error and need opposite answers. "Pack it again with `krate pack`"
+    /// is right for a compression method and useless for a locked entry:
+    /// the packer did not choose the encryption, and re-packing will not
+    /// remove it. The deeper reason to refuse at all is that a Krate app
+    /// is meant to be readable by whoever receives it -- that is what
+    /// makes it reviewable -- and a locked entry is a payload the
+    /// recipient, the hub and any reviewer are all shut out of.
+    #[test]
+    fn an_entry_nobody_can_read_is_refused_as_locked_not_as_bad_packing() {
+        const LOCKED: &[u8] = include_bytes!("../tests/fixtures/locked-entry.krate");
+
+        let err = open_bytes(LOCKED).expect_err("a locked entry must not open");
+        let message = err.user_message().unwrap_or_else(|| err.to_string());
+        assert!(
+            message.contains("locked entry"),
+            "the refusal must name what is actually wrong: {message}"
+        );
+        assert!(
+            message.contains("readable by whoever") || message.contains("reviewable"),
+            "and say why Krate will not open it: {message}"
+        );
+        assert!(
+            !message.contains("packed a way this version cannot read"),
+            "it must NOT be reported as an unsupported compression method -- \
+             that sends the publisher to re-pack a file whose packing is fine: {message}"
+        );
+
+        // The compression wording still exists for the case it was written
+        // for (K-259), or this fix would have taken it away.
+        let unsupported = BundleError::Archive(zip::result::ZipError::UnsupportedArchive(
+            "Compression method not supported",
+        ));
+        let message = unsupported
+            .user_message()
+            .expect("an unsupported method still explains itself");
+        assert!(
+            message.contains("pack it again") && !message.contains("locked entry"),
+            "a real compression problem keeps its own answer: {message}"
         );
     }
 
