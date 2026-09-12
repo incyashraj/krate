@@ -1641,6 +1641,14 @@ jobs:
       # CI proves the tool: every gate alone must hold a release (IC-159).
       - name: Prove the release decision holds on every gate
         run: python3 scripts/release-decision.py --self-test
+      # Release lineage binds a published artifact to the commit, toolchain,
+      # tests and signer behind it (IC-612). Only the self-test runs here:
+      # `record` and `verify` read the published release over the network,
+      # and a CI job that silently passed when GitHub was unreachable would
+      # be the false green the tool exists to prevent -- both refuse with
+      # exit 2 rather than report a pass they did not earn.
+      - name: Prove release lineage catches a drifted record
+        run: python3 scripts/release-lineage.py --self-test
       # The open-core boundary: the player and format are MIT/Apache, Studio
       # and the hub worker are BSL 1.1. It breaks by an MIT crate quietly
       # depending on the product layer, not by anyone relicensing a file
