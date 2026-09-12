@@ -8,6 +8,7 @@
     scripts/evidence-registry.py export DIR        # public-safe JSON + Markdown, no secrets, no private paths
     scripts/evidence-registry.py summary           # counts that keep their denominators
     scripts/evidence-registry.py audit             # measurement cells against the plan they were promised
+    scripts/evidence-registry.py seal FILE         # retain a run under a digest that makes edits visible
     scripts/evidence-registry.py --self-test
 
 An evidence record says what happened: to which exact subject, in which
@@ -654,6 +655,11 @@ def audit_profile(profile, results):
         if required:
             findings.append(f"{name}: REQUIRED and {outcome} (1806)")
 
+    # 1807: a retained run must still be the run that was retained.
+    sealed, why = check_seal(results)
+    if sealed is False:
+        findings.append(why)
+
     # 1803: the plan cannot be weakened after the fact.
     if results.get("profile_frozen_at") and results["profile_frozen_at"] != profile.get("frozen_at"):
         findings.append(
@@ -662,6 +668,73 @@ def audit_profile(profile, results):
             "cannot be reopened after seeing the run (1803)"
         )
     return (not findings), findings
+
+
+def seal(results):
+    """The digest that makes a run immutable (IC-829, test 1807).
+
+    Over everything the run asserts -- the profile it ran against, when,
+    the environment, and every cell with its outcome, value and reason --
+    so editing a number, quietly dropping a rejected row, or restating the
+    OS build changes the seal and the check below says so.
+
+    The `seal` field itself is excluded, since it cannot cover itself.
+    Keys are sorted so the same run always hashes the same whatever order
+    a tool wrote the JSON in.
+    """
+    import hashlib
+
+    body = {k: v for k, v in results.items() if k != "seal"}
+    canonical = json.dumps(body, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def check_seal(results):
+    """Whether a run still matches the seal it was retained under.
+
+    A run with no seal is not refused -- it is reported as unsealed, which
+    is a different and honest thing to say about an older record. What is
+    refused is a run whose seal does not match its contents: somebody
+    changed a retained measurement.
+    """
+    recorded = results.get("seal")
+    if not recorded:
+        return None, "unsealed: this run was retained without a digest, so nothing can say it is unchanged"
+    actual = seal(results)
+    if actual != recorded:
+        return False, (
+            f"the seal does not match the contents ({actual[:12]} vs {recorded[:12]}): "
+            "a retained measurement was edited after the fact"
+        )
+    return True, "sealed and unchanged"
+
+
+# What must match before two runs may be spoken about as one measurement.
+# 1807: a row from a different runtime, OS build, display or power state
+# is a different experiment, however similar the number looks.
+MERGE_KEYS = ["kind", "os", "arch", "version", "display", "power"]
+
+
+def refuse_merge(runs):
+    """Why a set of runs may not be combined into one table (1807).
+
+    Returns the differences that forbid it, empty when they genuinely
+    describe the same environment. Merging is the quiet way a measurement
+    from a laptop on battery joins one from a plugged-in desktop and
+    becomes an average nobody made.
+    """
+    if len(runs) < 2:
+        return []
+    differences = []
+    first = runs[0].get("environment") or {}
+    for other in runs[1:]:
+        env = other.get("environment") or {}
+        for key in MERGE_KEYS:
+            if first.get(key) != env.get(key):
+                differences.append(
+                    f"{key}: {first.get(key)!r} vs {env.get(key)!r} -- different {key} is a different run (1807)"
+                )
+    return differences
 
 
 def claims_blocked_by(profile, results):
@@ -1015,7 +1088,7 @@ def self_test():
         return base
 
     def results(cells, **over):
-        base = {"profile_frozen_at": "2026-09-12T09:00:00Z", "cells": cells}
+        base = {"profile": "P-SCROLL", "profile_frozen_at": "2026-09-12T09:00:00Z", "cells": cells}
         base.update(over)
         return base
 
@@ -1086,6 +1159,40 @@ def self_test():
     expect(not ok and any("cannot be reopened" in f for f in findings),
            f"1803: demoting a required cell after the run must be caught: {findings}")
 
+    # 1807: a retained run is immutable, and runs from different
+    # environments are not one measurement.
+    run = results(good, environment={"kind": "native", "os": "macos", "arch": "arm64",
+                                     "version": "27", "display": "built-in", "power": "mains"})
+    sealed = dict(run, seal=seal(run))
+    expect(check_seal(sealed)[0] is True, "a freshly sealed run verifies")
+    expect(check_seal(run)[0] is None, "a run with no seal is reported as unsealed, not refused")
+    edited = json.loads(json.dumps(sealed))
+    edited["cells"][0]["value"] = 0.1
+    expect(check_seal(edited)[0] is False, "editing a retained number must break the seal")
+    dropped = json.loads(json.dumps(sealed))
+    dropped["cells"] = [c for c in dropped["cells"] if c["name"] != "energy"]
+    expect(check_seal(dropped)[0] is False, "quietly dropping a row must break the seal")
+    restated = json.loads(json.dumps(sealed))
+    restated["environment"]["version"] = "26"
+    expect(check_seal(restated)[0] is False, "restating the OS build must break the seal")
+    reordered = json.loads(json.dumps(sealed))
+    reordered["cells"] = list(reversed(reordered["cells"]))
+    expect(check_seal(reordered)[0] is False, "reordering cells changes what was retained")
+    ok, findings = audit_profile(profile(), edited)
+    expect(any("seal does not match" in f for f in findings),
+           f"1807: the audit must say a retained run was edited: {findings}")
+
+    same = dict(run)
+    expect(refuse_merge([same, json.loads(json.dumps(same))]) == [],
+           "two runs of the same environment may be spoken about together")
+    for key, other in [("version", "26"), ("power", "battery"), ("display", "external"),
+                       ("os", "ubuntu"), ("arch", "x86_64"), ("kind", "virtual")]:
+        elsewhere = json.loads(json.dumps(run))
+        elsewhere["environment"][key] = other
+        differences = refuse_merge([run, elsewhere])
+        expect(any(key in d for d in differences),
+               f"1807: a different {key} must forbid merging: {differences}")
+
     # A profile cannot name a claim that does not exist: "blocks C-GHOST"
     # would read as a real consequence and mean nothing.
     dangling = validate_profile(profile(), {"C-REAL": {}})
@@ -1111,6 +1218,9 @@ def self_test():
         for f in failures:
             print(f"  {f}")
         return 1
+    print("OK -- a retained run is sealed under a digest that covers its cells and")
+    print("environment, and runs from different runtimes, OS builds, displays or")
+    print("power states are refused as one measurement.")
     print("OK -- the measurement matrix fails closed: only an optional not-run cell")
     print("is neutral, a rejected row appears with its reason and blocks the claim,")
     print("zero work and wrong tool/arch/fixture fail the audit, and a frozen plan")
@@ -1132,7 +1242,7 @@ def main(argv):
         print(__doc__.strip().splitlines()[0])
         print(
         "usage: evidence-registry.py "
-        "validate|state|card|publication|export|summary|audit|--self-test"
+        "validate|state|card|publication|export|summary|audit|seal|--self-test"
     )
         return 2
     command, args = argv[0], argv[1:]
@@ -1191,6 +1301,31 @@ def main(argv):
         return 0
     if command == "summary":
         print(summary(records))
+        return 0
+    if command == "seal":
+        # Retain a run under its digest. Refuses to re-seal a run whose
+        # seal no longer matches: that is an edited measurement, and
+        # stamping a fresh digest on it would launder the edit.
+        if len(args) != 1:
+            print("seal needs one results file")
+            return 2
+        path = Path(args[0])
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError) as err:
+            print(f"{path}: {err}")
+            return 1
+        state, why = check_seal(data)
+        if state is False:
+            print(f"{path}: {why}")
+            print("Not re-sealed. Restore the run, or retain the corrected one as a NEW file.")
+            return 1
+        if state is True:
+            print(f"{path}: already sealed and unchanged")
+            return 0
+        data["seal"] = seal(data)
+        path.write_text(json.dumps(data, indent=1) + "\n")
+        print(f"{path}: sealed as {data['seal'][:12]}")
         return 0
     if command == "audit":
         profiles, runs, problems = load_profiles()

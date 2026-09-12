@@ -3,7 +3,12 @@
  "profile_frozen_at": "2026-08-16T09:00:00Z",
  "ran_at": "2026-08-16T00:00:00Z",
  "source": "evidence/benchmarks/2026-08-16-notes-battery-macos.md",
- "environment": {"kind": "native", "os": "macos", "arch": "arm64", "version": "27"},
+ "environment": {
+  "kind": "native",
+  "os": "macos",
+  "arch": "arm64",
+  "version": "27"
+ },
  "cells": [
   {
    "name": "app-file-size",
@@ -55,5 +60,6 @@
    "fixture": "notes-50k",
    "arch": "arm64"
   }
- ]
+ ],
+ "seal": "de4c350843dbec07bb16726575bf6d0baf9b3022ad9bfdbc4a0c9254febefd5b"
 }

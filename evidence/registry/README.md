@@ -161,6 +161,28 @@ its result was thrown out -- a missing permission, a contaminated leg, the
 wrong instrument. The reason is recorded and shown, because a rejected row
 that vanishes from the report is indistinguishable from one that passed.
 
+## Retaining a run
+
+```
+python3 scripts/evidence-registry.py seal results/<run>.json
+```
+
+A sealed run carries a digest over everything it asserts: the profile, the
+environment, and every cell with its outcome, value and reason. Editing a
+number, dropping a rejected row, restating the OS build or reordering the
+cells all change the seal, and the audit says the run was edited after the
+fact. `seal` refuses to re-stamp a run whose seal no longer matches --
+that would launder the edit. A corrected measurement is retained as a NEW
+file beside the old one; nothing is overwritten.
+
+A run with no seal is reported as unsealed rather than refused, which is
+the honest thing to say about a record retained before this existed.
+
+Two runs may only be spoken about as one measurement when their runtime
+kind, OS, architecture, OS build, display and power state all match. A row
+from a laptop on battery and one from a plugged-in desktop are two
+experiments, and averaging them produces a number nobody measured.
+
 The seeded profile is the real case: the 2026-08-16 notes battery, whose
 energy leg was contaminated by live trackpad input and rejected. The audit
 therefore exits 1 today and names the blocked claim, which is the correct
