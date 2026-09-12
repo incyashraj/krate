@@ -540,6 +540,25 @@ def publication_gate(claims, records, today=None):
 CELL_STATUSES = {"required", "optional"}
 CELL_OUTCOMES = OUTCOMES | NEUTRAL_OUTCOMES
 
+# What a cell must carry when it compares Krate against something else
+# (1808). A one-number comparison is the shape every misleading benchmark
+# has: it is indistinguishable from noise, and the reader cannot tell
+# whether it would survive being run again.
+#
+# The rule is deliberately about DISCLOSURE, not about a threshold. It does
+# not say a comparison needs thirty samples or a p-value under anything --
+# picking that number for every future measurement from here would be a
+# guess. It says the comparison must state how many runs it rests on, what
+# was computed from them, what spread that estimate has, and what it assumed
+# -- so a reader can judge it. A comparison that cannot answer those is not
+# refused for being weak; it is refused for not saying how weak it is.
+COMPARISON_FIELDS = {
+    "samples": "how many runs the number rests on",
+    "estimator": "what was computed from them (mean, median, p50...)",
+    "interval": "the spread of that estimate, in the cell's unit",
+    "assumptions": "what had to be true for the comparison to be fair",
+}
+
 
 def validate_profile(profile, claims=None):
     """A measurement profile, as a plan: what will be measured, which of it
@@ -587,6 +606,25 @@ def validate_profile(profile, claims=None):
         for field in ("unit", "definition"):
             if not cell.get(field):
                 p.append(f"{pre}/{name}: {field} is required -- a bare number cannot be read back (1805)")
+        # 1808: a cell that compares Krate to something else has to say what
+        # it is being compared against, in the plan, before the run. Naming
+        # the baseline afterwards is how "faster than Electron" ends up
+        # meaning a different Electron each time it is quoted.
+        if cell.get("compares") is not None:
+            if not isinstance(cell.get("compares"), str) or not cell["compares"].strip():
+                p.append(
+                    f"{pre}/{name}: compares must name the baseline this cell is "
+                    "measured against (1808)"
+                )
+            if cell.get("status") != "required":
+                # An optional comparison is a comparison nobody has to run,
+                # which is the one shape that lets a favourable result be
+                # kept and an unfavourable one quietly not attempted.
+                p.append(
+                    f"{pre}/{name}: a comparison cell cannot be optional -- "
+                    "running it only when it looks good is the bias this "
+                    "profile exists to prevent (1808)"
+                )
     return p
 
 
@@ -642,6 +680,42 @@ def audit_profile(profile, results):
                 findings.append(f"{name}: passed with no value -- a cell with no number measured nothing (1806)")
             elif row.get("samples") is not None and int(row.get("samples")) <= 0:
                 findings.append(f"{name}: passed with {row.get('samples')} samples -- zero work is not a result (1806)")
+            # 1808: a comparison has to say what it rests on. Only for cells
+            # the profile declared as comparisons -- an ordinary measurement
+            # of Krate alone is not a claim about anyone else and does not
+            # need an interval to be readable.
+            baseline = cell.get("compares")
+            if baseline:
+                for field, what in sorted(COMPARISON_FIELDS.items()):
+                    value = row.get(field)
+                    if value is None or (isinstance(value, str) and not value.strip()):
+                        findings.append(
+                            f"{name}: compares against {baseline!r} and does "
+                            f"not state {field} -- {what} (1808)"
+                        )
+                    elif field == "samples" and int(value) < 2:
+                        # One run has no spread to report, so an interval
+                        # computed from it is a decoration. Said separately
+                        # from "zero work" above, because a single sample is
+                        # a real measurement -- just not a comparable one.
+                        findings.append(
+                            f"{name}: compares against {baseline!r} on "
+                            f"{value} sample -- one run cannot show whether the "
+                            "difference survives being run again (1808)"
+                        )
+                if row.get("multiple_comparisons") is None and len(
+                    [c for c in cells.values() if c.get("compares")]
+                ) > 1:
+                    # Several comparisons in one profile means several
+                    # chances for one to look good by accident. The profile
+                    # does not have to correct for it -- it has to say
+                    # whether it did.
+                    findings.append(
+                        f"{name}: this profile makes "
+                        f"{len([c for c in cells.values() if c.get('compares')])} "
+                        "comparisons and this cell does not say how multiple "
+                        "comparisons were handled (1808)"
+                    )
             # The measurement has to be OF the thing the profile named.
             for field in ("tool_version", "fixture", "arch"):
                 wanted = cell.get(field)
@@ -1148,6 +1222,91 @@ def self_test():
     ok, findings = audit_profile(profile(), results(good + [{"name": "invented", "outcome": "pass", "value": 1}]))
     expect(not ok and any("never named it" in f for f in findings),
            f"1806: a result nobody asked for means the plan and the run disagree: {findings}")
+
+    # 1808: a comparison has to state what it rests on. Only comparisons --
+    # the ordinary cells above pass with no interval and no assumptions, and
+    # must keep doing so, or every internal measurement inherits a burden
+    # that belongs to claims about other people's software.
+    def cmp_profile(**over):
+        base = profile(cells=[
+            {"name": "scroll-cpu", "status": "required", "unit": "percent",
+             "definition": "mean CPU while scrolling 50k lines",
+             "tool_version": "instruments-16", "fixture": "notes-50k",
+             "arch": "arm64", "compares": "Electron 32 notes replica"},
+            {"name": "energy", "status": "required", "unit": "joules",
+             "definition": "energy over the scroll leg"},
+            {"name": "gpu-time", "status": "optional", "unit": "ms",
+             "definition": "mean GPU frame time"},
+        ])
+        base.update(over)
+        return base
+
+    full = {"samples": 30, "estimator": "median", "interval": "p50 4.1, 95% CI 3.9-4.3",
+            "assumptions": "same fixture, same display, mains power, no other app running"}
+    complete = [dict(good[0], **full), good[1]]
+    expect(validate_profile(cmp_profile()) == [],
+           f"a comparison profile validates: {validate_profile(cmp_profile())}")
+    ok, findings = audit_profile(cmp_profile(), results(complete))
+    expect(ok, f"1808: a comparison that states everything passes: {findings}")
+
+    # Each field missing on its own, so no one of them is carrying the test.
+    # Built from the base row rather than by deleting from `full`: good[0]
+    # already carries `samples`, so deleting it there would leave the key in
+    # place and the case would pass without ever exercising the rule.
+    base_row = {k: v for k, v in good[0].items() if k not in COMPARISON_FIELDS}
+    for field in sorted(COMPARISON_FIELDS):
+        partial = {k: v for k, v in full.items() if k != field}
+        assert field not in partial, "the fixture still carries the field it drops"
+        row = dict(base_row, **partial)
+        assert field not in row, f"{field} leaked back into the row"
+        ok, findings = audit_profile(cmp_profile(), results([row, good[1]]))
+        expect(not ok and any(f"not state {field}" in f for f in findings),
+               f"1808: a comparison missing {field} must be caught: {findings}")
+
+    # One sample is a measurement but not a comparison.
+    ok, findings = audit_profile(cmp_profile(), results([dict(good[0], **dict(full, samples=1)), good[1]]))
+    expect(not ok and any("run again" in f for f in findings),
+           f"1808: a one-sample comparison must be caught: {findings}")
+
+    # An ordinary cell is unaffected: this is the regression that would make
+    # the rule unusable if it ever leaked onto non-comparisons.
+    ok, findings = audit_profile(profile(), results(good))
+    expect(ok, f"1808 must not burden an ordinary measurement: {findings}")
+
+    # A comparison nobody is obliged to run can be run only when it flatters.
+    optional_cmp = cmp_profile(cells=[
+        dict(cmp_profile()["cells"][0], status="optional"),
+        cmp_profile()["cells"][1],
+        cmp_profile()["cells"][2],
+    ])
+    expect(any("cannot be optional" in p for p in validate_profile(optional_cmp)),
+           f"1808: an optional comparison is refused: {validate_profile(optional_cmp)}")
+
+    # A baseline that names nothing is not a baseline.
+    nameless = cmp_profile(cells=[
+        dict(cmp_profile()["cells"][0], compares="   "),
+        cmp_profile()["cells"][1],
+        cmp_profile()["cells"][2],
+    ])
+    expect(any("must name the baseline" in p for p in validate_profile(nameless)),
+           f"1808: an empty baseline is refused: {validate_profile(nameless)}")
+
+    # Two comparisons in one profile: each must say how that was handled.
+    two = cmp_profile(cells=[
+        cmp_profile()["cells"][0],
+        dict(cmp_profile()["cells"][1], compares="Electron 32 notes replica"),
+        cmp_profile()["cells"][2],
+    ])
+    both_full = [dict(good[0], **full), dict(good[1], **full)]
+    ok, findings = audit_profile(two, results(both_full))
+    expect(not ok and any("multiple comparisons" in f for f in findings),
+           f"1808: two comparisons need the handling stated: {findings}")
+    said = [dict(c, multiple_comparisons="Holm-Bonferroni over 2") for c in both_full]
+    ok, findings = audit_profile(two, results(said))
+    expect(ok, f"1808: and saying how it was handled is enough: {findings}")
+    # One comparison alone does not need it: there is nothing to correct for.
+    ok, findings = audit_profile(cmp_profile(), results(complete))
+    expect(ok, f"1808: a single comparison needs no correction: {findings}")
 
     # 1803: the plan is frozen before the run and cannot be weakened after.
     weakened = profile(cells=[
