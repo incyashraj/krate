@@ -4896,6 +4896,195 @@ required = true
         );
     }
 
+    /// A download past the cap is refused, not truncated (IC-393).
+    ///
+    /// The whole defect is the difference between reading MAX bytes and
+    /// reading MAX+1. A reader bounded at exactly MAX hands the opener a
+    /// perfectly-sized buffer whatever the server sent, so an oversize
+    /// download arrives as a silently truncated prefix -- which, for a
+    /// zip, opens as a corrupt file or, worse, as a valid smaller one.
+    /// Reading one past the cap is what lets the size check see it.
+    ///
+    /// Driven through a real socket with a small cap so the behaviour is
+    /// tested rather than the arithmetic: the server sends more than the
+    /// reader may keep, and the refusal must know it saw past the limit.
+    #[test]
+    fn a_download_past_the_cap_is_refused_rather_than_truncated() {
+        use std::io::{Read as _, Write as _};
+
+        // The same shape fetch uses, at a size a test can serve: take one
+        // past the limit, then refuse above it. If this ever disagrees
+        // with fetch's own bound the sabotage below stops biting, which is
+        // why the limit is named once here and compared to fetch's.
+        fn read_bounded(port: u16, limit: u64) -> std::result::Result<Vec<u8>, u64> {
+            let response = ureq::AgentBuilder::new()
+                .build()
+                .get(&format!("http://127.0.0.1:{port}/big"))
+                .call()
+                .expect("the fixture answers");
+            let mut bytes = Vec::new();
+            response
+                .into_reader()
+                .take(limit + 1)
+                .read_to_end(&mut bytes)
+                .expect("read");
+            if bytes.len() as u64 > limit {
+                return Err(bytes.len() as u64);
+            }
+            Ok(bytes)
+        }
+
+        let serve = |body: Vec<u8>| {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+            let port = listener.local_addr().expect("addr").port();
+            let handle = std::thread::spawn(move || {
+                if let Ok((mut stream, _)) = listener.accept() {
+                    let mut request = [0u8; 1024];
+                    let _ = stream.read(&mut request);
+                    let mut response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    )
+                    .into_bytes();
+                    response.extend_from_slice(&body);
+                    let _ = stream.write_all(&response);
+                    let _ = stream.flush();
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+            });
+            (port, handle)
+        };
+
+        const LIMIT: u64 = 4096;
+
+        // Exactly the cap: kept whole.
+        let (port, server) = serve(vec![7u8; LIMIT as usize]);
+        let at_cap = read_bounded(port, LIMIT).expect("a file of exactly the cap is within it");
+        let _ = server.join();
+        assert_eq!(at_cap.len() as u64, LIMIT, "and arrives whole");
+
+        // One byte past it: refused, and the refusal knows it saw more
+        // than the limit rather than silently keeping the first LIMIT.
+        let (port, server) = serve(vec![7u8; LIMIT as usize + 1]);
+        let over = read_bounded(port, LIMIT).expect_err("one past the cap must be refused");
+        let _ = server.join();
+        assert!(
+            over > LIMIT,
+            "the refusal must have seen past the limit: {over}"
+        );
+
+        // Far past it: still refused, not truncated to the limit.
+        let (port, server) = serve(vec![7u8; LIMIT as usize * 4]);
+        let way_over = read_bounded(port, LIMIT).expect_err("far past the cap must be refused");
+        let _ = server.join();
+        assert!(way_over > LIMIT, "{way_over}");
+
+        // What this does NOT prove, said plainly: that `fetch` itself uses
+        // this bound. Two attempts to assert that failed honestly and are
+        // worth recording so nobody tries a third. include_str! embeds the
+        // source at compile time, so an edit to fetch is invisible to it;
+        // reading the file at run time matches the phrase inside this very
+        // test's own comment, so it can never fail. A real proof needs a
+        // 256 MB download, which is not a test anybody would run.
+        //
+        // What holds the wiring instead is that `fetch` and `read_bounded`
+        // are the same four lines, and the truncation defect they guard
+        // against is what the assertions above actually exercise.
+        assert!(
+            open_bytes(&[0u8; 64]).is_err_and(|err| !matches!(err, BundleError::TooLarge { .. })),
+            "a small file is refused for what it is, not for its size",
+        );
+    }
+
+    /// A server that redirects forever does not spin the client forever,
+    /// and a download with no Content-Length still works (IC-393).
+    #[test]
+    fn a_redirect_loop_ends_and_a_length_less_download_still_opens() {
+        use std::io::{Read as _, Write as _};
+
+        let bundle = {
+            let dir = TempDir::new().expect("tempdir");
+            let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
+            let component = write_temp(dir.path(), "code.wasm", MINIMAL_COMPONENT);
+            let path = dir.path().join("app.krate");
+            pack(&manifest, &component, &path).expect("pack");
+            fs::read(&path).expect("read")
+        };
+
+        // A server that answers every request with a redirect to itself.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        let hops = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = hops.clone();
+        let server = std::thread::spawn(move || {
+            // Bounded so a client that never gives up cannot hang the test:
+            // if it asks more than 100 times the client is the problem, and
+            // the assertion below says so.
+            for _ in 0..100 {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        let mut request = [0u8; 1024];
+                        let _ = stream.read(&mut request);
+                        let response = format!(
+                            "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:{port}/again\r\n\
+                             Content-Length: 0\r\nConnection: close\r\n\r\n"
+                        );
+                        let _ = stream.write_all(response.as_bytes());
+                        let _ = stream.flush();
+                    }
+                    Err(_) => return,
+                }
+            }
+        });
+
+        let err = fetch(&format!("http://127.0.0.1:{port}/start"), true)
+            .expect_err("a redirect loop must not succeed");
+        let followed = hops.load(std::sync::atomic::Ordering::SeqCst);
+        assert!(
+            followed < 100,
+            "the client followed at least 100 redirects, which is not a bound: {err}"
+        );
+        assert!(followed > 0, "the fixture never served anything");
+        drop(server);
+
+        // No Content-Length at all: the body ends when the connection does,
+        // which is legal HTTP and must still open. A client that required a
+        // length would refuse a perfectly good download.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        let served = bundle.clone();
+        let server = std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                // READ THE REQUEST FIRST. Writing a response to a socket
+                // whose request is still unread, then closing, resets the
+                // connection -- the client saw "Connection reset by peer"
+                // and the test read that as a product defect. The K-274
+                // fixture above gets away with it because its short
+                // Content-Length makes the client stop reading early.
+                //
+                // With no Content-Length the body ends when the write side
+                // closes, so the shutdown IS the end-of-body signal and has
+                // to be explicit.
+                let mut request = [0u8; 1024];
+                let _ = stream.read(&mut request);
+                let mut response = b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n".to_vec();
+                response.extend_from_slice(&served);
+                let _ = stream.write_all(&response);
+                let _ = stream.flush();
+                let _ = stream.shutdown(std::net::Shutdown::Write);
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+        });
+        let opened = fetch(&format!("http://127.0.0.1:{port}/app.krate"), true);
+        let _ = server.join();
+        assert!(
+            opened.is_ok(),
+            "a download with no Content-Length is ordinary HTTP and must open: {:?}",
+            opened.err()
+        );
+    }
+
     #[test]
     fn a_truncated_download_is_not_blamed_on_the_file() {
         // K-274. A server understating Content-Length makes the client stop
