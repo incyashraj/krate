@@ -4776,6 +4776,131 @@ fn a_run_that_painted_nothing_does_not_report_a_frame() {
     );
 }
 
+/// Every adversarial archive is refused by the BINARY people run, not
+/// only by the library (IC-714, tests 1471-1486).
+///
+/// This row exists because the two disagreed: the source contained the
+/// duplicate-asset rejection and the shipped binaries accepted the
+/// archive anyway. A library test cannot catch that -- it tests the
+/// library. So the fixtures go through `krate run`, the same path a
+/// recipient takes, and each must be refused with a message about what
+/// is actually wrong.
+///
+/// The archives assembled here cover the shapes a committed fixture
+/// cannot: the zip crate's writer refuses to emit a duplicate name, and
+/// Python's zipfile will not write some of these either, so they are
+/// built byte by byte in the test.
+#[test]
+fn every_adversarial_archive_is_refused_by_the_binary_people_run() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let minimal = include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm");
+
+    // The committed fixtures, through the public path. Each was built to
+    // exercise a shape our own writer cannot produce.
+    let committed: [(&str, &[u8], &str); 4] = [
+        (
+            "a duplicate name from another writer",
+            include_bytes!("../../bundle/tests/fixtures/duplicate-from-another-writer.krate"),
+            "names the same file twice",
+        ),
+        (
+            "an entry nobody can read",
+            include_bytes!("../../bundle/tests/fixtures/locked-entry.krate"),
+            "locked entry",
+        ),
+        (
+            "a duplicate source path",
+            include_bytes!("../../krate-hub/tests/fixtures/duplicate-source-path.krate"),
+            "names the same file twice",
+        ),
+        (
+            "a forged size bomb",
+            include_bytes!("../../krate-hub/tests/fixtures/forged-size-bomb.krate"),
+            "",
+        ),
+    ];
+    for (what, bytes, expected) in committed {
+        let path = dir.path().join(format!("{}.krate", what.replace(' ', "-")));
+        std::fs::write(&path, bytes).expect("write fixture");
+        let output = krate()
+            .arg("run")
+            .arg(&path)
+            .args(["--headless", "--auto-grant"])
+            .output()
+            .expect("run");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_ne!(
+            output.status.code(),
+            Some(0),
+            "{what} must be refused by the binary, not only by the library: {stderr}"
+        );
+        if !expected.is_empty() {
+            assert!(
+                stderr.contains(expected),
+                "{what} must be refused for what it IS ({expected:?}): {stderr}"
+            );
+        }
+    }
+
+    // Path shapes, assembled here. Each must be refused; an entry that is
+    // merely ignored would leave the archive opening as though it were
+    // clean, which is how a hostile record survives review.
+    let path_shapes: [(&str, &str); 6] = [
+        (
+            "a traversal out of assets",
+            "assets/../../../../tmp/krate-test-escape",
+        ),
+        (
+            "a traversal out of source",
+            "source/../../../../tmp/krate-test-escape",
+        ),
+        (
+            "a traversal out of the sdk",
+            "sdk/../../../../tmp/krate-test-escape",
+        ),
+        ("a dot segment", "source/./lib.rs"),
+        ("a doubled separator", "assets//logo.png"),
+        ("a backslash separator", r"assets\logo.png"),
+    ];
+    for (what, entry) in path_shapes {
+        let path = dir.path().join(format!("{}.krate", what.replace(' ', "-")));
+        std::fs::write(
+            &path,
+            archive_with_component(minimal, &[(entry.to_string(), b"payload".to_vec())]),
+        )
+        .expect("write");
+        let output = krate()
+            .arg("run")
+            .arg(&path)
+            .args(["--headless", "--auto-grant"])
+            .output()
+            .expect("run");
+        assert_ne!(
+            output.status.code(),
+            Some(0),
+            "{what} ({entry}) must be refused: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    // 1486: a rejection leaves nothing behind. Every refusal above unpacked
+    // into a temporary directory first, and none of them may survive it.
+    let leftovers: Vec<String> = std::fs::read_dir(std::env::temp_dir())
+        .expect("temp dir")
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .filter(|name| name.starts_with("krate-open-"))
+        .collect();
+    assert!(
+        leftovers.is_empty(),
+        "a refused archive must clean up its extraction: {leftovers:?}"
+    );
+    assert!(
+        !std::path::Path::new("/tmp/krate-test-escape").exists(),
+        "no traversal may write outside the extraction directory"
+    );
+}
+
 /// Uninstalling removes the app and keeps what the person wrote in it,
 /// unless they ask otherwise (IC-278, IC-396).
 ///

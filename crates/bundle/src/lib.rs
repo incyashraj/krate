@@ -1882,13 +1882,33 @@ fn preflight_entries<R: Read + io::Seek>(archive: &mut ZipArchive<R>) -> Result<
             });
         }
 
-        // One logical path, however it is spelled. Backslashes are folded to
-        // forward slashes because a zip may carry either and both name the
-        // same file once extracted.
-        let logical = name.replace('\\', "/").to_lowercase();
+        // A backslash is refused outright, not folded and hoped for (K-299).
+        //
+        // The duplicate check below folds `\` to `/`, so it treats
+        // `assets\logo.png` and `assets/logo.png` as one path. Extraction
+        // does not: it matches the literal prefix `assets/`, so the
+        // backslash form is not an asset at all and falls through to the
+        // ignored-unknown-record path -- the file silently never ships.
+        // Two guards, two answers about one entry.
+        //
+        // Refusing is the honest resolution. A zip may legally carry either
+        // separator, so this is usually a real app whose picture would have
+        // vanished, and telling the person is better than shipping the app
+        // without it. Repacking with `krate pack` writes forward slashes.
+        if name.contains('\\') {
+            return Err(BundleError::UnsafeAssetPath {
+                path: shorten_path(&name),
+            });
+        }
 
-        // Depth and length are judged on the folded form, so a path cannot
-        // hide its nesting behind backslashes (IC-209).
+        // One logical path, however it is spelled. Case is folded because
+        // two spellings that differ only in case are one file on the
+        // filesystems most people use.
+        let logical = name.to_lowercase();
+
+        // Depth and length are judged on the folded form. Backslashes are
+        // already refused above, so nothing can hide its nesting behind
+        // them (IC-209).
         if logical.matches('/').count() > MAX_PATH_DEPTH {
             return Err(BundleError::PathTooDeep {
                 path: shorten_path(&name),
@@ -2618,8 +2638,13 @@ required = true
                 writer.start_file(name, options).expect("start");
                 writer.write_all(&bytes).expect("write");
             }
+            // A second SPELLING of a path the archive already has. Case,
+            // because a backslash is now refused before the duplicate
+            // check ever runs (K-299) -- and case is the spelling that
+            // still reaches it: two entries differing only in case are
+            // one file on the filesystems most people use.
             writer
-                .start_file("source\\lib.rs", options)
+                .start_file("source/LIB.rs", options)
                 .expect("start the second spelling");
             writer
                 .write_all(b"// the attacker's copy")
@@ -2636,6 +2661,39 @@ required = true
         assert!(
             text.contains("freshly packed"),
             "and what to do about it: {text}"
+        );
+
+        // The other spelling, now its own refusal (K-299). A backslash
+        // entry used to be folded here and then silently ignored at
+        // extraction, because the prefix match is literal: `assets\x.png`
+        // is not `assets/`, so the file never shipped and the archive
+        // opened as though it were whole. Refused, and told, instead.
+        let backslashed = dir.path().join("backslashed.krate");
+        {
+            let source = fs::read(&honest).expect("read");
+            let mut archive = ZipArchive::new(io::Cursor::new(&source)).expect("open");
+            let file = File::create(&backslashed).expect("create");
+            let mut writer = ZipWriter::new(file);
+            let options =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            for index in 0..archive.len() {
+                let mut entry = archive.by_index(index).expect("entry");
+                let name = entry.name().to_string();
+                let mut bytes = Vec::new();
+                entry.read_to_end(&mut bytes).expect("read entry");
+                writer.start_file(name, options).expect("start");
+                writer.write_all(&bytes).expect("write");
+            }
+            writer
+                .start_file("assets\\logo.png", options)
+                .expect("start the backslash spelling");
+            writer.write_all(b"PNGDATA").expect("write");
+            writer.finish().expect("finish");
+        }
+        let err = open(&backslashed).expect_err("a backslash path must be refused");
+        assert!(
+            err.to_string().contains("not a safe relative path"),
+            "a backslash entry is refused rather than silently dropped: {err}"
         );
     }
 
