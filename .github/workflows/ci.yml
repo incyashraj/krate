@@ -1238,8 +1238,19 @@ jobs:
           status=0
           for app in bounce chart cubes eo2 mdview savings; do
             python3 scripts/golden-shots.py check "evidence/ported/$app.krate" --golden-dir evidence/golden/shared-painter --krate "$bin" || status=1
+            # What THIS host paints, kept as an artifact: text goes through
+            # the host's own fonts, so Ubuntu and Windows differ from the
+            # Mac goldens in the text (K-337); their own goldens are
+            # recorded from here rather than guessed.
+            python3 scripts/golden-shots.py record "evidence/ported/$app.krate" --golden-dir "shots-${{ matrix.os }}" --krate "$bin" || true
           done
           exit $status
+      - name: Keep what this host painted
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: golden-shots-${{ matrix.os }}
+          path: shots-${{ matrix.os }}/
       # The matrix as a file (IC-755): every corpus bundle's outcome on this
       # host, skips included, retained beside the log so the registry can
       # judge the every-OS claim from cells rather than from a green tick.
