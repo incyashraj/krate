@@ -1597,7 +1597,28 @@ impl Phase3GuiHost {
             krate_adapter_common::painter::PaintInteraction::default(),
         );
         write_argb_png(&buffer, pw, ph, path)
-            .map_err(|err| UiDispatchError::Layout(format!("write {}: {err}", path.display())))
+            .map_err(|err| UiDispatchError::Layout(format!("write {}: {err}", path.display())))?;
+        // What painted the shot, beside it (IC-743, test 1547): a golden
+        // comparison must know the renderer, the scale and the colour space
+        // it compares, and refuse two shots that differ in any of them. A
+        // PNG alone says none of that.
+        write_shot_sidecar(
+            path,
+            &ShotSidecar {
+                schema: SHOT_SIDECAR_SCHEMA.to_string(),
+                renderer: SHARED_PAINTER.to_string(),
+                scale,
+                width: pw,
+                height: ph,
+                logical_width: size.width,
+                logical_height: size.height,
+                color_space: SHOT_COLOR_SPACE.to_string(),
+                os: std::env::consts::OS.to_string(),
+                arch: std::env::consts::ARCH.to_string(),
+                runtime: env!("CARGO_PKG_VERSION").to_string(),
+            },
+        )
+        .map_err(|err| UiDispatchError::Layout(format!("write {}.json: {err}", path.display())))
     }
 
     /// Report a natively lowered control's text whenever a person changes it.
@@ -4541,6 +4562,44 @@ impl gfx::scene3d::Host for Phase3GuiHost {
     }
 }
 
+/// Version of the sidecar a shot carries.
+pub const SHOT_SIDECAR_SCHEMA: &str = "krate.shot.v1";
+/// The one renderer a headless shot goes through: the shared CPU painter
+/// every native host lowers to. Named so a golden made by it is never
+/// compared with a frame from something else.
+pub const SHARED_PAINTER: &str = "krate-shared-painter";
+/// How the bytes in the PNG are to be read.
+pub const SHOT_COLOR_SPACE: &str = "sRGB 8-bit RGBA, straight alpha, from an ARGB8888 framebuffer";
+
+/// What painted a shot, written beside it as `<shot>.json`.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ShotSidecar {
+    pub schema: String,
+    pub renderer: String,
+    pub scale: f32,
+    pub width: u32,
+    pub height: u32,
+    pub logical_width: u32,
+    pub logical_height: u32,
+    pub color_space: String,
+    pub os: String,
+    pub arch: String,
+    pub runtime: String,
+}
+
+/// The sidecar's path for a shot: the PNG's path with `.json` appended,
+/// so `frame.png` and `frame.png.json` sit together.
+pub fn shot_sidecar_path(shot: &std::path::Path) -> std::path::PathBuf {
+    let mut name = shot.as_os_str().to_os_string();
+    name.push(".json");
+    std::path::PathBuf::from(name)
+}
+
+fn write_shot_sidecar(shot: &std::path::Path, sidecar: &ShotSidecar) -> std::io::Result<()> {
+    let json = serde_json::to_string_pretty(sidecar).map_err(std::io::Error::other)?;
+    std::fs::write(shot_sidecar_path(shot), json + "\n")
+}
+
 /// Write an `0xAARRGGBB` framebuffer to a PNG file as RGBA.
 fn write_argb_png(
     buffer: &[u32],
@@ -5712,6 +5771,36 @@ mod tests {
             .expect("present succeeds");
 
         assert!(host.screenshot_taken.get(), "the screenshot was taken");
+        // And what painted it is written beside it (IC-743, test 1547):
+        // the renderer, the scale, the pixel and logical sizes, and the
+        // colour space, so a comparison can refuse a mismatched pair.
+        let sidecar_path = shot_sidecar_path(&path);
+        let sidecar: ShotSidecar = serde_json::from_str(
+            &std::fs::read_to_string(&sidecar_path)
+                .expect("the sidecar is written beside the shot"),
+        )
+        .expect("the sidecar is the runtime's own shape");
+        assert_eq!(sidecar.schema, SHOT_SIDECAR_SCHEMA);
+        assert_eq!(sidecar.renderer, SHARED_PAINTER);
+        assert_eq!(sidecar.color_space, SHOT_COLOR_SPACE);
+        assert!(sidecar.scale >= 1.0);
+        assert_eq!(
+            (sidecar.width, sidecar.height),
+            (
+                ((sidecar.logical_width as f32) * sidecar.scale).round() as u32,
+                ((sidecar.logical_height as f32) * sidecar.scale).round() as u32
+            ),
+            "the pixel size is the logical size at the scale"
+        );
+        let png = std::fs::read(&path).expect("read the shot");
+        assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
+        let png_width = u32::from_be_bytes([png[16], png[17], png[18], png[19]]);
+        let png_height = u32::from_be_bytes([png[20], png[21], png[22], png[23]]);
+        assert_eq!(
+            (png_width, png_height),
+            (sidecar.width, sidecar.height),
+            "the sidecar describes the PNG it sits beside"
+        );
         let bytes = std::fs::read(&path).expect("screenshot file exists");
         assert!(!bytes.is_empty(), "the screenshot is not empty");
         // Decode it: a valid PNG at the window size times the 2x scale.

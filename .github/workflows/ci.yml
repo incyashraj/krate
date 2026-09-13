@@ -1219,6 +1219,22 @@ jobs:
       - name: Replay every ported app
         shell: bash
         run: sh scripts/replay-ported-apps.sh
+      # What the ported GUI apps draw, against the goldens recorded on the
+      # lead's Mac through the shared painter (IC-743, test 1547). The
+      # comparison refuses a different renderer, scale or colour space and
+      # names the pixels that moved. Blocking where the goldens were recorded;
+      # reported elsewhere until the other hosts are known to paint the same.
+      - name: Compare what the ported apps draw with their goldens
+        shell: bash
+        continue-on-error: ${{ matrix.os != 'macos-latest' }}
+        run: |
+          python3 scripts/golden-shots.py --self-test
+          bin="target/release/krate"; [ -f "$bin.exe" ] && bin="$bin.exe"
+          status=0
+          for app in bounce chart cubes eo2 mdview savings; do
+            python3 scripts/golden-shots.py check "evidence/ported/$app.krate" --golden-dir evidence/golden/shared-painter --krate "$bin" || status=1
+          done
+          exit $status
       # The matrix as a file (IC-755): every corpus bundle's outcome on this
       # host, skips included, retained beside the log so the registry can
       # judge the every-OS claim from cells rather than from a green tick.
