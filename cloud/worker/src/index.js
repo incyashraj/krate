@@ -69,6 +69,12 @@ const MAX_PATH_BYTES = 180;
 const IDENTITY_TTL_SECONDS = 6 * 60 * 60;
 
 export default {
+  /// The nightly scrub (wrangler `[triggers] crons`): inventory and
+  /// reconciliation without repairs, stored where /admin/scrub/last and
+  /// /health read it (IC-852, tests 1886 and 1896).
+  async scheduled(_event, env) {
+    await runScrub(env, { repair: false });
+  },
   async fetch(request, env) {
     const url = new URL(request.url);
     const { pathname } = url;
@@ -80,7 +86,23 @@ export default {
 
     try {
       if (request.method === "GET" && pathname === "/health") {
-        return cors(text("ok"));
+        return cors(await health(env));
+      }
+      // ---- durability: inventory, reconciliation, export, restore -------
+      if (request.method === "GET" && pathname === "/admin/scrub") {
+        return cors(await scrubRoute(request, env, false));
+      }
+      if (request.method === "POST" && pathname === "/admin/scrub") {
+        return cors(await scrubRoute(request, env, true));
+      }
+      if (request.method === "GET" && pathname === "/admin/scrub/last") {
+        return cors(await lastScrub(request, env));
+      }
+      if (request.method === "GET" && pathname === "/admin/export") {
+        return cors(await exportRoute(request, env));
+      }
+      if (request.method === "POST" && pathname === "/admin/restore") {
+        return cors(await restoreRoute(request, url, env));
       }
       if (request.method === "POST" && pathname === "/publish") {
         return cors(await publish(request, env));
@@ -3769,4 +3791,278 @@ boot();
 // The door's pieces, exported so a test can watch them work rather than
 // infer it from a status code: a bounded inflate and a whole inflate both
 // answer 422 to a bomb, and only a byte count tells them apart (IC-833).
-export { archiveProblem, judgeBundle, readBounded, zipDirectory };
+export { archiveProblem, canonicalRecords, judgeBundle, readBounded, zipDirectory };
+
+// ------------------------------------------------------------- durability
+//
+// The hub's state lives in two places that can drift: R2 holds the bytes,
+// keyed by their SHA-256; KV holds the control records that point at them
+// (listings, aliases, channels, takedowns). Nothing reconciled them, and
+// nothing could tell a missing object from a never-published one, or a
+// corrupt object from a good one (IC-852). This is the inventory, the
+// reconciliation, the independent export and the restore, as admin routes
+// and a scheduled run.
+//
+// Repairs are the ones that cannot lose anything: a listing or alias that
+// points at bytes which no longer exist is removed (it served 404s), a
+// channel is settled (its own rule). Bytes are never deleted by a scrub --
+// an orphan object and a digest mismatch are REPORTED, because deleting
+// on the strength of a reconciliation is how a bug in the reconciliation
+// becomes data loss.
+
+/// The KV families that are the registry's control state. Sessions,
+/// logins, entitlements and counters are deliberately not here: they are
+/// not the registry, and an export must not carry secrets.
+const CONTROL_FAMILIES = ["app:", "alias:", "channel:", "takedown:", "takedown-closed:"];
+const EXPORT_SCHEMA = "krate.hub-export.v1";
+const SCRUB_SCHEMA = "krate.hub-scrub.v1";
+
+async function listAllKeys(kv, prefix) {
+  const out = [];
+  let cursor;
+  for (let page = 0; page < 200; page += 1) {
+    const listing = await kv.list({ prefix, limit: 1000, cursor });
+    out.push(...listing.keys.map((k) => k.name));
+    if (listing.list_complete || !listing.cursor) break;
+    cursor = listing.cursor;
+  }
+  return out;
+}
+
+async function listAllObjects(bucket) {
+  const out = [];
+  let cursor;
+  for (let page = 0; page < 200; page += 1) {
+    const listing = await bucket.list({ limit: 1000, cursor });
+    for (const object of listing.objects) {
+      out.push({ key: object.key, size: object.size, sha256: checksumHex(object) });
+    }
+    if (!listing.truncated || !listing.cursor) break;
+    cursor = listing.cursor;
+  }
+  return out;
+}
+
+/// Inventory the bucket and the control records, reconcile them, and
+/// (with `repair`) apply the repairs that cannot lose anything. The
+/// report is stored under `scrub:last` for /health and /admin/scrub/last.
+async function runScrub(env, { repair }) {
+  const at = Math.floor(Date.now() / 1000);
+  const problems = [];
+  const objects = await listAllObjects(env.BUNDLES);
+  const bundles = new Map(objects.filter((o) => /^[0-9a-f]{64}$/.test(o.key)).map((o) => [o.key, o]));
+
+  // 1896: every content-addressed object hashes to its own key when the
+  // store recorded a digest; one that does not is corrupt and is named.
+  for (const object of bundles.values()) {
+    if (object.sha256 && object.sha256 !== object.key) {
+      problems.push({ kind: "digest-mismatch", key: object.key, detail: `stored digest ${object.sha256.slice(0, 12)}... differs from the key`, repaired: false });
+    }
+  }
+
+  const referenced = new Set();
+  // 1869: dangling listings and aliases.
+  const listings = await listAllKeys(env.APPS, "app:");
+  for (const key of listings) {
+    const hash = key.slice(4);
+    referenced.add(hash);
+    if (!bundles.has(hash)) {
+      let repaired = false;
+      if (repair) {
+        await env.APPS.delete(key);
+        repaired = true;
+      }
+      problems.push({ kind: "dangling-listing", key, detail: "listed, but its bytes are gone", repaired });
+    }
+  }
+  const aliases = await listAllKeys(env.APPS, "alias:");
+  for (const key of aliases) {
+    const hash = await env.APPS.get(key);
+    if (hash) referenced.add(hash);
+    if (!hash || !bundles.has(hash)) {
+      let repaired = false;
+      if (repair) {
+        await env.APPS.delete(key);
+        repaired = true;
+      }
+      problems.push({ kind: "dangling-alias", key, detail: hash ? "points at bytes that are gone" : "points at nothing", repaired });
+    }
+  }
+  const channels = await listAllKeys(env.APPS, "channel:");
+  for (const key of channels) {
+    const raw = await env.APPS.get(key);
+    let channel = null;
+    try {
+      channel = raw ? JSON.parse(raw) : null;
+    } catch (_) {
+      channel = null;
+    }
+    if (!channel || !channel.current) {
+      problems.push({ kind: "unreadable-channel", key, detail: "not a channel record", repaired: false });
+      continue;
+    }
+    for (const move of channel.history || []) referenced.add(move.hash);
+    if (!bundles.has(channel.current)) {
+      let repaired = false;
+      if (repair) {
+        await settleChannel(env, channel, "scrub");
+        repaired = true;
+      }
+      problems.push({ kind: "dangling-channel", key, detail: `names ${channel.current.slice(0, 12)}..., whose bytes are gone`, repaired });
+    }
+  }
+  const takedowns = await listAllKeys(env.APPS, "takedown:");
+  for (const key of takedowns) referenced.add(key.slice("takedown:".length));
+  const closed = await listAllKeys(env.APPS, "takedown-closed:");
+  for (const key of closed) referenced.add(key.slice("takedown-closed:".length));
+
+  // Orphans: bytes nothing points at. Reported, never removed here -- a
+  // retired listing keeps its bytes on purpose, and so may a link that
+  // was only ever sent by hand.
+  for (const hash of bundles.keys()) {
+    if (!referenced.has(hash)) {
+      problems.push({ kind: "orphan-object", key: hash, detail: "no listing, alias, channel or takedown names it", repaired: false });
+    }
+  }
+
+  const report = {
+    schema: SCRUB_SCHEMA,
+    at,
+    repair,
+    objects: objects.length,
+    bundles: bundles.size,
+    listings: listings.length,
+    aliases: aliases.length,
+    channels: channels.length,
+    takedowns: takedowns.length,
+    problems,
+  };
+  try {
+    await env.APPS.put("scrub:last", JSON.stringify(report));
+  } catch (_) {
+    // A quota day must not turn a scrub into a failure; the report is
+    // still returned to whoever asked.
+  }
+  return report;
+}
+
+async function scrubRoute(request, env, repair) {
+  if (!(await isAdmin(request, env))) return text("not found", 404);
+  return json(await runScrub(env, { repair }));
+}
+
+async function lastScrub(request, env) {
+  if (!(await isAdmin(request, env))) return text("not found", 404);
+  const raw = await env.APPS.get("scrub:last");
+  if (!raw) return json({ schema: SCRUB_SCHEMA, at: null, problems: null, note: "no scrub has run" });
+  return new Response(raw, { headers: { "content-type": "application/json" } });
+}
+
+/// /health says "ok" and, when the last scrub found problems, says so:
+/// the alert a person or a monitor can read (1886).
+async function health(env) {
+  let raw = null;
+  try {
+    raw = await env.APPS.get("scrub:last");
+  } catch (_) {
+    raw = null;
+  }
+  if (raw) {
+    try {
+      const report = JSON.parse(raw);
+      const open = (report.problems || []).filter((p) => !p.repaired);
+      if (open.length > 0) {
+        const kinds = [...new Set(open.map((p) => p.kind))].join(", ");
+        return text(`ok -- the last scrub found ${open.length} problem(s): ${kinds} (see /admin/scrub/last)`);
+      }
+    } catch (_) {
+      // an unreadable report is not a reason to say the hub is down
+    }
+  }
+  return text("ok");
+}
+
+/// Canonical bytes of an export's records, for its digest: families in a
+/// fixed order, keys sorted, values as stored.
+function canonicalRecords(records) {
+  const out = [];
+  for (const family of CONTROL_FAMILIES) {
+    const keys = Object.keys(records[family] || {}).sort();
+    for (const key of keys) {
+      out.push(`${key}\n${records[family][key]}\n`);
+    }
+  }
+  return new TextEncoder().encode(out.join(""));
+}
+
+/// Every control record, with a digest over them, so a restore can prove
+/// it holds exactly what was exported (1890).
+async function exportControlRecords(env) {
+  const records = {};
+  let count = 0;
+  for (const family of CONTROL_FAMILIES) {
+    records[family] = {};
+    for (const key of await listAllKeys(env.APPS, family)) {
+      const value = await env.APPS.get(key);
+      if (value === null) continue;
+      records[family][key] = value;
+      count += 1;
+    }
+  }
+  const digest = await sha256Hex(canonicalRecords(records));
+  return { schema: EXPORT_SCHEMA, at: Math.floor(Date.now() / 1000), count, digest, records };
+}
+
+async function exportRoute(request, env) {
+  if (!(await isAdmin(request, env))) return text("not found", 404);
+  const dump = await exportControlRecords(env);
+  return new Response(JSON.stringify(dump), {
+    headers: {
+      "content-type": "application/json",
+      "content-disposition": `attachment; filename="krate-hub-export-${dump.at}.json"`,
+      "cache-control": "no-store",
+    },
+  });
+}
+
+/// Put an export's records back. Only into keys that are absent, unless
+/// `overwrite` was asked for; the digest must verify first, so a dump
+/// edited in transit restores nothing.
+async function restoreControlRecords(env, dump, { overwrite }) {
+  if (!dump || dump.schema !== EXPORT_SCHEMA || typeof dump.records !== "object") {
+    return { error: "not a hub export" };
+  }
+  const digest = await sha256Hex(canonicalRecords(dump.records));
+  if (digest !== dump.digest) {
+    return { error: `the export's digest does not match its records (${digest.slice(0, 12)}... vs ${String(dump.digest).slice(0, 12)}...); nothing restored` };
+  }
+  let restored = 0;
+  let skipped = 0;
+  for (const family of CONTROL_FAMILIES) {
+    for (const [key, value] of Object.entries(dump.records[family] || {})) {
+      if (!key.startsWith(family) || typeof value !== "string") {
+        return { error: `record ${key} is not a ${family} record; nothing more restored` };
+      }
+      if (!overwrite && (await env.APPS.get(key)) !== null) {
+        skipped += 1;
+        continue;
+      }
+      await env.APPS.put(key, value);
+      restored += 1;
+    }
+  }
+  return { restored, skipped, digest };
+}
+
+async function restoreRoute(request, url, env) {
+  if (!(await isAdmin(request, env))) return text("not found", 404);
+  let dump;
+  try {
+    dump = await request.json();
+  } catch (_) {
+    return text("the body must be a hub export (JSON)", 400);
+  }
+  const result = await restoreControlRecords(env, dump, { overwrite: url.searchParams.has("overwrite") });
+  if (result.error) return text(result.error, 400);
+  return json(result);
+}

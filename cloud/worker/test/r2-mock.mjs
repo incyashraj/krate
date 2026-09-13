@@ -38,6 +38,12 @@ export function r2Mock(blobs = new Map()) {
     delete: async (k) => {
       blobs.delete(k);
     },
+    list: async ({ prefix = "" } = {}) => ({
+      objects: await Promise.all(
+        [...blobs.keys()].filter((k) => !k.includes("\u0000") && k.startsWith(prefix)).map((k) => object(k)),
+      ),
+      truncated: false,
+    }),
     _blobs: blobs,
   };
 }
