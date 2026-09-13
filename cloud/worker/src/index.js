@@ -293,6 +293,9 @@ export default {
       if (request.method === "GET" && pathname.startsWith("/a/")) {
         return cors(await fetchBundle(request, url, pathname.slice(3), env));
       }
+      if (request.method === "GET" && pathname.startsWith("/c/")) {
+        return cors(await resolveChannel(request, url, pathname.slice(3), env));
+      }
       return cors(text("not found", 404));
     } catch (err) {
       // Never leak a stack trace to a caller; log it for us instead.
@@ -507,6 +510,16 @@ async function publish(request, env) {
     // The receipt: what the store holds, read back, not what was sent.
     stored: { size: stored.size, sha256: stored.sha256 },
   };
+  // The moving name: this author's latest listed publish under this name
+  // (IC-389, test 470). Only a listed publish moves it -- an unlisted one
+  // is deliberately not the app's public face -- and only this author's,
+  // because the key is their login and the login came from their session.
+  if (listed && !meta.unlisted) {
+    const channel = await moveChannel(env, identity.login, meta.name, hash);
+    if (channel) {
+      result.channel = `${base}/c/${channel.login}/${channel.slug}`;
+    }
+  }
   if (!listed) {
     result.note =
       "published and runnable at the URL, but the gallery listing is " +
@@ -663,7 +676,167 @@ async function unpublish(request, hash, env) {
   for (let length = 8; length <= 32; length += 1) {
     await env.APPS.delete(`alias:${hash.slice(0, length)}`);
   }
+  // A channel pointing at the removed release falls back to the newest
+  // earlier release of the same name that is still listed, and is removed
+  // when there is none: a name must never resolve to bytes that are gone.
+  await retreatChannel(env, identity.login, meta.name, hash);
   return json({ ok: true });
+}
+
+// ----------------------------------------------------------------- channel
+//
+// A channel is the one mutable name in the hub: `<publisher>/<app>`, moved
+// by that publisher's own listed publishes and by nobody else (IC-389,
+// test 470; K-308). Everything else the hub serves is a content address.
+// Each move records what it replaced, so the channel's history is an
+// audit trail rather than a pointer, and a client never runs what a
+// channel says: `/c/<login>/<slug>?dl=1` redirects to the fixed address
+// the channel currently names, and the client holds the bytes to THAT
+// address (test 471). The JSON form is the visible resolution (test 476).
+
+const CHANNEL_HISTORY = 50;
+
+function slugOf(name) {
+  return (name || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+}
+
+function channelKey(login, slug) {
+  return `channel:${login}/${slug}`;
+}
+
+async function readChannel(env, login, slug) {
+  const raw = await env.APPS.get(channelKey(login, slug));
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Point `login`'s channel for `name` at `hash`, recording the move.
+async function moveChannel(env, login, name, hash) {
+  const slug = slugOf(name);
+  if (!slug || !login) return null;
+  const now = Math.floor(Date.now() / 1000);
+  const existing = (await readChannel(env, login, slug)) || {
+    login,
+    name,
+    slug,
+    current: null,
+    moved_at: null,
+    history: [],
+  };
+  if (existing.current === hash) {
+    return existing; // republishing the same bytes moves nothing
+  }
+  const move = { hash, at: now, previous: existing.current };
+  const channel = {
+    login,
+    name,
+    slug,
+    current: hash,
+    moved_at: now,
+    history: [...existing.history, move].slice(-CHANNEL_HISTORY),
+  };
+  try {
+    await env.APPS.put(channelKey(login, slug), JSON.stringify(channel));
+  } catch (_) {
+    return null; // a KV quota day: the app is live at its address regardless
+  }
+  return channel;
+}
+
+/// Can the channel still name `hash`? Its bytes must exist, and if the
+/// hash is listed, the listing must be this publisher's: a content
+/// address is anyone's to re-publish once the original listing is retired,
+/// and a channel must never resolve to bytes now listed under somebody
+/// else's name.
+async function namable(env, login, hash) {
+  if (!(await env.BUNDLES.head(hash))) return false;
+  const raw = await env.APPS.get(`app:${hash}`);
+  if (!raw) return true;
+  try {
+    return JSON.parse(raw).author_login === login;
+  } catch (_) {
+    return false;
+  }
+}
+
+/// Make the channel name something that still exists, or remove it.
+///
+/// Called after an unpublish and on every resolution, because bytes can
+/// go by other doors too (an admin purge, a bytes-scope takedown): a name
+/// that resolves to gone bytes is the failure this exists to prevent, so
+/// the check sits on the path that answers, not only on the paths that
+/// delete. Falls back to the newest earlier release of the channel's own
+/// history that can still be named -- retiring an old listing keeps its
+/// bytes and its links, so the previous release is what the publisher's
+/// recipients already had.
+async function settleChannel(env, channel, reason) {
+  if (await namable(env, channel.login, channel.current)) return channel;
+  const gone = channel.current;
+  const earlier = [...channel.history].reverse().map((m) => m.hash).filter((h) => h !== gone);
+  let fallback = null;
+  for (const candidate of earlier) {
+    if (await namable(env, channel.login, candidate)) {
+      fallback = candidate;
+      break;
+    }
+  }
+  if (!fallback) {
+    await env.APPS.delete(channelKey(channel.login, channel.slug));
+    return null;
+  }
+  const now = Math.floor(Date.now() / 1000);
+  channel.history = [...channel.history, { hash: fallback, at: now, previous: gone, reason }].slice(-CHANNEL_HISTORY);
+  channel.current = fallback;
+  channel.moved_at = now;
+  await env.APPS.put(channelKey(channel.login, channel.slug), JSON.stringify(channel));
+  return channel;
+}
+
+async function retreatChannel(env, login, name, hash) {
+  const channel = await readChannel(env, login, slugOf(name));
+  if (!channel || channel.current !== hash) return;
+  await settleChannel(env, channel, "unpublished");
+}
+
+async function resolveChannel(request, url, rest, env) {
+  const parts = rest.split("/").filter(Boolean);
+  if (parts.length !== 2) return text("not found", 404);
+  const [login, slug] = parts;
+  if (!/^[A-Za-z0-9-]{1,39}$/.test(login) || !/^[a-z0-9-]{1,48}$/.test(slug)) {
+    return text("not found", 404);
+  }
+  const stored = await readChannel(env, login, slug);
+  const channel = stored && stored.current ? await settleChannel(env, stored, "gone") : null;
+  if (!channel) return text("not found", 404);
+  const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
+  if (url.searchParams.has("dl")) {
+    // Never the bytes from here: the client lands on the fixed address and
+    // checks the bytes against it, so a stale or wrong channel cannot run
+    // anything the address does not name.
+    return new Response(null, {
+      status: 302,
+      headers: { location: `${base}/a/${channel.current}?dl=1`, "cache-control": "no-store" },
+    });
+  }
+  const takedown = await env.APPS.get(`takedown:${channel.current}`);
+  return json({
+    login: channel.login,
+    name: channel.name,
+    slug: channel.slug,
+    current: channel.current,
+    url: `${base}/a/${channel.current}`,
+    moved_at: channel.moved_at,
+    blocked: Boolean(takedown),
+    history: channel.history,
+  });
 }
 
 /// Remove a bundle whose listing is already gone.

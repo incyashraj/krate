@@ -1009,6 +1009,40 @@ impl OpenBundle {
 
     /// What this bundle carries in place of a signature (K-258).
     ///
+    /// The signed release this file is, when its signature verifies
+    /// (IC-389, K-308). See [`signing::release_id`].
+    ///
+    /// `None` is unsigned, or signed by something that does not verify: a
+    /// file whose signature fails is not a release, and giving it an id
+    /// would make one up from a statement nobody signed.
+    pub fn release(&self) -> Result<Option<signing::Release>> {
+        let Some(envelope) = self.signature_envelope()? else {
+            return Ok(None);
+        };
+        let entries = self.entries_for_digest(provenance::Layer::Project)?;
+        if !signing::verify_envelope(&envelope, &entries).is_genuinely_signed() {
+            return Ok(None);
+        }
+        let statement = statement::SignedStatement::build(
+            &envelope.namespace,
+            &envelope.version,
+            envelope.signed_at,
+            &entries,
+        );
+        let authority = envelope
+            .delegation
+            .as_ref()
+            .map(|d| d.delegation.root.clone())
+            .unwrap_or_else(|| envelope.public_key.clone());
+        Ok(Some(signing::Release {
+            id: signing::release_id(&authority, &statement.digest()),
+            namespace: envelope.namespace,
+            version: envelope.version,
+            signed_at: envelope.signed_at,
+            authority,
+        }))
+    }
+
     /// The app this one was changed from, if it says so (IC-397, test 494).
     ///
     /// `None` is an original, or an app made before forks were recorded.
@@ -2304,6 +2338,69 @@ fn map_fetch_error(_url: &str, err: &ureq::Error) -> String {
 /// certificate. Fetching grants no capability: the returned bundle goes through
 /// the same policy resolution as one opened from disk.
 pub fn fetch(url: &str, allow_insecure_http: bool) -> Result<OpenBundle> {
+    fetch_resolved(url, allow_insecure_http).map(|fetched| fetched.bundle)
+}
+
+/// What [`fetch_resolved`] brings back: the bundle, the URL the bytes were
+/// finally served from, and the content address that URL named, when it
+/// named one.
+pub struct Fetched {
+    pub bundle: OpenBundle,
+    /// Where the bytes came from after every redirect. A channel link
+    /// (`/c/<publisher>/<app>`) resolves here to a fixed address.
+    pub url: String,
+    /// The hex content address in that URL's last path segment, checked
+    /// against the bytes. `None` when the URL named no address.
+    pub address: Option<String>,
+}
+
+/// The bytes served at a content address must BE that content (IC-389,
+/// test 471).
+///
+/// A hub link names the app by the SHA-256 of its bytes, and a short link
+/// by a prefix of it. Before this, whatever a server answered with ran:
+/// a stale cache, a compromised alias, or a redirect to somewhere else
+/// could hand over different bytes under a URL that still read as the
+/// right app. A channel link resolves (by redirect) to a fixed address,
+/// so the same check covers it: what runs is what the final address
+/// names, or nothing runs.
+///
+/// The address is the plain SHA-256 of the file -- the hub's store key --
+/// not the schema-tagged archive identity, which is a different number
+/// over the same bytes.
+fn check_address(final_url: &str, bytes: &[u8]) -> Result<Option<String>> {
+    let path = final_url.split(['?', '#']).next().unwrap_or(final_url);
+    let segment = path.rsplit('/').next().unwrap_or("");
+    let is_address = (8..=64).contains(&segment.len())
+        && segment
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+    if !is_address {
+        return Ok(None);
+    }
+    let actual: String = {
+        use sha2::{Digest, Sha256};
+        Sha256::digest(bytes)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
+    };
+    if !actual.starts_with(segment) {
+        return Err(BundleError::Fetch {
+            url: final_url.to_string(),
+            message: format!(
+                "the bytes served at this address are not the ones it names: the address \
+                 says {}..., the file is {}...; nothing ran. The link may be stale, or \
+                 something between you and the publisher changed the file",
+                &segment[..segment.len().min(12)],
+                &actual[..12]
+            ),
+        });
+    }
+    Ok(Some(segment.to_string()))
+}
+
+pub fn fetch_resolved(url: &str, allow_insecure_http: bool) -> Result<Fetched> {
     if url.starts_with("http://") && !allow_insecure_http {
         return Err(BundleError::InsecureUrl {
             url: url.to_string(),
@@ -2336,6 +2433,10 @@ pub fn fetch(url: &str, allow_insecure_http: bool) -> Result<OpenBundle> {
         }
     })?;
 
+    // Where the bytes finally came from: a channel link redirects to the
+    // fixed address it currently points at, and that is the address the
+    // bytes are held to.
+    let final_url = response.get_url().to_string();
     let mut bytes = Vec::new();
     response
         .into_reader()
@@ -2345,6 +2446,7 @@ pub fn fetch(url: &str, allow_insecure_http: bool) -> Result<OpenBundle> {
             url: url.to_string(),
             message: err.to_string(),
         })?;
+    let address = check_address(&final_url, &bytes)?;
 
     // A download that did not finish is not a damaged app (K-274).
     //
@@ -2355,7 +2457,7 @@ pub fn fetch(url: &str, allow_insecure_http: bool) -> Result<OpenBundle> {
     // the download was cut short, try again -- is the thing that helps, and
     // only this function is in a position to say it, because only this
     // function knows the bytes arrived over a network.
-    open_bytes(&bytes).map_err(|err| {
+    let bundle = open_bytes(&bytes).map_err(|err| {
         if matches!(err, BundleError::Archive(_)) {
             // Deliberately without a byte count. The obvious detail --
             // promised length against received length -- can never differ
@@ -2371,6 +2473,11 @@ pub fn fetch(url: &str, allow_insecure_http: bool) -> Result<OpenBundle> {
             };
         }
         err
+    })?;
+    Ok(Fetched {
+        bundle,
+        url: final_url,
+        address,
     })
 }
 
@@ -3641,6 +3748,203 @@ required = true
             ),
             "the record must not carry the parent's signer: {text}"
         );
+    }
+
+    /// A release id names one signed release and nothing else (IC-389,
+    /// test 468; K-308): the same content signed the same way is the same
+    /// release; a different version, a different signer, or different
+    /// content is another; a file that does not verify is no release.
+    #[test]
+    fn a_release_id_is_stable_under_repacking_and_moves_with_version_signer_and_content() {
+        let dir = TempDir::new().expect("tempdir");
+        let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
+        let component = write_temp(dir.path(), "code.wasm", MINIMAL_COMPONENT);
+        let alice =
+            signing::SigningKey::from_pkcs8(&signing::SigningKey::generate_pkcs8().unwrap())
+                .unwrap();
+        let bob = signing::SigningKey::from_pkcs8(&signing::SigningKey::generate_pkcs8().unwrap())
+            .unwrap();
+        let release_of = |path: &Path| open(path).unwrap().release().unwrap();
+
+        let a = dir.path().join("a.krate");
+        pack(&manifest, &component, &a).expect("pack");
+        assert_eq!(release_of(&a), None, "an unsigned file is no release");
+        sign_bundle(&a, &alice, "ns", "1.0.0", 1_700_000_000).expect("sign");
+        let first = release_of(&a).expect("a signed file is a release");
+        assert_eq!(first.version, "1.0.0");
+        assert_eq!(
+            first.authority,
+            alice
+                .public_key()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>()
+        );
+
+        // Byte-identical retry: same file, same release.
+        let copy = dir.path().join("copy.krate");
+        fs::copy(&a, &copy).unwrap();
+        assert_eq!(
+            release_of(&copy).unwrap().id,
+            first.id,
+            "the same bytes are the same release"
+        );
+
+        // Repacked and re-signed the same way: same content, same signer,
+        // same version, same moment -- the same release in a different file.
+        // Signing rewrites the archive in the packer's one canonical layout,
+        // so a re-pack signed the same way is byte-identical. A zip comment
+        // appended after signing makes the same content a genuinely
+        // different file, which is what a repack by another tool is.
+        let repacked = dir.path().join("repacked.krate");
+        pack(&manifest, &component, &repacked).expect("pack again");
+        sign_bundle(&repacked, &alice, "ns", "1.0.0", 1_700_000_000).expect("sign again");
+        {
+            let mut bytes = fs::read(&repacked).unwrap();
+            let len = bytes.len();
+            assert_eq!(&bytes[len - 2..], &[0, 0], "no comment yet");
+            bytes[len - 2] = 1;
+            bytes.push(b'x');
+            fs::write(&repacked, bytes).unwrap();
+        }
+        assert_ne!(
+            fs::read(&a).unwrap(),
+            fs::read(&repacked).unwrap(),
+            "the files differ"
+        );
+        assert_eq!(
+            release_of(&repacked).unwrap().id,
+            first.id,
+            "repacking is not a new release"
+        );
+
+        // A new version is a new release.
+        sign_bundle(&repacked, &alice, "ns", "1.0.1", 1_700_000_000).expect("sign v2");
+        assert_ne!(
+            release_of(&repacked).unwrap().id,
+            first.id,
+            "a version change is a new release"
+        );
+
+        // Another publisher signing the same content is their release.
+        let theirs = dir.path().join("theirs.krate");
+        pack(&manifest, &component, &theirs).expect("pack");
+        sign_bundle(&theirs, &bob, "ns", "1.0.0", 1_700_000_000).expect("bob signs");
+        assert_ne!(
+            release_of(&theirs).unwrap().id,
+            first.id,
+            "a different signer is a different release"
+        );
+
+        // Different executable content is a new release.
+        let other = write_temp(dir.path(), "other.wasm", OTHER_COMPONENT);
+        let changed = dir.path().join("changed.krate");
+        pack(&manifest, &other, &changed).expect("pack");
+        sign_bundle(&changed, &alice, "ns", "1.0.0", 1_700_000_000).expect("sign");
+        assert_ne!(
+            release_of(&changed).unwrap().id,
+            first.id,
+            "changed code is a new release"
+        );
+
+        // A file changed after signing is not a release at all.
+        replace_entry(&a, COMPONENT_ENTRY, OTHER_COMPONENT).unwrap();
+        assert_eq!(
+            release_of(&a),
+            None,
+            "a tampered file is no release, so it has no id"
+        );
+    }
+
+    /// The bytes served at a content address must be that content
+    /// (IC-389, test 471). A short link is a prefix of the address; a
+    /// channel link redirects to a fixed address and is held to that one.
+    #[test]
+    fn fetched_bytes_must_match_the_address_they_were_served_at() {
+        use std::io::{Read as _, Write as _};
+
+        let bundle = {
+            let dir = TempDir::new().expect("tempdir");
+            let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
+            let component = write_temp(dir.path(), "code.wasm", MINIMAL_COMPONENT);
+            let path = dir.path().join("app.krate");
+            pack(&manifest, &component, &path).expect("pack");
+            fs::read(&path).expect("read")
+        };
+        let address: String = {
+            use sha2::{Digest, Sha256};
+            Sha256::digest(&bundle)
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect()
+        };
+        let wrong = format!("{}{}", &"0".repeat(32), &address[32..]);
+
+        // One server: `/a/<x>` serves the bundle whatever x is (a stale
+        // cache, a compromised alias); `/c/<name>` redirects to the address
+        // in its query.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        let served = bundle.clone();
+        let server = std::thread::spawn(move || {
+            for _ in 0..8 {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    return;
+                };
+                let mut request = [0u8; 2048];
+                let n = stream.read(&mut request).unwrap_or(0);
+                let line = String::from_utf8_lossy(&request[..n]);
+                let target = line.split_whitespace().nth(1).unwrap_or("/").to_string();
+                let response = if let Some(rest) = target.strip_prefix("/c/") {
+                    let to = rest.split("to=").nth(1).unwrap_or("").to_string();
+                    format!(
+                        "HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:{port}/a/{to}?dl=1\r\n\
+                         Content-Length: 0\r\nConnection: close\r\n\r\n"
+                    )
+                    .into_bytes()
+                } else {
+                    let mut r = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        served.len()
+                    )
+                    .into_bytes();
+                    r.extend_from_slice(&served);
+                    r
+                };
+                let _ = stream.write_all(&response);
+                let _ = stream.flush();
+            }
+        });
+        let at = |path: String| fetch_resolved(&format!("http://127.0.0.1:{port}{path}"), true);
+
+        let err = at(format!("/a/{wrong}?dl=1"))
+            .err()
+            .expect("wrong address must refuse");
+        assert!(
+            err.to_string().contains("not the ones it names"),
+            "the refusal names the mismatch: {err}"
+        );
+        let ok = at(format!("/a/{address}?dl=1")).expect("the right address opens");
+        assert_eq!(ok.address.as_deref(), Some(address.as_str()));
+        let short = at(format!("/a/{}?dl=1", &address[..12])).expect("a short link is a prefix");
+        assert_eq!(short.address.as_deref(), Some(&address[..12]));
+        let via_channel =
+            at(format!("/c/alice/notes?dl=1&to={address}")).expect("a channel resolves");
+        assert!(
+            via_channel.url.contains(&format!("/a/{address}")),
+            "a channel link is held to the fixed address it resolved to: {}",
+            via_channel.url
+        );
+        let stale = at(format!("/c/alice/notes?dl=1&to={wrong}"))
+            .err()
+            .expect("a channel pointing at the wrong address must refuse");
+        assert!(
+            stale.to_string().contains("not the ones it names"),
+            "{stale}"
+        );
+        let plain = at("/app.krate".to_string()).expect("a plain file link names no address");
+        assert_eq!(plain.address, None);
+        let _ = server.join();
     }
 
     /// The sweep is scoped by prefix: asking it to clear one family of

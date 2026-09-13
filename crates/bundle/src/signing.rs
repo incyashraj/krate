@@ -37,6 +37,54 @@ use crate::statement::{Mismatch, SignedStatement};
 /// Version of the signature encoding, carried beside every signature.
 pub const SIGNATURE_SCHEMA: &str = "krate.bundle.signature.v1";
 
+/// Version of the release id derivation.
+pub const RELEASE_ID_SCHEMA: &str = "krate.release.v1";
+
+/// The immutable id of one signed release (IC-389, K-308).
+///
+/// The identity contract: "A release adds a version and the signed content
+/// identities. Rebuilding, revising, or republishing content creates
+/// another release." So the id is derived from the two things that make a
+/// release what it is -- the statement that was signed (namespace, version,
+/// time, every entry's digest) and the authority that signed it (the root
+/// key when a delegated release key signed, else the key itself) -- and
+/// from nothing that can be edited without re-signing. Same content, same
+/// version, same signer, same moment: same id. Change any one: a new id.
+/// Two publishers signing identical content get two ids, because a release
+/// is somebody's.
+///
+/// Derived, never stored: a stored id would be one more attacker-supplied
+/// number to compare against, and there is nothing in it that the
+/// verifier does not already recompute.
+pub fn release_id(authority_public_key_hex: &str, statement_digest: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(RELEASE_ID_SCHEMA.as_bytes());
+    hasher.update([0]);
+    hasher.update(authority_public_key_hex.as_bytes());
+    hasher.update([0]);
+    hasher.update(statement_digest.as_bytes());
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// One verified release: what a recipient can cite, compare, or be told
+/// has been withdrawn. Only ever produced for a signature that verifies --
+/// a tampered or unsigned file is not a release of anything.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Release {
+    pub id: String,
+    pub namespace: String,
+    pub version: String,
+    pub signed_at: u64,
+    /// The publisher authority the id is bound to: the root key's hex when
+    /// a delegated key signed, else the signing key's.
+    pub authority: String,
+}
+
 /// A publisher's signing key.
 ///
 /// Held by the developer, never by Krate. The private half is deliberately

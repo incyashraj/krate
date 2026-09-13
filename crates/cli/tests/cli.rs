@@ -5433,6 +5433,87 @@ fn a_profile_is_named_on_the_trust_screen_and_a_bad_name_is_refused() {
 /// The three identities move exactly as their labels say, on the surface a
 /// person reads them from (IC-212).
 ///
+/// A signed app is one release, named by one id the product prints
+/// (IC-389, test 468; K-308): the same file twice is the same release,
+/// a new version is another, and an unsigned file is none.
+#[test]
+fn a_signed_app_reports_its_release_id_and_an_unsigned_one_reports_none() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        "[app]\nid = \"com.example.release\"\nname = \"Release\"\nversion = \"1.0.0\"\n\
+         entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n",
+    )
+    .expect("manifest");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(
+        &wasm,
+        include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm"),
+    )
+    .expect("wasm");
+    let app = dir.path().join("app.krate");
+    krate_bundle::pack(&manifest, &wasm, &app).expect("pack");
+    let report = |path: &std::path::Path| -> serde_json::Value {
+        let output = krate()
+            .args(["run", "--json", "--headless", "--auto-grant"])
+            .arg(path)
+            .output()
+            .expect("run --json");
+        serde_json::from_slice(&output.stdout).unwrap_or_else(|_| {
+            panic!(
+                "no JSON report: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )
+        })
+    };
+    assert!(
+        report(&app)["identity"]["release"].is_null(),
+        "unsigned: no release"
+    );
+
+    let key = krate_bundle::signing::SigningKey::from_pkcs8(
+        &krate_bundle::signing::SigningKey::generate_pkcs8().expect("key"),
+    )
+    .expect("key");
+    krate_bundle::sign_bundle(&app, &key, "com.example.release", "1.0.0", 1_700_000_000)
+        .expect("sign");
+    let release = report(&app)["identity"]["release"].clone();
+    let id = release["id"]
+        .as_str()
+        .expect("a signed app has a release id")
+        .to_string();
+    assert_eq!(id.len(), 64, "{release}");
+    assert_eq!(release["version"].as_str(), Some("1.0.0"));
+
+    let copy = dir.path().join("copy.krate");
+    std::fs::copy(&app, &copy).expect("copy");
+    assert_eq!(
+        report(&copy)["identity"]["release"]["id"].as_str(),
+        Some(id.as_str()),
+        "the same file is the same release"
+    );
+
+    krate_bundle::sign_bundle(&app, &key, "com.example.release", "1.0.1", 1_700_000_000)
+        .expect("re-sign");
+    assert_ne!(
+        report(&app)["identity"]["release"]["id"].as_str(),
+        Some(id.as_str()),
+        "a new version is a new release"
+    );
+
+    let looked = krate()
+        .args(["run", "--dump-caps"])
+        .arg(&copy)
+        .output()
+        .expect("inspect");
+    let stdout = String::from_utf8_lossy(&looked.stdout);
+    assert!(
+        stdout.contains(&format!("release {id}")),
+        "the screen a person reads names the release: {stdout}"
+    );
+}
+
 /// A fork says what it was changed from, and the product prints it
 /// (IC-397, test 494; K-312).
 ///

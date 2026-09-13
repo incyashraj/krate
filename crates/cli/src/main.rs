@@ -6335,6 +6335,11 @@ fn publish_bundle(
     }
     println!("Published. Anyone can run it with:");
     println!("  krate run {url}");
+    // The moving name for this app: republishing under the same name
+    // moves it, and it moves for nobody else (IC-389, test 470).
+    if let Some(channel) = extract_json_string(&body, "channel") {
+        println!("  channel (follows your latest publish of this app): {channel}");
+    }
     // The archive identity, computed HERE from the bytes that were sent, so
     // a person can match the file in their hand to the one at the URL --
     // it is the same number `krate run --json` reports as identity.archive
@@ -11754,8 +11759,10 @@ fn resolve_run_target(
     insecure_http: bool,
 ) -> Result<(PathBuf, Option<PathBuf>, Option<krate_bundle::OpenBundle>)> {
     if krate_bundle::is_url(target) {
-        let bundle = krate_bundle::fetch(target, insecure_http)
+        let fetched = krate_bundle::fetch_resolved(target, insecure_http)
             .with_context(|| format!("could not open bundle from {target}"))?;
+        report_resolution(target, &fetched);
+        let bundle = fetched.bundle;
         return Ok((
             bundle.component_path().to_path_buf(),
             Some(bundle.manifest_path().to_path_buf()),
@@ -11771,8 +11778,10 @@ fn resolve_run_target(
     // A real file always wins; this can never shadow one.
     if !path.exists() {
         if let Some(url) = krate_bundle::implied_url(target) {
-            let bundle = krate_bundle::fetch(&url, insecure_http)
+            let fetched = krate_bundle::fetch_resolved(&url, insecure_http)
                 .with_context(|| format!("could not open bundle from {url} (from `{target}`)"))?;
+            report_resolution(&url, &fetched);
+            let bundle = fetched.bundle;
             return Ok((
                 bundle.component_path().to_path_buf(),
                 Some(bundle.manifest_path().to_path_buf()),
@@ -11792,6 +11801,25 @@ fn resolve_run_target(
     }
 
     Ok((path, None, None))
+}
+
+/// Say what a link resolved to before the app is judged (IC-389, test
+/// 476): a channel link is a moving name, and the person should see the
+/// fixed address it landed on and that the bytes were held to it. On
+/// stderr, so `run --json` keeps its one JSON object on stdout.
+fn report_resolution(asked: &str, fetched: &krate_bundle::Fetched) {
+    match &fetched.address {
+        Some(address) if fetched.url != asked => eprintln!(
+            "resolved {asked} -> {}; the bytes match the address {}...",
+            fetched.url,
+            &address[..address.len().min(12)]
+        ),
+        Some(address) => eprintln!(
+            "fixed address: the bytes match {}...",
+            &address[..address.len().min(12)]
+        ),
+        None => {}
+    }
 }
 
 fn run_component(request: RunRequest) -> Result<u8> {
@@ -11956,6 +11984,7 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
     // an identity nobody can check is worse than none.
     let run_identity = bundle.as_ref().map(|bundle| RunIdentity {
         derived_from: bundle.derived_from().ok().flatten(),
+        release: bundle.release().ok().flatten(),
         archive: std::fs::read(&request.target)
             .ok()
             .map(|bytes| krate_bundle::provenance::digest_archive_bytes(&bytes).digest),
@@ -12087,6 +12116,10 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
                 derived_from: bundle
                     .as_ref()
                     .and_then(|bundle| bundle.derived_from().ok())
+                    .flatten(),
+                release: bundle
+                    .as_ref()
+                    .and_then(|bundle| bundle.release().ok())
                     .flatten(),
                 signature: bundle
                     .as_ref()
@@ -12557,6 +12590,9 @@ struct RunIdentity {
     project: Option<String>,
     /// The app this one was changed from, when it says so (IC-397).
     derived_from: Option<krate_bundle::DerivedFrom>,
+    /// The signed release this file is, when its signature verifies
+    /// (IC-389, K-308).
+    release: Option<krate_bundle::signing::Release>,
 }
 
 /// Print the krate.run.v1 JSON object describing one run.
@@ -12622,6 +12658,15 @@ fn print_run_json(
                     "project": d.project,
                     "parent_signed": d.parent_signed,
                     "at": d.at,
+                })),
+                // Only for a signature that verifies: a tampered or unsigned
+                // file is not a release of anything (K-308).
+                "release": id.release.as_ref().map(|r| serde_json::json!({
+                    "id": r.id,
+                    "namespace": r.namespace,
+                    "version": r.version,
+                    "signed_at": r.signed_at,
+                    "authority": r.authority,
                 })),
             })
         }),
@@ -14704,6 +14749,8 @@ struct TrustFacts {
     project_digest: Option<krate_bundle::provenance::BundleDigest>,
     /// The app this one was changed from, when it says so (IC-397).
     derived_from: Option<krate_bundle::DerivedFrom>,
+    /// The signed release this is, when the signature verifies (K-308).
+    release: Option<krate_bundle::signing::Release>,
     signature: Option<krate_bundle::signing::FullVerdict>,
     storage: Option<StoragePrincipal>,
     /// The local data profile the stores live in (IC-245).
@@ -14721,6 +14768,7 @@ fn print_effective_capabilities(
         digest,
         project_digest,
         derived_from,
+        release,
         signature,
         storage,
         profile,
@@ -14818,6 +14866,15 @@ fn print_effective_capabilities(
                 // The line that stops a signature being read as an
                 // endorsement. Krate checked the maths, not the publisher.
                 println!("  - Krate has checked the signature, not who holds the key");
+                // The one number that names this release and no other:
+                // the same content re-signed the same way keeps it, a
+                // new version or another signer gets another (K-308).
+                if let Some(release) = &release {
+                    println!(
+                        "  - release {}  version {}, signed at {}",
+                        release.id, release.version, release.signed_at
+                    );
+                }
             }
             other => {
                 for line in other.to_string().lines() {
