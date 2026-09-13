@@ -326,6 +326,22 @@ async function publish(request, env) {
     return text(`not a valid .krate bundle: ${problem}`, 422);
   }
 
+  // The manifest, read from the archive itself. This is also the first
+  // real archive check at the door (K-309): the entry must exist in the
+  // central directory, inflate, and carry an [app] table. A body that only
+  // contains the words "manifest.toml" and "code.wasm" no longer passes.
+  const manifestText = await readZipEntry(body, "manifest.toml", 256 * 1024);
+  if (manifestText === null) {
+    return text("not a valid .krate bundle: manifest.toml is not a readable entry", 422);
+  }
+  if (!/^\s*\[app\]/m.test(manifestText)) {
+    return text("not a valid .krate bundle: manifest.toml has no [app] table", 422);
+  }
+  if (!zipHasEntry(body, "code.wasm")) {
+    return text("not a valid .krate bundle: code.wasm is not an entry", 422);
+  }
+  const manifestCapabilities = capabilitiesFromManifest(manifestText);
+
   const hash = await sha256Hex(body);
 
   // Content-addressed: republishing the same bytes is a no-op that returns the
@@ -362,21 +378,13 @@ async function publish(request, env) {
     //
     // Sent by the CLI as a compact JSON array; capped and validated here
     // because it arrives in a header and a header is not to be trusted.
-    capabilities: (() => {
-      const raw = header(request, "x-krate-capabilities") || "";
-      if (!raw) return [];
-      try {
-        const list = JSON.parse(raw);
-        if (!Array.isArray(list)) return [];
-        return list.slice(0, 24).map((c) => ({
-          cap: String(c.cap || "").slice(0, 96),
-          rationale: String(c.rationale || "").slice(0, 200),
-          required: c.required === true,
-        }));
-      } catch (_) {
-        return [];
-      }
-    })(),
+    // From the manifest INSIDE the bytes, never from a header (IC-669,
+    // test 1310). The header the CLI sends is what an honest client
+    // derived from the manifest; a dishonest one could list a microphone
+    // app as asking for nothing, and the same author could re-POST the
+    // identical bytes with a different header and rewrite the permissions
+    // the page shows. The bytes are the claim; the listing reads them.
+    capabilities: manifestCapabilities,
   };
 
   // Identical bytes are idempotent, and authorship does not transfer
@@ -1829,6 +1837,116 @@ function looksLikeKrate(bytes) {
   if (!haystack.includes("manifest.toml")) return "no manifest.toml inside";
   if (!haystack.includes("code.wasm")) return "no code.wasm inside";
   return null;
+}
+
+// ---------------------------------------------------------- reading the zip
+//
+// Enough of the zip format to find one named entry and read it: the end of
+// central directory record at the tail, the central directory it points
+// at, the local header each entry points at. Deflate is inflated with the
+// runtime's own DecompressionStream, so there is no dependency and no
+// hand-written inflater. Bounded: an entry larger than `max` bytes is
+// refused rather than read, and a directory that points outside the body
+// is treated as absent.
+
+function u16(b, i) { return b[i] | (b[i + 1] << 8); }
+function u32(b, i) { return (b[i] | (b[i + 1] << 8) | (b[i + 2] << 16) | (b[i + 3] << 24)) >>> 0; }
+
+/// Every central-directory entry: {name, method, compressed, size, local}.
+function zipEntries(bytes) {
+  // EOCD: signature 06054b50, at least 22 bytes, comment up to 65535.
+  const floor = Math.max(0, bytes.length - 22 - 65535);
+  let eocd = -1;
+  for (let i = bytes.length - 22; i >= floor; i -= 1) {
+    if (bytes[i] === 0x50 && bytes[i + 1] === 0x4b && bytes[i + 2] === 0x05 && bytes[i + 3] === 0x06) {
+      eocd = i;
+      break;
+    }
+  }
+  if (eocd < 0) return [];
+  const count = u16(bytes, eocd + 10);
+  let at = u32(bytes, eocd + 16);
+  const out = [];
+  const dec = new TextDecoder();
+  for (let n = 0; n < count && at + 46 <= bytes.length; n += 1) {
+    if (u32(bytes, at) !== 0x02014b50) break;
+    const method = u16(bytes, at + 10);
+    const compressed = u32(bytes, at + 20);
+    const size = u32(bytes, at + 24);
+    const nameLen = u16(bytes, at + 28);
+    const extraLen = u16(bytes, at + 30);
+    const commentLen = u16(bytes, at + 32);
+    const local = u32(bytes, at + 42);
+    const name = dec.decode(bytes.subarray(at + 46, at + 46 + nameLen));
+    out.push({ name, method, compressed, size, local });
+    at += 46 + nameLen + extraLen + commentLen;
+  }
+  return out;
+}
+
+function zipHasEntry(bytes, name) {
+  return zipEntries(bytes).some((e) => e.name === name);
+}
+
+/// The named entry's text, or null if it is absent, oversized, points
+/// outside the body, uses a method this reader does not know, or does not
+/// inflate.
+async function readZipEntry(bytes, name, max) {
+  const entry = zipEntries(bytes).find((e) => e.name === name);
+  if (!entry) return null;
+  if (entry.size > max || entry.compressed > max) return null;
+  const lh = entry.local;
+  if (lh + 30 > bytes.length || u32(bytes, lh) !== 0x04034b50) return null;
+  const nameLen = u16(bytes, lh + 26);
+  const extraLen = u16(bytes, lh + 28);
+  const start = lh + 30 + nameLen + extraLen;
+  const end = start + entry.compressed;
+  if (end > bytes.length) return null;
+  const raw = bytes.subarray(start, end);
+  let plain;
+  if (entry.method === 0) {
+    plain = raw;
+  } else if (entry.method === 8) {
+    try {
+      const stream = new Blob([raw]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+      plain = new Uint8Array(await new Response(stream).arrayBuffer());
+    } catch (_) {
+      return null;
+    }
+    if (plain.length !== entry.size) return null;
+  } else {
+    return null;
+  }
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(plain);
+  } catch (_) {
+    return null;
+  }
+}
+
+/// The [[capabilities]] tables of a manifest, as the listing shows them.
+///
+/// A small reader for the one shape the CLI writes -- `cap`, `rationale`
+/// and `required` under each [[capabilities]] header -- rather than a
+/// TOML parser the Worker does not have. Anything it cannot read is left
+/// out, never guessed at: a permission the page fails to show is a bug,
+/// but a permission the page invents is a lie.
+function capabilitiesFromManifest(text) {
+  const out = [];
+  const blocks = text.split(/^\s*\[\[capabilities\]\]\s*$/m).slice(1);
+  for (const block of blocks.slice(0, 24)) {
+    const body = block.split(/^\s*\[/m)[0];
+    const cap = /^\s*cap\s*=\s*"([^"]{1,96})"/m.exec(body);
+    if (!cap) continue;
+    const rationale = /^\s*rationale\s*=\s*"([^"]{0,200})"/m.exec(body);
+    const required = /^\s*required\s*=\s*(true|false)/m.exec(body);
+    out.push({
+      cap: cap[1],
+      rationale: rationale ? rationale[1] : "",
+      required: required ? required[1] === "true" : false,
+    });
+  }
+  return out;
 }
 
 async function sha256Hex(bytes) {
