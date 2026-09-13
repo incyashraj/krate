@@ -278,6 +278,15 @@ def investor_surfaces(root=ROOT):
     return out
 
 
+def scan_investor(record, figures, root=ROOT):
+    """(documents scanned, problems) over the private investor tree (1180)."""
+    problems = []
+    docs = investor_surfaces(root)
+    for path in docs:
+        problems.extend(check_surface(path, record, figures, comparison_only=True))
+    return len(docs), problems
+
+
 def check_surface(path, record, figures, comparison_only=False):
     """`comparison_only` scans only lines that name a comparator. The public
     surfaces also take every table row, because their tables ARE the
@@ -487,6 +496,15 @@ def self_test():
             failures.append(f"an investor memo stating a comparison figure no record vouches for must be a problem: {probs}")
         if any("100%" in x or "92.5%" in x for x in probs):
             failures.append(f"an allocation table row that names no comparator is not a product claim: {probs}")
+        count, wired = scan_investor(fresh, known_figures(fresh), root=troot)
+        if count != 2 or not any("999GB" in x for x in wired):
+            failures.append(f"scan_investor must scan every document and carry the problem out: {count} {wired}")
+        # And main must act on what it returns: a correct scan whose result the
+        # caller drops is invisible to every assertion above.
+        src = Path(__file__).read_text()
+        main_src = src[src.index("def main():"):]
+        if "problems.extend(investor_problems)" not in main_src:
+            failures.append("main() must add the investor problems to the ones that fail the gate")
         loose = check_surface(troot / "Invest" / "memo.md", fresh, known_figures(fresh))
         if not any("100%" in x for x in loose):
             failures.append("without comparison_only a table row is still scanned, as the public surfaces need")
@@ -541,12 +559,11 @@ def main():
         problems.extend(check_surface(surface, record, figures))
 
     # The investor material, where it exists (IC-629, 1180).
-    investor = investor_surfaces()
-    if investor:
-        for path in investor:
-            checked += 1
-            problems.extend(check_surface(path, record, figures, comparison_only=True))
-        print(f"investor material: {len(investor)} documents scanned")
+    investor_count, investor_problems = scan_investor(record, figures)
+    if investor_count:
+        checked += investor_count
+        problems.extend(investor_problems)
+        print(f"investor material: {investor_count} documents scanned")
     else:
         print("investor material: Invest/ is not present here (private, ignored), so it was NOT assessed")
 
