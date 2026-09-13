@@ -1,0 +1,85 @@
+{
+ "id": "E-E3-REPLAY-7752ecb50-ubuntu",
+ "claims": [
+  "C-PORTED-APPS-EVERY-OS"
+ ],
+ "subject": {
+  "kind": "source tree",
+  "source": {
+   "commit": "7752ecb506ec92c4478a6a6eee6594c66e73935c",
+   "tree": "9c174d6a9c84740b1e8c70f54abb742cbccc8b44"
+  },
+  "binary_digest": null,
+  "package_digest": null,
+  "relationship": "the replay job checked out this commit, built the runtime, and ran every corpus bundle on this host"
+ },
+ "environment": {
+  "kind": "hosted",
+  "os": "ubuntu",
+  "arch": "x86_64",
+  "runner": "GitHub-hosted"
+ },
+ "toolchain": {
+  "rust": "as pinned by rust-toolchain.toml at this commit"
+ },
+ "command": "sh scripts/replay-ported-apps.sh",
+ "inputs": {
+  "prerequisites": [
+   "evidence/ported/*.krate"
+  ]
+ },
+ "oracle": {
+  "class": "execution",
+  "description": "each bundle ran headless with its recorded argument and its stdout carried the expected marker; a bundle with no recorded check is a skip, kept as one, and blocks the claim"
+ },
+ "raw_result": {
+  "passed": [
+   "hexyl",
+   "savings",
+   "ddh",
+   "envelope",
+   "grex",
+   "eo2",
+   "mdview",
+   "chart",
+   "bounce",
+   "cubes"
+  ],
+  "failed": [],
+  "skipped": [
+   "rssfwd"
+  ],
+  "audit": [],
+  "tsv": "/Users/yashrajpardeshi/Projects/layer6x6/evidence/e3/run-34746660900-replay-ubuntu.tsv"
+ },
+ "outcome": "pass",
+ "scope": {
+  "supports": "every corpus bundle with a recorded check ran and printed its marker on ubuntu at 7752ecb50",
+  "exclusions": [
+   "bundles with no recorded check, which are listed under skipped rather than counted",
+   "anything about how the apps behave beyond printing their marker"
+  ]
+ },
+ "independence": "first-party API observation",
+ "time": {
+  "start": "2026-09-13T08:04:34Z",
+  "finish": "2026-09-13T08:04:34Z"
+ },
+ "operator": "GitHub Actions, CI workflow, replay-ported-apps job",
+ "privacy": {
+  "audience": "public",
+  "redact": []
+ },
+ "retention": {
+  "raw": "/Users/yashrajpardeshi/Projects/layer6x6/evidence/e3/run-34746660900-replay-ubuntu.tsv",
+  "until": "the results file is deleted"
+ },
+ "expiry": {
+  "triggers": [
+   "source-change"
+  ],
+  "on": null
+ },
+ "supersedes": null,
+ "invalidated_by": null
+}

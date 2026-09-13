@@ -127,3 +127,6 @@ __pycache__/
 # Release decision records quote the private defect board's titles, so they
 # stay on this machine with the board they read from.
 /evidence/releases/
+
+# A local replay writes its matrix here; the retained ones are evidence/e3/run-<ci-run>-*.tsv
+evidence/e3/replay-*.tsv

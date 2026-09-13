@@ -1,0 +1,90 @@
+{
+ "profile": "P-E3-REPLAY-UBUNTU",
+ "profile_frozen_at": "2026-09-13T06:00:00Z",
+ "ran_at": "2026-09-13T08:04:34Z",
+ "source": "scripts/replay-ported-apps.sh on ubuntu at 7752ecb50 (krate 0.4.0)",
+ "environment": {
+  "kind": "hosted",
+  "os": "ubuntu",
+  "arch": "x86_64",
+  "version": "GitHub-hosted"
+ },
+ "cells": [
+  {
+   "name": "hexyl",
+   "outcome": "pass",
+   "value": 1,
+   "samples": 1,
+   "note": "printed 48 65 6c 6c 6f"
+  },
+  {
+   "name": "savings",
+   "outcome": "pass",
+   "value": 1,
+   "samples": 1,
+   "note": "printed slice:2275"
+  },
+  {
+   "name": "ddh",
+   "outcome": "pass",
+   "value": 1,
+   "samples": 1,
+   "note": "printed Total files"
+  },
+  {
+   "name": "envelope",
+   "outcome": "pass",
+   "value": 1,
+   "samples": 1,
+   "note": "printed quick"
+  },
+  {
+   "name": "grex",
+   "outcome": "pass",
+   "value": 1,
+   "samples": 1,
+   "note": "printed ^a(?:bc?)?"
+  },
+  {
+   "name": "eo2",
+   "outcome": "pass",
+   "value": 1,
+   "samples": 1,
+   "note": "printed eo2:ok"
+  },
+  {
+   "name": "mdview",
+   "outcome": "pass",
+   "value": 1,
+   "samples": 1,
+   "note": "printed blocks:"
+  },
+  {
+   "name": "chart",
+   "outcome": "pass",
+   "value": 1,
+   "samples": 1,
+   "note": "printed drawn:yes"
+  },
+  {
+   "name": "bounce",
+   "outcome": "pass",
+   "value": 1,
+   "samples": 1,
+   "note": "printed playable:yes"
+  },
+  {
+   "name": "cubes",
+   "outcome": "pass",
+   "value": 1,
+   "samples": 1,
+   "note": "printed rendered3d:yes"
+  },
+  {
+   "name": "rssfwd",
+   "outcome": "not-run",
+   "note": "no replay check defined"
+  }
+ ],
+ "seal": "f8b247aa54db5398c520bc85d8ac86a5168c5a2f43909c16f07f8e71124552e3"
+}

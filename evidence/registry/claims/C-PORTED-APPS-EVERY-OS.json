@@ -6,7 +6,7 @@
   "release"
  ],
  "subject": {
-  "commit": "92dcaf9fe"
+  "commit": "7752ecb50"
  },
  "requires": {
   "evidence_classes": [
@@ -21,7 +21,9 @@
   "same_bytes": false
  },
  "evidence": [
-  "E-E3-REPLAY-92dcaf9fe-macos"
+  "E-E3-REPLAY-7752ecb50-macos",
+  "E-E3-REPLAY-7752ecb50-ubuntu",
+  "E-E3-REPLAY-7752ecb50-windows"
  ],
  "declared_state": "UNSUPPORTED",
  "exclusions": [
