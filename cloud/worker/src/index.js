@@ -165,6 +165,21 @@ export default {
       if (request.method === "POST" && pathname === "/report") {
         return cors(await putReport(request, env));
       }
+      // Registry takedown with notice, reason, scope and appeal (IC-669,
+      // tests 1313-1314). A block is a record, never a silent 404.
+      if (request.method === "POST" && pathname.startsWith("/admin/takedown/")) {
+        const [hash, action] = pathname.slice("/admin/takedown/".length).split("/");
+        if (action === "restore") return cors(await takedownRestore(request, hash, env));
+        if (action === "deny") return cors(await takedownDeny(request, hash, env));
+        if (!action) return cors(await takedownPut(request, hash, env));
+        return cors(text("not found", 404));
+      }
+      if (request.method === "POST" && pathname.startsWith("/takedown/") && pathname.endsWith("/appeal")) {
+        return cors(await takedownAppeal(request, pathname.slice("/takedown/".length, -"/appeal".length), env));
+      }
+      if (request.method === "GET" && pathname.startsWith("/takedown/")) {
+        return cors(await takedownNotice(pathname.slice("/takedown/".length), env));
+      }
       if (request.method === "GET" && pathname === "/admin/reports") {
         return cors(await listReports(request, env));
       }
@@ -637,6 +652,149 @@ async function unpublish(request, hash, env) {
 ///
 /// Gated on an admin login rather than the app's own metadata -- the
 /// metadata is exactly what is missing here.
+// ---------------------------------------------------------------- takedown
+//
+// A registry block is a RECORD with a notice, a reason, a scope and an
+// appeal, never a silent 404 (IC-669, test 1313). The listing leaves the
+// gallery and the hash answers 451 with the notice. The scope says what
+// happened to the bytes: "listing" keeps them, so an upheld appeal restores
+// the app as it was; "listing-and-bytes" removes them, for the case where
+// serving one more copy is the harm. Neither touches anything on the
+// developer's own machine (1314): a block is about this registry.
+//
+// Closing a takedown does not erase it. The record moves to
+// takedown-closed:<hash> with the decision, so "was this ever blocked, and
+// why" has an answer afterwards.
+
+const TAKEDOWN_SCOPES = new Set(["listing", "listing-and-bytes"]);
+
+async function readJson(request, max = 8192) {
+  const raw = await request.text();
+  if (raw.length > max) return null;
+  try {
+    const value = JSON.parse(raw || "{}");
+    return value && typeof value === "object" ? value : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function takedownResponse(rawRecord, env) {
+  let record;
+  try {
+    record = JSON.parse(rawRecord);
+  } catch (_) {
+    return text("this app was removed from the registry", 451);
+  }
+  const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
+  return new Response(
+    JSON.stringify({
+      removed: true,
+      reason: record.reason,
+      scope: record.scope,
+      at: record.at,
+      emergency: record.emergency === true,
+      appeal: { state: (record.appeal && record.appeal.state) || "none", how: `POST ${base}/takedown/${record.hash}/appeal as the author` },
+      notice: `${base}/takedown/${record.hash}`,
+    }),
+    { status: 451, headers: { "content-type": "application/json", link: `<${base}/takedown/${record.hash}>; rel="blocked-by"` } },
+  );
+}
+
+async function takedownPut(request, hash, env) {
+  const admin = await isAdmin(request, env);
+  if (!admin) return text("not found", 404);
+  if (!/^[0-9a-f]{64}$/.test(hash)) return text("not found", 404);
+  const body = await readJson(request);
+  if (!body) return text("a takedown is a JSON object", 400);
+  const reason = String(body.reason || "").trim().slice(0, 500);
+  if (!reason) return text("a takedown needs a reason; it is what the notice shows", 400);
+  const scope = body.scope || "listing";
+  if (!TAKEDOWN_SCOPES.has(scope)) return text(`scope must be one of ${[...TAKEDOWN_SCOPES].join(", ")}`, 400);
+  const listed = await env.APPS.get(`app:${hash}`);
+  const bytes = await env.BUNDLES.head(hash);
+  if (!listed && !bytes) return text("nothing is published under that hash", 404);
+  const record = {
+    hash,
+    reason,
+    scope,
+    emergency: body.emergency === true,
+    notice: String(body.notice || "").slice(0, 500),
+    by: admin.login,
+    at: Math.floor(Date.now() / 1000),
+    appeal: { state: "none" },
+  };
+  await env.APPS.put(`takedown:${hash}`, JSON.stringify(record));
+  if (scope === "listing-and-bytes") {
+    await env.BUNDLES.delete(hash);
+    await env.BUNDLES.delete(`shot:${hash}`);
+    await env.BUNDLES.delete(`icon:${hash}`);
+  }
+  return json({ ok: true, takedown: record });
+}
+
+async function takedownNotice(hash, env) {
+  if (!/^[0-9a-f]{64}$/.test(hash)) return text("not found", 404);
+  const raw = await env.APPS.get(`takedown:${hash}`);
+  if (raw) return takedownResponse(raw, env);
+  const closed = await env.APPS.get(`takedown-closed:${hash}`);
+  if (closed) {
+    const record = JSON.parse(closed);
+    return json({ removed: false, was_removed: true, reason: record.reason, closed: record.closed });
+  }
+  return text("not found", 404);
+}
+
+async function takedownAppeal(request, hash, env) {
+  const identity = await verifyGitHub(request, env);
+  if (!identity) return text("sign in first", 401);
+  if (!/^[0-9a-f]{64}$/.test(hash)) return text("not found", 404);
+  const raw = await env.APPS.get(`takedown:${hash}`);
+  if (!raw) return text("not found", 404);
+  const record = JSON.parse(raw);
+  const listed = await env.APPS.get(`app:${hash}`);
+  const author = listed ? JSON.parse(listed).author_login : null;
+  if (!author || author !== identity.login) return text("only the app's author can appeal its removal", 403);
+  const body = await readJson(request);
+  const appealText = String((body && body.text) || "").trim().slice(0, 2000);
+  if (!appealText) return text("an appeal needs a sentence: what is wrong with the reason given", 400);
+  record.appeal = { state: "appealed", text: appealText, by: identity.login, at: Math.floor(Date.now() / 1000) };
+  await env.APPS.put(`takedown:${hash}`, JSON.stringify(record));
+  return json({ ok: true, appeal: record.appeal });
+}
+
+async function takedownRestore(request, hash, env) {
+  const admin = await isAdmin(request, env);
+  if (!admin) return text("not found", 404);
+  if (!/^[0-9a-f]{64}$/.test(hash)) return text("not found", 404);
+  const raw = await env.APPS.get(`takedown:${hash}`);
+  if (!raw) return text("not found", 404);
+  const record = JSON.parse(raw);
+  const body = await readJson(request);
+  record.closed = { decision: "restored", by: admin.login, at: Math.floor(Date.now() / 1000), note: String((body && body.note) || "").slice(0, 500) };
+  await env.APPS.put(`takedown-closed:${hash}`, JSON.stringify(record));
+  await env.APPS.delete(`takedown:${hash}`);
+  const bytes = await env.BUNDLES.head(hash);
+  return json({
+    ok: true,
+    restored: Boolean(bytes),
+    note: bytes ? "the listing is back as it was" : "the bytes were removed with the takedown; the author must publish again",
+  });
+}
+
+async function takedownDeny(request, hash, env) {
+  const admin = await isAdmin(request, env);
+  if (!admin) return text("not found", 404);
+  if (!/^[0-9a-f]{64}$/.test(hash)) return text("not found", 404);
+  const raw = await env.APPS.get(`takedown:${hash}`);
+  if (!raw) return text("not found", 404);
+  const record = JSON.parse(raw);
+  const body = await readJson(request);
+  record.appeal = { ...(record.appeal || {}), state: "denied", decided_by: admin.login, decided_at: Math.floor(Date.now() / 1000), note: String((body && body.note) || "").slice(0, 500) };
+  await env.APPS.put(`takedown:${hash}`, JSON.stringify(record));
+  return json({ ok: true, appeal: record.appeal });
+}
+
 async function purgeBundle(request, hash, env) {
   const identity = await verifyGitHub(request, env);
   if (!identity) return text("sign in first", 401);
@@ -731,6 +889,10 @@ async function fetchBundle(request, url, hash, env) {
   }
   if (!/^[0-9a-f]{64}$/.test(hash)) {
     return text("not found", 404);
+  }
+  const takedown = await env.APPS.get(`takedown:${hash}`);
+  if (takedown) {
+    return takedownResponse(takedown, env);
   }
   const object = await env.BUNDLES.get(hash);
   if (!object) {
@@ -936,6 +1098,8 @@ async function meta(hash, env) {
     hash = full;
   }
   if (!/^[0-9a-f]{64}$/.test(hash)) return text("not found", 404);
+  const takedown = await env.APPS.get(`takedown:${hash}`);
+  if (takedown) return takedownResponse(takedown, env);
   const raw = await env.APPS.get(`app:${hash}`);
   if (!raw) return text("not found", 404);
   let m = {};
@@ -985,8 +1149,12 @@ async function list(env, url) {
   // Read every listed record. The KV gets are unavoidable -- the metadata IS
   // the value -- but they go out together rather than one at a time.
   const listing = await env.APPS.list({ prefix: "app:", limit: 1000 });
+  const blocked = new Set(
+    (await env.APPS.list({ prefix: "takedown:", limit: 1000 })).keys.map((k) => k.name.slice("takedown:".length)),
+  );
   const records = await Promise.all(
     listing.keys.map(async (key) => {
+      if (blocked.has(key.name.slice("app:".length))) return null;
       const raw = await env.APPS.get(key.name);
       if (!raw) return null;
       let meta;
