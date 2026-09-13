@@ -9,17 +9,14 @@
 #![no_std]
 
 extern crate alloc;
-extern crate krate as _krate_runtime;
 
-#[allow(warnings)]
-mod bindings;
 
 use alloc::vec::Vec;
 
-use bindings::krate::gfx::{canvas2d, types as gfx};
-use bindings::krate::io::{args, stdio};
-use bindings::krate::resources::assets;
-use bindings::krate::ui::{events, tree, types, window};
+use krate::gfx::{canvas2d, types as gfx};
+use krate::bindings::krate::io::{args, stdio};
+use krate::bindings::krate::resources::assets;
+use krate::ui::{events, tree, types, window};
 
 const ROOT_ID: u64 = 1;
 const CANVAS_ID: u64 = 2;
@@ -52,7 +49,7 @@ fn read_raw(path: &str) -> Option<Raw> {
     })
 }
 
-impl bindings::Guest for Component {
+impl krate::Guest for Component {
     fn run() -> i32 {
         let out = stdio::stdout();
         let Some(bg) = read_raw("bg.rgba") else {
@@ -173,4 +170,4 @@ fn node(id: u64, parent: Option<u64>, kind: types::WidgetKind) -> types::WidgetN
     }
 }
 
-bindings::export!(Component with_types_in bindings);
+krate::export!(Component);

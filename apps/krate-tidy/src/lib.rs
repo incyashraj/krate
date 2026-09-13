@@ -19,19 +19,17 @@
 
 #![no_std]
 
-#[allow(warnings)]
-mod bindings;
 
 extern crate alloc;
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-use bindings::krate::fs::files as fsapi;
-use bindings::krate::gfx::{canvas2d, types as gfx};
-use bindings::krate::io::{args, stdio};
-use bindings::krate::time::clock;
-use bindings::krate::ui::{dialog, events, tree, types, window};
+use krate::bindings::krate::fs::files as fsapi;
+use krate::gfx::{canvas2d, types as gfx};
+use krate::bindings::krate::io::{args, stdio};
+use krate::bindings::krate::time::clock;
+use krate::ui::{dialog, events, tree, types, window};
 use krate::motion::Spring;
 
 const ROOT_ID: u64 = 1;
@@ -360,7 +358,7 @@ fn quick_proof() {
 
 struct Component;
 
-impl bindings::Guest for Component {
+impl krate::Guest for Component {
     fn run() -> i32 {
         let raw = args::raw();
         let quick = raw.split_whitespace().any(|word| word == "quick");
@@ -471,4 +469,4 @@ impl bindings::Guest for Component {
     }
 }
 
-bindings::export!(Component with_types_in bindings);
+krate::export!(Component);

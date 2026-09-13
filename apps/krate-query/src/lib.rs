@@ -25,16 +25,13 @@
 
 extern crate alloc;
 
-extern crate krate as _krate_runtime;
 
-#[allow(warnings)]
-mod bindings;
 
 use alloc::string::String;
-use bindings::krate::gfx::{canvas2d, types as gfx};
-use bindings::krate::io::{args, stdio};
-use bindings::krate::store::sql;
-use bindings::krate::ui::{events, tree, types, window};
+use krate::gfx::{canvas2d, types as gfx};
+use krate::bindings::krate::io::{args, stdio};
+use krate::bindings::krate::store::sql;
+use krate::ui::{events, tree, types, window};
 
 const ROOT_ID: u64 = 1;
 const CANVAS_ID: u64 = 2;
@@ -909,7 +906,7 @@ fn integer_at(row: &sql::Row, index: usize) -> i64 {
 
 struct Component;
 
-impl bindings::Guest for Component {
+impl krate::Guest for Component {
     fn run() -> i32 {
         let mut rows = [ZERO_RECORD; MAX_ROWS];
         let (count, live) = load(&mut rows);
@@ -979,4 +976,4 @@ impl bindings::Guest for Component {
     }
 }
 
-bindings::export!(Component with_types_in bindings);
+krate::export!(Component);

@@ -1,16 +1,12 @@
 #![no_std]
 
-// The SDK owns the allocator, the panic handler, and the memory intrinsics
-// this guest needs. Nothing calls it directly, so link it explicitly or the
-// build fails with "`#[panic_handler]` function required".
-extern crate krate as _krate_runtime;
-
-#[allow(warnings)]
-mod bindings;
-
-use bindings::krate::gfx::{canvas2d, types as gfx};
-use bindings::krate::io::{args, stdio};
-use bindings::krate::ui::{events, tree, types, window};
+// The SDK with its `gui` feature: `krate::ui` and `krate::gfx` are the gui
+// world, `krate::bindings::krate::io` the Phase 2 interface underneath. With
+// its `std` feature off it also owns the allocator, the panic handler and the
+// memory intrinsics this `no_std` guest needs; nothing here has to link it.
+use krate::bindings::krate::io::{args, stdio};
+use krate::gfx::{canvas2d, types as gfx};
+use krate::ui::{events, tree, types, window};
 
 // Widget ids are yours to choose. Keep them as constants: the tree refers to
 // them and so does `canvas2d::bind`.
@@ -32,7 +28,7 @@ fn rgb(r: f32, g: f32, b: f32) -> gfx::Color {
     gfx::Color { r, g, b, a: 1.0 }
 }
 
-impl bindings::Guest for Component {
+impl krate::Guest for Component {
     // The world exports `run: func() -> s32`. No arguments, no Result: read
     // arguments with `args::raw()` and return 0 for success.
     fn run() -> i32 {
@@ -68,12 +64,18 @@ impl bindings::Guest for Component {
 
         let mut count: i32 = 0;
         let mut dirty = true;
-        // A quick run still opens the window and draws -- check-app clicks it,
-        // resizes it, and confirms it stays open. What it must not do is block
-        // forever, so the quick path polls a bounded number of rounds and the
-        // interactive path blocks until the person closes it.
-        let mut rounds: u32 = 0;
-        const QUICK_ROUNDS: u32 = 400;
+        // Wait in short rounds rather than blocking forever or spinning.
+        //
+        // This is the shape that passes the usability stage, and getting it
+        // wrong is the most common way a finished app fails its last check.
+        // `wait(None)` blocks until an event arrives, so a headless run hangs
+        // and is killed at 60 seconds. `poll()` never waits, so the loop spins
+        // a core and a quick run ends before the checker can click anything.
+        // A timeout does both jobs: idle costs nothing, and a quick run gives
+        // the checker its ten seconds and then exits on its own.
+        const ROUND_MILLIS: u32 = 33;
+        const QUICK_IDLE_ROUNDS: u32 = 300; // ~10 seconds of quiet
+        let mut idle: u32 = 0;
 
         loop {
             if dirty {
@@ -106,18 +108,20 @@ impl bindings::Guest for Component {
                 dirty = false;
             }
 
-            // Interactive: block until something happens, so the app sits idle
-            // instead of burning a core. Quick: never block, and stop after a
-            // bounded number of rounds.
-            let event = if quick {
-                rounds += 1;
-                if rounds > QUICK_ROUNDS {
-                    break;
+            // One round: wait up to ROUND_MILLIS for an event. An interactive
+            // run sits idle at no cost; a quick run counts the quiet rounds
+            // and exits on its own after about ten seconds of nothing.
+            let event = events::wait(Some(ROUND_MILLIS));
+            if quick {
+                if event.is_none() {
+                    idle += 1;
+                    if idle > QUICK_IDLE_ROUNDS {
+                        break;
+                    }
+                } else {
+                    idle = 0;
                 }
-                events::poll()
-            } else {
-                events::wait(None)
-            };
+            }
 
             match event {
                 // Always handle this. It is what the window's close button and
@@ -185,4 +189,4 @@ fn node(id: u64, parent: Option<u64>, kind: types::WidgetKind) -> types::WidgetN
     }
 }
 
-bindings::export!(Component with_types_in bindings);
+krate::export!(Component);

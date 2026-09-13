@@ -17,7 +17,7 @@ rust-version = "1.91"
 [dependencies]
 wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }
 # The SDK, for krate::motion's spring on the pill. No features needed.
-krate = { path = "../../crates/bindings-rust" }
+krate = { path = "../../crates/bindings-rust", features = ["gui"] }
 # Pure-math sin/cos for the breathing glow and the ring sweep. no_std by
 # design, so it costs nothing at the sandbox boundary.
 libm = "0.2"

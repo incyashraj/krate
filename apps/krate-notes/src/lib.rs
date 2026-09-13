@@ -15,15 +15,12 @@
 
 extern crate alloc;
 
-extern crate krate as _krate_runtime;
 
-#[allow(warnings)]
-mod bindings;
 
-use bindings::krate::fs::files::{self, OpenMode};
-use bindings::krate::gfx::{canvas2d, types as gfx};
-use bindings::krate::io::{args, stdio};
-use bindings::krate::ui::{clipboard, events, tree, types, window};
+use krate::bindings::krate::fs::files::{self, OpenMode};
+use krate::gfx::{canvas2d, types as gfx};
+use krate::bindings::krate::io::{args, stdio};
+use krate::ui::{clipboard, events, tree, types, window};
 
 const ROOT_ID: u64 = 1;
 const CANVAS_ID: u64 = 2;
@@ -659,7 +656,7 @@ fn node(id: u64, parent: Option<u64>, kind: types::WidgetKind) -> types::WidgetN
 
 struct Component;
 
-impl bindings::Guest for Component {
+impl krate::Guest for Component {
     fn run() -> i32 {
         let size = types::WindowSize {
             width: W as u32,
@@ -932,4 +929,4 @@ impl bindings::Guest for Component {
     }
 }
 
-bindings::export!(Component with_types_in bindings);
+krate::export!(Component);

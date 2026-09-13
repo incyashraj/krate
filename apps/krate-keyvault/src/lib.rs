@@ -19,15 +19,12 @@
 
 extern crate alloc;
 
-extern crate krate as _krate_runtime;
 
-#[allow(warnings)]
-mod bindings;
 
-use bindings::krate::gfx::{canvas2d, types as gfx};
-use bindings::krate::io::{args, stdio};
-use bindings::krate::store::kv;
-use bindings::krate::ui::{events, tree, types, window};
+use krate::gfx::{canvas2d, types as gfx};
+use krate::bindings::krate::io::{args, stdio};
+use krate::bindings::krate::store::kv;
+use krate::ui::{events, tree, types, window};
 
 const ROOT_ID: u64 = 1;
 const CANVAS_ID: u64 = 2;
@@ -49,7 +46,7 @@ const ACCENT: gfx::Color = gfx::Color { r: 0.42, g: 0.62, b: 1.0, a: 1.0 };
 
 struct Component;
 
-impl bindings::Guest for Component {
+impl krate::Guest for Component {
     fn run() -> i32 {
         // Read the saved count, or zero on the very first run. A missing key is
         // `Ok(None)`, the normal fresh-start case, not an error.
@@ -320,4 +317,4 @@ fn node(id: u64, parent: Option<u64>, kind: types::WidgetKind) -> types::WidgetN
     }
 }
 
-bindings::export!(Component with_types_in bindings);
+krate::export!(Component);

@@ -11,11 +11,14 @@
 //! In the automated run it fills a preset so the screenshot shows a real
 //! conversion. No panic paths, only `krate:*`.
 
-#[allow(warnings)]
-mod bindings;
 
-use bindings::krate::io::{args, stdio};
-use bindings::krate::ui::{events, tree, types, window};
+#![no_std]
+extern crate alloc;
+
+#[allow(unused_imports)]
+use alloc::{format, string::{String, ToString}, vec, vec::Vec};
+use krate::bindings::krate::io::{args, stdio};
+use krate::ui::{events, tree, types, window};
 
 const ROOT_ID: u64 = 1;
 const TITLE_ID: u64 = 2;
@@ -37,7 +40,7 @@ const ROUND_MILLIS: u32 = 50;
 
 struct Component;
 
-impl bindings::Guest for Component {
+impl krate::Guest for Component {
     fn run() -> i32 {
         let size = types::WindowSize {
             width: WIDTH,
@@ -325,7 +328,7 @@ fn pure_string_from_bytes(bytes: &[u8]) -> String {
     }
     unsafe {
         let layout = core::alloc::Layout::from_size_align_unchecked(len, 1);
-        let ptr = std::alloc::alloc(layout);
+        let ptr = alloc::alloc::alloc(layout);
         if ptr.is_null() {
             core::arch::wasm32::unreachable()
         }
@@ -334,4 +337,4 @@ fn pure_string_from_bytes(bytes: &[u8]) -> String {
     }
 }
 
-bindings::export!(Component with_types_in bindings);
+krate::export!(Component);

@@ -15,14 +15,17 @@
 //! somebody to look at a window.
 
 
-#[allow(warnings)]
-mod bindings;
 
-use bindings::krate::gfx::{scene3d, types as gfx};
+#![no_std]
+extern crate alloc;
 
-use bindings::krate::io::{args, stdio};
-use bindings::krate::time::clock;
-use bindings::krate::ui::{events, tree, types, window};
+#[allow(unused_imports)]
+use alloc::{format, string::{String, ToString}, vec, vec::Vec};
+use krate::gfx::{scene3d, types as gfx};
+
+use krate::bindings::krate::io::{args, stdio};
+use krate::bindings::krate::time::clock;
+use krate::ui::{events, tree, types, window};
 
 const ROOT_ID: u64 = 1;
 const SCENE_ID: u64 = 2;
@@ -187,7 +190,7 @@ fn cos(x: f32) -> f32 {
     sin(x + 1.570_796_3)
 }
 
-impl bindings::Guest for Component {
+impl krate::Guest for Component {
     fn run() -> i32 {
         let raw = args::raw();
         let quick = raw.split_whitespace().any(|word| word == "quick");
@@ -370,4 +373,4 @@ impl bindings::Guest for Component {
     }
 }
 
-bindings::export!(Component with_types_in bindings);
+krate::export!(Component);

@@ -23,15 +23,12 @@ extern crate alloc;
 // Linked purely for its no_std runtime lang items -- the global allocator, the
 // trapping panic handler, and the memory intrinsics a wasm guest needs when std
 // is not linked. Not called directly; the underscore keeps the import.
-extern crate krate as _krate_runtime;
 
-#[allow(warnings)]
-mod bindings;
 
-use bindings::krate::gfx::{canvas2d, types as gfx};
-use bindings::krate::io::{args, stdio};
-use bindings::krate::time::clock;
-use bindings::krate::ui::{events, tree, types, window};
+use krate::gfx::{canvas2d, types as gfx};
+use krate::bindings::krate::io::{args, stdio};
+use krate::bindings::krate::time::clock;
+use krate::ui::{events, tree, types, window};
 
 const ROOT_ID: u64 = 1;
 const CANVAS_ID: u64 = 2;
@@ -1359,7 +1356,7 @@ fn num_core12(value: u32, buf: &mut [u8; 12]) -> &[u8] {
 // Entry point
 // ------------------------------------------------------------------
 
-impl bindings::Guest for Component {
+impl krate::Guest for Component {
     fn run() -> i32 {
         let size = types::WindowSize {
             width: WIDTH as u32,
@@ -1539,4 +1536,4 @@ fn node(id: u64, parent: Option<u64>, kind: types::WidgetKind) -> types::WidgetN
     }
 }
 
-bindings::export!(Component with_types_in bindings);
+krate::export!(Component);

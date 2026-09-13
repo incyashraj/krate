@@ -20,7 +20,7 @@ rust-version = "1.91"
 # whose lowering reaches the allocation path; in a std guest that routes
 # through std's alloc-error handler and drags in all of wasi:*. no_std with
 # the SDK owning that path keeps this image app krate:*-only.
-krate = { path = "../../crates/bindings-rust" }
+krate = { path = "../../crates/bindings-rust", features = ["gui"] }
 wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }
 
 [lib]

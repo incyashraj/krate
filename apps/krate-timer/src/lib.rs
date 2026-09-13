@@ -11,12 +11,15 @@
 //! allocation/panic path and drag the whole `wasi:*` import set in, which LTO
 //! cannot strip and which stops the component instantiating.
 
-#[allow(warnings)]
-mod bindings;
 
-use bindings::krate::io::{args, stdio};
-use bindings::krate::time::clock;
-use bindings::krate::ui::{events, tree, types, window};
+#![no_std]
+extern crate alloc;
+
+#[allow(unused_imports)]
+use alloc::{format, string::{String, ToString}, vec, vec::Vec};
+use krate::bindings::krate::io::{args, stdio};
+use krate::bindings::krate::time::clock;
+use krate::ui::{events, tree, types, window};
 
 const ROOT_ID: u64 = 1;
 const LABEL_ID: u64 = 2;
@@ -132,12 +135,12 @@ fn pure_string(text: &str) -> String {
     }
     unsafe {
         let layout = core::alloc::Layout::from_size_align_unchecked(len, 1);
-        let ptr = std::alloc::alloc(layout);
+        let ptr = alloc::alloc::alloc(layout);
         if ptr.is_null() {
             #[cfg(target_arch = "wasm32")]
             core::arch::wasm32::unreachable();
             #[cfg(not(target_arch = "wasm32"))]
-            std::process::abort();
+            panic!("allocation failed");
         }
         core::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, len);
         String::from_raw_parts(ptr, len, len)
@@ -310,7 +313,7 @@ fn rebuild(win: u64, timer: &Timer) -> bool {
 
 // ---- the app --------------------------------------------------------------
 
-impl bindings::Guest for Component {
+impl krate::Guest for Component {
     fn run() -> i32 {
         let size = types::WindowSize {
             width: WIN_WIDTH,
@@ -420,4 +423,4 @@ impl bindings::Guest for Component {
     }
 }
 
-bindings::export!(Component with_types_in bindings);
+krate::export!(Component);

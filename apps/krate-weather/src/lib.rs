@@ -9,12 +9,15 @@
 //! The drawing is rectangle fills, discs approximated by scanned rows, and the
 //! canvas text call. No panic paths, only `krate:*`.
 
-#[allow(warnings)]
-mod bindings;
 
-use bindings::krate::gfx::{canvas2d, types as gfx};
-use bindings::krate::io::{args, stdio};
-use bindings::krate::ui::{events, tree, types, window};
+#![no_std]
+extern crate alloc;
+
+#[allow(unused_imports)]
+use alloc::{format, string::{String, ToString}, vec, vec::Vec};
+use krate::gfx::{canvas2d, types as gfx};
+use krate::bindings::krate::io::{args, stdio};
+use krate::ui::{events, tree, types, window};
 
 const ROOT_ID: u64 = 1;
 const CANVAS_ID: u64 = 2;
@@ -43,7 +46,7 @@ const ROUND_MILLIS: u32 = 50;
 
 struct Component;
 
-impl bindings::Guest for Component {
+impl krate::Guest for Component {
     fn run() -> i32 {
         let size = types::WindowSize {
             width: WIDTH,
@@ -392,4 +395,4 @@ fn i32_bytes(value: i32, buf: &mut [u8; 6]) -> &[u8] {
     buf.get(..pos).unwrap_or(b"0")
 }
 
-bindings::export!(Component with_types_in bindings);
+krate::export!(Component);

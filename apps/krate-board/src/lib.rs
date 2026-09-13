@@ -14,16 +14,13 @@
 
 extern crate alloc;
 
-extern crate krate as _krate_runtime;
 
-#[allow(warnings)]
-mod bindings;
 
 use alloc::string::String;
-use bindings::krate::gfx::{canvas2d, types as gfx};
-use bindings::krate::io::{args, stdio};
-use bindings::krate::store::kv as store_kv;
-use bindings::krate::ui::{events, tree, types, window};
+use krate::gfx::{canvas2d, types as gfx};
+use krate::bindings::krate::io::{args, stdio};
+use krate::bindings::krate::store::kv as store_kv;
+use krate::ui::{events, tree, types, window};
 
 const ROOT_ID: u64 = 1;
 const CANVAS_ID: u64 = 2;
@@ -344,7 +341,7 @@ fn hit_card(x: f32, y: f32, cols: [u8; TASK_COUNT]) -> Option<usize> {
 
 struct Component;
 
-impl bindings::Guest for Component {
+impl krate::Guest for Component {
     fn run() -> i32 {
         let size = types::WindowSize { width: WIDTH as u32, height: HEIGHT as u32 };
         let Ok(win) = window::create("Board", size) else {
@@ -421,4 +418,4 @@ impl bindings::Guest for Component {
     }
 }
 
-bindings::export!(Component with_types_in bindings);
+krate::export!(Component);

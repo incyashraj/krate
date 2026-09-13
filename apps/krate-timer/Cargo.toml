@@ -9,6 +9,8 @@ repository = "https://github.com/incyashraj/krate"
 rust-version = "1.91"
 
 [dependencies]
+# The SDK's gui world: krate::ui, krate::gfx, and every Phase 2 helper (IC-298).
+krate = { path = "../../crates/bindings-rust", features = ["gui"] }
 wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }
 
 [lib]

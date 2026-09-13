@@ -27,18 +27,16 @@
 
 #![no_std]
 
-#[allow(warnings)]
-mod bindings;
 
 extern crate alloc;
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-use bindings::krate::gfx::{canvas2d, types as gfx};
-use bindings::krate::io::{args, stdio};
-use bindings::krate::time::clock;
-use bindings::krate::ui::{events, tree, types, window};
+use krate::gfx::{canvas2d, types as gfx};
+use krate::bindings::krate::io::{args, stdio};
+use krate::bindings::krate::time::clock;
+use krate::ui::{events, tree, types, window};
 use krate::motion::Spring;
 
 const ROOT_ID: u64 = 1;
@@ -410,7 +408,7 @@ fn node(id: u64, parent: Option<u64>, kind: types::WidgetKind) -> types::WidgetN
 
 struct Component;
 
-impl bindings::Guest for Component {
+impl krate::Guest for Component {
     fn run() -> i32 {
         let raw = args::raw();
         // A real invocation carries a name and at least one whole request, so
@@ -560,4 +558,4 @@ impl bindings::Guest for Component {
     }
 }
 
-bindings::export!(Component with_types_in bindings);
+krate::export!(Component);

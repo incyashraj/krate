@@ -19,12 +19,15 @@
 //! comparison is on raw bytes -- no `format!`, no `==` on owned strings, only
 //! `krate:*` imports and no reachable panic.
 
-#[allow(warnings)]
-mod bindings;
 
-use bindings::krate::gfx::{canvas2d, types as gfx};
-use bindings::krate::io::{args, stdio};
-use bindings::krate::ui::{clipboard, events, tree, types, window};
+#![no_std]
+extern crate alloc;
+
+#[allow(unused_imports)]
+use alloc::{format, string::{String, ToString}, vec, vec::Vec};
+use krate::gfx::{canvas2d, types as gfx};
+use krate::bindings::krate::io::{args, stdio};
+use krate::ui::{clipboard, events, tree, types, window};
 
 const ROOT_ID: u64 = 1;
 const CANVAS_ID: u64 = 2;
@@ -134,7 +137,7 @@ impl App {
     }
 }
 
-impl bindings::Guest for Component {
+impl krate::Guest for Component {
     fn run() -> i32 {
         let out = stdio::stdout();
 
@@ -619,4 +622,4 @@ fn node(id: u64, parent: Option<u64>, kind: types::WidgetKind) -> types::WidgetN
     }
 }
 
-bindings::export!(Component with_types_in bindings);
+krate::export!(Component);
