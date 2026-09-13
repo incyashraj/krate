@@ -160,6 +160,16 @@ fn parse_host(source: &str) -> BTreeMap<String, Interface> {
 
     for (i, (pos, name)) in starts.iter().enumerate() {
         let end = starts.get(i + 1).map_or(source.len(), |(p, _)| *p);
+        // A region ends where the file's test module begins, not at the
+        // end of the file. The last interface's region used to run to EOF
+        // and count every `fn` in `mod tests` as one of its host functions:
+        // speech.transcription was published as 29 functions when the
+        // impl has a handful, and any test added to the file moved the
+        // number. A published count that includes the tests is not a count
+        // of anything.
+        let end = source[*pos..end]
+            .find("\n#[cfg(test)]")
+            .map_or(end, |offset| *pos + offset);
         let body = &source[*pos..end];
         let functions = body.matches("\n    fn ").count();
         // Only a function whose *whole* answer is a refusal counts. An
@@ -227,6 +237,35 @@ impl ui::clipboard::Host for Phase3GuiHost {
         let parsed = parse_host(source);
         assert_eq!(parsed["ui.menu"].state(), "not implemented");
         assert_eq!(parsed["ui.clipboard"].state(), "works");
+    }
+
+    /// The file's test module is not part of the last interface.
+    ///
+    /// Regions ran from one impl to the next, and the last one to the end
+    /// of the file -- through `mod tests`, whose every `fn` was counted as
+    /// a host function. speech.transcription was published as 29 when the
+    /// impl has three, and adding any test to the file moved the number.
+    #[test]
+    fn a_trailing_test_module_is_not_counted_as_the_last_interfaces_functions() {
+        let source = r#"
+impl speech::transcription::Host for Phase3GuiHost {
+    fn start(&mut self) -> Result<()> { Ok(Ok(())) }
+    fn stop(&mut self) -> Result<()> { Ok(Ok(())) }
+}
+
+#[cfg(test)]
+mod tests {
+    fn a_test_that_is_not_a_host_function() {}
+    fn another_one() {}
+    fn and_a_third() {}
+}
+"#;
+        let parsed = parse_host(source);
+        assert_eq!(
+            parsed["speech.transcription"].functions, 2,
+            "the impl has two functions; the three in mod tests are not host functions"
+        );
+        assert_eq!(parsed["speech.transcription"].state(), "works");
     }
 
     #[test]
