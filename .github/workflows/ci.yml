@@ -1649,6 +1649,13 @@ jobs:
       # exit 2 rather than report a pass they did not earn.
       - name: Prove release lineage catches a drifted record
         run: python3 scripts/release-lineage.py --self-test
+      # The licence map's rules -- an OR resolves to the first allowed
+      # licence, copyleft-only and unlicensed things are findings -- are
+      # proved here on every push. Whether the committed map still matches
+      # the dependency graph needs cargo-deny, so that check lives in the
+      # audit job below (IC-176, CP1 exit test).
+      - name: Prove the licence map flags what it should
+        run: python3 scripts/licence-map.py --self-test
       # The open-core boundary: the player and format are MIT/Apache, Studio
       # and the hub worker are BSL 1.1. It breaks by an MIT crate quietly
       # depending on the product layer, not by anyone relicensing a file
@@ -1814,6 +1821,11 @@ jobs:
         run: cargo install cargo-deny --locked --version 0.19.4
       - name: Run cargo-deny
         run: scripts/check-dependencies.sh
+      # docs/licence-map.md is generated from this same dependency graph and
+      # committed, so a new dependency or a licence that changed on upgrade
+      # is a diff a person reviewed, never a surprise (IC-176).
+      - name: The committed licence map still matches the dependency graph
+        run: python3 scripts/licence-map.py --check
       # The gate above answers "is anything matched right now" and throws the
       # answer away. A release needs to show which advisories matched, what
       # path brings each one in, and when the question was last asked -- so
