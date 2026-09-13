@@ -12566,6 +12566,32 @@ fn launch_target(bundle: &Path) -> Result<PathBuf> {
         .timeout(std::time::Duration::from_secs(60))
         .call()
         .with_context(|| format!("could not download {raw}"))?;
+
+    // Only a whole file (IC-393, test 481).
+    //
+    // No Range header is ever sent, so the only correct success here is 200.
+    // A server that answers 206 is handing over a piece of the file, and
+    // ureq's `call()` only fails on 4xx and 5xx -- so the piece was read to
+    // the end, cached under its own digest, and opened. Measured: a server
+    // returning 500 of 2000 bytes produced a 500-byte cache entry and the
+    // words "this is not a Krate app, or the file is damaged", which blames
+    // the file for what the server did.
+    //
+    // Checked by status rather than by comparing against Content-Length,
+    // because a truncated body with an honest length is a different failure
+    // (the read fails) and a lying length is caught by the digest. This is
+    // the one case where the transfer succeeded and is still incomplete.
+    let status = response.status();
+    if status != 200 {
+        anyhow::bail!(
+            "{raw} answered {status} {}, which is not a whole file.\n\
+             Krate asked for the entire app and did not ask for a byte range, \
+             so anything but 200 means what arrived is a piece of it.\n\
+             Nothing was saved or run.",
+            response.status_text(),
+        );
+    }
+
     let mut bytes = Vec::new();
     {
         use std::io::Read;
@@ -20422,6 +20448,63 @@ mod url_cache_tests {
             .expect("the hub's own digest must be the one accepted");
         verify_link_claim(&format!("https://krate.tech/a/{archive}"), bytes)
             .expect_err("the archive identity is not what /a/ names");
+    }
+
+    /// A partial response is not a file (IC-393, test 481).
+    ///
+    /// No Range header is ever sent, so 200 is the only correct success.
+    /// ureq's `call()` fails on 4xx and 5xx only, so a 206 used to be read
+    /// to the end and cached as a whole app -- measured, a server returning
+    /// 500 of 2000 bytes produced a 500-byte cache entry and an error
+    /// blaming the file for being damaged.
+    ///
+    /// The source is read because the decision sits between the fetch and
+    /// the read, where a unit test cannot reach it without a network. What
+    /// it asserts is ordering: the status is judged BEFORE the body is
+    /// consumed, since a check after `into_reader()` would refuse only
+    /// after paying for the download it refuses.
+    #[test]
+    fn a_partial_response_is_refused_before_its_body_is_read() {
+        let source = include_str!("main.rs");
+        let start = source
+            .find("fn launch_target(")
+            .expect("launch_target exists");
+        let end = source[start..]
+            .find("\n}\n")
+            .map(|offset| start + offset)
+            .expect("closing brace");
+        let code: String = source[start..end]
+            .lines()
+            .map(str::trim_start)
+            .filter(|line| !line.starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let status_at = code
+            .find("if status != 200 {")
+            .expect("launch_target refuses anything that is not a whole file");
+        let read_at = code
+            .find("into_reader()")
+            .expect("launch_target reads the body");
+        assert!(
+            status_at < read_at,
+            "the status must be judged before the body is read, or a partial \
+             response is paid for and then refused",
+        );
+
+        let refusal = code[status_at..]
+            .find("anyhow::bail!")
+            .expect("a partial response is refused, not noted");
+        assert!(
+            refusal < 200,
+            "the refusal must follow the status check directly",
+        );
+        // 200 exactly. `>= 200 && < 300` would let 206 back in, which is
+        // the whole case.
+        assert!(
+            !code.contains("status >= 200") && !code.contains("(200..300)"),
+            "a range of success codes readmits 206, which is a piece of a file",
+        );
     }
 
     /// The download path does not merely call the check -- it acts on it.
