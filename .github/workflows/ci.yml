@@ -1700,11 +1700,16 @@ jobs:
       # is one file with no module boundary), and a mirrored test that never
       # runs cannot catch the drift it was written for. Three of these
       # existed and nothing executed them.
+      # The publish door runs crates/bundle compiled to WebAssembly (IC-833,
+      # K-309), so the worker tests need the module built first. Ubuntu's
+      # clang targets wasm32, which ring's C parts need.
+      - name: Build the hub validator
+        run: TARGET_CC=clang scripts/build-hub-validator.sh
       - name: Hub worker tests
         run: |
           for test in cloud/worker/test/*.test.mjs; do
             echo "== $test"
-            node "$test"
+            node --experimental-wasm-modules "$test"
           done
       # The build service, driven as a real process with a stub hub and a
       # fake engine: ownership on every job operation, restart honesty,

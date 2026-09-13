@@ -23,9 +23,18 @@ serde_json = { workspace = true }
 sha2 = "0.10.9"
 tempfile.workspace = true
 thiserror.workspace = true
-ureq.workspace = true
+# Optional so the same crate builds for wasm32 and runs at the hub's door:
+# the validator the hub runs is this crate, not a copy of it (IC-833, the
+# "one shared validator" plan item). Everything but HTTP fetching builds
+# without it.
+ureq = { workspace = true, optional = true }
 wasmparser.workspace = true
 zip.workspace = true
+
+[features]
+default = ["fetch"]
+# Fetching a bundle by URL. Off in the wasm build the hub runs.
+fetch = ["dep:ureq"]
 
 [build-dependencies]
 # The WIT digest the validator reports (IC-210). Same crate the library

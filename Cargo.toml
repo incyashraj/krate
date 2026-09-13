@@ -14,6 +14,7 @@ members = [
     "crates/bindings-rust",
     "crates/layout",
     "crates/bundle",
+    "crates/validator-wasm",
     "crates/manifest",
     "crates/policy",
     "crates/runtime",

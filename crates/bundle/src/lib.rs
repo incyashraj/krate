@@ -206,6 +206,7 @@ pub const MAX_BUNDLE_BYTES: u64 = 256 * 1024 * 1024;
 ///
 /// ureq's own default, made explicit because the read timeout beside it is
 /// not defaulted and the pair should be read together.
+#[cfg(feature = "fetch")]
 const FETCH_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// How long a transfer may produce NOTHING before it is given up on (K-275).
@@ -218,6 +219,7 @@ const FETCH_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_sec
 /// Thirty seconds of complete silence is far longer than any healthy
 /// connection goes between packets, and short enough that a person is not
 /// left staring at a command that will never return.
+#[cfg(feature = "fetch")]
 const FETCH_SILENCE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 /// Largest single entry we will decompress. Bounds the classic zip bomb, where
 /// a small archive expands to an enormous file.
@@ -380,6 +382,11 @@ pub enum BundleError {
     InsecureUrl { url: String },
     #[error("could not fetch {url}: {message}")]
     Fetch { url: String, message: String },
+    #[error(
+        "bundle expands to more than {limit} bytes, which is more than this door holds in \
+         memory to judge it"
+    )]
+    ExpandsTooFar { limit: u64 },
 }
 
 impl BundleError {
@@ -1459,6 +1466,295 @@ pub fn open_bytes(bytes: &[u8]) -> Result<OpenBundle> {
     open_reader(io::Cursor::new(bytes.to_vec()))
 }
 
+/// What the validator concluded about a bundle it judged in memory, for a
+/// door that has the bytes and no disk: the hub's publish endpoint (IC-833,
+/// K-309), where this crate runs as WebAssembly.
+///
+/// Every rule here is the one `open` applies: the record-count duplicate
+/// check, the entry preflight, the profile, the manifest, the component
+/// against its declared world, the per-namespace ceilings, the identities,
+/// the signature recomputed over the entries, the release id, the fork
+/// record. `open` writes the entries to a temp directory and reads them
+/// back; this keeps them in memory under a caller-set ceiling. The test
+/// `the_two_doors_agree` holds them to the same answers.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Judgement {
+    /// Which rules judged the component, and the WIT they came from (IC-210).
+    pub validator: u32,
+    pub wit: String,
+    pub manifest: Manifest,
+    /// Plain SHA-256 of the bytes: the hub's store key.
+    pub archive: String,
+    /// The execution identity (what runs).
+    pub execution: String,
+    /// The project identity, when there is genuinely more to rebuild.
+    pub project: Option<String>,
+    pub signature: JudgedSignature,
+    /// The signed release, when the signature verifies.
+    pub release: Option<signing::Release>,
+    pub derived_from: Option<DerivedFrom>,
+    /// How many entries were read, and how many bytes they expanded to.
+    pub entries: usize,
+    pub expanded_bytes: u64,
+}
+
+/// The signature's state, in words a door can act on.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct JudgedSignature {
+    /// `absent`, `valid`, `bad`, `tampered`, `unknown-schema` or `damaged`.
+    pub state: String,
+    pub public_key: Option<String>,
+    pub detail: Option<String>,
+}
+
+/// Judge a bundle held in memory. See [`Judgement`].
+///
+/// `max_expanded` bounds the bytes every entry expands to together, on top
+/// of the per-namespace ceilings `open` applies; a door in a small runtime
+/// sets it to what it can hold. The archive itself is bounded by
+/// [`MAX_BUNDLE_BYTES`] as everywhere else.
+pub fn judge_bytes(bytes: &[u8], max_expanded: u64) -> Result<Judgement> {
+    use std::collections::BTreeMap;
+
+    if bytes.len() as u64 > MAX_BUNDLE_BYTES {
+        return Err(BundleError::TooLarge {
+            size: bytes.len() as u64,
+        });
+    }
+    refuse_undeclared_duplicate(bytes)?;
+    let mut archive = ZipArchive::new(io::Cursor::new(bytes))?;
+    preflight_entries(&mut archive)?;
+    check_profile(&mut archive)?;
+
+    // The same namespaces `open` extracts, under the same ceilings, read
+    // with the same forged-size guard: the declared size is the archive's
+    // claim, so every entry is read to its ceiling plus one and judged on
+    // what actually came out.
+    let mut raw: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    let mut expanded = 0u64;
+    let mut asset_bytes = 0u64;
+    let mut source_bytes = 0u64;
+    let mut asset_count = 0usize;
+    let names: Vec<String> = (0..archive.len())
+        .map(|index| {
+            archive
+                .by_index(index)
+                .map(|entry| entry.name().to_string())
+        })
+        .collect::<std::result::Result<_, _>>()?;
+    for name in names {
+        if name.ends_with('/') {
+            continue;
+        }
+        let (ceiling, class) = if name == MANIFEST_ENTRY
+            || name == COMPONENT_ENTRY
+            || name == SIGNATURE_ENTRY
+            || name == DERIVED_FROM_ENTRY
+        {
+            (MAX_ENTRY_BYTES, 'c')
+        } else if name.starts_with(ASSETS_PREFIX) {
+            safe_asset_relative_path(&name)?;
+            asset_count += 1;
+            if asset_count > MAX_ASSET_COUNT {
+                return Err(BundleError::TooManyAssets);
+            }
+            (MAX_ASSET_BYTES, 'a')
+        } else if name.starts_with(SOURCE_PREFIX) {
+            safe_source_relative_path(&name)?;
+            (MAX_ENTRY_BYTES, 's')
+        } else if name.starts_with(SDK_PREFIX) {
+            safe_prefixed_relative_path(&name, SDK_PREFIX)?;
+            (MAX_ENTRY_BYTES, 's')
+        } else {
+            continue; // unknown entries are ignored, as `open` ignores them
+        };
+        let mut entry = archive.by_name(&name)?;
+        if entry.size() > ceiling {
+            return Err(BundleError::EntryTooLarge { entry: name });
+        }
+        let mut body = Vec::new();
+        entry
+            .by_ref()
+            .take(ceiling + 1)
+            .read_to_end(&mut body)
+            .map_err(|err| BundleError::Io {
+                path: PathBuf::from(&name),
+                source: err,
+            })?;
+        let len = body.len() as u64;
+        if len > ceiling {
+            return Err(BundleError::EntryTooLarge { entry: name });
+        }
+        match class {
+            'a' => {
+                asset_bytes = asset_bytes
+                    .checked_add(len)
+                    .ok_or(BundleError::AssetsTooLarge)?;
+                if asset_bytes > MAX_TOTAL_ASSET_BYTES {
+                    return Err(BundleError::AssetsTooLarge);
+                }
+            }
+            's' => {
+                source_bytes = source_bytes
+                    .checked_add(len)
+                    .ok_or(BundleError::SourceTooLarge)?;
+                if source_bytes > MAX_TOTAL_SOURCE_BYTES {
+                    return Err(BundleError::SourceTooLarge);
+                }
+            }
+            _ => {}
+        }
+        expanded = expanded
+            .checked_add(len)
+            .ok_or(BundleError::ExpandsTooFar {
+                limit: max_expanded,
+            })?;
+        if expanded > max_expanded {
+            return Err(BundleError::ExpandsTooFar {
+                limit: max_expanded,
+            });
+        }
+        raw.insert(name, body);
+    }
+
+    let manifest_raw = raw
+        .get(MANIFEST_ENTRY)
+        .ok_or(BundleError::MissingEntry(MANIFEST_ENTRY))?;
+    let manifest_text = String::from_utf8_lossy(manifest_raw).into_owned();
+    let manifest =
+        Manifest::parse(&manifest_text).map_err(|err| BundleError::Manifest(err.to_string()))?;
+    let declared = manifest.app.entry.display().to_string();
+    if declared != COMPONENT_ENTRY {
+        return Err(BundleError::EntryMismatch { declared });
+    }
+    let component = raw
+        .get(COMPONENT_ENTRY)
+        .ok_or(BundleError::MissingEntry(COMPONENT_ENTRY))?;
+    check_component(component, COMPONENT_ENTRY, &manifest)?;
+
+    // The digest maps, exactly as `entries_for_digest` builds them: the
+    // manifest with its line endings folded, the signature never included,
+    // the profile never included.
+    let mut project_entries: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for (name, body) in &raw {
+        if name == SIGNATURE_ENTRY || name == PROFILE_ENTRY {
+            continue;
+        }
+        let body = if name == MANIFEST_ENTRY {
+            manifest_bytes_for_digest(body)
+        } else {
+            body.clone()
+        };
+        project_entries.insert(name.clone(), body);
+    }
+    // digest_layer keeps only what its layer includes, so one map serves
+    // both identities.
+    let execution = provenance::digest_layer(provenance::Layer::Execution, &project_entries);
+    let project = provenance::digest_layer(provenance::Layer::Project, &project_entries);
+
+    let derived_from = match raw.get(DERIVED_FROM_ENTRY) {
+        None => None,
+        Some(body) => {
+            let record: DerivedFrom = serde_json::from_slice(body).map_err(|err| {
+                BundleError::Manifest(format!("{DERIVED_FROM_ENTRY} is not readable: {err}"))
+            })?;
+            if record.schema != DERIVED_FROM_SCHEMA {
+                return Err(BundleError::Manifest(format!(
+                    "{DERIVED_FROM_ENTRY} uses a newer format ({}) than this copy of Krate \
+                     understands",
+                    record.schema
+                )));
+            }
+            Some(record)
+        }
+    };
+
+    let (signature, release) = match raw.get(SIGNATURE_ENTRY) {
+        None => (
+            JudgedSignature {
+                state: "absent".to_string(),
+                public_key: None,
+                detail: None,
+            },
+            None,
+        ),
+        Some(body) => match serde_json::from_slice::<signing::SignatureEnvelope>(body) {
+            Err(err) => (
+                JudgedSignature {
+                    state: "damaged".to_string(),
+                    public_key: None,
+                    detail: Some(err.to_string()),
+                },
+                None,
+            ),
+            Ok(envelope) => {
+                let verdict = signing::verify_envelope(&envelope, &project_entries);
+                let state = match &verdict {
+                    signing::Verdict::Valid { .. } => "valid",
+                    signing::Verdict::BadSignature => "bad",
+                    signing::Verdict::Tampered { .. } => "tampered",
+                    signing::Verdict::UnknownSchema { .. } => "unknown-schema",
+                };
+                let release = if verdict.is_genuinely_signed() {
+                    let statement = statement::SignedStatement::build(
+                        &envelope.namespace,
+                        &envelope.version,
+                        envelope.signed_at,
+                        &project_entries,
+                    );
+                    let authority = envelope
+                        .delegation
+                        .as_ref()
+                        .map(|d| d.delegation.root.clone())
+                        .unwrap_or_else(|| envelope.public_key.clone());
+                    Some(signing::Release {
+                        id: signing::release_id(&authority, &statement.digest()),
+                        namespace: envelope.namespace.clone(),
+                        version: envelope.version.clone(),
+                        signed_at: envelope.signed_at,
+                        authority,
+                    })
+                } else {
+                    None
+                };
+                (
+                    JudgedSignature {
+                        state: state.to_string(),
+                        public_key: Some(envelope.public_key.clone()),
+                        detail: match &verdict {
+                            signing::Verdict::Valid { .. } => None,
+                            other => Some(other.to_string()),
+                        },
+                    },
+                    release,
+                )
+            }
+        },
+    };
+
+    let archive_sha256: String = {
+        use sha2::{Digest, Sha256};
+        Sha256::digest(bytes)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
+    };
+    let entries = raw.len();
+    Ok(Judgement {
+        validator: imports::VALIDATOR_VERSION,
+        wit: imports::WIT_DIGEST.to_string(),
+        manifest,
+        archive: archive_sha256,
+        execution: execution.digest,
+        project: (project.entries.len() > execution.entries.len()).then_some(project.digest),
+        signature,
+        release,
+        derived_from,
+        entries,
+        expanded_bytes: expanded,
+    })
+}
+
 pub fn open_reader<R: Read + io::Seek>(reader: R) -> Result<OpenBundle> {
     let mut archive = ZipArchive::new(reader)?;
 
@@ -2303,6 +2599,7 @@ fn extract_entry<R: Read + io::Seek>(
 /// (WSAETIMEDOUT), and a text match on the first left every Windows user
 /// with three copies of the url and two "Network Error"s instead of the
 /// plain sentence.
+#[cfg(feature = "fetch")]
 fn is_read_timeout(err: &ureq::Error) -> bool {
     let mut cause: Option<&(dyn std::error::Error + 'static)> = Some(err);
     while let Some(current) = cause {
@@ -2319,6 +2616,7 @@ fn is_read_timeout(err: &ureq::Error) -> bool {
     err.to_string().contains("timed out")
 }
 
+#[cfg(feature = "fetch")]
 fn map_fetch_error(_url: &str, err: &ureq::Error) -> String {
     if is_read_timeout(err) {
         return format!(
@@ -2337,6 +2635,7 @@ fn map_fetch_error(_url: &str, err: &ureq::Error) -> String {
 /// and local development can serve a bundle from `127.0.0.1` without a
 /// certificate. Fetching grants no capability: the returned bundle goes through
 /// the same policy resolution as one opened from disk.
+#[cfg(feature = "fetch")]
 pub fn fetch(url: &str, allow_insecure_http: bool) -> Result<OpenBundle> {
     fetch_resolved(url, allow_insecure_http).map(|fetched| fetched.bundle)
 }
@@ -2344,6 +2643,7 @@ pub fn fetch(url: &str, allow_insecure_http: bool) -> Result<OpenBundle> {
 /// What [`fetch_resolved`] brings back: the bundle, the URL the bytes were
 /// finally served from, and the content address that URL named, when it
 /// named one.
+#[cfg(feature = "fetch")]
 pub struct Fetched {
     pub bundle: OpenBundle,
     /// Where the bytes came from after every redirect. A channel link
@@ -2368,6 +2668,7 @@ pub struct Fetched {
 /// The address is the plain SHA-256 of the file -- the hub's store key --
 /// not the schema-tagged archive identity, which is a different number
 /// over the same bytes.
+#[cfg(feature = "fetch")]
 fn check_address(final_url: &str, bytes: &[u8]) -> Result<Option<String>> {
     let path = final_url.split(['?', '#']).next().unwrap_or(final_url);
     let segment = path.rsplit('/').next().unwrap_or("");
@@ -2400,6 +2701,7 @@ fn check_address(final_url: &str, bytes: &[u8]) -> Result<Option<String>> {
     Ok(Some(segment.to_string()))
 }
 
+#[cfg(feature = "fetch")]
 pub fn fetch_resolved(url: &str, allow_insecure_http: bool) -> Result<Fetched> {
     if url.starts_with("http://") && !allow_insecure_http {
         return Err(BundleError::InsecureUrl {
@@ -3859,6 +4161,7 @@ required = true
     /// The bytes served at a content address must be that content
     /// (IC-389, test 471). A short link is a prefix of the address; a
     /// channel link redirects to a fixed address and is held to that one.
+    #[cfg(feature = "fetch")]
     #[test]
     fn fetched_bytes_must_match_the_address_they_were_served_at() {
         use std::io::{Read as _, Write as _};
@@ -3945,6 +4248,188 @@ required = true
         let plain = at("/app.krate".to_string()).expect("a plain file link names no address");
         assert_eq!(plain.address, None);
         let _ = server.join();
+    }
+
+    /// The in-memory judge and the on-disk open are one validator with
+    /// two doors (IC-833, the "one shared validator" plan item). Held to the
+    /// same answers on a plain app, a signed one, a fork, a tampered one,
+    /// and every adversarial fixture the tree keeps.
+    #[test]
+    fn the_two_doors_agree() {
+        let dir = TempDir::new().expect("tempdir");
+        let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
+        let component = write_temp(dir.path(), "code.wasm", MINIMAL_COMPONENT);
+        let source = dir.path().join("src-tree");
+        fs::create_dir_all(source.join("src")).unwrap();
+        fs::write(source.join("Cargo.toml"), "[package]\nname = \"x\"\n").unwrap();
+        fs::write(source.join("src/lib.rs"), "// code\n").unwrap();
+
+        let plain = dir.path().join("plain.krate");
+        pack(&manifest, &component, &plain).unwrap();
+        let with_source = dir.path().join("with-source.krate");
+        pack_with_source(&manifest, &component, None, Some(&source), &with_source).unwrap();
+        let signed = dir.path().join("signed.krate");
+        fs::copy(&with_source, &signed).unwrap();
+        let key = signing::SigningKey::from_pkcs8(&signing::SigningKey::generate_pkcs8().unwrap())
+            .unwrap();
+        sign_bundle(&signed, &key, "ns", "1.0.0", 1_700_000_000).unwrap();
+        let fork = dir.path().join("fork.krate");
+        let record = derived_from_record(&signed, 1_700_000_001).unwrap();
+        pack_with_lineage(
+            &manifest,
+            &component,
+            None,
+            None,
+            None,
+            Some(&record),
+            &fork,
+        )
+        .unwrap();
+        let tampered = dir.path().join("tampered.krate");
+        fs::copy(&signed, &tampered).unwrap();
+        replace_entry(&tampered, COMPONENT_ENTRY, OTHER_COMPONENT).unwrap();
+
+        for path in [&plain, &with_source, &signed, &fork, &tampered] {
+            let bytes = fs::read(path).unwrap();
+            let judged = judge_bytes(&bytes, 64 * 1024 * 1024).unwrap_or_else(|err| {
+                panic!(
+                    "{}: judge refused a bundle open accepts: {err}",
+                    path.display()
+                )
+            });
+            let opened = open(path).unwrap();
+            let name = path.display();
+            assert_eq!(judged.manifest, *opened.manifest(), "{name}: manifest");
+            assert_eq!(
+                judged.execution,
+                opened.digest().unwrap().digest,
+                "{name}: execution identity"
+            );
+            let open_project = opened.project_digest().unwrap();
+            let open_execution = opened.digest().unwrap();
+            assert_eq!(
+                judged.project,
+                (open_project.entries.len() > open_execution.entries.len())
+                    .then_some(open_project.digest),
+                "{name}: project identity"
+            );
+            assert_eq!(judged.release, opened.release().unwrap(), "{name}: release");
+            assert_eq!(
+                judged.derived_from,
+                opened.derived_from().unwrap(),
+                "{name}: fork record"
+            );
+            let open_state = match opened.signature_verdict().unwrap() {
+                None => "absent",
+                Some(signing::Verdict::Valid { .. }) => "valid",
+                Some(signing::Verdict::BadSignature) => "bad",
+                Some(signing::Verdict::Tampered { .. }) => "tampered",
+                Some(signing::Verdict::UnknownSchema { .. }) => "unknown-schema",
+            };
+            assert_eq!(
+                judged.signature.state, open_state,
+                "{name}: signature state"
+            );
+        }
+        assert_eq!(
+            judge_bytes(&fs::read(&signed).unwrap(), 64 * 1024 * 1024)
+                .unwrap()
+                .signature
+                .state,
+            "valid"
+        );
+        assert_eq!(
+            judge_bytes(&fs::read(&tampered).unwrap(), 64 * 1024 * 1024)
+                .unwrap()
+                .signature
+                .state,
+            "tampered"
+        );
+        assert!(judge_bytes(&fs::read(&fork).unwrap(), 64 * 1024 * 1024)
+            .unwrap()
+            .derived_from
+            .is_some());
+
+        // What open refuses, judge refuses, for the same reason.
+        let duplicate = include_bytes!("../tests/fixtures/duplicate-from-another-writer.krate");
+        let locked = include_bytes!("../tests/fixtures/locked-entry.krate");
+        let module = {
+            let m = write_temp(dir.path(), "module.wasm", b"\0asm\x01\0\0\0");
+            let out = dir.path().join("module.krate");
+            // pack refuses a module, so write the archive by hand
+            let mut w = ZipWriter::new(File::create(&out).unwrap());
+            let o = SimpleFileOptions::default();
+            w.start_file(MANIFEST_ENTRY, o).unwrap();
+            w.write_all(MANIFEST.as_bytes()).unwrap();
+            w.start_file(COMPONENT_ENTRY, o).unwrap();
+            w.write_all(&fs::read(&m).unwrap()).unwrap();
+            w.finish().unwrap();
+            fs::read(&out).unwrap()
+        };
+        for (what, bytes) in [
+            ("a duplicate from another writer", duplicate.to_vec()),
+            ("an encrypted entry", locked.to_vec()),
+            ("a module where a component belongs", module),
+            ("not a zip at all", b"PK\x03\x04 words".to_vec()),
+        ] {
+            let by_open = open_bytes(&bytes).err().map(|e| e.to_string());
+            let by_judge = judge_bytes(&bytes, 64 * 1024 * 1024)
+                .err()
+                .map(|e| e.to_string());
+            assert!(by_open.is_some(), "{what}: open must refuse this fixture");
+            assert_eq!(
+                by_judge, by_open,
+                "{what}: the two doors must refuse for the same reason"
+            );
+        }
+
+        // The door's own ceiling is its own refusal, named as such.
+        let err =
+            judge_bytes(&fs::read(&with_source).unwrap(), 16).expect_err("16 bytes is not enough");
+        assert!(
+            matches!(err, BundleError::ExpandsTooFar { limit: 16 }),
+            "{err}"
+        );
+    }
+
+    /// Write the hub's signed, tampered and module-not-component fixtures
+    /// from the committed bounce bundle. Run by hand when they need
+    /// regenerating:
+    ///
+    ///     cargo test -p krate-bundle --lib regenerate_hub_fixtures -- --ignored
+    #[test]
+    #[ignore]
+    fn regenerate_hub_fixtures() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let fixtures = root.join("cloud/worker/test/fixtures");
+        let bounce = root.join("evidence/ported/bounce.krate");
+        let signed = fixtures.join("bounce-signed.krate");
+        fs::copy(&bounce, &signed).unwrap();
+        let key = signing::SigningKey::from_pkcs8(&signing::SigningKey::generate_pkcs8().unwrap())
+            .unwrap();
+        sign_bundle(&signed, &key, "dev.krate.bounce", "1.0.0", 1_700_000_000).unwrap();
+        let tampered = fixtures.join("bounce-tampered.krate");
+        fs::copy(&signed, &tampered).unwrap();
+        replace_entry(&tampered, COMPONENT_ENTRY, OTHER_COMPONENT).unwrap();
+        let module = fixtures.join("module-not-component.krate");
+        let opened = open(&bounce).unwrap();
+        let manifest = fs::read(opened.manifest_path()).unwrap();
+        let mut w = ZipWriter::new(File::create(&module).unwrap());
+        let o = SimpleFileOptions::default();
+        w.start_file(MANIFEST_ENTRY, o).unwrap();
+        w.write_all(&manifest).unwrap();
+        w.start_file(COMPONENT_ENTRY, o).unwrap();
+        w.write_all(b"\0asm\x01\0\0\0").unwrap();
+        w.finish().unwrap();
+        assert!(matches!(
+            open(&signed).unwrap().signature_verdict().unwrap(),
+            Some(signing::Verdict::Valid { .. })
+        ));
+        assert!(matches!(
+            open(&tampered).unwrap().signature_verdict().unwrap(),
+            Some(signing::Verdict::Tampered { .. })
+        ));
+        assert!(open(&module).is_err());
     }
 
     /// The sweep is scoped by prefix: asking it to clear one family of
@@ -5657,6 +6142,7 @@ required = true
         );
     }
 
+    #[cfg(feature = "fetch")]
     #[test]
     fn a_server_that_stops_responding_does_not_hold_the_run_open() {
         // K-275. ureq bounds CONNECT and leaves READ unbounded, so a host
@@ -5737,6 +6223,7 @@ required = true
     /// Ignored by default: the real budget is thirty seconds of silence and
     /// the point is to WAIT for it. Run it deliberately with
     /// `cargo test -p krate-bundle -- --ignored a_download_gives_up`.
+    #[cfg(feature = "fetch")]
     #[test]
     #[ignore = "waits out the real 30s silence budget; run deliberately"]
     fn a_download_gives_up_on_a_silent_server() {
@@ -5874,6 +6361,7 @@ required = true
     /// Driven through a real socket with a small cap so the behaviour is
     /// tested rather than the arithmetic: the server sends more than the
     /// reader may keep, and the refusal must know it saw past the limit.
+    #[cfg(feature = "fetch")]
     #[test]
     fn a_download_past_the_cap_is_refused_rather_than_truncated() {
         use std::io::{Read as _, Write as _};
@@ -5964,6 +6452,7 @@ required = true
 
     /// A server that redirects forever does not spin the client forever,
     /// and a download with no Content-Length still works (IC-393).
+    #[cfg(feature = "fetch")]
     #[test]
     fn a_redirect_loop_ends_and_a_length_less_download_still_opens() {
         use std::io::{Read as _, Write as _};
@@ -6051,6 +6540,7 @@ required = true
         );
     }
 
+    #[cfg(feature = "fetch")]
     #[test]
     fn a_truncated_download_is_not_blamed_on_the_file() {
         // K-274. A server understating Content-Length makes the client stop
@@ -6116,6 +6606,7 @@ required = true
         );
     }
 
+    #[cfg(feature = "fetch")]
     #[test]
     fn plain_http_is_refused_unless_explicitly_allowed() {
         let err = fetch("http://example.com/app.krate", false).expect_err("http must be refused");

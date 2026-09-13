@@ -2481,6 +2481,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "krate-validator-wasm"
+version = "0.1.0"
+dependencies = [
+ "getrandom 0.2.17",
+ "krate-bundle",
+ "serde_json",
+]
+
+[[package]]
 name = "kurbo"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

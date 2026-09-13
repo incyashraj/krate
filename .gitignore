@@ -130,3 +130,6 @@ __pycache__/
 
 # A local replay writes its matrix here; the retained ones are evidence/e3/run-<ci-run>-*.tsv
 evidence/e3/replay-*.tsv
+# Built by scripts/build-hub-validator.sh; not committed (ring's C parts
+# compile differently per clang).
+cloud/worker/src/validator.wasm

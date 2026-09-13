@@ -7,6 +7,14 @@
 name = "krate-hub"
 main = "src/index.js"
 compatibility_date = "2026-01-01"
+
+# The bundle validator, compiled from crates/bundle to WebAssembly by
+# scripts/build-hub-validator.sh (run it before deploying). The publish
+# door judges every upload with it -- the same code `krate run` uses.
+[[rules]]
+type = "CompiledWasm"
+globs = ["**/*.wasm"]
+fallthrough = true
 account_id = "1ded170dc582113e578faac5034be4ce"
 
 [[r2_buckets]]

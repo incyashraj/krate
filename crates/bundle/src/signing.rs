@@ -107,6 +107,9 @@ impl SigningKey {
     /// Lives here rather than in the CLI so that the one crate holding the
     /// crypto dependency is the one that understands keys. A caller gets
     /// bytes to store; it never has to know which curve or encoding.
+    // Key generation needs the platform's randomness, which the wasm build
+    // that only verifies does not have (K-309).
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     pub fn generate_pkcs8() -> Result<Vec<u8>, SigningError> {
         let rng = ring::rand::SystemRandom::new();
         Ed25519KeyPair::generate_pkcs8(&rng)
@@ -494,6 +497,9 @@ impl FullVerdict {
     /// Separated because this is the one failure that means the bytes in
     /// front of you are not the bytes anybody signed -- as opposed to a key
     /// question, which is about who vouched rather than for what.
+    // Key generation needs the platform's randomness, which the wasm build
+    // that only verifies does not have (K-309).
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     pub fn was_tampered(&self) -> bool {
         matches!(self.signature, Verdict::Tampered { .. })
     }

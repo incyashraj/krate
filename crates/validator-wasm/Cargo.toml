@@ -1,0 +1,20 @@
+[package]
+name = "krate-validator-wasm"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "The bundle validator as a WebAssembly module, so the hub's door runs the same code the CLI does"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+krate-bundle = { path = "../bundle", default-features = false }
+serde_json = { workspace = true }
+# ring pulls getrandom, which on wasm32-unknown-unknown wants either a
+# JavaScript backend (wasm-bindgen imports the Worker cannot satisfy) or a
+# custom one. Verification never draws randomness, so the custom backend
+# below refuses, and the module has no imports at all.
+getrandom = { version = "0.2", features = ["custom"] }

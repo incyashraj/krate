@@ -21,6 +21,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import worker from "../src/index.js";
 import { r2Mock } from "./r2-mock.mjs";
+import { patchStored } from "./zip-tools.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..", "..");
@@ -118,14 +119,16 @@ const MANIFEST_CAPS = ["ui.window:create", "io.stdout", "io.args"];
   // same-length text that has no [app] table. Stored means no CRC-checked
   // inflate stands in the way, so the reader sees exactly this text.
   const e = env();
-  const bytes = new Uint8Array(STORED);
-  const text = new TextDecoder("latin1").decode(bytes);
-  const at = text.indexOf("[app]");
-  assert.ok(at > 0, "the fixture carries an [app] table to break");
-  bytes.set(new TextEncoder().encode("[xyz]"), at);
+  const bytes = patchStored(STORED, "manifest.toml", (content) => {
+    const text = new TextDecoder("latin1").decode(content);
+    const at = text.indexOf("[app]");
+    assert.ok(at >= 0, "the fixture carries an [app] table to break");
+    content.set(new TextEncoder().encode("[xyz]"), at);
+    return content;
+  });
   const res = await worker.fetch(publish(bytes), e);
   assert.strictEqual(res.status, 422, await res.clone().text());
-  assert.match(await res.text(), /\[app\]/);
+  assert.match(await res.text(), /manifest/, "refused as a manifest problem, in the parser's words");
 }
 
 /* ---- an archive with a manifest but no code.wasm entry is refused ------ */

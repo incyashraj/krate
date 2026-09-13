@@ -12,13 +12,19 @@
  */
 import assert from "node:assert";
 import { deflateRawSync } from "node:zlib";
-import worker, { inflateBounded } from "../src/index.js";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+import worker from "../src/index.js";
 import { r2Mock, sha256Hex } from "./r2-mock.mjs";
+import { crc32 } from "./zip-tools.mjs";
 
 const MANIFEST = new TextEncoder().encode(
   '[app]\nid = "dev.krate.door"\nname = "Door"\nversion = "0.1.0"\nentry = "code.wasm"\nworld = "krate:app/cli@0.1.0"\n',
 );
-const WASM = new Uint8Array([0, 0x61, 0x73, 0x6d, 0x0d, 0, 1, 0]);
+// A real component with a `run` export: the validator judges the component
+// against the declared world, so eight header bytes no longer pass.
+const WASM = new Uint8Array(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "crates", "bundle", "tests", "fixtures", "minimal-run.wasm")));
 
 function env(bundles = r2Mock()) {
   const kv = new Map([
@@ -63,15 +69,18 @@ function zip(entries, { declaredCount } = {}) {
     const size = e.size ?? e.data.byteLength;
     const method = e.deflate ? 8 : 0;
     const flags = e.flags ?? 0;
+    // A real CRC over the uncompressed data: the validator checks it, and
+    // a zero would be refused as a checksum before any rule was reached.
+    const crc = crc32(e.data) >>> 0;
     const local = new Uint8Array([
       ...le32(0x04034b50), ...le16(20), ...le16(flags), ...le16(method), ...le16(0), ...le16(0),
-      ...le32(0), ...le32(stored.byteLength), ...le32(size), ...le16(name.length), ...le16(0),
+      ...le32(crc), ...le32(stored.byteLength), ...le32(size), ...le16(name.length), ...le16(0),
       ...name,
     ]);
     central.push(
       new Uint8Array([
         ...le32(0x02014b50), ...le16(20), ...le16(20), ...le16(flags), ...le16(method), ...le16(0), ...le16(0),
-        ...le32(0), ...le32(stored.byteLength), ...le32(size), ...le16(name.length), ...le16(0), ...le16(0),
+        ...le32(crc), ...le32(stored.byteLength), ...le32(size), ...le16(name.length), ...le16(0), ...le16(0),
         ...le16(0), ...le16(0), ...le32(0), ...le32(offset), ...name,
       ]),
     );
@@ -128,7 +137,7 @@ const refused = [
   ["an entry declaring 600 MiB", zip([...good(), { name: "assets/big", data: WASM, size: 600 * 1024 * 1024 }]), /declares more than/],
   ["entries declaring 1.5 GiB together", zip([...good(), { name: "assets/a", data: WASM, size: 500 * 1024 * 1024 }, { name: "assets/b", data: WASM, size: 500 * 1024 * 1024 }, { name: "assets/c", data: WASM, size: 500 * 1024 * 1024 }]), /together/],
   ["no central directory at all", new TextEncoder().encode("PK\x03\x04 manifest.toml code.wasm words"), /no central directory/],
-  ["a manifest that inflates far past its declared size", zip([{ name: "manifest.toml", data: new Uint8Array(4 * 1024 * 1024), deflate: true, size: 1 }, { name: "code.wasm", data: WASM }]), /manifest\.toml is not a readable entry/],
+  ["a manifest that inflates far past its declared size", zip([{ name: "manifest.toml", data: new Uint8Array(4 * 1024 * 1024), deflate: true, size: 1 }, { name: "code.wasm", data: WASM }]), /not a valid \.krate bundle/],
 ];
 for (const [what, bytes, why] of refused) {
   const e = env();
@@ -138,37 +147,6 @@ for (const [what, bytes, why] of refused) {
   assert.match(body, why, `${what} must be refused for its own reason: ${body}`);
   assert.strictEqual(e.BUNDLES._blobs.size, 0, `${what} must not reach the store`);
   assert.ok(![...e._kv.keys()].some((k) => k.startsWith("app:")), `${what} must not be listed`);
-}
-
-/* ---- the manifest inflate stops at the bound, not at the end (K-309) ----
- * A 422 cannot tell a bounded inflate from one that inflated the whole bomb
- * and compared lengths afterwards. The bytes that flow out of the
- * decompressor can: the runtime's DecompressionStream is wrapped for this
- * one call to count them. */
-{
-  const bomb = new Uint8Array(deflateRawSync(new Uint8Array(64 * 1024 * 1024)));
-  const Real = globalThis.DecompressionStream;
-  let flowed = 0;
-  globalThis.DecompressionStream = class extends Real {
-    constructor(format) {
-      super(format);
-      const counted = super.readable.pipeThrough(
-        new TransformStream({ transform(chunk, c) { flowed += chunk.byteLength; c.enqueue(chunk); } }),
-      );
-      Object.defineProperty(this, "readable", { value: counted });
-    }
-  };
-  try {
-    const out = await inflateBounded(bomb, 256 * 1024);
-    assert.strictEqual(out, null, "a bomb past the bound is refused");
-  } finally {
-    globalThis.DecompressionStream = Real;
-  }
-  assert.ok(
-    flowed <= 256 * 1024 + 1024 * 1024,
-    `the inflate must stop near the bound, not run the bomb to its end: ${flowed} bytes flowed`,
-  );
-  assert.ok(flowed > 0, "the wrapper saw the stream at all");
 }
 
 /* ---- the bound is on bytes as they stream, not after they land (1831) --- */
