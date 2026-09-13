@@ -78,6 +78,10 @@ pub struct UsabilityPlan {
     pub check_resize: bool,
     /// Whether to inject a pointer press and compare frames across it.
     pub check_click: bool,
+    /// Whether to focus the app's first control and press Enter, then compare
+    /// frames across it (IC-743, test 1548). A control that answers the
+    /// pointer and not the keyboard is unreachable to anyone without a mouse.
+    pub check_keyboard: bool,
     /// Whether to watch for the app closing itself.
     pub check_stay_open: bool,
 }
@@ -121,6 +125,10 @@ pub struct UsabilityReport {
     pub resize: Option<Observation>,
     /// Did anything observable change when a pointer press was delivered.
     pub click: Option<Observation>,
+    /// Did anything observable change when the first control was focused and
+    /// Enter was pressed. Absent in reports written before this existed.
+    #[serde(default)]
+    pub keyboard: Option<Observation>,
     /// Whether the app ever opened a window at all. A CLI app never does, and
     /// that is not a defect -- it is the signal to skip the whole stage.
     pub opened_window: bool,
@@ -412,6 +420,7 @@ mod tests {
         let report = UsabilityReport {
             stay_open: Some(Observation::Held),
             resize: Some(Observation::broke("the frame did not change")),
+            keyboard: None,
             click: Some(Observation::unobserved("no clickable widget")),
             opened_window: true,
             ran_millis: 1234,

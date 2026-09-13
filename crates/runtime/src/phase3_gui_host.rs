@@ -238,6 +238,11 @@ struct UsabilityDriver {
     /// When the press was delivered, so the app gets a turn to react before
     /// the frame is judged. See `PRESS_SETTLE`.
     press_delivered_at: Option<std::time::Instant>,
+    /// The control the pointer step pressed, so the keyboard step can pick a
+    /// different one: pressing the same list row twice selects what is
+    /// already selected and changes nothing, which read as a keyboard
+    /// failure on hello-gui when it was the pointer step's own leftover.
+    clicked_widget: Option<WidgetId>,
     /// How much of the frame changes on its own, with nobody touching the app.
     ///
     /// The click check used to pass on ANY difference, which meant a spinner,
@@ -299,7 +304,9 @@ enum DriveStep {
     Resize,
     /// Compare the post-resize frame, then deliver a pointer press.
     Click,
-    /// Compare the post-click frame, then just watch that it stays open.
+    /// Compare the post-click frame, then focus a control and press Enter.
+    Keyboard,
+    /// Compare the post-keyboard frame, then just watch that it stays open.
     Watch,
     /// The script is finished; end the run.
     Done,
@@ -445,6 +452,7 @@ impl Phase3GuiHost {
             resize_settled: false,
             last_step: None,
             press_delivered_at: None,
+            clicked_widget: None,
             idle_churn: None,
         });
         self
@@ -655,6 +663,8 @@ impl Phase3GuiHost {
                         DriveStep::Resize
                     } else if driver.plan.check_click {
                         DriveStep::Click
+                    } else if driver.plan.check_keyboard {
+                        DriveStep::Keyboard
                     } else {
                         DriveStep::Watch
                     };
@@ -677,6 +687,10 @@ impl Phase3GuiHost {
                         driver.report.click =
                             Some(crate::usability::Observation::unobserved(reason));
                     }
+                    if driver.plan.check_keyboard {
+                        driver.report.keyboard =
+                            Some(crate::usability::Observation::unobserved(reason));
+                    }
                     driver.step = DriveStep::Watch;
                 }
                 None
@@ -687,6 +701,10 @@ impl Phase3GuiHost {
             }
             DriveStep::Click => {
                 self.drive_click(window, from_wait);
+                None
+            }
+            DriveStep::Keyboard => {
+                self.drive_keyboard(window, from_wait);
                 None
             }
             DriveStep::Watch => {
@@ -918,6 +936,8 @@ impl Phase3GuiHost {
     fn next_after_resize(driver: &UsabilityDriver) -> DriveStep {
         if driver.plan.check_click {
             DriveStep::Click
+        } else if driver.plan.check_keyboard {
+            DriveStep::Keyboard
         } else {
             DriveStep::Watch
         }
@@ -930,7 +950,7 @@ impl Phase3GuiHost {
         let before = self.usability.as_ref().and_then(|d| d.before.clone());
 
         if !clicked_already {
-            let Some((x, y, confident)) = self.usability_press_target(window) else {
+            let Some((x, y, confident, target_widget)) = self.usability_press_target(window) else {
                 if let Some(driver) = self.usability.as_mut() {
                     driver.report.click = Some(crate::usability::Observation::unobserved(
                         "the app drew nothing that could be pressed",
@@ -985,6 +1005,7 @@ impl Phase3GuiHost {
                 driver.action_delivered = true;
                 driver.press_was_confident = confident;
                 driver.press_delivered_at = Some(std::time::Instant::now());
+                driver.clicked_widget = target_widget;
             }
             return;
         }
@@ -1080,6 +1101,139 @@ impl Phase3GuiHost {
             }
             _ => crate::usability::Observation::unobserved(
                 "no frame could be painted around the press",
+            ),
+        });
+        driver.before = after;
+        driver.step = if driver.plan.check_keyboard {
+            DriveStep::Keyboard
+        } else {
+            DriveStep::Watch
+        };
+    }
+
+    /// Focus the app's first control and press Enter, then compare frames
+    /// across it (IC-743, test 1548).
+    ///
+    /// The pointer step proves a control answers a press. This asks whether
+    /// the same control answers the keyboard: focus it by its widget id,
+    /// deliver Enter down and up, and judge the frame change the way the
+    /// pointer step does. A control that answers one and not the other is
+    /// unreachable to anyone who cannot use a mouse, and that is a defect of
+    /// the app, so it reads as Broke rather than Unobserved.
+    ///
+    /// A canvas app draws its own controls and exposes no widget to focus, so
+    /// there is nothing to send a key to; that is Unobserved, with the reason.
+    fn drive_keyboard(&mut self, window: WindowId, from_wait: bool) {
+        let delivered_already = self.usability.as_ref().is_some_and(|d| d.action_delivered);
+        let before = self.usability.as_ref().and_then(|d| d.before.clone());
+        if !delivered_already {
+            let clicked = self.usability.as_ref().and_then(|d| d.clicked_widget);
+            let clickable: Vec<WidgetId> = self
+                .window_placements(window)
+                .ok()
+                .flatten()
+                .map(|(_, placements)| {
+                    placements
+                        .into_iter()
+                        .filter(|p| p.clickable && p.width > 1.0 && p.height > 1.0)
+                        .map(|p| p.widget)
+                        .collect()
+                })
+                .unwrap_or_default();
+            if clickable.is_empty() {
+                if let Some(driver) = self.usability.as_mut() {
+                    driver.report.keyboard = Some(crate::usability::Observation::unobserved(
+                        "the app draws its own controls, so there is no widget to focus and \
+                         no key to send it",
+                    ));
+                    driver.step = DriveStep::Watch;
+                }
+                return;
+            }
+            // Not the control the pointer step just pressed: on a list row a
+            // second press selects what is already selected and changes
+            // nothing, and that silence would be blamed on the keyboard.
+            let Some(widget) = clickable.iter().copied().find(|w| Some(*w) != clicked) else {
+                if let Some(driver) = self.usability.as_mut() {
+                    driver.report.keyboard = Some(crate::usability::Observation::unobserved(
+                        "the only control the host can focus is the one the pointer step \
+                         already pressed, and pressing it again changes nothing to compare",
+                    ));
+                    driver.step = DriveStep::Watch;
+                }
+                return;
+            };
+            let dispatcher = self.dispatcher();
+            let focused = dispatcher.focus_node(window, widget);
+            let key = |pressed: bool| {
+                dispatcher.route_key_event(crate::phase3_ui::KeyRouteRequest {
+                    window,
+                    key: "Enter".to_string(),
+                    pressed,
+                    modifiers: Default::default(),
+                })
+            };
+            let down = key(true);
+            let up = key(false);
+            if focused.is_err() || down.is_err() || up.is_err() {
+                if let Some(driver) = self.usability.as_mut() {
+                    driver.report.keyboard = Some(crate::usability::Observation::unobserved(
+                        "this host could not focus a control or deliver a key press",
+                    ));
+                    driver.step = DriveStep::Watch;
+                }
+                return;
+            }
+            if let Some(driver) = self.usability.as_mut() {
+                driver.action_delivered = true;
+                driver.press_delivered_at = Some(std::time::Instant::now());
+            }
+            return;
+        }
+        let since = self
+            .usability
+            .as_ref()
+            .and_then(|d| d.press_delivered_at)
+            .map(|at| at.elapsed())
+            .unwrap_or_default();
+        let ready = (since >= PRESS_SETTLE && from_wait) || since >= PRESS_GIVE_UP;
+        if !ready {
+            return;
+        }
+        let after = self.capture_frame(window);
+        let driver = match self.usability.as_mut() {
+            Some(driver) => driver,
+            None => return,
+        };
+        let idle_churn = driver.idle_churn.unwrap_or(0.0);
+        driver.action_delivered = false;
+        driver.report.keyboard = Some(match (before, after.clone()) {
+            (Some(before), Some(after)) => {
+                let difference = crate::usability::frame_difference(&before, &after);
+                let answered = crate::usability::press_answered(difference, idle_churn);
+                if std::env::var_os("KRATE_EVENT_TRACE").is_some() {
+                    eprintln!(
+                        "krate-check: keyboard difference={difference:.6} idle_churn={idle_churn:.6} \
+                         answered={answered}"
+                    );
+                }
+                if answered {
+                    crate::usability::Observation::Held
+                } else if idle_churn > 0.0 {
+                    crate::usability::Observation::unobserved(
+                        "the app animates on its own, and Enter changed no more of the screen \
+                         than that animation does, so whether it reacted could not be told apart",
+                    )
+                } else {
+                    crate::usability::Observation::broke(
+                        "the app's own control was focused and Enter was pressed, and nothing on \
+                         screen changed; a control that answers the pointer but not the keyboard \
+                         is unreachable to anyone without a mouse",
+                    )
+                }
+            }
+            _ => crate::usability::Observation::unobserved(
+                "no frame could be painted around the key press",
             ),
         });
         driver.before = after;
@@ -1230,7 +1384,10 @@ impl Phase3GuiHost {
     /// does not react is reported as *unobserved*, never as broken. Only a real
     /// lowered control, whose rectangle the host does know, can produce a
     /// confident failure.
-    fn usability_press_target(&self, window: WindowId) -> Option<(f32, f32, bool)> {
+    fn usability_press_target(
+        &self,
+        window: WindowId,
+    ) -> Option<(f32, f32, bool, Option<WidgetId>)> {
         // Aim the driven press at a named point instead of the canvas centre.
         // A canvas app draws its own controls, so centre-of-canvas is a guess
         // that lands on empty space as often as not -- and empty space looks
@@ -1241,7 +1398,7 @@ impl Phase3GuiHost {
             let mut parts = spec.split(',');
             if let (Some(x), Some(y)) = (parts.next(), parts.next()) {
                 if let (Ok(x), Ok(y)) = (x.trim().parse::<f32>(), y.trim().parse::<f32>()) {
-                    return Some((x, y, true));
+                    return Some((x, y, true, None));
                 }
             }
         }
@@ -1252,10 +1409,16 @@ impl Phase3GuiHost {
                     placement.x + placement.width / 2.0,
                     placement.y + placement.height / 2.0,
                     true,
+                    Some(placement.widget),
                 ));
             }
         }
-        Some((size.width as f32 / 2.0, size.height as f32 / 2.0, false))
+        Some((
+            size.width as f32 / 2.0,
+            size.height as f32 / 2.0,
+            false,
+            None,
+        ))
     }
 
     fn headless_close_request(&self) -> Option<ui::types::Event> {
@@ -1515,6 +1678,82 @@ impl Phase3GuiHost {
     /// pointer at window (500, 400) means nothing to it. Undo the host's
     /// letterbox mapping here -- the one place every delivered event passes
     /// through -- so hit-testing works with no change in the app (K-096).
+    /// The keyboard reaches the same command the pointer does: Enter or
+    /// Space pressed on a focused Button, Checkbox, Radio or Switch queues a
+    /// press and a release at that control's centre (IC-743, 1548).
+    fn synthesize_activation(
+        &self,
+        dispatcher: &Phase3UiDispatcher<'_>,
+        key: &krate_adapter_common::ui::KeyEvent,
+    ) {
+        if !key.pressed || !matches!(key.key.as_str(), "Enter" | "Space") {
+            return;
+        }
+        let Some(widget) = key.widget else {
+            return;
+        };
+        let Ok(Some(tree)) = dispatcher.widget_tree(key.window) else {
+            return;
+        };
+        // The same things a pointer press activates: the control kinds, and
+        // a row of a list, which is a Text node whose parent is a ListView --
+        // the definition the pointer step's `clickable` uses. hello-gui's
+        // first clickable control is such a row, and the first version of
+        // this rule, kinds only, let Enter on it do nothing.
+        let activates = tree.node(widget).is_some_and(|node| {
+            let control = matches!(
+                node.kind,
+                WidgetKind::Button | WidgetKind::Checkbox | WidgetKind::Radio | WidgetKind::Switch
+            );
+            let list_row = node.kind == WidgetKind::Text
+                && node
+                    .parent
+                    .and_then(|parent| tree.node(parent))
+                    .is_some_and(|parent| parent.kind == WidgetKind::ListView);
+            control || list_row
+        });
+        if !activates {
+            return;
+        }
+        let Ok(Some(record)) = dispatcher.window(key.window) else {
+            return;
+        };
+        let Ok(viewport) = LayoutViewport::new(record.size.width as f32, record.size.height as f32)
+        else {
+            return;
+        };
+        let Ok(layout) = dispatcher.compute_layout(key.window, viewport) else {
+            return;
+        };
+        let Some(rect) = absolute_rect(&tree, &layout, widget) else {
+            return;
+        };
+        let (x, y) = (rect.x + rect.width / 2.0, rect.y + rect.height / 2.0);
+        if std::env::var_os("KRATE_EVENT_TRACE").is_some() {
+            eprintln!(
+                "krate-check: {} on focused widget {} synthesized a press at {x:.1},{y:.1}",
+                key.key,
+                widget.get()
+            );
+        }
+        // Through the dispatcher, exactly as a pointer would arrive: the
+        // first version pushed a ready-made WIT event straight to the app,
+        // and the frame did not move -- the adapter's own reaction to a
+        // press (a list row's selection, a checkbox's tick) is what the
+        // pointer step measured, and it never saw the press.
+        for pressed in [true, false] {
+            let _ = dispatcher.route_pointer_event(crate::phase3_ui::PointerRouteRequest {
+                window: key.window,
+                viewport,
+                x,
+                y,
+                button: Some(PointerButton::Primary),
+                pressed,
+                modifiers: key.modifiers,
+            });
+        }
+    }
+
     fn to_design_space(&self, event: ui::types::Event) -> ui::types::Event {
         let canvases = self.canvases.borrow();
         let Some((_, _, surface)) = canvases.values().next() else {
@@ -1717,6 +1956,17 @@ impl Phase3GuiHost {
             // who alt-tabbed mid-stride returns to a character still running.
             if let UiEvent::WindowFocused { focused, .. } = event {
                 self.on_window_focus_changed(focused);
+            }
+            // Enter or Space on a focused control IS a press of it (IC-743,
+            // test 1548). Every native toolkit activates a focused button on
+            // those keys; Krate delivered the raw key and nothing else, so a
+            // button that answered the pointer ignored the keyboard in every
+            // app that did not special-case Enter -- measured on the
+            // hello-gui sample. The app still receives the Key event first;
+            // the press and release follow, aimed at the control's centre,
+            // exactly as a pointer would have delivered them.
+            if let UiEvent::Key(key) = &event {
+                self.synthesize_activation(&dispatcher, key);
             }
             if let Some(event) = event_to_wit(event) {
                 // Count a close request at the one point every real event
@@ -4839,6 +5089,181 @@ mod tests {
         assert_eq!(clamped_scroll_offset(10.0, -30.0, 192.0, 120.0), 0.0);
         // Content shorter than the viewport never scrolls.
         assert_eq!(clamped_scroll_offset(0.0, 30.0, 80.0, 120.0), 0.0);
+    }
+
+    /// Enter on a focused button is a press of it (IC-743, test 1548).
+    ///
+    /// Measured before this existed: hello-gui's button answered the
+    /// pointer and ignored Enter, because the runtime delivered a raw key
+    /// and nothing else. The app receives the key first, then a press and a
+    /// release aimed at the button, exactly as a pointer would deliver them.
+    #[test]
+    fn enter_on_a_focused_button_arrives_as_a_press_and_a_release() {
+        let mut host = headless_host();
+        let window_id = ui::window::Host::create(
+            &mut host,
+            "app".to_string(),
+            ui::types::WindowSize {
+                width: 200,
+                height: 100,
+            },
+        )
+        .expect("create call")
+        .expect("a window");
+        let node = wit_node(ui::types::WidgetKind::Button, None);
+        let widget_raw = node.id;
+        ui::tree::Host::set_root(&mut host, window_id, node)
+            .expect("set_root call")
+            .expect("a button root");
+        let window = *host.windows.first().expect("window id");
+        let widget = WidgetId::new(widget_raw).expect("widget id");
+        host.dispatcher().focus_node(window, widget).expect("focus");
+        for pressed in [true, false] {
+            host.dispatcher()
+                .route_key_event(crate::phase3_ui::KeyRouteRequest {
+                    window,
+                    key: "Enter".to_string(),
+                    pressed,
+                    modifiers: Default::default(),
+                })
+                .expect("key route");
+        }
+        let mut seen = Vec::new();
+        for _ in 0..8 {
+            match ui::events::Host::wait(&mut host, Some(5)).expect("wait call") {
+                Some(event) => seen.push(event),
+                None => break,
+            }
+        }
+        let keys = seen
+            .iter()
+            .filter(|e| matches!(e, ui::types::Event::Key(_)))
+            .count();
+        assert!(keys >= 1, "the app still receives the key itself: {seen:?}");
+        let presses: Vec<(bool, Option<u64>)> = seen
+            .iter()
+            .filter_map(|e| match e {
+                ui::types::Event::Pointer(p) => Some((p.pressed, p.widget)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            presses,
+            vec![(true, Some(widget_raw)), (false, Some(widget_raw))],
+            "Enter on the focused button must arrive as one press and one release of that button: {seen:?}"
+        );
+        let key_at = seen
+            .iter()
+            .position(|e| matches!(e, ui::types::Event::Key(_)))
+            .unwrap();
+        let press_at = seen
+            .iter()
+            .position(|e| matches!(e, ui::types::Event::Pointer(p) if p.pressed))
+            .unwrap();
+        assert!(
+            key_at < press_at,
+            "the key comes first, the synthesized press after it"
+        );
+    }
+
+    /// A row of a list answers Enter the way it answers a press: the pointer
+    /// step calls such a row clickable, so the keyboard step must reach it.
+    #[test]
+    fn enter_on_a_focused_list_row_arrives_as_a_press() {
+        let mut host = headless_host();
+        let window_id = ui::window::Host::create(
+            &mut host,
+            "app".to_string(),
+            ui::types::WindowSize {
+                width: 200,
+                height: 100,
+            },
+        )
+        .expect("create call")
+        .expect("a window");
+        let mut list = wit_node(ui::types::WidgetKind::ListView, None);
+        list.id = 1;
+        ui::tree::Host::set_root(&mut host, window_id, list)
+            .expect("set_root call")
+            .expect("root");
+        let mut row = wit_node(ui::types::WidgetKind::Text, None);
+        row.id = 2;
+        row.parent = Some(1);
+        ui::tree::Host::upsert_node(&mut host, window_id, row)
+            .expect("upsert call")
+            .expect("row");
+        let window = *host.windows.first().expect("window id");
+        host.dispatcher()
+            .focus_node(window, WidgetId::new(2).unwrap())
+            .expect("focus");
+        host.dispatcher()
+            .route_key_event(crate::phase3_ui::KeyRouteRequest {
+                window,
+                key: "Space".to_string(),
+                pressed: true,
+                modifiers: Default::default(),
+            })
+            .expect("key route");
+        let mut presses = Vec::new();
+        for _ in 0..8 {
+            match ui::events::Host::wait(&mut host, Some(5)).expect("wait call") {
+                Some(ui::types::Event::Pointer(p)) => presses.push((p.pressed, p.widget)),
+                Some(_) => {}
+                None => break,
+            }
+        }
+        assert_eq!(
+            presses,
+            vec![(true, Some(2)), (false, Some(2))],
+            "Space on a focused list row presses that row"
+        );
+    }
+
+    /// A key on a control that is not activatable, and a key that is not
+    /// Enter or Space, synthesize nothing.
+    #[test]
+    fn other_keys_and_other_widgets_synthesize_no_press() {
+        let mut host = headless_host();
+        let window_id = ui::window::Host::create(
+            &mut host,
+            "app".to_string(),
+            ui::types::WindowSize {
+                width: 200,
+                height: 100,
+            },
+        )
+        .expect("create call")
+        .expect("a window");
+        let node = wit_node(ui::types::WidgetKind::Text, None);
+        let widget_raw = node.id;
+        ui::tree::Host::set_root(&mut host, window_id, node)
+            .expect("set_root call")
+            .expect("root");
+        let window = *host.windows.first().expect("window id");
+        let widget = WidgetId::new(widget_raw).expect("widget id");
+        host.dispatcher().focus_node(window, widget).expect("focus");
+        for key in ["Enter", "a"] {
+            host.dispatcher()
+                .route_key_event(crate::phase3_ui::KeyRouteRequest {
+                    window,
+                    key: key.to_string(),
+                    pressed: true,
+                    modifiers: Default::default(),
+                })
+                .expect("key route");
+        }
+        let mut pointer = 0;
+        for _ in 0..8 {
+            match ui::events::Host::wait(&mut host, Some(5)).expect("wait call") {
+                Some(ui::types::Event::Pointer(_)) => pointer += 1,
+                Some(_) => {}
+                None => break,
+            }
+        }
+        assert_eq!(
+            pointer, 0,
+            "a text node is not activatable, and 'a' activates nothing"
+        );
     }
 
     fn headless_host() -> Phase3GuiHost {

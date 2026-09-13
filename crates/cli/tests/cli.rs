@@ -5838,6 +5838,61 @@ fn configured_component_from_env_or_paths(
     Some(workspace_path(PathBuf::from(path)))
 }
 
+/// The usability report carries a keyboard observation, through the real
+/// binary on a real bundle (IC-743, test 1548).
+///
+/// bounce.krate draws its own controls on a canvas, so the honest keyboard
+/// verdict is "unobserved" with the reason that there is no widget to focus.
+/// That is the case this can prove without building a widget-tree app; the
+/// held and broke verdicts are proven by the host's own tests, and the
+/// hello-gui sample was driven by hand: its list row answered the pointer
+/// and not Enter until the runtime made Enter a press.
+#[test]
+fn the_usability_report_says_what_the_keyboard_did() {
+    let bundle = workspace_path(PathBuf::from("evidence/ported/bounce.krate"));
+    if !bundle.exists() {
+        eprintln!("skipping: {} is not present", bundle.display());
+        return;
+    }
+    let dir = tempfile::tempdir().expect("tempdir");
+    let report = dir.path().join("usability.json");
+    let output = Command::new(env!("CARGO_BIN_EXE_krate"))
+        .args(["run", "--headless", "--auto-grant", "--usability-report"])
+        .arg(&report)
+        .arg(&bundle)
+        .env("KRATE_NO_USAGE", "1")
+        .output()
+        .expect("run krate");
+    assert!(
+        report.exists(),
+        "no usability report was written; stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let text = std::fs::read_to_string(&report).expect("read report");
+    let json: serde_json::Value = serde_json::from_str(&text).expect("report is json");
+    assert_eq!(
+        json["opened_window"],
+        serde_json::Value::Bool(true),
+        "{text}"
+    );
+    let keyboard = &json["keyboard"];
+    assert!(
+        !keyboard.is_null(),
+        "the report must say what the keyboard did, even when it could not be tried: {text}"
+    );
+    assert_eq!(
+        keyboard["outcome"], "unobserved",
+        "a canvas app has nothing to focus: {text}"
+    );
+    assert!(
+        keyboard["reason"]
+            .as_str()
+            .unwrap_or("")
+            .contains("no widget to focus"),
+        "the reason must say why: {text}"
+    );
+}
+
 fn bind_local_fixture_listener(label: &str) -> Option<TcpListener> {
     match TcpListener::bind("127.0.0.1:0") {
         Ok(listener) => Some(listener),

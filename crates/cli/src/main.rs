@@ -12183,6 +12183,7 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
                 report_path: path.clone(),
                 check_resize: true,
                 check_click: true,
+                check_keyboard: true,
                 check_stay_open: true,
             }
         }),
@@ -15930,6 +15931,17 @@ fn run_usability_stage(
         });
     }
 
+    if let Some(Observation::Broke { detail }) = &report.keyboard {
+        return Err(CheckFailure {
+            stage: CheckStage::Usability,
+            detail: detail.clone(),
+            fix: "A control the pointer can press must also answer the keyboard: handle \
+                  `Event::Key` for Enter and Space on the focused control the same way the \
+                  pointer press is handled, so the app is usable without a mouse (IC-743)."
+                .to_string(),
+        });
+    }
+
     // Everything else becomes a note, so a person can see what was and was not
     // actually measured rather than reading a green line as more than it is.
     let mut notes = Vec::new();
@@ -15937,6 +15949,7 @@ fn run_usability_stage(
         ("stays open", &report.stay_open),
         ("survives a resize", &report.resize),
         ("responds to a press", &report.click),
+        ("answers the keyboard", &report.keyboard),
     ] {
         if let Some(Observation::Unobserved { reason }) = observation {
             notes.push(format!("{name}: not checked -- {reason}"));
