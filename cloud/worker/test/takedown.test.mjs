@@ -17,6 +17,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import worker from "../src/index.js";
+import { r2Mock } from "./r2-mock.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const BOUNCE = new Uint8Array(readFileSync(join(here, "..", "..", "..", "evidence", "ported", "bounce.krate")));
@@ -35,12 +36,7 @@ function env() {
       delete: async (k) => { kv.delete(k); },
       list: async ({ prefix }) => ({ keys: [...kv.keys()].filter((k) => k.startsWith(prefix)).map((name) => ({ name })), list_complete: true }),
     },
-    BUNDLES: {
-      head: async (k) => (blobs.has(k) ? {} : null),
-      get: async (k) => (blobs.has(k) ? { body: blobs.get(k), arrayBuffer: async () => blobs.get(k) } : null),
-      put: async (k, v) => { blobs.set(k, v); },
-      delete: async (k) => { blobs.delete(k); },
-    },
+    BUNDLES: r2Mock(blobs),
     KRATE_ADMINS: "root",
     PUBLIC_BASE: "https://hub.example",
     _kv: kv, _blobs: blobs,

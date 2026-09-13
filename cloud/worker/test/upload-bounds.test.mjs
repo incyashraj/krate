@@ -18,6 +18,7 @@
  */
 import assert from "node:assert";
 import worker from "../src/index.js";
+import { r2Mock } from "./r2-mock.mjs";
 
 const MAX = 5 * 1024 * 1024;
 
@@ -34,10 +35,7 @@ function env() {
       put: async (k, v) => { kv.set(k, v); },
       list: async () => ({ keys: [], list_complete: true }),
     },
-    BUNDLES: {
-      head: async () => null,
-      put: async () => {},
-    },
+    BUNDLES: r2Mock(),
   };
 }
 
@@ -49,8 +47,10 @@ function env() {
  * flag was set before the handler ran and the probe reported the bug on
  * correct code.
  *
- * What only the handler can do is call arrayBuffer(). So that is what is
- * counted -- on the real Request, leaving every other behaviour intact. */
+ * What only the handler can do is call arrayBuffer() or take the body
+ * stream. Both are counted -- on the real Request, leaving every other
+ * behaviour intact. The handler reads the stream since IC-833's bounded
+ * read landed; counting arrayBuffer alone would then prove nothing. */
 function watched(headers, bytes = new Uint8Array(8)) {
   const req = new Request("https://hub.example/publish", {
     method: "POST",
@@ -63,6 +63,13 @@ function watched(headers, bytes = new Uint8Array(8)) {
     read = true;
     return real();
   };
+  const bodyGetter = Object.getOwnPropertyDescriptor(Request.prototype, "body").get;
+  Object.defineProperty(req, "body", {
+    get() {
+      read = true;
+      return bodyGetter.call(this);
+    },
+  });
   return { req, wasRead: () => read };
 }
 

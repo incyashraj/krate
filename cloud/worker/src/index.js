@@ -19,6 +19,18 @@
 /// money before anyone notices.
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
+/// What the archive may declare, judged from the central directory before
+/// any entry is inflated (IC-833, test 1833). The same ceilings
+/// crates/bundle applies when `krate run` opens the file, so the hub does
+/// not admit what the recipient would refuse. Declared sizes are the
+/// archive's own claim; they bound what a later reader could be asked to
+/// allocate, and the manifest inflate below is bounded on actual bytes.
+const MAX_ENTRY_COUNT = 8192;
+const MAX_ENTRY_BYTES = 512 * 1024 * 1024;
+const MAX_DECLARED_TOTAL_BYTES = 1024 * 1024 * 1024;
+const MAX_PATH_DEPTH = 16;
+const MAX_PATH_BYTES = 180;
+
 /// How long a verified GitHub identity is trusted without asking GitHub
 /// again. Long enough that publishing several apps costs one round trip,
 /// short enough that a revoked token stops working the same day.
@@ -324,19 +336,24 @@ async function publish(request, env) {
     }
   }
 
-  const body = new Uint8Array(await request.arrayBuffer());
+  // The body that actually arrives, read a chunk at a time and dropped the
+  // moment it passes the ceiling (IC-833, test 1831). `arrayBuffer()`
+  // materialised the whole body first and judged it after, so a chunked or
+  // lying upload still cost its full size before the 413.
+  const read = await readBounded(request, MAX_UPLOAD_BYTES);
+  if (read.tooLarge) {
+    return text("bundle too large (5 MiB max)", 413);
+  }
+  const body = read.body;
   if (body.length === 0) {
     return text("empty body", 400);
   }
-  // The body that actually arrived, whatever the header said.
-  if (body.length > MAX_UPLOAD_BYTES) {
-    return text("bundle too large (5 MiB max)", 413);
-  }
 
-  // It must actually be a .krate. Checking here keeps the store from filling
-  // with things `krate run` would only reject later, and it is the one piece
-  // of validation worth doing at the door.
-  const problem = looksLikeKrate(body);
+  // It must actually be a .krate: the archive contract, applied at the door
+  // (K-309, IC-833 test 1833). The central directory is judged whole before
+  // any entry is read -- count, names, duplicates, ceilings -- so the store
+  // does not fill with what `krate run` would refuse.
+  const problem = archiveProblem(body);
   if (problem) {
     return text(`not a valid .krate bundle: ${problem}`, 422);
   }
@@ -360,12 +377,12 @@ async function publish(request, env) {
   const hash = await sha256Hex(body);
 
   // Content-addressed: republishing the same bytes is a no-op that returns the
-  // same URL, so a person who publishes twice does not get two entries.
-  const existing = await env.BUNDLES.head(hash);
-  if (!existing) {
-    await env.BUNDLES.put(hash, body, {
-      httpMetadata: { contentType: "application/octet-stream" },
-    });
+  // same URL, so a person who publishes twice does not get two entries. The
+  // store is told the digest and read back before anything is listed
+  // (IC-833, tests 1837 and 1840).
+  const stored = await storeBundle(env, hash, body);
+  if (stored.problem) {
+    return text(stored.problem, 500);
   }
 
   const meta = {
@@ -483,7 +500,13 @@ async function publish(request, env) {
   } catch (e) {
     // Alias minting is a nicety; quota trouble must not fail a publish.
   }
-  const result = { url: `${base}/a/${short}`, full_url: `${base}/a/${hash}`, id: hash };
+  const result = {
+    url: `${base}/a/${short}`,
+    full_url: `${base}/a/${hash}`,
+    id: hash,
+    // The receipt: what the store holds, read back, not what was sent.
+    stored: { size: stored.size, sha256: stored.sha256 },
+  };
   if (!listed) {
     result.note =
       "published and runnable at the URL, but the gallery listing is " +
@@ -1995,16 +2018,158 @@ async function verifyGitHub(request, env) {
 /// shape without unzipping: the local file headers name their entries in
 /// plain bytes near the start, which is enough to reject something that is
 /// not a bundle at all.
-function looksLikeKrate(bytes) {
+/// Read a request body a chunk at a time, giving up the moment it passes
+/// `max` (IC-833, test 1831). Returns `{ body }` or `{ tooLarge: true }`.
+/// Nothing past the ceiling is kept, and the stream is cancelled so the
+/// rest of an oversized upload is never pulled.
+async function readBounded(request, max) {
+  if (!request.body) return { body: new Uint8Array(0) };
+  const reader = request.body.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      try {
+        await reader.cancel();
+      } catch (_) {
+        // Cancelling is a courtesy to the sender; the refusal stands.
+      }
+      return { tooLarge: true };
+    }
+    chunks.push(value);
+  }
+  const body = new Uint8Array(total);
+  let at = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, at);
+    at += chunk.byteLength;
+  }
+  return { body };
+}
+
+/// Why these bytes are not an archive the hub will hold, or null (K-309,
+/// IC-833 test 1833). Judged from the central directory before any entry
+/// is inflated, in the order a reader would meet the problems.
+function archiveProblem(bytes) {
   if (bytes.length < 4) return "too short to be a zip";
   // "PK\x03\x04"
   if (!(bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04)) {
     return "not a zip archive";
   }
-  const haystack = new TextDecoder("latin1").decode(bytes);
-  if (!haystack.includes("manifest.toml")) return "no manifest.toml inside";
-  if (!haystack.includes("code.wasm")) return "no code.wasm inside";
+  const { declared, entries } = zipDirectory(bytes);
+  if (declared === null) {
+    return "no central directory, so no manifest.toml or code.wasm can be found";
+  }
+  if (entries.length < declared) {
+    // The directory claims more records than can be read. A real writer
+    // that names one path twice lands here too, since the reader keys by
+    // name (the record-count check crates/bundle makes for the same reason).
+    return `declares ${declared} entries but only ${entries.length} can be read`;
+  }
+  if (entries.length > MAX_ENTRY_COUNT) {
+    return `more than ${MAX_ENTRY_COUNT} entries`;
+  }
+  const seen = new Set();
+  let declaredTotal = 0;
+  for (const entry of entries) {
+    const { name } = entry;
+    if (!/^[\x20-\x7e]+$/.test(name)) {
+      return `entry name is not plain ASCII: ${shortName(name)}`;
+    }
+    if (
+      name.includes("\\") ||
+      name.startsWith("/") ||
+      /^[A-Za-z]:/.test(name) ||
+      name.split("/").some((part, i, parts) => (part === "" && i !== parts.length - 1) || part === "." || part === "..")
+    ) {
+      return `unsafe entry path: ${shortName(name)}`;
+    }
+    if (name.split("/").length - 1 > MAX_PATH_DEPTH) {
+      return `entry path nests deeper than ${MAX_PATH_DEPTH}: ${shortName(name)}`;
+    }
+    if (name.length > MAX_PATH_BYTES) {
+      return `entry path longer than ${MAX_PATH_BYTES} bytes: ${shortName(name)}`;
+    }
+    if (entry.flags & 0x1) {
+      return `encrypted entry: ${shortName(name)}`;
+    }
+    if (name.endsWith("/")) continue; // a directory record carries no content
+    const logical = name.toLowerCase();
+    if (seen.has(logical)) {
+      return `names the same file twice: ${shortName(name)}`;
+    }
+    seen.add(logical);
+    if (entry.size > MAX_ENTRY_BYTES) {
+      return `entry ${shortName(name)} declares more than ${MAX_ENTRY_BYTES} bytes`;
+    }
+    declaredTotal += entry.size;
+    if (declaredTotal > MAX_DECLARED_TOTAL_BYTES) {
+      return `entries declare more than ${MAX_DECLARED_TOTAL_BYTES} bytes together`;
+    }
+  }
   return null;
+}
+
+function shortName(name) {
+  return name.length > 80 ? `${name.slice(0, 40)}...${name.slice(-37)}` : name;
+}
+
+/// Put the bytes at their own digest and read them back before saying so
+/// (IC-833, tests 1837 and 1840).
+///
+/// R2 is told the SHA-256 it must see, so bytes that do not hash to the
+/// key are refused by the store itself. An object already at the key is
+/// compared, never replaced: matching means the publish is idempotent, a
+/// mismatch is a store that holds the wrong bytes and is reported rather
+/// than papered over. An object stored before the digest was recorded is
+/// written again under the same guard, which upgrades it. What the store
+/// reports on read-back is the receipt; a receipt that disagrees with what
+/// was sent removes the object and fails the publish.
+async function storeBundle(env, hash, body) {
+  const options = {
+    httpMetadata: { contentType: "application/octet-stream" },
+    sha256: hash,
+  };
+  const existing = await env.BUNDLES.head(hash);
+  const existingSha = existing ? checksumHex(existing) : null;
+  if (existingSha && existingSha !== hash) {
+    return {
+      problem:
+        "the store holds bytes at this address that do not match it; not overwriting " +
+        "-- report this",
+    };
+  }
+  if (!existing || !existingSha) {
+    try {
+      await env.BUNDLES.put(hash, body, options);
+    } catch (err) {
+      return { problem: `the store refused the bytes: ${err && err.message ? err.message : err}` };
+    }
+  }
+  const stored = await env.BUNDLES.head(hash);
+  const storedSha = stored ? checksumHex(stored) : null;
+  if (!stored || stored.size !== body.length || storedSha !== hash) {
+    try {
+      await env.BUNDLES.delete(hash);
+    } catch (_) {
+      // Best effort: an unverified object must not be listed either way.
+    }
+    return {
+      problem:
+        "the stored copy could not be verified (size or digest differs from what was " +
+        "sent); nothing was published",
+    };
+  }
+  return { size: stored.size, sha256: storedSha };
+}
+
+function checksumHex(object) {
+  const raw = object.checksums && object.checksums.sha256;
+  if (!raw) return null;
+  return [...new Uint8Array(raw)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 // ---------------------------------------------------------- reading the zip
@@ -2021,7 +2186,47 @@ function u16(b, i) { return b[i] | (b[i + 1] << 8); }
 function u32(b, i) { return (b[i] | (b[i + 1] << 8) | (b[i + 2] << 16) | (b[i + 3] << 24)) >>> 0; }
 
 /// Every central-directory entry: {name, method, compressed, size, local}.
+async function inflateBounded(raw, max) {
+  try {
+    const stream = new Blob([raw]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+    const reader = stream.getReader();
+    const chunks = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > max) {
+        try {
+          await reader.cancel();
+        } catch (_) {
+          // The bound is what matters; the stream can go however it likes.
+        }
+        return null;
+      }
+      chunks.push(value);
+    }
+    const out = new Uint8Array(total);
+    let at = 0;
+    for (const chunk of chunks) {
+      out.set(chunk, at);
+      at += chunk.byteLength;
+    }
+    return out;
+  } catch (_) {
+    return null;
+  }
+}
+
 function zipEntries(bytes) {
+  return zipDirectory(bytes).entries;
+}
+
+/// The central directory as the archive declares it: `declared` is the
+/// EOCD's record count (null when there is no EOCD at all), `entries` the
+/// records that could actually be read, keyed by nothing -- duplicates are
+/// the caller's to judge.
+function zipDirectory(bytes) {
   // EOCD: signature 06054b50, at least 22 bytes, comment up to 65535.
   const floor = Math.max(0, bytes.length - 22 - 65535);
   let eocd = -1;
@@ -2031,13 +2236,14 @@ function zipEntries(bytes) {
       break;
     }
   }
-  if (eocd < 0) return [];
+  if (eocd < 0) return { declared: null, entries: [] };
   const count = u16(bytes, eocd + 10);
   let at = u32(bytes, eocd + 16);
   const out = [];
   const dec = new TextDecoder();
   for (let n = 0; n < count && at + 46 <= bytes.length; n += 1) {
     if (u32(bytes, at) !== 0x02014b50) break;
+    const flags = u16(bytes, at + 8);
     const method = u16(bytes, at + 10);
     const compressed = u32(bytes, at + 20);
     const size = u32(bytes, at + 24);
@@ -2046,10 +2252,10 @@ function zipEntries(bytes) {
     const commentLen = u16(bytes, at + 32);
     const local = u32(bytes, at + 42);
     const name = dec.decode(bytes.subarray(at + 46, at + 46 + nameLen));
-    out.push({ name, method, compressed, size, local });
+    out.push({ name, flags, method, compressed, size, local });
     at += 46 + nameLen + extraLen + commentLen;
   }
-  return out;
+  return { declared: count, entries: out };
 }
 
 function zipHasEntry(bytes, name) {
@@ -2075,13 +2281,12 @@ async function readZipEntry(bytes, name, max) {
   if (entry.method === 0) {
     plain = raw;
   } else if (entry.method === 8) {
-    try {
-      const stream = new Blob([raw]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
-      plain = new Uint8Array(await new Response(stream).arrayBuffer());
-    } catch (_) {
-      return null;
-    }
-    if (plain.length !== entry.size) return null;
+    // Inflated a chunk at a time and abandoned the moment it passes `max`:
+    // the declared size is the archive's own claim, and a forged-small
+    // entry used to inflate whole before its length was compared (K-309,
+    // "decompression bounds on every entry").
+    plain = await inflateBounded(raw, max);
+    if (plain === null || plain.length !== entry.size) return null;
   } else {
     return null;
   }
@@ -3424,3 +3629,8 @@ boot();
 </script>`;
   return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
 }
+
+// The door's pieces, exported so a test can watch them work rather than
+// infer it from a status code: a bounded inflate and a whole inflate both
+// answer 422 to a bomb, and only a byte count tells them apart (IC-833).
+export { archiveProblem, inflateBounded, readBounded, zipDirectory };

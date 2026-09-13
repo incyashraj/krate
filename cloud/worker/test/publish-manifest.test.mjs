@@ -20,6 +20,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import worker from "../src/index.js";
+import { r2Mock } from "./r2-mock.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..", "..");
@@ -39,11 +40,7 @@ function env() {
       delete: async (k) => { kv.delete(k); },
       list: async () => ({ keys: [], list_complete: true }),
     },
-    BUNDLES: {
-      head: async (k) => (blobs.has(k) ? {} : null),
-      put: async (k, v) => { blobs.set(k, v); },
-      delete: async (k) => { blobs.delete(k); },
-    },
+    BUNDLES: r2Mock(blobs),
     PUBLIC_BASE: "https://hub.example",
     _kv: kv,
   };
