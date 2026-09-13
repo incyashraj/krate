@@ -4432,6 +4432,133 @@ required = true
         assert!(open(&module).is_err());
     }
 
+    /// The inputs the cross-machine pack proof packs: every committed
+    /// ported bundle's manifest and component, and one synthetic app with
+    /// source and an SDK written by the test itself (so no checkout can
+    /// change its bytes). Returns (name, packed bytes).
+    fn pack_proof_corpus() -> Vec<(String, Vec<u8>)> {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let dir = TempDir::new().expect("tempdir");
+        let mut out = Vec::new();
+        let mut ported: Vec<PathBuf> = fs::read_dir(root.join("evidence/ported"))
+            .expect("evidence/ported")
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "krate"))
+            .collect();
+        ported.sort();
+        assert!(ported.len() >= 10, "the ported corpus is the proof's input");
+        for path in ported {
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            let opened = open(&path).expect("open a committed bundle");
+            let packed = dir.path().join(format!("{name}.repacked"));
+            pack(opened.manifest_path(), opened.component_path(), &packed).expect("pack");
+            out.push((name, fs::read(&packed).unwrap()));
+        }
+        let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
+        let component = write_temp(dir.path(), "code.wasm", MINIMAL_COMPONENT);
+        let assets = dir.path().join("assets");
+        fs::create_dir_all(assets.join("img")).unwrap();
+        fs::write(assets.join("img/logo.png"), b"\x89PNG not really").unwrap();
+        fs::write(assets.join("words.txt"), b"hello\n").unwrap();
+        let source = dir.path().join("source-tree");
+        fs::create_dir_all(source.join("src")).unwrap();
+        fs::write(source.join("Cargo.toml"), "[package]\nname = \"proof\"\nversion = \"0.1.0\"\n\n[dependencies]\nkrate = { path = \"/Users/someone/.krate/sdk/abc/bindings-rust\" }\n").unwrap();
+        fs::write(source.join("src/lib.rs"), "// the app\nfn main() {}\n").unwrap();
+        let sdk = dir.path().join("sdk-tree");
+        fs::create_dir_all(sdk.join("bindings-rust/src")).unwrap();
+        fs::write(
+            sdk.join("bindings-rust/Cargo.toml"),
+            "[package]\nname = \"krate\"\n",
+        )
+        .unwrap();
+        fs::write(sdk.join("bindings-rust/src/lib.rs"), "pub fn sdk() {}\n").unwrap();
+        let full = dir.path().join("full.krate");
+        pack_with_sdk(
+            &manifest,
+            &component,
+            Some(&assets),
+            Some(&source),
+            Some(&sdk),
+            &full,
+        )
+        .unwrap();
+        out.push((
+            "synthetic-with-source-assets-sdk".to_string(),
+            fs::read(&full).unwrap(),
+        ));
+        out
+    }
+
+    fn sha256_hex(bytes: &[u8]) -> String {
+        use sha2::{Digest, Sha256};
+        Sha256::digest(bytes)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
+    }
+
+    /// The CP1 exit clause, "`krate pack` rebuilds byte-equal on a second
+    /// machine", as a test that runs on every machine this suite runs on.
+    ///
+    /// Same-process determinism is `packing_the_same_input_twice_gives_the
+    /// _same_bytes` (K-315). This is the cross-machine half: the digest of
+    /// every packed corpus member is committed in
+    /// tests/fixtures/repack-digests.json, written on one machine, and the
+    /// library suite runs on macOS, Ubuntu and Windows in CI, so a packer
+    /// that reads anything from its host -- a path, a clock, a locale, a
+    /// separator, an unordered map -- fails on the machine that differs.
+    ///
+    /// When the format changes on purpose, regenerate with
+    /// `cargo test -p krate-bundle --lib regenerate_repack_digests -- --ignored`
+    /// and commit the JSON with the change that moved it.
+    #[test]
+    fn pack_is_byte_equal_on_every_machine_this_suite_runs_on() {
+        let expected: std::collections::BTreeMap<String, String> =
+            serde_json::from_str(include_str!("../tests/fixtures/repack-digests.json"))
+                .expect("repack-digests.json");
+        let corpus = pack_proof_corpus();
+        assert_eq!(
+            corpus.len(),
+            expected.len(),
+            "the corpus and the digests must cover the same inputs"
+        );
+        let mut wrong = Vec::new();
+        for (name, bytes) in &corpus {
+            let actual = sha256_hex(bytes);
+            match expected.get(name) {
+                Some(want) if *want == actual => {}
+                Some(want) => wrong.push(format!("{name}: packed {actual}, committed {want}")),
+                None => wrong.push(format!("{name}: no committed digest")),
+            }
+        }
+        assert!(
+            wrong.is_empty(),
+            "packing gave different bytes on this machine ({}-{}) than on the one that \
+             committed the digests; the packer read something from its host:\n  {}",
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            wrong.join("\n  ")
+        );
+    }
+
+    /// Write tests/fixtures/repack-digests.json from this machine.
+    #[test]
+    #[ignore = "writes the committed digests; run deliberately after a format change"]
+    fn regenerate_repack_digests() {
+        let digests: std::collections::BTreeMap<String, String> = pack_proof_corpus()
+            .into_iter()
+            .map(|(name, bytes)| (name, sha256_hex(&bytes)))
+            .collect();
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/repack-digests.json");
+        fs::write(
+            &path,
+            serde_json::to_string_pretty(&digests).unwrap() + "\n",
+        )
+        .unwrap();
+        println!("wrote {} digests to {}", digests.len(), path.display());
+    }
+
     /// The sweep is scoped by prefix: asking it to clear one family of
     /// directories must not clear another, however old (K-313).
     #[test]
