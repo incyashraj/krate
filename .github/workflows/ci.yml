@@ -1224,24 +1224,22 @@ jobs:
       - name: Replay every ported app
         shell: bash
         run: sh scripts/replay-ported-apps.sh
-      # What the ported GUI apps draw, against the goldens recorded on the
-      # lead's Mac through the shared painter (IC-743, test 1547). The
+      # What the ported GUI apps draw, against this host's own goldens
+      # (IC-743, test 1547): recorded through the shared painter on this
+      # runner type and committed under evidence/golden/<os>. The
       # comparison refuses a different renderer, scale or colour space and
-      # names the pixels that moved. Blocking where the goldens were recorded;
-      # reported elsewhere until the other hosts are known to paint the same.
-      - name: Compare what the ported apps draw with their goldens
+      # names the pixels that moved. Text goes through the host's fonts, so
+      # each host has its own goldens (K-337). Blocking everywhere.
+      - name: Compare what the ported apps draw with this host's goldens
         shell: bash
-        continue-on-error: ${{ matrix.os != 'macos-latest' }}
         run: |
           python3 scripts/golden-shots.py --self-test
           bin="target/release/krate"; [ -f "$bin.exe" ] && bin="$bin.exe"
           status=0
           for app in bounce chart cubes eo2 mdview savings; do
-            python3 scripts/golden-shots.py check "evidence/ported/$app.krate" --golden-dir evidence/golden/shared-painter --krate "$bin" || status=1
-            # What THIS host paints, kept as an artifact: text goes through
-            # the host's own fonts, so Ubuntu and Windows differ from the
-            # Mac goldens in the text (K-337); their own goldens are
-            # recorded from here rather than guessed.
+            python3 scripts/golden-shots.py check "evidence/ported/$app.krate" --golden-dir "evidence/golden/${{ matrix.os }}" --krate "$bin" || status=1
+            # What this run painted, kept as an artifact so a golden can be
+            # re-recorded from the runner rather than guessed.
             python3 scripts/golden-shots.py record "evidence/ported/$app.krate" --golden-dir "shots-${{ matrix.os }}" --krate "$bin" || true
           done
           exit $status

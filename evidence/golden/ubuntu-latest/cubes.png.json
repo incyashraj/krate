@@ -1,0 +1,24 @@
+{
+ "schema": "krate.shot.v1",
+ "renderer": "krate-shared-painter",
+ "scale": 2.0,
+ "width": 640,
+ "height": 480,
+ "logical_width": 320,
+ "logical_height": 240,
+ "color_space": "sRGB 8-bit RGBA, straight alpha, from an ARGB8888 framebuffer",
+ "os": "linux",
+ "arch": "x86_64",
+ "runtime": "0.4.0",
+ "golden": {
+  "schema": "krate.golden.v1",
+  "bundle_sha256": "9b0b3a471ffa395d6b319bc203232c743e4c3f592074a673f860c4920498bede",
+  "bundle": "cubes.krate",
+  "tolerance": {
+   "max_differing_fraction": 0.005,
+   "channel_delta": 8
+  },
+  "after_ms": 400,
+  "commit": "36a592a"
+ }
+}
