@@ -1671,6 +1671,14 @@ jobs:
         run: |
           python3 scripts/check-decision-records.py --self-test
           python3 scripts/check-decision-records.py
+      # The benchmark kit's run directories are private and absent here, but
+      # its rules are not: raw output is sealed and unchanged, and the
+      # analysis is regenerated from it and compared (IC-829, 1809-1810).
+      - name: Prove the benchmark kit seals runs and regenerates analyses
+        run: |
+          python3 evidence/benchmarks/marktext-vs-krate/scripts/seal.py --self-test
+          python3 evidence/benchmarks/marktext-vs-krate/scripts/analyze.py --self-test
+          python3 evidence/benchmarks/marktext-vs-krate/scripts/audit.py --self-test
       # The open-core boundary: the player and format are MIT/Apache, Studio
       # and the hub worker are BSL 1.1. It breaks by an MIT crate quietly
       # depending on the product layer, not by anyone relicensing a file

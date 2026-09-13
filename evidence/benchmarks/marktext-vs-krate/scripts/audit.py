@@ -17,9 +17,86 @@ def read_tsv(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(handle, delimiter="\t"))
 
 
+def integrity(run_dir: Path):
+    """(errors, warnings): raw output sealed and unchanged (1809), analysis.md
+    what the raw files produce (1810). Runs from before the seal existed
+    (2026-09-13) may be unsealed with a warning; a new run may not."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import seal as _seal  # noqa: E402
+    import analyze as _analyze  # noqa: E402
+    errors, warnings = [], []
+    seal_problems = _seal.verify(run_dir)
+    if seal_problems and any("no seal" in p for p in seal_problems):
+        if run_dir.resolve().name >= "20260913T":
+            errors.append("raw output is not sealed; run seal.py RUN_DIR before publishing (1809)")
+        else:
+            warnings.append("raw output is not sealed (run predates the seal); nothing proves it is untouched")
+    else:
+        errors.extend(f"seal: {p}" for p in seal_problems)
+    problem = _analyze.check(run_dir)
+    if (run_dir / "analysis.md").exists() and problem:
+        errors.append("analysis.md is not what analyze.py produces from raw/ (1810)")
+    return errors, warnings
+
+
+def self_test() -> int:
+    import tempfile
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import seal as _seal  # noqa: E402
+    import analyze as _analyze  # noqa: E402
+    failures = []
+
+    def make(name):
+        run = Path(tempfile.mkdtemp()) / name
+        (run / "raw").mkdir(parents=True)
+        for f, header in (("size.tsv", "app\tbytes"), ("startup.tsv", "app\tworkload_content_lines\tmode\tstatus\twindow_ms"),
+                          ("resources.tsv", "app\tworkload_content_lines\tstatus"), ("scroll.tsv", "app\tworkload_content_lines\tstatus")):
+            (run / "raw" / f).write_text(header + "\n")
+        (run / "machine.tsv").write_text("host_arch\tarm64\n")
+        (run / "analysis.md").write_text(_analyze.render(run))
+        return run
+
+    old = make("20260825T000000Z")
+    e, w = integrity(old)
+    if e or not any("predates" in x for x in w):
+        failures.append(f"an unsealed run from before the seal warns and does not fail: {e} {w}")
+    new = make("20260913T000000Z")
+    e, w = integrity(new)
+    if not any("1809" in x for x in e):
+        failures.append(f"an unsealed NEW run fails (1809): {e}")
+    _seal.write(new)
+    e, w = integrity(new)
+    if e or w:
+        failures.append(f"a sealed, consistent run is clean: {e} {w}")
+    with (new / "raw" / "startup.tsv").open("a") as fh:
+        fh.write("krate\t5000\twarm\taccepted\t200\n")
+    e, _ = integrity(new)
+    if not any("seal: raw/startup.tsv: changed" in x for x in e):
+        failures.append(f"a raw sample changed after sealing fails on the seal: {e}")
+    if not any("1810" in x for x in e):
+        failures.append(f"and the analysis no longer matches its inputs (1810): {e}")
+    _seal.write(new)
+    (new / "analysis.md").write_text(_analyze.render(new))
+    if integrity(new) != ([], []):
+        failures.append(f"re-sealed and re-rendered is clean again: {integrity(new)}")
+    (new / "analysis.md").write_text("typed by hand\n")
+    e, _ = integrity(new)
+    if not any("1810" in x for x in e) or any("seal:" in x for x in e):
+        failures.append(f"an edited analysis fails 1810 and only 1810: {e}")
+    if failures:
+        print("audit self-test FAILED:")
+        for f in failures:
+            print(f"  - {f}")
+        return 1
+    print("audit self-test OK -- the seal and the regeneration are part of the verdict, old runs warn, new runs fail")
+    return 0
+
+
 def main() -> int:
+    if "--self-test" in sys.argv:
+        return self_test()
     if len(sys.argv) != 2:
-        print("usage: audit.py RUN_DIR", file=sys.stderr)
+        print("usage: audit.py RUN_DIR | --self-test", file=sys.stderr)
         return 2
     run_dir = Path(sys.argv[1])
     raw = run_dir / "raw"
@@ -101,6 +178,10 @@ def main() -> int:
     if not (raw / "energy-index.tsv").exists():
         warnings.append("energy was not measured; make no power or battery-life claim")
     warnings.append("feature parity is not established; describe this as an equivalent-workload comparison")
+
+    integrity_errors, integrity_warnings = integrity(run_dir)
+    errors.extend(integrity_errors)
+    warnings.extend(integrity_warnings)
 
     for warning in warnings:
         print(f"WARN: {warning}")

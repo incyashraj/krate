@@ -31,11 +31,10 @@ def fmt_number(value: float, suffix: str = "") -> str:
     return f"{value:,.2f}{suffix}"
 
 
-def main() -> int:
-    if len(sys.argv) != 2:
-        print("usage: analyze.py RUN_DIR", file=sys.stderr)
-        return 2
-    run_dir = Path(sys.argv[1])
+def render(run_dir: Path) -> str:
+    """The analysis as text, from the raw files alone. Kept as a function
+    so audit.py can regenerate it and compare (test 1810): an analysis.md
+    that differs from what its inputs produce is not analysis."""
     raw = run_dir / "raw"
     out: list[str] = [
         "# MarkText versus Krate benchmark analysis",
@@ -128,8 +127,72 @@ def main() -> int:
     else:
         out.append("None recorded.")
 
-    (run_dir / "analysis.md").write_text("\n".join(out) + "\n")
-    print(run_dir / "analysis.md")
+    return "\n".join(out) + "\n"
+
+
+def check(run_dir: Path):
+    """None when analysis.md is exactly what the raw files produce, else a
+    sentence (test 1810). Regenerates to compare, never to overwrite -- a
+    check that rewrites the thing it checks passes."""
+    target = run_dir / "analysis.md"
+    if not target.exists():
+        return f"{target} does not exist; run analyze.py without --check"
+    if target.read_text() != render(run_dir):
+        return f"{target} is not what analyze.py produces from raw/; regenerate and review the diff (1810)"
+    return None
+
+
+def self_test() -> int:
+    import tempfile
+    failures = []
+    with tempfile.TemporaryDirectory() as tmp:
+        run = Path(tmp) / "20260913T000000Z"
+        (run / "raw").mkdir(parents=True)
+        for name, header in (("size.tsv", "app\tbytes"), ("startup.tsv", "app\tworkload_content_lines\tmode\tstatus\twindow_ms"),
+                             ("resources.tsv", "app\tworkload_content_lines\tstatus"), ("scroll.tsv", "app\tworkload_content_lines\tstatus")):
+            (run / "raw" / name).write_text(header + "\n")
+        text = render(run)
+        if "Generated only from the raw files" not in text:
+            failures.append("render() must produce the analysis from an empty run")
+        if check(run) is None:
+            failures.append("a missing analysis.md must be reported, not passed")
+        (run / "analysis.md").write_text(text)
+        if check(run) is not None:
+            failures.append(f"a freshly rendered analysis must pass: {check(run)}")
+        (run / "analysis.md").write_text(text + "edited by hand\n")
+        if not (check(run) or "").endswith("(1810)"):
+            failures.append("an edited analysis must fail with the 1810 sentence")
+        (run / "analysis.md").write_text(text)
+        (run / "raw" / "startup.tsv").write_text("app\tworkload_content_lines\tmode\tstatus\twindow_ms\nkrate\t5000\twarm\taccepted\t200\n")
+        if check(run) is None:
+            failures.append("a raw file that changed after the analysis was written must fail the check")
+    if failures:
+        print("analyze self-test FAILED:")
+        for f in failures:
+            print(f"  - {f}")
+        return 1
+    print("analyze self-test OK -- the analysis is regenerated from raw/ and compared, never overwritten by the check")
+    return 0
+
+
+def main() -> int:
+    if "--self-test" in sys.argv:
+        return self_test()
+    args = [a for a in sys.argv[1:] if a != "--check"]
+    if len(args) != 1:
+        print("usage: analyze.py [--check|--self-test] RUN_DIR", file=sys.stderr)
+        return 2
+    run_dir = Path(args[0])
+    if "--check" in sys.argv:
+        problem = check(run_dir)
+        if problem:
+            print(f"FAIL: {problem}")
+            return 1
+        print(f"OK -- {run_dir / 'analysis.md'} matches its raw inputs")
+        return 0
+    target = run_dir / "analysis.md"
+    target.write_text(render(run_dir))
+    print(target)
     return 0
 
 
