@@ -5433,6 +5433,123 @@ fn a_profile_is_named_on_the_trust_screen_and_a_bad_name_is_refused() {
 /// The three identities move exactly as their labels say, on the surface a
 /// person reads them from (IC-212).
 ///
+/// A fork says what it was changed from, and the product prints it
+/// (IC-397, test 494; K-312).
+///
+/// The record is an entry, `derived-from.json`, so it is written here by
+/// the raw writer the way any tool could write it, and read back through
+/// the product's own two doors: `run --json` reports it under `identity`,
+/// and `run --dump-caps` -- the screen where a person decides whether to
+/// trust the app -- says the app was changed from another one and whether
+/// that one was signed. The parent's signer is never printed: their
+/// signature does not cover these bytes (F-013).
+#[test]
+fn a_fork_names_its_parent_and_the_product_says_so() {
+    const MANIFEST: &str = "[app]\nid = \"com.example.fork\"\nname = \"Fork\"\n\
+                            version = \"1.0.0\"\nentry = \"code.wasm\"\n\
+                            world = \"krate:app/cli@0.1.0\"\n";
+    let dir = tempfile::tempdir().expect("tempdir");
+    let minimal = include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm");
+    let report = |name: &str, bytes: &[u8]| -> serde_json::Value {
+        let path = dir.path().join(name);
+        std::fs::write(&path, bytes).expect("write");
+        let output = krate()
+            .args(["run", "--json", "--headless", "--auto-grant"])
+            .arg(&path)
+            .output()
+            .expect("run --json");
+        serde_json::from_slice(&output.stdout).unwrap_or_else(|_| {
+            panic!(
+                "{name}: no JSON report: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )
+        })
+    };
+
+    let parent = report("parent.krate", &raw_bundle(MANIFEST, minimal, &[]));
+    assert!(
+        parent["identity"]["derived_from"].is_null(),
+        "an original was changed from nothing: {parent}"
+    );
+    let parent_archive = parent["identity"]["archive"]
+        .as_str()
+        .expect("the parent's archive identity")
+        .to_string();
+    let parent_execution = parent["identity"]["execution"]
+        .as_str()
+        .expect("the parent's execution identity")
+        .to_string();
+
+    let record = serde_json::json!({
+        "schema": "krate.bundle.derived-from.v1",
+        "archive": parent_archive,
+        "execution": parent_execution,
+        "project": null,
+        "parent_signed": false,
+        "at": 1_700_000_000u64,
+    });
+    let fork_bytes = raw_bundle(
+        MANIFEST,
+        minimal,
+        &[(
+            "derived-from.json".to_string(),
+            serde_json::to_vec(&record).unwrap(),
+        )],
+    );
+    let fork = report("fork.krate", &fork_bytes);
+    let derived = &fork["identity"]["derived_from"];
+    assert_eq!(
+        derived["archive"].as_str(),
+        Some(parent_archive.as_str()),
+        "the fork must name the parent file it was changed from: {fork}"
+    );
+    assert_eq!(
+        derived["execution"].as_str(),
+        Some(parent_execution.as_str())
+    );
+    assert_eq!(derived["parent_signed"].as_bool(), Some(false));
+    assert_eq!(
+        fork["identity"]["execution"].as_str(),
+        Some(parent_execution.as_str()),
+        "what runs did not change, so the fork's execution identity is the parent's"
+    );
+    assert_ne!(
+        fork["identity"]["archive"].as_str(),
+        Some(parent_archive.as_str()),
+        "the fork is a different file"
+    );
+
+    // The screen a person reads.
+    let looked = krate()
+        .args(["run", "--dump-caps"])
+        .arg(dir.path().join("fork.krate"))
+        .output()
+        .expect("inspect the fork");
+    let stdout = String::from_utf8_lossy(&looked.stdout);
+    assert!(
+        looked.status.success(),
+        "{}",
+        String::from_utf8_lossy(&looked.stderr)
+    );
+    assert!(
+        stdout.contains("changed from another app"),
+        "inspection must say this is a fork: {stdout}"
+    );
+    assert!(
+        stdout.contains(&parent_archive[..12]) && stdout.contains("was not signed"),
+        "and name the parent file and whether it was signed: {stdout}"
+    );
+    let original = krate()
+        .args(["run", "--dump-caps"])
+        .arg(dir.path().join("parent.krate"))
+        .output()
+        .expect("inspect the parent");
+    assert!(
+        !String::from_utf8_lossy(&original.stdout).contains("changed from another app"),
+        "an original is not called a fork"
+    );
+}
+
 /// archive is the exact file bytes; execution is what runs (manifest,
 /// component, assets); project is what can be rebuilt (adds source and
 /// SDK). Each change below moves the identities it should and none it

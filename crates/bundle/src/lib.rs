@@ -134,6 +134,66 @@ pub const SOURCE_PREFIX: &str = "source/";
 /// its own bytes. See `statement` and `signing`.
 pub const SIGNATURE_ENTRY: &str = "signature.json";
 
+/// Where a fork says which app it was changed from (IC-397, test 494).
+///
+/// Written by `krate revise` when the input is a bundle. It names the
+/// parent's identities and whether the parent was signed -- never the
+/// parent's signer, because a fork must not carry the original publisher's
+/// name on bytes they never signed (F-013). The identity contract says a
+/// "derived from" record "can point to the original release digest without
+/// claiming that the original publisher signed, approved, supports, or
+/// remains liable for the fork", and that is all this record claims.
+///
+/// An entry rather than a manifest field so an older Krate, which ignores
+/// entries it does not know, still opens a fork. It belongs to the project
+/// identity (what this is) and not the execution identity (what runs).
+pub const DERIVED_FROM_ENTRY: &str = "derived-from.json";
+
+/// Version of the derived-from record.
+pub const DERIVED_FROM_SCHEMA: &str = "krate.bundle.derived-from.v1";
+
+/// The parent an app was changed from. See [`DERIVED_FROM_ENTRY`].
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DerivedFrom {
+    pub schema: String,
+    /// The parent file's own bytes.
+    pub archive: String,
+    /// What ran in the parent.
+    pub execution: String,
+    /// What could be rebuilt from the parent, when it carried source.
+    pub project: Option<String>,
+    /// Whether the parent carried a signature that verified. A fact about
+    /// the parent, not a claim about this file: this file is not that
+    /// signature's.
+    pub parent_signed: bool,
+    /// When the fork was made, seconds since the Unix epoch.
+    pub at: u64,
+}
+
+/// The record a fork of `parent` should carry.
+///
+/// Reads the parent the way `open` does, so the identities recorded are
+/// the ones the parent prints for itself.
+pub fn derived_from_record(parent: &Path, at: u64) -> Result<DerivedFrom> {
+    let bytes = fs::read(parent).map_err(|err| io_err(parent, err))?;
+    let opened = open_bytes(&bytes)?;
+    let execution = opened.digest()?;
+    let project = opened.project_digest()?;
+    let parent_signed = opened
+        .signature_verdict()?
+        .is_some_and(|verdict| verdict.is_genuinely_signed());
+    Ok(DerivedFrom {
+        schema: DERIVED_FROM_SCHEMA.to_string(),
+        archive: provenance::digest_archive_bytes(&bytes).digest,
+        execution: execution.digest,
+        // Only when there was genuinely more to rebuild: the two layers
+        // differ by schema tag over identical entries.
+        project: (project.entries.len() > execution.entries.len()).then_some(project.digest),
+        parent_signed,
+        at,
+    })
+}
+
 /// Conventional file extension.
 pub const BUNDLE_EXTENSION: &str = "krate";
 
@@ -576,6 +636,34 @@ pub fn pack_with_sdk(
     sdk_dir: Option<&Path>,
     output_path: &Path,
 ) -> Result<u64> {
+    pack_with_lineage(
+        manifest_path,
+        component_path,
+        assets_dir,
+        source_dir,
+        sdk_dir,
+        None,
+        output_path,
+    )
+}
+
+/// Pack a bundle that was changed from another, recording its parent
+/// (IC-397, test 494). See [`DERIVED_FROM_ENTRY`].
+pub fn pack_with_lineage(
+    manifest_path: &Path,
+    component_path: &Path,
+    assets_dir: Option<&Path>,
+    source_dir: Option<&Path>,
+    sdk_dir: Option<&Path>,
+    derived_from: Option<&DerivedFrom>,
+    output_path: &Path,
+) -> Result<u64> {
+    let derived = derived_from
+        .map(|record| {
+            serde_json::to_vec_pretty(record)
+                .map_err(|err| BundleError::Manifest(format!("{DERIVED_FROM_ENTRY}: {err}")))
+        })
+        .transpose()?;
     let manifest_text =
         fs::read_to_string(manifest_path).map_err(|err| io_err(manifest_path, err))?;
     let manifest =
@@ -634,6 +722,7 @@ pub fn pack_with_sdk(
         assets_dir,
         source_dir,
         sdk_dir,
+        derived.as_deref(),
     );
     if let Err(err) = outcome {
         let _ = fs::remove_file(&staging);
@@ -657,6 +746,7 @@ fn write_bundle_into(
     assets_dir: Option<&Path>,
     source_dir: Option<&Path>,
     sdk_dir: Option<&Path>,
+    derived_from: Option<&[u8]>,
 ) -> Result<()> {
     let output_path = staging;
     let file = File::create(staging).map_err(|err| io_err(staging, err))?;
@@ -674,6 +764,11 @@ fn write_bundle_into(
     zip.start_file(COMPONENT_ENTRY, options)?;
     zip.write_all(component)
         .map_err(|err| io_err(output_path, err))?;
+    if let Some(record) = derived_from {
+        zip.start_file(DERIVED_FROM_ENTRY, options)?;
+        zip.write_all(record)
+            .map_err(|err| io_err(output_path, err))?;
+    }
     if let Some(assets_dir) = assets_dir.filter(|path| path.is_dir()) {
         for (entry_name, source) in collect_assets(assets_dir)? {
             zip.start_file(entry_name, options)?;
@@ -914,6 +1009,31 @@ impl OpenBundle {
 
     /// What this bundle carries in place of a signature (K-258).
     ///
+    /// The app this one was changed from, if it says so (IC-397, test 494).
+    ///
+    /// `None` is an original, or an app made before forks were recorded.
+    /// A record that is present but unreadable is an error: it is part of
+    /// the project identity, and a damaged part of an identity is not
+    /// "nothing".
+    pub fn derived_from(&self) -> Result<Option<DerivedFrom>> {
+        let path = self._dir.path().join(DERIVED_FROM_ENTRY);
+        if !path.is_file() {
+            return Ok(None);
+        }
+        let bytes = fs::read(&path).map_err(|err| io_err(&path, err))?;
+        let record: DerivedFrom = serde_json::from_slice(&bytes).map_err(|err| {
+            BundleError::Manifest(format!("{DERIVED_FROM_ENTRY} is not readable: {err}"))
+        })?;
+        if record.schema != DERIVED_FROM_SCHEMA {
+            return Err(BundleError::Manifest(format!(
+                "{DERIVED_FROM_ENTRY} uses a newer format ({}) than this copy of Krate \
+                 understands",
+                record.schema
+            )));
+        }
+        Ok(Some(record))
+    }
+
     /// Three states, because there are three. Collapsing the middle one into
     /// "absent" told a recipient their tampered bundle was merely unsigned,
     /// which is the opposite of what a signature exists to tell them.
@@ -963,6 +1083,18 @@ impl OpenBundle {
         // The two namespaces the execution identity deliberately ignores. They
         // are walked with the same collector as assets, so the names here are
         // the names the bundle stores.
+        // A fork's record is part of what this bundle IS, not of what runs
+        // (IC-397): the project layer and the signature cover it, the
+        // execution layer does not, so a fork whose code is unchanged still
+        // reports the same execution identity as its parent.
+        let derived_path = self._dir.path().join(DERIVED_FROM_ENTRY);
+        if derived_path.is_file() && layer.includes(DERIVED_FROM_ENTRY) {
+            entries.insert(
+                DERIVED_FROM_ENTRY.to_string(),
+                fs::read(&derived_path).map_err(|err| io_err(&derived_path, err))?,
+            );
+        }
+
         for (root, prefix) in [
             (self.source_path.as_deref(), SOURCE_PREFIX),
             (self.sdk_path.as_deref(), SDK_PREFIX),
@@ -1328,6 +1460,8 @@ pub fn open_reader<R: Read + io::Seek>(reader: R) -> Result<OpenBundle> {
     // unsigned, which is a state Krate supports rather than an error.
     let signature_path = dir.path().join(SIGNATURE_ENTRY);
     let _ = extract_entry(&mut archive, SIGNATURE_ENTRY, &signature_path);
+    let derived_path = dir.path().join(DERIVED_FROM_ENTRY);
+    let _ = extract_entry(&mut archive, DERIVED_FROM_ENTRY, &derived_path);
     let asset_names = asset_entry_names(&mut archive)?;
     let mut total_asset_bytes = 0_u64;
     for name in &asset_names {
@@ -3384,6 +3518,128 @@ required = true
             stranger.exists(),
             "another program's temp directory is not ours to delete, however \
              old it is"
+        );
+    }
+
+    /// A fork carries the record of its parent (IC-397, test 494). The
+    /// record is part of what the fork IS and of what a signature over it
+    /// covers, and no part of what runs: a fork with unchanged code has its
+    /// parent's execution identity and its own project identity.
+    #[test]
+    fn a_fork_records_its_parent_in_the_project_identity_and_not_the_execution_one() {
+        let dir = TempDir::new().expect("tempdir");
+        let manifest = dir.path().join("manifest.toml");
+        fs::write(
+            &manifest,
+            "[app]\nid = \"com.example.fork\"\nname = \"Fork\"\nversion = \"1.0.0\"\n\
+             entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n",
+        )
+        .expect("manifest");
+        let component = dir.path().join("code.wasm");
+        fs::write(&component, MINIMAL_COMPONENT).expect("component");
+
+        let parent = dir.path().join("parent.krate");
+        pack(&manifest, &component, &parent).expect("pack parent");
+        let record = derived_from_record(&parent, 1_700_000_000).expect("record");
+        assert_eq!(record.schema, DERIVED_FROM_SCHEMA);
+        assert_eq!(
+            record.archive,
+            provenance::digest_archive_bytes(&fs::read(&parent).unwrap()).digest,
+            "the record names the parent file's own bytes"
+        );
+        assert_eq!(
+            record.execution,
+            open(&parent).unwrap().digest().unwrap().digest
+        );
+        assert!(
+            record.project.is_none(),
+            "a source-less parent has no project identity"
+        );
+        assert!(!record.parent_signed);
+
+        let fork = dir.path().join("fork.krate");
+        pack_with_lineage(
+            &manifest,
+            &component,
+            None,
+            None,
+            None,
+            Some(&record),
+            &fork,
+        )
+        .expect("pack fork");
+        let plain = dir.path().join("plain.krate");
+        pack(&manifest, &component, &plain).expect("pack plain");
+
+        let opened = open(&fork).expect("open fork");
+        assert_eq!(
+            opened.derived_from().expect("read record"),
+            Some(record.clone()),
+            "the fork says what it was changed from"
+        );
+        assert_eq!(
+            open(&plain).unwrap().derived_from().unwrap(),
+            None,
+            "an original says nothing"
+        );
+        assert_eq!(
+            opened.digest().unwrap().digest,
+            open(&plain).unwrap().digest().unwrap().digest,
+            "what runs is unchanged, so the execution identity is the parent's"
+        );
+        assert_ne!(
+            opened.project_digest().unwrap().digest,
+            open(&plain).unwrap().project_digest().unwrap().digest,
+            "what this IS includes its parent, so the project identity is its own"
+        );
+
+        // A signature over the fork covers the record: change it and the
+        // signature reads as tampering, so a fork cannot quietly change
+        // whose child it claims to be.
+        let pkcs8 = signing::SigningKey::generate_pkcs8().unwrap();
+        let key = signing::SigningKey::from_pkcs8(&pkcs8).unwrap();
+        sign_bundle(&fork, &key, "com.example.fork", "1.0.0", 1_700_000_001).expect("sign");
+        let signed = open(&fork).unwrap();
+        assert_eq!(
+            signed.derived_from().unwrap(),
+            Some(record.clone()),
+            "signing keeps the record"
+        );
+        assert!(matches!(
+            signed.signature_verdict().unwrap(),
+            Some(signing::Verdict::Valid { .. })
+        ));
+        let mut forged = record.clone();
+        forged.parent_signed = true;
+        replace_entry(
+            &fork,
+            DERIVED_FROM_ENTRY,
+            &serde_json::to_vec(&forged).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            matches!(
+                open(&fork).unwrap().signature_verdict().unwrap(),
+                Some(signing::Verdict::Tampered { .. })
+            ),
+            "a changed record breaks the signature over the fork"
+        );
+
+        // A parent that was signed is recorded as such -- the fact, not
+        // the key.
+        sign_bundle(&parent, &key, "com.example.fork", "1.0.0", 1_700_000_000)
+            .expect("sign parent");
+        let of_signed = derived_from_record(&parent, 1_700_000_002).unwrap();
+        assert!(of_signed.parent_signed);
+        let text = serde_json::to_string(&of_signed).unwrap();
+        assert!(
+            !text.contains(
+                &key.public_key()
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect::<String>()
+            ),
+            "the record must not carry the parent's signer: {text}"
         );
     }
 

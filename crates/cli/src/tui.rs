@@ -613,6 +613,7 @@ fn change_an_app(bundle: &Path) -> Result<()> {
             provider,
             bundle,
             &attachments,
+            crate::derived_from_of(bundle),
             &progress,
         ),
         None => {

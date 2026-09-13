@@ -120,7 +120,11 @@ impl Layer {
     /// answers false rather than pretending.
     pub fn includes(self, entry: &str) -> bool {
         match self {
-            Layer::Execution => !entry.starts_with("source/") && !entry.starts_with("sdk/"),
+            Layer::Execution => {
+                !entry.starts_with("source/")
+                    && !entry.starts_with("sdk/")
+                    && entry != crate::DERIVED_FROM_ENTRY
+            }
             Layer::Project => true,
             Layer::Archive => false,
         }

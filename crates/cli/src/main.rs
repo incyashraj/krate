@@ -1760,6 +1760,7 @@ fn run() -> Result<u8> {
                 no_install,
                 json,
                 force,
+                derived_from: None,
             })
         }
         Command::Report { report, show } => run_report_command(&report, show),
@@ -3821,6 +3822,7 @@ pub(crate) fn author_app_for_tui(
         no_install: false,
         json: false,
         force: false,
+        derived_from: None,
     })?;
     usage::record_with(
         usage::Action::Make,
@@ -4114,11 +4116,20 @@ fn revise_cli(
         Some(_) if out == bundle => Some(keep_signed_original(bundle)?),
         _ => None,
     };
+    // The result says what it was changed from (IC-397, test 494).
+    let derived_from = derived_from_of(bundle);
 
     match bundle_source_dir(bundle)? {
         Some(source) => {
             println!("==> changing the app in its own source");
-            revise_app_for_tui(&source, change, provider, out, attachments)?;
+            revise_app_for_tui(
+                &source,
+                change,
+                provider,
+                out,
+                attachments,
+                derived_from.clone(),
+            )?;
         }
         None => {
             // An older bundle with no source inside: restate the whole app.
@@ -4153,6 +4164,7 @@ fn revise_cli(
                 no_install: false,
                 json: false,
                 force: true,
+                derived_from,
             })?;
             if code != 0 {
                 anyhow::bail!("the change could not be applied");
@@ -4181,15 +4193,29 @@ pub(crate) fn revise_app_for_tui_watched(
     provider: &'static dyn agent_provider::AgentProvider,
     output: &Path,
     attachments: &[PathBuf],
+    derived_from: Option<krate_bundle::DerivedFrom>,
     progress: &std::sync::Arc<progress::Progress>,
 ) -> Result<()> {
     // Studio's entry: the same one-change-at-a-time rule as the CLI's
     // (K-310).
     let _claim = claim_destination(output)?;
     set_progress_sink(Some(std::sync::Arc::clone(progress)));
-    let result = revise_app_for_tui(source, change, provider, output, attachments);
+    let result = revise_app_for_tui(source, change, provider, output, attachments, derived_from);
     set_progress_sink(None);
     result
+}
+
+/// What a fork of `bundle` should record about it (IC-397, test 494).
+///
+/// Best effort: a parent that cannot be read is not a reason to refuse the
+/// change -- the revision reads it again itself and fails there with the
+/// real error -- but a fork of a readable parent always carries the record.
+pub(crate) fn derived_from_of(bundle: &Path) -> Option<krate_bundle::DerivedFrom> {
+    let at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    krate_bundle::derived_from_record(bundle, at).ok()
 }
 
 pub(crate) fn revise_app_for_tui(
@@ -4198,6 +4224,7 @@ pub(crate) fn revise_app_for_tui(
     provider: &'static dyn agent_provider::AgentProvider,
     output: &Path,
     attachments: &[PathBuf],
+    derived_from: Option<krate_bundle::DerivedFrom>,
 ) -> Result<()> {
     // The change is authored in the app's own directory, so an attachment
     // goes in beside the code the same way it does for a new app.
@@ -4243,6 +4270,7 @@ pub(crate) fn revise_app_for_tui(
         json: false,
         // The output already exists; that is the point.
         force: true,
+        derived_from,
     })?;
     if code == 0 {
         remember_app(output);
@@ -6391,6 +6419,9 @@ struct CreateRequest {
     no_install: bool,
     json: bool,
     force: bool,
+    /// The app this one is being changed from, recorded in the result
+    /// (IC-397, test 494). None for an original.
+    derived_from: Option<krate_bundle::DerivedFrom>,
 }
 
 /// Fewest characters a create request must have to be worth authoring from.
@@ -7798,7 +7829,7 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     // A sibling rather than a temp dir, because the rename at the end has to
     // be atomic and a rename across filesystems is not.
     let mut staged = StagedOutput::beside(&req.output)?;
-    let size = krate_bundle::pack_with_source(
+    let size = krate_bundle::pack_with_lineage(
         &packed_manifest,
         &code,
         assets.is_dir().then_some(assets.as_path()),
@@ -7806,6 +7837,8 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
             .join("Cargo.toml")
             .is_file()
             .then_some(app_dir.as_path()),
+        None,
+        req.derived_from.as_ref(),
         staged.path(),
     )
     .with_context(|| format!("pack {}", req.output.display()))?;
@@ -11922,6 +11955,7 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
     // A digest that cannot be computed is left absent rather than guessed --
     // an identity nobody can check is worse than none.
     let run_identity = bundle.as_ref().map(|bundle| RunIdentity {
+        derived_from: bundle.derived_from().ok().flatten(),
         archive: std::fs::read(&request.target)
             .ok()
             .map(|bytes| krate_bundle::provenance::digest_archive_bytes(&bytes).digest),
@@ -12050,6 +12084,10 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
                 project_digest: bundle
                     .as_ref()
                     .and_then(|bundle| bundle.project_digest().ok()),
+                derived_from: bundle
+                    .as_ref()
+                    .and_then(|bundle| bundle.derived_from().ok())
+                    .flatten(),
                 signature: bundle
                     .as_ref()
                     .and_then(|bundle| {
@@ -12517,6 +12555,8 @@ struct RunIdentity {
     execution: Option<String>,
     /// What could be rebuilt. Absent unless the bundle carries source or SDK.
     project: Option<String>,
+    /// The app this one was changed from, when it says so (IC-397).
+    derived_from: Option<krate_bundle::DerivedFrom>,
 }
 
 /// Print the krate.run.v1 JSON object describing one run.
@@ -12573,6 +12613,16 @@ fn print_run_json(
                 "archive": id.archive,
                 "execution": id.execution,
                 "project": id.project,
+                // A fork names its parent's identities and whether the
+                // parent was signed -- a fact about the parent, never a
+                // claim that this file carries that signature (F-013).
+                "derived_from": id.derived_from.as_ref().map(|d| serde_json::json!({
+                    "archive": d.archive,
+                    "execution": d.execution,
+                    "project": d.project,
+                    "parent_signed": d.parent_signed,
+                    "at": d.at,
+                })),
             })
         }),
         "runtime": {
@@ -14652,6 +14702,8 @@ fn parse_grant_response(input: &str, caps: &[Capability]) -> Result<Vec<Capabili
 struct TrustFacts {
     digest: Option<krate_bundle::provenance::BundleDigest>,
     project_digest: Option<krate_bundle::provenance::BundleDigest>,
+    /// The app this one was changed from, when it says so (IC-397).
+    derived_from: Option<krate_bundle::DerivedFrom>,
     signature: Option<krate_bundle::signing::FullVerdict>,
     storage: Option<StoragePrincipal>,
     /// The local data profile the stores live in (IC-245).
@@ -14668,6 +14720,7 @@ fn print_effective_capabilities(
     let TrustFacts {
         digest,
         project_digest,
+        derived_from,
         signature,
         storage,
         profile,
@@ -14726,6 +14779,21 @@ fn print_effective_capabilities(
                     krate_bundle::provenance::Layer::Project.describe()
                 );
             }
+        }
+        // A fork says so, and says what it is not: the parent's signer is
+        // never named here, because their signature does not cover these
+        // bytes (F-013). "Was signed" is a fact about the parent.
+        if let Some(parent) = &derived_from {
+            println!(
+                "  - changed from another app: parent file {}, which {}; this copy is \
+                 not that publisher's release",
+                parent.archive.chars().take(12).collect::<String>(),
+                if parent.parent_signed {
+                    "was signed by its publisher"
+                } else {
+                    "was not signed"
+                }
+            );
         }
         println!();
     }
@@ -19714,6 +19782,7 @@ mod create_tests {
             no_install: true,
             json: true,
             force: false,
+            derived_from: None,
         };
         let verdict = krate_author::feasibility::screen(&req.request);
         let krate_author::feasibility::Verdict::Refuse(refusal) = verdict else {
