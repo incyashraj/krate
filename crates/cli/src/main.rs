@@ -12116,6 +12116,8 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
             .checked_mul(1024 * 1024)
             .context("memory limit is too large")?,
         session_policy: policy,
+        // The sender line on a notification, fixed at consent (IC-271).
+        app_name: manifest.map(|m| m.app.name.clone()),
         test_time_millis: request.test_time_millis,
         test_locale: request.test_locale,
         test_timezone: request.test_timezone,

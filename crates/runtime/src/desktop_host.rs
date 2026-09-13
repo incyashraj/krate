@@ -230,22 +230,60 @@ fn open_checked_url(url: &str) -> Result<(), LaunchError> {
     }
 }
 
+/// What the OS shows as the sender of a notification (IC-271).
+///
+/// The consented app name when there is one; otherwise a fixed phrase.
+/// Never guest-chosen text: the point of a sender line is that the app did
+/// not write it.
+pub fn attribution_for(app_name: Option<&str>) -> String {
+    match app_name.map(str::trim).filter(|name| !name.is_empty()) {
+        Some(name) => name.to_string(),
+        None => "a Krate app".to_string(),
+    }
+}
+
+/// Turn the helper's exit into an answer that means what it says (IC-271).
+///
+/// The helper is a process -- `osascript` or `notify-send` -- and its exit
+/// code is the only acknowledgement there is. The first version returned Ok
+/// as soon as it had STARTED, so a helper that then failed reported success.
+/// Waiting costs 0.12 s measured on macOS, and turns "the helper ran" into
+/// "the helper accepted it". It still does not mean the person SAW anything:
+/// macOS in particular exits 0 for an app whose notifications are switched
+/// off, and the WIT says so -- there is no reply channel by design.
+fn helper_outcome(status: std::io::Result<std::process::ExitStatus>) -> Result<(), NotifyError> {
+    match status {
+        Ok(status) if status.success() => Ok(()),
+        Ok(status) => Err(NotifyError::Unavailable(format!(
+            "the notification service refused it ({status})"
+        ))),
+        Err(err) => Err(NotifyError::Unavailable(format!(
+            "this computer has no notification service ({err})"
+        ))),
+    }
+}
+
 /// Show a desktop notification attributed to the app.
+///
+/// `app_name` is the sender the OS displays. It must come from the host's
+/// knowledge of the app, never from the guest's arguments: see
+/// [`attribution_for`].
 pub fn notify(title: &str, body: &str, app_name: &str, granted: bool) -> Result<(), NotifyError> {
     if !granted {
         return Err(NotifyError::Denied);
     }
     check_notification(title, body)?;
 
-    let result = if cfg!(target_os = "macos") {
+    let status = if cfg!(target_os = "macos") {
         // osascript rather than a crate: no new dependency, and the text is
         // escaped below so it cannot close the string and run more script.
-        let script = format!(
-            "display notification \"{}\" with title \"{}\"",
-            escape_applescript(body),
-            escape_applescript(app_name)
-        );
-        Command::new("osascript").args(["-e", &script]).spawn()
+        //
+        // The APP is the title line and the guest's title is the subtitle,
+        // which is where macOS puts the sender of every other notification.
+        // Putting the guest's text on the title line was how an app could
+        // post as somebody else.
+        let script = macos_script(title, body, app_name);
+        Command::new("osascript").args(["-e", &script]).status()
     } else if cfg!(target_os = "windows") {
         // Windows has no dependency-free notification path from a plain
         // process; report that plainly rather than pretending it worked.
@@ -258,15 +296,10 @@ pub fn notify(title: &str, body: &str, app_name: &str, granted: bool) -> Result<
             .arg(app_name)
             .arg(title)
             .arg(body)
-            .spawn()
+            .status()
     };
 
-    match result {
-        Ok(_) => Ok(()),
-        Err(err) => Err(NotifyError::Unavailable(format!(
-            "this computer has no notification service ({err})"
-        ))),
-    }
+    helper_outcome(status)
 }
 
 /// Reject notification text that is empty or unbounded.
@@ -287,6 +320,24 @@ pub fn check_notification(title: &str, body: &str) -> Result<(), NotifyError> {
         ));
     }
     Ok(())
+}
+
+/// The AppleScript for one notification, with the sender and the guest's
+/// title in their own places (IC-271).
+///
+/// `with title` is the line macOS shows as the sender; `subtitle` is the
+/// line beneath it. The app's name goes on the sender line and the guest's
+/// title beneath -- the first version put the guest's text on the sender
+/// line, which is exactly how an app could post as somebody else. Kept as
+/// a function so that placement is a fact a test can read, not a detail
+/// inside a spawn.
+fn macos_script(title: &str, body: &str, app_name: &str) -> String {
+    format!(
+        "display notification \"{}\" with title \"{}\" subtitle \"{}\"",
+        escape_applescript(body),
+        escape_applescript(app_name),
+        escape_applescript(title)
+    )
 }
 
 /// Escape text for embedding in an AppleScript string literal.
@@ -437,6 +488,73 @@ mod tests {
         let long = format!("https://example.com/{}", "a".repeat(MAX_URL_BYTES));
         assert!(check_url(&long).is_err());
         assert!(check_url("").is_err());
+    }
+
+    /// The sender line is the app's consented name, never guest text
+    /// (IC-271, "spoofed guest fields").
+    #[test]
+    fn attribution_is_the_apps_name_or_a_fixed_phrase_never_empty() {
+        assert_eq!(attribution_for(Some("Tip Calculator")), "Tip Calculator");
+        assert_eq!(attribution_for(Some("  Notes  ")), "Notes", "trimmed");
+        // No name known: a fixed phrase, so a notification is never sent
+        // with an empty or missing sender that the OS would fill in oddly.
+        assert_eq!(attribution_for(None), "a Krate app");
+        assert_eq!(attribution_for(Some("")), "a Krate app");
+        assert_eq!(attribution_for(Some("   ")), "a Krate app");
+    }
+
+    /// A helper that started and then failed is a failure (IC-271,
+    /// "helper/service failure"). Driven with real processes: `true` and
+    /// `false` are the smallest helpers that exit 0 and 1.
+    #[cfg(unix)]
+    #[test]
+    fn a_helper_that_exits_nonzero_is_reported_not_swallowed() {
+        let ok = helper_outcome(Command::new("true").status());
+        assert_eq!(
+            ok,
+            Ok(()),
+            "a helper that exits 0 accepted the notification"
+        );
+
+        let failed = helper_outcome(Command::new("false").status());
+        match failed {
+            Err(NotifyError::Unavailable(words)) => assert!(
+                words.contains("refused"),
+                "a non-zero exit must read as the service refusing it, got: {words}"
+            ),
+            other => panic!("a helper that exits 1 must be an error, got {other:?}"),
+        }
+
+        let missing = helper_outcome(Command::new("/nonexistent/krate-no-such-helper").status());
+        match missing {
+            Err(NotifyError::Unavailable(words)) => assert!(
+                words.contains("no notification service"),
+                "a helper that cannot start reads as no service: {words}"
+            ),
+            other => panic!("a missing helper must be an error, got {other:?}"),
+        }
+    }
+
+    /// On macOS the sender line is the app, the guest's title is beneath it
+    /// (IC-271). Swapping them is the spoof.
+    #[test]
+    fn the_macos_sender_line_is_the_app_and_the_guest_title_sits_beneath() {
+        let script = macos_script("Update ready", "Version 2 is out", "Reading List");
+        assert!(
+            script.contains("with title \"Reading List\""),
+            "the app must be the sender line: {script}"
+        );
+        assert!(
+            script.contains("subtitle \"Update ready\""),
+            "the guest's title goes beneath the sender: {script}"
+        );
+        assert!(
+            !script.contains("with title \"Update ready\""),
+            "the guest's title must never be the sender line: {script}"
+        );
+        // A guest cannot promote itself by closing the literal early.
+        let sneaky = macos_script("x\" with title \"1Password", "b", "App");
+        assert!(!sneaky.contains("with title \"1Password\""), "{sneaky}");
     }
 
     #[test]

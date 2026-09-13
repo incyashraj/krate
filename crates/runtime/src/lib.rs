@@ -157,6 +157,12 @@ pub struct Config {
     /// Where this app's shared-store mirror lives, and the hub it syncs
     /// against, on the same terms as the key-value store.
     pub app_shared: Option<(PathBuf, String)>,
+    /// The name the person consented to -- the manifest's `app.name` -- for
+    /// anything the OS shows outside the app's own window (IC-271). A
+    /// notification carries it as the sender. It is optional because the
+    /// runtime is also driven by tests and tools with no manifest; absent,
+    /// the host attributes to "a Krate app" and never to guest-chosen text.
+    pub app_name: Option<String>,
     /// Host UI backend mode for Phase 3 `gui` world runs.
     pub phase3_ui_mode: phase3_ui::Phase3HostUiMode,
     /// When set, a headless GUI run paints the window to this PNG once the app
@@ -191,6 +197,7 @@ impl Default for Config {
             app_database_path: None,
             app_secrets: None,
             app_shared: None,
+            app_name: None,
             phase3_ui_mode: phase3_ui::Phase3HostUiMode::HeadlessDraft,
             check_layout: false,
             screenshot_path: None,
@@ -956,7 +963,8 @@ impl Runtime {
         )
         .with_usability(config.usability_plan.clone())
         .with_layout_check(config.check_layout)
-        .with_chosen_files(store.data().chosen.clone());
+        .with_chosen_files(store.data().chosen.clone())
+        .with_app_name(config.app_name.clone());
         store.data_mut().phase3_gui = Some(gui_host);
 
         let linker = self.phase3_gui_linker()?;

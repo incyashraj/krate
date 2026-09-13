@@ -108,6 +108,8 @@ pub struct Phase3GuiHost {
     last_pump: std::cell::Cell<Option<std::time::Instant>>,
     /// How many times an interrupt has been turned into a close request.
     interrupts: std::cell::Cell<u32>,
+    /// See [`Config::app_name`](crate::Config::app_name).
+    app_name: Option<String>,
     /// How many times the person has asked to close the window.
     ///
     /// The first request goes to the guest untouched. A second means the guest
@@ -357,6 +359,7 @@ impl Phase3GuiHost {
             last_present_entry: std::cell::Cell::new(None),
             last_pump: std::cell::Cell::new(None),
             interrupts: std::cell::Cell::new(0),
+            app_name: None,
             close_requests: std::cell::Cell::new(0),
             pending_events: std::cell::RefCell::new(std::collections::VecDeque::new()),
             headless_started: std::cell::Cell::new(None),
@@ -386,6 +389,25 @@ impl Phase3GuiHost {
             frame_ended: std::cell::Cell::new(false),
             usability: None,
         })
+    }
+
+    /// The name the person consented to, for anything shown outside the
+    /// app's window (IC-271).
+    pub fn with_app_name(mut self, name: Option<String>) -> Self {
+        self.app_name = name;
+        self
+    }
+
+    /// What the OS shows as the sender of a notification.
+    ///
+    /// Never the notification's own title. The first version passed the
+    /// guest's title here, under a comment that read "the app's own title is
+    /// used for attribution" -- two meanings of "title" in one sentence, and
+    /// the wrong one won. The WIT promises an app "cannot post a notification
+    /// that appears to come from somewhere else"; with the guest choosing the
+    /// sender line per call, a to-do app could post as "1Password".
+    fn attribution(&self) -> String {
+        crate::desktop_host::attribution_for(self.app_name.as_deref())
     }
 
     pub fn with_asset_root(mut self, root: Option<std::path::PathBuf>) -> Self {
@@ -2775,10 +2797,11 @@ impl ui::notify::Host for Phase3GuiHost {
             .guard()
             .check(&UapiCall::Ui(UiCall::Notify))
             .is_ok();
-        // The app's own title is used for attribution, so a notification cannot
-        // be made to look like it came from somewhere else.
+        // Attribution is the APP's name, fixed at consent, never the guest's
+        // per-call title (IC-271, see `attribution`).
+        let sender = self.attribution();
         Ok(
-            crate::desktop_host::notify(&title, &body, &title, granted).map_err(|err| match err {
+            crate::desktop_host::notify(&title, &body, &sender, granted).map_err(|err| match err {
                 crate::desktop_host::NotifyError::Denied => ui::notify::NotifyError::Denied,
                 crate::desktop_host::NotifyError::InvalidContent(m) => {
                     ui::notify::NotifyError::InvalidContent(m)
@@ -5408,5 +5431,42 @@ mod tests {
         let err = widget_node_from_wit(wit_node(ui::types::WidgetKind::Button, Some((1, 1))))
             .expect_err("a button cannot carry a text caret");
         assert!(matches!(err, ui::types::UiError::Unsupported(_)));
+    }
+}
+
+#[cfg(test)]
+mod notification_attribution_tests {
+    use super::*;
+
+    /// The sender of a notification is the app's consented name, and the
+    /// call site never hands the guest's title in its place (IC-271).
+    #[test]
+    fn a_notification_is_attributed_to_the_app_not_to_its_own_title() {
+        let host = Phase3GuiHost::new(UapiGuard::default(), Phase3HostUiMode::HeadlessDraft)
+            .expect("headless host")
+            .with_app_name(Some("Reading List".to_string()));
+        assert_eq!(host.attribution(), "Reading List");
+
+        let unnamed = Phase3GuiHost::new(UapiGuard::default(), Phase3HostUiMode::HeadlessDraft)
+            .expect("headless host");
+        assert_eq!(unnamed.attribution(), "a Krate app");
+
+        // The call site itself. `show(title, body)` has the guest's title in
+        // scope and the first version passed it as the sender; a behavioural
+        // test cannot see that mistake without posting a real notification,
+        // so the one line that matters is read.
+        let source = include_str!("phase3_gui_host.rs");
+        let show_at = source
+            .find("impl ui::notify::Host for Phase3GuiHost")
+            .expect("notify impl");
+        let show = &source[show_at..show_at + 1500];
+        assert!(
+            show.contains("desktop_host::notify(&title, &body, &sender, granted)"),
+            "show must pass the attribution as the sender"
+        );
+        assert!(
+            !show.contains("notify(&title, &body, &title,"),
+            "the guest's title must never be the sender line"
+        );
     }
 }
