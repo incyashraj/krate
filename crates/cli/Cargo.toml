@@ -46,6 +46,8 @@ default = []
 speech = ["krate-runtime/speech"]
 
 [dependencies]
+# krate-check.toml, the app's primary task for the usability driver.
+toml.workspace = true
 # Native consent fallback where no terminal exists (Windows dialog).
 rfd.workspace = true
 anyhow.workspace = true

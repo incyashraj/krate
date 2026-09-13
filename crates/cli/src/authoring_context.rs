@@ -91,6 +91,28 @@ text (it is a `run` flag, not a `check-app` one -- a real build wasted
 attempts discovering that). Every pass through that
 loop is worth more than another green check.
 
+Say what the app is FOR, so check-app can prove it does it. Beside\n\
+`manifest.toml`, write `krate-check.toml`: the app's primary task as steps a\n\
+driver can do and what must then be on screen. check-app runs it after the\n\
+usability checks and fails if the task cannot be completed, listing what was\n\
+on screen instead. Keep it to the one thing the app exists to do:\n\
+\n\
+```toml\n\
+name = \"add an item to the list\"\n\
+[[step]]\n\
+click = \"Add\"          # the label of a control on screen\n\
+[[step]]\n\
+type = \"milk\"          # keys go to whatever has focus\n\
+[[step]]\n\
+key = \"Enter\"\n\
+[[step]]\n\
+expect_text = \"milk\"   # a label containing this must now be on screen\n\
+```\n\
+\n\
+Steps: `click`, `type`, `key`, `wait_ms`, `expect_text`, `expect_no_text`,\n\
+one per step. A task with no expectation is refused: completing it has to\n\
+mean something.\n\
+\n\
 The one hard rule: a Krate component may import ONLY `krate:*` interfaces.
 Reaching the operating system through `std` instead of through Krate pulls
 `wasi:*` imports in, and the app is rejected at the import check. Everything

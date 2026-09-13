@@ -5636,6 +5636,76 @@ fn a_removed_app_is_refused_offline_by_the_held_blocklist() {
     );
 }
 
+/// The task oracle through the binary (IC-743, test 1506): a task file's
+/// steps are driven after the usability checks, the report says whether
+/// the task completed, and a failing step says what WAS on screen.
+#[test]
+fn the_usability_report_says_whether_the_task_completed() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let bounce =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../evidence/ported/bounce.krate");
+    let run = |task: &str| -> serde_json::Value {
+        let task_path = dir.path().join("krate-check.toml");
+        std::fs::write(&task_path, task).expect("task file");
+        let report = dir.path().join("usability.json");
+        let _ = std::fs::remove_file(&report);
+        let output = krate()
+            .args(["run", "--headless", "--auto-grant", "--usability-report"])
+            .arg(&report)
+            .arg("--task")
+            .arg(&task_path)
+            .arg(&bounce)
+            .output()
+            .expect("run");
+        let text = std::fs::read_to_string(&report).unwrap_or_else(|_| {
+            panic!(
+                "no report was written: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )
+        });
+        serde_json::from_str(&text).expect("json")
+    };
+    // bounce draws its own canvas: nothing is labelled, so the only task
+    // it can complete is one that expects nothing in particular.
+    let held = run("name = \"keep the ball on screen\"\n[[step]]\nwait_ms = 300\n[[step]]\nexpect_no_text = \"Game over\"\n");
+    assert_eq!(held["task"]["outcome"], "held", "{held}");
+    assert_eq!(held["task_name"], "keep the ball on screen");
+    assert_eq!(held["task_steps_done"], 2);
+
+    let broke = run("name = \"press start\"\n[[step]]\nclick = \"Start\"\n[[step]]\nexpect_text = \"running\"\n");
+    assert_eq!(broke["task"]["outcome"], "broke", "{broke}");
+    let detail = broke["task"]["detail"].as_str().unwrap_or("");
+    assert!(
+        detail.contains("step 1 of 2")
+            && detail.contains("\"Start\"")
+            && detail.contains("on screen: []"),
+        "{detail}"
+    );
+    assert_eq!(broke["task_steps_done"], 0);
+
+    // A task file that is not one is refused before anything runs.
+    let task_path = dir.path().join("krate-check.toml");
+    std::fs::write(
+        &task_path,
+        "name = \"no expectation\"\n[[step]]\nclick = \"Start\"\n",
+    )
+    .unwrap();
+    let output = krate()
+        .args(["run", "--headless", "--auto-grant", "--usability-report"])
+        .arg(dir.path().join("r2.json"))
+        .arg("--task")
+        .arg(&task_path)
+        .arg(&bounce)
+        .output()
+        .expect("run");
+    assert_ne!(output.status.code(), Some(0));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("never looks at the screen"),
+        "a task with no expectation is refused with the reason: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 /// A fork says what it was changed from, and the product prints it
 /// (IC-397, test 494; K-312).
 ///

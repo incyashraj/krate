@@ -238,6 +238,10 @@ struct UsabilityDriver {
     /// When the press was delivered, so the app gets a turn to react before
     /// the frame is judged. See `PRESS_SETTLE`.
     press_delivered_at: Option<std::time::Instant>,
+    /// The task oracle's place: which step is next, and when the last
+    /// action was dispatched, so the app gets a settle before the next.
+    task_index: usize,
+    task_dispatched_at: Option<std::time::Instant>,
     /// The control the pointer step pressed, so the keyboard step can pick a
     /// different one: pressing the same list row twice selects what is
     /// already selected and changes nothing, which read as a keyboard
@@ -296,6 +300,37 @@ const STEP_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250)
 const SETTLE_GRACE: std::time::Duration = std::time::Duration::from_millis(3_000);
 
 /// The steps of a driven run, in order.
+/// One node of the tree as a task step sees it. `kind` is the widget
+/// kind's name (`TextField`), matched case-insensitively against a
+/// `@text-field` target with the hyphens removed.
+struct OnScreen {
+    widget: WidgetId,
+    kind: String,
+    label: String,
+    rect: Option<(f32, f32, f32, f32)>,
+}
+
+impl OnScreen {
+    /// Whether a task target names this node: a label, exactly or by
+    /// containment, or `@kind` for the first node of a kind.
+    fn matches(&self, target: &str, exact: bool) -> bool {
+        let wanted = target.trim().to_lowercase();
+        if let Some(kind) = wanted.strip_prefix('@') {
+            let kind = kind.replace('-', "");
+            return self.kind.to_lowercase() == kind;
+        }
+        let label = self.label.trim().to_lowercase();
+        if label.is_empty() {
+            return false;
+        }
+        if exact {
+            label == wanted
+        } else {
+            label.contains(&wanted)
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DriveStep {
     /// Let the app settle and draw its first real frame.
@@ -452,6 +487,8 @@ impl Phase3GuiHost {
             resize_settled: false,
             last_step: None,
             press_delivered_at: None,
+            task_index: 0,
+            task_dispatched_at: None,
             clicked_widget: None,
             idle_churn: None,
         });
@@ -708,6 +745,17 @@ impl Phase3GuiHost {
                 None
             }
             DriveStep::Watch => {
+                // The primary task first, once, when the plan has one
+                // (IC-743, test 1506): the other checks proved the app
+                // answers; this proves it does its job.
+                let task_pending = self
+                    .usability
+                    .as_ref()
+                    .is_some_and(|d| d.plan.task.is_some() && d.report.task.is_none());
+                if task_pending {
+                    self.drive_task(window, from_wait);
+                    return None;
+                }
                 let driver = self.usability.as_mut()?;
                 let started = driver.started?;
                 if std::time::Instant::now().duration_since(started)
@@ -1247,6 +1295,251 @@ impl Phase3GuiHost {
     /// elapsed. If the run reaches here with the watch unfinished, the app
     /// returned from its own event loop while the driver was still watching --
     /// which is precisely "the window closed by itself".
+    /// What is on screen in this window right now, from the widget tree
+    /// the app built: every node's kind, its label when it has one, and
+    /// where it is. The tree rather than the painted placements, because a
+    /// natively lowered control (a text field, say) is not painted by the
+    /// shared painter headless and would otherwise be invisible to a task
+    /// that types into it. Clicks aim at the rectangle; expectations read
+    /// the labels.
+    fn on_screen(&self, window: WindowId) -> Vec<OnScreen> {
+        let dispatcher = self.dispatcher();
+        let Ok(Some(tree)) = dispatcher.widget_tree(window) else {
+            return Vec::new();
+        };
+        let Ok(Some(record)) = dispatcher.window(window) else {
+            return Vec::new();
+        };
+        let Ok(viewport) = LayoutViewport::new(record.size.width as f32, record.size.height as f32)
+        else {
+            return Vec::new();
+        };
+        let layout = dispatcher.compute_layout(window, viewport).ok();
+        tree.nodes()
+            .iter()
+            .map(|(id, node)| OnScreen {
+                widget: *id,
+                kind: format!("{:?}", node.kind),
+                label: node.label.clone().unwrap_or_default(),
+                rect: layout
+                    .as_ref()
+                    .and_then(|layout| absolute_rect(&tree, layout, *id))
+                    .map(|r| (r.x, r.y, r.width, r.height)),
+            })
+            .collect()
+    }
+
+    /// One turn of the task oracle (IC-743, test 1506): dispatch the next
+    /// step, or wait for the last action to settle, or judge an
+    /// expectation. Ends with `report.task` set.
+    fn drive_task(&mut self, window: WindowId, from_wait: bool) {
+        let (index, dispatched_at, step, total, name) = {
+            let Some(driver) = self.usability.as_ref() else {
+                return;
+            };
+            let Some(task) = driver.plan.task.as_ref() else {
+                return;
+            };
+            (
+                driver.task_index,
+                driver.task_dispatched_at,
+                task.steps.get(driver.task_index).cloned(),
+                task.steps.len(),
+                task.name.clone(),
+            )
+        };
+        let trace = std::env::var_os("KRATE_EVENT_TRACE").is_some();
+        let finish = |host: &mut Self, outcome: crate::usability::Observation, done: usize| {
+            if let Some(driver) = host.usability.as_mut() {
+                driver.report.task = Some(outcome);
+                driver.report.task_name = Some(name.clone());
+                driver.report.task_steps_done = done;
+                driver.task_dispatched_at = None;
+            }
+        };
+        let Some(step) = step else {
+            if trace {
+                eprintln!("krate-check: task {name:?} completed all {total} steps");
+            }
+            finish(self, crate::usability::Observation::Held, total);
+            return;
+        };
+        let number = index + 1;
+        // An action is settling: give the app its frame before the next
+        // step, the same grace the click and keyboard steps get.
+        if let Some(at) = dispatched_at {
+            let needed = step
+                .wait_ms
+                .map(std::time::Duration::from_millis)
+                .unwrap_or(PRESS_SETTLE);
+            let since = at.elapsed();
+            let ready = (since >= needed && from_wait) || since >= needed.max(PRESS_GIVE_UP);
+            if !ready {
+                return;
+            }
+            if let Some(driver) = self.usability.as_mut() {
+                driver.task_index += 1;
+                driver.task_dispatched_at = None;
+                driver.report.task_steps_done = number;
+            }
+            return;
+        }
+        let on_screen = self.on_screen(window);
+        let labels = || {
+            let mut seen: Vec<String> = on_screen
+                .iter()
+                .filter(|n| !n.label.trim().is_empty())
+                .map(|n| n.label.clone())
+                .collect();
+            seen.dedup();
+            let shown: Vec<String> = seen.iter().take(24).map(|l| format!("{l:?}")).collect();
+            if seen.len() > 24 {
+                format!("[{}, ... {} more]", shown.join(", "), seen.len() - 24)
+            } else {
+                format!("[{}]", shown.join(", "))
+            }
+        };
+        let broke = |host: &mut Self, why: String| {
+            if trace {
+                eprintln!("krate-check: task {name:?} step {number}: {why}");
+            }
+            finish(
+                host,
+                crate::usability::Observation::broke(format!(
+                    "task {name:?}, step {number} of {total} ({}): {why}",
+                    step.describe()
+                )),
+                index,
+            );
+        };
+        if let Some(text) = &step.expect_text {
+            let wanted = text.trim().to_lowercase();
+            if on_screen
+                .iter()
+                .any(|n| n.label.to_lowercase().contains(&wanted))
+            {
+                if let Some(driver) = self.usability.as_mut() {
+                    driver.task_index += 1;
+                    driver.report.task_steps_done = number;
+                }
+            } else {
+                broke(
+                    self,
+                    format!(
+                        "{text:?} is not on screen after the steps before it; on screen: {}",
+                        labels()
+                    ),
+                );
+            }
+            return;
+        }
+        if let Some(text) = &step.expect_no_text {
+            let unwanted = text.trim().to_lowercase();
+            if on_screen
+                .iter()
+                .any(|n| n.label.to_lowercase().contains(&unwanted))
+            {
+                broke(
+                    self,
+                    format!("{text:?} is still on screen; on screen: {}", labels()),
+                );
+            } else if let Some(driver) = self.usability.as_mut() {
+                driver.task_index += 1;
+                driver.report.task_steps_done = number;
+            }
+            return;
+        }
+        if step.wait_ms.is_some() {
+            if let Some(driver) = self.usability.as_mut() {
+                driver.task_dispatched_at = Some(std::time::Instant::now());
+            }
+            return;
+        }
+        let dispatcher = self.dispatcher();
+        let delivered = if let Some(label) = &step.click {
+            let target = on_screen
+                .iter()
+                .find(|n| n.matches(label, true) && n.rect.is_some())
+                .or_else(|| {
+                    on_screen
+                        .iter()
+                        .find(|n| n.matches(label, false) && n.rect.is_some())
+                });
+            let Some(node) = target else {
+                broke(
+                    self,
+                    format!(
+                        "no control labelled {label:?} is on screen; on screen: {}",
+                        labels()
+                    ),
+                );
+                return;
+            };
+            let (rx, ry, rw, rh) = node.rect.unwrap_or_default();
+            let (x, y) = (rx + rw / 2.0, ry + rh / 2.0);
+            if trace {
+                eprintln!(
+                    "krate-check: task {name:?} step {number}: pressing widget {} ({label:?}) at {x:.1},{y:.1}",
+                    node.widget.get()
+                );
+            }
+            // A host gives focus to what was pressed, so what is typed next
+            // goes there.
+            let _ = dispatcher.focus_node(window, node.widget);
+            let Ok(Some(record)) = dispatcher.window(window) else {
+                return;
+            };
+            let Ok(viewport) =
+                LayoutViewport::new(record.size.width as f32, record.size.height as f32)
+            else {
+                return;
+            };
+            [true, false].iter().all(|&pressed| {
+                dispatcher
+                    .route_pointer_event(crate::phase3_ui::PointerRouteRequest {
+                        window,
+                        viewport,
+                        x,
+                        y,
+                        button: Some(krate_adapter_common::ui::PointerButton::Primary),
+                        pressed,
+                        modifiers: Default::default(),
+                    })
+                    .is_ok()
+            })
+        } else if let Some(key) = &step.key {
+            [true, false].iter().all(|&pressed| {
+                dispatcher
+                    .route_key_event(crate::phase3_ui::KeyRouteRequest {
+                        window,
+                        key: key.clone(),
+                        pressed,
+                        modifiers: Default::default(),
+                    })
+                    .is_ok()
+            })
+        } else if let Some(text) = &step.type_text {
+            // Typed text is a text-input event, the way a host delivers it,
+            // not one key event per character: an app reads its text field
+            // from `Event::TextInput`, and a key named "a" is a key.
+            dispatcher
+                .route_text_input(crate::phase3_ui::TextInputRouteRequest {
+                    window,
+                    text: text.clone(),
+                })
+                .is_ok()
+        } else {
+            false
+        };
+        if !delivered {
+            broke(self, "this host could not deliver the step".to_string());
+            return;
+        }
+        if let Some(driver) = self.usability.as_mut() {
+            driver.task_dispatched_at = Some(std::time::Instant::now());
+        }
+    }
+
     pub fn usability_report(&self) -> Option<crate::usability::UsabilityReport> {
         self.usability.as_ref().map(|d| {
             let mut report = d.report.clone();
@@ -5223,6 +5516,161 @@ mod tests {
             key_at < press_at,
             "the key comes first, the synthesized press after it"
         );
+    }
+
+    /// Drive a headless host's usability plan until it reports, or a
+    /// budget runs out. The driver advances on `wait`, one step per
+    /// STEP_INTERVAL.
+    fn drive_until_task_reports(host: &mut Phase3GuiHost) -> crate::usability::UsabilityReport {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        loop {
+            let _ = ui::events::Host::wait(host, Some(50));
+            let report = host.usability_report().expect("a plan");
+            if report.task.is_some() || std::time::Instant::now() > deadline {
+                return report;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(60));
+        }
+    }
+
+    fn task_plan(task: crate::usability::Task) -> crate::usability::UsabilityPlan {
+        crate::usability::UsabilityPlan {
+            report_path: std::env::temp_dir()
+                .join(format!("krate-task-test-{}.json", std::process::id())),
+            check_resize: false,
+            check_click: false,
+            check_keyboard: false,
+            check_stay_open: false,
+            task: Some(task),
+        }
+    }
+
+    fn step(field: &str, value: &str) -> crate::usability::TaskStep {
+        let mut s = crate::usability::TaskStep::default();
+        match field {
+            "click" => s.click = Some(value.to_string()),
+            "key" => s.key = Some(value.to_string()),
+            "type" => s.type_text = Some(value.to_string()),
+            "expect_text" => s.expect_text = Some(value.to_string()),
+            "expect_no_text" => s.expect_no_text = Some(value.to_string()),
+            _ => s.wait_ms = value.parse().ok(),
+        }
+        s
+    }
+
+    fn host_with_labelled_button(
+        label: &str,
+        plan: crate::usability::UsabilityPlan,
+    ) -> Phase3GuiHost {
+        let mut host = Phase3GuiHost::new(
+            UapiGuard::new(Default::default()),
+            Phase3HostUiMode::HeadlessDraft,
+        )
+        .expect("headless host")
+        .with_usability(Some(plan));
+        let window_id = ui::window::Host::create(
+            &mut host,
+            "app".to_string(),
+            ui::types::WindowSize {
+                width: 300,
+                height: 200,
+            },
+        )
+        .expect("create call")
+        .expect("a window");
+        let mut node = wit_node(ui::types::WidgetKind::Button, None);
+        node.label = Some(label.to_string());
+        ui::tree::Host::set_root(&mut host, window_id, node)
+            .expect("set_root call")
+            .expect("root");
+        host
+    }
+
+    /// The task oracle (IC-743, test 1506): a task whose expectation is on
+    /// screen completes; one that names a control that is not there fails
+    /// and says what IS there.
+    #[test]
+    fn a_task_completes_when_its_expectation_is_on_screen_and_names_what_is_there_when_not() {
+        let task = crate::usability::Task {
+            name: "see the button".to_string(),
+            steps: vec![step("expect_text", "Add item")],
+        };
+        let mut host = host_with_labelled_button("Add item", task_plan(task));
+        let report = drive_until_task_reports(&mut host);
+        assert_eq!(
+            report.task,
+            Some(crate::usability::Observation::Held),
+            "{report:?}"
+        );
+        assert_eq!(report.task_name.as_deref(), Some("see the button"));
+        assert_eq!(report.task_steps_done, 1);
+
+        let task = crate::usability::Task {
+            name: "press what is not there".to_string(),
+            steps: vec![step("click", "Remove"), step("expect_text", "gone")],
+        };
+        let mut host = host_with_labelled_button("Add item", task_plan(task));
+        let report = drive_until_task_reports(&mut host);
+        match report.task {
+            Some(crate::usability::Observation::Broke { detail }) => {
+                assert!(detail.contains("step 1 of 2"), "{detail}");
+                assert!(
+                    detail.contains("\"Remove\""),
+                    "the missing label is named: {detail}"
+                );
+                assert!(
+                    detail.contains("\"Add item\""),
+                    "and what is on screen is listed: {detail}"
+                );
+            }
+            other => {
+                panic!("a click on a control that is not there must break the task: {other:?}")
+            }
+        }
+        assert_eq!(report.task_steps_done, 0);
+
+        // An expectation that is not on screen breaks the task by itself.
+        let task = crate::usability::Task {
+            name: "expect what is not there".to_string(),
+            steps: vec![step("expect_text", "nope")],
+        };
+        let mut host = host_with_labelled_button("Add item", task_plan(task));
+        let report = drive_until_task_reports(&mut host);
+        assert!(
+            matches!(report.task, Some(crate::usability::Observation::Broke { ref detail }) if detail.contains("\"nope\"")),
+            "{report:?}"
+        );
+
+        // And something that must NOT be on screen, but is, breaks it too.
+        let task = crate::usability::Task {
+            name: "expect the button gone".to_string(),
+            steps: vec![step("expect_no_text", "Add item")],
+        };
+        let mut host = host_with_labelled_button("Add item", task_plan(task));
+        let report = drive_until_task_reports(&mut host);
+        assert!(
+            matches!(report.task, Some(crate::usability::Observation::Broke { ref detail }) if detail.contains("still on screen")),
+            "{report:?}"
+        );
+
+        // A click on a control that IS there is delivered, settles, and the
+        // expectation after it is judged on the labels then on screen.
+        let task = crate::usability::Task {
+            name: "press the button".to_string(),
+            steps: vec![
+                step("click", "add item"),
+                step("expect_no_text", "Remove"),
+                step("expect_text", "Add"),
+            ],
+        };
+        let mut host = host_with_labelled_button("Add item", task_plan(task));
+        let report = drive_until_task_reports(&mut host);
+        assert_eq!(
+            report.task,
+            Some(crate::usability::Observation::Held),
+            "{report:?}"
+        );
+        assert_eq!(report.task_steps_done, 3);
     }
 
     /// A row of a list answers Enter the way it answers a press: the pointer

@@ -84,6 +84,137 @@ pub struct UsabilityPlan {
     pub check_keyboard: bool,
     /// Whether to watch for the app closing itself.
     pub check_stay_open: bool,
+    /// The app's primary task, scripted, to be completed after the other
+    /// checks and before the watch (IC-743, test 1506). None means no task
+    /// oracle: reaching readiness is then all that is judged.
+    pub task: Option<Task>,
+}
+
+/// An app's primary task as steps a driver can do and a state it can look
+/// for (IC-743, test 1506): "a GUI that reaches readiness but cannot
+/// complete its primary task fails the task oracle". Written by whoever
+/// made the app -- a person, or the agent that authored it -- as
+/// `krate-check.toml` beside the manifest:
+///
+/// ```toml
+/// name = "add an item to the list"
+/// [[step]]
+/// click = "Add"
+/// [[step]]
+/// type = "milk"
+/// [[step]]
+/// key = "Enter"
+/// [[step]]
+/// expect_text = "milk"
+/// ```
+///
+/// Clicks find a control by the label the host shows; text and keys go to
+/// whatever has focus, the way a person's would; an expectation looks at
+/// the labels on screen after the steps before it have settled.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Task {
+    pub name: String,
+    #[serde(rename = "step", default)]
+    pub steps: Vec<TaskStep>,
+}
+
+/// One step. Exactly one field is set; `validate` says so.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct TaskStep {
+    /// Press the control whose label is this (case-insensitive, trimmed).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub click: Option<String>,
+    /// Press and release one key, by the runtime's key name ("Enter", "a").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    /// Type this text, one key per character, into whatever has focus.
+    #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
+    pub type_text: Option<String>,
+    /// Let the app work for this long before the next step.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wait_ms: Option<u64>,
+    /// A label containing this must be on screen.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expect_text: Option<String>,
+    /// No label containing this may be on screen.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expect_no_text: Option<String>,
+}
+
+impl TaskStep {
+    /// The one thing this step does, or why it is not one thing.
+    pub fn validate(&self) -> Result<(), String> {
+        let set = [
+            self.click.is_some(),
+            self.key.is_some(),
+            self.type_text.is_some(),
+            self.wait_ms.is_some(),
+            self.expect_text.is_some(),
+            self.expect_no_text.is_some(),
+        ]
+        .iter()
+        .filter(|s| **s)
+        .count();
+        match set {
+            1 => Ok(()),
+            0 => Err("a step must do one thing: click, key, type, wait_ms, expect_text or expect_no_text".to_string()),
+            _ => Err(format!("a step does one thing, this one does {set}: {}", self.describe())),
+        }
+    }
+
+    pub fn describe(&self) -> String {
+        if let Some(l) = &self.click {
+            return format!("click {l:?}");
+        }
+        if let Some(k) = &self.key {
+            return format!("key {k:?}");
+        }
+        if let Some(t) = &self.type_text {
+            return format!("type {t:?}");
+        }
+        if let Some(ms) = self.wait_ms {
+            return format!("wait {ms} ms");
+        }
+        if let Some(t) = &self.expect_text {
+            return format!("expect {t:?} on screen");
+        }
+        if let Some(t) = &self.expect_no_text {
+            return format!("expect {t:?} not on screen");
+        }
+        "an empty step".to_string()
+    }
+
+    /// Whether the step changes the app (and so needs a settle after it)
+    /// or only looks.
+    pub fn is_action(&self) -> bool {
+        self.expect_text.is_none() && self.expect_no_text.is_none()
+    }
+}
+
+impl Task {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.name.trim().is_empty() {
+            return Err(
+                "a task needs a name: what a person would call what they are doing".to_string(),
+            );
+        }
+        if self.steps.is_empty() {
+            return Err(format!("task {:?} has no steps", self.name));
+        }
+        if !self.steps.iter().any(|s| !s.is_action()) {
+            return Err(format!(
+                "task {:?} never looks at the screen; add an expect_text so completing it means something",
+                self.name
+            ));
+        }
+        for (index, step) in self.steps.iter().enumerate() {
+            step.validate()
+                .map_err(|why| format!("task {:?}, step {}: {why}", self.name, index + 1))?;
+        }
+        Ok(())
+    }
 }
 
 /// One thing the driver tried to observe.
@@ -129,6 +260,13 @@ pub struct UsabilityReport {
     /// Enter was pressed. Absent in reports written before this existed.
     #[serde(default)]
     pub keyboard: Option<Observation>,
+    /// The primary task, when one was given (IC-743, test 1506).
+    #[serde(default)]
+    pub task: Option<Observation>,
+    #[serde(default)]
+    pub task_name: Option<String>,
+    #[serde(default)]
+    pub task_steps_done: usize,
     /// Whether the app ever opened a window at all. A CLI app never does, and
     /// that is not a defect -- it is the signal to skip the whole stage.
     pub opened_window: bool,
@@ -421,6 +559,9 @@ mod tests {
             stay_open: Some(Observation::Held),
             resize: Some(Observation::broke("the frame did not change")),
             keyboard: None,
+            task: None,
+            task_name: None,
+            task_steps_done: 0,
             click: Some(Observation::unobserved("no clickable widget")),
             opened_window: true,
             ran_millis: 1234,

@@ -282,6 +282,12 @@ enum Command {
         #[arg(long, hide = true, value_name = "FILE")]
         usability_report: Option<PathBuf>,
 
+        /// The app's primary task as steps, to complete after the usability
+        /// checks (see `krate-check.toml` in the authoring guide). Used with
+        /// --usability-report; `check-app` reads it from beside the manifest.
+        #[arg(long, value_name = "FILE")]
+        task: Option<PathBuf>,
+
         /// Arguments passed to the Krate app. Put them after `--`.
         #[arg(last = true, value_name = "ARG")]
         app_args: Vec<String>,
@@ -1552,6 +1558,7 @@ fn run() -> Result<u8> {
             shoot_scale,
             check_layout,
             usability_report,
+            task,
             app_args,
         } => run_component(RunRequest {
             target,
@@ -1601,6 +1608,7 @@ fn run() -> Result<u8> {
             screenshot_path: shoot,
             screenshot_scale: shoot_scale,
             usability_report,
+            task,
             app_args,
         }),
         #[cfg(target_os = "macos")]
@@ -3551,6 +3559,8 @@ struct RunRequest {
     /// When set, drive the run against the usability script and write what was
     /// observed here.
     usability_report: Option<PathBuf>,
+    /// The primary task to run under the usability plan (IC-743, test 1506).
+    task: Option<PathBuf>,
     app_args: Vec<String>,
 }
 
@@ -4535,6 +4545,7 @@ pub(crate) fn run_bundle_inline(bundle: &Path) -> Result<()> {
         screenshot_path: None,
         screenshot_scale: 2.0,
         usability_report: None,
+        task: None,
         app_args: Vec::new(),
     })?;
     Ok(())
@@ -11930,6 +11941,22 @@ fn resolve_run_target(
     Ok((path, None, None))
 }
 
+/// Read a task file (`krate-check.toml`): the app's primary task as steps
+/// the usability driver can do (IC-743, test 1506).
+fn load_task(path: &Path) -> Result<krate_runtime::usability::Task> {
+    let text = fs::read_to_string(path)
+        .with_context(|| format!("could not read the task file {}", path.display()))?;
+    let task: krate_runtime::usability::Task = toml::from_str(&text).with_context(|| {
+        format!(
+            "{} is not a task file: it needs `name` and [[step]] entries",
+            path.display()
+        )
+    })?;
+    task.validate()
+        .map_err(|why| anyhow::anyhow!("{}: {why}", path.display()))?;
+    Ok(task)
+}
+
 /// Say what a link resolved to before the app is judged (IC-389, test
 /// 476): a channel link is a moving name, and the person should see the
 /// fixed address it landed on and that the bytes were held to it. On
@@ -12575,15 +12602,17 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
         phase3_ui_mode: request.ui_mode,
         screenshot_path: request.screenshot_path.clone(),
         screenshot_scale: request.screenshot_scale,
-        usability_plan: request.usability_report.as_ref().map(|path| {
-            krate_runtime::usability::UsabilityPlan {
+        usability_plan: match request.usability_report.as_ref() {
+            Some(path) => Some(krate_runtime::usability::UsabilityPlan {
                 report_path: path.clone(),
                 check_resize: true,
                 check_click: true,
                 check_keyboard: true,
                 check_stay_open: true,
-            }
-        }),
+                task: request.task.as_deref().map(load_task).transpose()?,
+            }),
+            None => None,
+        },
     };
     let runtime = Runtime::new(&config)?;
     let runtime_world = match manifest.map(Manifest::app_world).transpose()? {
@@ -14313,6 +14342,7 @@ fn open_app(direct: Option<PathBuf>) -> Result<u8> {
         screenshot_path: None,
         screenshot_scale: 2.0,
         usability_report: None,
+        task: None,
         app_args: Vec::new(),
     })
 }
@@ -16322,6 +16352,23 @@ fn run_usability_stage(
         "--usability-report".into(),
         report_str,
     ];
+    // The app's primary task, when its author wrote one down beside the
+    // manifest (IC-743, test 1506). Validated here so a broken task file is
+    // a named failure of the file, not a silent skip of the oracle.
+    let task_file = dir.join("krate-check.toml");
+    let mut args = args;
+    if task_file.is_file() {
+        load_task(&task_file).map_err(|error| CheckFailure {
+            stage: CheckStage::Usability,
+            detail: format!("{error:#}"),
+            fix: "krate-check.toml names the app's primary task: a `name`, then [[step]] entries each \
+                  doing one thing (click = \"label\", type = \"text\", key = \"Enter\", wait_ms = 500, \
+                  expect_text = \"what should then be on screen\")."
+                .to_string(),
+        })?;
+        args.push("--task".into());
+        args.push(task_file.to_string_lossy().into_owned());
+    }
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     let exit = run_self(dir, &arg_refs).map_err(|error| CheckFailure {
         stage: CheckStage::Usability,
@@ -16382,6 +16429,20 @@ fn run_usability_stage(
         });
     }
 
+    // The primary task is the one check that says the app does its job,
+    // not only that it answers (IC-743, test 1506).
+    if let Some(Observation::Broke { detail }) = &report.task {
+        return Err(CheckFailure {
+            stage: CheckStage::Usability,
+            detail: detail.clone(),
+            fix: "The app reached the screen but could not complete the task krate-check.toml \
+                  describes. Either the app does not do what the task says -- fix the app -- or \
+                  the task names a control or text that is not what the app shows; the message \
+                  lists what was on screen, so make the step match it."
+                .to_string(),
+        });
+    }
+
     if let Some(Observation::Broke { detail }) = &report.keyboard {
         return Err(CheckFailure {
             stage: CheckStage::Usability,
@@ -16401,10 +16462,24 @@ fn run_usability_stage(
         ("survives a resize", &report.resize),
         ("responds to a press", &report.click),
         ("answers the keyboard", &report.keyboard),
+        ("completes its task", &report.task),
     ] {
         if let Some(Observation::Unobserved { reason }) = observation {
             notes.push(format!("{name}: not checked -- {reason}"));
         }
+    }
+    if report.task.is_none() {
+        notes.push(
+            "completes its task: not checked -- no krate-check.toml beside the manifest names the \
+             app's primary task, so only readiness and responses were judged"
+                .to_string(),
+        );
+    } else if let Some(Observation::Held) = &report.task {
+        notes.push(format!(
+            "completes its task: {} ({} steps)",
+            report.task_name.as_deref().unwrap_or("the task"),
+            report.task_steps_done
+        ));
     }
     Ok(notes)
 }
