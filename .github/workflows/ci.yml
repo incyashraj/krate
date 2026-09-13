@@ -1656,6 +1656,13 @@ jobs:
       # audit job below (IC-176, CP1 exit test).
       - name: Prove the licence map flags what it should
         run: python3 scripts/licence-map.py --self-test
+      # A comparison may say "equivalent product" or "feature parity" only
+      # when the corpus records every common required feature present on
+      # both sides; otherwise the wording is workload-matched (IC-822).
+      - name: Prove the comparison corpus gates equivalence wording
+        run: |
+          python3 scripts/check-compare-corpus.py --self-test
+          python3 scripts/check-compare-corpus.py
       # The open-core boundary: the player and format are MIT/Apache, Studio
       # and the hub worker are BSL 1.1. It breaks by an MIT crate quietly
       # depending on the product layer, not by anyone relicensing a file

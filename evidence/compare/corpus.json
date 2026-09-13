@@ -1,0 +1,100 @@
+{
+ "schema": "krate.compare.corpus.v1",
+ "note": "The machine-readable gate behind any comparison Krate publishes (IC-822). A sentence may say 'equivalent product', 'feature parity' or 'the same app as X' only when the corpus records every common required feature as present on BOTH sides. Until then the permitted wording is workload-matched: the same document, the same journey, the same machine, named. Sealed with a content digest; a publisher signature replaces the seal when publisher keys exist (CP1 signing).",
+ "apps": [
+  {
+   "id": "notes-replica-vs-marktext",
+   "stratum": "notes",
+   "krate_app": {
+    "name": "mark-replica.krate",
+    "bytes": 37489,
+    "identity": "the exact bundle hashed in evidence/benchmarks/marktext-vs-krate/README.md; a run records its digest"
+   },
+   "comparator": {
+    "name": "MarkText",
+    "version": "0.17.1",
+    "platform_note": "Electron; the ARM64 package on Apple silicon, never the x86_64 one under Rosetta",
+    "licence": "MIT",
+    "release_origin": "https://github.com/marktext/marktext/releases/tag/v0.17.1",
+    "released_at": "2022-03-07T18:12:02Z",
+    "support_status": "repository not archived; last push observed 2026-09-13",
+    "verified_at": "2026-09-13",
+    "verified_from": "api.github.com/repos/marktext/marktext and /releases/tags/v0.17.1"
+   },
+   "common_required_features": [
+    {
+     "feature": "a notes list and one editor",
+     "krate": "present",
+     "comparator": "present"
+    },
+    {
+     "feature": "local persistence of the document",
+     "krate": "present",
+     "comparator": "present"
+    },
+    {
+     "feature": "open the same generated Markdown document at 5,000 and 50,000 lines",
+     "krate": "present",
+     "comparator": "present"
+    },
+    {
+     "feature": "render the document content after opening, not only a window",
+     "krate": "present",
+     "comparator": "present"
+    },
+    {
+     "feature": "scroll the document under wheel input without dropping it",
+     "krate": "present",
+     "comparator": "present"
+    },
+    {
+     "feature": "Markdown preview and syntax rendering",
+     "krate": "absent",
+     "comparator": "present"
+    },
+    {
+     "feature": "multiple documents and tabs",
+     "krate": "absent",
+     "comparator": "present"
+    },
+    {
+     "feature": "export to other formats",
+     "krate": "absent",
+     "comparator": "present"
+    }
+   ],
+   "optional_features": [
+    "themes",
+    "spell checking",
+    "image paste",
+    "table editing"
+   ],
+   "known_differences": [
+    "MarkText is a mature editor with more features; the replica implements the workflow being measured and nothing beyond it",
+    "the historical 271 MiB installed figure is MarkText's x86_64 package; the ARM64 package is about 284.6 MiB and a new run must use it",
+    "the per-app Krate payload excludes the shared Krate Studio/runtime installation, which is disclosed beside it"
+   ],
+   "human_review_tasks": [
+    "open the 50,000-line document in both apps and confirm the text is visible before any timing is read",
+    "scroll with the same wheel input in both apps and confirm content moves in both",
+    "confirm both binaries ran under the same host architecture"
+   ],
+   "fixtures": [
+    "evidence/benchmarks/marktext-vs-krate/fixtures"
+   ],
+   "journeys": [
+    "warm launch to visible window",
+    "settled idle with the document open",
+    "memory footprint of the whole process tree",
+    "controlled scrolling"
+   ],
+   "profile": "P-NOTES-BATTERY-MACOS",
+   "required_correctness_cells": [
+    "content-readiness",
+    "input-integrity"
+   ],
+   "permitted_wording": "workload-matched"
+  }
+ ],
+ "seal": "f829680494a0578a66ced2d7a6a63d176e50e075bf7de5f2c70bf099fd78275c"
+}
