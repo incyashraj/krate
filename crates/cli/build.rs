@@ -101,7 +101,13 @@ fn embed_sdk() {
 
     // The Rust bindings crate. Its Cargo.toml is rewritten to stand alone.
     let bindings = repo_root.join("crates/bindings-rust");
-    for rel in ["README.md", "src/lib.rs", "src/bindings.rs"] {
+    for rel in [
+        "README.md",
+        "src/lib.rs",
+        "src/bindings.rs",
+        "src/bindings_gui.rs",
+        "src/phase3.rs",
+    ] {
         let path = bindings.join(rel);
         println!("cargo:rerun-if-changed={}", path.display());
         let bytes = fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));

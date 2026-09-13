@@ -1211,22 +1211,30 @@ to call it.\n";
 pub(crate) fn gui_world_section() -> String {
     let mut out = String::from("\n---\n\n# 4. The GUI world: ui / gfx / audio / speech\n\n");
     out.push_str(
-        "A windowed app reaches these through its generated `bindings` module, e.g.\n\
-         `bindings::krate::gfx::canvas2d::present(canvas)`. Records live in each\n\
-         package's `types` interface (with two exceptions the samples show:\n\
-         `ui::image::ImagePixels` and `ui::dialog`). Signatures are WIT, so\n\
-         `list<u8>` is a Rust `Vec<u8>`/`&[u8]`, `result<t, e>` is `Result<T, E>`,\n\
-         and kebab-case names become snake_case in Rust.\n\n\
-         IMPORTANT for a GUI app: reach the *shared* modules through `bindings::krate`\n\
-         too, not the `krate::` SDK helpers in section 1. Their shapes differ. In the\n\
-         generated bindings the action is a nested module, so it is\n\
-         `bindings::krate::random::bytes::get(count)`,\n\
-         `bindings::krate::random::bytes::below(bound)`,\n\
-         `bindings::krate::random::bytes::next_u64()`, and\n\
-         `bindings::krate::store::kv::get(key)` -- not `random::bytes(count)` or\n\
-         `store::get(key)`, which are the SDK free-function forms and do not exist on the\n\
-         GUI world's `bindings`. When in doubt, expand the module path: the leaf that\n\
-         takes the arguments is the function.\n\n",
+        "A windowed app reaches these through the SDK, the same crate a CLI app\n\
+         uses, with its `gui` feature on:\n\n\
+         ```toml\n\
+         [dependencies]\n\
+         krate = {{ path = \"<sdk>/crates/bindings-rust\", features = [\"gui\"] }}\n\
+         ```\n\n\
+         Then the interfaces below are `krate::<package>::<interface>::<fn>`, e.g.\n\
+         `krate::ui::window::create(\"Title\", size)`,\n\
+         `krate::gfx::canvas2d::present(canvas)`, `krate::ui::events::wait(None)`.\n\
+         Records live in each package's `types` module (`krate::ui::types::WindowSize`)\n\
+         and are re-exported beside the functions that use them. Signatures are WIT,\n\
+         so `list<u8>` is a Rust `Vec<u8>`/`&[u8]`, `result<t, e>` is `Result<T, E>`,\n\
+         and kebab-case names become snake_case in Rust. The app implements\n\
+         `krate::Guest` and ends with `krate::export!(Component);` -- no generated\n\
+         `bindings` module of its own, no `mod bindings;`.\n\n\
+         The `gui` feature is what makes the component declare the gui world, so a\n\
+         windowed app MUST have it and a CLI app MUST NOT.\n\n\
+         The shared Phase 2 helpers in section 1 (`krate::store::get(key)`,\n\
+         `krate::random::bytes(count)`, `krate::fs`, `krate::net`) work unchanged in a\n\
+         GUI app: the gui world imports everything the cli world does. The raw\n\
+         bindings are still reachable as `krate::bindings::krate::<package>::...` when a\n\
+         shape the helpers do not cover is needed. Older shipped GUI apps carry a\n\
+         generated `bindings` module and call `bindings::krate::ui::...`; that still\n\
+         builds, but new apps take the SDK path above.\n\n",
     );
     for (package, wit) in [
         ("gfx", GFX_WIT),
@@ -1240,9 +1248,9 @@ pub(crate) fn gui_world_section() -> String {
     out.push_str(
         "\n## The shared packages, exact shapes\n\n\
          The same modules earlier sections describe in prose, but as the exact \
-         interfaces the generated `bindings` module exposes -- complete, so \
-         there is never a reason to open `bindings.rs` to check a name or a \
-         type. Reach each as `bindings::krate::<package>::<interface>::<fn>`.\n\n",
+         interfaces the bindings expose -- complete, so there is never a reason \
+         to open a bindings file to check a name or a type. Prefer the SDK helpers \
+         of section 1; the raw form is `krate::bindings::krate::<package>::<interface>::<fn>`.\n\n",
     );
     for (package, wit) in [
         ("fs", FS_WIT),
@@ -2157,6 +2165,34 @@ pub fn closest_example(request: &str) -> &'static EmbeddedExample {
 
 #[cfg(test)]
 mod tests {
+    /// A windowed app is taught to reach Phase 3 through the SDK's `gui`
+    /// feature, not through a generated bindings copy of its own, and the
+    /// old warning against the SDK helpers in GUI apps is gone (IC-298).
+    #[test]
+    fn the_gui_world_is_taught_through_the_sdk() {
+        let section = super::gui_world_section();
+        assert!(
+            section.contains("features = [\"gui\"]"),
+            "the dependency line carries the feature"
+        );
+        assert!(
+            section.contains("krate::ui::window::create("),
+            "the paths are the SDK's"
+        );
+        assert!(
+            section.contains("krate::export!(Component);"),
+            "and so is the export"
+        );
+        assert!(
+            !section.contains("not the `krate::` SDK helpers"),
+            "the SDK helpers work in a GUI app now; the warning against them must be gone"
+        );
+        assert!(
+            section.contains("MUST have it and a CLI app MUST NOT"),
+            "the feature decides the world, and the pack says so"
+        );
+    }
+
     /// The authoring pack must not promise a keychain the runtime does not
     /// provide (IC-038).
     ///

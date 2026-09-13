@@ -94,9 +94,26 @@ mod mem_intrinsics {
     }
 }
 
+// One crate, two worlds. The `gui` feature picks which generated binding
+// set is compiled: the gui world imports everything the cli world does and
+// more, so the Phase 2 helpers below compile against either, and the
+// component-type section the bindings carry declares the world the app
+// actually targets (IC-298, K-302).
+#[cfg(not(feature = "gui"))]
 #[allow(warnings)]
 #[doc(hidden)]
 pub mod bindings;
+
+#[cfg(feature = "gui")]
+#[allow(warnings)]
+#[doc(hidden)]
+#[path = "bindings_gui.rs"]
+pub mod bindings;
+
+#[cfg(feature = "gui")]
+mod phase3;
+#[cfg(feature = "gui")]
+pub use phase3::{audio, camera, gfx, speech, ui};
 
 pub use bindings::Guest;
 

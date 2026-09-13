@@ -14,11 +14,16 @@
 //! window: the tree is accepted, events stay empty, and the app exits after
 //! its bounded loop. That keeps this sample runnable in CI on all hosts.
 
-#[allow(warnings)]
-mod bindings;
+#![no_std]
+extern crate alloc;
 
-use bindings::krate::io::{args, stdio};
-use bindings::krate::ui::{events, tree, types, window};
+// The SDK carries the gui world's bindings (IC-298): the windowing,
+// widget and event interfaces are `krate::ui::*`, and the raw bindings
+// for the shared Phase 2 packages sit under `krate::bindings`. This app
+// no longer needs a generated copy of the bindings of its own.
+use alloc::string::String;
+use krate::bindings::krate::io::{args, stdio};
+use krate::ui::{events, tree, types, window};
 
 const ROOT_ID: u64 = 1;
 const BUTTON_ID: u64 = 2;
@@ -247,7 +252,7 @@ fn typing_progress(fraction: f32) -> types::WidgetNode {
     }
 }
 
-impl bindings::Guest for Component {
+impl krate::Guest for Component {
     fn run() -> i32 {
         let size = types::WindowSize {
             width: 640,
@@ -455,7 +460,7 @@ fn pure_string_from_bytes(bytes: &[u8]) -> String {
     }
     unsafe {
         let layout = core::alloc::Layout::from_size_align_unchecked(len, 1);
-        let ptr = std::alloc::alloc(layout);
+        let ptr = alloc::alloc::alloc(layout);
         if ptr.is_null() {
             core::arch::wasm32::unreachable()
         }
@@ -471,7 +476,7 @@ fn pure_string(text: &str) -> String {
     }
     unsafe {
         let layout = core::alloc::Layout::from_size_align_unchecked(len, 1);
-        let ptr = std::alloc::alloc(layout);
+        let ptr = alloc::alloc::alloc(layout);
         if ptr.is_null() {
             core::arch::wasm32::unreachable()
         }
@@ -480,4 +485,4 @@ fn pure_string(text: &str) -> String {
     }
 }
 
-bindings::export!(Component with_types_in bindings);
+krate::export!(Component);

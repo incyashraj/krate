@@ -144,8 +144,13 @@ implements `krate::Guest`.
 
 ### A GUI app (a window)
 
-Same as above with three changes: the WIT world is `gui` under `phase3`, four
-more WIT packages are listed, and the bindings need `std_feature = true`.
+Same as above with four changes: the `krate` dependency turns on its `gui`
+feature (that is what makes the component declare the gui world), the WIT
+world is `gui` under `phase3`, four more WIT packages are listed, and the
+bindings need `std_feature = true`. The windowing, widget, event, drawing,
+sound, camera and speech interfaces are then `krate::ui::...`,
+`krate::gfx::...`, `krate::audio::...`, `krate::camera::...` and
+`krate::speech::...`; the Phase 2 helpers work unchanged.
 
 ```toml
 [workspace]
@@ -157,7 +162,7 @@ edition = "2021"
 rust-version = "1.91"
 
 [dependencies]
-krate = { path = "PREFIX/crates/bindings-rust" }
+krate = { path = "PREFIX/crates/bindings-rust", features = ["gui"] }
 wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }
 
 [lib]
@@ -528,23 +533,34 @@ This has real consequences, not just tidiness. The person is only asked about ca
 
 # 4. The GUI world: ui / gfx / audio / speech
 
-A windowed app reaches these through its generated `bindings` module, e.g.
-`bindings::krate::gfx::canvas2d::present(canvas)`. Records live in each
-package's `types` interface (with two exceptions the samples show:
-`ui::image::ImagePixels` and `ui::dialog`). Signatures are WIT, so
-`list<u8>` is a Rust `Vec<u8>`/`&[u8]`, `result<t, e>` is `Result<T, E>`,
-and kebab-case names become snake_case in Rust.
+A windowed app reaches these through the SDK, the same crate a CLI app
+uses, with its `gui` feature on:
 
-IMPORTANT for a GUI app: reach the *shared* modules through `bindings::krate`
-too, not the `krate::` SDK helpers in section 1. Their shapes differ. In the
-generated bindings the action is a nested module, so it is
-`bindings::krate::random::bytes::get(count)`,
-`bindings::krate::random::bytes::below(bound)`,
-`bindings::krate::random::bytes::next_u64()`, and
-`bindings::krate::store::kv::get(key)` -- not `random::bytes(count)` or
-`store::get(key)`, which are the SDK free-function forms and do not exist on the
-GUI world's `bindings`. When in doubt, expand the module path: the leaf that
-takes the arguments is the function.
+```toml
+[dependencies]
+krate = {{ path = "<sdk>/crates/bindings-rust", features = ["gui"] }}
+```
+
+Then the interfaces below are `krate::<package>::<interface>::<fn>`, e.g.
+`krate::ui::window::create("Title", size)`,
+`krate::gfx::canvas2d::present(canvas)`, `krate::ui::events::wait(None)`.
+Records live in each package's `types` module (`krate::ui::types::WindowSize`)
+and are re-exported beside the functions that use them. Signatures are WIT,
+so `list<u8>` is a Rust `Vec<u8>`/`&[u8]`, `result<t, e>` is `Result<T, E>`,
+and kebab-case names become snake_case in Rust. The app implements
+`krate::Guest` and ends with `krate::export!(Component);` -- no generated
+`bindings` module of its own, no `mod bindings;`.
+
+The `gui` feature is what makes the component declare the gui world, so a
+windowed app MUST have it and a CLI app MUST NOT.
+
+The shared Phase 2 helpers in section 1 (`krate::store::get(key)`,
+`krate::random::bytes(count)`, `krate::fs`, `krate::net`) work unchanged in a
+GUI app: the gui world imports everything the cli world does. The raw
+bindings are still reachable as `krate::bindings::krate::<package>::...` when a
+shape the helpers do not cover is needed. Older shipped GUI apps carry a
+generated `bindings` module and call `bindings::krate::ui::...`; that still
+builds, but new apps take the SDK path above.
 
 ## `gfx`
 
@@ -650,7 +666,7 @@ takes the arguments is the function.
 
 ## The shared packages, exact shapes
 
-The same modules earlier sections describe in prose, but as the exact interfaces the generated `bindings` module exposes -- complete, so there is never a reason to open `bindings.rs` to check a name or a type. Reach each as `bindings::krate::<package>::<interface>::<fn>`.
+The same modules earlier sections describe in prose, but as the exact interfaces the bindings expose -- complete, so there is never a reason to open a bindings file to check a name or a type. Prefer the SDK helpers of section 1; the raw form is `krate::bindings::krate::<package>::<interface>::<fn>`.
 
 ## `fs`
 

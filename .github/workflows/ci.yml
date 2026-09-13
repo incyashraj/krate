@@ -157,6 +157,14 @@ jobs:
       # compiling and fails naming the packages that moved.
       - name: Check the generated bindings are the ones checked in
         run: sh scripts/check-bindings-fresh.sh
+      # The SDK carries both worlds (IC-298): it must compile as a guest for
+      # each, and its Phase 3 layer must be what the gui bindings generate.
+      - name: Check the SDK builds for both worlds and its Phase 3 layer is fresh
+        run: |
+          python3 scripts/sdk-phase3-layer.py --self-test
+          python3 scripts/sdk-phase3-layer.py --check
+          cargo check -p krate --target wasm32-wasip1
+          cargo check -p krate --features gui --target wasm32-wasip1
       - name: Warm the cargo cache for the offline port tests
         run: |
           # The port tests build a guest with CARGO_NET_OFFLINE so they

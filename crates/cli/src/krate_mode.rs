@@ -211,8 +211,13 @@ implements `krate::Guest`.
 
 ### A GUI app (a window)
 
-Same as above with three changes: the WIT world is `gui` under `phase3`, four
-more WIT packages are listed, and the bindings need `std_feature = true`.
+Same as above with four changes: the `krate` dependency turns on its `gui`
+feature (that is what makes the component declare the gui world), the WIT
+world is `gui` under `phase3`, four more WIT packages are listed, and the
+bindings need `std_feature = true`. The windowing, widget, event, drawing,
+sound, camera and speech interfaces are then `krate::ui::...`,
+`krate::gfx::...`, `krate::audio::...`, `krate::camera::...` and
+`krate::speech::...`; the Phase 2 helpers work unchanged.
 
 ```toml
 [workspace]
@@ -224,7 +229,7 @@ edition = \"2021\"
 rust-version = \"1.91\"
 
 [dependencies]
-krate = { path = \"PREFIX/crates/bindings-rust\" }
+krate = { path = \"PREFIX/crates/bindings-rust\", features = [\"gui\"] }
 wit-bindgen-rt = { version = \"0.44.0\", features = [\"bitflags\"] }
 
 [lib]

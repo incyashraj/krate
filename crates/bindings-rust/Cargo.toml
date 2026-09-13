@@ -30,6 +30,14 @@ std = []
 # dependency and forces `--cfg getrandom_backend="custom"`, which only an app
 # that actually pulls getrandom should take on.
 getrandom-backend = ["dep:getrandom"]
+# The gui world (Phase 3): windows, widgets, events, drawing, sound, camera,
+# speech. Selects the gui world's bindings in place of the cli world's -- the
+# gui world imports everything the cli world does, so every Phase 2 helper
+# works unchanged -- and adds `krate::ui`, `krate::gfx`, `krate::audio`,
+# `krate::camera` and `krate::speech`. A windowed app turns this on; a CLI
+# app must not, because the feature decides which world the component
+# declares (IC-298, K-302).
+gui = []
 
 [dependencies]
 wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }

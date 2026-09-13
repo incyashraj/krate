@@ -84,6 +84,27 @@ if command -v wit-bindgen >/dev/null 2>&1; then
     if command -v rustfmt >/dev/null 2>&1; then
       rustfmt --edition 2021 "$sdk_out/cli.rs" 2>/dev/null || true
     fi
+    # The gui world too: the same crate carries both binding sets and the
+    # `gui` feature selects one (IC-298).
+    wit-bindgen rust "$ROOT/wit/krate/phase3" --world gui --std-feature \
+      --runtime-path wit_bindgen_rt --generate-all --out-dir "$sdk_out" >/dev/null 2>&1 || {
+      echo "wit-bindgen could not generate the SDK's gui bindings from the Phase 3 world" >&2
+      rm -rf "$sdk_out"
+      exit 1
+    }
+    if command -v rustfmt >/dev/null 2>&1; then
+      rustfmt --edition 2021 "$sdk_out/gui.rs" 2>/dev/null || true
+    fi
+    if ! cmp -s "$sdk_out/gui.rs" "$ROOT/crates/bindings-rust/src/bindings_gui.rs"; then
+      echo "the SDK's gui bindings are not what the Phase 3 world generates." >&2
+      echo "Refresh them and the Phase 3 layer, then commit both:" >&2
+      echo "  wit-bindgen rust wit/krate/phase3 --world gui --std-feature \\" >&2
+      echo "    --runtime-path wit_bindgen_rt --generate-all --out-dir /tmp/sdk" >&2
+      echo "  rustfmt --edition 2021 /tmp/sdk/gui.rs && cp /tmp/sdk/gui.rs crates/bindings-rust/src/bindings_gui.rs" >&2
+      echo "  python3 scripts/sdk-phase3-layer.py" >&2
+      rm -rf "$sdk_out"
+      exit 1
+    fi
     if ! cmp -s "$sdk_out/cli.rs" "$ROOT/crates/bindings-rust/src/bindings.rs"; then
       echo "the SDK's bindings are not what the Phase 2 world generates." >&2
       echo "An interface the world imports may be unreachable from the SDK." >&2

@@ -57,3 +57,29 @@ crates.io yet.
 
 The SDK does not bypass Krate permissions. File and network access still go
 through the runtime's UCap checks.
+
+## A windowed app: the `gui` feature
+
+The same crate carries both of Krate's worlds. A CLI app depends on it plain
+and gets the `cli` world; a windowed app turns on the `gui` feature and gets
+the `gui` world -- every Phase 2 helper unchanged, plus `krate::ui`,
+`krate::gfx`, `krate::audio`, `krate::camera` and `krate::speech`, one thin
+layer per interface with the exact WIT signatures and errors:
+
+```toml
+[dependencies]
+krate = { path = "<sdk>/crates/bindings-rust", features = ["gui"] }
+```
+
+```rust,ignore
+use krate::ui::{events, tree, types, window};
+
+let win = window::create("Hello", types::WindowSize { width: 480, height: 320 })?;
+tree::set_root(win, &root)?;
+while let Some(event) = events::wait(None) { /* ... */ }
+```
+
+The feature decides which world the component declares, so a windowed app
+must have it and a CLI app must not. The raw bindings for either world stay
+reachable as `krate::bindings::krate::<package>::...` when a shape the
+helpers do not cover is needed.
