@@ -1205,6 +1205,24 @@ fn sweep_abandoned_extractions() {
 /// The sweep, against a named directory so it can be tested without
 /// touching the machine's real temp directory.
 fn sweep_in(root: &Path) {
+    sweep_abandoned_dirs(root, EXTRACT_PREFIX, ABANDONED_AFTER);
+}
+
+/// Remove every directory directly under `root` whose name starts with
+/// `prefix` and that was last modified more than `older_than` ago.
+///
+/// The same sweep [`open`] runs over its own `krate-open-*` extractions,
+/// offered to callers that leave directories of their own: the CLI's
+/// `krate-edit-*` working copies were kept on purpose so a failed change
+/// could be read, and then nothing ever removed them (K-313). One sweep
+/// with two prefixes rather than two sweeps, so the two rules cannot drift
+/// apart: age is the only thing separating abandoned from in use, and a
+/// directory with another name is never touched however old it is.
+///
+/// Best effort, like the extraction sweep: a directory that cannot be
+/// removed is left for next time, and nothing here is a reason to refuse
+/// the work the caller was about to do.
+pub fn sweep_abandoned_dirs(root: &Path, prefix: &str, older_than: std::time::Duration) {
     let Ok(entries) = fs::read_dir(root) else {
         return;
     };
@@ -1214,17 +1232,15 @@ fn sweep_in(root: &Path) {
         let Some(name) = name.to_str() else {
             continue;
         };
-        if !name.starts_with(EXTRACT_PREFIX) {
+        if !name.starts_with(prefix) {
             continue;
         }
-        // Age is read from the directory itself. A directory still being
-        // written to by a live open is young, so it is never a candidate.
         let old_enough = entry
             .metadata()
             .and_then(|meta| meta.modified())
             .ok()
             .and_then(|modified| now.duration_since(modified).ok())
-            .is_some_and(|age| age > ABANDONED_AFTER);
+            .is_some_and(|age| age > older_than);
         if old_enough {
             let _ = fs::remove_dir_all(entry.path());
         }
@@ -3368,6 +3384,39 @@ required = true
             stranger.exists(),
             "another program's temp directory is not ours to delete, however \
              old it is"
+        );
+    }
+
+    /// The sweep is scoped by prefix: asking it to clear one family of
+    /// directories must not clear another, however old (K-313).
+    #[test]
+    fn a_sweep_for_one_prefix_leaves_the_other_alone() {
+        let root = TempDir::new().expect("tempdir");
+        let edit_old = root.path().join("krate-edit-abandoned");
+        let open_old = root.path().join(format!("{EXTRACT_PREFIX}abandoned"));
+        let edit_young = root.path().join("krate-edit-live");
+        for dir in [&edit_old, &open_old, &edit_young] {
+            fs::create_dir(dir).expect("create");
+            fs::write(dir.join("f"), b"x").expect("write");
+        }
+        let long_ago =
+            std::time::SystemTime::now() - ABANDONED_AFTER - std::time::Duration::from_secs(60);
+        set_modified(&edit_old, long_ago);
+        set_modified(&open_old, long_ago);
+
+        sweep_abandoned_dirs(root.path(), "krate-edit-", ABANDONED_AFTER);
+
+        assert!(
+            !edit_old.exists(),
+            "an old directory of the named family is swept"
+        );
+        assert!(
+            edit_young.exists(),
+            "a young one of the same family is in use"
+        );
+        assert!(
+            open_old.exists(),
+            "a directory of another family is not this sweep's to remove"
         );
     }
 

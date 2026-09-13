@@ -3849,7 +3849,161 @@ pub(crate) fn author_app_for_tui(
 }
 
 /// Extract a bundle's source, when it carries any.
+/// Where a revision's private working copy lives: `krate-edit-<random>`
+/// in the temp directory, the app under `app/` and its SDK beside it.
+const EDIT_PREFIX: &str = "krate-edit-";
+
+/// A working copy nobody has touched for this long belongs to a revision
+/// that is not coming back: killed, crashed, or the machine lost power.
+/// The same hour the bundle crate gives its own extractions.
+const EDIT_ABANDONED_AFTER: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+/// Age out working copies left behind by revisions that never finished
+/// (K-313). Once per process, on the path that makes a new one.
+fn sweep_abandoned_edits() {
+    static SWEPT: std::sync::Once = std::sync::Once::new();
+    SWEPT.call_once(|| {
+        krate_bundle::sweep_abandoned_dirs(
+            &std::env::temp_dir(),
+            EDIT_PREFIX,
+            EDIT_ABANDONED_AFTER,
+        );
+    });
+}
+
+/// Remove the transaction directory a finished revision worked in (K-313).
+///
+/// `source` is what [`bundle_source_dir`] returned: `<txn>/app`. The whole
+/// `<txn>` goes, SDK copy included. Only a directory of our own family is
+/// removed -- a caller that passes a real project directory gets nothing
+/// deleted, because its parent is not named `krate-edit-*`. A FAILED
+/// revision keeps its copy on purpose: the error names a path inside it.
+pub(crate) fn discard_working_copy(source: &Path) {
+    let Some(txn) = source.parent() else {
+        return;
+    };
+    let ours = txn
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.starts_with(EDIT_PREFIX));
+    if ours {
+        let _ = fs::remove_dir_all(txn);
+    }
+}
+
+/// The right to write a revision's result to one path, held until dropped
+/// (K-310).
+///
+/// Two revisions of one app used to build independently and both rename
+/// onto the same destination; the second landed on top of the first with
+/// no error and no message. The claim is an advisory lock on a sidecar
+/// beside the destination, taken before the build and held through the
+/// promote. A second claimant is refused, not queued: a person should be
+/// told their app is already being changed rather than have their request
+/// silently land after somebody else's.
+struct RevisionClaim {
+    _lock: fs::File,
+    sidecar: PathBuf,
+}
+
+impl Drop for RevisionClaim {
+    fn drop(&mut self) {
+        // Best effort: on Windows the file cannot go while another handle
+        // is open, and a leftover sidecar is harmless -- the lock inside it
+        // is released with the handle, so the next claim succeeds.
+        let _ = fs::remove_file(&self.sidecar);
+    }
+}
+
+fn revision_sidecar(destination: &Path) -> PathBuf {
+    let mut name = destination.as_os_str().to_os_string();
+    name.push(".changing");
+    PathBuf::from(name)
+}
+
+fn claim_destination(destination: &Path) -> Result<RevisionClaim> {
+    let sidecar = revision_sidecar(destination);
+    let lock = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&sidecar)
+        .with_context(|| format!("could not claim {} for the change", destination.display()))?;
+    match lock.try_lock() {
+        Ok(()) => Ok(RevisionClaim {
+            _lock: lock,
+            sidecar,
+        }),
+        Err(fs::TryLockError::WouldBlock) => anyhow::bail!(
+            "{} is already being changed by another krate revise. Wait for it to \
+             finish, or write this change somewhere else with --output.",
+            destination.display()
+        ),
+        Err(fs::TryLockError::Error(err)) => Err(err)
+            .with_context(|| format!("could not claim {} for the change", destination.display())),
+    }
+}
+
+/// Who signed this bundle, if anyone (K-311).
+///
+/// `None` is unsigned. A signature that is present but does not verify is
+/// still a signature the person should hear about, so it is reported in
+/// the verdict's own words rather than folded into "unsigned".
+fn signer_of(bundle: &Path) -> Result<Option<String>> {
+    let opened = krate_bundle::open(bundle)?;
+    Ok(opened.signature_verdict()?.map(|verdict| match verdict {
+        krate_bundle::signing::Verdict::Valid { public_key } => {
+            format!("key {}", &hex_of(&public_key)[..12])
+        }
+        other => format!("a signature that does not verify ({other})"),
+    }))
+}
+
+/// Keep a signed original beside the file a revision is about to replace
+/// (K-311): `notes.krate` -> `notes.signed.krate`, numbered if that name is
+/// taken. The publisher's release survives the recipient's fork.
+fn keep_signed_original(bundle: &Path) -> Result<PathBuf> {
+    let stem = bundle
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "app".to_string());
+    let dir = bundle.parent().unwrap_or_else(|| Path::new("."));
+    let mut n = 1u32;
+    let kept = loop {
+        let name = if n == 1 {
+            format!("{stem}.signed.krate")
+        } else {
+            format!("{stem}.signed-{n}.krate")
+        };
+        let candidate = dir.join(name);
+        if !candidate.exists() {
+            break candidate;
+        }
+        n += 1;
+    };
+    fs::copy(bundle, &kept)
+        .with_context(|| format!("could not keep the signed original at {}", kept.display()))?;
+    Ok(kept)
+}
+
+/// What a person is told after changing a signed app (K-311).
+fn unsigned_fork_note(signer: &str, kept: Option<&Path>) -> String {
+    let mut note = format!(
+        "The app you changed was signed ({signer}). The changed copy is unsigned: a \
+         signature covers exact bytes and these are new ones, so this is your own \
+         fork of the app, not the publisher's release."
+    );
+    if let Some(kept) = kept {
+        note.push_str(&format!(
+            " The signed original is kept at {}.",
+            kept.display()
+        ));
+    }
+    note
+}
+
 pub(crate) fn bundle_source_dir(bundle: &Path) -> Result<Option<PathBuf>> {
+    sweep_abandoned_edits();
     let opened = krate_bundle::open(bundle)?;
     let Some(source) = opened.source_path() else {
         return Ok(None);
@@ -3866,7 +4020,7 @@ pub(crate) fn bundle_source_dir(bundle: &Path) -> Result<Option<PathBuf>> {
     // It is deliberately kept on failure -- the workspace note create prints
     // points here, and evidence is not cleanup's business.
     let txn = tempfile::Builder::new()
-        .prefix("krate-edit-")
+        .prefix(EDIT_PREFIX)
         .tempdir()
         .context("create a private working copy for the change")?
         .keep();
@@ -3947,6 +4101,19 @@ fn revise_cli(
     }
     let provider = resolve_agent(agent)?;
     let out = output.unwrap_or(bundle);
+    // Held until this returns, so two changes to one file cannot both
+    // land on it (K-310).
+    let _claim = claim_destination(out)?;
+
+    // A signed app is somebody's release. Changing it makes an unsigned
+    // fork, and the person is told so rather than left holding an unsigned
+    // file where a signed one used to be (K-311). When the result replaces
+    // the input, the signed original is kept beside it first.
+    let signer = signer_of(bundle)?;
+    let kept = match &signer {
+        Some(_) if out == bundle => Some(keep_signed_original(bundle)?),
+        _ => None,
+    };
 
     match bundle_source_dir(bundle)? {
         Some(source) => {
@@ -3993,6 +4160,9 @@ fn revise_cli(
         }
     }
     println!("Changed {}", out.display());
+    if let Some(signer) = &signer {
+        println!("{}", unsigned_fork_note(signer, kept.as_deref()));
+    }
     Ok(0)
 }
 
@@ -4013,6 +4183,9 @@ pub(crate) fn revise_app_for_tui_watched(
     attachments: &[PathBuf],
     progress: &std::sync::Arc<progress::Progress>,
 ) -> Result<()> {
+    // Studio's entry: the same one-change-at-a-time rule as the CLI's
+    // (K-310).
+    let _claim = claim_destination(output)?;
     set_progress_sink(Some(std::sync::Arc::clone(progress)));
     let result = revise_app_for_tui(source, change, provider, output, attachments);
     set_progress_sink(None);
@@ -4073,6 +4246,9 @@ pub(crate) fn revise_app_for_tui(
     })?;
     if code == 0 {
         remember_app(output);
+        // The working copy has done its job; a failed one is kept so the
+        // error's path still leads somewhere (K-313).
+        discard_working_copy(source);
         Ok(())
     } else {
         Err(anyhow::anyhow!("the change could not be applied"))
@@ -20067,6 +20243,156 @@ mod revise_transaction_tests {
                 let _ = fs::remove_dir_all(parent);
             }
         }
+    }
+
+    fn tiny_bundle(dir: &Path, with_source: bool) -> PathBuf {
+        let manifest = dir.join("manifest.toml");
+        fs::write(
+            &manifest,
+            "[app]\nid = \"dev.krate.txn\"\nname = \"Txn\"\nversion = \"0.1.0\"\n\
+             entry = \"code.wasm\"\nworld = \"krate:app/gui@0.2.0\"\n",
+        )
+        .expect("manifest");
+        let component = dir.join("code.wasm");
+        fs::write(&component, MINIMAL_COMPONENT).expect("component");
+        let source = dir.join("source");
+        if with_source {
+            fs::create_dir_all(source.join("src")).expect("source dir");
+            fs::write(source.join("Cargo.toml"), "[package]\nname = \"txn\"\n").expect("toml");
+            fs::write(source.join("src/lib.rs"), "// code\n").expect("lib");
+        }
+        let bundle = dir.join("txn.krate");
+        krate_bundle::pack_with_sdk(
+            &manifest,
+            &component,
+            None,
+            with_source.then_some(source.as_path()),
+            None,
+            &bundle,
+        )
+        .expect("pack");
+        bundle
+    }
+
+    /// Two changes to one file cannot both land on it: the second is
+    /// refused while the first holds the destination, and succeeds once
+    /// the first is done (K-310, IC-397 "concurrent revise").
+    #[test]
+    fn a_second_revision_of_one_file_is_refused_while_the_first_holds_it() {
+        let dir = tempfile::tempdir().expect("dir");
+        let out = dir.path().join("notes.krate");
+
+        let first = claim_destination(&out).expect("the first claim is free");
+        let second = claim_destination(&out);
+        let message = match second {
+            Ok(_) => panic!("a second revision of the same file must be refused"),
+            Err(err) => format!("{err:#}"),
+        };
+        assert!(
+            message.contains("already being changed") && message.contains("--output"),
+            "the refusal must say what is happening and what to do: {message}"
+        );
+        // A different destination is a different app: not refused.
+        let elsewhere = claim_destination(&dir.path().join("elsewhere.krate"))
+            .expect("another file is not held by this claim");
+        drop(elsewhere);
+
+        drop(first);
+        let third = claim_destination(&out).expect("once the first is done, the file is free");
+        drop(third);
+        assert!(
+            !revision_sidecar(&out).exists(),
+            "a finished claim leaves nothing beside the app"
+        );
+    }
+
+    /// A finished revision removes the working copy it made, and never
+    /// removes a directory that is not its own (K-313).
+    #[test]
+    fn a_finished_revision_removes_its_working_copy_and_nothing_else() {
+        let dir = tempfile::tempdir().expect("dir");
+        let bundle = tiny_bundle(dir.path(), true);
+        let copy = bundle_source_dir(&bundle)
+            .expect("working copy")
+            .expect("the bundle carries source");
+        let txn = copy.parent().expect("transaction dir").to_path_buf();
+        assert!(
+            txn.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with(EDIT_PREFIX),
+            "the working copy lives in a krate-edit-* transaction directory"
+        );
+        assert!(copy.join("src/lib.rs").is_file());
+
+        discard_working_copy(&copy);
+        assert!(
+            !txn.exists(),
+            "a finished revision must remove its working copy"
+        );
+
+        // A caller's own project directory has a parent that is not ours.
+        let project = dir.path().join("my-project").join("app");
+        fs::create_dir_all(&project).expect("project");
+        fs::write(project.join("lib.rs"), "// mine").expect("write");
+        discard_working_copy(&project);
+        assert!(
+            project.join("lib.rs").is_file(),
+            "a directory that is not a krate-edit-* copy is never removed"
+        );
+    }
+
+    /// Revising a signed app is a fork: the person is told, and the signed
+    /// original survives beside the changed copy (K-311, IC-397 test 494).
+    #[test]
+    fn revising_a_signed_app_says_so_and_keeps_the_signed_original() {
+        let dir = tempfile::tempdir().expect("dir");
+        let bundle = tiny_bundle(dir.path(), false);
+        assert_eq!(
+            signer_of(&bundle).expect("open"),
+            None,
+            "an unsigned app has no signer to name"
+        );
+
+        let pkcs8 = krate_bundle::signing::SigningKey::generate_pkcs8().expect("key");
+        let key = krate_bundle::signing::SigningKey::from_pkcs8(&pkcs8).expect("key");
+        krate_bundle::sign_bundle(&bundle, &key, "dev.krate.txn", "0.1.0", 1_700_000_000)
+            .expect("sign");
+        let signed_bytes = fs::read(&bundle).expect("read");
+        let signer = signer_of(&bundle)
+            .expect("open")
+            .expect("a signed app names its signer");
+        assert!(
+            signer.contains(&hex_of(&key.public_key())[..12]),
+            "the signer is named by its key: {signer}"
+        );
+
+        let kept = keep_signed_original(&bundle).expect("keep");
+        let kept_again = keep_signed_original(&bundle).expect("keep again");
+        assert_ne!(
+            kept, kept_again,
+            "a second keep must not overwrite the first"
+        );
+        assert!(
+            kept.to_string_lossy().ends_with("txn.signed.krate"),
+            "{}",
+            kept.display()
+        );
+        for path in [&kept, &kept_again] {
+            assert_eq!(
+                fs::read(path).expect("read kept"),
+                signed_bytes,
+                "the kept original is byte-for-byte the signed file"
+            );
+        }
+
+        let note = unsigned_fork_note(&signer, Some(&kept));
+        assert!(note.contains("unsigned") && note.contains("fork"), "{note}");
+        assert!(note.contains(&kept.display().to_string()), "{note}");
+        assert!(
+            !unsigned_fork_note(&signer, None).contains("kept at"),
+            "with --output the original was never at risk, so nothing was kept"
+        );
     }
 
     /// A build that is never promoted leaves the old app exactly as it was
