@@ -119,6 +119,9 @@ any new source files.
 
 - Small changes: PR author decides, one maintainer approves.
 - Large changes: write an ADR, open for discussion, merge with two approvals.
+  Founder stage, while `docs/governance/maintainers.json` lists one active
+  maintainer: that maintainer records their own review in the PR, and the
+  two-approval rule resumes when a second is registered.
 - Breaking changes to UAPI interfaces: require an ADR + two weeks open comment period.
 
 ---

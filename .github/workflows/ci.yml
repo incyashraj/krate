@@ -1663,6 +1663,14 @@ jobs:
         run: |
           python3 scripts/check-compare-corpus.py --self-test
           python3 scripts/check-compare-corpus.py
+      # Decision records follow their own published template, both indexes
+      # agree with the files, supersession links resolve both ways, maturity
+      # labels need evidence, and the approval rule is one the registered
+      # maintainers can actually follow (IC-663).
+      - name: Prove the decision records follow their published process
+        run: |
+          python3 scripts/check-decision-records.py --self-test
+          python3 scripts/check-decision-records.py
       # The open-core boundary: the player and format are MIT/Apache, Studio
       # and the hub worker are BSL 1.1. It breaks by an MIT crate quietly
       # depending on the product layer, not by anyone relicensing a file

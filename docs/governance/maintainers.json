@@ -1,0 +1,25 @@
+{
+ "schema": "krate.maintainers.v1",
+ "note": "Who may approve a decision record, and the rule that applies. Read by scripts/check-decision-records.py: an approval rule the registry cannot satisfy is refused, so the process page can never demand two approvers from a project that has one (IC-663, tests 1281-1282). Appointment, inactivity and removal are recorded here with a date and a reason, never by silently editing the list.",
+ "maintainers": [
+  {
+   "handle": "@incyashraj",
+   "name": "Yashraj Pardeshi",
+   "role": "founder, accountable maintainer",
+   "since": "2026-05-04",
+   "appointed_by": "founding; the first record in docs/adr is dated 2026-05-04",
+   "active": true
+  }
+ ],
+ "history": [],
+ "approval_rule": {
+  "required_approvals": 2,
+  "or_one_approval_after_days": 7,
+  "founder_stage": {
+   "active": true,
+   "condition": "fewer active maintainers on this registry than required_approvals",
+   "rule": "The one accountable maintainer records their own review in the pull request: what was checked, what alternatives were weighed, and why it merges. The two-approval rule resumes the day a second active maintainer is registered here; nothing else switches it back on.",
+   "ends_when": "a second entry in maintainers with active true"
+  }
+ }
+}

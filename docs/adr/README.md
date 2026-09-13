@@ -43,5 +43,8 @@ workflow, or the quick version:
 1. Copy `template.md` → `NNNN-short-title.md`
 2. Fill out every section
 3. Open a PR titled `ADR: <title>`
-4. Merge after 2 approvals (or 1 approval + 7 days)
+4. Merge after 2 approvals (or 1 approval + 7 days). Founder stage, while
+   `docs/governance/maintainers.json` lists fewer active maintainers than
+   that: the one accountable maintainer records their own review in the PR.
+   The two-approval rule resumes when a second active maintainer is registered.
 5. Update the index above

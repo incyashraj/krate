@@ -58,6 +58,15 @@ lost. An ADR with no real alternatives was not a real decision.)*
 
 ---
 
+## Compatibility
+
+What this breaks, what migrates, and how. If nothing: say "nothing breaks;
+no migration", and say why that is true rather than assumed. A change to a
+bundle format, a WIT interface or a host contract names the review period
+and the migration path here.
+
+---
+
 ## Revisiting
 
 Under what conditions would this decision be reconsidered? Be specific.

@@ -28,7 +28,7 @@ Examples that do **not** need an ADR:
 1. Copy `docs/adr/template.md` to `docs/adr/NNNN-short-title.md` (next sequential number).
 2. Fill out every section. Be honest about alternatives rejected.
 3. Open a PR titled `ADR: <title>`.
-4. Minimum 2 maintainers approve, or 1 approve + 7 days open.
+4. Minimum 2 maintainers approve, or 1 approve + 7 days open. **Founder stage**, while `docs/governance/maintainers.json` lists fewer active maintainers than that: the one accountable maintainer records their own review in the PR -- what was checked, which alternatives were weighed, why it merges. The two-approval rule resumes the day a second active maintainer is registered.
 5. **Merged ADRs are immutable.** To supersede an ADR, write a new one that
    references the old one with `Supersedes: ADR-NNNN`.
 
@@ -48,3 +48,6 @@ Examples that do **not** need an ADR:
 | [ADR-0012](https://github.com/incyashraj/krate/blob/main/docs/adr/0012-adapter-crate-split-per-os.md) | Adapter crate split per host OS | Accepted |
 | [ADR-0013](https://github.com/incyashraj/krate/blob/main/docs/adr/0013-widget-lowering-strategy.md) | Widget lowering strategy | Proposed |
 | [ADR-0014](https://github.com/incyashraj/krate/blob/main/docs/adr/0014-layout-engine-taffy.md) | Layout engine uses Taffy | Proposed |
+| [ADR-0015](https://github.com/incyashraj/krate/blob/main/docs/adr/0015-linux-widget-strategy.md) | Linux widget strategy | Proposed |
+| [ADR-0016](https://github.com/incyashraj/krate/blob/main/docs/adr/0016-security-feed-refresh-policy.md) | Security feed refresh, before there is a feed | Accepted |
+| [ADR-0017](https://github.com/incyashraj/krate/blob/main/docs/adr/0017-wasmtime-support-window.md) | Which Wasmtime line Krate ships, and when it moves | Accepted |
