@@ -83,6 +83,7 @@ SUBJECT_KINDS = {
 }
 ENVIRONMENT_KINDS = {"native", "hosted", "virtual", "emulated"}
 ORACLE_CLASSES = {
+    "timing",      # a duration or rate was measured; see TIMING_FIELDS (1508)
     "execution",   # the thing ran and its behaviour was judged
     "launch",      # it started; nothing about what it did after
     "build",       # source compiled under the named conditions
@@ -249,6 +250,14 @@ def validate_record(rec, records):
         p.append(f"{pre}: a no-op is skipped, not passed -- an early return or an oracle of none cannot record pass (1345)")
     if outcome == "pass" and oracle.get("class") == "launch" and raw.get("killed_after_timeout"):
         p.append(f"{pre}: a launch killed at a timeout is not a pass; it is informational until an oracle judged the app")
+    # 1508: a timing is evidence only with its warm-up, repetitions,
+    # distribution and environment written down beside the number.
+    if outcome == "pass" and oracle.get("class") == "timing":
+        measurement = raw.get("measurement")
+        if not isinstance(measurement, dict):
+            p.append(f"{pre}: a timing record must carry raw_result.measurement with {sorted(TIMING_FIELDS)} (1508)")
+        else:
+            p.extend(timing_problems(measurement, pre))
 
     scope = _need(rec, "scope", dict, p, pre) or {}
     if not isinstance(scope.get("supports"), str) or not scope.get("supports").strip():
@@ -539,6 +548,57 @@ def publication_gate(claims, records, today=None):
 # required list after its result is seen (1803).
 CELL_STATUSES = {"required", "optional"}
 CELL_OUTCOMES = OUTCOMES | NEUTRAL_OUTCOMES
+CELL_KINDS = {"timing"}
+
+# What a timing must record before it is performance evidence (IC-743,
+# test 1508): how many runs were thrown away first, how many were kept,
+# the spread of what was kept -- not one number -- and the machine state
+# it was taken in. A single warm number with no spread and no environment
+# is an anecdote, and an anecdote quoted as a figure is how "24x faster"
+# happened.
+TIMING_FIELDS = {
+    "warmup": "how many runs were discarded before counting (0 is an answer; absent is not)",
+    "samples": "how many runs the distribution rests on (at least 3)",
+    "distribution": "the spread: min, median and max in the cell's unit, or every value",
+    "environment": "where it ran: os, arch, commit, and the machine's state (power, display, load)",
+}
+
+
+def timing_problems(row, what):
+    """Why `row` is not yet a timing measurement (1508). Empty means it is."""
+    problems = []
+    warmup = row.get("warmup")
+    if not isinstance(warmup, int) or isinstance(warmup, bool) or warmup < 0:
+        problems.append(f"{what}: warmup must be a count of discarded runs -- {TIMING_FIELDS['warmup']} (1508)")
+    samples = row.get("samples")
+    if not isinstance(samples, int) or isinstance(samples, bool) or samples < 3:
+        problems.append(f"{what}: samples must be at least 3 -- {TIMING_FIELDS['samples']} (1508)")
+    dist = row.get("distribution")
+    if not isinstance(dist, dict):
+        problems.append(f"{what}: distribution is missing -- {TIMING_FIELDS['distribution']} (1508)")
+    else:
+        values = dist.get("values")
+        if isinstance(values, list):
+            if isinstance(samples, int) and not isinstance(samples, bool) and len(values) != samples:
+                problems.append(f"{what}: distribution.values has {len(values)} entries for {samples} samples (1508)")
+            if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in values):
+                problems.append(f"{what}: distribution.values must be numbers (1508)")
+        else:
+            for key in ("min", "median", "max"):
+                v = dist.get(key)
+                if not isinstance(v, (int, float)) or isinstance(v, bool):
+                    problems.append(f"{what}: distribution.{key} is missing -- {TIMING_FIELDS['distribution']} (1508)")
+            if all(isinstance(dist.get(k), (int, float)) for k in ("min", "median", "max")):
+                if not dist["min"] <= dist["median"] <= dist["max"]:
+                    problems.append(f"{what}: distribution min/median/max are not in order (1508)")
+    env = row.get("environment")
+    if not isinstance(env, dict):
+        problems.append(f"{what}: environment is missing -- {TIMING_FIELDS['environment']} (1508)")
+    else:
+        for key in ("os", "arch", "commit", "state"):
+            if not isinstance(env.get(key), str) or not env.get(key).strip():
+                problems.append(f"{what}: environment.{key} is missing -- {TIMING_FIELDS['environment']} (1508)")
+    return problems
 
 # What a cell must carry when it compares Krate against something else
 # (1808). A one-number comparison is the shape every misleading benchmark
@@ -600,6 +660,8 @@ def validate_profile(profile, claims=None):
         seen.add(name)
         if cell.get("status") not in CELL_STATUSES:
             p.append(f"{pre}/{name}: status must be required or optional (IC-828)")
+        if cell.get("kind") is not None and cell.get("kind") not in CELL_KINDS:
+            p.append(f"{pre}/{name}: kind must be one of {sorted(CELL_KINDS)} or absent (1508)")
         # Units and definition travel with the cell, not with the prose
         # that quotes it: a number whose unit lives in a sentence
         # somewhere else is a number that gets requoted wrongly (1805).
@@ -716,6 +778,10 @@ def audit_profile(profile, results):
                         "comparisons and this cell does not say how multiple "
                         "comparisons were handled (1808)"
                     )
+            # 1508: a timing cell is a measurement only with its warm-up,
+            # repetitions, distribution and environment beside the number.
+            if cell.get("kind") == "timing":
+                findings.extend(timing_problems(row, name))
             # The measurement has to be OF the thing the profile named.
             for field in ("tool_version", "fixture", "arch"):
                 wanted = cell.get(field)
@@ -1307,6 +1373,56 @@ def self_test():
     # One comparison alone does not need it: there is nothing to correct for.
     ok, findings = audit_profile(cmp_profile(), results(complete))
     expect(ok, f"1808: a single comparison needs no correction: {findings}")
+
+    # 1508: a timing is performance evidence only with its warm-up,
+    # repetitions, distribution and environment. Each field missing on its
+    # own, so no one of them carries the test.
+    timing_profile = profile(cells=[
+        {"name": "warm-start", "status": "required", "unit": "ms", "kind": "timing",
+         "definition": "time from launch to first frame, warm cache"},
+        {"name": "energy", "status": "required", "unit": "joules",
+         "definition": "energy over the scroll leg"},
+        {"name": "gpu-time", "status": "optional", "unit": "ms",
+         "definition": "mean GPU frame time"},
+    ])
+    expect(validate_profile(timing_profile) == [], f"1508: a timing cell is a valid cell: {validate_profile(timing_profile)}")
+    unknown_kind = profile(cells=[dict(timing_profile["cells"][0], kind="speed")] + timing_profile["cells"][1:])
+    expect(any("1508" in p for p in validate_profile(unknown_kind)), "1508: an unknown cell kind is refused")
+    measured = {"warmup": 3, "samples": 12,
+                "distribution": {"min": 180.0, "median": 205.0, "max": 260.0},
+                "environment": {"os": "macos", "arch": "arm64", "commit": "496cc9a15",
+                                "state": "mains power, external display, no other apps"}}
+    timing_row = dict({k: v for k, v in good[0].items() if k not in COMPARISON_FIELDS},
+                      name="warm-start", value=205.0, **measured)
+    ok, findings = audit_profile(timing_profile, results([timing_row, good[1]]))
+    expect(ok, f"1508: a timing with everything recorded passes: {findings}")
+    for field in sorted(TIMING_FIELDS):
+        row = {k: v for k, v in timing_row.items() if k != field}
+        ok, findings = audit_profile(timing_profile, results([row, good[1]]))
+        expect(not ok and any(field in f and "1508" in f for f in findings),
+               f"1508: a timing without {field} is not evidence: {findings}")
+    for bad_name, bad in [
+        ("two samples", dict(timing_row, samples=2)),
+        ("a bare number for the spread", dict(timing_row, distribution={"median": 205.0})),
+        ("an unordered spread", dict(timing_row, distribution={"min": 300.0, "median": 205.0, "max": 260.0})),
+        ("values that do not match the sample count", dict(timing_row, distribution={"values": [1.0, 2.0]})),
+        ("no machine state", dict(timing_row, environment={"os": "macos", "arch": "arm64", "commit": "496cc9a15"})),
+        ("a boolean warmup", dict(timing_row, warmup=True)),
+    ]:
+        ok, findings = audit_profile(timing_profile, results([bad, good[1]]))
+        expect(not ok and any("1508" in f for f in findings), f"1508: {bad_name} must not pass: {findings}")
+    ok, findings = audit_profile(timing_profile, results([dict(timing_row, distribution={"values": [201.0] * 12}), good[1]]))
+    expect(ok, f"1508: every value listed is a distribution too: {findings}")
+    # The ordinary cells keep passing with none of this: the burden is the
+    # timing cell's, not every measurement's.
+    ok, findings = audit_profile(profile(), results(good))
+    expect(ok, f"1508 must not burden cells that are not timings: {findings}")
+    # And a RECORD whose oracle is a timing carries the same four things.
+    timed = _record(id="E-TEST-TIMING", oracle={"class": "timing", "description": "warm start, first frame"},
+                    raw_result={"exit": 0, "measurement": measured})
+    expect(validate_record(timed, {timed["id"]: timed}) == [], f"1508: a timing record with its measurement validates: {validate_record(timed, {timed['id']: timed})}")
+    bare = _record(id="E-TEST-TIMING", oracle={"class": "timing", "description": "warm start"}, raw_result={"exit": 0, "ms": 205})
+    expect(any("1508" in p for p in validate_record(bare, {bare["id"]: bare})), "1508: a timing record with one number is refused")
 
     # 1803: the plan is frozen before the run and cannot be weakened after.
     weakened = profile(cells=[
