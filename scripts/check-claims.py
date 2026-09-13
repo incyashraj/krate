@@ -278,7 +278,11 @@ def investor_surfaces(root=ROOT):
     return out
 
 
-def check_surface(path, record, figures):
+def check_surface(path, record, figures, comparison_only=False):
+    """`comparison_only` scans only lines that name a comparator. The public
+    surfaces also take every table row, because their tables ARE the
+    comparison; investor material has tables of allocations and dates
+    where "100%" is not a claim about any product (K-326)."""
     problems = []
     text = (ROOT / path).read_text(errors="replace")
 
@@ -292,7 +296,8 @@ def check_surface(path, record, figures):
         # Only lines that are making a comparison. A number in ordinary prose
         # ("takes 2 minutes to install") is not a performance claim about the
         # product against another product.
-        if not any(word in line.lower() for word in ("marktext", "electron")) and "|" not in line:
+        names_comparator = any(word in line.lower() for word in ("marktext", "electron"))
+        if not names_comparator and (comparison_only or "|" not in line):
             continue
         for value, unit in NUMBER.findall(line):
             figure = normalise(value, unit)
@@ -468,17 +473,23 @@ def self_test():
     with _tf.TemporaryDirectory() as tmp:
         troot = Path(tmp)
         (troot / "Invest" / "KIT").mkdir(parents=True)
-        (troot / "Invest" / "memo.md").write_text("| Metric | MarkText | Krate |\n|---|---|---|\n| Memory | 2.3 GB | 999 GB |\n")
+        (troot / "Invest" / "memo.md").write_text(
+            "| Metric | MarkText | Krate |\n|---|---|---|\n| Memory (MarkText) | 2.3 GB | 999 GB |\n"
+            "| Use of funds | 100% | 92.5% |\n"
+        )
         (troot / "Invest" / "KIT" / "deck.html").write_text("<p>plain prose, no comparison</p>\n")
         (troot / "Invest" / "notes.rs").write_text("not a document")
         found = investor_surfaces(troot)
         if [p.name for p in found] != ["deck.html", "memo.md"]:
             failures.append(f"investor_surfaces must find every document under Invest/ and nothing else: {found}")
-        probs = check_surface(troot / "Invest" / "memo.md", fresh, known_figures(fresh))
-        if not any("999 GB" in x for x in probs):
-            failures.append(f"an investor memo stating a figure no record vouches for must be a problem: {probs}")
-        if any("2.3 GB" in x for x in probs) and "2.3 GB" in known_figures(fresh):
-            failures.append("a vouched-for figure must not be flagged")
+        probs = check_surface(troot / "Invest" / "memo.md", fresh, known_figures(fresh), comparison_only=True)
+        if not any("999GB" in x for x in probs):
+            failures.append(f"an investor memo stating a comparison figure no record vouches for must be a problem: {probs}")
+        if any("100%" in x or "92.5%" in x for x in probs):
+            failures.append(f"an allocation table row that names no comparator is not a product claim: {probs}")
+        loose = check_surface(troot / "Invest" / "memo.md", fresh, known_figures(fresh))
+        if not any("100%" in x for x in loose):
+            failures.append("without comparison_only a table row is still scanned, as the public surfaces need")
         if investor_surfaces(troot / "nowhere") != []:
             failures.append("with no Invest/ present the scan must find nothing, not fail")
 
@@ -534,7 +545,7 @@ def main():
     if investor:
         for path in investor:
             checked += 1
-            problems.extend(check_surface(path, record, figures))
+            problems.extend(check_surface(path, record, figures, comparison_only=True))
         print(f"investor material: {len(investor)} documents scanned")
     else:
         print("investor material: Invest/ is not present here (private, ignored), so it was NOT assessed")
