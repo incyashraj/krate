@@ -12583,10 +12583,24 @@ fn launch_target(bundle: &Path) -> Result<PathBuf> {
     // the one case where the transfer succeeded and is still incomplete.
     let status = response.status();
     if status != 200 {
+        // Said differently for the two shapes, because they are different
+        // problems and the reader can only act on one of them. 206 is a
+        // server handing over part of a file. 304 is a server answering a
+        // question Krate never asked -- nothing here sends a validator,
+        // and the cache is keyed on the bytes, so there is no "your copy"
+        // for it to refer to.
+        let why = match status {
+            206 => "so what arrived is a piece of the file",
+            304 => {
+                "and Krate sent no validator to be answered with one, \
+                 so nothing arrived at all"
+            }
+            _ => "so this is not the whole file",
+        };
         anyhow::bail!(
             "{raw} answered {status} {}, which is not a whole file.\n\
              Krate asked for the entire app and did not ask for a byte range, \
-             so anything but 200 means what arrived is a piece of it.\n\
+             {why}.\n\
              Nothing was saved or run.",
             response.status_text(),
         );
@@ -20492,13 +20506,24 @@ mod url_cache_tests {
              response is paid for and then refused",
         );
 
-        let refusal = code[status_at..]
+        let inside = &code[status_at..];
+        let refusal = inside
             .find("anyhow::bail!")
             .expect("a partial response is refused, not noted");
-        assert!(
-            refusal < 200,
-            "the refusal must follow the status check directly",
-        );
+        // Nothing may leave the branch before the refusal. A character
+        // distance was the first shape of this and it was the wrong
+        // measure: improving the message pushed the bail past the limit
+        // and failed a correct check. What matters is that no path out
+        // exists between entering the branch and refusing -- message
+        // building in between is free.
+        let before = &inside[..refusal];
+        for escape in ["return", "?;", "continue", "break"] {
+            assert!(
+                !before.contains(escape),
+                "nothing may leave the branch before the refusal, found {escape:?} \
+                 between the status check and the bail: {before}",
+            );
+        }
         // 200 exactly. `>= 200 && < 300` would let 206 back in, which is
         // the whole case.
         assert!(
