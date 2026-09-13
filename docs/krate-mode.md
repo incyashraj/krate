@@ -483,7 +483,7 @@ to exactly what the app needs, e.g. `fs.read:notes/**`.
 | `fs.list:<path-glob>` | no | list a folder |
 | `store.kv` | no | the app's own key-value store |
 | `store.sql` | no | the app's own SQL database |
-| `store.secret` | no | OS keychain (passwords, tokens) |
+| `store.secret` | no | secrets encrypted at rest (passwords, tokens); not the OS keychain |
 | `store.shared` | no | share a key-value bucket with everyone holding its invite code |
 | `random.bytes` | no | entropy (also what getrandom/rand need) |
 | `fs.remove:<path-glob>` | no | delete under a folder |

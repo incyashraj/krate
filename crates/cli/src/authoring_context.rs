@@ -496,7 +496,13 @@ fn capability_note(name: &str) -> &'static str {
         "fs.mkdir" => "make folders",
         "store.kv" => "the app's own key-value store",
         "store.sql" => "the app's own SQL database",
-        "store.secret" => "OS keychain (passwords, tokens)",
+        // Not "OS keychain". The runtime's own module says it is not one:
+        // secrets are encrypted at rest under a machine key, which protects
+        // a copied disk or a synced folder and does not protect against
+        // code already running as the same user (IC-038). This line teaches
+        // every AI author what to tell a person, and the person then hears
+        // a promise the runtime does not make.
+        "store.secret" => "secrets encrypted at rest (passwords, tokens); not the OS keychain",
         "random.bytes" => "entropy (also what getrandom/rand need)",
         "net.connect" => "reach a host and port",
         "time.clock" => "wall-clock time",
@@ -2129,6 +2135,49 @@ pub fn closest_example(request: &str) -> &'static EmbeddedExample {
 
 #[cfg(test)]
 mod tests {
+    /// The authoring pack must not promise a keychain the runtime does not
+    /// provide (IC-038).
+    ///
+    /// `store.secret` is one encrypted file under a machine key. The
+    /// runtime's own module and the WIT both say so, and both say what it
+    /// does not protect against. The capability note is what every AI
+    /// author reads and repeats to the person, and for months it said "OS
+    /// keychain" -- so the person heard a promise nobody else in the system
+    /// made. Checked against the runtime's own words rather than a fixed
+    /// string, so the two cannot drift apart again without this failing.
+    #[test]
+    fn the_secret_note_says_what_the_runtime_says_and_not_more() {
+        let note = super::capability_note("store.secret");
+        let lower = note.to_ascii_lowercase();
+        assert!(
+            !lower.starts_with("os keychain") && !lower.contains("the os keychain ("),
+            "the note must not present store.secret AS the OS keychain: {note}",
+        );
+        assert!(
+            lower.contains("not the os keychain") || lower.contains("not an os keychain"),
+            "the note must say plainly that this is not the OS keychain, because \
+             an author who is not told will assume it: {note}",
+        );
+        assert!(
+            lower.contains("at rest"),
+            "the note must name the protection that IS given, at-rest encryption, \
+             so the honest claim replaces the false one rather than leaving a gap: {note}",
+        );
+
+        // The runtime is the source of truth, and it agrees.
+        let wit = include_str!("../../../wit/krate/phase2/deps/store/store.wit");
+        let secret_docs = wit
+            .split("interface secret")
+            .next()
+            .expect("the secret interface has docs before it");
+        let tail = &secret_docs[secret_docs.len().saturating_sub(600)..];
+        assert!(
+            tail.contains("at rest") && tail.contains("same user"),
+            "the WIT for store.secret should say what it protects and what it does \
+             not; if this wording moved, move the note with it: {tail}",
+        );
+    }
+
     use super::*;
     use std::path::Path;
 
