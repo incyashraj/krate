@@ -29,15 +29,11 @@ extern crate alloc;
 // component. The GUI-world bindings this app calls are the generated `bindings`
 // module below; the SDK crate carries only the CLI world, so we take the
 // runtime from it here, not the API surface.
-extern crate krate as _krate_runtime;
 
-#[allow(warnings)]
-mod bindings;
-
-use bindings::krate::gfx::{canvas2d, types as gfx};
-use bindings::krate::io::{args, stdio};
-use bindings::krate::store::sql;
-use bindings::krate::ui::{events, tree, types, window};
+use krate::bindings::krate::io::{args, stdio};
+use krate::bindings::krate::store::sql;
+use krate::gfx::{canvas2d, types as gfx};
+use krate::ui::{events, tree, types, window};
 
 const ROOT_ID: u64 = 1;
 const CANVAS_ID: u64 = 2;
@@ -94,7 +90,7 @@ const ZERO_CONTACT: Contact = Contact {
 
 struct Component;
 
-impl bindings::Guest for Component {
+impl krate::Guest for Component {
     fn run() -> i32 {
         let out = stdio::stdout();
 
@@ -285,7 +281,14 @@ fn draw(
     )?;
 
     // ---- header ----
-    draw_text(canvas, "Contacts", 24.0, 58.0, 34.0, color(0.96, 0.97, 1.0, 1.0))?;
+    draw_text(
+        canvas,
+        "Contacts",
+        24.0,
+        58.0,
+        34.0,
+        color(0.96, 0.97, 1.0, 1.0),
+    )?;
 
     // Subtitle with a live count and an accent dot.
     let mut buf = [0u8; 40];
@@ -360,7 +363,15 @@ fn draw_card(canvas: u64, c: &Contact, y: f32) -> Result<(), gfx::GfxError> {
         color(0.117, 0.133, 0.196, 1.0),
     )?;
     // A hair of top highlight for a lit edge.
-    round_rect(canvas, CARD_X, y, CARD_W, 1.5, 16.0, color(1.0, 1.0, 1.0, 0.05))?;
+    round_rect(
+        canvas,
+        CARD_X,
+        y,
+        CARD_W,
+        1.5,
+        16.0,
+        color(1.0, 1.0, 1.0, 0.05),
+    )?;
 
     // Avatar disc: a color chosen by first initial, with a soft ring glow and
     // the initial centered on it.
@@ -384,18 +395,39 @@ fn draw_card(canvas: u64, c: &Contact, y: f32) -> Result<(), gfx::GfxError> {
     }
     if let Ok(itxt) = core::str::from_utf8(&ibuf) {
         // Single glyph, nudged from center so it sits on the disc.
-        draw_text(canvas, itxt, ax - 6.0, ay + 6.0, 20.0, color(0.08, 0.09, 0.14, 1.0))?;
+        draw_text(
+            canvas,
+            itxt,
+            ax - 6.0,
+            ay + 6.0,
+            20.0,
+            color(0.08, 0.09, 0.14, 1.0),
+        )?;
     }
 
     // Name in bright ink.
     let text_x = CARD_X + 74.0;
     if let Ok(nm) = core::str::from_utf8(name) {
-        draw_text(canvas, nm, text_x, y + 30.0, 18.0, color(0.96, 0.97, 1.0, 1.0))?;
+        draw_text(
+            canvas,
+            nm,
+            text_x,
+            y + 30.0,
+            18.0,
+            color(0.96, 0.97, 1.0, 1.0),
+        )?;
     }
     // Email in a muted tone.
     let email = c.email.get(..c.email_len).unwrap_or(&[]);
     if let Ok(em) = core::str::from_utf8(email) {
-        draw_text(canvas, em, text_x, y + 52.0, 14.0, color(0.55, 0.62, 0.80, 1.0))?;
+        draw_text(
+            canvas,
+            em,
+            text_x,
+            y + 52.0,
+            14.0,
+            color(0.55, 0.62, 0.80, 1.0),
+        )?;
     }
 
     Ok(())
@@ -420,8 +452,18 @@ fn round_rect(
     // version this replaced showed seams where the pieces met.
     canvas2d::fill_round_rect(
         canvas,
-        gfx::Rect { x, y, width: w, height: h },
-        gfx::CornerRadii { top_left: r, top_right: r, bottom_right: r, bottom_left: r },
+        gfx::Rect {
+            x,
+            y,
+            width: w,
+            height: h,
+        },
+        gfx::CornerRadii {
+            top_left: r,
+            top_right: r,
+            bottom_right: r,
+            bottom_left: r,
+        },
         c,
     )
 }
@@ -597,4 +639,4 @@ fn pure_string(text: &str) -> String {
     }
 }
 
-bindings::export!(Component with_types_in bindings);
+krate::export!(Component);

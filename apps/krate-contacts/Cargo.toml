@@ -11,7 +11,7 @@ rust-version = "1.91"
 # handler, mem intrinsics), which keep the query-result lift from reaching std's
 # WASI-backed allocation-error path. This app uses its own generated GUI-world
 # `bindings` for the UI the SDK crate does not carry.
-krate = { path = "../../crates/bindings-rust" }
+krate = { path = "../../crates/bindings-rust", features = ["gui"] }
 wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }
 
 # Standalone: this app builds on its own, so it carries an empty workspace table

@@ -18,16 +18,11 @@
 
 extern crate alloc;
 
-extern crate krate as _krate_runtime;
-
-#[allow(warnings)]
-mod bindings;
-
-use bindings::krate::gfx::{canvas2d, types as gfx};
-use bindings::krate::io::{args, stdio};
-use bindings::krate::store::kv;
-use bindings::krate::time::clock;
-use bindings::krate::ui::{events, tree, types, window};
+use krate::bindings::krate::io::{args, stdio};
+use krate::bindings::krate::store::kv;
+use krate::bindings::krate::time::clock;
+use krate::gfx::{canvas2d, types as gfx};
+use krate::ui::{events, tree, types, window};
 
 const ROOT_ID: u64 = 1;
 const CANVAS_ID: u64 = 2;
@@ -82,7 +77,12 @@ const fn rgb(r: u8, g: u8, b: u8) -> gfx::Color {
 }
 
 const fn tint(c: gfx::Color, a: f32) -> gfx::Color {
-    gfx::Color { r: c.r, g: c.g, b: c.b, a }
+    gfx::Color {
+        r: c.r,
+        g: c.g,
+        b: c.b,
+        a,
+    }
 }
 
 // ------------------------------------------------------------------
@@ -210,7 +210,7 @@ impl Timer {
 
 struct Component;
 
-impl bindings::Guest for Component {
+impl krate::Guest for Component {
     fn run() -> i32 {
         let completed = match kv::get(DONE_KEY) {
             Ok(Some(bytes)) => parse_u64(&bytes),
@@ -376,7 +376,12 @@ fn draw(canvas: u64, timer: &Timer) -> Result<(), gfx::GfxError> {
     // Ground: the house near-black blue, top to bottom.
     canvas2d::linear_gradient(
         canvas,
-        gfx::Rect { x: 0.0, y: 0.0, width: WIDTH, height: HEIGHT },
+        gfx::Rect {
+            x: 0.0,
+            y: 0.0,
+            width: WIDTH,
+            height: HEIGHT,
+        },
         BG_TOP,
         BG_BOT,
     )?;
@@ -423,7 +428,11 @@ fn draw(canvas: u64, timer: &Timer) -> Result<(), gfx::GfxError> {
         let x = CX + (i as f32 - 1.5) * DOT_GAP;
         // Empty dots sit a step above the ring track so they stay legible at
         // this small size on the dark ground.
-        let c = if i < filled { ACCENT } else { rgb(0x31, 0x3A, 0x4C) };
+        let c = if i < filled {
+            ACCENT
+        } else {
+            rgb(0x31, 0x3A, 0x4C)
+        };
         disc(canvas, x, DOTS_Y, DOT_R, c)?;
     }
 
@@ -439,7 +448,12 @@ fn draw(canvas: u64, timer: &Timer) -> Result<(), gfx::GfxError> {
         pr.x + (pr.width - vw) * 0.5,
         pr.y + pr.height * 0.5 + 6.0,
         vsize,
-        gfx::Color { r: 1.0, g: 1.0, b: 1.0, a: 1.0 },
+        gfx::Color {
+            r: 1.0,
+            g: 1.0,
+            b: 1.0,
+            a: 1.0,
+        },
     )?;
 
     let gr = ghost_rect();
@@ -447,7 +461,15 @@ fn draw(canvas: u64, timer: &Timer) -> Result<(), gfx::GfxError> {
     // ground color sampled at the button's band so the border reads 1px.
     rounded_rect(canvas, gr.x, gr.y, gr.width, gr.height, 12.0, TRACK)?;
     let inner = bg_at((gr.y + gr.height * 0.5) / HEIGHT);
-    rounded_rect(canvas, gr.x + 1.0, gr.y + 1.0, gr.width - 2.0, gr.height - 2.0, 11.0, inner)?;
+    rounded_rect(
+        canvas,
+        gr.x + 1.0,
+        gr.y + 1.0,
+        gr.width - 2.0,
+        gr.height - 2.0,
+        11.0,
+        inner,
+    )?;
     let reset = "Reset";
     let rw = text_width(canvas, reset, vsize);
     draw_text(
@@ -500,7 +522,18 @@ fn draw_ring(canvas: u64, progress: f32) -> Result<(), gfx::GfxError> {
             tint(ACCENT, 0.45),
             tint(ACCENT, 0.0),
         )?;
-        disc(canvas, x, y, dot_r + 1.5, gfx::Color { r: 0.78, g: 0.87, b: 1.0, a: 1.0 })?;
+        disc(
+            canvas,
+            x,
+            y,
+            dot_r + 1.5,
+            gfx::Color {
+                r: 0.78,
+                g: 0.87,
+                b: 1.0,
+                a: 1.0,
+            },
+        )?;
     }
 
     Ok(())
@@ -512,7 +545,10 @@ fn ring_point(a: f32) -> (f32, f32) {
     // Screen angle: 12 o'clock is -90 deg; clockwise means +angle in screen
     // coords (y down).
     let t = a - HALF_PI;
-    (CX + RING_R * cos_approx(t), RING_CY + RING_R * sin_approx(t))
+    (
+        CX + RING_R * cos_approx(t),
+        RING_CY + RING_R * sin_approx(t),
+    )
 }
 
 // ------------------------------------------------------------------
@@ -521,7 +557,11 @@ fn ring_point(a: f32) -> (f32, f32) {
 // ------------------------------------------------------------------
 
 fn absf(x: f32) -> f32 {
-    if x < 0.0 { -x } else { x }
+    if x < 0.0 {
+        -x
+    } else {
+        x
+    }
 }
 
 fn sin_approx(x: f32) -> f32 {
@@ -551,10 +591,27 @@ fn cos_approx(x: f32) -> f32 {
 // ------------------------------------------------------------------
 
 fn fill(canvas: u64, x: f32, y: f32, w: f32, h: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
-    canvas2d::fill_rect(canvas, gfx::Rect { x, y, width: w, height: h }, c)
+    canvas2d::fill_rect(
+        canvas,
+        gfx::Rect {
+            x,
+            y,
+            width: w,
+            height: h,
+        },
+        c,
+    )
 }
 
-fn rounded_rect(canvas: u64, x: f32, y: f32, w: f32, h: f32, r: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
+fn rounded_rect(
+    canvas: u64,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    r: f32,
+    c: gfx::Color,
+) -> Result<(), gfx::GfxError> {
     let r = r.min(w * 0.5).min(h * 0.5);
     fill(canvas, x + r, y, w - r * 2.0, h, c)?;
     fill(canvas, x, y + r, w, h - r * 2.0, c)?;
@@ -569,7 +626,14 @@ fn disc(canvas: u64, cx: f32, cy: f32, r: f32, c: gfx::Color) -> Result<(), gfx:
     canvas2d::fill_circle(canvas, gfx::Point { x: cx, y: cy }, r, c)
 }
 
-fn draw_text(canvas: u64, text: &str, x: f32, y: f32, size: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
+fn draw_text(
+    canvas: u64,
+    text: &str,
+    x: f32,
+    y: f32,
+    size: f32,
+    c: gfx::Color,
+) -> Result<(), gfx::GfxError> {
     canvas2d::draw_text(canvas, text, gfx::Point { x, y }, size, c)
 }
 
@@ -615,7 +679,9 @@ fn parse_u64(bytes: &[u8]) -> u64 {
     let mut value = 0u64;
     for byte in bytes {
         if byte.is_ascii_digit() {
-            value = value.saturating_mul(10).saturating_add(u64::from(byte - b'0'));
+            value = value
+                .saturating_mul(10)
+                .saturating_add(u64::from(byte - b'0'));
         }
     }
     value
@@ -710,4 +776,4 @@ fn node(id: u64, parent: Option<u64>, kind: types::WidgetKind) -> types::WidgetN
     }
 }
 
-bindings::export!(Component with_types_in bindings);
+krate::export!(Component);

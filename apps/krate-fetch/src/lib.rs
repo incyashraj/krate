@@ -20,13 +20,20 @@
 //! exactly the code a URL run takes. Everything is byte work on the response,
 //! no parsing library, only `krate:*` imports and no reachable panic.
 
-#[allow(warnings)]
-mod bindings;
+#![no_std]
+extern crate alloc;
 
-use bindings::krate::gfx::{canvas2d, types as gfx};
-use bindings::krate::io::{args, stdio};
-use bindings::krate::net::http_client;
-use bindings::krate::ui::{events, tree, types, window};
+#[allow(unused_imports)]
+use alloc::{
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+use krate::bindings::krate::io::{args, stdio};
+use krate::bindings::krate::net::http_client;
+use krate::gfx::{canvas2d, types as gfx};
+use krate::ui::{events, tree, types, window};
 
 const ROOT_ID: u64 = 1;
 const CANVAS_ID: u64 = 2;
@@ -135,7 +142,9 @@ impl Reader {
             let is_nl = !at_end && body.get(i) == Some(&b'\n');
             if at_end || is_nl {
                 let slice = body.get(start..i).unwrap_or(&[]);
-                let blank = slice.iter().all(|b| *b == b' ' || *b == b'\r' || *b == b'\t');
+                let blank = slice
+                    .iter()
+                    .all(|b| *b == b' ' || *b == b'\r' || *b == b'\t');
                 let prev_blank = self
                     .n_lines
                     .checked_sub(1)
@@ -179,7 +188,7 @@ impl Reader {
     }
 }
 
-impl bindings::Guest for Component {
+impl krate::Guest for Component {
     fn run() -> i32 {
         // The first line of raw args is the URL; a later line may be `quick`.
         // The automated harness passes only `quick`, which is not a URL, so we
@@ -375,7 +384,14 @@ fn draw(canvas: u64, reader: &Reader) -> Result<(), gfx::GfxError> {
     )?;
 
     // ---- header ----
-    draw_text(canvas, "Reader", 28.0, 52.0, 30.0, color(0.96, 0.97, 1.0, 1.0))?;
+    draw_text(
+        canvas,
+        "Reader",
+        28.0,
+        52.0,
+        30.0,
+        color(0.96, 0.97, 1.0, 1.0),
+    )?;
     draw_text(
         canvas,
         "Fetch a page over HTTP and read it",
@@ -386,9 +402,23 @@ fn draw(canvas: u64, reader: &Reader) -> Result<(), gfx::GfxError> {
     )?;
 
     // ---- URL bar ----
-    round_rect(canvas, URL_X, URL_Y, URL_W, URL_H, 12.0, color(0.129, 0.145, 0.216, 1.0))?;
+    round_rect(
+        canvas,
+        URL_X,
+        URL_Y,
+        URL_W,
+        URL_H,
+        12.0,
+        color(0.129, 0.145, 0.216, 1.0),
+    )?;
     // A small globe dot as an affordance.
-    disc(canvas, URL_X + 22.0, URL_Y + URL_H * 0.5, 5.0, color(0.36, 0.72, 1.0, 1.0))?;
+    disc(
+        canvas,
+        URL_X + 22.0,
+        URL_Y + URL_H * 0.5,
+        5.0,
+        color(0.36, 0.72, 1.0, 1.0),
+    )?;
     if let Ok(u) = core::str::from_utf8(reader.url_bytes()) {
         let shown = truncate_str(u, 34);
         draw_text(
@@ -402,10 +432,27 @@ fn draw(canvas: u64, reader: &Reader) -> Result<(), gfx::GfxError> {
     }
 
     // ---- Fetch button ----
-    draw_button(canvas, BTN_X, BTN_Y, BTN_W, BTN_H, "Fetch", reader.hover, reader.pressed)?;
+    draw_button(
+        canvas,
+        BTN_X,
+        BTN_Y,
+        BTN_W,
+        BTN_H,
+        "Fetch",
+        reader.hover,
+        reader.pressed,
+    )?;
 
     // ---- content card ----
-    round_rect(canvas, CARD_X, CARD_Y, CARD_W, CARD_H, 16.0, color(0.105, 0.121, 0.184, 1.0))?;
+    round_rect(
+        canvas,
+        CARD_X,
+        CARD_Y,
+        CARD_W,
+        CARD_H,
+        16.0,
+        color(0.105, 0.121, 0.184, 1.0),
+    )?;
     // Lit top edge (opaque, inset from corners).
     canvas2d::fill_rect(
         canvas,
@@ -464,7 +511,15 @@ fn draw_button(
     pressed: bool,
 ) -> Result<(), gfx::GfxError> {
     // Opaque shadow, then an opaque accent body that reacts to hover/press.
-    round_rect(canvas, x, y + 3.0, w, h, 12.0, color(0.020, 0.025, 0.045, 1.0))?;
+    round_rect(
+        canvas,
+        x,
+        y + 3.0,
+        w,
+        h,
+        12.0,
+        color(0.020, 0.025, 0.045, 1.0),
+    )?;
     let (r, g, b) = (0.24f32, 0.55f32, 1.0f32);
     let k = if pressed {
         0.80
@@ -502,14 +557,30 @@ fn draw_scrollbar(canvas: u64, reader: &Reader) -> Result<(), gfx::GfxError> {
     let track_y = CARD_Y + 16.0;
     let track_h = CARD_H - 32.0;
     // Track.
-    round_rect(canvas, track_x, track_y, 4.0, track_h, 2.0, color(0.20, 0.23, 0.32, 1.0))?;
+    round_rect(
+        canvas,
+        track_x,
+        track_y,
+        4.0,
+        track_h,
+        2.0,
+        color(0.20, 0.23, 0.32, 1.0),
+    )?;
     // Thumb.
     let frac_vis = VISIBLE_LINES as f32 / reader.n_lines as f32;
     let thumb_h = (track_h * frac_vis).max(24.0);
     let max_scroll = reader.max_scroll().max(1) as f32;
     let t = reader.scroll as f32 / max_scroll;
     let thumb_y = track_y + (track_h - thumb_h) * t;
-    round_rect(canvas, track_x, thumb_y, 4.0, thumb_h, 2.0, color(0.36, 0.72, 1.0, 1.0))?;
+    round_rect(
+        canvas,
+        track_x,
+        thumb_y,
+        4.0,
+        thumb_h,
+        2.0,
+        color(0.36, 0.72, 1.0, 1.0),
+    )?;
     Ok(())
 }
 
@@ -570,8 +641,18 @@ fn round_rect(
     // version this replaced showed seams where the pieces met.
     canvas2d::fill_round_rect(
         canvas,
-        gfx::Rect { x, y, width: w, height: h },
-        gfx::CornerRadii { top_left: r, top_right: r, bottom_right: r, bottom_left: r },
+        gfx::Rect {
+            x,
+            y,
+            width: w,
+            height: h,
+        },
+        gfx::CornerRadii {
+            top_left: r,
+            top_right: r,
+            bottom_right: r,
+            bottom_left: r,
+        },
         c,
     )
 }
@@ -690,4 +771,4 @@ fn node(id: u64, parent: Option<u64>, kind: types::WidgetKind) -> types::WidgetN
     }
 }
 
-bindings::export!(Component with_types_in bindings);
+krate::export!(Component);

@@ -165,9 +165,7 @@ fn scroll_line(index: usize) -> types::WidgetNode {
 /// Whether a hit widget id is one of the list's own rows.
 fn is_row_id(widget: Option<u64>) -> bool {
     match widget {
-        Some(id) => {
-            id >= LIST_ROW_BASE_ID && id < LIST_ROW_BASE_ID + LIST_ROW_LABELS.len() as u64
-        }
+        Some(id) => id >= LIST_ROW_BASE_ID && id < LIST_ROW_BASE_ID + LIST_ROW_LABELS.len() as u64,
         None => false,
     }
 }
@@ -370,8 +368,7 @@ impl krate::Guest for Component {
                     }
                     let shown = typed.get(..typed_len).unwrap_or(&[]);
                     let _ = tree::upsert_node(win, &text_field_bytes(shown));
-                    let _ =
-                        tree::upsert_node(win, &typing_progress(typed_len as f32 / 16.0));
+                    let _ = tree::upsert_node(win, &typing_progress(typed_len as f32 / 16.0));
                 }
                 Some(types::Event::Key(key))
                     if key.pressed && key.key.as_bytes() == b"Backspace" =>

@@ -23,15 +23,11 @@ extern crate alloc;
 // Linked purely for its no_std runtime lang items -- the global allocator, the
 // trapping panic handler, and the memory intrinsics a wasm guest needs when std
 // is not linked. Not called directly; the underscore keeps the import.
-extern crate krate as _krate_runtime;
 
-#[allow(warnings)]
-mod bindings;
-
-use bindings::krate::gfx::{canvas2d, types as gfx};
-use bindings::krate::io::{args, stdio};
-use bindings::krate::store::kv as store_kv;
-use bindings::krate::ui::{events, tree, types, window};
+use krate::bindings::krate::io::{args, stdio};
+use krate::bindings::krate::store::kv as store_kv;
+use krate::gfx::{canvas2d, types as gfx};
+use krate::ui::{events, tree, types, window};
 
 const ROOT_ID: u64 = 1;
 const CANVAS_ID: u64 = 2;
@@ -254,7 +250,11 @@ fn save(list: &Checklist) -> bool {
         if !item.used {
             continue;
         }
-        push(if item.done { b"[x] " } else { b"[ ] " }, &mut out, &mut len);
+        push(
+            if item.done { b"[x] " } else { b"[ ] " },
+            &mut out,
+            &mut len,
+        );
         push(item.text_str().as_bytes(), &mut out, &mut len);
         push(b"\n", &mut out, &mut len);
     }
@@ -273,7 +273,11 @@ fn hit_row(list: &Checklist, x: f32, y: f32) -> Option<usize> {
     if x < MARGIN || x > WIDTH - MARGIN {
         return None;
     }
-    let shown = if list.len < VISIBLE_ROWS { list.len } else { VISIBLE_ROWS };
+    let shown = if list.len < VISIBLE_ROWS {
+        list.len
+    } else {
+        VISIBLE_ROWS
+    };
     let mut i = 0usize;
     while i < shown {
         let ry = row_y(i);
@@ -306,23 +310,68 @@ fn hit_field(x: f32, y: f32) -> bool {
 // Palette
 // ------------------------------------------------------------------
 
-const BG_TOP: gfx::Color = gfx::Color { r: 0.075, g: 0.086, b: 0.125, a: 1.0 };
-const BG_BOT: gfx::Color = gfx::Color { r: 0.043, g: 0.051, b: 0.078, a: 1.0 };
-const CARD: gfx::Color = gfx::Color { r: 0.129, g: 0.145, b: 0.196, a: 1.0 };
-const CARD_DONE: gfx::Color = gfx::Color { r: 0.102, g: 0.118, b: 0.161, a: 1.0 };
-const INK: gfx::Color = gfx::Color { r: 0.902, g: 0.925, b: 0.98, a: 1.0 };
-const INK_DIM: gfx::Color = gfx::Color { r: 0.478, g: 0.525, b: 0.627, a: 1.0 };
-const INK_DONE: gfx::Color = gfx::Color { r: 0.435, g: 0.475, b: 0.561, a: 1.0 };
+const BG_TOP: gfx::Color = gfx::Color {
+    r: 0.075,
+    g: 0.086,
+    b: 0.125,
+    a: 1.0,
+};
+const BG_BOT: gfx::Color = gfx::Color {
+    r: 0.043,
+    g: 0.051,
+    b: 0.078,
+    a: 1.0,
+};
+const CARD: gfx::Color = gfx::Color {
+    r: 0.129,
+    g: 0.145,
+    b: 0.196,
+    a: 1.0,
+};
+const CARD_DONE: gfx::Color = gfx::Color {
+    r: 0.102,
+    g: 0.118,
+    b: 0.161,
+    a: 1.0,
+};
+const INK: gfx::Color = gfx::Color {
+    r: 0.902,
+    g: 0.925,
+    b: 0.98,
+    a: 1.0,
+};
+const INK_DIM: gfx::Color = gfx::Color {
+    r: 0.478,
+    g: 0.525,
+    b: 0.627,
+    a: 1.0,
+};
+const INK_DONE: gfx::Color = gfx::Color {
+    r: 0.435,
+    g: 0.475,
+    b: 0.561,
+    a: 1.0,
+};
 
 // ------------------------------------------------------------------
 // Rendering
 // ------------------------------------------------------------------
 
-fn draw(canvas: u64, list: &Checklist, draft: &Draft, field_focus: bool) -> Result<(), gfx::GfxError> {
+fn draw(
+    canvas: u64,
+    list: &Checklist,
+    draft: &Draft,
+    field_focus: bool,
+) -> Result<(), gfx::GfxError> {
     // Deep, considered ground -- a soft vertical gradient, not flat black.
     canvas2d::linear_gradient(
         canvas,
-        gfx::Rect { x: 0.0, y: 0.0, width: WIDTH, height: HEIGHT },
+        gfx::Rect {
+            x: 0.0,
+            y: 0.0,
+            width: WIDTH,
+            height: HEIGHT,
+        },
         BG_TOP,
         BG_BOT,
     )?;
@@ -344,7 +393,15 @@ fn draw(canvas: u64, list: &Checklist, draft: &Draft, field_focus: bool) -> Resu
     // Progress bar track + accent fill.
     let bar_y = 108.0;
     let bar_w = CONTENT_W;
-    rounded_rect(canvas, MARGIN, bar_y, bar_w, 8.0, 4.0, color(0.16, 0.18, 0.24, 1.0))?;
+    rounded_rect(
+        canvas,
+        MARGIN,
+        bar_y,
+        bar_w,
+        8.0,
+        4.0,
+        color(0.16, 0.18, 0.24, 1.0),
+    )?;
     if total > 0 {
         let frac = (done as f32 / total as f32).clamp(0.0, 1.0);
         let fw = (bar_w * frac).max(if done > 0 { 10.0 } else { 0.0 });
@@ -354,7 +411,11 @@ fn draw(canvas: u64, list: &Checklist, draft: &Draft, field_focus: bool) -> Resu
     }
 
     // ---- item rows as cards ----
-    let shown = if list.len < VISIBLE_ROWS { list.len } else { VISIBLE_ROWS };
+    let shown = if list.len < VISIBLE_ROWS {
+        list.len
+    } else {
+        VISIBLE_ROWS
+    };
     let mut i = 0usize;
     while i < shown {
         if let Some(item) = list.items.get(i) {
@@ -368,7 +429,14 @@ fn draw(canvas: u64, list: &Checklist, draft: &Draft, field_focus: bool) -> Resu
         let mut mbuf = [0u8; 24];
         let more = more_label((list.len - VISIBLE_ROWS) as u32, &mut mbuf);
         if let Ok(txt) = core::str::from_utf8(more) {
-            draw_text(canvas, txt, MARGIN, row_y(VISIBLE_ROWS) + 4.0, 13.0, INK_DIM)?;
+            draw_text(
+                canvas,
+                txt,
+                MARGIN,
+                row_y(VISIBLE_ROWS) + 4.0,
+                13.0,
+                INK_DIM,
+            )?;
         }
     }
 
@@ -376,10 +444,34 @@ fn draw(canvas: u64, list: &Checklist, draft: &Draft, field_focus: bool) -> Resu
     let iy = input_y();
     let fw = CONTENT_W - ADD_W - 12.0;
     if field_focus {
-        rounded_rect(canvas, MARGIN - 2.0, iy - 2.0, fw + 4.0, INPUT_H + 4.0, 14.0, accent_soft)?;
+        rounded_rect(
+            canvas,
+            MARGIN - 2.0,
+            iy - 2.0,
+            fw + 4.0,
+            INPUT_H + 4.0,
+            14.0,
+            accent_soft,
+        )?;
     }
-    rounded_rect(canvas, MARGIN, iy, fw, INPUT_H, 12.0, color(0.11, 0.125, 0.17, 1.0))?;
-    stroke_rounded(canvas, MARGIN, iy, fw, INPUT_H, 12.0, color(0.24, 0.27, 0.35, 1.0))?;
+    rounded_rect(
+        canvas,
+        MARGIN,
+        iy,
+        fw,
+        INPUT_H,
+        12.0,
+        color(0.11, 0.125, 0.17, 1.0),
+    )?;
+    stroke_rounded(
+        canvas,
+        MARGIN,
+        iy,
+        fw,
+        INPUT_H,
+        12.0,
+        color(0.24, 0.27, 0.35, 1.0),
+    )?;
 
     let text_x = MARGIN + 16.0;
     let text_y = iy + INPUT_H * 0.5 + 6.0;
@@ -396,11 +488,26 @@ fn draw(canvas: u64, list: &Checklist, draft: &Draft, field_focus: bool) -> Resu
     // Add button: filled accent rounded rect with a centered label.
     let ax = WIDTH - MARGIN - ADD_W;
     let can_add = !draft.is_empty();
-    let btn = if can_add { accent } else { color(0.2, 0.24, 0.33, 1.0) };
+    let btn = if can_add {
+        accent
+    } else {
+        color(0.2, 0.24, 0.33, 1.0)
+    };
     rounded_rect(canvas, ax, iy, ADD_W, INPUT_H, 12.0, btn)?;
-    let label_ink = if can_add { color(0.05, 0.08, 0.16, 1.0) } else { INK_DIM };
+    let label_ink = if can_add {
+        color(0.05, 0.08, 0.16, 1.0)
+    } else {
+        INK_DIM
+    };
     let lw = text_width(canvas, "Add", 17.0);
-    draw_text(canvas, "Add", ax + (ADD_W - lw) * 0.5, text_y, 17.0, label_ink)?;
+    draw_text(
+        canvas,
+        "Add",
+        ax + (ADD_W - lw) * 0.5,
+        text_y,
+        17.0,
+        label_ink,
+    )?;
 
     canvas2d::present(canvas)?;
     Ok(())
@@ -408,7 +515,12 @@ fn draw(canvas: u64, list: &Checklist, draft: &Draft, field_focus: bool) -> Resu
 
 /// One item row: a rounded card, a drawn checkbox that fills with accent when
 /// checked (with a drawn tick), and the item text (dimmed + struck when done).
-fn draw_row(canvas: u64, index: usize, item: &Item, accent: gfx::Color) -> Result<(), gfx::GfxError> {
+fn draw_row(
+    canvas: u64,
+    index: usize,
+    item: &Item,
+    accent: gfx::Color,
+) -> Result<(), gfx::GfxError> {
     let y = row_y(index);
     let card = if item.done { CARD_DONE } else { CARD };
     shadow(canvas, MARGIN, y, CONTENT_W, ROW_H, 14.0)?;
@@ -420,8 +532,24 @@ fn draw_row(canvas: u64, index: usize, item: &Item, accent: gfx::Color) -> Resul
         rounded_rect(canvas, bx, by, CHECK_SIZE, CHECK_SIZE, 7.0, accent)?;
         draw_tick(canvas, bx, by, CHECK_SIZE)?;
     } else {
-        rounded_rect(canvas, bx, by, CHECK_SIZE, CHECK_SIZE, 7.0, color(0.17, 0.19, 0.26, 1.0))?;
-        stroke_rounded(canvas, bx, by, CHECK_SIZE, CHECK_SIZE, 7.0, color(0.35, 0.39, 0.49, 1.0))?;
+        rounded_rect(
+            canvas,
+            bx,
+            by,
+            CHECK_SIZE,
+            CHECK_SIZE,
+            7.0,
+            color(0.17, 0.19, 0.26, 1.0),
+        )?;
+        stroke_rounded(
+            canvas,
+            bx,
+            by,
+            CHECK_SIZE,
+            CHECK_SIZE,
+            7.0,
+            color(0.35, 0.39, 0.49, 1.0),
+        )?;
     }
 
     let tx = bx + CHECK_SIZE + 16.0;
@@ -451,27 +579,78 @@ fn draw_tick(canvas: u64, bx: f32, by: f32, s: f32) -> Result<(), gfx::GfxError>
 // ------------------------------------------------------------------
 
 fn fill(canvas: u64, x: f32, y: f32, w: f32, h: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
-    canvas2d::fill_rect(canvas, gfx::Rect { x, y, width: w, height: h }, c)
+    canvas2d::fill_rect(
+        canvas,
+        gfx::Rect {
+            x,
+            y,
+            width: w,
+            height: h,
+        },
+        c,
+    )
 }
 
 /// A filled rounded rectangle. One host call, antialiased on the curve --
 /// the cross-of-rects-plus-corner-discs version this replaced showed seams
 /// where the bands met the discs.
-fn rounded_rect(canvas: u64, x: f32, y: f32, w: f32, h: f32, r: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
-    canvas2d::fill_round_rect(canvas, gfx::Rect { x, y, width: w, height: h }, radii(r), c)
+fn rounded_rect(
+    canvas: u64,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    r: f32,
+    c: gfx::Color,
+) -> Result<(), gfx::GfxError> {
+    canvas2d::fill_round_rect(
+        canvas,
+        gfx::Rect {
+            x,
+            y,
+            width: w,
+            height: h,
+        },
+        radii(r),
+        c,
+    )
 }
 
 /// A thin rounded-rect outline. The hand-built version drew the corners as
 /// 1px dots, so every empty checkbox and text field had four visible gaps.
-fn stroke_rounded(canvas: u64, x: f32, y: f32, w: f32, h: f32, r: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
-    canvas2d::stroke_round_rect(canvas, gfx::Rect { x, y, width: w, height: h }, radii(r), 1.5, c)
+fn stroke_rounded(
+    canvas: u64,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    r: f32,
+    c: gfx::Color,
+) -> Result<(), gfx::GfxError> {
+    canvas2d::stroke_round_rect(
+        canvas,
+        gfx::Rect {
+            x,
+            y,
+            width: w,
+            height: h,
+        },
+        radii(r),
+        1.5,
+        c,
+    )
 }
 
 /// A soft shadow under a card, drawn before the card itself.
 fn shadow(canvas: u64, x: f32, y: f32, w: f32, h: f32, r: f32) -> Result<(), gfx::GfxError> {
     canvas2d::drop_shadow_round_rect(
         canvas,
-        gfx::Rect { x, y: y + 2.0, width: w, height: h },
+        gfx::Rect {
+            x,
+            y: y + 2.0,
+            width: w,
+            height: h,
+        },
         radii(r),
         10.0,
         color(0.0, 0.0, 0.0, 0.28),
@@ -479,7 +658,12 @@ fn shadow(canvas: u64, x: f32, y: f32, w: f32, h: f32, r: f32) -> Result<(), gfx
 }
 
 fn radii(r: f32) -> gfx::CornerRadii {
-    gfx::CornerRadii { top_left: r, top_right: r, bottom_right: r, bottom_left: r }
+    gfx::CornerRadii {
+        top_left: r,
+        top_right: r,
+        bottom_right: r,
+        bottom_left: r,
+    }
 }
 
 fn disc(canvas: u64, cx: f32, cy: f32, r: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
@@ -487,7 +671,15 @@ fn disc(canvas: u64, cx: f32, cy: f32, r: f32, c: gfx::Color) -> Result<(), gfx:
 }
 
 /// A thick line drawn as a chain of small discs so any angle reads smooth.
-fn thick_line(canvas: u64, x0: f32, y0: f32, x1: f32, y1: f32, width: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
+fn thick_line(
+    canvas: u64,
+    x0: f32,
+    y0: f32,
+    x1: f32,
+    y1: f32,
+    width: f32,
+    c: gfx::Color,
+) -> Result<(), gfx::GfxError> {
     let dx = x1 - x0;
     let dy = y1 - y0;
     let len = sqrtf(dx * dx + dy * dy).max(0.001);
@@ -501,7 +693,14 @@ fn thick_line(canvas: u64, x0: f32, y0: f32, x1: f32, y1: f32, width: f32, c: gf
     Ok(())
 }
 
-fn draw_text(canvas: u64, text: &str, x: f32, y: f32, size: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
+fn draw_text(
+    canvas: u64,
+    text: &str,
+    x: f32,
+    y: f32,
+    size: f32,
+    c: gfx::Color,
+) -> Result<(), gfx::GfxError> {
     canvas2d::draw_text(canvas, text, gfx::Point { x, y }, size, c)
 }
 
@@ -606,7 +805,7 @@ fn number_bytes(value: u32, buf: &mut [u8; 10]) -> &[u8] {
 // Entry point
 // ------------------------------------------------------------------
 
-impl bindings::Guest for Component {
+impl krate::Guest for Component {
     fn run() -> i32 {
         let size = types::WindowSize {
             width: WIDTH as u32,
@@ -825,4 +1024,4 @@ fn node(id: u64, parent: Option<u64>, kind: types::WidgetKind) -> types::WidgetN
     }
 }
 
-bindings::export!(Component with_types_in bindings);
+krate::export!(Component);
