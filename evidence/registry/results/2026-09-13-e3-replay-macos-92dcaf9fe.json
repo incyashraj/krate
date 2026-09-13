@@ -1,0 +1,90 @@
+{
+ "profile": "P-E3-REPLAY-MACOS",
+ "profile_frozen_at": "2026-09-13T06:00:00Z",
+ "ran_at": "2026-09-13T07:59:46Z",
+ "source": "scripts/replay-ported-apps.sh on macos at 92dcaf9fe (krate 0.4.0 (debug build -- not what a user runs))",
+ "environment": {
+  "kind": "hosted",
+  "os": "macos",
+  "arch": "arm64",
+  "version": "GitHub-hosted"
+ },
+ "cells": [
+  {
+   "name": "hexyl",
+   "outcome": "pass",
+   "value": 1,
+   "samples": 1,
+   "note": "printed 48 65 6c 6c 6f"
+  },
+  {
+   "name": "savings",
+   "outcome": "pass",
+   "value": 1,
+   "samples": 1,
+   "note": "printed slice:2275"
+  },
+  {
+   "name": "ddh",
+   "outcome": "pass",
+   "value": 1,
+   "samples": 1,
+   "note": "printed Total files"
+  },
+  {
+   "name": "envelope",
+   "outcome": "pass",
+   "value": 1,
+   "samples": 1,
+   "note": "printed quick"
+  },
+  {
+   "name": "grex",
+   "outcome": "pass",
+   "value": 1,
+   "samples": 1,
+   "note": "printed ^a(?:bc?)?"
+  },
+  {
+   "name": "eo2",
+   "outcome": "pass",
+   "value": 1,
+   "samples": 1,
+   "note": "printed eo2:ok"
+  },
+  {
+   "name": "mdview",
+   "outcome": "pass",
+   "value": 1,
+   "samples": 1,
+   "note": "printed blocks:"
+  },
+  {
+   "name": "chart",
+   "outcome": "pass",
+   "value": 1,
+   "samples": 1,
+   "note": "printed drawn:yes"
+  },
+  {
+   "name": "bounce",
+   "outcome": "pass",
+   "value": 1,
+   "samples": 1,
+   "note": "printed playable:yes"
+  },
+  {
+   "name": "cubes",
+   "outcome": "pass",
+   "value": 1,
+   "samples": 1,
+   "note": "printed rendered3d:yes"
+  },
+  {
+   "name": "rssfwd",
+   "outcome": "not-run",
+   "note": "no replay check defined"
+  }
+ ],
+ "seal": "154c21ad3890cb82acc87c4ef8e259e37c068d0d654d97e7fe85307fb6fca6e5"
+}

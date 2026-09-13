@@ -31,6 +31,10 @@ fi
 # ago against the bundles you built an hour ago, and report every app green
 # while the change you are actually testing is in neither -- which is exactly
 # how a real interface break got a clean run here once.
+# Absolute, because every app runs from a temporary directory: a relative
+# KRATE_BIN resolved there, every run exited 127, and the matrix recorded
+# ten failures of a runtime that was never invoked.
+KRATE="$(cd "$(dirname "$KRATE")" && pwd)/$(basename "$KRATE")"
 echo "using: $KRATE"
 newest_source="$(find "$ROOT/crates" "$ROOT/wit" -name '*.rs' -o -name '*.wit' 2>/dev/null \
   | while read -r f; do [ "$f" -nt "$KRATE" ] && echo "$f"; done | head -1)"
@@ -41,6 +45,35 @@ fi
 
 passed=0
 failed=0
+# The matrix as a file, not only as a log (IC-755). One row per corpus
+# bundle: pass, fail, or skip with its reason, so a bundle the replay never
+# tries is kept as a skip rather than vanishing into a green tick. The
+# header names the host and the commit; scripts/e3-matrix.py turns this
+# into registry results and a record the claim rests on.
+case "$(uname -s)" in
+  Darwin) host_os=macos ;;
+  Linux) host_os=ubuntu ;;
+  MINGW*|MSYS*|CYGWIN*|Windows*) host_os=windows ;;
+  *) host_os="$(uname -s | tr '[:upper:]' '[:lower:]')" ;;
+esac
+case "$(uname -m)" in
+  arm64|aarch64) host_arch=arm64 ;;
+  x86_64|amd64) host_arch=x86_64 ;;
+  *) host_arch="$(uname -m)" ;;
+esac
+TSV="${REPLAY_TSV:-$ROOT/evidence/e3/replay-$host_os.tsv}"
+mkdir -p "$(dirname "$TSV")"
+{
+  printf '# os\t%s\n' "$host_os"
+  printf '# arch\t%s\n' "$host_arch"
+  printf '# commit\t%s\n' "$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+  printf '# tree\t%s\n' "$(git -C "$ROOT" rev-parse 'HEAD^{tree}' 2>/dev/null || echo unknown)"
+  printf '# ran_at\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf '# krate\t%s\n' "$("$KRATE" --version 2>/dev/null | head -1)"
+} > "$TSV"
+checked=""
+row() { printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$5" >> "$TSV"; checked="$checked $1"; }
+now_ms() { python3 -c 'import time; print(int(time.time()*1000))' 2>/dev/null || echo 0; }
 
 # Each case: bundle, argument, and a string the output must contain. The
 # expected string is the app's real answer, not a status line -- a bundle that
@@ -53,9 +86,11 @@ check() {
   bundle="$BUNDLES/$name.krate"
   if [ ! -f "$bundle" ]; then
     echo "  $name: MISSING at $bundle"
+    row "$name" fail "bundle missing at $bundle" 0 0
     failed=$((failed + 1))
     return 0
   fi
+  started="$(now_ms)"
 
   work="$(mktemp -d)"
   # The subtree ported apps are granted, and a file inside it. `fs.mkdir` does
@@ -84,9 +119,11 @@ TOML
   code="$?"
   set -e
 
+  elapsed=$(( $(now_ms) - started ))
   if [ "$code" -ne 0 ]; then
     echo "  $name: FAILED to run (exit $code)"
     echo "$out" | head -4 | sed 's/^/      /'
+    row "$name" fail "failed to run (exit $code)" "$elapsed" "$code"
     failed=$((failed + 1))
     rm -rf "$work"
     return 0
@@ -95,10 +132,12 @@ TOML
   case "$out" in
     *"$expect"*)
       echo "  $name: ok"
+      row "$name" pass "printed $expect" "$elapsed" 0
       passed=$((passed + 1))
       ;;
     *)
       echo "  $name: ran but did not produce '$expect'"
+      row "$name" fail "ran but did not produce '$expect'" "$elapsed" 0
       echo "$out" | head -4 | sed 's/^/      /'
       failed=$((failed + 1))
       ;;
@@ -162,7 +201,16 @@ check "cubes" "quick" "rendered3d:yes"
 # on all three operating systems.
 
 echo ""
-echo "passed: $passed   failed: $failed"
+# Every corpus bundle nobody checked is a SKIP row, with the reason. It is
+# not counted as a pass and not dropped: the matrix must say it was not tried.
+for bundle in "$BUNDLES"/*.krate; do
+  name="$(basename "$bundle" .krate)"
+  case " $checked " in
+    *" $name "*) ;;
+    *) row "$name" skip "no replay check defined" 0 0; echo "  $name: skipped (no replay check defined)" ;;
+  esac
+done
+echo "passed: $passed   failed: $failed   matrix: $TSV"
 if [ "$failed" -gt 0 ]; then
   exit 1
 fi

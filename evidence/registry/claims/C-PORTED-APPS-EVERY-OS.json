@@ -1,0 +1,42 @@
+{
+ "id": "C-PORTED-APPS-EVERY-OS",
+ "sentence": "Every ported app in the corpus with a replay check runs on macOS, Ubuntu and Windows and prints its expected marker, on the same commit.",
+ "audience": "whoever says Krate runs the same file on every desktop OS, and whoever reads the release notes",
+ "surfaces": [
+  "release"
+ ],
+ "subject": {
+  "commit": "92dcaf9fe"
+ },
+ "requires": {
+  "evidence_classes": [
+   "execution"
+  ],
+  "platforms": [
+   "macos-arm64",
+   "ubuntu-x86_64",
+   "windows-x86_64"
+  ],
+  "environment": "any",
+  "same_bytes": false
+ },
+ "evidence": [
+  "E-E3-REPLAY-92dcaf9fe-macos"
+ ],
+ "declared_state": "UNSUPPORTED",
+ "exclusions": [
+  "rssfwd, which is deliberately not replayed because it reaches the internet",
+  "anything about how the apps behave beyond printing their marker",
+  "Android, iOS and the browser: this is the desktop matrix, and a report labelled every-OS must add those columns (1575)"
+ ],
+ "owner": "lead",
+ "approval": null,
+ "expiry": {
+  "triggers": [
+   "source-change"
+  ]
+ },
+ "revision": 1,
+ "history": [],
+ "note": "subject.commit and evidence are filled by scripts/e3-matrix.py ingest from the replay job's matrix files; until three hosts have passing records on one commit this stays UNSUPPORTED, which is the truth."
+}

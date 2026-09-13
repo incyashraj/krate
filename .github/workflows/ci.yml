@@ -1219,6 +1219,15 @@ jobs:
       - name: Replay every ported app
         shell: bash
         run: sh scripts/replay-ported-apps.sh
+      # The matrix as a file (IC-755): every corpus bundle's outcome on this
+      # host, skips included, retained beside the log so the registry can
+      # judge the every-OS claim from cells rather than from a green tick.
+      - name: Keep the replay matrix
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: e3-replay-${{ matrix.os }}
+          path: evidence/e3/replay-*.tsv
       # The website's numbers come from these bundles, and the fastest way to
       # make a public claim wrong is to improve the code. Printed on every run
       # so a stale claim is visible before it reaches a pitch deck.

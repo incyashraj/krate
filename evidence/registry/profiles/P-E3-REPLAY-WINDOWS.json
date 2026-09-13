@@ -1,0 +1,110 @@
+{
+ "id": "P-E3-REPLAY-WINDOWS",
+ "title": "Ported-app replay on windows (x86_64)",
+ "claims": [
+  "C-PORTED-APPS-EVERY-OS"
+ ],
+ "frozen_at": "2026-09-13T06:00:00Z",
+ "note": "One cell per bundle in evidence/ported. A required cell that did not run blocks the claim: a bundle the replay never tried is not a pass (IC-755, 1576). Results come from scripts/replay-ported-apps.sh via scripts/e3-matrix.py.",
+ "cells": [
+  {
+   "name": "bounce",
+   "status": "required",
+   "claims": [
+    "C-PORTED-APPS-EVERY-OS"
+   ],
+   "unit": "outcome",
+   "definition": "bounce.krate runs headless on windows with its recorded argument and prints its expected marker on stdout"
+  },
+  {
+   "name": "chart",
+   "status": "required",
+   "claims": [
+    "C-PORTED-APPS-EVERY-OS"
+   ],
+   "unit": "outcome",
+   "definition": "chart.krate runs headless on windows with its recorded argument and prints its expected marker on stdout"
+  },
+  {
+   "name": "cubes",
+   "status": "required",
+   "claims": [
+    "C-PORTED-APPS-EVERY-OS"
+   ],
+   "unit": "outcome",
+   "definition": "cubes.krate runs headless on windows with its recorded argument and prints its expected marker on stdout"
+  },
+  {
+   "name": "ddh",
+   "status": "required",
+   "claims": [
+    "C-PORTED-APPS-EVERY-OS"
+   ],
+   "unit": "outcome",
+   "definition": "ddh.krate runs headless on windows with its recorded argument and prints its expected marker on stdout"
+  },
+  {
+   "name": "envelope",
+   "status": "required",
+   "claims": [
+    "C-PORTED-APPS-EVERY-OS"
+   ],
+   "unit": "outcome",
+   "definition": "envelope.krate runs headless on windows with its recorded argument and prints its expected marker on stdout"
+  },
+  {
+   "name": "eo2",
+   "status": "required",
+   "claims": [
+    "C-PORTED-APPS-EVERY-OS"
+   ],
+   "unit": "outcome",
+   "definition": "eo2.krate runs headless on windows with its recorded argument and prints its expected marker on stdout"
+  },
+  {
+   "name": "grex",
+   "status": "required",
+   "claims": [
+    "C-PORTED-APPS-EVERY-OS"
+   ],
+   "unit": "outcome",
+   "definition": "grex.krate runs headless on windows with its recorded argument and prints its expected marker on stdout"
+  },
+  {
+   "name": "hexyl",
+   "status": "required",
+   "claims": [
+    "C-PORTED-APPS-EVERY-OS"
+   ],
+   "unit": "outcome",
+   "definition": "hexyl.krate runs headless on windows with its recorded argument and prints its expected marker on stdout"
+  },
+  {
+   "name": "mdview",
+   "status": "required",
+   "claims": [
+    "C-PORTED-APPS-EVERY-OS"
+   ],
+   "unit": "outcome",
+   "definition": "mdview.krate runs headless on windows with its recorded argument and prints its expected marker on stdout"
+  },
+  {
+   "name": "rssfwd",
+   "status": "optional",
+   "claims": [
+    "C-PORTED-APPS-EVERY-OS"
+   ],
+   "unit": "outcome",
+   "definition": "deliberately not replayed: given a real feed file it reaches the internet, and a nightly check that depends on someone else's server reports their uptime rather than our runtime (scripts/replay-ported-apps.sh). Its bundle is opened by the open-every-bundle job; it is not a cell of this claim, and the claim's wording must not count it"
+  },
+  {
+   "name": "savings",
+   "status": "required",
+   "claims": [
+    "C-PORTED-APPS-EVERY-OS"
+   ],
+   "unit": "outcome",
+   "definition": "savings.krate runs headless on windows with its recorded argument and prints its expected marker on stdout"
+  }
+ ]
+}

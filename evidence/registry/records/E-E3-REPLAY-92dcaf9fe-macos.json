@@ -1,0 +1,85 @@
+{
+ "id": "E-E3-REPLAY-92dcaf9fe-macos",
+ "claims": [
+  "C-PORTED-APPS-EVERY-OS"
+ ],
+ "subject": {
+  "kind": "source tree",
+  "source": {
+   "commit": "92dcaf9fea2a4b06c92c4fa5d1472bfb13faa0d3",
+   "tree": "b80b94eec29888f6a67f02d0b2463a8b33297d40"
+  },
+  "binary_digest": null,
+  "package_digest": null,
+  "relationship": "the replay job checked out this commit, built the runtime, and ran every corpus bundle on this host"
+ },
+ "environment": {
+  "kind": "hosted",
+  "os": "macos",
+  "arch": "arm64",
+  "runner": "GitHub-hosted"
+ },
+ "toolchain": {
+  "rust": "as pinned by rust-toolchain.toml at this commit"
+ },
+ "command": "sh scripts/replay-ported-apps.sh",
+ "inputs": {
+  "prerequisites": [
+   "evidence/ported/*.krate"
+  ]
+ },
+ "oracle": {
+  "class": "execution",
+  "description": "each bundle ran headless with its recorded argument and its stdout carried the expected marker; a bundle with no recorded check is a skip, kept as one, and blocks the claim"
+ },
+ "raw_result": {
+  "passed": [
+   "hexyl",
+   "savings",
+   "ddh",
+   "envelope",
+   "grex",
+   "eo2",
+   "mdview",
+   "chart",
+   "bounce",
+   "cubes"
+  ],
+  "failed": [],
+  "skipped": [
+   "rssfwd"
+  ],
+  "audit": [],
+  "tsv": "evidence/e3/replay-macos.tsv"
+ },
+ "outcome": "pass",
+ "scope": {
+  "supports": "every corpus bundle with a recorded check ran and printed its marker on macos at 92dcaf9fe",
+  "exclusions": [
+   "bundles with no recorded check, which are listed under skipped rather than counted",
+   "anything about how the apps behave beyond printing their marker"
+  ]
+ },
+ "independence": "first-party API observation",
+ "time": {
+  "start": "2026-09-13T07:59:46Z",
+  "finish": "2026-09-13T07:59:46Z"
+ },
+ "operator": "GitHub Actions, CI workflow, replay-ported-apps job",
+ "privacy": {
+  "audience": "public",
+  "redact": []
+ },
+ "retention": {
+  "raw": "evidence/e3/replay-macos.tsv",
+  "until": "the results file is deleted"
+ },
+ "expiry": {
+  "triggers": [
+   "source-change"
+  ],
+  "on": null
+ },
+ "supersedes": null,
+ "invalidated_by": null
+}
