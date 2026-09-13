@@ -256,6 +256,28 @@ def normalise(value, unit):
     return f"{value}{unit}"
 
 
+def investor_surfaces(root=ROOT):
+    """Every investor document, when the private tree is present (IC-629).
+
+    Invest/ is ignored by git and lives only on the founder's machine, so
+    this scan cannot run in CI. It runs where scripts/release-decision.py
+    runs, and a figure in a memo that no claim record vouches for holds a
+    release exactly as one on the landing page does. In CI the absence is
+    said out loud, never treated as a pass (test 1180)."""
+    base = root / "Invest"
+    if not base.is_dir():
+        return []
+    out = []
+    for path in sorted(base.rglob("*")):
+        if not path.is_file() or path.suffix not in RETIRED_SCAN_SUFFIXES:
+            continue
+        rel = path.relative_to(root).as_posix()
+        if any(part in rel for part in RETIRED_SKIP_PARTS) or rel in RETIRED_SKIP_FILES:
+            continue
+        out.append(path)
+    return out
+
+
 def check_surface(path, record, figures):
     problems = []
     text = (ROOT / path).read_text(errors="replace")
@@ -440,6 +462,26 @@ def self_test():
                 failures.append(f"the missing-evidence refusal must say so: {refusal.code!r}")
     finally:
         temp.unlink()
+    # IC-629 / 1180: a figure in investor material is held to the same
+    # record as one on the landing page, and the private tree is found.
+    import tempfile as _tf
+    with _tf.TemporaryDirectory() as tmp:
+        troot = Path(tmp)
+        (troot / "Invest" / "KIT").mkdir(parents=True)
+        (troot / "Invest" / "memo.md").write_text("| Metric | MarkText | Krate |\n|---|---|---|\n| Memory | 2.3 GB | 999 GB |\n")
+        (troot / "Invest" / "KIT" / "deck.html").write_text("<p>plain prose, no comparison</p>\n")
+        (troot / "Invest" / "notes.rs").write_text("not a document")
+        found = investor_surfaces(troot)
+        if [p.name for p in found] != ["deck.html", "memo.md"]:
+            failures.append(f"investor_surfaces must find every document under Invest/ and nothing else: {found}")
+        probs = check_surface(troot / "Invest" / "memo.md", fresh, known_figures(fresh))
+        if not any("999 GB" in x for x in probs):
+            failures.append(f"an investor memo stating a figure no record vouches for must be a problem: {probs}")
+        if any("2.3 GB" in x for x in probs) and "2.3 GB" in known_figures(fresh):
+            failures.append("a vouched-for figure must not be flagged")
+        if investor_surfaces(troot / "nowhere") != []:
+            failures.append("with no Invest/ present the scan must find nothing, not fail")
+
     listing = inventory(fresh, _dt.date(2026, 9, 12))
     if "owner: lead" not in listing or "27 days old" not in listing or "stated on:" not in listing:
         failures.append(f"the inventory must show owner, age and where the figure is stated: {listing}")
@@ -486,6 +528,16 @@ def main():
             continue
         checked += 1
         problems.extend(check_surface(surface, record, figures))
+
+    # The investor material, where it exists (IC-629, 1180).
+    investor = investor_surfaces()
+    if investor:
+        for path in investor:
+            checked += 1
+            problems.extend(check_surface(path, record, figures))
+        print(f"investor material: {len(investor)} documents scanned")
+    else:
+        print("investor material: Invest/ is not present here (private, ignored), so it was NOT assessed")
 
     scanned, retired = scan_retired()
 
