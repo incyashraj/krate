@@ -94,6 +94,15 @@ async function publish(e) {
   // The bytes are still there: a listing-scope block keeps them (1314).
   assert.ok(e._blobs.has(id), "listing scope keeps the bytes for a restore");
 
+  // The list clients hold offline names it, with the reason (1311).
+  const listed = await worker.fetch(req("/takedowns"), e);
+  assert.strictEqual(listed.status, 200);
+  assert.strictEqual(listed.headers.get("cache-control"), "public, max-age=300");
+  const list = JSON.parse(await listed.text());
+  assert.strictEqual(list.schema, "krate.hub-blocklist.v1");
+  assert.deepStrictEqual(list.blocked.map((b) => [b.hash, b.reason, b.emergency]), [[id, "impersonates a bank", false]]);
+  assert.strictEqual(list.blocked[0].notice, `https://hub.example/takedown/${id}`);
+
   // Appeal: only the author.
   assert.strictEqual((await worker.fetch(post(`/takedown/${id}/appeal`, "bob", { text: "not mine to say" }), e)).status, 403);
   assert.strictEqual((await worker.fetch(post(`/takedown/${id}/appeal`, "alice", {}), e)).status, 400, "an appeal needs words");
@@ -113,6 +122,7 @@ async function publish(e) {
   const after = JSON.parse(await closedRes.text());
   assert.strictEqual(after.was_removed, true, "the closed record still answers: it WAS removed, and why");
   assert.strictEqual(after.closed.decision, "restored");
+  assert.deepStrictEqual(JSON.parse(await (await worker.fetch(req("/takedowns"), e)).text()).blocked, [], "a restored app is off the list clients hold");
 }
 
 /* ---- a denied appeal stays blocked and says so -------------------------- */

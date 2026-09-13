@@ -625,6 +625,15 @@ enum Command {
         forget_all: bool,
     },
 
+    /// What this machine knows about apps the hub removed, and fetch the
+    /// hub's current list so a removed app is refused even offline.
+    Blocklist {
+        /// Fetch the hub's list (KRATE_HUB_URL or the public hub) and keep
+        /// it under ~/.krate for every later `krate run`.
+        #[arg(long)]
+        update: bool,
+    },
+
     /// What this machine knows about withdrawn signing keys, and import a
     /// publisher's signed revocation list.
     Revocations {
@@ -1641,6 +1650,7 @@ fn run() -> Result<u8> {
             permissions_command(forget.as_deref(), forget_all)
         }
         Command::Revocations { import } => revocations_command(import.as_deref()),
+        Command::Blocklist { update } => blocklist_command(update),
         Command::Identity {
             isolate,
             share,
@@ -4856,6 +4866,123 @@ fn permissions_command(forget: Option<&str>, forget_all: bool) -> Result<u8> {
 }
 
 /// `krate revocations`: show what is held, or import a publisher's list.
+/// The hub's list of removed apps, as this machine last fetched it
+/// (IC-669, test 1311: a blocklist clients honour offline).
+///
+/// Unsigned: the hub has no signing key yet, so this is what an HTTPS
+/// answer from the configured hub said, and the file records which hub
+/// and when. A person who does not trust it can delete it; `krate run`
+/// then says the list was not checked rather than pretending it was.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct Blocklist {
+    schema: String,
+    hub: String,
+    issued_at: u64,
+    fetched_at: u64,
+    blocked: Vec<Blocked>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct Blocked {
+    hash: String,
+    reason: String,
+    #[serde(default)]
+    scope: String,
+    #[serde(default)]
+    emergency: bool,
+    #[serde(default)]
+    at: u64,
+    #[serde(default)]
+    notice: String,
+}
+
+const BLOCKLIST_SCHEMA: &str = "krate.hub-blocklist.v1";
+
+fn blocklist_path() -> PathBuf {
+    krate_home().join("blocklist.json")
+}
+
+fn stored_blocklist() -> Option<Blocklist> {
+    let text = fs::read_to_string(blocklist_path()).ok()?;
+    let list: Blocklist = serde_json::from_str(&text).ok()?;
+    (list.schema == BLOCKLIST_SCHEMA).then_some(list)
+}
+
+/// The hub's block on this file, if the held list names it. A URL target
+/// is not checked here: the hub answers a removed app's link itself, and
+/// the check would only repeat what the download already said.
+fn blocked_entry(target: &str) -> Option<Blocked> {
+    if krate_bundle::is_url(target) {
+        return None;
+    }
+    let list = stored_blocklist()?;
+    let bytes = fs::read(target).ok()?;
+    let hash = krate_bundle::sha256_hex(&bytes);
+    list.blocked.into_iter().find(|b| b.hash == hash)
+}
+
+fn blocklist_command(update: bool) -> Result<u8> {
+    if update {
+        let hub = std::env::var("KRATE_HUB_URL").unwrap_or_else(|_| DEFAULT_HUB_URL.to_string());
+        let endpoint = format!("{}/takedowns", hub.trim_end_matches('/'));
+        let response = ureq::AgentBuilder::new()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .get(&endpoint)
+            .call()
+            .with_context(|| format!("could not fetch the blocklist from {endpoint}"))?;
+        let body = response
+            .into_string()
+            .with_context(|| format!("{endpoint} did not answer"))?;
+        let mut list: Blocklist = serde_json::from_str(&body)
+            .with_context(|| format!("{endpoint} did not answer with a blocklist"))?;
+        if list.schema != BLOCKLIST_SCHEMA {
+            anyhow::bail!(
+                "{endpoint} answered with a {} list, which this Krate does not read",
+                list.schema
+            );
+        }
+        list.hub = hub.clone();
+        list.fetched_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let path = blocklist_path();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&path, serde_json::to_string_pretty(&list)? + "\n")?;
+        println!(
+            "fetched the blocklist from {hub}: {} removed app(s), kept at {}",
+            list.blocked.len(),
+            path.display()
+        );
+        return Ok(0);
+    }
+    match stored_blocklist() {
+        None => {
+            println!("no blocklist held; `krate blocklist --update` fetches the hub's");
+        }
+        Some(list) => {
+            println!(
+                "blocklist from {}: {} removed app(s), fetched at {}",
+                list.hub,
+                list.blocked.len(),
+                list.fetched_at
+            );
+            for block in &list.blocked {
+                println!(
+                    "  {}  {}{}",
+                    &block.hash[..block.hash.len().min(12)],
+                    block.reason,
+                    if block.emergency { "  (emergency)" } else { "" }
+                );
+            }
+        }
+    }
+    Ok(0)
+}
+
 fn revocations_command(import: Option<&Path>) -> Result<u8> {
     use krate_bundle::delegation::SignedRevocationList;
     if let Some(path) = import {
@@ -11997,6 +12124,29 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
             (project.entries.len() > execution.entries.len()).then_some(project.digest)
         }),
     });
+
+    // An app the hub removed is refused, offline included (IC-669, test
+    // 1311): the list this machine last fetched names the file's own bytes.
+    // A link is not checked here -- the hub answers it live with the same
+    // notice -- and no held list means "not checked", never "clean".
+    if bundle.is_some() {
+        if let Some(block) = blocked_entry(&request.target) {
+            eprintln!("error: the hub removed this app: {}", block.reason);
+            if block.emergency {
+                eprintln!("  - an emergency removal");
+            }
+            if !block.notice.is_empty() {
+                eprintln!(
+                    "  - the notice, and how its author can appeal: {}",
+                    block.notice
+                );
+            }
+            eprintln!();
+            eprintln!("Krate will not run an app the hub has removed. If the list is stale,");
+            eprintln!("`krate blocklist --update` fetches the current one.");
+            return Ok(5);
+        }
+    }
 
     // A signature that says the file changed is a refusal, not a note
     // (IC-015). The publisher signed one thing and this is another, so

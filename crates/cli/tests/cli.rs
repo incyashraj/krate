@@ -5514,6 +5514,128 @@ fn a_signed_app_reports_its_release_id_and_an_unsigned_one_reports_none() {
     );
 }
 
+/// An app the hub removed is refused on this machine, offline, by the
+/// list it last fetched (IC-669, test 1311); a machine holding no list
+/// runs it and says nothing was checked.
+#[test]
+fn a_removed_app_is_refused_offline_by_the_held_blocklist() {
+    let home = tempfile::tempdir().expect("home");
+    let bounce =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../evidence/ported/bounce.krate");
+    let hash = krate_bundle::sha256_hex(&std::fs::read(&bounce).expect("bounce"));
+    let run = || {
+        krate()
+            .env("HOME", home.path())
+            .env("USERPROFILE", home.path())
+            .args(["run", "--headless", "--auto-grant"])
+            .arg(&bounce)
+            .output()
+            .expect("run")
+    };
+
+    // No list held: not refused.
+    let free = run();
+    assert_eq!(
+        free.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&free.stderr)
+    );
+    let held = krate()
+        .env("HOME", home.path())
+        .env("USERPROFILE", home.path())
+        .arg("blocklist")
+        .output()
+        .expect("blocklist");
+    assert!(String::from_utf8_lossy(&held.stdout).contains("no blocklist held"));
+
+    // The hub's list, as `krate blocklist --update` would have written it.
+    std::fs::create_dir_all(home.path().join(".krate")).unwrap();
+    std::fs::write(
+        home.path().join(".krate/blocklist.json"),
+        serde_json::json!({
+            "schema": "krate.hub-blocklist.v1",
+            "hub": "https://hub.example",
+            "issued_at": 1_700_000_000u64,
+            "fetched_at": 1_700_000_100u64,
+            "blocked": [{
+                "hash": hash,
+                "reason": "impersonates a bank",
+                "scope": "listing",
+                "emergency": true,
+                "at": 1_700_000_000u64,
+                "notice": "https://hub.example/takedown/abc",
+            }],
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let blocked = run();
+    assert_eq!(
+        blocked.status.code(),
+        Some(5),
+        "a removed app must be refused, exit 5 like the wall"
+    );
+    let stderr = String::from_utf8_lossy(&blocked.stderr);
+    assert!(
+        stderr.contains("the hub removed this app: impersonates a bank"),
+        "{stderr}"
+    );
+    assert!(stderr.contains("emergency"), "{stderr}");
+    assert!(
+        stderr.contains("https://hub.example/takedown/abc"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("krate blocklist --update"),
+        "and how to refresh: {stderr}"
+    );
+    assert!(
+        !String::from_utf8_lossy(&blocked.stdout).contains("items:"),
+        "the app must not have run"
+    );
+
+    // A different file with the same name is not the blocked bytes.
+    let other = home.path().join("bounce.krate");
+    std::fs::write(
+        &other,
+        raw_bundle(
+            "[app]\nid = \"com.example.other\"\nname = \"Other\"\nversion = \"1.0.0\"\n\
+             entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n",
+            include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm"),
+            &[],
+        ),
+    )
+    .unwrap();
+    let ok = krate()
+        .env("HOME", home.path())
+        .env("USERPROFILE", home.path())
+        .args(["run", "--headless", "--auto-grant"])
+        .arg(&other)
+        .output()
+        .expect("run other");
+    assert_eq!(
+        ok.status.code(),
+        Some(0),
+        "the block is on the bytes, not the name: {}",
+        String::from_utf8_lossy(&ok.stderr)
+    );
+
+    let shown = krate()
+        .env("HOME", home.path())
+        .env("USERPROFILE", home.path())
+        .arg("blocklist")
+        .output()
+        .expect("blocklist");
+    let text = String::from_utf8_lossy(&shown.stdout);
+    assert!(
+        text.contains("1 removed app")
+            && text.contains(&hash[..12])
+            && text.contains("(emergency)"),
+        "{text}"
+    );
+}
+
 /// A fork says what it was changed from, and the product prints it
 /// (IC-397, test 494; K-312).
 ///

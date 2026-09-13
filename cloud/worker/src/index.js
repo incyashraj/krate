@@ -243,6 +243,9 @@ export default {
       if (request.method === "POST" && pathname.startsWith("/takedown/") && pathname.endsWith("/appeal")) {
         return cors(await takedownAppeal(request, pathname.slice("/takedown/".length, -"/appeal".length), env));
       }
+      if (request.method === "GET" && pathname === "/takedowns") {
+        return cors(await takedownList(env));
+      }
       if (request.method === "GET" && pathname.startsWith("/takedown/")) {
         return cors(await takedownNotice(pathname.slice("/takedown/".length), env));
       }
@@ -1005,6 +1008,36 @@ async function takedownPut(request, hash, env) {
     await env.BUNDLES.delete(`icon:${hash}`);
   }
   return json({ ok: true, takedown: record });
+}
+
+/// Every open takedown, for clients to hold and honour offline (IC-669,
+/// test 1311). Closed ones are not here: a restored app is not blocked.
+async function takedownList(env) {
+  const keys = await listAllKeys(env.APPS, "takedown:");
+  const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
+  const blocked = [];
+  for (const key of keys) {
+    const raw = await env.APPS.get(key);
+    if (!raw) continue;
+    try {
+      const record = JSON.parse(raw);
+      blocked.push({
+        hash: record.hash,
+        reason: record.reason,
+        scope: record.scope,
+        emergency: record.emergency === true,
+        at: record.at,
+        notice: `${base}/takedown/${record.hash}`,
+      });
+    } catch (_) {
+      // an unreadable record blocks nothing it cannot name
+    }
+  }
+  blocked.sort((a, b) => (a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0));
+  return new Response(
+    JSON.stringify({ schema: "krate.hub-blocklist.v1", hub: base, issued_at: Math.floor(Date.now() / 1000), fetched_at: 0, blocked }),
+    { headers: { "content-type": "application/json", "cache-control": "public, max-age=300" } },
+  );
 }
 
 async function takedownNotice(hash, env) {
