@@ -136,13 +136,23 @@ const MANIFEST_CAPS = ["ui.window:create", "io.stdout", "io.args"];
   const e = env();
   const bytes = new Uint8Array(STORED);
   const text = new TextDecoder("latin1").decode(bytes);
-  // Rename every "code.wasm" entry name (local + central) to "code.wash".
+  // Rename the entry NAMES (local header and central directory) to
+  // "code.wash", but leave the manifest's own `entry = "code.wasm"` line
+  // alone. The first version renamed that too, so the old substring gate
+  // refused the body before the directory check could, and a sabotage
+  // that removed the directory check survived on the older message.
   let idx = text.indexOf("code.wasm");
   assert.ok(idx > 0);
+  let renamed = 0;
   while (idx >= 0) {
-    bytes.set(new TextEncoder().encode("code.wash"), idx);
+    if (text.slice(idx - 9, idx) !== 'entry = "') {
+      bytes.set(new TextEncoder().encode("code.wash"), idx);
+      renamed += 1;
+    }
     idx = text.indexOf("code.wasm", idx + 1);
   }
+  assert.strictEqual(renamed, 2, "the local header and the central directory name were renamed");
+  assert.ok(new TextDecoder("latin1").decode(bytes).includes('entry = "code.wasm"'), "the manifest line still says code.wasm");
   const res = await worker.fetch(publish(bytes), e);
   assert.strictEqual(res.status, 422, await res.clone().text());
   assert.match(await res.text(), /code\.wasm/);
