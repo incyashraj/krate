@@ -201,10 +201,12 @@ codegen-units = 1
 opt-level = "s"
 ```
 
-A GUI app declares `mod bindings;`, reaches the API through
-`bindings::krate::*`, implements `bindings::Guest`, and ends with
-`bindings::export!(Component with_types_in bindings);`. Do **not** write the
-`bindings` module yourself -- the build generates it from the WIT.
+A GUI app reaches the API through the SDK -- `krate::ui::*` and `krate::gfx::*`
+for the window and the drawing, `krate::bindings::krate::io::*` for the Phase 2
+interfaces underneath -- implements `krate::Guest`, and ends with
+`krate::export!(Component);`. Do **not** write a `bindings` module: the SDK's
+`gui` feature carries the gui world's bindings, and `features = ["gui"]` is
+what makes the component declare that world.
 
 ---
 
@@ -220,27 +222,30 @@ panic site can take a component from zero imports to more than thirty.
 
 ### Which to write
 
-- **No dependencies beyond the bindings, and simple logic?** Plain std is fine.
-  `apps/krate-bounce` is a shipped std GUI app that imports zero `wasi:*`.
+- **No dependencies beyond the SDK, and simple logic?** Plain std is fine: give
+  the `krate` dependency `features = ["gui", "std"]`, which tells the SDK the
+  guest brings its own allocator and panic handler.
 - **Any real dependency (a parser, a decoder, `rand`), or enough logic that a
   stray panic is likely?** Write `#![no_std]`. This is the safer default, and it
   is what the worked examples below do.
 
 ### The `no_std` checklist
 
-Miss a step and it fails to build with "no global memory allocator found" or
-"`#[panic_handler]` required":
+Miss a step and it fails to build with "no global memory allocator found",
+"`#[panic_handler]` required" or "duplicate lang item":
 
-1. `#![no_std]` at the top of `src/lib.rs`, then `extern crate alloc;`
-2. For a GUI app, also `extern crate krate as _krate_runtime;` -- linked only for
-   its runtime pieces, never called directly. (A CLI app gets these by `use`ing
-   the `krate` crate normally.)
-3. **KEEP the `krate` dependency in `Cargo.toml`.** Do not remove it because
-   "the app does not call it". It is what provides the global allocator, the
-   `#[panic_handler]`, and the memory intrinsics a `no_std` guest needs. **This
-   is the step that is missed most often, and nothing builds without it.**
-4. Keep `std_feature = true` under `[package.metadata.component.bindings]`.
-5. Keep `panic = "abort"` and `opt-level = "s"` in `[profile.release]`.
+1. `#![no_std]` at the top of `src/lib.rs`, then `extern crate alloc;`, and take
+   `String`, `Vec`, `format!` and `vec!` from `alloc`:
+   `use alloc::{format, string::{String, ToString}, vec, vec::Vec};`
+2. **KEEP the `krate` dependency in `Cargo.toml`, and drop `"std"` from its
+   features** (`features = ["gui"]` for a windowed app, no features for a CLI
+   app). Without `std` the SDK provides the global allocator, the
+   `#[panic_handler]`, and the memory intrinsics a `no_std` guest needs; with
+   `std` it leaves them to std. A `#![no_std]` guest that still says `"std"`
+   fails with "`#[panic_handler]` function required"; a std guest that drops
+   `"std"` fails with "duplicate lang item `panic_impl`". **The two lines move
+   together, and this is the step that is missed most often.**
+3. Keep `panic = "abort"` and `opt-level = "s"` in `[profile.release]`.
 
 ### What to avoid in `no_std`
 
@@ -558,9 +563,8 @@ The shared Phase 2 helpers in section 1 (`krate::store::get(key)`,
 `krate::random::bytes(count)`, `krate::fs`, `krate::net`) work unchanged in a
 GUI app: the gui world imports everything the cli world does. The raw
 bindings are still reachable as `krate::bindings::krate::<package>::...` when a
-shape the helpers do not cover is needed. Older shipped GUI apps carry a
-generated `bindings` module and call `bindings::krate::ui::...`; that still
-builds, but new apps take the SDK path above.
+shape the helpers do not cover is needed. Every shipped GUI app under `apps/`
+takes this path, so any of them is a model for the wiring.
 
 ## `gfx`
 

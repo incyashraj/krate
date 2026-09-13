@@ -10962,8 +10962,8 @@ stops std's unwinding and formatting machinery dragging its own I/O in.\n\
 Both `#![no_std]` and plain std work. Which one you need depends on your\n\
 dependencies, and getting this wrong is the most expensive mistake here:\n\
 \n\
-- **No dependencies beyond the bindings?** Use std. `krate-notes` is a shipped\n\
-  GUI app that does exactly this and imports zero `wasi:*`.\n\
+- **No dependencies beyond the SDK?** Use std, with `features = [\"gui\", \"std\"]`\n\
+  on the `krate` line, which is what the skeleton you were handed has.\n\
 - **Any real dependency -- a decoder, a parser?** Use `#![no_std]`. A crate\n\
   that never touches the operating system still leaks through std's panic\n\
   path: one reachable panic pulls in `fd_write`, `environ_get`, and\n\
@@ -15711,13 +15711,24 @@ fn build_fix(detail: &str) -> String {
         || detail.contains("undefined symbol: memcpy")
     {
         return "This is a `#![no_std]` guest with no allocator, panic handler, or memory \
-                intrinsics. Do NOT write your own -- add the SDK, which provides all three:\n\
-                \u{20}\u{20}- put `krate = { path = \"<sdk>/crates/bindings-rust\" }` under \
-                `[dependencies]` in Cargo.toml (copy the path prefix from the \
-                `[package.metadata.component.target]` entry already there)\n\
-                \u{20}\u{20}- add `extern crate krate as _krate_runtime;` near the top of \
-                src/lib.rs so the crate is linked even when nothing calls it\n\
+                intrinsics. Do NOT write your own -- the SDK provides all three when its \
+                `std` feature is off:\n\
+                \u{20}\u{20}- put `krate = { path = \"<sdk>/crates/bindings-rust\", features = \
+                [\"gui\"] }` under `[dependencies]` in Cargo.toml (copy the path prefix \
+                from the `[package.metadata.component.target]` entry already there; a \
+                CLI app leaves `gui` out)\n\
+                \u{20}\u{20}- if the line is already there with `\"std\"` in its features, \
+                remove `\"std\"`: it tells the SDK the guest brings its own\n\
                 apps/krate-notes is a shipped GUI app that does exactly this."
+            .to_string();
+    }
+    // A std guest linking the SDK's no_std lang items beside std's own.
+    if detail.contains("duplicate lang item") {
+        return "The guest links `std` and so does the SDK's default `no_std` runtime, so \
+                the panic handler and allocator exist twice. Either make the guest \
+                `#![no_std]` (the usual answer -- see KRATE_AUTHORING.md section 3), or \
+                keep std and add `\"std\"` to the `krate` dependency's features \
+                (`features = [\"gui\", \"std\"]`), which tells the SDK to leave them to std."
             .to_string();
     }
     // A std guest whose bindings were gated behind std_feature.

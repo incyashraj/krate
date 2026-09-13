@@ -127,7 +127,7 @@ described the network in nine places. Every line below is a real, shipped
 capability. Believe this table over your instinct:
 
 - **Live network fetch IS real.** Declare `net.http`. `net::begin` /
-  `net::poll` in the SDK, `bindings::krate::net::http-client` in a GUI app.
+  `net::poll` from the SDK, in a CLI app and a GUI app alike.
   A currency converter fetching live rates is a normal Krate app.
 - **The real clock IS real.** `time.clock` gives epoch milliseconds; the
   day number is `epoch_ms / 86_400_000`.
@@ -732,28 +732,28 @@ an in-repo sample) instead.\n\n\
 Keep `panic = \"abort\"` and `opt-level = \"s\"` in the release profile: that is \
 what stops std's unwinding and formatting machinery dragging its own I/O in.\n\n\
 ## std or no_std -- pick by your dependencies\n\n\
-- **No dependencies beyond the bindings?** Use plain std. `krate-notes` is a \
-shipped GUI app that does exactly this and imports zero `wasi:*`.\n\
+- **No dependencies beyond the SDK, and simple logic?** Plain std is fine. \
+The skeleton you were handed is a std guest: its `krate` line carries \
+`features = [\"gui\", \"std\"]`, and it imports zero `wasi:*`.\n\
 - **Any real dependency (a decoder, a parser, `rand`), or a lot of logic where \
 a stray panic is likely?** Make it `#![no_std]`. Even a crate that never \
-touches the OS leaks through std's panic path.\n\n\
+touches the OS leaks through std's panic path. Every shipped GUI app under \
+`apps/` is written this way.\n\n\
 Converting the skeleton to `#![no_std]` is a checklist -- miss a step and it \
-fails to build with \"no global memory allocator found\" or \"`#[panic_handler]` \
-required\":\n\
+fails to build with \"no global memory allocator found\", \"`#[panic_handler]` \
+required\" or \"duplicate lang item\":\n\
 \u{20}\u{20}1. put `#![no_std]` at the top of `src/lib.rs`, then `extern crate alloc;`, \
-then `extern crate krate as _krate_runtime;`\n\
-\u{20}\u{20}2. KEEP the `krate` dependency in `Cargo.toml` -- do NOT remove it. It is \
-what provides the allocator, `#[panic_handler]`, and the `mem*` intrinsics a \
-`no_std` guest needs. This is the step that is most often missed, and the \
-usual way to miss it is scaffolding: if you copied `Cargo.toml` from a plain \
-std example (krate-glow, krate-hello-gui), it has no `krate` line at all, \
-because a std guest does not need one. Adding `#![no_std]` to code whose \
-manifest came from a std example fails until you add the dependency:\n\
-\u{20}\u{20}\u{20}\u{20}\u{20}krate = {{ path = \"<sdk>/krate\" }}  # copy the exact line from krate-contacts\n\
-\u{20}\u{20}3. keep `std_feature = true` under \
-`[package.metadata.component.bindings]`, which puts the generated \
-`impl std::error::Error` behind a feature nobody turns on.\n\
-\u{20}\u{20}4. build strings with a `pure_string`-style helper and allocate directly; \
+and take `String`, `Vec`, `format!` and `vec!` from `alloc`: \
+`use alloc::{{format, string::{{String, ToString}}, vec, vec::Vec}};`\n\
+\u{20}\u{20}2. KEEP the `krate` dependency in `Cargo.toml` and drop `\"std\"` from its \
+features:\n\
+\u{20}\u{20}\u{20}\u{20}\u{20}krate = {{ path = \"<sdk>/crates/bindings-rust\", features = [\"gui\"] }}\n\
+Without `std` the SDK provides the allocator, the `#[panic_handler]` and the \
+`mem*` intrinsics a `no_std` guest needs; with `std` it leaves them to std. So a \
+`#![no_std]` guest that still says `\"std\"` fails with \"`#[panic_handler]` \
+function required\", and a std guest that drops `\"std\"` fails with \
+\"duplicate lang item `panic_impl`\". The two lines move together.\n\
+\u{20}\u{20}3. build strings with a `pure_string`-style helper and allocate directly; \
 avoid `format!`, `.unwrap()`, and `a[i]` indexing.\n\n\
 `apps/krate-contacts` is a shipped `no_std` GUI app to copy this wiring \
 from.\n\n\
@@ -1206,8 +1206,8 @@ cannot know from the request -- what the reader on the other side decided \
 to call it.\n";
 
 /// Section 4: the GUI world interfaces, extracted from the WIT. A GUI app calls
-/// these through its generated `bindings::krate::{ui,gfx,audio,speech}::*`, not
-/// through the `krate::*` SDK functions in section 1.
+/// these through the SDK's `gui` feature -- `krate::{ui,gfx,audio,speech}::*` --
+/// beside the Phase 2 helpers of section 1.
 pub(crate) fn gui_world_section() -> String {
     let mut out = String::from("\n---\n\n# 4. The GUI world: ui / gfx / audio / speech\n\n");
     out.push_str(
@@ -1232,9 +1232,8 @@ pub(crate) fn gui_world_section() -> String {
          `krate::random::bytes(count)`, `krate::fs`, `krate::net`) work unchanged in a\n\
          GUI app: the gui world imports everything the cli world does. The raw\n\
          bindings are still reachable as `krate::bindings::krate::<package>::...` when a\n\
-         shape the helpers do not cover is needed. Older shipped GUI apps carry a\n\
-         generated `bindings` module and call `bindings::krate::ui::...`; that still\n\
-         builds, but new apps take the SDK path above.\n\n",
+         shape the helpers do not cover is needed. Every shipped GUI app under `apps/`\n\
+         takes this path, so any of them is a model for the wiring.\n\n",
     );
     for (package, wit) in [
         ("gfx", GFX_WIT),
@@ -1510,17 +1509,13 @@ const WORKED_EXAMPLE: &str = r####"### `src/lib.rs`
 ```rust
 #![no_std]
 
-// The SDK owns the allocator, the panic handler, and the memory intrinsics
-// this guest needs. Nothing calls it directly, so link it explicitly or the
-// build fails with "`#[panic_handler]` function required".
-extern crate krate as _krate_runtime;
-
-#[allow(warnings)]
-mod bindings;
-
-use bindings::krate::gfx::{canvas2d, types as gfx};
-use bindings::krate::io::{args, stdio};
-use bindings::krate::ui::{events, tree, types, window};
+// The SDK with its `gui` feature: `krate::ui` and `krate::gfx` are the gui
+// world, `krate::bindings::krate::io` the Phase 2 interface underneath. With
+// its `std` feature off it also owns the allocator, the panic handler and the
+// memory intrinsics this `no_std` guest needs; nothing here has to link it.
+use krate::bindings::krate::io::{args, stdio};
+use krate::gfx::{canvas2d, types as gfx};
+use krate::ui::{events, tree, types, window};
 
 // Widget ids are yours to choose. Keep them as constants: the tree refers to
 // them and so does `canvas2d::bind`.
@@ -1542,7 +1537,7 @@ fn rgb(r: f32, g: f32, b: f32) -> gfx::Color {
     gfx::Color { r, g, b, a: 1.0 }
 }
 
-impl bindings::Guest for Component {
+impl krate::Guest for Component {
     // The world exports `run: func() -> s32`. No arguments, no Result: read
     // arguments with `args::raw()` and return 0 for success.
     fn run() -> i32 {
@@ -1622,18 +1617,20 @@ impl bindings::Guest for Component {
                 dirty = false;
             }
 
-            // Interactive: block until something happens, so the app sits idle
-            // instead of burning a core. Quick: never block, and stop after a
-            // bounded number of rounds.
-            let event = if quick {
-                rounds += 1;
-                if rounds > QUICK_ROUNDS {
-                    break;
+            // One round: wait up to ROUND_MILLIS for an event. An interactive
+            // run sits idle at no cost; a quick run counts the quiet rounds
+            // and exits on its own after about ten seconds of nothing.
+            let event = events::wait(Some(ROUND_MILLIS));
+            if quick {
+                if event.is_none() {
+                    idle += 1;
+                    if idle > QUICK_IDLE_ROUNDS {
+                        break;
+                    }
+                } else {
+                    idle = 0;
                 }
-                events::poll()
-            } else {
-                events::wait(None)
-            };
+            }
 
             match event {
                 // Always handle this. It is what the window's close button and
@@ -1701,7 +1698,7 @@ fn node(id: u64, parent: Option<u64>, kind: types::WidgetKind) -> types::WidgetN
     }
 }
 
-bindings::export!(Component with_types_in bindings);
+krate::export!(Component);
 ```
 
 ### `manifest.toml`
@@ -2190,6 +2187,50 @@ mod tests {
         assert!(
             section.contains("MUST have it and a CLI app MUST NOT"),
             "the feature decides the world, and the pack says so"
+        );
+    }
+
+    /// One shape, everywhere (K-338). The gui section teaches the SDK path;
+    /// the no_std checklist, the worked example and the repair hints used
+    /// to teach the older per-app wiring beside it, and an agent reading
+    /// both produced hybrids. The worked example is also the checked-in
+    /// app `apps/zz-example-check`, so building that app is building the
+    /// example the pack carries -- the example did not compile for months
+    /// because nothing did.
+    #[test]
+    fn the_whole_pack_teaches_the_sdk_wiring_and_the_worked_example_is_a_real_app() {
+        let pack = generate(std::path::Path::new("."));
+        for old in [
+            "extern crate krate as _krate_runtime",
+            "with_types_in bindings",
+            "use bindings::krate::",
+            "impl bindings::Guest",
+        ] {
+            assert!(
+                !pack.contains(old),
+                "the pack still teaches the per-app bindings wiring: {old:?}"
+            );
+        }
+        let example = WORKED_EXAMPLE;
+        let start = example
+            .find("```rust\n")
+            .expect("the example has a rust block")
+            + 8;
+        let end = example[start..]
+            .find("\n```")
+            .expect("the rust block closes")
+            + start;
+        let taught = &example[start..end];
+        assert!(
+            taught.contains("krate::export!(Component);")
+                && taught.contains("impl krate::Guest for"),
+            "the worked example is on the SDK path"
+        );
+        let checked_in = include_str!("../../../apps/zz-example-check/src/lib.rs");
+        assert_eq!(
+            checked_in.trim_end(),
+            taught.trim_end(),
+            "apps/zz-example-check/src/lib.rs must equal the pack's worked example; copy the block over it"
         );
     }
 
