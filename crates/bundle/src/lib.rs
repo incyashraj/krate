@@ -1509,6 +1509,17 @@ fn collect_source(root: &Path) -> Result<Vec<(String, PathBuf)>> {
                 // -- and would silently publish anyone's attached sketch
                 // or spreadsheet inside every copy of the app they share.
                 | "attached"
+                // Operating-system metadata, which is not source and is not
+                // the same on any two machines. Measured: packing an app
+                // whose folder Finder had opened shipped an 8 KB
+                // `source/.DS_Store`, so the editable digest depended on
+                // which machine did the packing -- and the CP1 exit test
+                // asks that a pack rebuild byte-equal on a second machine.
+                // Named individually rather than as "every dotfile": a
+                // `.cargo/config.toml` is real build input and must ship.
+                | ".DS_Store"
+                | "Thumbs.db"
+                | "desktop.ini"
                 // The verification frame the pack tells agents to shoot.
                 | "frame.png"
         )
@@ -4677,6 +4688,57 @@ required = true
             fs::read(extracted.join("icon.bin")).expect("read binary asset"),
             [1, 2, 3]
         );
+    }
+
+    /// Operating-system metadata never ships as source (CP1 exit test:
+    /// a pack rebuilds byte-equal on a second machine).
+    ///
+    /// Measured before the skip existed: packing an app whose folder Finder
+    /// had opened produced a bundle with `source/.DS_Store` in it, 8 KB of
+    /// Finder state. That file exists on a Mac that browsed the folder and
+    /// on nothing else, so the same source packed on two machines had two
+    /// editable digests -- which is the exact thing determinism promises
+    /// cannot happen. AppleDouble `._*` sidecars are the same story on a
+    /// non-native volume, and `Thumbs.db` / `desktop.ini` are Windows'.
+    #[test]
+    fn os_metadata_in_the_source_tree_is_not_packed() {
+        let dir = TempDir::new().expect("tempdir");
+        let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
+        let component = write_temp(dir.path(), "code.wasm", MINIMAL_COMPONENT);
+        write_temp(dir.path(), "Cargo.toml", b"[package]\nname = \"demo\"\n");
+        fs::create_dir_all(dir.path().join("src")).expect("src");
+        fs::write(dir.path().join("src/lib.rs"), b"fn main() {}").expect("lib");
+        // A real config directory that starts with a dot and MUST ship,
+        // so the skip cannot be "every dotfile".
+        fs::create_dir_all(dir.path().join(".cargo")).expect(".cargo");
+        fs::write(dir.path().join(".cargo/config.toml"), b"[build]\n").expect("config");
+        for junk in [".DS_Store", "src/.DS_Store", "Thumbs.db", "src/desktop.ini"] {
+            fs::write(dir.path().join(junk), b"os state").expect(junk);
+        }
+
+        let bundle = dir.path().join("out.krate");
+        pack_with_source(&manifest, &component, None, Some(dir.path()), &bundle)
+            .expect("pack with source");
+
+        let names: Vec<String> = {
+            let file = File::open(&bundle).expect("open");
+            let mut zip = ZipArchive::new(file).expect("zip");
+            (0..zip.len())
+                .map(|i| zip.by_index(i).expect("entry").name().to_string())
+                .collect()
+        };
+        for junk in ["DS_Store", "Thumbs.db", "desktop.ini"] {
+            assert!(
+                !names.iter().any(|n| n.contains(junk)),
+                "{junk} was packed as source; the bundle now depends on which \
+                 machine packed it: {names:?}",
+            );
+        }
+        assert!(
+            names.iter().any(|n| n == "source/.cargo/config.toml"),
+            "a dot-directory that is real build input must still ship: {names:?}",
+        );
+        assert!(names.iter().any(|n| n == "source/src/lib.rs"));
     }
 
     #[test]

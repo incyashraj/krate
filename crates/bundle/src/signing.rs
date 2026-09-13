@@ -548,6 +548,115 @@ mod vectors {
         }
     }
 
+    /// Every single-byte mutation fails verification (CP1 exit test).
+    ///
+    /// The exit test asks that a signed release "fails verification after
+    /// any single-byte mutation per test vectors". The vector test above
+    /// proves the signature reproduces and verifies; the tampering test in
+    /// the sibling module swaps a whole component. Neither is "any single
+    /// byte", and the difference matters: a verifier that checked only the
+    /// first 32 bytes of a 64-byte signature, or hashed only the first
+    /// entry, would pass both.
+    ///
+    /// So this flips every bit of every byte, one at a time, in each thing
+    /// a signature covers -- the signature itself, the public key, and
+    /// every byte of every signed entry -- and asks that not one of them
+    /// still reads as valid. Exhaustive rather than sampled because
+    /// Ed25519 is fast enough that there is no reason to guess.
+    #[test]
+    fn every_single_byte_mutation_of_the_vectors_fails_to_verify() {
+        let text = std::fs::read_to_string(PATH).expect("the vectors file is committed");
+        let v: serde_json::Value = serde_json::from_str(&text).expect("json");
+        let release =
+            SigningKey::from_pkcs8(&unhex(v["release_pkcs8"].as_str().unwrap())).expect("release");
+        let statement = SignedStatement::build("vectors/app", "1.2.3", 1_760_000_000, &entries());
+        let signature = release.sign(&statement);
+        assert!(
+            matches!(
+                verify(&statement, &signature, &entries()),
+                Verdict::Valid { .. }
+            ),
+            "the untouched vector must verify, or every refusal below is vacuous",
+        );
+
+        let mut tried = 0_u32;
+
+        // The signature: every bit of every byte.
+        for i in 0..signature.bytes.len() {
+            for bit in 0..8 {
+                let mut broken = signature.clone();
+                broken.bytes[i] ^= 1 << bit;
+                tried += 1;
+                assert!(
+                    !matches!(
+                        verify(&statement, &broken, &entries()),
+                        Verdict::Valid { .. }
+                    ),
+                    "signature byte {i} bit {bit} flipped and it still verified",
+                );
+            }
+        }
+
+        // The public key: a signature must not verify under a neighbour key.
+        for i in 0..signature.public_key.len() {
+            for bit in 0..8 {
+                let mut broken = signature.clone();
+                broken.public_key[i] ^= 1 << bit;
+                tried += 1;
+                assert!(
+                    !matches!(
+                        verify(&statement, &broken, &entries()),
+                        Verdict::Valid { .. }
+                    ),
+                    "public key byte {i} bit {bit} flipped and it still verified",
+                );
+            }
+        }
+
+        // The signed content: every byte of every entry, which must read as
+        // TAMPERED specifically -- the bytes in front of you are not the
+        // bytes anybody signed, and that is a different sentence from "bad
+        // signature".
+        for (name, bytes) in entries() {
+            for i in 0..bytes.len() {
+                for bit in 0..8 {
+                    let mut changed = entries();
+                    changed.get_mut(&name).unwrap()[i] ^= 1 << bit;
+                    tried += 1;
+                    match verify(&statement, &signature, &changed) {
+                        Verdict::Tampered { problems } => {
+                            assert!(
+                                problems.iter().any(|p| p.to_string().contains(&name)),
+                                "{name} byte {i} changed but the mismatch names something else: {problems:?}",
+                            );
+                        }
+                        other => panic!(
+                            "{name} byte {i} bit {bit} flipped: expected Tampered, got {other:?}"
+                        ),
+                    }
+                }
+            }
+        }
+
+        // The count is asserted so a refactor that empties one of the loops
+        // cannot pass on vacuity. The expected figure is WRITTEN DOWN, not
+        // computed from entries(): the first version derived it from the
+        // same function it was guarding, so an entries() emptied by
+        // sabotage produced an expectation of zero entry bytes and the
+        // guard agreed with itself. The vectors are fixed known-answer
+        // inputs -- 14 + 8 + 12 bytes across three entries, and they change
+        // only with a deliberate regeneration -- so the number belongs here.
+        // Counted by hand and then checked by the run: `[app]\nid = "v"\n`
+        // is 15 bytes, the component header 8, `fn main() {}` 12.
+        const VECTOR_ENTRY_BYTES: usize = 15 + 8 + 12;
+        assert_eq!(entries().len(), 3, "the vectors carry three entries");
+        assert_eq!(
+            tried as usize,
+            (64 + 32 + VECTOR_ENTRY_BYTES) * 8,
+            "not every byte was tried",
+        );
+    }
+
     /// Writes the vectors. Run by hand when the format changes ON PURPOSE:
     /// `cargo test -p krate-bundle --lib regenerate_signing_vectors -- --ignored`
     /// and commit the file with the change that moved it.
