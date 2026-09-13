@@ -77,6 +77,13 @@ if command -v wit-bindgen >/dev/null 2>&1; then
   sdk_out="$(mktemp -d)"
   if wit-bindgen rust "$ROOT/wit/krate/phase2" --world cli --std-feature \
       --runtime-path wit_bindgen_rt --generate-all --out-dir "$sdk_out" >/dev/null 2>&1; then
+    # The checked-in file is rustfmt output over the generator's output
+    # (the tree is formatted); the generator's own layout is not. Compare
+    # formatted with formatted, or every run fails on whitespace alone --
+    # which it did, on every machine that had wit-bindgen (K-336).
+    if command -v rustfmt >/dev/null 2>&1; then
+      rustfmt --edition 2021 "$sdk_out/cli.rs" 2>/dev/null || true
+    fi
     if ! cmp -s "$sdk_out/cli.rs" "$ROOT/crates/bindings-rust/src/bindings.rs"; then
       echo "the SDK's bindings are not what the Phase 2 world generates." >&2
       echo "An interface the world imports may be unreachable from the SDK." >&2
@@ -84,12 +91,22 @@ if command -v wit-bindgen >/dev/null 2>&1; then
       echo "Refresh them and commit the change:" >&2
       echo "  wit-bindgen rust wit/krate/phase2 --world cli --std-feature \\" >&2
       echo "    --runtime-path wit_bindgen_rt --generate-all --out-dir /tmp/sdk" >&2
+      echo "  rustfmt --edition 2021 /tmp/sdk/cli.rs" >&2
       echo "  cp /tmp/sdk/cli.rs crates/bindings-rust/src/bindings.rs" >&2
       rm -rf "$sdk_out"
       exit 1
     fi
+  else
+    echo "wit-bindgen could not generate the SDK's bindings from the Phase 2 world" >&2
+    rm -rf "$sdk_out"
+    exit 1
   fi
   rm -rf "$sdk_out"
+elif [ -n "${CI:-}" ]; then
+  # On a runner a missing generator is a check that did not run, and a
+  # check that did not run must not read as a pass (K-281, K-336).
+  echo "wit-bindgen is not installed on this runner, so the SDK's bindings were NOT checked; install wit-bindgen-cli 0.41.0" >&2
+  exit 1
 else
   echo "note: wit-bindgen is not installed, so the SDK's own bindings were not checked."
 fi

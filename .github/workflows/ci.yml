@@ -147,6 +147,11 @@ jobs:
           key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
       - name: Install cargo-component (the port tests build a real component)
         run: cargo install cargo-component --locked --version 0.21.1
+      # The SDK's own bindings are checked by regenerating them with
+      # wit-bindgen; without it the script could only print a note, and
+      # that note passed on every run (K-336).
+      - name: Install wit-bindgen (the SDK's bindings are regenerated to check them)
+        run: cargo install wit-bindgen-cli --locked --version 0.41.0
       # The checked-in wit-bindgen output must be what this generator makes,
       # or every build dirties the tree (IC-295). Regenerates without
       # compiling and fails naming the packages that moved.
