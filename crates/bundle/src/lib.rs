@@ -45,7 +45,7 @@ pub mod imports;
 use krate_manifest::Manifest;
 use tempfile::TempDir;
 use thiserror::Error;
-use zip::{write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
+use zip::ZipArchive;
 
 /// Release keys delegated by a publisher root (IC-015).
 pub mod delegation;
@@ -746,6 +746,128 @@ pub fn pack_with_lineage(
 /// Assemble the archive at `staging`. Split out so `pack_with_sdk` has one
 /// place to clean up from, whichever step fails.
 #[allow(clippy::too_many_arguments)]
+/// A zip writer whose bytes are a pure function of the entries it is given,
+/// in order (CP1: "a deterministic writer where determinism is claimed";
+/// K-335).
+///
+/// The `zip` crate deflates through `flate2`, and flate2's backend is
+/// chosen by feature unification: built alone, this crate got one deflater;
+/// built beside the rest of the workspace it got zlib-rs, and the same
+/// input packed to different bytes. Measured when the cross-machine pack
+/// proof failed on every CI machine and then on this one under
+/// `--workspace`. So the packer no longer delegates the choice: it deflates
+/// with miniz_oxide called directly, stamps 1980-01-01 00:00 on every
+/// entry, writes no extra fields, DOS host attributes and no comment. The
+/// `zip` crate still reads the result; only the writing side is ours.
+struct DeterministicZip<W: Write> {
+    out: W,
+    offset: u64,
+    central: Vec<u8>,
+    count: u64,
+}
+
+impl<W: Write> DeterministicZip<W> {
+    fn new(out: W) -> Self {
+        DeterministicZip {
+            out,
+            offset: 0,
+            central: Vec::new(),
+            count: 0,
+        }
+    }
+
+    /// Add one entry. Deflated when that is smaller, stored otherwise, so
+    /// an incompressible component is not made larger by a header.
+    fn add(&mut self, name: &str, bytes: &[u8]) -> io::Result<()> {
+        let too_big = |what: &str| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("{what} is too large for a zip without zip64, which bundles do not use"),
+            )
+        };
+        let deflated = miniz_oxide::deflate::compress_to_vec(bytes, 6);
+        let (method, body): (u16, &[u8]) = if deflated.len() < bytes.len() {
+            (8, &deflated)
+        } else {
+            (0, bytes)
+        };
+        let size = u32::try_from(bytes.len()).map_err(|_| too_big(name))?;
+        let compressed = u32::try_from(body.len()).map_err(|_| too_big(name))?;
+        let name_len = u16::try_from(name.len()).map_err(|_| too_big("the entry name"))?;
+        let offset = u32::try_from(self.offset).map_err(|_| too_big("the archive"))?;
+        let crc = crc32fast::hash(bytes);
+        // DOS time 00:00:00 and date 1980-01-01: the epoch of the format,
+        // and the only stamp that says nothing about when or where.
+        const TIME: u16 = 0;
+        const DATE: u16 = 0x0021;
+
+        let mut local = Vec::with_capacity(30 + name.len());
+        local.extend_from_slice(&0x0403_4b50u32.to_le_bytes());
+        local.extend_from_slice(&20u16.to_le_bytes()); // version needed
+        local.extend_from_slice(&0u16.to_le_bytes()); // flags
+        local.extend_from_slice(&method.to_le_bytes());
+        local.extend_from_slice(&TIME.to_le_bytes());
+        local.extend_from_slice(&DATE.to_le_bytes());
+        local.extend_from_slice(&crc.to_le_bytes());
+        local.extend_from_slice(&compressed.to_le_bytes());
+        local.extend_from_slice(&size.to_le_bytes());
+        local.extend_from_slice(&name_len.to_le_bytes());
+        local.extend_from_slice(&0u16.to_le_bytes()); // extra
+        local.extend_from_slice(name.as_bytes());
+        self.out.write_all(&local)?;
+        self.out.write_all(body)?;
+        self.offset += local.len() as u64 + body.len() as u64;
+
+        let c = &mut self.central;
+        c.extend_from_slice(&0x0201_4b50u32.to_le_bytes());
+        c.extend_from_slice(&20u16.to_le_bytes()); // version made by: 2.0, host DOS
+        c.extend_from_slice(&20u16.to_le_bytes()); // version needed
+        c.extend_from_slice(&0u16.to_le_bytes()); // flags
+        c.extend_from_slice(&method.to_le_bytes());
+        c.extend_from_slice(&TIME.to_le_bytes());
+        c.extend_from_slice(&DATE.to_le_bytes());
+        c.extend_from_slice(&crc.to_le_bytes());
+        c.extend_from_slice(&compressed.to_le_bytes());
+        c.extend_from_slice(&size.to_le_bytes());
+        c.extend_from_slice(&name_len.to_le_bytes());
+        c.extend_from_slice(&0u16.to_le_bytes()); // extra
+        c.extend_from_slice(&0u16.to_le_bytes()); // comment
+        c.extend_from_slice(&0u16.to_le_bytes()); // disk
+        c.extend_from_slice(&0u16.to_le_bytes()); // internal attributes
+        c.extend_from_slice(&0u32.to_le_bytes()); // external attributes
+        c.extend_from_slice(&offset.to_le_bytes());
+        c.extend_from_slice(name.as_bytes());
+        self.count += 1;
+        Ok(())
+    }
+
+    fn finish(mut self) -> io::Result<W> {
+        let too_big = |what: &str| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("{what} is too large for a zip without zip64, which bundles do not use"),
+            )
+        };
+        let count = u16::try_from(self.count).map_err(|_| too_big("the entry count"))?;
+        let central_offset = u32::try_from(self.offset).map_err(|_| too_big("the archive"))?;
+        let central_size =
+            u32::try_from(self.central.len()).map_err(|_| too_big("the directory"))?;
+        self.out.write_all(&self.central)?;
+        let mut eocd = Vec::with_capacity(22);
+        eocd.extend_from_slice(&0x0605_4b50u32.to_le_bytes());
+        eocd.extend_from_slice(&0u16.to_le_bytes()); // this disk
+        eocd.extend_from_slice(&0u16.to_le_bytes()); // directory disk
+        eocd.extend_from_slice(&count.to_le_bytes());
+        eocd.extend_from_slice(&count.to_le_bytes());
+        eocd.extend_from_slice(&central_size.to_le_bytes());
+        eocd.extend_from_slice(&central_offset.to_le_bytes());
+        eocd.extend_from_slice(&0u16.to_le_bytes()); // comment
+        self.out.write_all(&eocd)?;
+        self.out.flush()?;
+        Ok(self.out)
+    }
+}
+
 fn write_bundle_into(
     staging: &Path,
     manifest_text: &str,
@@ -757,35 +879,30 @@ fn write_bundle_into(
 ) -> Result<()> {
     let output_path = staging;
     let file = File::create(staging).map_err(|err| io_err(staging, err))?;
-    let mut zip = ZipWriter::new(file);
-    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+    let mut zip = DeterministicZip::new(io::BufWriter::new(file));
+    let add = |zip: &mut DeterministicZip<_>, name: &str, bytes: &[u8]| -> Result<()> {
+        zip.add(name, bytes).map_err(|err| io_err(output_path, err))
+    };
 
     // First entry, so a reader meets it before anything else (IC-208).
-    zip.start_file(PROFILE_ENTRY, options)?;
-    zip.write_all(PROFILE_VERSION.to_string().as_bytes())
-        .map_err(|err| io_err(output_path, err))?;
-
-    zip.start_file(MANIFEST_ENTRY, options)?;
-    zip.write_all(manifest_text.as_bytes())
-        .map_err(|err| io_err(output_path, err))?;
-    zip.start_file(COMPONENT_ENTRY, options)?;
-    zip.write_all(component)
-        .map_err(|err| io_err(output_path, err))?;
+    add(
+        &mut zip,
+        PROFILE_ENTRY,
+        PROFILE_VERSION.to_string().as_bytes(),
+    )?;
+    add(&mut zip, MANIFEST_ENTRY, manifest_text.as_bytes())?;
+    add(&mut zip, COMPONENT_ENTRY, component)?;
     if let Some(record) = derived_from {
-        zip.start_file(DERIVED_FROM_ENTRY, options)?;
-        zip.write_all(record)
-            .map_err(|err| io_err(output_path, err))?;
+        add(&mut zip, DERIVED_FROM_ENTRY, record)?;
     }
     if let Some(assets_dir) = assets_dir.filter(|path| path.is_dir()) {
         for (entry_name, source) in collect_assets(assets_dir)? {
-            zip.start_file(entry_name, options)?;
-            let mut input = File::open(&source).map_err(|err| io_err(&source, err))?;
-            io::copy(&mut input, &mut zip).map_err(|err| io_err(output_path, err))?;
+            let bytes = fs::read(&source).map_err(|err| io_err(&source, err))?;
+            add(&mut zip, &entry_name, &bytes)?;
         }
     }
     if let Some(source_dir) = source_dir.filter(|path| path.is_dir()) {
         for (entry_name, source) in collect_source(source_dir)? {
-            zip.start_file(&entry_name, options)?;
             // Cargo.toml points at the SDK by absolute path, because that is
             // where this machine materialised it. Shipped as-is, the source in
             // a bundle only rebuilds on the machine that made it -- which
@@ -793,23 +910,20 @@ fn write_bundle_into(
             // placeholder lets any Krate install substitute its own SDK.
             if entry_name.ends_with("Cargo.toml") {
                 let text = fs::read_to_string(&source).map_err(|err| io_err(&source, err))?;
-                let rewritten = rewrite_sdk_paths(&text);
-                zip.write_all(rewritten.as_bytes())
-                    .map_err(|err| io_err(output_path, err))?;
+                add(&mut zip, &entry_name, rewrite_sdk_paths(&text).as_bytes())?;
                 continue;
             }
-            let mut input = File::open(&source).map_err(|err| io_err(&source, err))?;
-            io::copy(&mut input, &mut zip).map_err(|err| io_err(output_path, err))?;
+            let bytes = fs::read(&source).map_err(|err| io_err(&source, err))?;
+            add(&mut zip, &entry_name, &bytes)?;
         }
     }
     if let Some(sdk_dir) = sdk_dir.filter(|path| path.is_dir()) {
         for (entry_name, source) in collect_tree(sdk_dir, SDK_PREFIX)? {
-            zip.start_file(entry_name, options)?;
-            let mut input = File::open(&source).map_err(|err| io_err(&source, err))?;
-            io::copy(&mut input, &mut zip).map_err(|err| io_err(output_path, err))?;
+            let bytes = fs::read(&source).map_err(|err| io_err(&source, err))?;
+            add(&mut zip, &entry_name, &bytes)?;
         }
     }
-    zip.finish()?;
+    zip.finish().map_err(|err| io_err(output_path, err))?;
     Ok(())
 }
 
@@ -1190,8 +1304,7 @@ pub fn sign_bundle(
     let temporary = bundle_path.with_extension("krate.signing");
     {
         let file = File::create(&temporary).map_err(|err| io_err(&temporary, err))?;
-        let mut writer = ZipWriter::new(file);
-        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+        let mut writer = DeterministicZip::new(io::BufWriter::new(file));
         for index in 0..archive.len() {
             let mut entry = archive.by_index(index)?;
             let name = entry.name().to_string();
@@ -1205,18 +1318,14 @@ pub fn sign_bundle(
                     path: PathBuf::from(&name),
                     source: err,
                 })?;
-            writer.start_file(name.clone(), options)?;
-            writer.write_all(&bytes).map_err(|err| BundleError::Io {
-                path: PathBuf::from(&name),
-                source: err,
-            })?;
+            writer
+                .add(&name, &bytes)
+                .map_err(|err| io_err(&temporary, err))?;
         }
-        writer.start_file(SIGNATURE_ENTRY, options)?;
-        writer.write_all(&json).map_err(|err| BundleError::Io {
-            path: PathBuf::from(SIGNATURE_ENTRY),
-            source: err,
-        })?;
-        writer.finish()?;
+        writer
+            .add(SIGNATURE_ENTRY, &json)
+            .map_err(|err| io_err(&temporary, err))?;
+        writer.finish().map_err(|err| io_err(&temporary, err))?;
     }
     fs::rename(&temporary, bundle_path).map_err(|err| io_err(bundle_path, err))?;
     Ok(envelope)
@@ -1254,8 +1363,7 @@ fn replace_entry(bundle_path: &Path, entry_name: &str, bytes: &[u8]) -> Result<(
     let temporary = bundle_path.with_extension("krate.signing");
     {
         let file = File::create(&temporary).map_err(|err| io_err(&temporary, err))?;
-        let mut writer = ZipWriter::new(file);
-        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+        let mut writer = DeterministicZip::new(io::BufWriter::new(file));
         for index in 0..archive.len() {
             let mut entry = archive.by_index(index)?;
             let name = entry.name().to_string();
@@ -1269,18 +1377,14 @@ fn replace_entry(bundle_path: &Path, entry_name: &str, bytes: &[u8]) -> Result<(
                     path: PathBuf::from(&name),
                     source: err,
                 })?;
-            writer.start_file(name.clone(), options)?;
-            writer.write_all(&body).map_err(|err| BundleError::Io {
-                path: PathBuf::from(&name),
-                source: err,
-            })?;
+            writer
+                .add(&name, &body)
+                .map_err(|err| io_err(&temporary, err))?;
         }
-        writer.start_file(entry_name, options)?;
-        writer.write_all(bytes).map_err(|err| BundleError::Io {
-            path: PathBuf::from(entry_name),
-            source: err,
-        })?;
-        writer.finish()?;
+        writer
+            .add(entry_name, bytes)
+            .map_err(|err| io_err(&temporary, err))?;
+        writer.finish().map_err(|err| io_err(&temporary, err))?;
     }
     fs::rename(&temporary, bundle_path).map_err(|err| io_err(bundle_path, err))?;
     Ok(())
@@ -2617,14 +2721,32 @@ fn is_read_timeout(err: &ureq::Error) -> bool {
 }
 
 #[cfg(feature = "fetch")]
-fn map_fetch_error(_url: &str, err: &ureq::Error) -> String {
-    if is_read_timeout(err) {
+fn map_fetch_error(_url: &str, err: ureq::Error) -> String {
+    if is_read_timeout(&err) {
         return format!(
             "the server accepted the connection and then stopped responding, \
              so the download was given up on after {} seconds. Try again, or \
              check the link.",
             FETCH_SILENCE_TIMEOUT.as_secs()
         );
+    }
+    // A hub answers 451 for an app it removed, with the notice as JSON
+    // (IC-669). The person is told the reason and where the notice is,
+    // not "status 451" (K-334).
+    if let ureq::Error::Status(451, response) = err {
+        let body = response.into_string().unwrap_or_default();
+        let notice: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+        let reason = notice["reason"].as_str().unwrap_or("no reason was given");
+        let mut message = format!("the hub removed this app: {reason}");
+        if notice["emergency"].as_bool() == Some(true) {
+            message.push_str(" (an emergency removal)");
+        }
+        if let Some(url) = notice["notice"].as_str() {
+            message.push_str(&format!(
+                ". The notice, and how its author can appeal: {url}"
+            ));
+        }
+        return message;
     }
     err.to_string()
 }
@@ -2668,6 +2790,17 @@ pub struct Fetched {
 /// The address is the plain SHA-256 of the file -- the hub's store key --
 /// not the schema-tagged archive identity, which is a different number
 /// over the same bytes.
+/// Plain lowercase-hex SHA-256 of `bytes`: the hub's store key, the
+/// address in a hub link, and the name a takedown blocks. Not an identity
+/// of the bundle's contents -- those are schema-tagged, see [`provenance`].
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
 #[cfg(feature = "fetch")]
 fn check_address(final_url: &str, bytes: &[u8]) -> Result<Option<String>> {
     let path = final_url.split(['?', '#']).next().unwrap_or(final_url);
@@ -2679,13 +2812,7 @@ fn check_address(final_url: &str, bytes: &[u8]) -> Result<Option<String>> {
     if !is_address {
         return Ok(None);
     }
-    let actual: String = {
-        use sha2::{Digest, Sha256};
-        Sha256::digest(bytes)
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect()
-    };
+    let actual = sha256_hex(bytes);
     if !actual.starts_with(segment) {
         return Err(BundleError::Fetch {
             url: final_url.to_string(),
@@ -2724,15 +2851,9 @@ pub fn fetch_resolved(url: &str, allow_insecure_http: bool) -> Result<Fetched> {
         .timeout_connect(FETCH_CONNECT_TIMEOUT)
         .timeout_read(FETCH_SILENCE_TIMEOUT)
         .build();
-    let response = agent.get(url).call().map_err(|err| {
-        // ureq stacks its own context, so a timeout arrives as
-        // "<url>: Network Error: Network Error: Error encountered in the
-        // status line: timed out reading response" -- the url three times
-        // over and the one useful phrase last. Say it plainly instead.
-        BundleError::Fetch {
-            url: url.to_string(),
-            message: map_fetch_error(url, &err),
-        }
+    let response = agent.get(url).call().map_err(|err| BundleError::Fetch {
+        url: url.to_string(),
+        message: map_fetch_error(url, err),
     })?;
 
     // Where the bytes finally came from: a channel link redirects to the
@@ -2787,6 +2908,7 @@ pub fn fetch_resolved(url: &str, allow_insecure_http: bool) -> Result<Fetched> {
 mod tests {
     use super::*;
     use std::io::Cursor;
+    use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
 
     /// The smallest valid COMPONENT: eight bytes of header and nothing else.
     ///
@@ -4498,6 +4620,44 @@ required = true
             .collect()
     }
 
+    /// Every local header's fields and each entry's content digest, so a
+    /// cross-machine mismatch says which byte differs rather than only
+    /// that one does.
+    fn zip_structure(bytes: &[u8]) -> String {
+        let mut archive = ZipArchive::new(io::Cursor::new(bytes)).expect("readable archive");
+        let mut parts = Vec::new();
+        for index in 0..archive.len() {
+            let mut entry = archive.by_index(index).expect("entry");
+            let mut body = Vec::new();
+            entry.read_to_end(&mut body).expect("read");
+            let at = entry.header_start() as usize;
+            let local = &bytes[at..at + 30];
+            parts.push(format!(
+                "{}[method={:?} flags={:02x}{:02x} time={:02x}{:02x} date={:02x}{:02x} crc={:08x} csize={} size={} extra={} mode={:o} content={}]",
+                entry.name(),
+                entry.compression(),
+                local[7],
+                local[6],
+                local[11],
+                local[10],
+                local[13],
+                local[12],
+                entry.crc32(),
+                entry.compressed_size(),
+                entry.size(),
+                entry.extra_data().map(|x| x.len()).unwrap_or(0),
+                entry.unix_mode().unwrap_or(0),
+                &sha256_hex(&body)[..12]
+            ));
+        }
+        let tail = &bytes[bytes.len().saturating_sub(22)..];
+        parts.push(format!(
+            "eocd={}",
+            tail.iter().map(|b| format!("{b:02x}")).collect::<String>()
+        ));
+        parts.join(" ")
+    }
+
     /// The CP1 exit clause, "`krate pack` rebuilds byte-equal on a second
     /// machine", as a test that runs on every machine this suite runs on.
     ///
@@ -4528,7 +4688,10 @@ required = true
             let actual = sha256_hex(bytes);
             match expected.get(name) {
                 Some(want) if *want == actual => {}
-                Some(want) => wrong.push(format!("{name}: packed {actual}, committed {want}")),
+                Some(want) => wrong.push(format!(
+                    "{name}: packed {actual}, committed {want}\n    structure: {}",
+                    zip_structure(bytes)
+                )),
                 None => wrong.push(format!("{name}: no committed digest")),
             }
         }
@@ -4557,6 +4720,113 @@ required = true
         )
         .unwrap();
         println!("wrote {} digests to {}", digests.len(), path.display());
+    }
+
+    /// A hub's 451 reaches the person as the notice, not as a status code
+    /// (IC-669, K-334).
+    #[cfg(feature = "fetch")]
+    #[test]
+    fn a_removed_app_is_refused_with_the_hubs_notice() {
+        use std::io::{Read as _, Write as _};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        let server = std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut request = [0u8; 1024];
+                let _ = stream.read(&mut request);
+                let body = r#"{"removed":true,"reason":"impersonates a bank","emergency":true,"appeal":{"state":"none","how":"POST ..."},"notice":"https://hub.example/takedown/abc"}"#;
+                let response = format!(
+                    "HTTP/1.1 451 Unavailable For Legal Reasons\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+        let err = fetch(&format!("http://127.0.0.1:{port}/a/abc?dl=1"), true)
+            .expect_err("a 451 is a refusal");
+        let _ = server.join();
+        let text = err.to_string();
+        assert!(
+            text.contains("the hub removed this app: impersonates a bank"),
+            "{text}"
+        );
+        assert!(text.contains("emergency"), "{text}");
+        assert!(
+            text.contains("https://hub.example/takedown/abc"),
+            "the notice URL is the way to appeal: {text}"
+        );
+        assert!(
+            !text.contains("451"),
+            "a status code is not what a person needs: {text}"
+        );
+    }
+
+    /// The archive writer is a pure function of its entries (K-335): the
+    /// same entries give the same bytes whatever built this crate, every
+    /// entry is stamped 1980-01-01 with no extra field, the zip crate reads
+    /// the result back exactly, and a stored entry is used only when
+    /// deflate would not shrink it.
+    #[test]
+    fn the_archive_writer_depends_on_nothing_but_its_entries() {
+        let entries: Vec<(&str, Vec<u8>)> = vec![
+            ("krate-profile", b"1".to_vec()),
+            ("manifest.toml", MANIFEST.as_bytes().to_vec()),
+            ("code.wasm", MINIMAL_COMPONENT.to_vec()),
+            ("assets/zeros.bin", vec![0u8; 4096]),
+            ("assets/tiny", b"x".to_vec()),
+        ];
+        let write = || {
+            let mut zip = DeterministicZip::new(Vec::new());
+            for (name, bytes) in &entries {
+                zip.add(name, bytes).unwrap();
+            }
+            zip.finish().unwrap()
+        };
+        let a = write();
+        let b = write();
+        assert_eq!(a, b, "two writes of the same entries are the same bytes");
+        // Pinned: this digest was computed on one machine, and CI compares
+        // it on the others. Change it only with a deliberate format change.
+        assert_eq!(
+            sha256_hex(&a),
+            "7a0b3e1f9fdc2e71179b58d2c13e7b6a95577dc34421d274d7626d5168c3fbb2",
+            "the writer's bytes moved; if the format did not change on purpose, something host-dependent got in"
+        );
+
+        let mut archive = ZipArchive::new(io::Cursor::new(&a)).expect("the zip crate reads it");
+        assert_eq!(archive.len(), entries.len());
+        for (index, (name, bytes)) in entries.iter().enumerate() {
+            let mut entry = archive.by_index(index).unwrap();
+            assert_eq!(entry.name(), *name, "entries keep their order");
+            let mut body = Vec::new();
+            entry.read_to_end(&mut body).unwrap();
+            assert_eq!(&body, bytes, "{name}: content round-trips");
+            assert_eq!(
+                entry
+                    .last_modified()
+                    .map(|t| (t.year(), t.month(), t.day())),
+                Some((1980, 1, 1)),
+                "{name}: stamped at the epoch"
+            );
+            assert!(
+                entry.extra_data().map(|x| x.is_empty()).unwrap_or(true),
+                "{name}: no extra field"
+            );
+        }
+        let tiny = archive.by_name("assets/tiny").unwrap();
+        assert_eq!(
+            tiny.compression(),
+            CompressionMethod::Stored,
+            "one byte is stored, not made larger by deflate"
+        );
+        drop(tiny);
+        let zeros = archive.by_name("assets/zeros.bin").unwrap();
+        assert_eq!(zeros.compression(), CompressionMethod::Deflated);
+        assert!(
+            zeros.compressed_size() < 64,
+            "4 KiB of zeros deflates to a few bytes"
+        );
     }
 
     /// The sweep is scoped by prefix: asking it to clear one family of
@@ -6332,7 +6602,7 @@ required = true
 
         // And the message a person gets says what happened and what to do.
         // This is the mapping fetch() applies to exactly that error.
-        let mapped = map_fetch_error("http://example/x", &err);
+        let mapped = map_fetch_error("http://example/x", err);
         assert!(
             mapped.contains("stopped responding") && mapped.contains("Try again"),
             "the raw ureq text is three copies of the url and two Network \

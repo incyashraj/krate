@@ -2274,7 +2274,9 @@ dependencies = [
 name = "krate-bundle"
 version = "0.4.0"
 dependencies = [
+ "crc32fast",
  "krate-manifest",
+ "miniz_oxide",
  "ring",
  "serde",
  "serde_json",

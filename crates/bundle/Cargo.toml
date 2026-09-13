@@ -21,6 +21,13 @@ ring = "0.17"
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = "0.10.9"
+# The archive writer deflates with miniz_oxide called directly and checks
+# with crc32fast, so the bytes a bundle packs to depend on nothing but its
+# entries (K-335): the zip crate's own deflate goes through flate2, whose
+# backend is chosen by feature unification, and the same input packed to
+# different bytes depending on which crates were built beside this one.
+miniz_oxide = "0.8"
+crc32fast = "1"
 tempfile.workspace = true
 thiserror.workspace = true
 # Optional so the same crate builds for wasm32 and runs at the hub's door:
