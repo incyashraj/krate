@@ -1701,6 +1701,13 @@ jobs:
         run: |
           python3 scripts/check-decision-records.py --self-test
           python3 scripts/check-decision-records.py
+      # The developer-control review must cover every WIT interface Krate
+      # declares, justify every compulsory boundary or record its gap, and
+      # match the committed doc (IC-175, IC-176; the CP1 exit test).
+      - name: Check the developer-control review covers every boundary
+        run: |
+          python3 scripts/developer-control-review.py --self-test
+          python3 scripts/developer-control-review.py --check
       # The benchmark kit's run directories are private and absent here, but
       # its rules are not: raw output is sealed and unchanged, and the
       # analysis is regenerated from it and compared (IC-829, 1809-1810).
