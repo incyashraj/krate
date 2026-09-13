@@ -112,7 +112,9 @@ async function publish(e) {
   assert.strictEqual(JSON.parse(await rs.text()).restored, true);
   assert.strictEqual((await worker.fetch(req(`/a/${id}?dl=1`), e)).status, 200, "served again");
   assert.ok((await (await worker.fetch(req("/apps"), e)).text()).includes(id), "listed again");
-  const after = JSON.parse(await (await worker.fetch(req(`/takedown/${id}`), e)).text());
+  const closedRes = await worker.fetch(req(`/takedown/${id}`), e);
+  assert.strictEqual(closedRes.status, 200, "a closed takedown must still answer at its notice URL, not vanish into a 404");
+  const after = JSON.parse(await closedRes.text());
   assert.strictEqual(after.was_removed, true, "the closed record still answers: it WAS removed, and why");
   assert.strictEqual(after.closed.decision, "restored");
 }
