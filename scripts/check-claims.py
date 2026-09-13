@@ -501,9 +501,15 @@ def self_test():
             failures.append(f"scan_investor must scan every document and carry the problem out: {count} {wired}")
         # And main must act on what it returns: a correct scan whose result the
         # caller drops is invisible to every assertion above.
+        # Anchored at the LAST top-level `def main` and built at run time,
+        # because this test's own source is part of what is read: the first
+        # version used index() on the literal, which found this very line,
+        # and searched for a phrase that this very line contained. It could
+        # not fail.
         src = Path(__file__).read_text()
-        main_src = src[src.index("def main():"):]
-        if "problems.extend(investor_problems)" not in main_src:
+        main_src = src[src.rindex("\ndef main():"):]
+        wired = "problems.extend(" + "investor_problems)"
+        if wired not in main_src:
             failures.append("main() must add the investor problems to the ones that fail the gate")
         loose = check_surface(troot / "Invest" / "memo.md", fresh, known_figures(fresh))
         if not any("100%" in x for x in loose):
