@@ -393,15 +393,16 @@ pub fn skeleton(name: &str, sdk_prefix: &str, world: Skeleton) -> Result<Generat
 /// behavior, imports only `krate:*`. The agent replaces the body.
 fn gui_skeleton_source() -> String {
     // Kept deliberately small and heavily commented: the comments are the
-    // agent's in-file guide to the shape it must keep (bindings, quick, the
-    // pure_string helper, export!). `#[allow(warnings)]` on bindings matches
-    // every shipped GUI app.
+    // agent's in-file guide to the shape it must keep (the SDK's `krate::ui`,
+    // quick, the pure_string helper, `krate::export!`). No bindings module of
+    // the app's own: the SDK's `gui` feature carries the gui world (IC-298).
     r####"//! A minimal Krate GUI skeleton. Replace this with the real app.
 //!
 //! It opens a window with one label, honors the `quick` argument (exit
 //! promptly for automated checks), and imports only `krate:*`. Keep the
-//! shape -- `#![no_std]`, `mod bindings`, the `quick` check, `pure_string`,
-//! `export!` -- and build the requested app inside `run`. Read
+//! shape -- `#![no_std]`, `krate::ui` from the SDK, the `quick` check,
+//! `pure_string`, `krate::export!` -- and build the requested app inside
+//! `run`. Read
 //! KRATE_AUTHORING.md first, then the closest example under apps/, and run
 //! `krate check-app .` until it prints OK.
 
@@ -413,17 +414,14 @@ fn gui_skeleton_source() -> String {
 
 extern crate alloc;
 
-// Pulled in for its allocator and panic handler even though this file calls no
-// `krate::*` function directly. Without it the link fails with "no global
-// memory allocator found" and "`#[panic_handler]` function required".
-extern crate krate as _krate_runtime;
-
-#[allow(warnings)]
-mod bindings;
-
+// The SDK owns the allocator, the panic handler and the mem intrinsics, and
+// with its `gui` feature (see Cargo.toml) it carries the gui world: the
+// windowing, widget and event interfaces are `krate::ui::*`, and the raw
+// bindings for the shared packages sit under `krate::bindings`. This app
+// has no generated bindings module of its own.
 use alloc::string::String;
-use bindings::krate::io::args;
-use bindings::krate::ui::{events, tree, types, window};
+use krate::bindings::krate::io::args;
+use krate::ui::{events, tree, types, window};
 
 const ROOT_ID: u64 = 1;
 const LABEL_ID: u64 = 2;
@@ -466,7 +464,7 @@ fn label(text: &str) -> types::WidgetNode {
     }
 }
 
-impl bindings::Guest for Component {
+impl krate::Guest for Component {
     fn run() -> i32 {
         let size = types::WindowSize { width: 480, height: 320 };
         let Ok(win) = window::create("Krate App", size) else { return 30; };
@@ -519,7 +517,7 @@ fn pure_string(text: &str) -> String {
     }
 }
 
-bindings::export!(Component with_types_in bindings);
+krate::export!(Component);
 "####
         .to_string()
 }
@@ -1016,8 +1014,10 @@ fn title_case(name: &str) -> String {
 /// `#![no_std]` should drop `features = ["std"]` at the same time.
 fn skeleton_cargo_toml(request: &AppRequest, sdk_prefix: &str) -> String {
     checklist_cargo_toml(request, sdk_prefix).replace(
-        &format!(r#"krate = {{ path = "{sdk_prefix}/crates/bindings-rust" }}"#),
-        &format!(r#"krate = {{ path = "{sdk_prefix}/crates/bindings-rust", features = ["std"] }}"#),
+        &format!(r#"krate = {{ path = "{sdk_prefix}/crates/bindings-rust", features = ["gui"] }}"#),
+        &format!(
+            r#"krate = {{ path = "{sdk_prefix}/crates/bindings-rust", features = ["gui", "std"] }}"#
+        ),
     )
 }
 
@@ -1040,11 +1040,12 @@ repository = "https://github.com/incyashraj/krate"
 rust-version = "1.91"
 
 [dependencies]
-# The Krate SDK. Your app is `#![no_std]`, so this supplies the pieces Rust
-# would normally take from the standard library: the allocator, the panic
-# handler, and the memory intrinsics. Keep it even if you never call
-# `krate::` yourself, because without it the app will not link.
-krate = {{ path = "{sdk_prefix}/crates/bindings-rust" }}
+# The Krate SDK with its `gui` feature: that is what makes this a windowed
+# app (the feature selects the gui world) and gives it `krate::ui`,
+# `krate::gfx` and the rest. Your app is `#![no_std]`, so the SDK also
+# supplies the allocator, the panic handler, and the memory intrinsics.
+# Keep it, because without it the app will not link.
+krate = {{ path = "{sdk_prefix}/crates/bindings-rust", features = ["gui"] }}
 wit-bindgen-rt = {{ version = "0.44.0", features = ["bitflags"] }}
 
 [lib]
@@ -1263,8 +1264,9 @@ mod tests {
         let gui = generate(&AppRequest::checklist("todo"), "../..").expect("generate");
         let cargo = gui.file("Cargo.toml").expect("cargo");
         assert!(
-            cargo.contains(r#"krate = { path = "../../crates/bindings-rust" }"#),
-            "the GUI Cargo.toml must depend on the SDK, got:\n{cargo}"
+            cargo
+                .contains(r#"krate = { path = "../../crates/bindings-rust", features = ["gui"] }"#),
+            "the GUI Cargo.toml must depend on the SDK with its gui feature, got:\n{cargo}"
         );
 
         // The skeleton is what an AI author is handed to start from, so it has
@@ -1282,6 +1284,22 @@ mod tests {
                     && line.contains("../../crates/bindings-rust")
             }),
             "the GUI skeleton must depend on the SDK, got:\n{skel_cargo}"
+        );
+        assert!(
+            skel_cargo.contains(r#"features = ["gui", "std"]"#),
+            "the skeleton is a windowed app, so the SDK's gui feature is on:\n{skel_cargo}"
+        );
+        // And the skeleton reaches the gui world through the SDK, not through a
+        // bindings module of its own (IC-298).
+        let skel_lib = skel.file("src/lib.rs").expect("lib");
+        assert!(!skel_lib.contains("mod bindings;"), "{skel_lib}");
+        assert!(
+            skel_lib.contains("use krate::ui::{events, tree, types, window};"),
+            "{skel_lib}"
+        );
+        assert!(
+            skel_lib.contains("krate::export!(Component);"),
+            "{skel_lib}"
         );
     }
 
@@ -1571,7 +1589,8 @@ mod tests {
         assert!(source.contains("My list"));
         // And it is the real checklist app: the persistence format is there.
         assert!(source.contains("[x] ") || source.contains("b\"[x] \""));
-        assert!(source.contains("bindings::export!(Component"));
+        // Exported through the SDK, the way every windowed app is now (IC-298).
+        assert!(source.contains("krate::export!(Component"));
     }
 
     #[test]
