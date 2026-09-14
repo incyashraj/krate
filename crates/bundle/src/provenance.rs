@@ -120,10 +120,14 @@ impl Layer {
     /// answers false rather than pretending.
     pub fn includes(self, entry: &str) -> bool {
         match self {
+            // Developer extensions are project material, like source: they
+            // say what this bundle IS, not what runs (IC-714, test 1476).
             Layer::Execution => {
                 !entry.starts_with("source/")
                     && !entry.starts_with("sdk/")
+                    && !entry.starts_with(crate::EXTENSION_PREFIX)
                     && entry != crate::DERIVED_FROM_ENTRY
+                    && entry != crate::EXTENSIONS_ENTRY
             }
             Layer::Project => true,
             Layer::Archive => false,

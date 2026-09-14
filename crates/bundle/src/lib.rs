@@ -34,7 +34,7 @@
 //! a local one would: none, until granted.
 
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs::{self, File},
     io::{self, Read, Write},
     path::{Component, Path, PathBuf},
@@ -83,6 +83,332 @@ pub const PROFILE_ENTRY: &str = "krate-profile";
 /// files readable as their recorded generation" is the requirement's own
 /// words.
 pub const PROFILE_VERSION: u32 = 1;
+/// The newest profile this build can READ (IC-714, test 1475).
+///
+/// Readers lead writers by one: every Krate that opens bundles learns the
+/// next profile's rules before any Krate writes it, so that when
+/// [`PROFILE_VERSION`] moves, the installed base already understands the
+/// files. Profile 2 adds one rule to profile 1: a top-level record this
+/// profile does not name is REFUSED rather than ignored, unless it sits in
+/// a declared extension namespace (`ext/<owner>/<name>/`, declared in
+/// `extensions.json`). Profile 1 bundles keep their recorded behaviour --
+/// unknown entries ignored -- which is what "readable as their recorded
+/// generation" means.
+///
+/// Moving the written profile to 2 is a deliberate act (it makes new
+/// bundles unreadable by every Krate older than this reader), and it is a
+/// one-constant change once the installed base has this reader.
+pub const READS_PROFILE: u32 = 2;
+/// Root for developer-defined material: `ext/<owner>/<name>/...`
+/// (IC-208, IC-714 test 1476).
+///
+/// An application can carry things Krate does not interpret -- a plugin
+/// manifest, a data pack, a licence bundle -- without Krate taking control
+/// of its architecture, as long as it says so: every `<owner>/<name>` group
+/// under this prefix is declared in [`EXTENSIONS_ENTRY`] with its owner,
+/// name, version, total size and digest, and a group that is undeclared,
+/// missing or does not match its declaration is refused. Krate never reads
+/// the contents; it only proves they are what the bundle says they are.
+pub const EXTENSION_PREFIX: &str = "ext/";
+/// The declaration of every extension group a bundle carries.
+pub const EXTENSIONS_ENTRY: &str = "extensions.json";
+/// Version of the extensions declaration.
+pub const EXTENSIONS_SCHEMA: &str = "krate.bundle.extensions.v1";
+/// Schema tag mixed into an extension group's digest.
+pub const EXTENSION_DIGEST_SCHEMA: &str = "krate.bundle.extension.v1";
+
+/// One declared extension group, as the bundle records it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ExtensionRecord {
+    /// Who defines the group: a lower-case ASCII label such as `acme`.
+    pub owner: String,
+    /// What the group is, within its owner: `plugins`, `dataset-v3`.
+    pub name: String,
+    /// The owner's own version label for the group; opaque to Krate.
+    pub version: String,
+    /// Total bytes of every entry under `ext/<owner>/<name>/`.
+    pub size: u64,
+    /// `sha256` over the group's sorted entries, see [`extension_digest`].
+    pub digest: String,
+}
+
+/// The `extensions.json` record.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ExtensionsRecord {
+    pub schema: String,
+    pub extensions: Vec<ExtensionRecord>,
+}
+
+/// An extension group to pack: a directory that becomes
+/// `ext/<owner>/<name>/...` with a declaration beside it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtensionSource {
+    pub owner: String,
+    pub name: String,
+    pub version: String,
+    pub root: PathBuf,
+}
+
+impl ExtensionSource {
+    /// The label rule: lower-case ASCII letters, digits, `.`, `_` and `-`,
+    /// starting with a letter or digit, at most 64 bytes. Labels are path
+    /// segments, so nothing that could be read as a separator or a dot
+    /// segment is allowed.
+    pub fn valid_label(label: &str) -> bool {
+        !label.is_empty()
+            && label.len() <= 64
+            && label.bytes().all(|b| {
+                b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'.' || b == b'_' || b == b'-'
+            })
+            && label.as_bytes()[0].is_ascii_alphanumeric()
+            && label != "."
+            && label != ".."
+    }
+
+    fn check(&self) -> Result<()> {
+        for (what, label) in [("owner", &self.owner), ("name", &self.name)] {
+            if !Self::valid_label(label) {
+                return Err(BundleError::MalformedExtensionPath {
+                    path: format!("{EXTENSION_PREFIX}{}/{}/", self.owner, self.name),
+                    detail: format!(
+                        "the {what} {label:?} is not a label: lower-case ASCII letters, \
+                         digits, `.`, `_` and `-`, starting with a letter or digit, at most \
+                         64 bytes"
+                    ),
+                });
+            }
+        }
+        if self.version.is_empty() || self.version.len() > 64 || !self.version.is_ascii() {
+            return Err(BundleError::MalformedExtensionPath {
+                path: format!("{EXTENSION_PREFIX}{}/{}/", self.owner, self.name),
+                detail: "the version must be 1 to 64 ASCII bytes".to_string(),
+            });
+        }
+        Ok(())
+    }
+
+    fn prefix(&self) -> String {
+        format!("{EXTENSION_PREFIX}{}/{}/", self.owner, self.name)
+    }
+}
+
+/// One record of a bundle, as every reader resolves it (IC-714, test 1477).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Record {
+    /// The entry name, exactly as stored.
+    pub name: String,
+    /// What the profile makes of it, see [`record_class`].
+    pub class: String,
+    /// The size the archive declares for it.
+    pub bytes: u64,
+}
+
+/// The class the container profile gives an entry name.
+///
+/// One function, used by `open`, by `judge_bytes` and by the record listing,
+/// so no door can resolve a record set another door would not (1477).
+/// Directory records (a trailing `/`) are not records at all.
+pub fn record_class(name: &str) -> &'static str {
+    if name == PROFILE_ENTRY {
+        "profile"
+    } else if name == MANIFEST_ENTRY {
+        "manifest"
+    } else if name == COMPONENT_ENTRY {
+        "component"
+    } else if name == SIGNATURE_ENTRY {
+        "signature"
+    } else if name == DERIVED_FROM_ENTRY {
+        "derived-from"
+    } else if name == EXTENSIONS_ENTRY {
+        "extensions"
+    } else if name.starts_with(ASSETS_PREFIX) {
+        "asset"
+    } else if name.starts_with(SOURCE_PREFIX) {
+        "source"
+    } else if name.starts_with(SDK_PREFIX) {
+        "sdk"
+    } else if name.starts_with(EXTENSION_PREFIX) {
+        "extension"
+    } else {
+        "unknown"
+    }
+}
+
+/// The record set of an archive: every non-directory entry, sorted by name,
+/// with its class and declared size.
+fn records_of<R: Read + io::Seek>(archive: &mut ZipArchive<R>) -> Result<Vec<Record>> {
+    let mut records = Vec::with_capacity(archive.len());
+    for index in 0..archive.len() {
+        let entry = archive.by_index(index)?;
+        let name = entry.name().to_string();
+        if name.ends_with('/') {
+            continue;
+        }
+        records.push(Record {
+            class: record_class(&name).to_string(),
+            bytes: entry.size(),
+            name,
+        });
+    }
+    records.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(records)
+}
+
+/// Profile 2: a top-level record the profile does not name is refused
+/// (1475). Profile 1 keeps ignoring it, as its rules say.
+fn refuse_unknown_records(profile: u32, records: &[Record]) -> Result<()> {
+    if profile < 2 {
+        return Ok(());
+    }
+    if let Some(record) = records.iter().find(|record| record.class == "unknown") {
+        return Err(BundleError::UnknownEntry {
+            path: shorten_path(&record.name),
+            profile,
+        });
+    }
+    Ok(())
+}
+
+/// The digest of one extension group: `sha256` over the schema tag and,
+/// for every entry in name order, the name (length-prefixed) and the hex
+/// digest of its bytes. The same shape as a layer digest, so a reader that
+/// can check one can check the other.
+pub fn extension_digest(entries: &BTreeMap<String, Vec<u8>>) -> String {
+    use sha2::{Digest, Sha256};
+    let mut outer = Sha256::new();
+    outer.update(EXTENSION_DIGEST_SCHEMA.as_bytes());
+    outer.update([0u8]);
+    for (name, body) in entries {
+        let inner: String = Sha256::digest(body)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        outer.update((name.len() as u64).to_le_bytes());
+        outer.update(name.as_bytes());
+        outer.update(inner.as_bytes());
+    }
+    outer
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// `ext/<owner>/<name>/rest` split into its group key and the rest.
+fn extension_group(name: &str) -> Result<(String, String)> {
+    let rest = name.strip_prefix(EXTENSION_PREFIX).unwrap_or(name);
+    let mut parts = rest.splitn(3, '/');
+    let owner = parts.next().unwrap_or("");
+    let group = parts.next().unwrap_or("");
+    let file = parts.next().unwrap_or("");
+    if !ExtensionSource::valid_label(owner)
+        || !ExtensionSource::valid_label(group)
+        || file.is_empty()
+    {
+        return Err(BundleError::MalformedExtensionPath {
+            path: shorten_path(name),
+            detail: "an extension entry is `ext/<owner>/<name>/<file>`, with lower-case \
+                     ASCII labels for the owner and the name"
+                .to_string(),
+        });
+    }
+    Ok((format!("{owner}/{group}"), file.to_string()))
+}
+
+/// Check every extension group against the declaration (1476).
+///
+/// `entries` holds the bundle's entries by name. A group is checked against
+/// its record's size and digest; a declared group with no entries, and --
+/// when the bundle declares extensions at all, or is profile 2 -- an entry
+/// with no declaration, are refused. Under profile 1 with no declaration,
+/// `ext/` entries are unknown material and are ignored like any other.
+/// Returns the declared records, in declaration order.
+fn check_extensions(
+    profile: u32,
+    entries: &BTreeMap<String, Vec<u8>>,
+) -> Result<Vec<ExtensionRecord>> {
+    let declared: Option<ExtensionsRecord> = match entries.get(EXTENSIONS_ENTRY) {
+        None => None,
+        Some(body) => {
+            let record: ExtensionsRecord =
+                serde_json::from_slice(body).map_err(|err| BundleError::DamagedExtensions {
+                    detail: err.to_string(),
+                })?;
+            if record.schema != EXTENSIONS_SCHEMA {
+                return Err(BundleError::DamagedExtensions {
+                    detail: format!(
+                        "it uses a newer format ({}) than this copy of Krate understands",
+                        record.schema
+                    ),
+                });
+            }
+            Some(record)
+        }
+    };
+
+    let mut groups: BTreeMap<String, BTreeMap<String, Vec<u8>>> = BTreeMap::new();
+    for (name, body) in entries {
+        if !name.starts_with(EXTENSION_PREFIX) {
+            continue;
+        }
+        let (key, _) = extension_group(name)?;
+        groups
+            .entry(key)
+            .or_default()
+            .insert(name.clone(), body.clone());
+    }
+
+    let Some(declared) = declared else {
+        if profile >= 2 {
+            if let Some(key) = groups.keys().next() {
+                return Err(BundleError::UndeclaredExtension {
+                    extension: key.clone(),
+                });
+            }
+        }
+        return Ok(Vec::new());
+    };
+
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    for record in &declared.extensions {
+        let key = format!("{}/{}", record.owner, record.name);
+        if !ExtensionSource::valid_label(&record.owner)
+            || !ExtensionSource::valid_label(&record.name)
+        {
+            return Err(BundleError::DamagedExtensions {
+                detail: format!("{key:?} is not a valid owner/name pair"),
+            });
+        }
+        if !seen.insert(key.clone()) {
+            return Err(BundleError::DamagedExtensions {
+                detail: format!("{key} is declared twice"),
+            });
+        }
+        let Some(group) = groups.get(&key) else {
+            return Err(BundleError::MissingExtension { extension: key });
+        };
+        let size: u64 = group.values().map(|body| body.len() as u64).sum();
+        if size != record.size {
+            return Err(BundleError::ExtensionMismatch {
+                extension: key,
+                detail: format!("it declares {} bytes and carries {size}", record.size),
+            });
+        }
+        let digest = extension_digest(group);
+        if digest != record.digest {
+            return Err(BundleError::ExtensionMismatch {
+                extension: key,
+                detail: "its contents do not match the digest it declares".to_string(),
+            });
+        }
+    }
+    if let Some(key) = groups.keys().find(|key| !seen.contains(*key)) {
+        return Err(BundleError::UndeclaredExtension {
+            extension: key.clone(),
+        });
+    }
+    Ok(declared.extensions)
+}
 
 /// The one function the runtime calls on a Krate app.
 ///
@@ -387,6 +713,39 @@ pub enum BundleError {
          memory to judge it"
     )]
     ExpandsTooFar { limit: u64 },
+    #[error(
+        "this app carries a record Krate does not know, `{path}`, and its format \
+         (profile {profile}) allows only the records the format names.\n\n  \
+         Developer material belongs under ext/<owner>/<name>/ and is declared in \
+         extensions.json; anything else is refused so nobody can hide a file in \
+         an app that every reader would skip."
+    )]
+    UnknownEntry { path: String, profile: u32 },
+    #[error(
+        "this app's extension declaration (extensions.json) is damaged: {detail}.\n\n  \
+         Ask whoever sent it for a freshly packed copy."
+    )]
+    DamagedExtensions { detail: String },
+    #[error(
+        "this app carries the extension `{extension}` without declaring it in \
+         extensions.json.\n\n  \
+         Every ext/<owner>/<name>/ group is declared with its owner, name, version, \
+         size and digest, so a reader can prove it is what the app says it is."
+    )]
+    UndeclaredExtension { extension: String },
+    #[error(
+        "this app declares the extension `{extension}` in extensions.json but carries \
+         no entries under ext/{extension}/."
+    )]
+    MissingExtension { extension: String },
+    #[error(
+        "this app's extension `{extension}` is not what its declaration says: {detail}.\n\n  \
+         The contents changed after the declaration was written, or the declaration \
+         was edited. Ask whoever sent it for a freshly packed copy."
+    )]
+    ExtensionMismatch { extension: String, detail: String },
+    #[error("`{path}` is not a valid extension path: {detail}")]
+    MalformedExtensionPath { path: String, detail: String },
 }
 
 impl BundleError {
@@ -665,6 +1024,35 @@ pub fn pack_with_lineage(
     derived_from: Option<&DerivedFrom>,
     output_path: &Path,
 ) -> Result<u64> {
+    pack_with_extensions(
+        manifest_path,
+        component_path,
+        assets_dir,
+        source_dir,
+        sdk_dir,
+        derived_from,
+        &[],
+        output_path,
+    )
+}
+
+/// Pack a bundle carrying developer extensions: each source directory
+/// becomes `ext/<owner>/<name>/...`, declared in `extensions.json` with
+/// its size and digest (IC-714, test 1476). See [`EXTENSION_PREFIX`].
+#[allow(clippy::too_many_arguments)]
+pub fn pack_with_extensions(
+    manifest_path: &Path,
+    component_path: &Path,
+    assets_dir: Option<&Path>,
+    source_dir: Option<&Path>,
+    sdk_dir: Option<&Path>,
+    derived_from: Option<&DerivedFrom>,
+    extensions: &[ExtensionSource],
+    output_path: &Path,
+) -> Result<u64> {
+    for extension in extensions {
+        extension.check()?;
+    }
     let derived = derived_from
         .map(|record| {
             serde_json::to_vec_pretty(record)
@@ -730,6 +1118,7 @@ pub fn pack_with_lineage(
         source_dir,
         sdk_dir,
         derived.as_deref(),
+        extensions,
     );
     if let Err(err) = outcome {
         let _ = fs::remove_file(&staging);
@@ -868,6 +1257,7 @@ impl<W: Write> DeterministicZip<W> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn write_bundle_into(
     staging: &Path,
     manifest_text: &str,
@@ -876,6 +1266,7 @@ fn write_bundle_into(
     source_dir: Option<&Path>,
     sdk_dir: Option<&Path>,
     derived_from: Option<&[u8]>,
+    extensions: &[ExtensionSource],
 ) -> Result<()> {
     let output_path = staging;
     let file = File::create(staging).map_err(|err| io_err(staging, err))?;
@@ -894,6 +1285,55 @@ fn write_bundle_into(
     add(&mut zip, COMPONENT_ENTRY, component)?;
     if let Some(record) = derived_from {
         add(&mut zip, DERIVED_FROM_ENTRY, record)?;
+    }
+    // Extensions: the declaration first, then every group's files. The
+    // declaration is computed from the bytes about to be written, so what
+    // it says and what the archive holds cannot disagree.
+    if !extensions.is_empty() {
+        let mut groups: Vec<(&ExtensionSource, BTreeMap<String, Vec<u8>>)> = Vec::new();
+        let mut seen: BTreeSet<String> = BTreeSet::new();
+        for extension in extensions {
+            let key = format!("{}/{}", extension.owner, extension.name);
+            if !seen.insert(key.clone()) {
+                return Err(BundleError::DamagedExtensions {
+                    detail: format!("{key} is given twice"),
+                });
+            }
+            let prefix = extension.prefix();
+            let mut files = BTreeMap::new();
+            for (name, source) in collect_files(&extension.root, &|_| false)? {
+                let entry_name = format!("{prefix}{}", &name[SOURCE_PREFIX.len()..]);
+                files.insert(
+                    entry_name,
+                    fs::read(&source).map_err(|err| io_err(&source, err))?,
+                );
+            }
+            if files.is_empty() {
+                return Err(BundleError::MissingExtension { extension: key });
+            }
+            groups.push((extension, files));
+        }
+        let record = ExtensionsRecord {
+            schema: EXTENSIONS_SCHEMA.to_string(),
+            extensions: groups
+                .iter()
+                .map(|(extension, files)| ExtensionRecord {
+                    owner: extension.owner.clone(),
+                    name: extension.name.clone(),
+                    version: extension.version.clone(),
+                    size: files.values().map(|body| body.len() as u64).sum(),
+                    digest: extension_digest(files),
+                })
+                .collect(),
+        };
+        let body = serde_json::to_vec_pretty(&record)
+            .map_err(|err| BundleError::Manifest(format!("{EXTENSIONS_ENTRY}: {err}")))?;
+        add(&mut zip, EXTENSIONS_ENTRY, &body)?;
+        for (_, files) in &groups {
+            for (entry_name, bytes) in files {
+                add(&mut zip, entry_name, bytes)?;
+            }
+        }
     }
     if let Some(assets_dir) = assets_dir.filter(|path| path.is_dir()) {
         for (entry_name, source) in collect_assets(assets_dir)? {
@@ -953,7 +1393,11 @@ pub struct OpenBundle {
     assets_path: Option<PathBuf>,
     source_path: Option<PathBuf>,
     sdk_path: Option<PathBuf>,
+    ext_path: Option<PathBuf>,
     manifest: Manifest,
+    profile: u32,
+    records: Vec<Record>,
+    extensions: Vec<ExtensionRecord>,
 }
 
 /// What a bundle carries where a signature would be (K-258).
@@ -1019,6 +1463,35 @@ impl OpenBundle {
     /// happens to have.
     pub fn sdk_path(&self) -> Option<&Path> {
         self.sdk_path.as_deref()
+    }
+
+    /// The container profile the bundle was written for (1 when it carries
+    /// no profile line).
+    pub fn profile(&self) -> u32 {
+        self.profile
+    }
+
+    /// Every record in the archive, sorted by name, with the class the
+    /// profile gives it (IC-714, test 1477).
+    pub fn records(&self) -> &[Record] {
+        &self.records
+    }
+
+    /// The extension groups the bundle declares, each verified against its
+    /// entries (test 1476).
+    pub fn extensions(&self) -> &[ExtensionRecord] {
+        &self.extensions
+    }
+
+    /// Where a declared extension group's files were unpacked, if the
+    /// bundle carries that group.
+    pub fn extension_path(&self, owner: &str, name: &str) -> Option<PathBuf> {
+        let declared = self
+            .extensions
+            .iter()
+            .any(|record| record.owner == owner && record.name == name);
+        let root = self.ext_path.as_ref()?;
+        declared.then(|| root.join(owner).join(name))
     }
 
     /// The parsed manifest.
@@ -1250,9 +1723,18 @@ impl OpenBundle {
             );
         }
 
+        let extensions_path = self._dir.path().join(EXTENSIONS_ENTRY);
+        if extensions_path.is_file() && layer.includes(EXTENSIONS_ENTRY) {
+            entries.insert(
+                EXTENSIONS_ENTRY.to_string(),
+                fs::read(&extensions_path).map_err(|err| io_err(&extensions_path, err))?,
+            );
+        }
+
         for (root, prefix) in [
             (self.source_path.as_deref(), SOURCE_PREFIX),
             (self.sdk_path.as_deref(), SDK_PREFIX),
+            (self.ext_path.as_deref(), EXTENSION_PREFIX),
         ] {
             let Some(root) = root else { continue };
             for (entry_name, source) in collect_tree(root, prefix)? {
@@ -1600,6 +2082,12 @@ pub struct Judgement {
     /// How many entries were read, and how many bytes they expanded to.
     pub entries: usize,
     pub expanded_bytes: u64,
+    /// The container profile the bundle declares (1 when it has no line).
+    pub profile: u32,
+    /// Every record, sorted by name, with its class (IC-714, test 1477).
+    pub records: Vec<Record>,
+    /// The declared and verified extension groups (test 1476).
+    pub extensions: Vec<ExtensionRecord>,
 }
 
 /// The signature's state, in words a door can act on.
@@ -1628,7 +2116,9 @@ pub fn judge_bytes(bytes: &[u8], max_expanded: u64) -> Result<Judgement> {
     refuse_undeclared_duplicate(bytes)?;
     let mut archive = ZipArchive::new(io::Cursor::new(bytes))?;
     preflight_entries(&mut archive)?;
-    check_profile(&mut archive)?;
+    let profile = check_profile(&mut archive)?;
+    let records = records_of(&mut archive)?;
+    refuse_unknown_records(profile, &records)?;
 
     // The same namespaces `open` extracts, under the same ceilings, read
     // with the same forged-size guard: the declared size is the archive's
@@ -1654,6 +2144,7 @@ pub fn judge_bytes(bytes: &[u8], max_expanded: u64) -> Result<Judgement> {
             || name == COMPONENT_ENTRY
             || name == SIGNATURE_ENTRY
             || name == DERIVED_FROM_ENTRY
+            || name == EXTENSIONS_ENTRY
         {
             (MAX_ENTRY_BYTES, 'c')
         } else if name.starts_with(ASSETS_PREFIX) {
@@ -1669,8 +2160,11 @@ pub fn judge_bytes(bytes: &[u8], max_expanded: u64) -> Result<Judgement> {
         } else if name.starts_with(SDK_PREFIX) {
             safe_prefixed_relative_path(&name, SDK_PREFIX)?;
             (MAX_ENTRY_BYTES, 's')
+        } else if name.starts_with(EXTENSION_PREFIX) {
+            safe_prefixed_relative_path(&name, EXTENSION_PREFIX)?;
+            (MAX_ENTRY_BYTES, 's')
         } else {
-            continue; // unknown entries are ignored, as `open` ignores them
+            continue; // unknown entries are ignored under profile 1, as `open` ignores them
         };
         let mut entry = archive.by_name(&name)?;
         if entry.size() > ceiling {
@@ -1721,6 +2215,7 @@ pub fn judge_bytes(bytes: &[u8], max_expanded: u64) -> Result<Judgement> {
         raw.insert(name, body);
     }
 
+    let extensions = check_extensions(profile, &raw)?;
     let manifest_raw = raw
         .get(MANIFEST_ENTRY)
         .ok_or(BundleError::MissingEntry(MANIFEST_ENTRY))?;
@@ -1856,6 +2351,9 @@ pub fn judge_bytes(bytes: &[u8], max_expanded: u64) -> Result<Judgement> {
         derived_from,
         entries,
         expanded_bytes: expanded,
+        profile,
+        records,
+        extensions,
     })
 }
 
@@ -1886,7 +2384,9 @@ pub fn open_reader<R: Read + io::Seek>(reader: R) -> Result<OpenBundle> {
     // message about a field. Absent means generation 1: every bundle
     // shipped so far predates this entry and is exactly what version 1
     // describes.
-    check_profile(&mut archive)?;
+    let profile = check_profile(&mut archive)?;
+    let records = records_of(&mut archive)?;
+    refuse_unknown_records(profile, &records)?;
 
     extract_entry(&mut archive, MANIFEST_ENTRY, &manifest_path)?;
     extract_entry(&mut archive, COMPONENT_ENTRY, &component_path)?;
@@ -1974,6 +2474,47 @@ pub fn open_reader<R: Read + io::Seek>(reader: R) -> Result<OpenBundle> {
         }
     }
 
+    // Developer extensions, through the same guard as the SDK tree, then
+    // checked against their declaration (IC-714, test 1476). The
+    // declaration is read by exact name like the manifest.
+    let ext_path = dir.path().join("ext");
+    let extensions_path = dir.path().join(EXTENSIONS_ENTRY);
+    let _ = extract_entry(&mut archive, EXTENSIONS_ENTRY, &extensions_path);
+    let ext_names: Vec<String> = records
+        .iter()
+        .filter(|record| record.class == "extension")
+        .map(|record| record.name.clone())
+        .collect();
+    let mut ext_entries: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for name in &ext_names {
+        // The group shape first: `ext/<owner>/<name>/<file>`. A file sitting
+        // where a group directory belongs would collide on disk below and
+        // read as an I/O failure rather than as what it is.
+        extension_group(name)?;
+        let relative = safe_prefixed_relative_path(name, EXTENSION_PREFIX)?;
+        let destination = ext_path.join(relative);
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent).map_err(|err| io_err(parent, err))?;
+        }
+        total_source_bytes = total_source_bytes
+            .checked_add(extract_asset_entry(&mut archive, name, &destination)?)
+            .ok_or(BundleError::SourceTooLarge)?;
+        if total_source_bytes > MAX_TOTAL_SOURCE_BYTES {
+            return Err(BundleError::SourceTooLarge);
+        }
+        ext_entries.insert(
+            name.clone(),
+            fs::read(&destination).map_err(|err| io_err(&destination, err))?,
+        );
+    }
+    if extensions_path.is_file() {
+        ext_entries.insert(
+            EXTENSIONS_ENTRY.to_string(),
+            fs::read(&extensions_path).map_err(|err| io_err(&extensions_path, err))?,
+        );
+    }
+    let extensions = check_extensions(profile, &ext_entries)?;
+
     let manifest_text =
         fs::read_to_string(&manifest_path).map_err(|err| io_err(&manifest_path, err))?;
     let manifest =
@@ -1999,7 +2540,11 @@ pub fn open_reader<R: Read + io::Seek>(reader: R) -> Result<OpenBundle> {
         assets_path: (!asset_names.is_empty()).then_some(assets_path),
         source_path: (!source_names.is_empty()).then_some(source_path),
         sdk_path: (!sdk_names.is_empty()).then_some(sdk_path),
+        ext_path: (!ext_names.is_empty()).then_some(ext_path),
         manifest,
+        profile,
+        records,
+        extensions,
     })
 }
 
@@ -2350,10 +2895,10 @@ fn safe_source_relative_path(name: &str) -> Result<PathBuf> {
 /// later without stranding every reader before it -- that is what the
 /// version number is for. Raising the version is how a bundle says "you need
 /// to understand more than you do", and an old reader already refuses those.
-fn check_profile<R: Read + io::Seek>(archive: &mut ZipArchive<R>) -> Result<()> {
+fn check_profile<R: Read + io::Seek>(archive: &mut ZipArchive<R>) -> Result<u32> {
     let mut entry = match archive.by_name(PROFILE_ENTRY) {
         Ok(entry) => entry,
-        Err(_) => return Ok(()), // generation 1
+        Err(_) => return Ok(1), // generation 1
     };
     let mut text = String::new();
     entry
@@ -2366,12 +2911,12 @@ fn check_profile<R: Read + io::Seek>(archive: &mut ZipArchive<R>) -> Result<()> 
     // has never heard of still says which rules it was written for.
     let found = text.lines().next().unwrap_or("").trim();
     match found.parse::<u32>() {
-        Ok(version) if version <= PROFILE_VERSION => Ok(()),
+        Ok(version) if version <= READS_PROFILE => Ok(version),
         // A number this build has not reached: genuinely a newer format, and
         // updating Krate is the thing that helps.
         Ok(_) => Err(BundleError::UnsupportedProfile {
             found: found.chars().take(32).collect(),
-            supported: PROFILE_VERSION,
+            supported: READS_PROFILE,
         }),
         // Not a number at all -- empty, a word, a negative. That is damage,
         // not a version from the future, and no release will ever read it.
@@ -2518,7 +3063,10 @@ fn preflight_entries<R: Read + io::Seek>(archive: &mut ZipArchive<R>) -> Result<
             return Err(BundleError::DuplicateEntry { path: name });
         }
 
-        if name.starts_with(SOURCE_PREFIX) || name.starts_with(SDK_PREFIX) {
+        if name.starts_with(SOURCE_PREFIX)
+            || name.starts_with(SDK_PREFIX)
+            || name.starts_with(EXTENSION_PREFIX)
+        {
             source_bytes = source_bytes.saturating_add(entry.size());
             if source_bytes > MAX_TOTAL_SOURCE_BYTES {
                 return Err(BundleError::SourceTooLarge);
@@ -4372,6 +4920,452 @@ required = true
         let _ = server.join();
     }
 
+    /// An edit applied to each entry of an archive: the bytes to keep, or
+    /// None to drop the entry.
+    type EditFn = dyn Fn(&str, &[u8]) -> Option<Vec<u8>>;
+
+    /// Rewrite an archive: every entry passes through `edit` (None drops
+    /// it), then `extra` entries are appended. Test archives need shapes
+    /// our own writer refuses to produce.
+    fn edit_archive(source: &Path, destination: &Path, edit: &EditFn, extra: &[(&str, &[u8])]) {
+        let data = fs::read(source).expect("read source");
+        let mut archive = ZipArchive::new(io::Cursor::new(&data)).expect("open zip");
+        let file = File::create(destination).expect("create");
+        let mut writer = ZipWriter::new(file);
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+        for index in 0..archive.len() {
+            let mut existing = archive.by_index(index).expect("entry");
+            let name = existing.name().to_string();
+            let mut bytes = Vec::new();
+            existing.read_to_end(&mut bytes).expect("read");
+            if let Some(payload) = edit(&name, &bytes) {
+                writer.start_file(name.clone(), options).expect("start");
+                writer.write_all(&payload).expect("write");
+            }
+        }
+        for (name, bytes) in extra {
+            writer.start_file(*name, options).expect("start");
+            writer.write_all(bytes).expect("write");
+        }
+        writer.finish().expect("finish");
+    }
+
+    /// The variant name of an error, for "both doors refuse for the same
+    /// reason" assertions.
+    fn variant(err: &BundleError) -> String {
+        let text = format!("{err:?}");
+        text.split(|c: char| !c.is_alphanumeric())
+            .next()
+            .unwrap_or("")
+            .to_string()
+    }
+
+    /// Profile 2 refuses a top-level record the format does not name, and
+    /// profile 1 keeps ignoring it (IC-714, test 1475). The reader leads
+    /// the writer: this build reads profile 2 and still writes profile 1,
+    /// so no installed Krate meets a file it cannot open.
+    #[test]
+    fn profile_two_refuses_unknown_records_and_profile_one_ignores_them() {
+        fn archive(profile: Option<&[u8]>, extra: &[(&str, &[u8])]) -> Vec<u8> {
+            let mut buf = Vec::new();
+            {
+                let mut writer = ZipWriter::new(io::Cursor::new(&mut buf));
+                let opts =
+                    SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+                if let Some(profile) = profile {
+                    writer.start_file(PROFILE_ENTRY, opts).expect("profile");
+                    writer.write_all(profile).expect("write");
+                }
+                writer.start_file(MANIFEST_ENTRY, opts).expect("manifest");
+                writer.write_all(MANIFEST.as_bytes()).expect("write");
+                writer.start_file(COMPONENT_ENTRY, opts).expect("component");
+                writer.write_all(MINIMAL_COMPONENT).expect("write");
+                for (name, bytes) in extra {
+                    writer.start_file(*name, opts).expect("extra");
+                    writer.write_all(bytes).expect("write");
+                }
+                writer.finish().expect("finish");
+            }
+            buf
+        }
+        assert_eq!(PROFILE_VERSION, 1, "the written profile has not moved");
+        assert_eq!(READS_PROFILE, 2, "and the reader is one ahead of it");
+        let dir = TempDir::new().expect("tempdir");
+        let stray: [(&str, &[u8]); 1] = [("notes.txt", b"a file every reader would skip")];
+
+        // Profile 1 and no profile line: the stray record is ignored, and
+        // the record set says what it is.
+        for (what, profile) in [("profile 1", Some(b"1".as_slice())), ("no profile", None)] {
+            let path = dir.path().join("one.krate");
+            fs::write(&path, archive(profile, &stray)).unwrap();
+            let opened = open(&path).unwrap_or_else(|err| panic!("{what}: must open: {err}"));
+            assert_eq!(opened.profile(), 1, "{what}");
+            let unknown: Vec<&str> = opened
+                .records()
+                .iter()
+                .filter(|record| record.class == "unknown")
+                .map(|record| record.name.as_str())
+                .collect();
+            assert_eq!(
+                unknown,
+                ["notes.txt"],
+                "{what}: the stray record is listed as unknown"
+            );
+            let judged = judge_bytes(&fs::read(&path).unwrap(), 64 * 1024 * 1024).unwrap();
+            assert_eq!(judged.profile, 1, "{what}");
+            assert_eq!(
+                judged.records,
+                opened.records(),
+                "{what}: both doors list it"
+            );
+        }
+
+        // Profile 2: refused, and the refusal names the record and where
+        // developer material belongs.
+        let two = dir.path().join("two.krate");
+        let two_bytes = archive(Some(b"2"), &stray);
+        fs::write(&two, &two_bytes).unwrap();
+        let err = open(&two).expect_err("profile 2 refuses an unknown record");
+        assert!(
+            matches!(&err, BundleError::UnknownEntry { path, profile: 2 } if path == "notes.txt"),
+            "{err:?}"
+        );
+        let text = err.to_string();
+        assert!(
+            text.contains("notes.txt") && text.contains("ext/<owner>/<name>/"),
+            "the refusal says which record and what to do: {text}"
+        );
+        let judged = judge_bytes(&two_bytes, 64 * 1024 * 1024).expect_err("the judge agrees");
+        assert_eq!(variant(&judged), "UnknownEntry", "{judged}");
+
+        // Profile 2 with only the records the format names: opens, and
+        // says which profile it is.
+        let clean = dir.path().join("clean.krate");
+        fs::write(&clean, archive(Some(b"2"), &[])).unwrap();
+        let opened = open(&clean).expect("a clean profile 2 bundle opens");
+        assert_eq!(opened.profile(), 2);
+        assert_eq!(
+            judge_bytes(&fs::read(&clean).unwrap(), 64 * 1024 * 1024)
+                .unwrap()
+                .profile,
+            2
+        );
+
+        // What this build packs still opens everywhere: profile 1.
+        let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
+        let component = write_temp(dir.path(), "code.wasm", MINIMAL_COMPONENT);
+        let packed = dir.path().join("packed.krate");
+        pack(&manifest, &component, &packed).unwrap();
+        assert_eq!(open(&packed).unwrap().profile(), 1);
+    }
+
+    /// A declared extension records owner, name, version, size and digest,
+    /// travels as project material, and comes back through the reader with
+    /// its files (IC-714, test 1476).
+    #[test]
+    fn a_declared_extension_records_owner_version_size_and_digest_and_round_trips() {
+        let dir = TempDir::new().expect("tempdir");
+        let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
+        let component = write_temp(dir.path(), "code.wasm", MINIMAL_COMPONENT);
+        let plugins = dir.path().join("plugins");
+        fs::create_dir_all(plugins.join("nested")).unwrap();
+        fs::write(plugins.join("a.toml"), b"[a]\n").unwrap();
+        let blob: Vec<u8> = (0..=255u8).collect();
+        fs::write(plugins.join("nested/b.bin"), &blob).unwrap();
+        let extension = ExtensionSource {
+            owner: "acme".to_string(),
+            name: "plugins".to_string(),
+            version: "3".to_string(),
+            root: plugins,
+        };
+        let out = dir.path().join("ext.krate");
+        pack_with_extensions(
+            &manifest,
+            &component,
+            None,
+            None,
+            None,
+            None,
+            std::slice::from_ref(&extension),
+            &out,
+        )
+        .unwrap();
+
+        let opened = open(&out).expect("a bundle with a declared extension opens");
+        assert_eq!(
+            opened.profile(),
+            1,
+            "extensions are additive: the written profile is unchanged"
+        );
+        let [record] = opened.extensions() else {
+            panic!("one declared extension, got {:?}", opened.extensions())
+        };
+        assert_eq!(
+            (
+                record.owner.as_str(),
+                record.name.as_str(),
+                record.version.as_str(),
+                record.size
+            ),
+            ("acme", "plugins", "3", 4 + 256)
+        );
+        let mut expected = BTreeMap::new();
+        expected.insert("ext/acme/plugins/a.toml".to_string(), b"[a]\n".to_vec());
+        expected.insert("ext/acme/plugins/nested/b.bin".to_string(), blob.clone());
+        assert_eq!(
+            record.digest,
+            extension_digest(&expected),
+            "the digest is over the sorted entries"
+        );
+        assert_eq!(record.digest.len(), 64);
+
+        let unpacked = opened
+            .extension_path("acme", "plugins")
+            .expect("the declared group was unpacked");
+        assert_eq!(fs::read(unpacked.join("nested/b.bin")).unwrap(), blob);
+        assert!(
+            opened.extension_path("acme", "other").is_none(),
+            "an undeclared group has no path"
+        );
+        let classes: BTreeMap<&str, &str> = opened
+            .records()
+            .iter()
+            .map(|record| (record.name.as_str(), record.class.as_str()))
+            .collect();
+        assert_eq!(classes.get("ext/acme/plugins/a.toml"), Some(&"extension"));
+        assert_eq!(classes.get(EXTENSIONS_ENTRY), Some(&"extensions"));
+
+        // Project material, not runnable: the execution identity is the
+        // one the bundle has without the extension, the project identity
+        // covers it.
+        let execution = opened.digest().unwrap();
+        let project = opened.project_digest().unwrap();
+        for name in ["ext/acme/plugins/a.toml", EXTENSIONS_ENTRY] {
+            assert!(
+                !execution.entries.contains_key(name),
+                "{name} is not runnable"
+            );
+            assert!(
+                project.entries.contains_key(name),
+                "{name} is what the bundle is"
+            );
+        }
+        let plain = dir.path().join("plain.krate");
+        pack(&manifest, &component, &plain).unwrap();
+        assert_eq!(
+            open(&plain).unwrap().digest().unwrap().digest,
+            execution.digest
+        );
+
+        // Deterministic, like every other pack.
+        let again = dir.path().join("again.krate");
+        pack_with_extensions(
+            &manifest,
+            &component,
+            None,
+            None,
+            None,
+            None,
+            std::slice::from_ref(&extension),
+            &again,
+        )
+        .unwrap();
+        assert_eq!(fs::read(&out).unwrap(), fs::read(&again).unwrap());
+
+        // The other door resolves the same records and the same extensions.
+        let judged = judge_bytes(&fs::read(&out).unwrap(), 64 * 1024 * 1024).unwrap();
+        assert_eq!(judged.extensions, opened.extensions());
+        assert_eq!(judged.records, opened.records());
+        assert_eq!(judged.execution, execution.digest);
+        assert_eq!(judged.project, Some(project.digest));
+
+        // Labels are path segments: a slash or a dot segment is refused
+        // before anything is written.
+        for bad in ["../x", "Acme", "a/b", "", "."] {
+            let err = pack_with_extensions(
+                &manifest,
+                &component,
+                None,
+                None,
+                None,
+                None,
+                &[ExtensionSource {
+                    owner: bad.to_string(),
+                    name: "plugins".to_string(),
+                    version: "1".to_string(),
+                    root: extension.root.clone(),
+                }],
+                &dir.path().join("bad.krate"),
+            )
+            .expect_err("a label that is not a label is refused");
+            assert_eq!(variant(&err), "MalformedExtensionPath", "{bad:?}: {err}");
+        }
+    }
+
+    /// An extension that is not what its declaration says is refused, at
+    /// both doors, for the reason that is true (IC-714, tests 1475-1476).
+    #[test]
+    fn an_extension_that_is_not_what_it_declares_is_refused() {
+        let dir = TempDir::new().expect("tempdir");
+        let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
+        let component = write_temp(dir.path(), "code.wasm", MINIMAL_COMPONENT);
+        let plugins = dir.path().join("plugins");
+        fs::create_dir_all(&plugins).unwrap();
+        fs::write(plugins.join("a.toml"), b"[a]\n").unwrap();
+        let good = dir.path().join("good.krate");
+        pack_with_extensions(
+            &manifest,
+            &component,
+            None,
+            None,
+            None,
+            None,
+            &[ExtensionSource {
+                owner: "acme".to_string(),
+                name: "plugins".to_string(),
+                version: "3".to_string(),
+                root: plugins,
+            }],
+            &good,
+        )
+        .unwrap();
+        let keep = |_: &str, bytes: &[u8]| Some(bytes.to_vec());
+
+        type Case<'a> = (
+            &'a str,
+            Box<EditFn>,
+            Vec<(&'a str, &'a [u8])>,
+            &'a str,
+            &'a str,
+        );
+        let cases: Vec<Case> = vec![
+            (
+                "contents changed under the declaration",
+                Box::new(|name, bytes| {
+                    Some(if name == "ext/acme/plugins/a.toml" {
+                        b"[b]\n".to_vec()
+                    } else {
+                        bytes.to_vec()
+                    })
+                }),
+                vec![],
+                "ExtensionMismatch",
+                "do not match the digest",
+            ),
+            (
+                "size changed under the declaration",
+                Box::new(|name, bytes| {
+                    Some(if name == "ext/acme/plugins/a.toml" {
+                        b"[aa]\n".to_vec()
+                    } else {
+                        bytes.to_vec()
+                    })
+                }),
+                vec![],
+                "ExtensionMismatch",
+                "declares 4 bytes and carries 5",
+            ),
+            (
+                "a group nobody declared",
+                Box::new(keep),
+                vec![("ext/evil/thing/x", b"smuggled".as_slice())],
+                "UndeclaredExtension",
+                "evil/thing",
+            ),
+            (
+                "a declared group with no entries",
+                Box::new(|name, bytes| (!name.starts_with("ext/")).then(|| bytes.to_vec())),
+                vec![],
+                "MissingExtension",
+                "acme/plugins",
+            ),
+            (
+                "a declaration that is not JSON",
+                Box::new(|name, bytes| {
+                    Some(if name == EXTENSIONS_ENTRY {
+                        b"{".to_vec()
+                    } else {
+                        bytes.to_vec()
+                    })
+                }),
+                vec![],
+                "DamagedExtensions",
+                "fresh",
+            ),
+            (
+                "a declaration from a later format",
+                Box::new(|name, bytes| {
+                    Some(if name == EXTENSIONS_ENTRY {
+                        br#"{"schema":"krate.bundle.extensions.v9","extensions":[]}"#.to_vec()
+                    } else {
+                        bytes.to_vec()
+                    })
+                }),
+                vec![],
+                "DamagedExtensions",
+                "newer format",
+            ),
+            (
+                "an extension path with no file under its group",
+                Box::new(keep),
+                vec![("ext/acme/plugins", b"x".as_slice())],
+                "MalformedExtensionPath",
+                "ext/<owner>/<name>/<file>",
+            ),
+        ];
+        for (what, edit, extra, expected_variant, expected_words) in &cases {
+            let path = dir.path().join("edited.krate");
+            edit_archive(&good, &path, edit.as_ref(), extra);
+            let err = match open(&path) {
+                Err(err) => err,
+                Ok(_) => panic!("{what}: must be refused"),
+            };
+            assert_eq!(variant(&err), *expected_variant, "{what}: {err}");
+            assert!(
+                err.to_string().contains(expected_words),
+                "{what}: the refusal must say so ({expected_words:?}): {err}"
+            );
+            let judged = judge_bytes(&fs::read(&path).unwrap(), 64 * 1024 * 1024)
+                .expect_err("the judge refuses what open refuses");
+            assert_eq!(
+                variant(&judged),
+                *expected_variant,
+                "{what}: the two doors disagree: {judged}"
+            );
+        }
+
+        // Profile 1 with no declaration: an ext/ entry is unknown material
+        // and is ignored, as the recorded generation says. The same
+        // archive under profile 2 must be declared.
+        let plain = dir.path().join("plain.krate");
+        pack(&manifest, &component, &plain).unwrap();
+        let loose = dir.path().join("loose.krate");
+        edit_archive(
+            &plain,
+            &loose,
+            &keep,
+            &[("ext/acme/plugins/a.toml", b"[a]\n")],
+        );
+        let opened = open(&loose).expect("profile 1 ignores an undeclared ext/ entry");
+        assert!(opened.extensions().is_empty());
+        assert!(opened.extension_path("acme", "plugins").is_none());
+        let strict = dir.path().join("strict.krate");
+        edit_archive(
+            &loose,
+            &strict,
+            &|name, bytes| {
+                Some(if name == PROFILE_ENTRY {
+                    b"2".to_vec()
+                } else {
+                    bytes.to_vec()
+                })
+            },
+            &[],
+        );
+        let err = open(&strict).expect_err("profile 2 wants every ext/ group declared");
+        assert_eq!(variant(&err), "UndeclaredExtension", "{err}");
+    }
+
     /// The in-memory judge and the on-disk open are one validator with
     /// two doors (IC-833, the "one shared validator" plan item). Held to the
     /// same answers on a plain app, a signed one, a fork, a tampered one,
@@ -4436,6 +5430,13 @@ required = true
                 "{name}: project identity"
             );
             assert_eq!(judged.release, opened.release().unwrap(), "{name}: release");
+            assert_eq!(judged.profile, opened.profile(), "{name}: profile");
+            assert_eq!(
+                judged.records,
+                opened.records(),
+                "{name}: record set (1477)"
+            );
+            assert_eq!(judged.extensions, opened.extensions(), "{name}: extensions");
             assert_eq!(
                 judged.derived_from,
                 opened.derived_from().unwrap(),
@@ -5034,8 +6035,9 @@ required = true
         // A version this build has not reached: genuinely newer, and
         // updating IS the answer. Checked at the top of the range too, so
         // the split is about parsing rather than about size.
+        let next = (READS_PROFILE + 1).to_string();
         for (what, profile) in [
-            ("the next version", b"2".as_slice()),
+            ("the next version", next.as_bytes()),
             ("a far future version", b"4294967295"),
         ] {
             let path = bundle(dir.path(), "future.krate", profile);
@@ -5099,11 +6101,12 @@ required = true
         // build knows is still refused -- that is what raising the version
         // is FOR, and it is the only way to demand a reader understand
         // something new.
-        let future = bundle(dir.path(), "future.krate", b"2\nanything = here\n");
+        let future_line = format!("{}\nanything = here\n", READS_PROFILE + 1);
+        let future = bundle(dir.path(), "future.krate", future_line.as_bytes());
         let err = open(&future).expect_err("a future profile must be refused");
         let text = err.to_string();
         assert!(
-            text.contains("profile 2"),
+            text.contains(&format!("profile {}", READS_PROFILE + 1)),
             "the refusal must name the version it found: {text}"
         );
         assert!(

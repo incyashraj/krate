@@ -3,7 +3,7 @@ use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, ExitCode};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use krate_manifest::{
     supported_capability_specs, App, AppWorld, Capability, CapabilityRequest, Manifest,
@@ -477,6 +477,19 @@ enum Command {
         trace: PathBuf,
     },
 
+    /// Say what a .krate is without running it: its identities, its format
+    /// profile, every record and the class the format gives it, the
+    /// extensions it declares, its signature and the permissions it asks
+    /// for. Nothing is executed and nothing is granted.
+    Inspect {
+        /// Path to a .krate bundle, or an https URL to one.
+        bundle: String,
+
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+    },
+
     /// Inspect and validate Phase 2 app manifests.
     Manifest {
         #[command(subcommand)]
@@ -661,6 +674,14 @@ enum Command {
         /// Where to write the bundle.
         #[arg(short, long)]
         output: PathBuf,
+
+        /// Carry a directory as a declared extension, `OWNER/NAME@VERSION=DIR`:
+        /// its files ship under ext/OWNER/NAME/ and extensions.json records
+        /// the owner, name, version, size and digest, so any reader can
+        /// prove they are what the app says. Krate never interprets them.
+        /// Repeatable.
+        #[arg(long = "extension", value_name = "OWNER/NAME@VERSION=DIR")]
+        extensions: Vec<String>,
     },
 
     /// Upload a .krate to a hub and print a URL anyone can `krate run`.
@@ -1617,7 +1638,8 @@ fn run() -> Result<u8> {
             file,
             manifest,
             output,
-        } => pack_bundle(&file, &manifest, &output),
+            extensions,
+        } => pack_bundle(&file, &manifest, &output, &extensions),
         Command::Sign {
             file,
             key,
@@ -1883,6 +1905,7 @@ fn run() -> Result<u8> {
             Ok(0)
         }
         Command::StudyReport { trace } => study_report_command(&trace),
+        Command::Inspect { bundle, format } => inspect_command(&bundle, format),
         Command::Manifest { command } => match command {
             ManifestCommand::Check { file, format } => check_manifest(&file, format),
             ManifestCommand::Explain { file, format } => explain_manifest(&file, format),
@@ -5277,7 +5300,39 @@ fn write_private_key(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-fn pack_bundle(file: &Path, manifest: &Path, output: &Path) -> Result<u8> {
+/// `OWNER/NAME@VERSION=DIR`, as `krate pack --extension` takes it.
+fn parse_extension(spec: &str) -> Result<krate_bundle::ExtensionSource> {
+    let (head, dir) = spec.split_once('=').ok_or_else(|| {
+        anyhow!("--extension takes OWNER/NAME@VERSION=DIR, got {spec:?} (no `=DIR`)")
+    })?;
+    let (group, version) = head.split_once('@').ok_or_else(|| {
+        anyhow!("--extension takes OWNER/NAME@VERSION=DIR, got {spec:?} (no `@VERSION`)")
+    })?;
+    let (owner, name) = group.split_once('/').ok_or_else(|| {
+        anyhow!("--extension takes OWNER/NAME@VERSION=DIR, got {spec:?} (no `OWNER/NAME`)")
+    })?;
+    let root = PathBuf::from(dir);
+    if !root.is_dir() {
+        bail!("--extension {spec}: {dir} is not a directory");
+    }
+    Ok(krate_bundle::ExtensionSource {
+        owner: owner.to_string(),
+        name: name.to_string(),
+        version: version.to_string(),
+        root,
+    })
+}
+
+fn pack_bundle(
+    file: &Path,
+    manifest: &Path,
+    output: &Path,
+    extension_specs: &[String],
+) -> Result<u8> {
+    let extensions = extension_specs
+        .iter()
+        .map(|spec| parse_extension(spec))
+        .collect::<Result<Vec<_>>>()?;
     // A development manifest points `entry` at the build output; inside a
     // bundle the component is always stored as `code.wasm`. The difference is
     // knowable here, so it is rewritten here -- demanding a second, hand-kept
@@ -5328,12 +5383,14 @@ fn pack_bundle(file: &Path, manifest: &Path, output: &Path) -> Result<u8> {
         .as_deref()
         .and_then(|_| sdk::ensure_materialized().ok())
         .filter(|path| path.is_dir());
-    let size = krate_bundle::pack_with_sdk(
+    let size = krate_bundle::pack_with_extensions(
         pack_manifest,
         file,
         assets.as_deref(),
         source.as_deref(),
         sdk.as_deref(),
+        None,
+        &extensions,
         output,
     )
     .with_context(|| format!("could not pack {}", output.display()))?;
@@ -16493,6 +16550,82 @@ fn run_usability_stage(
         ));
     }
     Ok(notes)
+}
+
+/// `krate inspect`: the same report the MCP `inspect_bundle` tool gives,
+/// through the same opener every other door uses (IC-714, test 1477).
+fn inspect_command(target: &str, format: OutputFormat) -> Result<u8> {
+    let report = mcp::inspect_json(target, false)?;
+    if format == OutputFormat::Json {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+        return Ok(0);
+    }
+    let text = |key: &str| {
+        report
+            .get(key)
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| "(none)".to_string())
+    };
+    let app = &report["app"];
+    let identity = &report["identity"];
+    let field = |v: &serde_json::Value| {
+        v.as_str()
+            .map(str::to_string)
+            .unwrap_or_else(|| "(none)".to_string())
+    };
+    println!(
+        "app             {} ({})",
+        field(&app["name"]),
+        field(&app["id"])
+    );
+    println!("version         {}", field(&app["version"]));
+    println!("world           {}", field(&app["world"]));
+    println!("profile         {}", report["profile"]);
+    println!("archive         {}", field(&identity["archive"]));
+    println!("execution       {}", field(&identity["execution"]));
+    println!("project         {}", field(&identity["project"]));
+    println!("signature       {}", text("signature"));
+    if let Some(release) = report.get("release").filter(|v| !v.is_null()) {
+        println!("release         {}", field(&release["id"]));
+    }
+    let records = report["records"].as_array().cloned().unwrap_or_default();
+    println!("records         {}", records.len());
+    for record in &records {
+        println!(
+            "  {:<12} {:>10}  {}",
+            field(&record["class"]),
+            record["bytes"],
+            field(&record["name"])
+        );
+    }
+    let extensions = report["extensions"].as_array().cloned().unwrap_or_default();
+    println!("extensions      {}", extensions.len());
+    for ext in &extensions {
+        println!(
+            "  {}/{} {} ({} bytes, sha256 {})",
+            field(&ext["owner"]),
+            field(&ext["name"]),
+            field(&ext["version"]),
+            ext["size"],
+            field(&ext["digest"])
+        );
+    }
+    let requests = report["requests"].as_array().cloned().unwrap_or_default();
+    println!("requests        {}", requests.len());
+    for request in &requests {
+        println!(
+            "  {} {}-- {}",
+            field(&request["capability"]),
+            if request["required"].as_bool().unwrap_or(false) {
+                "(required) "
+            } else {
+                ""
+            },
+            field(&request["rationale"])
+        );
+    }
+    Ok(0)
 }
 
 fn check_manifest(file: &Path, format: OutputFormat) -> Result<u8> {

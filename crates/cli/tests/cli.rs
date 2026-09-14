@@ -6092,6 +6092,263 @@ fn archive_carrying(extra: &[(String, Vec<u8>)]) -> Vec<u8> {
 }
 
 /// A well formed archive around exactly these component bytes.
+/// The record set every reader resolves (IC-714, test 1477), and the
+/// extension namespace and profile 2 rules through the binary people run
+/// (tests 1475 and 1476).
+///
+/// `krate inspect --format json` is the runtime's, the signer's and the
+/// hub's view: one opener. `scripts/krate-records.py` is an independent
+/// reader -- Python's zipfile and the profile's rules written a second
+/// time. On every committed bundle and adversarial fixture, on a bundle
+/// packed with an extension and on a profile 2 archive with a stray
+/// record, the two must accept the same record set or both refuse.
+#[test]
+fn every_reader_resolves_one_record_set_and_the_extension_namespace_holds() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let minimal = include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm");
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let reader = repo.join("scripts/krate-records.py");
+    assert!(reader.is_file(), "the independent reader is committed");
+
+    // 1476 through the binary: a directory packed as a declared extension.
+    let plugins = dir.path().join("plugins");
+    std::fs::create_dir_all(plugins.join("nested")).unwrap();
+    std::fs::write(plugins.join("a.toml"), b"[a]\n").unwrap();
+    std::fs::write(plugins.join("nested/b.bin"), b"bytes").unwrap();
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        "[app]\nid = \"com.example.ext\"\nname = \"Ext\"\nversion = \"1.0.0\"\n\
+         entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n",
+    )
+    .unwrap();
+    let component = dir.path().join("code.wasm");
+    std::fs::write(&component, minimal).unwrap();
+    let packed = dir.path().join("with-extension.krate");
+    let output = krate()
+        .arg("pack")
+        .arg(&component)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&packed)
+        .arg("--extension")
+        .arg(format!("acme/plugins@3={}", plugins.display()))
+        .output()
+        .expect("pack");
+    assert!(
+        output.status.success(),
+        "pack with an extension: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let inspected = krate()
+        .args(["inspect", "--format", "json"])
+        .arg(&packed)
+        .output()
+        .expect("inspect");
+    assert!(
+        inspected.status.success(),
+        "{}",
+        String::from_utf8_lossy(&inspected.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&inspected.stdout).expect("json");
+    let ext = &report["extensions"][0];
+    assert_eq!(ext["owner"], "acme", "{report}");
+    assert_eq!(ext["name"], "plugins");
+    assert_eq!(ext["version"], "3");
+    assert_eq!(ext["size"], 4 + 5);
+    assert_eq!(
+        ext["digest"].as_str().map(str::len),
+        Some(64),
+        "a sha256 in hex"
+    );
+    assert_eq!(
+        report["profile"], 1,
+        "extensions are additive: the written profile has not moved"
+    );
+    assert!(
+        report["identity"]["project"].is_string(),
+        "an extension is project material, so there is a project identity: {report}"
+    );
+    let classes: Vec<(String, String)> = report["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| {
+            (
+                r["name"].as_str().unwrap().to_string(),
+                r["class"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect();
+    assert!(
+        classes.contains(&(
+            "ext/acme/plugins/a.toml".to_string(),
+            "extension".to_string()
+        )),
+        "{classes:?}"
+    );
+    assert!(
+        classes.contains(&("extensions.json".to_string(), "extensions".to_string())),
+        "{classes:?}"
+    );
+    let ran = krate()
+        .arg("run")
+        .arg(&packed)
+        .args(["--headless", "--auto-grant"])
+        .output()
+        .expect("run");
+    assert!(
+        ran.status.success(),
+        "an app with a declared extension still runs: {}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+    let bad = krate()
+        .arg("pack")
+        .arg(&component)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(dir.path().join("bad.krate"))
+        .args(["--extension", "nonsense"])
+        .output()
+        .expect("pack");
+    assert!(!bad.status.success());
+    assert!(
+        String::from_utf8_lossy(&bad.stderr).contains("OWNER/NAME@VERSION=DIR"),
+        "a malformed --extension says the shape: {}",
+        String::from_utf8_lossy(&bad.stderr)
+    );
+
+    // Refusals through the binary: a stray record under profile 2 (1475),
+    // an extension that lies, and one nobody declared (1476).
+    let declaration = |digest: &str| {
+        format!(
+            "{{\"schema\":\"krate.bundle.extensions.v1\",\"extensions\":[{{\"owner\":\"acme\",\
+             \"name\":\"plugins\",\"version\":\"1\",\"size\":4,\"digest\":\"{digest}\"}}]}}"
+        )
+    };
+    type Refusal<'a> = (&'a str, Vec<(String, Vec<u8>)>, &'a [&'a str]);
+    let refusals: [Refusal; 3] = [
+        (
+            "a stray record under profile 2",
+            vec![
+                ("krate-profile".to_string(), b"2".to_vec()),
+                ("notes.txt".to_string(), b"skipped by every reader".to_vec()),
+            ],
+            &["notes.txt", "ext/<owner>/<name>/"],
+        ),
+        (
+            "an extension that is not what it declares",
+            vec![
+                (
+                    "extensions.json".to_string(),
+                    declaration(&"0".repeat(64)).into_bytes(),
+                ),
+                ("ext/acme/plugins/a.toml".to_string(), b"[a]\n".to_vec()),
+            ],
+            &["acme/plugins", "not what its declaration says"],
+        ),
+        (
+            "an extension nobody declared",
+            vec![
+                ("krate-profile".to_string(), b"2".to_vec()),
+                ("ext/evil/thing/x".to_string(), b"smuggled".to_vec()),
+            ],
+            &["evil/thing", "without declaring it"],
+        ),
+    ];
+    let mut corpus: Vec<(String, PathBuf)> =
+        vec![("packed with an extension".to_string(), packed.clone())];
+    for (what, extra, words) in &refusals {
+        let path = dir.path().join(format!("{}.krate", what.replace(' ', "-")));
+        std::fs::write(&path, archive_with_component(minimal, extra)).unwrap();
+        let output = krate()
+            .arg("run")
+            .arg(&path)
+            .args(["--headless", "--auto-grant"])
+            .output()
+            .expect("run");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_ne!(
+            output.status.code(),
+            Some(0),
+            "{what} must be refused: {stderr}"
+        );
+        for word in *words {
+            assert!(
+                stderr.contains(word),
+                "{what}: the refusal must say {word:?}: {stderr}"
+            );
+        }
+        corpus.push((what.to_string(), path));
+    }
+
+    // 1477: the independent reader against the binary, on everything.
+    for entry in std::fs::read_dir(repo.join("evidence/ported")).expect("ported bundles") {
+        let path = entry.unwrap().path();
+        if path.extension().is_some_and(|e| e == "krate") {
+            corpus.push((
+                format!("ported {}", path.file_name().unwrap().to_string_lossy()),
+                path,
+            ));
+        }
+    }
+    for fixture in [
+        "crates/bundle/tests/fixtures/duplicate-from-another-writer.krate",
+        "crates/bundle/tests/fixtures/locked-entry.krate",
+        "crates/krate-hub/tests/fixtures/duplicate-source-path.krate",
+        "crates/krate-hub/tests/fixtures/forged-size-bomb.krate",
+    ] {
+        corpus.push((fixture.to_string(), repo.join(fixture)));
+    }
+    let mut accepted = 0;
+    let mut refused = 0;
+    for (what, path) in &corpus {
+        let ours = krate()
+            .args(["inspect", "--format", "json"])
+            .arg(path)
+            .output()
+            .expect("inspect");
+        let theirs = Command::new("python3")
+            .arg(&reader)
+            .arg(path)
+            .output()
+            .expect("python3 must be on PATH: the independent reader is part of this test");
+        let theirs_json: serde_json::Value =
+            serde_json::from_slice(&theirs.stdout).unwrap_or_else(|err| {
+                panic!(
+                    "{what}: the reader printed no JSON ({err}): {}",
+                    String::from_utf8_lossy(&theirs.stderr)
+                )
+            });
+        match (ours.status.success(), theirs.status.success()) {
+            (true, true) => {
+                let ours_json: serde_json::Value = serde_json::from_slice(&ours.stdout).unwrap();
+                for key in ["profile", "records", "extensions"] {
+                    assert_eq!(
+                        ours_json[key], theirs_json[key],
+                        "{what}: the two readers resolve a different {key} (1477)"
+                    );
+                }
+                accepted += 1;
+            }
+            (false, false) => refused += 1,
+            (ours_ok, _) => panic!(
+                "{what}: one reader accepts what the other refuses (1477): krate {}: {} / reader: {}",
+                if ours_ok { "accepted" } else { "refused" },
+                String::from_utf8_lossy(&ours.stderr),
+                theirs_json["refused"]
+            ),
+        }
+    }
+    assert!(
+        accepted >= 8,
+        "the corpus must carry bundles both accept: {accepted}"
+    );
+    assert!(refused >= 6, "and bundles both refuse: {refused}");
+}
+
 fn archive_with_component(component: &[u8], extra: &[(String, Vec<u8>)]) -> Vec<u8> {
     const MANIFEST: &str = "[app]\nid = \"com.example.adversarial\"\nname = \"Adversarial\"\n\
                             version = \"1.0.0\"\nentry = \"code.wasm\"\n\

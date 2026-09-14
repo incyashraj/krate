@@ -169,9 +169,11 @@ fn execution_tools() -> Vec<Value> {
         }),
         json!({
             "name": "inspect_bundle",
-            "description": "Read a .krate bundle's identity and the capabilities it requests, without running it. \
-                Use this before run_component to decide whether an app should be executed at all, \
-                and which of its requests to grant. Nothing is executed and nothing is granted.",
+            "description": "Read a .krate bundle without running it: its identities, its container \
+                profile, every record with the class the format gives it, the extensions it \
+                declares, its signature and the capabilities it requests. Use this before \
+                run_component to decide whether an app should be executed at all, and which of \
+                its requests to grant. Nothing is executed and nothing is granted.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -203,11 +205,30 @@ fn inspect_bundle_tool(arguments: &Value) -> Result<Value> {
         .get("insecure_http")
         .and_then(Value::as_bool)
         .unwrap_or(false);
+    inspect_json(target, allow_http)
+}
 
-    let bundle = if krate_bundle::is_url(target) {
-        krate_bundle::fetch(target, allow_http).with_context(|| format!("fetch {target}"))?
+/// What a bundle is, without running it: its app, its identities, its
+/// container profile, every record with the class the profile gives it,
+/// the extensions it declares, its signature and its capability requests.
+///
+/// One builder for the MCP tool and `krate inspect`, over the one opener
+/// every door uses, so an agent, a person at a terminal and the runtime
+/// resolve the same record set (IC-714, test 1477). Reading a bundle
+/// executes no code and grants nothing.
+pub(crate) fn inspect_json(target: &str, allow_http: bool) -> Result<Value> {
+    let (bundle, archive_bytes) = if krate_bundle::is_url(target) {
+        (
+            krate_bundle::fetch(target, allow_http).with_context(|| format!("fetch {target}"))?,
+            None,
+        )
     } else {
-        krate_bundle::open(Path::new(target)).with_context(|| format!("open {target}"))?
+        let path = Path::new(target);
+        let bytes = std::fs::read(path).with_context(|| format!("read {target}"))?;
+        (
+            krate_bundle::open(path).with_context(|| format!("open {target}"))?,
+            Some(bytes),
+        )
     };
 
     let manifest = bundle.manifest();
@@ -223,6 +244,24 @@ fn inspect_bundle_tool(arguments: &Value) -> Result<Value> {
         })
         .collect();
 
+    // The three identities, as `run --json` reports them: the file's own
+    // bytes, what runs, and what could be rebuilt (absent unless there is
+    // genuinely more to rebuild than to run).
+    let execution = bundle.digest().ok();
+    let project = bundle.project_digest().ok().and_then(|project| {
+        let execution = execution.as_ref()?;
+        (project.entries.len() > execution.entries.len()).then_some(project.digest)
+    });
+    let archive = archive_bytes
+        .as_deref()
+        .map(|bytes| krate_bundle::provenance::digest_archive_bytes(bytes).digest);
+    let signature = match bundle.signature_state() {
+        Ok(krate_bundle::SignatureState::Absent) => "absent",
+        Ok(krate_bundle::SignatureState::Damaged { .. }) => "damaged",
+        Ok(krate_bundle::SignatureState::Signed(_)) => "present",
+        Err(_) => "unreadable",
+    };
+
     Ok(json!({
         "schema": "krate.inspect.v1",
         "source": target,
@@ -232,6 +271,17 @@ fn inspect_bundle_tool(arguments: &Value) -> Result<Value> {
             "version": manifest.app.version,
             "world": manifest.app.world,
         },
+        "profile": bundle.profile(),
+        "identity": {
+            "archive": archive,
+            "execution": execution.map(|d| d.digest),
+            "project": project,
+        },
+        "signature": signature,
+        "release": bundle.release().ok().flatten(),
+        "derived_from": bundle.derived_from().ok().flatten(),
+        "records": bundle.records(),
+        "extensions": bundle.extensions(),
         "requests": requests,
         "note": "Nothing was executed and nothing was granted. Pass the capabilities \
                 you decide to allow to run_component in `grants`.",
