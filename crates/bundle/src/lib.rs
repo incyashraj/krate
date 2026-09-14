@@ -75,30 +75,35 @@ pub const PROFILE_ENTRY: &str = "krate-profile";
 
 /// The profile version this build writes.
 ///
-/// 1 is what every bundle shipped so far implicitly is: manifest.toml and
-/// code.wasm required, assets/ source/ sdk/ signature.json optional,
-/// unknown entries ignored, paths compared case- and separator-insensitively.
-/// Bundles written before this entry existed carry no profile line and are
-/// read as generation 1, because that is what they are -- "keep existing
-/// files readable as their recorded generation" is the requirement's own
-/// words.
-pub const PROFILE_VERSION: u32 = 1;
+/// 1 is what every bundle shipped before 2026-09-14 implicitly is:
+/// manifest.toml and code.wasm required, assets/ source/ sdk/
+/// signature.json optional, unknown entries ignored, paths compared case-
+/// and separator-insensitively. Bundles written before this entry existed
+/// carry no profile line and are read as generation 1, because that is
+/// what they are -- "keep existing files readable as their recorded
+/// generation" is the requirement's own words.
+///
+/// 2 (written since 2026-09-14, the founder's call) keeps every rule of 1
+/// and adds one: a top-level record the profile does not name is refused,
+/// not ignored, unless it sits in a declared extension namespace
+/// (`ext/<owner>/<name>/`, declared in `extensions.json`). The profile
+/// names: krate-profile, manifest.toml, code.wasm, signature.json,
+/// derived-from.json, extensions.json, and the assets/ source/ sdk/ ext/
+/// trees. A Krate older than the reader that learned profile 2 refuses a
+/// profile 2 bundle with "this app uses a newer .krate format ... update
+/// Krate", which is the honest outcome the profile line exists for.
+pub const PROFILE_VERSION: u32 = 2;
 /// The newest profile this build can READ (IC-714, test 1475).
 ///
-/// Readers lead writers by one: every Krate that opens bundles learns the
-/// next profile's rules before any Krate writes it, so that when
-/// [`PROFILE_VERSION`] moves, the installed base already understands the
-/// files. Profile 2 adds one rule to profile 1: a top-level record this
-/// profile does not name is REFUSED rather than ignored, unless it sits in
-/// a declared extension namespace (`ext/<owner>/<name>/`, declared in
-/// `extensions.json`). Profile 1 bundles keep their recorded behaviour --
-/// unknown entries ignored -- which is what "readable as their recorded
-/// generation" means.
-///
-/// Moving the written profile to 2 is a deliberate act (it makes new
-/// bundles unreadable by every Krate older than this reader), and it is a
-/// one-constant change once the installed base has this reader.
+/// Never below [`PROFILE_VERSION`], and meant to move first: a reader that
+/// understands the next profile ships before any writer produces it, so
+/// the installed base can open the files by the time they exist. Profile
+/// 1 bundles keep their recorded behaviour -- unknown entries ignored --
+/// which is what "readable as their recorded generation" means; see
+/// [`PROFILE_VERSION`] for what 2 adds.
 pub const READS_PROFILE: u32 = 2;
+// A build never writes a profile it cannot read.
+const _: () = assert!(READS_PROFILE >= PROFILE_VERSION);
 /// Root for developer-defined material: `ext/<owner>/<name>/...`
 /// (IC-208, IC-714 test 1476).
 ///
@@ -4988,8 +4993,7 @@ required = true
             }
             buf
         }
-        assert_eq!(PROFILE_VERSION, 1, "the written profile has not moved");
-        assert_eq!(READS_PROFILE, 2, "and the reader is one ahead of it");
+        assert_eq!(READS_PROFILE, 2, "the reader knows profile 2");
         let dir = TempDir::new().expect("tempdir");
         let stray: [(&str, &[u8]); 1] = [("notes.txt", b"a file every reader would skip")];
 
@@ -5051,12 +5055,22 @@ required = true
             2
         );
 
-        // What this build packs still opens everywhere: profile 1.
+        // What this build packs declares the profile it writes, and a
+        // packed bundle carries nothing the profile does not name.
         let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
         let component = write_temp(dir.path(), "code.wasm", MINIMAL_COMPONENT);
         let packed = dir.path().join("packed.krate");
         pack(&manifest, &component, &packed).unwrap();
-        assert_eq!(open(&packed).unwrap().profile(), 1);
+        let opened = open(&packed).unwrap();
+        assert_eq!(opened.profile(), PROFILE_VERSION);
+        assert!(
+            opened
+                .records()
+                .iter()
+                .all(|record| record.class != "unknown"),
+            "{:?}",
+            opened.records()
+        );
     }
 
     /// A declared extension records owner, name, version, size and digest,
@@ -5092,11 +5106,7 @@ required = true
         .unwrap();
 
         let opened = open(&out).expect("a bundle with a declared extension opens");
-        assert_eq!(
-            opened.profile(),
-            1,
-            "extensions are additive: the written profile is unchanged"
-        );
+        assert_eq!(opened.profile(), PROFILE_VERSION);
         let [record] = opened.extensions() else {
             panic!("one declared extension, got {:?}", opened.extensions())
         };
@@ -5343,7 +5353,13 @@ required = true
         edit_archive(
             &plain,
             &loose,
-            &keep,
+            &|name, bytes| {
+                Some(if name == PROFILE_ENTRY {
+                    b"1".to_vec()
+                } else {
+                    bytes.to_vec()
+                })
+            },
             &[("ext/acme/plugins/a.toml", b"[a]\n")],
         );
         let opened = open(&loose).expect("profile 1 ignores an undeclared ext/ entry");

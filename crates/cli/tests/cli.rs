@@ -6163,8 +6163,8 @@ fn every_reader_resolves_one_record_set_and_the_extension_namespace_holds() {
         "a sha256 in hex"
     );
     assert_eq!(
-        report["profile"], 1,
-        "extensions are additive: the written profile has not moved"
+        report["profile"], 2,
+        "this build writes container profile 2"
     );
     assert!(
         report["identity"]["project"].is_string(),
