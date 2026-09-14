@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """Generate the release decision record for one commit (IC-159).
 
-    scripts/release-decision.py [--sha <commit>] [--accept K-nnn --because "..."]
+    scripts/release-decision.py [--sha <commit>] [--accept <hold> --because "..."]
+
+A hold is accepted by its name: a bug (K-nnn), a registry claim (C-NAME),
+a lane ("Full test (windows-2022)") or the public-claims drift
+("public-claims"). Every acceptance needs its own reason and is printed in
+the record with it; there is no flag that accepts everything.
     scripts/release-decision.py --self-test
 
 A release decision used to be "the CI run is green", which answers whether
@@ -324,10 +329,14 @@ def decide(sha, ci_findings, fuzz, advisories, claims, bugs, accepted, registry=
             holds.append(f"evidence registry: {len(registry['problems'])} malformed record(s)/claim(s) -- run scripts/evidence-registry.py validate")
         else:
             for refusal in registry.get("refusals", []):
+                # "C-NAME (STATE): why" -- the claim id is the acceptance key.
+                claim_id = refusal.split(" ", 1)[0]
+                if claim_id in accepted:
+                    continue
                 holds.append(f"evidence registry: {refusal}")
 
     for name, state, why in ci_findings:
-        if state == "pass":
+        if state == "pass" or name in accepted:
             continue
         holds.append(f"{name}: {state}" + (f" -- {why}" if why else ""))
 
@@ -347,7 +356,7 @@ def decide(sha, ci_findings, fuzz, advisories, claims, bugs, accepted, registry=
     elif not advisories.get("fresh"):
         holds.append(f"advisory evidence: stale ({advisories.get('age_days')} day(s) old)")
 
-    if not claims.get("ok"):
+    if not claims.get("ok") and "public-claims" not in accepted:
         holds.append("public claims: drift detected -- see scripts/check-claims.py")
 
     if not bugs.get("assessed"):
@@ -517,6 +526,21 @@ Severity: blocker
     verdict, _ = decide("x", green_ci, fresh_fuzz, good_adv, good_claims, with_blocker, {"K-999"})
     if verdict != "HOLD":
         failures.append("accepting a different bug must not release this one")
+
+    # Every other kind of hold is accepted the same way: by its own name,
+    # never by a neighbour's, and never wholesale.
+    red_lane = [("Full test (windows-2022)", "fail", "concluded cancelled")] + green_ci[1:]
+    refused = {"assessed": True, "valid": True, "problems": [],
+               "refusals": ["C-X (UNSUPPORTED): nothing", "C-Y (UNSUPPORTED): nothing"]}
+    drifting = {"assessed": True, "ok": False}
+    verdict, holds = decide("x", red_lane, fresh_fuzz, good_adv, drifting, clean_bugs,
+                            {"Full test (windows-2022)", "C-X", "C-Y", "public-claims"}, refused)
+    if verdict != "RELEASE":
+        failures.append(f"a lane, two claims and the drift, each accepted by name, must release: {holds}")
+    verdict, holds = decide("x", red_lane, fresh_fuzz, good_adv, drifting, clean_bugs,
+                            {"Full test (macos-latest)", "C-X", "public-claims"}, refused)
+    if verdict != "HOLD" or not any("C-Y" in h for h in holds) or not any("windows" in h for h in holds):
+        failures.append(f"accepting one lane and one claim must leave the other lane and claim holding: {holds}")
 
     # Every lane verdict becomes a registry record the gate can read, and a
     # changed verdict supersedes rather than overwrites (IC-681).

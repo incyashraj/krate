@@ -1,0 +1,70 @@
+{
+ "id": "E-CI-a8af9f6e1-dependency-audit-cargo-deny",
+ "claims": [
+  "C-RELEASE-GATES"
+ ],
+ "subject": {
+  "kind": "source tree",
+  "source": {
+   "commit": "a8af9f6e1b181c1ac441f985936efe19ea3e8595",
+   "tree": "2acfae443e7b537d8d6dcec5a7b5c839e8a52f7a"
+  },
+  "binary_digest": null,
+  "package_digest": null,
+  "relationship": "the CI workflow checked out this commit and built it inside the lane"
+ },
+ "environment": {
+  "kind": "hosted",
+  "os": "ubuntu",
+  "arch": "x86_64",
+  "runner": "GitHub-hosted"
+ },
+ "toolchain": {
+  "rust": "as pinned by .github/workflows/ci.yml at this commit"
+ },
+ "command": "GitHub Actions job 'Dependency audit (cargo-deny)' of CI run 34804074926",
+ "inputs": {
+  "prerequisites": []
+ },
+ "oracle": {
+  "class": "execution",
+  "description": "cargo-deny found no advisory, licence or source violation in the locked dependency graph"
+ },
+ "raw_result": {
+  "conclusion": "success",
+  "run_id": "34804074926",
+  "location": "https://github.com/incyashraj/krate/actions/runs/34804074926",
+  "note": ""
+ },
+ "outcome": "pass",
+ "scope": {
+  "supports": "Dependency audit (cargo-deny) concluded pass on commit a8af9f6e1",
+  "exclusions": [
+   "anything the lane does not exercise",
+   "clean recipients",
+   "published artifacts"
+  ]
+ },
+ "independence": "first-party API observation",
+ "time": {
+  "start": "2026-09-14T03:52:58Z",
+  "finish": "2026-09-14T03:55:24Z"
+ },
+ "operator": "GitHub Actions, CI workflow",
+ "privacy": {
+  "audience": "public",
+  "redact": []
+ },
+ "retention": {
+  "raw": "the GitHub Actions run log",
+  "until": "GitHub's log retention"
+ },
+ "expiry": {
+  "triggers": [
+   "source-change"
+  ],
+  "on": null
+ },
+ "supersedes": null,
+ "invalidated_by": null
+}
