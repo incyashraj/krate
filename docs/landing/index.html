@@ -172,7 +172,7 @@ img { max-width: 100%; display: block; }
   /* A thumb is not a mouse pointer: every button clears 44px, which is
      what both platform guidelines ask for and what this page's 34px
      buttons failed. */
-  min-height: 44px;
+  min-height: 44px;  /* a thumb needs 44; a pointer does not mind */
   transition: background-color 0.3s, color 0.3s, box-shadow 0.3s,
               border-radius 0.3s cubic-bezier(0.2, 0.8, 0.2, 1.2);
 }

@@ -4144,6 +4144,15 @@ body.side-resizing .shelf { transition: none; }
  * sidebar rows 34. A thumb needs 44. Applied only on touch-sized screens
  * so the desktop's density is untouched.
  */
+/* Touch, not width: a tablet is operated by the same thumb as a phone, so
+   the targets are decided by the input device rather than by how wide the
+   screen happens to be. */
+@media (pointer: coarse) {
+  .icon-btn, .tool, .send, .set-mini { min-width: 44px; min-height: 44px; }
+  .side-nav a, .side-nav button, .side-item, .side-mark { min-height: 44px; }
+  #sideSearch { min-height: 44px; }
+}
+
 @media (max-width: 760px) {
   .icon-btn, .tool, .send, .set-mini { min-width: 44px; min-height: 44px; }
   .side-nav a, .side-nav button, .side-item { min-height: 44px; }
@@ -4171,6 +4180,30 @@ body.side-resizing .shelf { transition: none; }
   /* The ambient mark is sized off the smaller axis, which on a tall phone
      is the width -- so it filled the screen. Held back. */
   .home-hero::before { width: min(60vh, 86vw); opacity: 0.20; }
+}
+
+/* ---- a session, on a phone --------------------------------------------
+ *
+ * The session view is a fixed-width transcript rail beside a stage. At
+ * 375px the rail took 320 and the stage got 72, so the app card had zero
+ * width and simply was not there. Stacked instead, app first: the thing
+ * you made is what you came back to see, and the conversation reads fine
+ * underneath it.
+ */
+@media (max-width: 760px) {
+  .session-body { flex-direction: column; overflow-y: auto; }
+  .rail {
+    width: 100%; min-width: 0; max-height: none;
+    border-right: 0; border-top: 1px solid var(--line);
+    order: 2;
+  }
+  .thread { padding: 16px 14px; overflow: visible; }
+  .stage { order: 1; padding: 16px 14px 20px; overflow: visible; }
+  .stage-state { width: 100%; }
+  .done-card { width: 100%; max-width: 100%; }
+  /* The composer is pinned to the rail's foot on a desktop; on a phone it
+     belongs at the bottom of the screen, where a thumb is. */
+  .rail .composer-shell { position: sticky; bottom: 0; background: var(--bg); }
 }
 
 /* ---- a built app, on a phone ------------------------------------------ */

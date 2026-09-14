@@ -289,6 +289,13 @@ h1 .soft { color: var(--faint); }
   h1 { font-size: 26px; }
   .room { justify-content: flex-start; padding-top: 8vh; }
 }
+
+  /* Touch, not width: a thumb needs 44px whatever the screen size. */
+  @media (pointer: coarse) {
+    button, a[href], input[type=submit], .sugg button, .pill { min-height: 44px; }
+    a[href] { display: inline-block; }
+    nav a[href], .foot a[href] { padding-top: 10px; padding-bottom: 10px; }
+  }
 </style>
 </head>
 <body>
