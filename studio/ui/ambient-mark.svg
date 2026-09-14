@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1000" width="1400" height="1000" aria-hidden="true">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1200" width="1200" height="1200" aria-hidden="true">
   <!-- The Krate mark, as the faintest wash of light.
 
        The mark is a STACK: a wide flat cap over three horizontal slabs,
@@ -17,14 +17,15 @@
   <defs>
     <!-- The logo's own range: pale periwinkle at the lit top edge down to
          the deeper blue-violet of the slab fronts. -->
-    <linearGradient id="slab" x1="0.1" y1="0" x2="0.9" y2="1">
-      <stop offset="0" stop-color="#b9b0ff" stop-opacity="0.55"/>
-      <stop offset="0.5" stop-color="#7b6bf2" stop-opacity="0.38"/>
-      <stop offset="1" stop-color="#4733d9" stop-opacity="0.22"/>
+    <linearGradient id="slab" x1="0.05" y1="0" x2="0.95" y2="1">
+      <stop offset="0" stop-color="#c4b5fd" stop-opacity="0.95"/>
+      <stop offset="0.42" stop-color="#6366f1" stop-opacity="0.80"/>
+      <stop offset="1" stop-color="#2563eb" stop-opacity="0.62"/>
     </linearGradient>
-    <linearGradient id="cap" x1="0.15" y1="0" x2="0.85" y2="1">
-      <stop offset="0" stop-color="#cdc6ff" stop-opacity="0.55"/>
-      <stop offset="1" stop-color="#7b6bf2" stop-opacity="0.30"/>
+    <linearGradient id="cap" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#ddd6fe" stop-opacity="0.95"/>
+      <stop offset="0.5" stop-color="#818cf8" stop-opacity="0.82"/>
+      <stop offset="1" stop-color="#4f46e5" stop-opacity="0.65"/>
     </linearGradient>
 
     <!-- Enough blur to lose every edge while keeping the silhouette. -->
@@ -40,18 +41,18 @@
       <stop offset="1" stop-color="#fff" stop-opacity="0"/>
     </radialGradient>
     <mask id="soften">
-      <rect width="1400" height="1000" fill="url(#falloff)"/>
+      <rect width="1200" height="1200" fill="url(#falloff)"/>
     </mask>
   </defs>
 
   <g mask="url(#soften)" filter="url(#wash)">
     <!-- The cap: a wide, shallow pyramid over the stack. -->
-    <path d="M700 250 L1240 420 L160 420 Z" fill="url(#cap)"/>
+    <path d="M600 330 L1075 500 L125 500 Z" fill="url(#cap)"/>
 
     <!-- Three slabs, each a shallow diamond with a front face below it.
          The gaps between them are what makes the mark read as layers. -->
-    <path d="M160 460 L700 700 L1240 460 L1240 520 L700 760 L160 520 Z" fill="url(#slab)"/>
-    <path d="M160 590 L700 830 L1240 590 L1240 650 L700 890 L160 650 Z" fill="url(#slab)" opacity="0.75"/>
-    <path d="M200 330 L700 555 L1200 330 L1200 380 L700 605 L200 380 Z" fill="url(#slab)" opacity="0.85"/>
+    <path d="M125 540 L600 780 L1075 540 L1075 605 L600 845 L125 605 Z" fill="url(#slab)"/>
+    <path d="M125 690 L600 930 L1075 690 L1075 755 L600 995 L125 755 Z" fill="url(#slab)" opacity="0.75"/>
+    <path d="M165 400 L600 625 L1035 400 L1035 455 L600 680 L165 455 Z" fill="url(#slab)" opacity="0.85"/>
   </g>
 </svg>

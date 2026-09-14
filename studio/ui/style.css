@@ -139,19 +139,21 @@ body::before {
   pointer-events: none;
   background-image: url("ambient-mark.svg");
   background-repeat: no-repeat;
-  background-position: 50% 2%;
-  /* Capped in viewport-height units as well as percent: on a very wide
-     window a percentage-only size makes the triangle short and stretched. */
-  background-size: min(120vh, 100%) auto;
-  opacity: 0.22;
+  background-position: 50% -22%;
+  /* contain, not a percentage: a percentage is measured against the
+     window's width, so a wide window stretched the mark sideways. The
+     artboard is square and stays square; this just decides how much of
+     the viewport it fills. */
+  background-size: min(105vh, 105vw) auto;
+  opacity: 0.30;
 }
-body.light::before { opacity: 0.09; }
+body.light::before { opacity: 0.13; }
 
 /* Centred on the CONTENT, not the window. With the drawer open the two are
    not the same place, and an apex off the axis of the column it lights
    reads as a mistake rather than as lighting. */
 body.side-open::before {
-  background-position: calc(50% + (var(--side-w, 240px) / 2)) 2%;
+  background-position: calc(50% + (var(--side-w, 240px) / 2)) -22%;
 }
 
 /* Everything the app draws sits above the lighting. The views already
