@@ -129,13 +129,10 @@ mod tests {
             text.contains(&format!("version = \"{}\"", env!("CARGO_PKG_VERSION"))),
             "{text}"
         );
-        assert!(
-            text.contains(&format!(
-                "rust-version = \"{}\"",
-                env!("CARGO_PKG_RUST_VERSION")
-            )),
-            "{text}"
-        );
+        // The SDK keeps its own, lower floor: the workspace's rust-version is
+        // the runtime's, and declaring it for the guest SDK made `krate
+        // create` refuse on a default 1.91 toolchain.
+        assert!(text.contains("rust-version = \"1.91\""), "{text}");
     }
 
     #[test]

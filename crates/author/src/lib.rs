@@ -1293,6 +1293,24 @@ mod tests {
         // bindings module of its own (IC-298).
         let skel_lib = skel.file("src/lib.rs").expect("lib");
         assert!(!skel_lib.contains("mod bindings;"), "{skel_lib}");
+        // Every template links the SDK's gui bindings, so none may carry a
+        // bindings module of its own: two identical `component-type` custom
+        // sections are merged by the linker and cargo-component then fails
+        // with "decoding custom section ... unexpected end-of-file" (K-341,
+        // found by the full CI lanes on the voice prompter).
+        for (what, source) in [
+            ("voice prompter", VOICE_PROMPTER_SOURCE),
+            ("checklist", CHECKLIST_SOURCE),
+        ] {
+            assert!(
+                !source.contains("mod bindings;"),
+                "{what} carries its own bindings"
+            );
+            assert!(
+                source.contains("krate::export!("),
+                "{what} exports through the SDK"
+            );
+        }
         assert!(
             skel_lib.contains("use krate::ui::{events, tree, types, window};"),
             "{skel_lib}"

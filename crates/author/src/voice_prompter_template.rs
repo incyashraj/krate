@@ -22,17 +22,14 @@ extern crate alloc;
 // Pulled in for its allocator and panic handler even though this file calls no
 // `krate::*` function directly. Without it the link fails with "no global
 // memory allocator found" and "`#[panic_handler]` function required".
-extern crate krate as _krate_runtime;
 
 use alloc::string::String;
 
-#[allow(warnings)]
-mod bindings;
 
-use bindings::krate::audio::{capture, types as audio_types};
-use bindings::krate::io::{args, stdio};
-use bindings::krate::speech::transcription;
-use bindings::krate::ui::{events, tree, types, window};
+use krate::audio::{capture, types as audio_types};
+use krate::bindings::krate::io::{args, stdio};
+use krate::speech::transcription;
+use krate::ui::{events, tree, types, window};
 
 const ROOT_ID: u64 = 1;
 const TITLE_ID: u64 = 2;
@@ -220,7 +217,7 @@ fn peak_pcm_s16(bytes: &[u8]) -> u32 {
     peak
 }
 
-impl bindings::Guest for Component {
+impl krate::Guest for Component {
     fn run() -> i32 {
         let quick = args::raw()
             .as_bytes()
@@ -373,4 +370,4 @@ impl bindings::Guest for Component {
     }
 }
 
-bindings::export!(Component with_types_in bindings);
+krate::export!(Component);

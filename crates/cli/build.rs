@@ -190,6 +190,10 @@ fn collect_dir(root: &Path, dir: &Path, files: &mut Vec<(String, Vec<u8>)>) {
 /// `version = "0.1.0-dev"` while the workspace said 0.4.0, so an app built
 /// in the checkout locked `krate v0.4.0` and could never rebuild `--locked`
 /// against the SDK its own bundle carried (K-340).
+/// The oldest rustc the guest SDK builds with. See the note inside
+/// `standalone_bindings_cargo_toml`.
+const SDK_RUST_VERSION: &str = "1.91";
+
 fn standalone_bindings_cargo_toml(path: &Path, root_manifest: &Path) -> String {
     let text = fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     let root = fs::read_to_string(root_manifest)
@@ -198,6 +202,17 @@ fn standalone_bindings_cargo_toml(path: &Path, root_manifest: &Path) -> String {
     for line in text.lines() {
         let trimmed = line.trim();
         let replacement = trimmed.strip_suffix(".workspace = true").map(|key| {
+            // The SDK's own floor, not the workspace's. The workspace moves
+            // its rust-version for the runtime's sake; the guest SDK has
+            // built on 1.91 throughout, and declaring the workspace's floor
+            // here made `krate create` refuse on every machine whose default
+            // toolchain is older than the runtime needs -- measured: "rustc
+            // 1.91.1 is not supported ... krate@0.4.0 requires rustc 1.94"
+            // from a default 1.91.1 toolchain outside the checkout. Raise
+            // it only when the SDK itself needs more.
+            if key == "rust-version" {
+                return format!("rust-version = \"{SDK_RUST_VERSION}\"");
+            }
             let value = workspace_package_field(&root, key).unwrap_or_else(|| {
                 panic!(
                     "{key} is not set under [workspace.package] in {}",
