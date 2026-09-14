@@ -148,7 +148,7 @@ body {
   background-position: 50% 50%;
   background-size: contain;
   /* Soft enough to be lighting, sharp enough to still be the mark. */
-  filter: blur(18px) saturate(1.2);
+  filter: blur(30px) saturate(1.25);
   opacity: 0.16;
 }
 body.light .home-hero::before { opacity: 0.10; }
