@@ -816,6 +816,14 @@ body.windows.light .titlebar .side-toggle:hover { color: #000; }
 }
 .done-name { font-size: 17px; font-weight: 500; letter-spacing: -0.022em; }
 .done-sub { color: var(--faint); font-size: 12.5px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+/* The engine's verdict on an app that built but is not what was asked:
+   plain words on the card, in the same place every time. */
+.done-verdict {
+  margin: 12px 0 0; padding: 9px 12px;
+  font-size: 12.5px; line-height: 1.5; color: var(--text);
+  border: 1px solid rgba(240, 180, 200, 0.28); border-radius: 10px;
+  background: rgba(240, 180, 200, 0.07);
+}
 .asks { list-style: none; margin: 16px 0 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .asks li {
   font-size: 11.5px; color: var(--muted);

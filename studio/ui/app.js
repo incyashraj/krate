@@ -1551,6 +1551,25 @@ function fillDone(result, opts) {
   try { localStorage.setItem("krateMadeOnce", "1"); } catch (e) {}
   $("doneName").textContent = result.name;
   $("doneSize").textContent = result.size;
+  // The verdict, when the engine gave one: the card must not read as
+  // "here is your app" over an app that is not what was asked (K-349).
+  // Text nodes only -- the detail quotes the request.
+  const verdictEl = $("doneVerdict");
+  if (result.verdict === "off-request") {
+    // The desktop's detail opens with the engine's verdict line (which
+    // names the file path); the web's is the one-line reason. Keep every
+    // line that is a reason, and say the verdict once in our own words.
+    const lines = String(result.verdict_detail || "").split("\n").filter(Boolean);
+    const kept = lines.filter((l) => !/but it is not what you asked for/.test(l) && !l.startsWith("The change did not"));
+    const head = lines[0] && lines[0].startsWith("The change did not")
+      ? lines[0]
+      : "Built, but it is not what you asked for.";
+    verdictEl.textContent = [head, ...kept, "Say what to change and it becomes the next version."].join(" ");
+    verdictEl.classList.remove("hidden");
+  } else {
+    verdictEl.textContent = "";
+    verdictEl.classList.add("hidden");
+  }
   // Text nodes, not interpolation (IC-320). An unrecognised capability falls
   // through friendlyAsk as its raw name from the app's OWN manifest -- a
   // bundle somebody sent you -- so this is untrusted text reaching the DOM.
@@ -1637,9 +1656,16 @@ function finishBuild(result) {
   settleChipOk(state.buildChip, version, result.size, "", built);
   state.buildChip = null;
   // The transcript keeps the receipt, not the live chip.
+  // The engine's request verdict travels with the result (desktop and web
+  // alike): an app that built and runs but is not what was asked is shown
+  // AS THAT, beside the app -- not as a success, and not as a failure over
+  // a file that exists (K-349).
+  const offRequest = Boolean(result && result.verdict === "off-request");
   built.messages.push({
     who: "KRATE",
-    body: `v${version} built · ${result.size}${mins ? ` · ${mins} min` : ""}. Tell me what to change and it becomes v${version + 1}.`,
+    body: offRequest
+      ? `v${version} built, but it is not what you asked for.${result.verdict_detail ? `\n${result.verdict_detail}` : ""}\nThe file is there and it runs. Tell me what to change and it becomes v${version + 1}.`
+      : `v${version} built · ${result.size}${mins ? ` · ${mins} min` : ""}. Tell me what to change and it becomes v${version + 1}.`,
     files: [],
     when: Math.floor(Date.now() / 1000),
   });

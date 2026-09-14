@@ -1165,6 +1165,50 @@ struct CreateResult {
     /// was always right there.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     source_dir: String,
+    /// "off-request" when the engine built a working app that does not
+    /// serve the request (its exit 6); absent when the app was accepted.
+    /// The web build service reports the same field, so the one done card
+    /// reads both.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    verdict: Option<String>,
+    /// The engine's own words for what fell short: its verdict line and
+    /// each "asked for / but" pair.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    verdict_detail: Option<String>,
+}
+
+/// Exit 6 is the engine's own request verdict: the app built, runs, and is
+/// not what was asked. `krate create` prints why and keeps the file; a
+/// `revise` that falls short keeps the app it started from. Either way a
+/// file exists and works, so this is a result with a verdict, not a failure:
+/// the person must see the app AND the reason, never "something went wrong"
+/// over an app that is right there. Since the engine started exiting 6
+/// (2026-09-05) every such build showed the failure card (K-349).
+fn is_off_request(code: Option<i32>, was_stopped: bool, file_exists: bool) -> bool {
+    code == Some(6) && !was_stopped && file_exists
+}
+
+/// The reason, from what the engine printed: its verdict line, then each
+/// "asked for:" / "but" line with the spacing collapsed. None when nothing
+/// recognisable was said, so the card falls back to the one-line verdict.
+fn off_request_detail(lines: &[String]) -> Option<String> {
+    let mut out: Vec<String> = Vec::new();
+    for line in lines {
+        let t = line.trim();
+        if t.contains("but it is not what you asked for")
+            || t.starts_with("The change did not do what you asked")
+        {
+            out.clear();
+            out.push(t.to_string());
+        } else if !out.is_empty() && (t.starts_with("asked for:") || t.starts_with("but ")) {
+            out.push(t.split_whitespace().collect::<Vec<_>>().join(" "));
+        }
+    }
+    if out.is_empty() {
+        None
+    } else {
+        Some(out.join("\n"))
+    }
 }
 
 #[tauri::command]
@@ -1787,7 +1831,8 @@ fn run_author(
     let was_stopped = running.0.lock().map(|g| g.is_none()).unwrap_or(false);
     *running.0.lock().map_err(|_| "poisoned")? = None;
 
-    if !status.success() {
+    let off_request = is_off_request(status.code(), was_stopped, out_path.exists());
+    if !status.success() && !off_request {
         if was_stopped {
             return Err("stopped".to_string());
         }
@@ -1841,6 +1886,12 @@ fn run_author(
         asks,
         shot: shoot(engine, out_path).unwrap_or_default(),
         source_dir,
+        verdict: off_request.then(|| "off-request".to_string()),
+        verdict_detail: if off_request {
+            off_request_detail(&tail)
+        } else {
+            None
+        },
     })
 }
 
@@ -4818,6 +4869,57 @@ mod tests {
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
             .expect("chmod stub");
         path
+    }
+
+    /// An app the engine built and then judged not to serve the request
+    /// (exit 6, file present) is a result with a verdict; a stop, a real
+    /// failure, or a missing file is not. The detail is the engine's own
+    /// verdict line and its asked-for/but pairs, nothing else it printed.
+    #[test]
+    fn an_app_that_built_but_is_not_what_was_asked_is_a_result_with_a_verdict() {
+        assert!(super::is_off_request(Some(6), false, true));
+        assert!(!super::is_off_request(Some(6), true, true), "a stop is a stop");
+        assert!(!super::is_off_request(Some(6), false, false), "no file, no result");
+        assert!(!super::is_off_request(Some(1), false, true), "exit 1 is a failure");
+        assert!(!super::is_off_request(Some(0), false, true), "exit 0 is accepted");
+        assert!(!super::is_off_request(None, false, true), "a signal is not a verdict");
+
+        let lines: Vec<String> = [
+            "reading what krate can do",
+            "==> packing",
+            "",
+            "Built /x/timer.krate, but it is not what you asked for.",
+            "",
+            "  asked for: a countdown timer",
+            "  but       the app shows a checklist",
+            "",
+            "  The file is there and it runs. Try again with more detail about",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let detail = super::off_request_detail(&lines).expect("a detail");
+        assert!(detail.starts_with("Built /x/timer.krate, but it is not what you asked for."), "{detail}");
+        assert!(detail.contains("\nasked for: a countdown timer\n"), "{detail}");
+        assert!(detail.ends_with("but the app shows a checklist"), "{detail}");
+        assert!(!detail.contains("packing"), "only the verdict, not the log: {detail}");
+
+        assert_eq!(super::off_request_detail(&["Created /x/a.krate".to_string()]), None);
+
+        let revise: Vec<String> = [
+            "The change did not do what you asked, so it was not applied.",
+            "",
+            "  asked for: a blue button",
+            "  but       the button is still red",
+            "",
+            "  /x/a.krate is unchanged.",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let detail = super::off_request_detail(&revise).expect("a detail");
+        assert!(detail.starts_with("The change did not do what you asked"), "{detail}");
+        assert!(!detail.contains("unchanged"), "{detail}");
     }
 
     /// An app made on the web comes home as a file: the session's URL

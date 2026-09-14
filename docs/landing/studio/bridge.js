@@ -207,6 +207,10 @@ function watchJob(jobId, request, sessionId) {
           size: job.result.size,
           asks: job.result.asks || [],
           shot: job.result.shot || "",
+          // The build service's request verdict, in the desktop's own
+          // field names, so the one done card reads both.
+          verdict: job.result.verdict || null,
+          verdict_detail: job.result.verdict_detail || null,
           // Made on the web: the desktop fetches the file from this URL
           // with the same sign-in before it opens or changes the app.
           web: true,
