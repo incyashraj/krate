@@ -6349,6 +6349,324 @@ fn every_reader_resolves_one_record_set_and_the_extension_namespace_holds() {
     assert!(refused >= 6, "and bundles both refuse: {refused}");
 }
 
+/// An app's saved data leaves and comes back as one file, to the app it
+/// came from, checked against its own record, and never to another app by
+/// accident (IC-736, test 1520; K-298's export bullet).
+#[test]
+fn saved_data_exports_and_imports_to_the_app_it_came_from() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let home = tempfile::tempdir().expect("home");
+    let elsewhere = tempfile::tempdir().expect("second home");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(
+        &wasm,
+        include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm"),
+    )
+    .unwrap();
+    let pack = |id: &str| {
+        let manifest = dir.path().join(format!("{id}.toml"));
+        std::fs::write(
+            &manifest,
+            format!(
+                "[app]\nid = \"{id}\"\nname = \"{id}\"\nversion = \"1.0.0\"\n\
+                 entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n"
+            ),
+        )
+        .unwrap();
+        let bundle = dir.path().join(format!("{id}.krate"));
+        assert!(krate()
+            .arg("pack")
+            .arg(&wasm)
+            .arg("--manifest")
+            .arg(&manifest)
+            .arg("-o")
+            .arg(&bundle)
+            .status()
+            .unwrap()
+            .success());
+        bundle
+    };
+    let notes = pack("dev.krate.notes");
+    let other = pack("dev.krate.other");
+
+    // Data the person made, where the runtime keeps an unsigned app's.
+    let store = home.path().join(".krate/store");
+    std::fs::create_dir_all(&store).unwrap();
+    std::fs::write(store.join("dev.krate.notes.kv"), b"what the person wrote").unwrap();
+    std::fs::write(store.join("dev.krate.notes.sqlite"), b"and their table").unwrap();
+    std::fs::write(store.join("dev.krate.notes.shared.json"), b"{}").unwrap();
+
+    // Nothing to export is said, not written.
+    let none = dir.path().join("none.krate-data");
+    let out = krate()
+        .args(["data", "export"])
+        .arg(&other)
+        .arg("-o")
+        .arg(&none)
+        .env("HOME", home.path())
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    assert!(!none.exists(), "no file for no data");
+    assert!(String::from_utf8_lossy(&out.stderr).contains("no saved data"));
+
+    // Export: one file, a record that names every part with its digest.
+    let copy = dir.path().join("notes.krate-data");
+    let out = krate()
+        .args(["data", "export"])
+        .arg(&notes)
+        .arg("-o")
+        .arg(&copy)
+        .env("HOME", home.path())
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        said.contains("3 files") && said.contains("dev.krate.notes"),
+        "{said}"
+    );
+    let mut archive = zip::ZipArchive::new(std::fs::File::open(&copy).unwrap()).unwrap();
+    let record: serde_json::Value = {
+        let mut text = String::new();
+        std::io::Read::read_to_string(&mut archive.by_name("export.json").unwrap(), &mut text)
+            .unwrap();
+        serde_json::from_str(&text).unwrap()
+    };
+    assert_eq!(record["schema"], "krate.data-export.v1");
+    assert_eq!(record["app"]["id"], "dev.krate.notes");
+    assert_eq!(record["principal"]["kind"], "unverified");
+    let files = record["files"].as_array().unwrap();
+    assert_eq!(files.len(), 3, "{record}");
+    let kv = files
+        .iter()
+        .find(|f| f["kind"] == "kv")
+        .expect("the kv file is recorded");
+    assert_eq!(kv["bytes"], 21);
+    assert_eq!(kv["sha256"].as_str().map(str::len), Some(64));
+    assert_eq!(kv["machine_bound"], false);
+    let mut body = Vec::new();
+    std::io::Read::read_to_end(
+        &mut archive.by_name("data/dev.krate.notes.kv").unwrap(),
+        &mut body,
+    )
+    .unwrap();
+    assert_eq!(body, b"what the person wrote");
+    drop(archive);
+
+    // Import on another machine: the same files, where the app looks.
+    let import = |home: &std::path::Path, into: &std::path::Path, extra: &[&str]| {
+        krate()
+            .args(["data", "import"])
+            .arg(&copy)
+            .arg("--into")
+            .arg(into)
+            .args(extra)
+            .env("HOME", home)
+            .output()
+            .unwrap()
+    };
+    let out = import(elsewhere.path(), &notes, &[]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let restored = elsewhere.path().join(".krate/store");
+    for (name, body) in [
+        ("dev.krate.notes.kv", b"what the person wrote".as_slice()),
+        ("dev.krate.notes.sqlite", b"and their table"),
+        ("dev.krate.notes.shared.json", b"{}"),
+    ] {
+        assert_eq!(std::fs::read(restored.join(name)).unwrap(), body, "{name}");
+    }
+    assert!(
+        !restored.join("dev.krate.notes.partial").exists(),
+        "no staging litter"
+    );
+
+    // Existing data is not overwritten by accident.
+    std::fs::write(restored.join("dev.krate.notes.kv"), b"newer notes").unwrap();
+    let out = import(elsewhere.path(), &notes, &[]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--replace"));
+    assert_eq!(
+        std::fs::read(restored.join("dev.krate.notes.kv")).unwrap(),
+        b"newer notes"
+    );
+    let out = import(elsewhere.path(), &notes, &["--replace"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        std::fs::read(restored.join("dev.krate.notes.kv")).unwrap(),
+        b"what the person wrote"
+    );
+
+    // Another app is another namespace: refused unless said on purpose.
+    let out = import(elsewhere.path(), &other, &[]);
+    assert_eq!(out.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("dev.krate.other") && stderr.contains("--accept-different-app"),
+        "{stderr}"
+    );
+    assert!(!restored.join("dev.krate.other.kv").exists());
+    let out = import(elsewhere.path(), &other, &["--accept-different-app"]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        std::fs::read(restored.join("dev.krate.other.kv")).unwrap(),
+        b"what the person wrote"
+    );
+    assert!(String::from_utf8_lossy(&out.stdout).contains("because you said so"));
+
+    // A damaged copy is refused whole: nothing restored, not even the
+    // parts that were fine.
+    let damaged = dir.path().join("damaged.krate-data");
+    {
+        let mut source = zip::ZipArchive::new(std::fs::File::open(&copy).unwrap()).unwrap();
+        let mut writer = zip::ZipWriter::new(std::fs::File::create(&damaged).unwrap());
+        let options = zip::write::SimpleFileOptions::default();
+        for index in 0..source.len() {
+            let mut entry = source.by_index(index).unwrap();
+            let name = entry.name().to_string();
+            let mut bytes = Vec::new();
+            std::io::Read::read_to_end(&mut entry, &mut bytes).unwrap();
+            if name == "data/dev.krate.notes.sqlite" {
+                bytes = b"and their tabl3".to_vec();
+            }
+            writer.start_file(name, options).unwrap();
+            std::io::Write::write_all(&mut writer, &bytes).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+    let third = tempfile::tempdir().expect("third home");
+    let out = krate()
+        .args(["data", "import"])
+        .arg(&damaged)
+        .arg("--into")
+        .arg(&notes)
+        .env("HOME", third.path())
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("not what the record says"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        !third
+            .path()
+            .join(".krate/store/dev.krate.notes.kv")
+            .exists(),
+        "a damaged copy must not be restored by halves"
+    );
+
+    // Uninstall takes the copy first, and deletes nothing when the copy
+    // cannot be written. Only where installing is supported.
+    let prefix = tempfile::tempdir().expect("prefix");
+    let installed = krate()
+        .arg("install")
+        .arg(&notes)
+        .arg("--prefix")
+        .arg(prefix.path())
+        .env("HOME", home.path())
+        .output()
+        .unwrap();
+    if !installed.status.success() {
+        eprintln!("skipping the uninstall half: this platform has no installer");
+        return;
+    }
+    let blocker = dir.path().join("blocker");
+    std::fs::write(&blocker, b"a file where a directory would need to be").unwrap();
+    let out = krate()
+        .args(["uninstall", "dev.krate.notes", "--delete-data", "--export"])
+        .arg(blocker.join("copy.krate-data"))
+        .arg("--prefix")
+        .arg(prefix.path())
+        .env("HOME", home.path())
+        .output()
+        .unwrap();
+    assert!(
+        !out.status.success(),
+        "an export that cannot be written stops the uninstall"
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("nothing was deleted"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        store.join("dev.krate.notes.kv").exists(),
+        "the data is still there"
+    );
+    let listed = krate()
+        .arg("installed")
+        .arg("--prefix")
+        .arg(prefix.path())
+        .env("HOME", home.path())
+        .output()
+        .unwrap();
+    assert!(
+        String::from_utf8_lossy(&listed.stdout).contains("dev.krate.notes"),
+        "and so is the app"
+    );
+    let taken = dir.path().join("taken.krate-data");
+    let out = krate()
+        .args(["uninstall", "dev.krate.notes", "--delete-data", "--export"])
+        .arg(&taken)
+        .arg("--prefix")
+        .arg(prefix.path())
+        .env("HOME", home.path())
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(taken.is_file(), "the copy exists");
+    assert!(
+        !store.join("dev.krate.notes.kv").exists(),
+        "and then the data is gone"
+    );
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        said.contains("Copied the saved data") && said.contains("deleted"),
+        "{said}"
+    );
+    // And the copy is a real one: it restores.
+    let fourth = tempfile::tempdir().expect("fourth home");
+    let out = krate()
+        .args(["data", "import"])
+        .arg(&taken)
+        .arg("--into")
+        .arg(&notes)
+        .env("HOME", fourth.path())
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        std::fs::read(fourth.path().join(".krate/store/dev.krate.notes.kv")).unwrap(),
+        b"what the person wrote"
+    );
+}
+
 fn archive_with_component(component: &[u8], extra: &[(String, Vec<u8>)]) -> Vec<u8> {
     const MANIFEST: &str = "[app]\nid = \"com.example.adversarial\"\nname = \"Adversarial\"\n\
                             version = \"1.0.0\"\nentry = \"code.wasm\"\n\

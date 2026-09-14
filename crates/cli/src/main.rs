@@ -1063,9 +1063,23 @@ enum Command {
         #[arg(long)]
         delete_data: bool,
 
+        /// Before deleting the data, write a copy here (the file `krate data
+        /// import` takes). Nothing is deleted if the copy cannot be written.
+        #[arg(long, requires = "delete_data", value_name = "FILE")]
+        export: Option<PathBuf>,
+
         /// Print what would be removed and stop.
         #[arg(long)]
         dry_run: bool,
+    },
+
+    /// Take an app's saved data out as one file, or put a copy back: the
+    /// key-value store, the database, the secrets and the shared-list
+    /// record, found the way the runtime finds them, so a signed app's data
+    /// and an impostor's never mix.
+    Data {
+        #[command(subcommand)]
+        command: DataCommand,
     },
 
     /// List the apps installed on this machine.
@@ -1285,6 +1299,52 @@ enum AccountAction {
     Adopt,
     /// Forget the stored sign-in on this machine.
     Logout,
+}
+
+#[derive(Debug, Subcommand)]
+enum DataCommand {
+    /// Copy an app's saved data into one .krate-data file.
+    ///
+    /// Close the app first: a copy taken while it writes may hold half a
+    /// change.
+    Export {
+        /// A .krate file, or the id of an installed app (`krate installed`).
+        app: String,
+
+        /// Where to write the copy.
+        #[arg(short, long)]
+        output: PathBuf,
+
+        /// Look for an installed app here instead of the default location.
+        #[arg(long)]
+        prefix: Option<PathBuf>,
+    },
+    /// Put a copy back where the app will find it.
+    ///
+    /// The copy is checked against its own record first, and it goes to the
+    /// app it came from unless you say otherwise.
+    Import {
+        /// A .krate-data file written by `krate data export`.
+        file: PathBuf,
+
+        /// The app the data is for: a .krate file, or an installed app's id.
+        #[arg(long, value_name = "APP")]
+        into: String,
+
+        /// Replace data the app already has here. Without this, existing
+        /// data is left alone and the import stops.
+        #[arg(long)]
+        replace: bool,
+
+        /// Give the data to an app other than the one it came from -- a
+        /// fork adopting its parent's notes. Deliberate, never automatic.
+        #[arg(long)]
+        accept_different_app: bool,
+
+        /// Look for an installed app here instead of the default location.
+        #[arg(long)]
+        prefix: Option<PathBuf>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -1673,8 +1733,35 @@ fn run() -> Result<u8> {
             app_id,
             prefix,
             delete_data,
+            export,
             dry_run,
-        } => uninstall_app(&app_id, prefix.as_deref(), delete_data, dry_run),
+        } => uninstall_app(
+            &app_id,
+            prefix.as_deref(),
+            delete_data,
+            export.as_deref(),
+            dry_run,
+        ),
+        Command::Data { command } => match command {
+            DataCommand::Export {
+                app,
+                output,
+                prefix,
+            } => export_data(&app, &output, prefix.as_deref()),
+            DataCommand::Import {
+                file,
+                into,
+                replace,
+                accept_different_app,
+                prefix,
+            } => import_data(
+                &file,
+                &into,
+                replace,
+                accept_different_app,
+                prefix.as_deref(),
+            ),
+        },
         Command::Installed { prefix } => list_installed(prefix.as_deref()),
         Command::Permissions { forget, forget_all } => {
             permissions_command(forget.as_deref(), forget_all)
@@ -13465,11 +13552,12 @@ fn uninstall_app(
     app_id: &str,
     prefix: Option<&Path>,
     delete_data: bool,
+    export_to: Option<&Path>,
     dry_run: bool,
 ) -> Result<u8> {
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
-        let _ = (app_id, prefix, delete_data, dry_run);
+        let _ = (app_id, prefix, delete_data, export_to, dry_run);
         bail!("installing apps is not supported on this system, so there is nothing to uninstall")
     }
     #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -13493,34 +13581,37 @@ fn uninstall_app(
         // claim (IC-874). An app whose data lives under a publisher stays
         // separate from an impostor's.
         let mut data_paths = Vec::new();
+        let mut owners = Vec::new();
         if delete_data {
             for (_, _, path) in &matches {
-                #[cfg(target_os = "macos")]
-                let payload = path.join("Contents/Resources/app.krate");
-                #[cfg(target_os = "linux")]
-                let payload = path.join("app.krate");
+                let payload = installed_payload_path(path);
                 let Ok(opened) = krate_bundle::open(&payload) else {
                     continue;
                 };
-                let principal = storage_principal(
-                    opened.manifest(),
-                    opened.signature_envelope().ok().flatten().as_ref(),
-                    opened
-                        .full_verdict(&revocations_known_here(
-                            opened.signing_authority().ok().flatten().as_deref(),
-                        ))
-                        .ok()
-                        .flatten()
-                        .as_ref(),
-                );
-                let base = principal_store_path_in(&krate_home(), &principal);
-                for extension in ["kv", "sqlite", "secrets", "shared.json"] {
-                    let candidate = base.with_extension(extension);
-                    if candidate.exists() {
-                        data_paths.push(candidate);
-                    }
+                let principal = principal_of(&opened);
+                for (_, candidate) in store_files_for(&principal) {
+                    data_paths.push(candidate);
                 }
+                owners.push((opened.manifest().clone(), principal));
             }
+        }
+        // The copy first, and the delete only once the copy is a whole
+        // file on disk (IC-736, test 1520). Written even in a dry run? No:
+        // a dry run writes nothing, and says what it would write.
+        if let Some(export) = export_to.filter(|_| !dry_run) {
+            let Some((manifest, principal)) = owners.first() else {
+                eprintln!("no saved data to export for {app_id}; nothing was deleted.");
+                return Ok(1);
+            };
+            let files = store_files_for(principal);
+            if files.is_empty() {
+                eprintln!("no saved data to export for {app_id}; nothing was deleted.");
+                return Ok(1);
+            }
+            write_data_export(manifest, principal, &files, export).with_context(|| {
+                format!("could not write {}; nothing was deleted", export.display())
+            })?;
+            println!("Copied the saved data to {} first.", export.display());
         }
 
         if dry_run {
@@ -13550,6 +13641,386 @@ fn uninstall_app(
         }
         Ok(0)
     }
+}
+
+/// The bundle an installed app runs, inside its installed object.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn installed_payload_path(installed: &Path) -> PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        installed.join("Contents/Resources/app.krate")
+    }
+    #[cfg(target_os = "linux")]
+    {
+        installed.join("app.krate")
+    }
+}
+
+/// The storage principal of an opened bundle, exactly as a run derives it:
+/// verified lineage when the signature holds, the bare id otherwise.
+fn principal_of(opened: &krate_bundle::OpenBundle) -> StoragePrincipal {
+    storage_principal(
+        opened.manifest(),
+        opened.signature_envelope().ok().flatten().as_ref(),
+        opened
+            .full_verdict(&revocations_known_here(
+                opened.signing_authority().ok().flatten().as_deref(),
+            ))
+            .ok()
+            .flatten()
+            .as_ref(),
+    )
+}
+
+/// Every kind of file the runtime keeps for one principal. One list, so
+/// export, import and uninstall cannot disagree about what "the app's
+/// data" is.
+const STORE_KINDS: [&str; 4] = ["kv", "sqlite", "secrets", "shared.json"];
+
+/// The store files a principal has on this machine, by kind.
+fn store_files_for(principal: &StoragePrincipal) -> Vec<(&'static str, PathBuf)> {
+    let base = principal_store_path_in(&krate_home(), principal);
+    STORE_KINDS
+        .iter()
+        .map(|kind| (*kind, base.with_extension(kind)))
+        .filter(|(_, path)| path.is_file())
+        .collect()
+}
+
+/// Resolve what a person names -- a .krate file, or an installed app's id
+/// -- to the app and the storage it owns, the way the runtime would.
+fn resolve_app_storage(app: &str, prefix: Option<&Path>) -> Result<(Manifest, StoragePrincipal)> {
+    let path = Path::new(app);
+    let bundle_path = if path.is_file() {
+        path.to_path_buf()
+    } else {
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        {
+            let root = install_root(prefix)?;
+            let found = installed_apps(&root)
+                .into_iter()
+                .find(|(id, _, _)| id == app)
+                .map(|(_, _, installed)| installed_payload_path(&installed));
+            match found {
+                Some(payload) => payload,
+                None => bail!(
+                    "{app} is neither a .krate file nor the id of an app installed in {} \
+                     (`krate installed` lists those)",
+                    root.display()
+                ),
+            }
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        {
+            let _ = prefix;
+            bail!("{app} is not a .krate file, and installed apps are not supported on this system")
+        }
+    };
+    let opened = krate_bundle::open(&bundle_path)
+        .with_context(|| format!("open {}", bundle_path.display()))?;
+    let principal = principal_of(&opened);
+    Ok((opened.manifest().clone(), principal))
+}
+
+/// Version of the record inside a .krate-data file.
+const DATA_EXPORT_SCHEMA: &str = "krate.data-export.v1";
+/// The record's entry name inside the file.
+const DATA_EXPORT_RECORD: &str = "export.json";
+
+/// What a .krate-data file says about itself (IC-736, test 1520).
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+struct DataExport {
+    schema: String,
+    app: DataExportApp,
+    principal: DataExportPrincipal,
+    exported_at: u64,
+    files: Vec<DataExportFile>,
+}
+
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+struct DataExportApp {
+    id: String,
+    name: String,
+    version: String,
+}
+
+/// The namespace the data came from: enough to tell a fork or an impostor
+/// from the app itself without a machine-specific path.
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+struct DataExportPrincipal {
+    kind: String,
+    key: String,
+}
+
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+struct DataExportFile {
+    kind: String,
+    /// The entry inside the file: `data/<name>`.
+    name: String,
+    bytes: u64,
+    sha256: String,
+    /// The secrets store is encrypted with this machine's key: it travels,
+    /// and it only opens on the machine that wrote it.
+    machine_bound: bool,
+}
+
+fn principal_kind(principal: &StoragePrincipal) -> &'static str {
+    match principal {
+        StoragePrincipal::Verified { .. } => "verified",
+        StoragePrincipal::Unverified { .. } => "unverified",
+        StoragePrincipal::Development { .. } => "development",
+    }
+}
+
+fn sha256_hex_of(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// Write the copy: the record first, then every file, to a sibling staging
+/// file that is renamed into place, so a failure leaves no half-copy that
+/// looks like a whole one.
+fn write_data_export(
+    manifest: &Manifest,
+    principal: &StoragePrincipal,
+    files: &[(&'static str, PathBuf)],
+    output: &Path,
+) -> Result<DataExport> {
+    let mut bodies = Vec::new();
+    let mut records = Vec::new();
+    for (kind, path) in files {
+        let body = fs::read(path).with_context(|| format!("read {}", path.display()))?;
+        let name = format!(
+            "data/{}",
+            path.file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default()
+        );
+        records.push(DataExportFile {
+            kind: kind.to_string(),
+            name: name.clone(),
+            bytes: body.len() as u64,
+            sha256: sha256_hex_of(&body),
+            machine_bound: *kind == "secrets",
+        });
+        bodies.push((name, body));
+    }
+    let record = DataExport {
+        schema: DATA_EXPORT_SCHEMA.to_string(),
+        app: DataExportApp {
+            id: manifest.app.id.clone(),
+            name: manifest.app.name.clone(),
+            version: manifest.app.version.clone(),
+        },
+        principal: DataExportPrincipal {
+            kind: principal_kind(principal).to_string(),
+            key: principal.storage_key(),
+        },
+        exported_at: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0),
+        files: records,
+    };
+    let parent = output.parent().filter(|p| !p.as_os_str().is_empty());
+    if let Some(parent) = parent {
+        fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    }
+    let staging = parent.unwrap_or_else(|| Path::new(".")).join(format!(
+        ".{}.{}.partial",
+        output
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "data".to_string()),
+        std::process::id()
+    ));
+    let write = || -> Result<()> {
+        let file =
+            fs::File::create(&staging).with_context(|| format!("create {}", staging.display()))?;
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        zip.start_file(DATA_EXPORT_RECORD, options)?;
+        zip.write_all(&serde_json::to_vec_pretty(&record)?)?;
+        for (name, body) in &bodies {
+            zip.start_file(name, options)?;
+            zip.write_all(body)?;
+        }
+        zip.finish()?;
+        Ok(())
+    };
+    if let Err(err) = write() {
+        let _ = fs::remove_file(&staging);
+        return Err(err);
+    }
+    fs::rename(&staging, output)
+        .with_context(|| format!("move into place: {}", output.display()))?;
+    Ok(record)
+}
+
+/// `krate data export`: the app's saved data, as one file.
+fn export_data(app: &str, output: &Path, prefix: Option<&Path>) -> Result<u8> {
+    let (manifest, principal) = resolve_app_storage(app, prefix)?;
+    let files = store_files_for(&principal);
+    if files.is_empty() {
+        let base = principal_store_path_in(&krate_home(), &principal);
+        eprintln!(
+            "{} ({}) has no saved data on this machine: nothing at {}.{{{}}}",
+            manifest.app.name,
+            manifest.app.id,
+            base.with_extension("").display(),
+            STORE_KINDS.join(",")
+        );
+        return Ok(1);
+    }
+    let record = write_data_export(&manifest, &principal, &files, output)?;
+    let total: u64 = record.files.iter().map(|f| f.bytes).sum();
+    println!(
+        "Wrote {} for {} ({}): {} file{}, {} bytes.",
+        output.display(),
+        manifest.app.name,
+        manifest.app.id,
+        record.files.len(),
+        if record.files.len() == 1 { "" } else { "s" },
+        total
+    );
+    for file in &record.files {
+        println!("  {:<12} {:>10}  {}", file.kind, file.bytes, file.name);
+    }
+    if record.files.iter().any(|f| f.machine_bound) {
+        println!(
+            "The secrets file is locked to this machine's key: it travels with the copy, \
+             and only opens on this machine."
+        );
+    }
+    Ok(0)
+}
+
+/// `krate data import`: a copy back where the app will find it.
+fn import_data(
+    file: &Path,
+    into: &str,
+    replace: bool,
+    accept_different_app: bool,
+    prefix: Option<&Path>,
+) -> Result<u8> {
+    let opened = fs::File::open(file).with_context(|| format!("open {}", file.display()))?;
+    let mut zip = zip::ZipArchive::new(opened)
+        .with_context(|| format!("{} is not a .krate-data file", file.display()))?;
+    let record: DataExport = {
+        let mut entry = zip
+            .by_name(DATA_EXPORT_RECORD)
+            .with_context(|| format!("{} carries no {DATA_EXPORT_RECORD}", file.display()))?;
+        let mut text = String::new();
+        std::io::Read::read_to_string(&mut entry, &mut text)?;
+        serde_json::from_str(&text)
+            .with_context(|| format!("{} has a damaged {DATA_EXPORT_RECORD}", file.display()))?
+    };
+    if record.schema != DATA_EXPORT_SCHEMA {
+        bail!(
+            "{} was written in a newer format ({}) than this copy of Krate understands",
+            file.display(),
+            record.schema
+        );
+    }
+
+    let (manifest, principal) = resolve_app_storage(into, prefix)?;
+    let same_app =
+        record.app.id == manifest.app.id && record.principal.key == principal.storage_key();
+    if !same_app && !accept_different_app {
+        eprintln!(
+            "this copy came from {} ({}, {}); {into} is {} ({}, {}).\n\
+             Data does not move between apps by accident: a fork, a copy under another \
+             publisher, or an unsigned file with the same id gets its own storage. If this \
+             is what you mean, pass --accept-different-app.",
+            record.app.id,
+            record.principal.kind,
+            record.principal.key,
+            manifest.app.id,
+            principal_kind(&principal),
+            principal.storage_key()
+        );
+        return Ok(1);
+    }
+
+    // Every file checked against the record before anything is written:
+    // a damaged copy is refused whole, not restored by halves.
+    let base = principal_store_path_in(&krate_home(), &principal);
+    let mut ready = Vec::new();
+    for entry in &record.files {
+        if !STORE_KINDS.contains(&entry.kind.as_str()) {
+            bail!("{}: unknown data kind {:?}", file.display(), entry.kind);
+        }
+        let mut body = Vec::new();
+        let mut carried = zip.by_name(&entry.name).with_context(|| {
+            format!(
+                "{} lists {} but does not carry it",
+                file.display(),
+                entry.name
+            )
+        })?;
+        std::io::Read::read_to_end(&mut carried, &mut body)?;
+        drop(carried);
+        if body.len() as u64 != entry.bytes || sha256_hex_of(&body) != entry.sha256 {
+            bail!(
+                "{}: {} is not what the record says (damaged or edited copy); nothing was restored",
+                file.display(),
+                entry.name
+            );
+        }
+        let destination = base.with_extension(&entry.kind);
+        if destination.is_file() && !replace {
+            eprintln!(
+                "{} ({}) already has data here: {}\n\
+                 Nothing was restored. Pass --replace to overwrite it, or export it first.",
+                manifest.app.name,
+                manifest.app.id,
+                destination.display()
+            );
+            return Ok(1);
+        }
+        ready.push((entry, destination, body));
+    }
+    if let Some(parent) = base.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    }
+    for (_, destination, body) in &ready {
+        let staging = destination.with_extension("partial");
+        fs::write(&staging, body).with_context(|| format!("write {}", staging.display()))?;
+        fs::rename(&staging, destination)
+            .with_context(|| format!("move into place: {}", destination.display()))?;
+    }
+    println!(
+        "Restored {} file{} for {} ({}) from {}.",
+        ready.len(),
+        if ready.len() == 1 { "" } else { "s" },
+        manifest.app.name,
+        manifest.app.id,
+        file.display()
+    );
+    for (entry, destination, _) in &ready {
+        println!(
+            "  {:<12} {:>10}  {}",
+            entry.kind,
+            entry.bytes,
+            destination.display()
+        );
+    }
+    if ready.iter().any(|(entry, _, _)| entry.machine_bound) {
+        println!(
+            "The secrets file only opens on the machine that wrote it; on another machine \
+             the app starts with no secrets."
+        );
+    }
+    if !same_app {
+        println!(
+            "Note: this data came from {} and now belongs to {}, because you said so.",
+            record.app.id, manifest.app.id
+        );
+    }
+    Ok(0)
 }
 
 /// Where an app installs, decided once (IC-278).
