@@ -4182,6 +4182,63 @@ body.side-resizing .shelf { transition: none; }
   .home-hero::before { width: min(60vh, 86vw); opacity: 0.20; }
 }
 
+/* ---- the settings and AI sheets, on a phone ---------------------------
+ *
+ * Both are a 216px nav column beside a content pane. At 375px that leaves
+ * the pane 63px wide, which is what put the API key fields and the
+ * spending panel into a single column of broken words -- every label
+ * wrapping one letter at a time.
+ *
+ * Stacked instead: the sections become a horizontal strip of chips along
+ * the top, the way a phone settings screen works, and the content gets the
+ * whole width beneath them. The strip scrolls sideways if there are more
+ * sections than fit, which is the one place sideways scrolling is right.
+ */
+@media (max-width: 760px) {
+  .set-modal {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    width: 100%; height: 100%;
+    max-height: 100%;
+    border-radius: 0; border: 0;
+  }
+  .set-side {
+    flex-direction: column;
+    padding: 14px 14px 10px;
+    border-right: 0; border-bottom: 1px solid var(--glass-edge-soft);
+    overflow: visible;
+  }
+  .set-side-head { margin-bottom: 10px; }
+  /* The section list becomes a row of chips. */
+  .set-nav {
+    flex-direction: row; gap: 8px;
+    overflow-x: auto; overflow-y: hidden;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px;
+  }
+  .set-nav::-webkit-scrollbar { display: none; }
+  .set-nav button {
+    flex: none; width: auto; white-space: nowrap;
+    padding: 10px 14px; border-radius: 999px;
+    background: var(--film); min-height: 40px;
+  }
+  .set-nav button.on { background: var(--text); color: var(--bg); }
+  .set-main { padding: 16px 14px 24px; overflow-y: auto; }
+  /* The key rows are a label beside a field beside a button; at this width
+     the label goes above and the field takes the line. */
+  /* Pinned to the sheet's corner. It lives inside the scrolling content,
+     so on a phone it drifted down the page as you scrolled. */
+  .set-modal .set-close {
+    position: fixed; top: 14px; right: 14px; z-index: 6;
+    width: 44px; height: 44px; display: grid; place-items: center;
+  }
+  /* The spending cards: two up rather than four across. */
+  .web-spend-cards { display: grid; grid-template-columns: 1fr 1fr; }
+  .web-spend-card { flex: none; }
+  .web-spend-row { flex-wrap: wrap; row-gap: 2px; }
+  .web-spend-row .app { flex: 1 0 100%; }
+}
+
 /* ---- a session, on a phone --------------------------------------------
  *
  * The session view is a fixed-width transcript rail beside a stage. At
@@ -4493,3 +4550,33 @@ body:not(.macos).light .side-top .side-toggle:hover { color: #000; }
   background: var(--film); border-radius: 4px; padding: 1px 5px;
 }
 
+/* ---- phone layout for rows that are defined later in this file --------
+ *
+ * Last, deliberately. `.ai-key-row` is declared further down than the
+ * media query that overrides it, and equal specificity is decided by
+ * order -- so the phone layout has to come after everything it corrects.
+ * The spend rows are injected by the web bridge after this sheet loads,
+ * which is why they carry their own !important below: nothing in a file
+ * can out-order a stylesheet appended at runtime.
+ */
+@media (max-width: 760px) {
+  .ai-key-row {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 10px; align-items: center;
+  }
+  .ai-key-row .ai-key-name { grid-column: 1 / -1; width: auto; font-weight: 500; }
+  .ai-key-row .ai-key-state { grid-column: 1; }
+  .ai-key-row .ai-key-input { grid-column: 1; min-width: 0; }
+  .ai-key-row .ai-key-save,
+  .ai-key-row .ai-key-forget { grid-column: 2; }
+
+  /* App name and price on one line, the detail under them. */
+  .web-spend-row {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 2px 8px;
+  }
+  .web-spend-row .app { grid-column: 1; grid-row: 1; font-weight: 500; }
+  .web-spend-row .usd { grid-column: 2; grid-row: 1; text-align: right; }
+  .web-spend-row .who { grid-column: 1 / -1; font-size: 10.5px; }
+}
