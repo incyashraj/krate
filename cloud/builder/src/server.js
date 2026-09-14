@@ -40,6 +40,7 @@ const HUB = process.env.KRATE_HUB || "https://hub.krate.tech";
  * minutes; a run past this is stuck, and a stuck run holds a queue slot
  * that a paying person is waiting on. */
 const BUILD_TIMEOUT_MS = Number(process.env.KRATE_BUILD_TIMEOUT_MS || 15 * 60 * 1000);
+const PLAN_TIMEOUT_MS = Number(process.env.KRATE_PLAN_TIMEOUT_MS || 90 * 1000);
 
 /* One at a time per account. Not politeness -- the difference between a
  * bill and a bankruptcy, since each build is inference we pay for. */
@@ -287,7 +288,12 @@ async function allowedToBuild(token, device) {
 
 /* ---- running one build --------------------------------------------------- */
 
-async function startBuild({ request, token, account, device }) {
+/* A revision continues the case the app was made in: same funding, the
+ * app's own source as the starting point, `krate revise` doing the edit --
+ * the same command the desktop runs, so a change made in a tab and a change
+ * made in Studio cannot come out different. `revise` names the finished job
+ * it starts from: { parentId, source, change, caseId, name }. */
+async function startBuild({ request, token, account, device, revise = null }) {
   // 128 random bits. The id appears in URLs and is all a page holds, so it
   // must not be guessable -- the truncated UUID this used to be was the only
   // thing between anyone on the internet and another person's app file.
@@ -299,7 +305,8 @@ async function startBuild({ request, token, account, device }) {
   const shotPath = join(dir, "frame.png");
 
   const job = {
-    id, account, device, request, dir, output, shotPath,
+    id, account, device, request: revise ? revise.change : request, dir, output, shotPath,
+    parent: revise ? revise.parentId : null,
     state: "working",
     stage: "read",
     line: "reading what Krate can do",
@@ -315,15 +322,18 @@ async function startBuild({ request, token, account, device }) {
   // The build lives inside a funded case on the hub's ledger. Opening it
   // consumes nothing; the outcome recorded when this build ends is what
   // decides whether it cost an allowance (only "made" does).
-  job.caseId = await caseOpen(token, device, request);
+  job.caseId = revise ? revise.caseId : await caseOpen(token, device, request);
   await persistJob(job);
-  await audit({ action: "start", account, job: id });
+  await audit({ action: revise ? "revise" : "start", account, job: id, parent: job.parent });
 
   // The engine prints its progress as it works; that is what drives the
   // stages. The app's picture comes after, from running the finished file
   // (`krate create` has no --shoot; `krate run` does), which is also the
   // more honest picture: it is the app that was actually made.
-  const args = ["create", request, "--output", output, "--agent", AGENT];
+  const transcript = join(dir, "transcript.json");
+  const args = revise
+    ? ["revise", revise.source, revise.change, "--agent", AGENT, "--output", output]
+    : ["create", request, "--output", output, "--agent", AGENT, "--transcript", transcript];
   const proc = spawn(KRATE, args, { cwd: dir, env: { ...process.env } });
   job.proc = proc;
 
@@ -364,7 +374,14 @@ async function startBuild({ request, token, account, device }) {
       await caseAttempt(token, device, job.caseId, "stopped");
       return cleanup(job);
     }
-    if (code !== 0 || job.error) {
+    // Exit 6 is the engine's own request verdict: the app built, runs, and
+    // is not what was asked for (`krate create` says so and keeps the
+    // file). A person must see that verdict beside the app, not "it
+    // failed" and not "here is your app". It spends nothing: the funded
+    // case continues until an app that serves the request exists, and the
+    // next change starts from this one.
+    const offRequest = code === 6 && !job.error && (await stat(output).catch(() => null));
+    if ((code !== 0 || job.error) && !offRequest) {
       const timedOut = Boolean(job.error);
       job.state = "failed";
       job.error = job.error || plainFailure(tail);
@@ -392,12 +409,31 @@ async function startBuild({ request, token, account, device }) {
       job.stage = "done";
       job.line = "taking its picture";
       job.shot = await takeShot(output, shotPath);
+      // The engine's own record of the build: what the app asks the
+      // person for (the done card shows it, as Studio does on a desktop)
+      // and, when the app is not what was asked, the reason.
+      let verdict = null;
+      let asks = [];
+      try {
+        const written = JSON.parse(await readFile(transcript, "utf8"));
+        asks = Array.isArray(written.requested_permissions)
+          ? written.requested_permissions.map((p) => (typeof p === "string" ? p : p.cap || p.capability || "")).filter(Boolean)
+          : [];
+        if (offRequest) {
+          verdict = String(written.verdict || "").replace(/^built a working, permission-gated \.krate, but it does not serve the request: ?/, "").trim();
+        }
+      } catch (e) {}
+      if (offRequest) job.line = "built, but it is not what you asked for";
       job.result = {
         id,
-        name: prettyName(request),
+        name: revise ? revise.name : prettyName(request),
         size: prettySize(info.size),
-        asks: [],
+        asks,
         shot: job.shot,
+        // "off-request": the engine's verdict that the app does not serve
+        // the request, with its reason; null when the app was accepted.
+        verdict: offRequest ? "off-request" : null,
+        verdict_detail: verdict || null,
         // Held in memory and handed over on download. The file is the
         // product; we are not its host.
         bytes,
@@ -410,9 +446,11 @@ async function startBuild({ request, token, account, device }) {
       await persistResultBytes(job);
       await persistJob(job);
       await audit({ action: "done", account, job: job.id });
-      // Only a build that produced a file counts against the allowance:
-      // "made" is the one outcome that consumes the case's funding.
-      await caseAttempt(token, device, job.caseId, "made");
+      // Only a build that produced a file the engine accepted counts
+      // against the allowance: "made" is the one outcome that consumes the
+      // case's funding. An app that is not what was asked is recorded as
+      // "off-request" and the case stays open for the change that fixes it.
+      await caseAttempt(token, device, job.caseId, offRequest ? "off-request" : "made", verdict || "");
     } catch (err) {
       job.state = "failed";
       job.error = "The app was made but could not be read back.";
@@ -424,6 +462,32 @@ async function startBuild({ request, token, account, device }) {
   });
 
   return job;
+}
+
+/* `krate plan <request>`: the engine's own pre-build answer, as JSON text.
+ * Bounded, because a model that never answers must not hold the request
+ * open; and one answer at a time is plenty. */
+async function planRequest(request) {
+  return new Promise((resolve) => {
+    let out = "";
+    let err = "";
+    const proc = spawn(KRATE, ["plan", request, "--agent", AGENT], { env: { ...process.env } });
+    const killer = setTimeout(() => { try { proc.kill("SIGKILL"); } catch (e) {} }, PLAN_TIMEOUT_MS);
+    proc.stdout.on("data", (b) => { out += b.toString(); });
+    proc.stderr.on("data", (b) => { err = (err + b.toString()).slice(-2000); });
+    proc.on("error", (e) => { clearTimeout(killer); resolve({ ok: false, message: `could not run the engine: ${e.message}` }); });
+    proc.on("close", (code) => {
+      clearTimeout(killer);
+      const text = out.trim();
+      if (code !== 0 || !text) {
+        return resolve({ ok: false, message: plainFailure(err || "the plan step failed") });
+      }
+      try { JSON.parse(text); } catch (e) {
+        return resolve({ ok: false, message: "the plan step answered with something that is not a plan" });
+      }
+      resolve({ ok: true, text });
+    });
+  });
 }
 
 /* Run the finished app once, headless, and keep the frame. A build with no
@@ -615,6 +679,62 @@ const server = createServer(async (req, res) => {
       return json(res, 200, { id: job.id });
     }
 
+    // The conversation before the build: the engine's `plan` step, which
+    // answers with up to three questions or a one-paragraph plan and never
+    // builds anything. It costs the model one short answer and consumes no
+    // allowance: asking is not making.
+    if (req.method === "POST" && url.pathname === "/plan") {
+      const body = await readBody(req);
+      const request = String(body.request || "").trim();
+      if (!request) return send(res, 400, "Say what to make.");
+      if (request.length > 2000) return send(res, 400, "That is longer than we can work from.");
+      const off = authoringOff();
+      if (off) return json(res, 503, { wall: true, download: true, message: off });
+      const account = await resolveAccount(token);
+      if (!account) return send(res, 401, "Sign in first.");
+      const answer = await planRequest(request);
+      if (!answer.ok) return send(res, 502, answer.message);
+      res.statusCode = 200;
+      res.setHeader("content-type", "application/json");
+      return res.end(answer.text);
+    }
+
+    if (req.method === "POST" && url.pathname.endsWith("/revise") && url.pathname.startsWith("/build/")) {
+      const id = url.pathname.split("/")[2];
+      const body = await readBody(req);
+      const change = String(body.change || "").trim();
+      const device = String(body.device || "").trim();
+      if (!change) return send(res, 400, "Say what to change.");
+      if (change.length > 2000) return send(res, 400, "That is longer than we can work from.");
+      const off = authoringOff();
+      if (off) return json(res, 503, { wall: true, download: true, message: off });
+      const account = await resolveAccount(token);
+      if (!account) return send(res, 401, "Sign in first.");
+      const job = jobs.get(id);
+      if (!job || job.account !== account) {
+        if (job) await audit({ action: "denied", account, job: id });
+        return send(res, 404, "no such build");
+      }
+      if (job.state === "expired") return send(res, 404, job.error);
+      if (job.state !== "done" || !job.result) return send(res, 409, "Make the app first; a change starts from a finished one.");
+      const bytes = await resultBytes(job);
+      if (!bytes) return send(res, 404, "not ready");
+      if (activeByAccount.has(account)) {
+        return send(res, 429, "One app is already being made. It will be a few minutes.");
+      }
+      // The source the change starts from is the file that was made -- the
+      // one the person could have downloaded -- copied into the new job's
+      // own directory so nothing edits a finished result in place.
+      const sourceDir = await mkdtemp(join(tmpdir(), "krate-revise-"));
+      const source = join(sourceDir, "app.krate");
+      await writeFile(source, bytes);
+      const next = await startBuild({
+        request: job.request, token, account, device,
+        revise: { parentId: id, source, change, caseId: job.caseId, name: job.result.name },
+      });
+      return json(res, 200, { id: next.id, parent: id });
+    }
+
     if (req.method === "GET" && url.pathname.startsWith("/build/")) {
       const [, , id, action] = url.pathname.split("/");
       await expireOldResults();
@@ -652,12 +772,21 @@ const server = createServer(async (req, res) => {
         stage: job.stage,
         line: job.line,
         shot: job.shot,
+        parent: job.parent || null,
         error: job.error,
         result: job.result && {
           id: job.result.id,
           name: job.result.name,
           size: job.result.size,
           asks: job.result.asks,
+          verdict: job.result.verdict || null,
+          verdict_detail: job.result.verdict_detail || null,
+          // Where the file is. The page fetches it with the same sign-in
+          // (the endpoint reads the bearer token, so a bare link cannot),
+          // and hands the bytes to the browser as a download. The two
+          // surfaces used to read this field and it was never here, so
+          // neither could ever download an app.
+          download: `/build/${job.id}/file`,
           shot: job.result.shot,
           download: `/build/${job.id}/file`,
         },

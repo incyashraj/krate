@@ -62,18 +62,47 @@ async function fakeKrate(dir) {
     bin,
     `#!/bin/sh
 # create <request> --output <path> --agent <agent> | run <bundle> --shoot ...
-if [ "$1" = "create" ]; then
-  case "$*" in *FAIL*) echo "the engine fell over" >&2; exit 1;; esac
+# plan <request> --agent <agent> | revise <bundle> <change> --agent <agent> --output <path>
+if [ "$1" = "plan" ]; then
+  case "$*" in *FAIL*) echo "no plan today" >&2; exit 1;; esac
+  echo '{"plan":"a small notes app that saves locally","needs":["store.kv"]}'
+  exit 0
+fi
+if [ "$1" = "revise" ]; then
+  src="$2"
   out=""
   prev=""
   for a in "$@"; do
     if [ "$prev" = "--output" ]; then out="$a"; fi
     prev="$a"
   done
+  echo "reading the app"
+  sleep 0.3
+  echo "==> packing"
+  printf '%s-revised' "$(cat "$src")" > "$out"
+  exit 0
+fi
+if [ "$1" = "create" ]; then
+  case "$*" in *FAIL*) echo "the engine fell over" >&2; exit 1;; esac
+  out=""
+  transcript=""
+  prev=""
+  for a in "$@"; do
+    if [ "$prev" = "--output" ]; then out="$a"; fi
+    if [ "$prev" = "--transcript" ]; then transcript="$a"; fi
+    prev="$a"
+  done
   echo "reading what krate can do"
   sleep 0.4
   echo "==> packing"
   printf 'not-a-real-bundle' > "$out"
+  [ -n "$transcript" ] && printf '{"ok":true,"requested_permissions":["ui.window:create","store.kv"],"verdict":"authored a working, permission-gated .krate that serves the request"}' > "$transcript"
+  # OFFREQ: the app builds and runs, and the engine's request verdict says
+  # it is not what was asked -- exit 6, the file kept, the verdict written.
+  case "$*" in *OFFREQ*)
+    [ -n "$transcript" ] && printf '{"ok":false,"verdict":"built a working, permission-gated .krate, but it does not serve the request: asked for a timer, built the starter"}' > "$transcript"
+    exit 6;;
+  esac
   exit 0
 fi
 # the screenshot run: fail quietly, a build with no picture is still a build
@@ -210,6 +239,10 @@ await until(async () => {
 const file = await get(`/build/${jobId}/file`, asAlice);
 assert.strictEqual(file.status, 200, "the owner downloads");
 assert.strictEqual(file.body, "not-a-real-bundle", "and gets the actual bytes");
+const doneStatus = JSON.parse((await get(`/build/${jobId}`, asAlice)).body);
+assert.deepStrictEqual(doneStatus.result.asks, ["ui.window:create", "store.kv"], "what the app asks for comes from the engine's own record");
+assert.strictEqual(doneStatus.result.verdict, null, "an accepted app carries no verdict against it");
+assert.strictEqual(doneStatus.result.download, `/build/${jobId}/file`, "the status says where the file is");
 
 // Stop on a finished job: idempotent, truthful, twice.
 for (const round of [1, 2]) {
@@ -217,6 +250,57 @@ for (const round of [1, 2]) {
   assert.strictEqual(stop.status, 200, `stop round ${round}`);
   assert.strictEqual(JSON.parse(stop.body).state, "done", "stopping a finished build changes nothing");
 }
+
+/* ---- built, and not what was asked ----------------------------------- */
+// The engine's request verdict (exit 6) is a result with a verdict, not a
+// failure: the file is there, the page is told why it falls short, and the
+// funded case is not spent by it.
+const casesBeforeOff = caseCalls.filter((c) => c.path === "/case/attempt").length;
+const off = await post("/build", { request: "a timer OFFREQ" }, asAlice);
+assert.strictEqual(off.status, 200, `off-request start: ${off.body}`);
+const offId = JSON.parse(off.body).id;
+await until(async () => {
+  const s = JSON.parse((await get(`/build/${offId}`, asAlice)).body);
+  return s.state === "done" || s.state === "failed";
+});
+const offStatus = JSON.parse((await get(`/build/${offId}`, asAlice)).body);
+assert.strictEqual(offStatus.state, "done", `an off-request app is a result, not a failure: ${JSON.stringify(offStatus)}`);
+assert.strictEqual(offStatus.result.verdict, "off-request");
+assert.match(offStatus.result.verdict_detail, /asked for a timer/, "the engine's reason reaches the page");
+assert.strictEqual((await get(`/build/${offId}/file`, asAlice)).status, 200, "and the file is still theirs");
+const offAttempts = caseCalls.filter((c) => c.path === "/case/attempt").slice(casesBeforeOff);
+assert.deepStrictEqual(offAttempts.map((c) => c.body.outcome), ["off-request"], "recorded as off-request, never as made");
+
+/* ---- the plan, and a change -------------------------------------------- */
+// Planning is a conversation, not a build: it answers, and it consumes nothing.
+const casesBeforePlan = caseCalls.length;
+const planned = await post("/plan", { request: "a tiny notes app" }, asAlice);
+assert.strictEqual(planned.status, 200, `plan: ${planned.body}`);
+assert.strictEqual(JSON.parse(planned.body).plan, "a small notes app that saves locally", "the engine's own plan comes back as JSON");
+assert.strictEqual(caseCalls.length, casesBeforePlan, "a plan opens no case and records no attempt");
+assert.strictEqual((await post("/plan", { request: "x" })).status, 401, "a plan needs a sign-in");
+const noPlan = await post("/plan", { request: "please FAIL" }, asAlice);
+assert.strictEqual(noPlan.status, 502, `a failed plan is an error, not a plan: ${noPlan.body}`);
+
+// A change starts from the finished app, inside the same funded case, and
+// only its owner can ask for it.
+assert.strictEqual((await post(`/build/${jobId}/revise`, { change: "make it blue" }, asBob)).status, 404, "another account cannot revise it");
+assert.strictEqual((await post(`/build/${"0".repeat(32)}/revise`, { change: "x" }, asAlice)).status, 404, "a guessed id cannot be revised");
+const revised = await post(`/build/${jobId}/revise`, { change: "make the button blue" }, asAlice);
+assert.strictEqual(revised.status, 200, `revise: ${revised.body}`);
+const revisedId = JSON.parse(revised.body).id;
+assert.match(revisedId, /^[0-9a-f]{32}$/);
+assert.strictEqual(JSON.parse(revised.body).parent, jobId, "the change names the app it starts from");
+assert.strictEqual((await post(`/build/${revisedId}/revise`, { change: "again" }, asAlice)).status, 409, "a change cannot start from an unfinished one");
+await until(async () => JSON.parse((await get(`/build/${revisedId}`, asAlice)).body).state === "done");
+const revisedStatus = JSON.parse((await get(`/build/${revisedId}`, asAlice)).body);
+assert.strictEqual(revisedStatus.parent, jobId, "the status carries the parent");
+const revisedFile = await get(`/build/${revisedId}/file`, asAlice);
+assert.strictEqual(revisedFile.body, "not-a-real-bundle-revised", "the change was made to the app that was made");
+const firstCase = caseCalls.find((c) => c.path === "/case/attempt").body.id;
+const revisedAttempt = caseCalls.filter((c) => c.path === "/case/attempt").pop().body;
+assert.strictEqual(revisedAttempt.id, firstCase, `the change stays inside the case the app was made in: ${JSON.stringify(revisedAttempt)}`);
+assert.strictEqual(caseCalls.filter((c) => c.path === "/case/open").length, 2, "a change opens no new case (only the two apps did)");
 
 /* ---- restart ------------------------------------------------------------- */
 // Alice starts another build and the machine dies mid-build.

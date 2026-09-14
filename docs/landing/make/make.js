@@ -10,6 +10,11 @@
  */
 
 const HUB = "https://hub.krate.tech";
+/* The build service is its own machine (a Fly box, not the worker): a
+ * build is minutes of CPU that no request-shaped runtime can hold. The
+ * page used to send /build to the hub, which has no such route, so the
+ * live page could never make anything -- only the mock answered. */
+const BUILDER = window.KRATE_BUILDER || "https://build.krate.tech";
 const $ = (id) => document.getElementById(id);
 
 const state = {
@@ -55,6 +60,20 @@ async function hub(path, opts = {}) {
   if (state.token) headers.authorization = `Bearer ${state.token}`;
   if (opts.body && !headers["content-type"]) headers["content-type"] = "application/json";
   const res = await fetch(HUB + path, { ...opts, headers });
+  if (!res.ok) {
+    const err = new Error(await res.text().catch(() => res.statusText));
+    err.status = res.status;
+    throw err;
+  }
+  const type = res.headers.get("content-type") || "";
+  return type.includes("json") ? res.json() : res.text();
+}
+
+async function builder(path, opts = {}) {
+  const headers = { ...(opts.headers || {}) };
+  if (state.token) headers.authorization = `Bearer ${state.token}`;
+  if (opts.body && !headers["content-type"]) headers["content-type"] = "application/json";
+  const res = await fetch(BUILDER + path, { ...opts, headers });
   if (!res.ok) {
     const err = new Error(await res.text().catch(() => res.statusText));
     err.status = res.status;
@@ -145,7 +164,7 @@ async function startMake() {
   resetWork();
 
   try {
-    const job = await hub("/build", {
+    const job = await builder("/build", {
       method: "POST",
       body: JSON.stringify({ request }),
     });
@@ -205,7 +224,7 @@ async function poll() {
   if (!state.job) return;
   let job;
   try {
-    job = await hub(`/build/${state.job}`);
+    job = await builder(`/build/${state.job}`);
   } catch (err) {
     return failed(String(err.message || err));
   }
@@ -270,7 +289,7 @@ function failed(message) {
 
 function stopBuild() {
   clearInterval(thinkTimer);
-  if (state.job) hub(`/build/${state.job}/stop`, { method: "POST" }).catch(() => {});
+  if (state.job) builder(`/build/${state.job}/stop`, { method: "POST" }).catch(() => {});
   state.job = null;
   show("viewAsk");
 }
@@ -475,8 +494,27 @@ function boot() {
     b.setSelectionRange(b.value.length, b.value.length);
     b.dispatchEvent(new Event("input"));
   };
-  $("download").onclick = () => {
-    if (state.result && state.result.download) location.href = state.result.download;
+  $("download").onclick = async () => {
+    // The file endpoint reads the sign-in from a header, so a plain link
+    // answers 401 and this button did nothing for as long as it existed.
+    // Fetch with the token and hand the bytes over as a download.
+    if (!(state.result && state.result.download)) return;
+    try {
+      const headers = {};
+      if (state.token) headers.authorization = `Bearer ${state.token}`;
+      const res = await fetch(BUILDER + state.result.download, { headers });
+      if (!res.ok) throw new Error(await res.text());
+      const blob = await res.blob();
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `${(state.result.name || "app").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.krate`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(link.href), 60_000);
+    } catch (err) {
+      console.warn("download failed:", err);
+    }
   };
   $("sendLink").onclick = async () => {
     if (!state.result) return;
@@ -487,11 +525,23 @@ function boot() {
     }
     $("doneNote").textContent = "Publishing…";
     try {
-      const out = await hub("/publish/from-build", {
+      // The hub's publish door takes the bundle bytes, the same way `krate
+      // publish` sends them. There was never a "publish this build" route:
+      // the file lives on the build service, so it is fetched from there
+      // with the sign-in and posted to the hub with the listing's words.
+      const headers = {};
+      if (state.token) headers.authorization = `Bearer ${state.token}`;
+      const got = await fetch(BUILDER + state.result.download, { headers });
+      if (!got.ok) throw new Error((await got.text()) || "the file is not there any more; make it again");
+      const bytes = await got.arrayBuffer();
+      const res = await fetch(HUB + "/publish", {
         method: "POST",
-        body: JSON.stringify({ id: state.result.id }),
+        headers: { ...headers, "content-type": "application/octet-stream", "x-krate-name": state.result.name || "Untitled app" },
+        body: bytes,
       });
-      state.result.share = out.url;
+      if (!res.ok) throw new Error((await res.text()) || res.statusText);
+      const out = await res.json();
+      state.result.share = out.full_url || out.url;
       await copy(out.url);
       $("doneNote").textContent = "Link copied. Anyone who opens it gets the app.";
     } catch (err) {

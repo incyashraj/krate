@@ -100,6 +100,151 @@ function refuse(message) {
   return Promise.reject(new Error(message));
 }
 
+/* Hand the finished app to the browser as a download.
+ *
+ * The build service reads the sign-in from a header, so a plain link to the
+ * file answers 401 -- both surfaces used to set `location.href` to it and
+ * nothing happened. The bytes are fetched with the token and handed over
+ * as an object URL under the app's own file name. */
+async function downloadApp(url, fileName) {
+  const headers = {};
+  if (bridge.token) headers.authorization = `Bearer ${bridge.token}`;
+  const res = await fetch(url, { headers });
+  if (!res.ok) throw new Error((await res.text().catch(() => "")) || "the file is not there any more; make it again");
+  const blob = await res.blob();
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = fileName || "app.krate";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(link.href), 60_000);
+}
+
+/* The current app's URL and name, from the session Studio is showing or
+ * the last build this page watched. */
+function currentWebApp(path) {
+  const url = String(path || (bridge.jobResult && `${BUILDER}${bridge.jobResult.download}`) || "");
+  if (!/^https?:/.test(url)) return null;
+  const name = (bridge.jobResult && bridge.jobResult.name) ? `${bridge.jobResult.name}.krate` : "app.krate";
+  return { url, name };
+}
+
+/* Publish an app the build service holds: the same door `krate publish`
+ * uses, fed the same way. The hub wants the bundle bytes as the body and
+ * the listing's words in headers -- the bridge used to post a JSON object
+ * of file paths, which the hub read as a bundle and refused. The bytes are
+ * fetched from the build service with the sign-in, then posted. A picture
+ * of the app (the build's own shot, a data URL) goes up beside it the way
+ * the CLI's --shot does. Resolves with the app's public URL. */
+async function publishWebApp({ path, name, description, shot, unlisted } = {}, token) {
+  const app = currentWebApp(path);
+  if (!app) throw new Error("This app is not on the build service; publish it from Studio on your computer.");
+  const headers = {};
+  if (token) headers.authorization = `Bearer ${token}`;
+  const got = await fetch(app.url, { headers });
+  if (!got.ok) throw new Error((await got.text().catch(() => "")) || "the file is not there any more; make it again");
+  const bytes = await got.arrayBuffer();
+  const publishHeaders = { ...headers, "content-type": "application/octet-stream" };
+  const title = String(name || app.name.replace(/\.krate$/, "") || "").trim();
+  if (title) publishHeaders["x-krate-name"] = title;
+  if (description) publishHeaders["x-krate-description"] = String(description).slice(0, 500);
+  if (unlisted) publishHeaders["x-krate-unlisted"] = "1";
+  const res = await fetch(`${HUB}/publish`, { method: "POST", headers: publishHeaders, body: bytes });
+  if (!res.ok) throw new Error((await res.text().catch(() => "")) || res.statusText);
+  const out = await res.json();
+  // The picture is a courtesy: a listing without one is still published.
+  if (out.id && shot && /^data:image\/png;base64,/.test(String(shot))) {
+    try {
+      const png = Uint8Array.from(atob(String(shot).split(",")[1]), (c) => c.charCodeAt(0));
+      await fetch(`${HUB}/shot/${out.id}`, { method: "POST", headers: { ...headers, "content-type": "image/png" }, body: png });
+    } catch (e) {}
+  }
+  return out.full_url || out.url;
+}
+
+/* The build id inside an app's URL, `${BUILDER}/build/<id>/file`. */
+function jobIdOf(path) {
+  const m = String(path || "").match(/\/build\/([0-9a-f]{32})\/file$/);
+  return m ? m[1] : null;
+}
+
+/* Watch one job on the build service until it ends, feeding Studio's own
+ * build card as it goes and resolving with the shape `create_app` returns
+ * on a desktop. Studio's UI drives its stages by reading the engine's
+ * lines (`onEngineLine`, the same handler the desktop feeds from its
+ * "engine-line" event), so feeding it those lines makes the same card
+ * move the same way; the shot goes through the door the desktop's
+ * "build-shot" event uses. */
+function watchJob(jobId, request, sessionId) {
+  bridge.job = jobId;
+  bridge.jobResult = null;
+  let lastLine = "";
+  let lastShot = "";
+  return new Promise((resolve, reject) => {
+    const tick = async () => {
+      let job;
+      try {
+        job = await builder(`/build/${jobId}`);
+      } catch (err) {
+        clearInterval(bridge.poll);
+        return reject(err);
+      }
+      if (job.line && job.line !== lastLine && typeof window.onEngineLine === "function") {
+        lastLine = job.line;
+        window.onEngineLine(job.line);
+      }
+      if (job.shot && job.shot !== lastShot && typeof window.onBuildShot === "function") {
+        lastShot = job.shot;
+        window.onBuildShot(job.shot);
+      }
+      if (job.state === "done") {
+        clearInterval(bridge.poll);
+        bridge.jobResult = job.result;
+        const result = {
+          path: `${BUILDER}${job.result.download}`,
+          name: `${job.result.name}.krate`,
+          size: job.result.size,
+          asks: job.result.asks || [],
+          shot: job.result.shot || "",
+          // Made on the web: the desktop fetches the file from this URL
+          // with the same sign-in before it opens or changes the app.
+          web: true,
+        };
+        if (sessionId) {
+          // The session saved before the build now carries the app, so the
+          // wall's promise ("this session is waiting in Studio") is kept
+          // with the file, not only the sentence they typed. The record is
+          // updated in place: what Studio's UI wrote there (messages, the
+          // build count, the plan) stays, and only the result is new.
+          const existing = localSessions().find((s) => s.id === sessionId);
+          const saved = existing
+            ? { ...existing, updated: Date.now(), result }
+            : {
+              id: sessionId,
+              title: (request || "").slice(0, 80),
+              created: Date.now(),
+              updated: Date.now(),
+              messages: [
+                { who: "YOU", body: request || "" },
+                { who: "KRATE", body: `Made ${result.name} (${result.size}).` },
+              ],
+              result,
+            };
+          COMMANDS.session_save({ session: saved }).catch(() => {});
+        }
+        return resolve(result);
+      }
+      if (job.state === "failed" || job.state === "stopped") {
+        clearInterval(bridge.poll);
+        return reject(new Error(job.error || "that build stopped"));
+      }
+    };
+    bridge.poll = setInterval(tick, 1500);
+    tick();
+  });
+}
+
 const COMMANDS = {
   /* ---- who they are ---------------------------------------------------- */
 
@@ -179,7 +324,7 @@ const COMMANDS = {
    * builder, which parses the same engine output Studio parses locally.
    */
 
-  async create_app({ request } = {}) {
+  async create_app({ request, session } = {}) {
     // Nobody makes an app without an account: it is how the funded first
     // app is counted, and how the work belongs to someone. But the
     // sentence they just typed must survive the round trip -- being asked
@@ -193,17 +338,25 @@ const COMMANDS = {
     // The session is saved BEFORE the build starts, so the wall below has
     // something true to point at. Being told "your session is waiting in
     // Studio" and then finding nothing there is worse than no wall at all.
-    const sessionId = `web-${Date.now()}`;
-    await COMMANDS.session_save({
-      session: {
-        id: sessionId,
-        title: (request || "").slice(0, 80),
-        created: Date.now(),
-        updated: Date.now(),
-        messages: [{ who: "YOU", body: request || "" }],
-        result: null,
-      },
-    }).catch(() => {});
+    // Studio's UI names the session it is building in (`session`), and
+    // that record is the one that counts: it already holds the plan, the
+    // messages and the build count. The bridge used to write a second
+    // record of its own beside it, so every web build left a duplicate
+    // "Draft" in the sidebar, and a change made on the duplicate started
+    // its numbering again at v1.
+    const sessionId = session || `web-${Date.now()}`;
+    if (!localSessions().some((s) => s.id === sessionId)) {
+      await COMMANDS.session_save({
+        session: {
+          id: sessionId,
+          title: (request || "").slice(0, 80),
+          created: Date.now(),
+          updated: Date.now(),
+          messages: [{ who: "YOU", body: request || "" }],
+          result: null,
+        },
+      }).catch(() => {});
+    }
 
     let started;
     try {
@@ -226,44 +379,56 @@ const COMMANDS = {
       }
       throw err;
     }
-    bridge.job = started.id;
-    bridge.jobResult = null;
-
-    return new Promise((resolve, reject) => {
-      const tick = async () => {
-        let job;
-        try {
-          job = await builder(`/build/${bridge.job}`);
-        } catch (err) {
-          clearInterval(bridge.poll);
-          return reject(err);
-        }
-
-        // Studio's UI drives its stages by reading the engine's lines, so
-        // feeding it those lines makes the same card move the same way.
-        if (job.line && window.onBuildLine) window.onBuildLine(job.line);
-        if (job.shot && window.onBuildShot) window.onBuildShot(job.shot);
-
-        if (job.state === "done") {
-          clearInterval(bridge.poll);
-          bridge.jobResult = job.result;
-          return resolve({
-            path: `${BUILDER}${job.result.download}`,
-            name: `${job.result.name}.krate`,
-            size: job.result.size,
-            asks: job.result.asks || [],
-            shot: job.result.shot || "",
-          });
-        }
-        if (job.state === "failed" || job.state === "stopped") {
-          clearInterval(bridge.poll);
-          return reject(new Error(job.error || "that build stopped"));
-        }
-      };
-      bridge.poll = setInterval(tick, 1500);
-      tick();
-    });
+    return watchJob(started.id, request, sessionId);
   },
+
+  /* A change to the app they made, in the same funded case: the build
+   * service runs `krate revise` on the file it made, exactly as Studio on
+   * a desktop runs it on the file in your folder. The app's URL names the
+   * build it came from; the service checks that build is theirs. */
+  async revise_app({ path, change } = {}) {
+    if (!bridge.token) return refuse("Sign in to change your app.");
+    const id = jobIdOf(path);
+    if (!id) return refuse("This app was not made here, so it cannot be changed here. Open it in Studio on your computer.");
+    let started;
+    try {
+      started = await builder(`/build/${id}/revise`, {
+        method: "POST",
+        body: JSON.stringify({ change, device: deviceId() }),
+      });
+    } catch (err) {
+      const text = String((err && err.message) || err || "");
+      let parsed = null;
+      try { parsed = JSON.parse(text); } catch (_) {}
+      if (parsed && parsed.wall) {
+        const wall = new Error(parsed.message || "You have made your app.");
+        wall.wall = true;
+        wall.download = Boolean(parsed.download);
+        throw wall;
+      }
+      throw err;
+    }
+    return watchJob(started.id, change, null);
+  },
+
+  /* The conversation before a build: the engine's own `plan` step, on the
+   * build service, so the questions and the plan are the same ones Studio
+   * asks on a desktop. Attachments are not carried to the web yet, and the
+   * plan says so rather than pretending to have read them. */
+  async plan_request({ request, attachments } = {}) {
+    if (!bridge.token) return refuse("Sign in first.");
+    if (attachments && attachments.length) {
+      return refuse("Attaching files is coming to the web version; the plan is made from your words alone.");
+    }
+    const answer = await builder("/plan", {
+      method: "POST",
+      body: JSON.stringify({ request, device: deviceId() }),
+    });
+    // Studio's UI expects the engine's JSON as text, exactly as the
+    // desktop hands it over.
+    return typeof answer === "string" ? answer : JSON.stringify(answer);
+  },
+
 
   async build_alive() {
     return Boolean(bridge.job);
@@ -341,7 +506,11 @@ const COMMANDS = {
   /* ---- sharing ---------------------------------------------------------- */
 
   async publish(args = {}) {
-    return hub("/publish", { method: "POST", body: JSON.stringify(args) });
+    if (!bridge.token) return refuse("Sign in to publish.");
+    // Studio hands over the picture it chose as a path; on the web that
+    // path is the build's own shot (a data URL) or nothing.
+    const shot = args.shot || (bridge.jobResult && bridge.jobResult.shot) || "";
+    return publishWebApp({ ...args, shot }, bridge.token);
   },
 
   async open_external({ url } = {}) {
@@ -355,14 +524,20 @@ const COMMANDS = {
    * button that does nothing.
    */
 
-  open_app() {
-    return refuse("A browser cannot open the app itself. Download the file -- it opens on your Mac, Windows or Linux.");
+  /* Opening, on the web, is downloading: the file is the product, and it
+   * opens on the person's own computer. The button does the useful thing
+   * and then says where the app really runs. */
+  async open_app({ path } = {}) {
+    const app = currentWebApp(path);
+    if (!app) return refuse("A browser cannot open the app itself. Download the file -- it opens on your Mac, Windows or Linux.");
+    await downloadApp(app.url, app.name);
+    return refuse("Downloaded. Double-click the file on your Mac, Windows or Linux -- that is where the app really runs.");
   },
-  open_krate() {
-    return refuse("Download the file and double-click it. That is where an app really runs.");
+  async open_krate({ path } = {}) {
+    return COMMANDS.open_app({ path });
   },
-  autorun() {
-    return refuse("Download the file to run it.");
+  async autorun({ path } = {}) {
+    return COMMANDS.open_app({ path });
   },
   pick_folder() {
     return refuse("A browser chooses where downloads go, not this page.");
@@ -382,8 +557,25 @@ const COMMANDS = {
   make_wrap() {
     return refuse("The gift for a friend without Krate is made in Studio on your computer.");
   },
-  reveal() {
-    return refuse("Check your downloads folder.");
+  make_card() {
+    return refuse("The card is made in Studio on your computer -- download the file and open it there. Send a link works from here.");
+  },
+  share_file() {
+    return refuse("Download the file; sharing it from this page is not built yet.");
+  },
+  async read_image({ path } = {}) {
+    // A picture that is already a URL is its own data.
+    if (/^(https?:|data:)/.test(String(path || ""))) return path;
+    return refuse("That picture lives on your computer, not on this page.");
+  },
+  async session_source_dir() {
+    return refuse("The source travels inside the .krate; download it and open it in Studio to edit the files by hand.");
+  },
+  async reveal({ path } = {}) {
+    const app = currentWebApp(path);
+    if (!app) return refuse("Check your downloads folder.");
+    await downloadApp(app.url, app.name);
+    return refuse("Downloaded -- check your downloads folder.");
   },
 
   /* ---- the quiet ones ---------------------------------------------------
@@ -400,6 +592,9 @@ const COMMANDS = {
   async settings_get() { return { out_dir: "", agent: "krate" }; },
   async settings_set() {},
   async studio_version() { return "web"; },
+  // The engine is the build service's, and the service is never older than
+  // the page that was deployed with it.
+  async engine_status() { return { path: BUILDER, version: "web", studio_version: "web", lags: false }; },
   async build_progress() {},
   async dbg_log() {},
   async usage_flush() {},
@@ -479,6 +674,14 @@ function speakWeb() {
   // entry and no answer. Offering it would be a dead end dressed as help.
   const switchAi = document.getElementById("switchAiBtn");
   if (switchAi) switchAi.remove();
+  // Studio checks GitHub for a newer desktop release and offers the
+  // download; in a tab there is nothing to update, and "Update to v0.3.0"
+  // on a website is a lie about a file that does not exist here. The check
+  // itself runs in Studio's code; the chip is simply never shown.
+  for (const id of ["updateChip", "dockBadge"]) {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+  }
   // Studio paints its home a beat after boot, so the box may not exist
   // yet when this first runs.
   restorePending();

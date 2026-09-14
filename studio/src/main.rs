@@ -611,25 +611,113 @@ async fn sessions_pull() -> Result<usize, String> {
     .unwrap_or_default();
 
     let mut merged = 0usize;
+    let out_dir = PathBuf::from(settings_get().out_dir);
     for value in pulled {
-        let Ok(remote) = serde_json::from_value::<Session>(value) else {
-            // One unreadable record must not stop the rest arriving.
+        let Ok(mut remote) = serde_json::from_value::<Session>(value) else {
             continue;
         };
-        // Only take it when it is genuinely newer. A stale copy from the hub
-        // overwriting work done here since is the one way this could lose
-        // something, so it is the one case explicitly ruled out.
         let local_is_newer = sessions_list()
             .iter()
             .any(|s| s.id == remote.id && s.updated >= remote.updated);
         if local_is_newer {
             continue;
         }
+        // An app made on the web arrives as a URL on the build service.
+        // Fetch it into the person's apps folder now, with the same
+        // sign-in, so "carry on editing in Studio" is a file on disk and
+        // every button that needs a local path (open, change, send) works
+        // on it. A fetch that fails leaves the session as it came: the
+        // sentence and the picture are still theirs, and the next pull
+        // tries again.
+        if let Some(result) = remote.result.as_mut() {
+            let token = hub_token().unwrap_or_default();
+            let _ = import_web_result(result, &out_dir, |url| fetch_with_token(url, &token));
+        }
         if session_save(remote).is_ok() {
             merged += 1;
         }
     }
     Ok(merged)
+}
+
+/// GET a URL with the hub's bearer token, the way the build service expects
+/// it (a web-made app is readable only by the account that made it).
+fn fetch_with_token(url: &str, token: &str) -> Result<Vec<u8>, String> {
+    let response = ureq::get(url)
+        .set("Authorization", &format!("Bearer {token}"))
+        .timeout(std::time::Duration::from_secs(60))
+        .call()
+        .map_err(|err| err.to_string())?;
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(&mut response.into_reader(), &mut bytes)
+        .map_err(|err| err.to_string())?;
+    Ok(bytes)
+}
+
+/// Turn a web-made result (`web: true`, `path` an https URL) into a local
+/// one: the file is fetched into `out_dir` under the app's own name, `path`
+/// becomes that file, `web` is cleared, and `imported_from` keeps the URL.
+/// A result that is already local, or not marked web, is left alone. Only a
+/// whole download lands: bytes go to a staging name and are renamed into
+/// place, so a broken fetch never leaves half an app where a whole one
+/// should be. Returns whether the result changed.
+fn import_web_result<F>(
+    result: &mut serde_json::Value,
+    out_dir: &Path,
+    fetch: F,
+) -> Result<bool, String>
+where
+    F: Fn(&str) -> Result<Vec<u8>, String>,
+{
+    let is_web = result.get("web").and_then(|v| v.as_bool()).unwrap_or(false);
+    let url = result
+        .get("path")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    if !is_web || !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Ok(false);
+    }
+    let name = result
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("app.krate");
+    let safe: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let file_name = if safe.ends_with(".krate") {
+        safe
+    } else {
+        format!("{safe}.krate")
+    };
+    std::fs::create_dir_all(out_dir).map_err(|err| err.to_string())?;
+    let bytes = fetch(&url)?;
+    if bytes.is_empty() {
+        return Err("the build service returned an empty file".to_string());
+    }
+    let destination = out_dir.join(&file_name);
+    let staging = out_dir.join(format!(".{file_name}.{}.partial", std::process::id()));
+    std::fs::write(&staging, &bytes).map_err(|err| err.to_string())?;
+    std::fs::rename(&staging, &destination).map_err(|err| {
+        let _ = std::fs::remove_file(&staging);
+        err.to_string()
+    })?;
+    if let Some(map) = result.as_object_mut() {
+        map.insert(
+            "path".to_string(),
+            serde_json::Value::String(destination.display().to_string()),
+        );
+        map.insert("web".to_string(), serde_json::Value::Bool(false));
+        map.insert("imported_from".to_string(), serde_json::Value::String(url));
+    }
+    Ok(true)
 }
 
 #[tauri::command]
@@ -4730,6 +4818,71 @@ mod tests {
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
             .expect("chmod stub");
         path
+    }
+
+    /// An app made on the web comes home as a file: the session's URL
+    /// result is fetched into the apps folder under the app's own name,
+    /// whole or not at all, and the session then points at the file. A
+    /// local result, a result not marked web, and a failed fetch all leave
+    /// the session as it was.
+    #[test]
+    fn a_web_made_app_is_fetched_into_the_apps_folder_when_the_session_arrives() {
+        let dir = std::env::temp_dir().join(format!("krate-web-import-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut result = serde_json::json!({
+            "path": "https://build.krate.tech/build/0123456789abcdef0123456789abcdef/file",
+            "name": "Tip Calculator.krate",
+            "size": "27 KB",
+            "web": true,
+        });
+        let fetched = std::cell::Cell::new(0);
+        let changed = super::import_web_result(&mut result, &dir, |url| {
+            fetched.set(fetched.get() + 1);
+            assert!(
+                url.ends_with("/file"),
+                "the URL is fetched as recorded: {url}"
+            );
+            Ok(b"PK\x03\x04 pretend bundle".to_vec())
+        })
+        .expect("import");
+        assert!(changed);
+        assert_eq!(fetched.get(), 1);
+        let path = result["path"].as_str().unwrap().to_string();
+        assert!(path.starts_with(dir.to_str().unwrap()), "{path}");
+        assert!(
+            path.ends_with("Tip-Calculator.krate"),
+            "the app's own name, made safe: {path}"
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), b"PK\x03\x04 pretend bundle");
+        assert_eq!(result["web"], false);
+        assert!(result["imported_from"]
+            .as_str()
+            .unwrap()
+            .starts_with("https://"));
+        assert!(
+            std::fs::read_dir(&dir).unwrap().all(|e| !e
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .ends_with(".partial")),
+            "no staging litter"
+        );
+
+        // Already local: untouched, nothing fetched.
+        let mut local =
+            serde_json::json!({ "path": "/Users/me/Krate Apps/notes.krate", "web": false });
+        let changed =
+            super::import_web_result(&mut local, &dir, |_| panic!("must not fetch")).unwrap();
+        assert!(!changed);
+
+        // A failed fetch leaves the URL in place, and no file behind.
+        let mut broken = serde_json::json!({ "path": "https://build.krate.tech/build/x/file", "name": "Gone.krate", "web": true });
+        let err = super::import_web_result(&mut broken, &dir, |_| Err("expired".to_string()))
+            .unwrap_err();
+        assert!(err.contains("expired"));
+        assert_eq!(broken["path"], "https://build.krate.tech/build/x/file");
+        assert!(!dir.join("Gone.krate").exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A Studio driving an engine older than itself says so (K-171); a
