@@ -177,11 +177,22 @@ img { max-width: 100%; display: block; }
 .btn > span { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 8px; pointer-events: none; }
 .btn-primary { background: #fff; color: #0a0a0a; box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
 .btn-primary:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
-.btn-make { background: rgba(139, 92, 246, 0.16); color: #fff;
-  border: 1px solid rgba(167, 139, 250, 0.45); border-radius: 12px; }
-.btn-make:hover { background: rgba(139, 92, 246, 0.26);
-  box-shadow: 0 4px 18px rgba(124, 58, 237, 0.35); }
-.btn-make[data-pressed="true"] { border-radius: 20px; }
+/* The download, demoted.
+ *
+ * Making an app is the product; downloading a tool is how somebody does
+ * more of it later. So the hero leads with Make in the white primary, and
+ * the download sits on the quiet line under it -- the same split button,
+ * every id and handler intact, wearing a smaller and softer skin. */
+.dlLine { display: flex; align-items: center; justify-content: center;
+  gap: 10px; flex-wrap: wrap; }
+.dlLine .split { transform: none; }
+.dlLine .btn { padding: 6px 12px; font-size: 12.5px; }
+.dlLine .btn svg { width: 14px; height: 14px; }
+.dlLine .split .more { padding: 6px 8px; }
+.dlLine .btn-primary { background: rgba(255,255,255,0.10); color: #d4d4d8;
+  box-shadow: none; border: 1px solid rgba(255,255,255,0.14); }
+.dlLine .btn-primary:hover { background: rgba(255,255,255,0.16); color: #fff;
+  box-shadow: none; }
 .btn-ghost { background: transparent; color: #fff; border-radius: 12px; }
 .btn-ghost:hover { background: rgba(255,255,255,0.1); }
 .btn-ghost[data-pressed="true"] { border-radius: 20px; }
@@ -650,26 +661,9 @@ img { max-width: 100%; display: block; }
       from the same file, and cannot touch anything it did not declare.</p>
       <div class="heroCtas" id="heroCtas">
         <div class="ctaRow">
-          <div class="split">
-            <button class="btn btn-primary main" id="dlMain" data-pressed="false">
-              <span><svg id="dlOsIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg><span id="dlLabel">Download for macOS</span></span>
-              <span class="hoverco"></span><span class="ripple"></span>
-            </button>
-            <button class="btn btn-primary more" id="dlMore" data-pressed="false" data-open="false" aria-label="Download for other platforms">
-              <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
-              <span class="hoverco"></span><span class="ripple"></span>
-            </button>
-            <div class="dlmenu" id="dlMenu">
-              <a data-dl="krate-studio|universal|dmg" href="https://github.com/incyashraj/krate/releases/latest"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>macOS -- universal</a>
-              <a data-dl="krate-studio|windows-x64-setup|exe" href="https://github.com/incyashraj/krate/releases/latest"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.55 10.5 4.5v7H3v-5.95zM3 18.45V12.5h7.5v7L3 18.45zM11.5 4.36 21 3v8.5h-9.5v-7.14zM21 12.5V21l-9.5-1.36V12.5H21z"/></svg>Windows -- x64</a>
-              <a data-dl="krate-studio|linux-x86_64|AppImage" href="https://github.com/incyashraj/krate/releases/latest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 15c.5-2.5.5-4.5 2-6m6 6c-.5-2.5-.5-4.5-2-6"/></svg>Linux -- x86_64</a>
-              <div class="sep"></div>
-              <a href="/studio/#get">All downloads &rarr;</a>
-            </div>
-          </div>
-          <a class="btn btn-make" id="makeBtn" data-pressed="false"
+          <a class="btn btn-primary" id="makeBtn" data-pressed="false"
              href="/login/?next=studio">
-            <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18"/></svg>Sign in and make an app</span>
+            <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>Make an app</span>
             <span class="hoverco"></span><span class="ripple"></span>
           </a>
           <a class="btn btn-ghost" id="srcBtn" data-pressed="false"
@@ -677,6 +671,25 @@ img { max-width: 100%; display: block; }
             <span><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>Source</span>
             <span class="hoverco"></span><span class="ripple"></span>
           </a>
+        </div>
+        <div class="secondDoor dlLine"><span>Want it on your machine?</span>
+            <div class="split">
+              <button class="btn btn-primary main" id="dlMain" data-pressed="false">
+                <span><svg id="dlOsIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg><span id="dlLabel">Download for macOS</span></span>
+                <span class="hoverco"></span><span class="ripple"></span>
+              </button>
+              <button class="btn btn-primary more" id="dlMore" data-pressed="false" data-open="false" aria-label="Download for other platforms">
+                <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
+                <span class="hoverco"></span><span class="ripple"></span>
+              </button>
+              <div class="dlmenu" id="dlMenu">
+                <a data-dl="krate-studio|universal|dmg" href="https://github.com/incyashraj/krate/releases/latest"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>macOS -- universal</a>
+                <a data-dl="krate-studio|windows-x64-setup|exe" href="https://github.com/incyashraj/krate/releases/latest"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.55 10.5 4.5v7H3v-5.95zM3 18.45V12.5h7.5v7L3 18.45zM11.5 4.36 21 3v8.5h-9.5v-7.14zM21 12.5V21l-9.5-1.36V12.5H21z"/></svg>Windows -- x64</a>
+                <a data-dl="krate-studio|linux-x86_64|AppImage" href="https://github.com/incyashraj/krate/releases/latest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 15c.5-2.5.5-4.5 2-6m6 6c-.5-2.5-.5-4.5-2-6"/></svg>Linux -- x86_64</a>
+                <div class="sep"></div>
+                <a href="/studio/#get">All downloads &rarr;</a>
+              </div>
+            </div>
         </div>
         <p class="secondDoor">Someone sent you a file?
         <a href="/open/">Here's how it opens.</a></p>
