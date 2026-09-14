@@ -6325,7 +6325,7 @@ fn every_reader_resolves_one_record_set_and_the_extension_namespace_holds() {
         match (ours.status.success(), theirs.status.success()) {
             (true, true) => {
                 let ours_json: serde_json::Value = serde_json::from_slice(&ours.stdout).unwrap();
-                for key in ["profile", "records", "extensions"] {
+                for key in ["profile", "records", "extensions", "closure"] {
                     assert_eq!(
                         ours_json[key], theirs_json[key],
                         "{what}: the two readers resolve a different {key} (1477)"
@@ -6664,6 +6664,201 @@ fn saved_data_exports_and_imports_to_the_app_it_came_from() {
     assert_eq!(
         std::fs::read(fourth.path().join(".krate/store/dev.krate.notes.kv")).unwrap(),
         b"what the person wrote"
+    );
+}
+
+/// A wasm binary with every `name` custom section removed, at the
+/// component level and inside each core module. Symbol names carry a hash
+/// of the crate's metadata, which includes WHERE a path dependency sits on
+/// disk, so a rebuild from a bundle differs from the original in exactly
+/// those sections and nowhere else (measured on krate-hello-gui: 456 bytes
+/// of mangled-symbol hashes, identical everywhere else).
+fn without_name_sections(bytes: &[u8]) -> Vec<u8> {
+    fn leb(bytes: &[u8], mut at: usize) -> (usize, usize) {
+        let (mut value, mut shift) = (0usize, 0u32);
+        loop {
+            let byte = bytes[at];
+            at += 1;
+            value |= ((byte & 0x7f) as usize) << shift;
+            shift += 7;
+            if byte < 0x80 {
+                return (value, at);
+            }
+        }
+    }
+    fn encode(mut n: usize, out: &mut Vec<u8>) {
+        loop {
+            let byte = (n & 0x7f) as u8;
+            n >>= 7;
+            if n == 0 {
+                out.push(byte);
+                return;
+            }
+            out.push(byte | 0x80);
+        }
+    }
+    fn strip(bytes: &[u8], nested: bool) -> Vec<u8> {
+        let mut out = bytes[..8].to_vec();
+        let mut at = 8;
+        while at < bytes.len() {
+            let id = bytes[at];
+            let (size, start) = leb(bytes, at + 1);
+            let payload = &bytes[start..start + size];
+            at = start + size;
+            if id == 0 {
+                let (len, name_at) = leb(payload, 0);
+                if &payload[name_at..name_at + len] == b"name" {
+                    continue;
+                }
+            }
+            let payload = if id == 1 && !nested && payload.starts_with(b"\0asm") {
+                strip(payload, true)
+            } else {
+                payload.to_vec()
+            };
+            out.push(id);
+            encode(payload.len(), &mut out);
+            out.extend_from_slice(&payload);
+        }
+        out
+    }
+    strip(bytes, false)
+}
+
+/// An editable bundle carries its whole closure, and rebuilds from it on
+/// another machine (CP1: "Editable bundles carry the full closure: source,
+/// Cargo.lock, bindings, toolchain identity, SDK -- and provably rebuild on
+/// another machine"; K-339, K-340).
+///
+/// krate-hello-gui is built in the checkout, packed with its source and
+/// the SDK, unpacked somewhere that is not the checkout, and rebuilt with
+/// `--locked` against nothing but what the bundle holds. The rebuilt
+/// component is the original, byte for byte, once the symbol-name sections
+/// are set aside -- they hash the SDK's path, which is the one thing that
+/// legitimately differs between two machines.
+#[test]
+fn an_editable_bundle_rebuilds_locked_from_what_it_carries() {
+    if !has_cargo_component() {
+        eprintln!("skipping the rebuild proof: cargo-component is not on PATH");
+        return;
+    }
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let app = repo.join("apps/krate-hello-gui");
+    let toolchain = repo.join("rust-toolchain.toml");
+
+    // The original, built in the checkout the way CI builds it.
+    let built = Command::new("cargo-component")
+        .args(["build", "--release"])
+        .current_dir(&app)
+        .output()
+        .expect("cargo-component");
+    assert!(
+        built.status.success(),
+        "building krate-hello-gui: {}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    let original = app.join("target/wasm32-wasip1/release/krate_hello_gui.wasm");
+    let original_bytes = std::fs::read(&original).expect("the built component");
+
+    // Packed with source and SDK, as `krate pack` does for a crate.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let bundle = dir.path().join("hello.krate");
+    let packed = krate()
+        .arg("pack")
+        .arg(&original)
+        .arg("--manifest")
+        .arg(app.join("manifest.toml"))
+        .arg("-o")
+        .arg(&bundle)
+        .output()
+        .expect("pack");
+    assert!(
+        packed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&packed.stderr)
+    );
+
+    // What the bundle says it carries.
+    let inspected = krate()
+        .args(["inspect", "--format", "json"])
+        .arg(&bundle)
+        .output()
+        .expect("inspect");
+    let report: serde_json::Value = serde_json::from_slice(&inspected.stdout).expect("json");
+    let closure = &report["closure"];
+    assert_eq!(closure["locked"], true, "Cargo.lock travels: {closure}");
+    let tools: Vec<String> = closure["processed_by"]
+        .as_array()
+        .expect("producers")
+        .iter()
+        .map(|p| p["name"].as_str().unwrap().to_string())
+        .collect();
+    assert!(
+        tools.contains(&"rustc".to_string()) && tools.contains(&"wit-component".to_string()),
+        "the toolchain is measured from the component itself: {tools:?}"
+    );
+    assert!(
+        closure["sdk"]["digest"].is_string(),
+        "the SDK is recorded: {closure}"
+    );
+
+    // Unpacked elsewhere: only the bundle's own contents, and the
+    // placeholder pointed at the SDK it carries.
+    let elsewhere = dir.path().join("elsewhere");
+    {
+        let mut archive = zip::ZipArchive::new(std::fs::File::open(&bundle).unwrap()).expect("zip");
+        for index in 0..archive.len() {
+            let mut entry = archive.by_index(index).unwrap();
+            let name = entry.name().to_string();
+            if !(name.starts_with("source/") || name.starts_with("sdk/")) {
+                continue;
+            }
+            let path = elsewhere.join(&name);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let mut bytes = Vec::new();
+            std::io::Read::read_to_end(&mut entry, &mut bytes).unwrap();
+            std::fs::write(&path, bytes).unwrap();
+        }
+    }
+    let source = elsewhere.join("source");
+    assert!(
+        source.join("Cargo.lock").is_file(),
+        "the lock is in the bundle"
+    );
+    let manifest_text = std::fs::read_to_string(source.join("Cargo.toml")).unwrap();
+    assert!(
+        !manifest_text.contains("../../"),
+        "no path into the checkout survives packing: {manifest_text}"
+    );
+    let sdk = elsewhere.join("sdk");
+    std::fs::write(
+        source.join("Cargo.toml"),
+        manifest_text.replace("{KRATE_SDK}", &sdk.to_string_lossy().replace('\\', "/")),
+    )
+    .unwrap();
+    std::fs::copy(&toolchain, source.join("rust-toolchain.toml")).unwrap();
+
+    let rebuilt = Command::new("cargo-component")
+        .args(["build", "--release", "--locked"])
+        .current_dir(&source)
+        .output()
+        .expect("cargo-component");
+    assert!(
+        rebuilt.status.success(),
+        "the rebuild must resolve to the lock the bundle carries, against the SDK it carries: {}",
+        String::from_utf8_lossy(&rebuilt.stderr)
+    );
+    let rebuilt_bytes =
+        std::fs::read(source.join("target/wasm32-wasip1/release/krate_hello_gui.wasm")).unwrap();
+    assert_eq!(
+        without_name_sections(&rebuilt_bytes),
+        without_name_sections(&original_bytes),
+        "the rebuilt component must be the original, symbol names aside"
+    );
+    assert_ne!(
+        without_name_sections(&original_bytes).len(),
+        original_bytes.len(),
+        "the stripping must have removed something, or it proved nothing"
     );
 }
 

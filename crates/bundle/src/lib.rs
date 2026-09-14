@@ -88,8 +88,8 @@ pub const PROFILE_ENTRY: &str = "krate-profile";
 /// not ignored, unless it sits in a declared extension namespace
 /// (`ext/<owner>/<name>/`, declared in `extensions.json`). The profile
 /// names: krate-profile, manifest.toml, code.wasm, signature.json,
-/// derived-from.json, extensions.json, and the assets/ source/ sdk/ ext/
-/// trees. A Krate older than the reader that learned profile 2 refuses a
+/// derived-from.json, extensions.json, closure.json, and the assets/
+/// source/ sdk/ ext/ trees. A Krate older than the reader that learned profile 2 refuses a
 /// profile 2 bundle with "this app uses a newer .krate format ... update
 /// Krate", which is the honest outcome the profile line exists for.
 pub const PROFILE_VERSION: u32 = 2;
@@ -226,6 +226,8 @@ pub fn record_class(name: &str) -> &'static str {
         "derived-from"
     } else if name == EXTENSIONS_ENTRY {
         "extensions"
+    } else if name == CLOSURE_ENTRY {
+        "closure"
     } else if name.starts_with(ASSETS_PREFIX) {
         "asset"
     } else if name.starts_with(SOURCE_PREFIX) {
@@ -413,6 +415,214 @@ fn check_extensions(
         });
     }
     Ok(declared.extensions)
+}
+
+/// What built this bundle, and what it would take to build it again
+/// (CP1: "editable bundles carry the full closure").
+///
+/// Written beside `source/` whenever a bundle carries source. The
+/// toolchain is MEASURED from the component's own `producers` section --
+/// the compiler that emitted the code, not the one the packer happens to
+/// have on PATH -- and the digests are over the very entries the archive
+/// holds, so the record cannot describe a closure other than the one
+/// shipped. A reader checks them (`check_closure`) and refuses a bundle
+/// whose record and contents disagree, exactly as for extensions.
+pub const CLOSURE_ENTRY: &str = "closure.json";
+/// Version of the closure record.
+pub const CLOSURE_SCHEMA: &str = "krate.bundle.closure.v1";
+/// Schema tag mixed into the source and SDK digests of a closure.
+pub const CLOSURE_DIGEST_SCHEMA: &str = "krate.bundle.closure.v1";
+
+/// The closure record. See [`CLOSURE_ENTRY`].
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Closure {
+    pub schema: String,
+    /// The bundle crate that wrote the record.
+    pub packer: String,
+    /// Tools named in the component's `producers` section, `name` and
+    /// `version`, in the order they appear: `rustc`, `wit-component`, ...
+    /// Empty when the component names none.
+    pub processed_by: Vec<Producer>,
+    /// The channel `rust-toolchain.toml` in the source declares, when it
+    /// carries one.
+    pub rust_toolchain: Option<String>,
+    /// Whether `source/Cargo.lock` travels, so a rebuild can be `--locked`.
+    pub locked: bool,
+    /// Digest over every `source/` entry, sorted by name.
+    pub source_digest: String,
+    /// The SDK the source was written against, when the bundle carries it.
+    pub sdk: Option<ClosureSdk>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Producer {
+    pub name: String,
+    pub version: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ClosureSdk {
+    /// The version the bundled SDK's Cargo.toml declares.
+    pub version: Option<String>,
+    /// Digest over every `sdk/` entry, sorted by name.
+    pub digest: String,
+}
+
+/// The tools a component says processed it: every `processed-by` field of
+/// every `producers` custom section, component and core modules alike.
+///
+/// `parse_all` walks nested modules, so a component built by
+/// cargo-component reports `rustc` (from the core module) and
+/// `wit-component` (from the component wrapper) both.
+pub fn producers(component: &[u8]) -> Vec<Producer> {
+    use wasmparser::{KnownCustom, Parser, Payload};
+    let mut out: Vec<Producer> = Vec::new();
+    for payload in Parser::new(0).parse_all(component) {
+        let Ok(Payload::CustomSection(section)) = payload else {
+            continue;
+        };
+        let KnownCustom::Producers(reader) = section.as_known() else {
+            continue;
+        };
+        for field in reader.into_iter().flatten() {
+            if field.name != "processed-by" {
+                continue;
+            }
+            for value in field.values.into_iter().flatten() {
+                let producer = Producer {
+                    name: value.name.to_string(),
+                    version: value.version.to_string(),
+                };
+                if !out.contains(&producer) {
+                    out.push(producer);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Digest over a set of entries, sorted by name: the same shape as an
+/// extension digest, under the closure's own schema tag.
+fn closure_digest(entries: &BTreeMap<String, Vec<u8>>) -> String {
+    use sha2::{Digest, Sha256};
+    let mut outer = Sha256::new();
+    outer.update(CLOSURE_DIGEST_SCHEMA.as_bytes());
+    outer.update([0u8]);
+    for (name, body) in entries {
+        let inner: String = Sha256::digest(body)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        outer.update((name.len() as u64).to_le_bytes());
+        outer.update(name.as_bytes());
+        outer.update(inner.as_bytes());
+    }
+    outer
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// The channel a `rust-toolchain.toml` declares, read the simple way: the
+/// `channel = "..."` line. A toolchain file with no channel line records
+/// nothing rather than a guess.
+fn toolchain_channel(text: &str) -> Option<String> {
+    text.lines().find_map(|line| {
+        let line = line.trim();
+        let rest = line
+            .strip_prefix("channel")?
+            .trim_start()
+            .strip_prefix('=')?;
+        Some(rest.trim().trim_matches('"').to_string()).filter(|c| !c.is_empty())
+    })
+}
+
+/// Build the closure record for the entries about to be written.
+fn closure_record(
+    component: &[u8],
+    source: &BTreeMap<String, Vec<u8>>,
+    sdk: &BTreeMap<String, Vec<u8>>,
+) -> Closure {
+    let rust_toolchain = source
+        .get(&format!("{SOURCE_PREFIX}rust-toolchain.toml"))
+        .and_then(|bytes| toolchain_channel(&String::from_utf8_lossy(bytes)));
+    let sdk_record = (!sdk.is_empty()).then(|| ClosureSdk {
+        version: sdk
+            .get(&format!("{SDK_PREFIX}crates/bindings-rust/Cargo.toml"))
+            .and_then(|bytes| {
+                String::from_utf8_lossy(bytes).lines().find_map(|line| {
+                    let rest = line
+                        .trim()
+                        .strip_prefix("version")?
+                        .trim_start()
+                        .strip_prefix('=')?;
+                    Some(rest.trim().trim_matches('"').to_string())
+                })
+            }),
+        digest: closure_digest(sdk),
+    });
+    Closure {
+        schema: CLOSURE_SCHEMA.to_string(),
+        packer: format!("krate-bundle {}", env!("CARGO_PKG_VERSION")),
+        processed_by: producers(component),
+        rust_toolchain,
+        locked: source.contains_key(&format!("{SOURCE_PREFIX}Cargo.lock")),
+        source_digest: closure_digest(source),
+        sdk: sdk_record,
+    }
+}
+
+/// Check a bundle's closure record against what it carries, when it has
+/// one. A record whose digests do not match the entries, or that claims
+/// a lock the source does not hold, is damage and is refused.
+fn check_closure(entries: &BTreeMap<String, Vec<u8>>) -> Result<Option<Closure>> {
+    let Some(body) = entries.get(CLOSURE_ENTRY) else {
+        return Ok(None);
+    };
+    let record: Closure =
+        serde_json::from_slice(body).map_err(|err| BundleError::DamagedClosure {
+            detail: err.to_string(),
+        })?;
+    if record.schema != CLOSURE_SCHEMA {
+        return Err(BundleError::DamagedClosure {
+            detail: format!(
+                "it uses a newer format ({}) than this copy of Krate understands",
+                record.schema
+            ),
+        });
+    }
+    let source: BTreeMap<String, Vec<u8>> = entries
+        .iter()
+        .filter(|(name, _)| name.starts_with(SOURCE_PREFIX))
+        .map(|(name, body)| (name.clone(), body.clone()))
+        .collect();
+    let sdk: BTreeMap<String, Vec<u8>> = entries
+        .iter()
+        .filter(|(name, _)| name.starts_with(SDK_PREFIX))
+        .map(|(name, body)| (name.clone(), body.clone()))
+        .collect();
+    if record.source_digest != closure_digest(&source) {
+        return Err(BundleError::DamagedClosure {
+            detail: "the source does not match the digest the record declares".to_string(),
+        });
+    }
+    if record.locked != source.contains_key(&format!("{SOURCE_PREFIX}Cargo.lock")) {
+        return Err(BundleError::DamagedClosure {
+            detail: "the record and the source disagree about Cargo.lock".to_string(),
+        });
+    }
+    match (&record.sdk, sdk.is_empty()) {
+        (Some(declared), false) if declared.digest == closure_digest(&sdk) => {}
+        (None, true) => {}
+        _ => {
+            return Err(BundleError::DamagedClosure {
+                detail: "the SDK does not match what the record declares".to_string(),
+            })
+        }
+    }
+    Ok(Some(record))
 }
 
 /// The one function the runtime calls on a Krate app.
@@ -751,6 +961,11 @@ pub enum BundleError {
     ExtensionMismatch { extension: String, detail: String },
     #[error("`{path}` is not a valid extension path: {detail}")]
     MalformedExtensionPath { path: String, detail: String },
+    #[error(
+        "this app's build record (closure.json) is damaged: {detail}.\n\n  \
+         Ask whoever sent it for a freshly packed copy."
+    )]
+    DamagedClosure { detail: String },
 }
 
 impl BundleError {
@@ -1346,6 +1561,10 @@ fn write_bundle_into(
             add(&mut zip, &entry_name, &bytes)?;
         }
     }
+    // Source and SDK are gathered before they are written, so the closure
+    // record can be computed over the exact bytes that ship and written
+    // ahead of them.
+    let mut source_entries: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     if let Some(source_dir) = source_dir.filter(|path| path.is_dir()) {
         for (entry_name, source) in collect_source(source_dir)? {
             // Cargo.toml points at the SDK by absolute path, because that is
@@ -1355,18 +1574,31 @@ fn write_bundle_into(
             // placeholder lets any Krate install substitute its own SDK.
             if entry_name.ends_with("Cargo.toml") {
                 let text = fs::read_to_string(&source).map_err(|err| io_err(&source, err))?;
-                add(&mut zip, &entry_name, rewrite_sdk_paths(&text).as_bytes())?;
+                source_entries.insert(entry_name, rewrite_sdk_paths(&text).into_bytes());
                 continue;
             }
             let bytes = fs::read(&source).map_err(|err| io_err(&source, err))?;
-            add(&mut zip, &entry_name, &bytes)?;
+            source_entries.insert(entry_name, bytes);
         }
     }
+    let mut sdk_entries: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     if let Some(sdk_dir) = sdk_dir.filter(|path| path.is_dir()) {
         for (entry_name, source) in collect_tree(sdk_dir, SDK_PREFIX)? {
             let bytes = fs::read(&source).map_err(|err| io_err(&source, err))?;
-            add(&mut zip, &entry_name, &bytes)?;
+            sdk_entries.insert(entry_name, bytes);
         }
+    }
+    if !source_entries.is_empty() {
+        let record = closure_record(component, &source_entries, &sdk_entries);
+        let body = serde_json::to_vec_pretty(&record)
+            .map_err(|err| BundleError::Manifest(format!("{CLOSURE_ENTRY}: {err}")))?;
+        add(&mut zip, CLOSURE_ENTRY, &body)?;
+    }
+    for (entry_name, bytes) in &source_entries {
+        add(&mut zip, entry_name, bytes)?;
+    }
+    for (entry_name, bytes) in &sdk_entries {
+        add(&mut zip, entry_name, bytes)?;
     }
     zip.finish().map_err(|err| io_err(output_path, err))?;
     Ok(())
@@ -1403,6 +1635,7 @@ pub struct OpenBundle {
     profile: u32,
     records: Vec<Record>,
     extensions: Vec<ExtensionRecord>,
+    closure: Option<Closure>,
 }
 
 /// What a bundle carries where a signature would be (K-258).
@@ -1486,6 +1719,13 @@ impl OpenBundle {
     /// entries (test 1476).
     pub fn extensions(&self) -> &[ExtensionRecord] {
         &self.extensions
+    }
+
+    /// What built the component and what it takes to build it again, when
+    /// the bundle carries source; checked against the source and SDK it
+    /// carries (CP1, the editable closure).
+    pub fn closure(&self) -> Option<&Closure> {
+        self.closure.as_ref()
     }
 
     /// Where a declared extension group's files were unpacked, if the
@@ -1728,6 +1968,13 @@ impl OpenBundle {
             );
         }
 
+        let closure_path = self._dir.path().join(CLOSURE_ENTRY);
+        if closure_path.is_file() && layer.includes(CLOSURE_ENTRY) {
+            entries.insert(
+                CLOSURE_ENTRY.to_string(),
+                fs::read(&closure_path).map_err(|err| io_err(&closure_path, err))?,
+            );
+        }
         let extensions_path = self._dir.path().join(EXTENSIONS_ENTRY);
         if extensions_path.is_file() && layer.includes(EXTENSIONS_ENTRY) {
             entries.insert(
@@ -1742,7 +1989,7 @@ impl OpenBundle {
             (self.ext_path.as_deref(), EXTENSION_PREFIX),
         ] {
             let Some(root) = root else { continue };
-            for (entry_name, source) in collect_tree(root, prefix)? {
+            for (entry_name, source) in collect_unpacked(root, prefix)? {
                 if !layer.includes(&entry_name) {
                     continue;
                 }
@@ -2093,6 +2340,9 @@ pub struct Judgement {
     pub records: Vec<Record>,
     /// The declared and verified extension groups (test 1476).
     pub extensions: Vec<ExtensionRecord>,
+    /// What built the component and what it takes to build it again, when
+    /// the bundle carries source (CP1, the editable closure).
+    pub closure: Option<Closure>,
 }
 
 /// The signature's state, in words a door can act on.
@@ -2150,6 +2400,7 @@ pub fn judge_bytes(bytes: &[u8], max_expanded: u64) -> Result<Judgement> {
             || name == SIGNATURE_ENTRY
             || name == DERIVED_FROM_ENTRY
             || name == EXTENSIONS_ENTRY
+            || name == CLOSURE_ENTRY
         {
             (MAX_ENTRY_BYTES, 'c')
         } else if name.starts_with(ASSETS_PREFIX) {
@@ -2221,6 +2472,7 @@ pub fn judge_bytes(bytes: &[u8], max_expanded: u64) -> Result<Judgement> {
     }
 
     let extensions = check_extensions(profile, &raw)?;
+    let closure = check_closure(&raw)?;
     let manifest_raw = raw
         .get(MANIFEST_ENTRY)
         .ok_or(BundleError::MissingEntry(MANIFEST_ENTRY))?;
@@ -2359,6 +2611,7 @@ pub fn judge_bytes(bytes: &[u8], max_expanded: u64) -> Result<Judgement> {
         profile,
         records,
         extensions,
+        closure,
     })
 }
 
@@ -2520,6 +2773,35 @@ pub fn open_reader<R: Read + io::Seek>(reader: R) -> Result<OpenBundle> {
     }
     let extensions = check_extensions(profile, &ext_entries)?;
 
+    // The closure record, checked against the source and SDK that were
+    // just unpacked (CP1, the editable closure).
+    let closure_path = dir.path().join(CLOSURE_ENTRY);
+    let _ = extract_entry(&mut archive, CLOSURE_ENTRY, &closure_path);
+    let closure = if closure_path.is_file() {
+        let mut entries: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+        entries.insert(
+            CLOSURE_ENTRY.to_string(),
+            fs::read(&closure_path).map_err(|err| io_err(&closure_path, err))?,
+        );
+        for (root, prefix, present) in [
+            (&source_path, SOURCE_PREFIX, !source_names.is_empty()),
+            (&sdk_path, SDK_PREFIX, !sdk_names.is_empty()),
+        ] {
+            if !present {
+                continue;
+            }
+            for (entry_name, file) in collect_unpacked(root, prefix)? {
+                entries.insert(
+                    entry_name,
+                    fs::read(&file).map_err(|err| io_err(&file, err))?,
+                );
+            }
+        }
+        check_closure(&entries)?
+    } else {
+        None
+    };
+
     let manifest_text =
         fs::read_to_string(&manifest_path).map_err(|err| io_err(&manifest_path, err))?;
     let manifest =
@@ -2550,6 +2832,7 @@ pub fn open_reader<R: Read + io::Seek>(reader: R) -> Result<OpenBundle> {
         profile,
         records,
         extensions,
+        closure,
     })
 }
 
@@ -2571,13 +2854,55 @@ pub const SDK_PLACEHOLDER: &str = "{KRATE_SDK}";
 pub fn rewrite_sdk_paths(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for line in text.lines() {
-        match sdk_root_in(line) {
+        match sdk_root_in(line).or_else(|| checkout_sdk_root_in(line)) {
             Some(root) => out.push_str(&line.replace(&root, SDK_PLACEHOLDER)),
             None => out.push_str(line),
         }
         out.push('\n');
     }
     out
+}
+
+/// The root of an SDK reached by a path into a CHECKOUT rather than the
+/// cache: `../../crates/bindings-rust`, `../../wit/krate/phase3`, or an
+/// absolute path into a clone of the repository.
+///
+/// Every app under `apps/` is written this way, and a bundle packed from
+/// one shipped those relative paths verbatim -- source that only rebuilds
+/// inside the checkout it came from, which is not a closure at all
+/// (measured on krate-hello-gui: the rebuild elsewhere failed to load
+/// `../../crates/bindings-rust/Cargo.toml`). The materialised SDK has the
+/// same layout under its root (`crates/bindings-rust`, `wit/krate/...`),
+/// so the part before either marker IS the SDK root, whatever it was.
+///
+/// Only a prefix made of parent/current segments or an absolute path is
+/// taken: `vendor/crates/bindings-rust` is the app's own copy and stays.
+fn checkout_sdk_root_in(line: &str) -> Option<String> {
+    let start = line.find("path = \"")? + "path = \"".len();
+    let end = start + line[start..].find('"')?;
+    let value = &line[start..end];
+    let normalized = value.replace('\\', "/");
+    let marker_at = ["crates/bindings-rust", "wit/krate/"]
+        .iter()
+        .filter_map(|marker| {
+            normalized
+                .find(marker)
+                .filter(|&i| i == 0 || normalized.as_bytes()[i - 1] == b'/')
+        })
+        .min()?;
+    let prefix = &normalized[..marker_at];
+    let relative_only = prefix
+        .split('/')
+        .all(|segment| matches!(segment, "" | "." | ".."));
+    let absolute = prefix.starts_with('/') || prefix.get(1..3) == Some(":/");
+    if !relative_only && !absolute {
+        return None;
+    }
+    // The prefix in the ORIGINAL spelling, so the replacement lands on the
+    // bytes that are there; single-character replacements keep the indices
+    // aligned. Drop the trailing separator: the placeholder is a root.
+    let original = &value[..marker_at];
+    Some(original.trim_end_matches(['/', '\\']).to_string()).filter(|root| !root.is_empty())
 }
 
 /// The SDK root inside a line, if it holds one.
@@ -2627,12 +2952,26 @@ fn collect_tree(root: &Path, prefix: &str) -> Result<Vec<(String, PathBuf)>> {
     Ok(out)
 }
 
+/// Every file under an UNPACKED tree, prefixed for the archive: no skip
+/// list, because what was unpacked is exactly what the archive held, and a
+/// digest over it must cover all of it (Cargo.lock included).
+fn collect_unpacked(root: &Path, prefix: &str) -> Result<Vec<(String, PathBuf)>> {
+    let mut out = collect_files(root, &|_| false)?;
+    for (name, _) in out.iter_mut() {
+        *name = format!("{prefix}{}", &name[SOURCE_PREFIX.len()..]);
+    }
+    Ok(out)
+}
+
 fn collect_source(root: &Path) -> Result<Vec<(String, PathBuf)>> {
+    // Cargo.lock TRAVELS (CP1, the editable closure). It used to be skipped
+    // as "versions that may not resolve on someone else's machine", which
+    // had it backwards: the lock is what makes a rebuild elsewhere resolve
+    // to the same crates, and `--locked` is how a rebuild proves it did.
     collect_files(root, &|name| {
         matches!(
             name,
             "target"
-                | "Cargo.lock"
                 | "bindings.rs"
                 | ".git"
                 | ".agent-transcript.txt"
@@ -7257,10 +7596,16 @@ required = true
         let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
         let component = write_temp(dir.path(), "code.wasm", MINIMAL_COMPONENT);
 
-        // A crate-shaped directory, including the two things that must NOT be
-        // packed: build output, and a lock file that may not resolve elsewhere.
+        // A crate-shaped directory: build output must NOT be packed, and the
+        // lock file MUST be -- it is what makes a rebuild elsewhere resolve to
+        // the same crates (CP1, the editable closure).
         write_temp(dir.path(), "Cargo.toml", b"[package]\nname = \"demo\"\n");
         write_temp(dir.path(), "Cargo.lock", b"# pinned");
+        write_temp(
+            dir.path(),
+            "rust-toolchain.toml",
+            b"[toolchain]\nchannel = \"1.94.1\"\n",
+        );
         fs::create_dir_all(dir.path().join("src")).expect("src");
         fs::write(dir.path().join("src/lib.rs"), b"fn main() {}").expect("lib");
         fs::create_dir_all(dir.path().join("target/release")).expect("target");
@@ -7274,10 +7619,192 @@ required = true
         let source = opened.source_path().expect("source shipped");
         assert!(source.join("Cargo.toml").is_file());
         assert!(source.join("src/lib.rs").is_file());
-        // The point of shipping source is rebuilding, and neither of these
-        // helps with that: one is output, the other pins versions.
-        assert!(!source.join("Cargo.lock").exists());
+        // The point of shipping source is rebuilding: the lock travels so
+        // the rebuild can be --locked, the build output does not.
+        assert_eq!(fs::read(source.join("Cargo.lock")).unwrap(), b"# pinned");
         assert!(!source.join("target").exists());
+        // And the bundle says what it takes to build it again.
+        let closure = opened
+            .closure()
+            .expect("a bundle with source carries a closure record");
+        assert!(closure.locked, "{closure:?}");
+        assert_eq!(closure.rust_toolchain.as_deref(), Some("1.94.1"));
+        assert_eq!(closure.source_digest.len(), 64);
+        assert!(closure.sdk.is_none(), "no SDK was packed");
+        assert!(
+            closure.processed_by.is_empty(),
+            "the minimal fixture names no producers: {:?}",
+            closure.processed_by
+        );
+        let judged = judge_bytes(&fs::read(&bundle).unwrap(), 64 * 1024 * 1024).unwrap();
+        assert_eq!(
+            judged.closure.as_ref(),
+            Some(closure),
+            "the two doors agree on the closure"
+        );
+    }
+
+    /// The toolchain in a closure record is what the component SAYS built
+    /// it -- its `producers` section -- not what the packer has on PATH.
+    /// A hand-assembled core module with a producers section is enough to
+    /// prove the reader; a real cargo-component build carries `rustc` and
+    /// `wit-component` the same way (measured on krate-hello-gui).
+    #[test]
+    fn the_closure_records_what_the_component_says_built_it() {
+        fn leb(mut n: usize) -> Vec<u8> {
+            let mut out = Vec::new();
+            loop {
+                let byte = (n & 0x7f) as u8;
+                n >>= 7;
+                if n == 0 {
+                    out.push(byte);
+                    return out;
+                }
+                out.push(byte | 0x80);
+            }
+        }
+        fn name(s: &str) -> Vec<u8> {
+            let mut out = leb(s.len());
+            out.extend_from_slice(s.as_bytes());
+            out
+        }
+        // producers: one field, "processed-by", two values.
+        let mut section = Vec::new();
+        section.extend(name("producers"));
+        section.extend(leb(1));
+        section.extend(name("processed-by"));
+        section.extend(leb(2));
+        section.extend(name("rustc"));
+        section.extend(name("1.94.1 (e408947bf 2026-03-25)"));
+        section.extend(name("wit-component"));
+        section.extend(name("0.227.1"));
+        let mut module = b"\0asm\x01\0\0\0".to_vec();
+        module.push(0); // custom section id
+        module.extend(leb(section.len()));
+        module.extend(section);
+
+        assert_eq!(
+            producers(&module),
+            vec![
+                Producer {
+                    name: "rustc".to_string(),
+                    version: "1.94.1 (e408947bf 2026-03-25)".to_string()
+                },
+                Producer {
+                    name: "wit-component".to_string(),
+                    version: "0.227.1".to_string()
+                },
+            ]
+        );
+        assert!(
+            producers(MINIMAL_COMPONENT).is_empty(),
+            "the minimal fixture names none"
+        );
+        assert!(
+            producers(b"not wasm").is_empty(),
+            "garbage names none, and does not fail"
+        );
+    }
+
+    /// A closure record that does not describe the closure it ships with is
+    /// damage, refused at both doors: source edited under the record, the
+    /// lock removed, the SDK swapped, the record itself edited.
+    #[test]
+    fn a_closure_record_that_lies_is_refused() {
+        let dir = TempDir::new().expect("tempdir");
+        let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
+        let component = write_temp(dir.path(), "code.wasm", MINIMAL_COMPONENT);
+        let source = dir.path().join("app");
+        fs::create_dir_all(source.join("src")).unwrap();
+        fs::write(source.join("Cargo.toml"), "[package]\nname = \"x\"\n").unwrap();
+        fs::write(source.join("Cargo.lock"), "# pinned\n").unwrap();
+        fs::write(source.join("src/lib.rs"), "// code\n").unwrap();
+        let sdk = dir.path().join("sdk");
+        fs::create_dir_all(sdk.join("crates/bindings-rust/src")).unwrap();
+        fs::write(
+            sdk.join("crates/bindings-rust/Cargo.toml"),
+            "[package]\nname = \"krate\"\nversion = \"0.4.0\"\n",
+        )
+        .unwrap();
+        fs::write(sdk.join("crates/bindings-rust/src/lib.rs"), "// sdk\n").unwrap();
+        let good = dir.path().join("good.krate");
+        pack_with_sdk(
+            &manifest,
+            &component,
+            None,
+            Some(&source),
+            Some(&sdk),
+            &good,
+        )
+        .unwrap();
+        let opened = open(&good).unwrap();
+        let closure = opened.closure().expect("closure recorded");
+        assert!(closure.locked);
+        assert_eq!(
+            closure.sdk.as_ref().and_then(|s| s.version.as_deref()),
+            Some("0.4.0"),
+            "{closure:?}"
+        );
+        let keep = |_: &str, bytes: &[u8]| Some(bytes.to_vec());
+        type Case<'a> = (&'a str, Box<EditFn>, &'a str);
+        let cases: Vec<Case> = vec![
+            (
+                "source edited under the record",
+                Box::new(|name, bytes| {
+                    Some(if name == "source/src/lib.rs" {
+                        b"// changed\n".to_vec()
+                    } else {
+                        bytes.to_vec()
+                    })
+                }),
+                "source does not match",
+            ),
+            (
+                "the lock removed",
+                Box::new(|name, bytes| (name != "source/Cargo.lock").then(|| bytes.to_vec())),
+                "source does not match",
+            ),
+            (
+                "the SDK swapped",
+                Box::new(|name, bytes| {
+                    Some(if name == "sdk/crates/bindings-rust/src/lib.rs" {
+                        b"// other sdk\n".to_vec()
+                    } else {
+                        bytes.to_vec()
+                    })
+                }),
+                "SDK does not match",
+            ),
+            (
+                "the record edited",
+                Box::new(|name, bytes| {
+                    Some(if name == CLOSURE_ENTRY {
+                        b"{\"schema\":\"krate.bundle.closure.v1\"".to_vec()
+                    } else {
+                        bytes.to_vec()
+                    })
+                }),
+                "fresh",
+            ),
+        ];
+        for (what, edit, words) in &cases {
+            let path = dir.path().join("edited.krate");
+            edit_archive(&good, &path, edit.as_ref(), &[]);
+            let err = match open(&path) {
+                Err(err) => err,
+                Ok(_) => panic!("{what}: must be refused"),
+            };
+            assert_eq!(variant(&err), "DamagedClosure", "{what}: {err}");
+            assert!(err.to_string().contains(words), "{what}: {err}");
+            let judged = judge_bytes(&fs::read(&path).unwrap(), 64 * 1024 * 1024)
+                .expect_err("the judge refuses what open refuses");
+            assert_eq!(variant(&judged), "DamagedClosure", "{what}: {judged}");
+        }
+        let _ = keep;
+        // A bundle without source has no record, and needs none.
+        let plain = dir.path().join("plain.krate");
+        pack(&manifest, &component, &plain).unwrap();
+        assert!(open(&plain).unwrap().closure().is_none());
     }
 
     #[test]
@@ -7453,6 +7980,50 @@ required = true
         // The Unix cache shape keeps working.
         let unix = r#"krate = { path = "/home/u/.cache/krate/sdk/aabbccdd11223344/crates/bindings-rust" }"#;
         assert!(rewrite_sdk_paths(unix).contains("{KRATE_SDK}/crates/bindings-rust"));
+    }
+
+    /// A sample app in the checkout reaches the SDK by relative path, and a
+    /// bundle packed from it used to ship those paths verbatim: source that
+    /// rebuilt only inside this repository (CP1, the editable closure).
+    #[test]
+    fn a_checkout_relative_sdk_path_is_rewritten_to_the_placeholder() {
+        let manifest = "[dependencies]\n\
+            krate = { path = \"../../crates/bindings-rust\", features = [\"gui\"] }\n\
+            [package.metadata.component.target]\n\
+            path = \"../../wit/krate/phase3\"\n\
+            [package.metadata.component.target.dependencies]\n\
+            \"krate:io\" = { path = \"../../wit/krate/phase3/deps/io\" }\n\
+            zune = { path = \"vendor/crates/bindings-rust\" }\n\
+            other = { path = \"../sibling/thing\" }\n";
+        let out = rewrite_sdk_paths(manifest);
+        assert!(
+            out.contains(
+                r#"krate = { path = "{KRATE_SDK}/crates/bindings-rust", features = ["gui"] }"#
+            ),
+            "{out}"
+        );
+        assert!(
+            out.contains(r#"path = "{KRATE_SDK}/wit/krate/phase3""#),
+            "{out}"
+        );
+        assert!(
+            out.contains(r#""krate:io" = { path = "{KRATE_SDK}/wit/krate/phase3/deps/io" }"#),
+            "{out}"
+        );
+        assert!(
+            out.contains(r#"zune = { path = "vendor/crates/bindings-rust" }"#),
+            "an app's own vendored copy is its own: {out}"
+        );
+        assert!(
+            out.contains(r#"other = { path = "../sibling/thing" }"#),
+            "a relative path that is not the SDK stays: {out}"
+        );
+        // An absolute path into a clone rewrites the same way.
+        let clone = r#"krate = { path = "/Users/someone/src/krate/crates/bindings-rust" }"#;
+        assert!(rewrite_sdk_paths(clone).contains("{KRATE_SDK}/crates/bindings-rust"));
+        // And the placeholder itself is left alone on a repack.
+        let already = r#"krate = { path = "{KRATE_SDK}/crates/bindings-rust" }"#;
+        assert_eq!(rewrite_sdk_paths(already).trim_end(), already);
     }
 
     #[test]

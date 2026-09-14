@@ -115,7 +115,9 @@ fn embed_sdk() {
     }
     let cargo_toml = bindings.join("Cargo.toml");
     println!("cargo:rerun-if-changed={}", cargo_toml.display());
-    let standalone = standalone_bindings_cargo_toml(&cargo_toml);
+    let root_manifest = repo_root.join("Cargo.toml");
+    println!("cargo:rerun-if-changed={}", root_manifest.display());
+    let standalone = standalone_bindings_cargo_toml(&cargo_toml, &root_manifest);
     files.push((
         "crates/bindings-rust/Cargo.toml".to_string(),
         standalone.into_bytes(),
@@ -182,23 +184,31 @@ fn collect_dir(root: &Path, dir: &Path, files: &mut Vec<(String, Vec<u8>)>) {
 
 /// Rewrite the bindings crate's Cargo.toml so it needs no parent workspace:
 /// replace each `field.workspace = true` with the concrete value.
-fn standalone_bindings_cargo_toml(path: &Path) -> String {
+/// The SDK crate's manifest with every `workspace = true` field filled in
+/// from the workspace it came from, so the materialised SDK is the SAME
+/// crate the checkout has -- same version above all. This used to hardcode
+/// `version = "0.1.0-dev"` while the workspace said 0.4.0, so an app built
+/// in the checkout locked `krate v0.4.0` and could never rebuild `--locked`
+/// against the SDK its own bundle carried (K-340).
+fn standalone_bindings_cargo_toml(path: &Path, root_manifest: &Path) -> String {
     let text = fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let root = fs::read_to_string(root_manifest)
+        .unwrap_or_else(|e| panic!("read {}: {e}", root_manifest.display()));
     let mut out = String::new();
     for line in text.lines() {
-        let replacement = match line.trim() {
-            "version.workspace = true" => Some("version = \"0.1.0-dev\""),
-            "edition.workspace = true" => Some("edition = \"2021\""),
-            "license.workspace = true" => Some("license = \"MIT OR Apache-2.0\""),
-            "repository.workspace = true" => {
-                Some("repository = \"https://github.com/incyashraj/krate\"")
-            }
-            "rust-version.workspace = true" => Some("rust-version = \"1.91\""),
-            _ => None,
-        };
+        let trimmed = line.trim();
+        let replacement = trimmed.strip_suffix(".workspace = true").map(|key| {
+            let value = workspace_package_field(&root, key).unwrap_or_else(|| {
+                panic!(
+                    "{key} is not set under [workspace.package] in {}",
+                    root_manifest.display()
+                )
+            });
+            format!("{key} = \"{value}\"")
+        });
         match replacement {
             Some(value) => {
-                out.push_str(value);
+                out.push_str(&value);
                 out.push('\n');
             }
             None => {
@@ -208,6 +218,27 @@ fn standalone_bindings_cargo_toml(path: &Path) -> String {
         }
     }
     out
+}
+
+/// `key = "value"` under `[workspace.package]` in the root manifest.
+fn workspace_package_field(root: &str, key: &str) -> Option<String> {
+    let mut in_section = false;
+    for line in root.lines() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            in_section = line == "[workspace.package]";
+            continue;
+        }
+        if !in_section {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix(key) {
+            if let Some(value) = rest.trim_start().strip_prefix('=') {
+                return Some(value.trim().trim_matches('"').to_string());
+            }
+        }
+    }
+    None
 }
 
 fn env(key: &str) -> String {

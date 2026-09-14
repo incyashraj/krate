@@ -17082,6 +17082,34 @@ fn inspect_command(target: &str, format: OutputFormat) -> Result<u8> {
             field(&ext["digest"])
         );
     }
+    if let Some(closure) = report.get("closure").filter(|v| !v.is_null()) {
+        let tools: Vec<String> = closure["processed_by"]
+            .as_array()
+            .map(|list| {
+                list.iter()
+                    .map(|p| format!("{} {}", field(&p["name"]), field(&p["version"])))
+                    .collect()
+            })
+            .unwrap_or_default();
+        println!(
+            "closure         built by {}; rust-toolchain {}; Cargo.lock {}; sdk {}",
+            if tools.is_empty() {
+                "(unrecorded)".to_string()
+            } else {
+                tools.join(", ")
+            },
+            field(&closure["rust_toolchain"]),
+            if closure["locked"].as_bool().unwrap_or(false) {
+                "carried"
+            } else {
+                "absent"
+            },
+            closure["sdk"]
+                .get("version")
+                .map(field)
+                .unwrap_or_else(|| "(none)".to_string())
+        );
+    }
     let requests = report["requests"].as_array().cloned().unwrap_or_default();
     println!("requests        {}", requests.len());
     for request in &requests {

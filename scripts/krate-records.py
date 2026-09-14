@@ -31,6 +31,8 @@ The rules, in the order the opener applies them (profile 1 and 2):
     `extensions.json`: every declared group present with the declared size
     and digest; an undeclared group is refused when the bundle declares
     extensions at all, or is profile 2
+  - `closure.json`, when present, is checked the same way: its source and
+    SDK digests match the entries and its lock flag matches the source
   - `manifest.toml` and `code.wasm` are present
 """
 import hashlib
@@ -63,7 +65,10 @@ FIXED = {
     "signature.json": "signature",
     "derived-from.json": "derived-from",
     "extensions.json": "extensions",
+    "closure.json": "closure",
 }
+CLOSURE_SCHEMA = "krate.bundle.closure.v1"
+CLOSURE_DIGEST_SCHEMA = "krate.bundle.closure.v1"
 PREFIXED = [("assets/", "asset"), ("source/", "source"), ("sdk/", "sdk"), ("ext/", "extension")]
 
 
@@ -99,9 +104,9 @@ def extension_group(name):
     return parts[0] + "/" + parts[1]
 
 
-def extension_digest(entries):
+def entries_digest(entries, schema):
     h = hashlib.sha256()
-    h.update(EXTENSION_DIGEST_SCHEMA.encode())
+    h.update(schema.encode())
     h.update(b"\0")
     for name in sorted(entries):
         inner = hashlib.sha256(entries[name]).hexdigest()
@@ -109,6 +114,36 @@ def extension_digest(entries):
         h.update(name.encode())
         h.update(inner.encode())
     return h.hexdigest()
+
+
+def extension_digest(entries):
+    return entries_digest(entries, EXTENSION_DIGEST_SCHEMA)
+
+
+def check_closure(by_name, records, read):
+    """closure.json, when present: its source and SDK digests and its lock
+    flag must match the entries the archive holds."""
+    if "closure.json" not in by_name:
+        return None
+    try:
+        record = json.loads(read(by_name["closure.json"]))
+    except ValueError as err:
+        raise Refused(f"closure.json is damaged: {err}") from None
+    if not isinstance(record, dict) or record.get("schema") != CLOSURE_SCHEMA:
+        raise Refused("closure.json uses a format this reader does not know")
+    source = {r["name"]: read(by_name[r["name"]]) for r in records if r["class"] == "source"}
+    sdk = {r["name"]: read(by_name[r["name"]]) for r in records if r["class"] == "sdk"}
+    if entries_digest(source, CLOSURE_DIGEST_SCHEMA) != record.get("source_digest"):
+        raise Refused("closure.json: the source does not match the digest it declares")
+    if bool(record.get("locked")) != ("source/Cargo.lock" in source):
+        raise Refused("closure.json: the record and the source disagree about Cargo.lock")
+    declared = record.get("sdk")
+    if declared is None:
+        if sdk:
+            raise Refused("closure.json: the SDK does not match what the record declares")
+    elif not sdk or entries_digest(sdk, CLOSURE_DIGEST_SCHEMA) != declared.get("digest"):
+        raise Refused("closure.json: the SDK does not match what the record declares")
+    return record
 
 
 def resolve(data):
@@ -253,10 +288,18 @@ def resolve(data):
             if key not in seen_groups:
                 raise Refused(f"{key}: an extension nobody declared")
 
+    closure = check_closure(by_name, records, read)
+
     for required in ("manifest.toml", "code.wasm"):
         if required not in by_name:
             raise Refused(f"missing its `{required}` entry")
-    return {"schema": SCHEMA, "profile": profile, "records": records, "extensions": extensions}
+    return {
+        "schema": SCHEMA,
+        "profile": profile,
+        "records": records,
+        "extensions": extensions,
+        "closure": closure,
+    }
 
 
 # ----------------------------------------------------------------- self-test
@@ -329,6 +372,15 @@ def self_test():
     check("a malformed extension path is refused",
           "ext/<owner>" in (refused(ext_entries + [("ext/acme/plugins", b"x")]) or ""))
     check("a damaged declaration is refused", "damaged" in (refused(CORE + [("extensions.json", b"{")]) or ""))
+    src = {"source/Cargo.toml": b"[package]\n", "source/Cargo.lock": b"# pinned"}
+    closure = {"schema": CLOSURE_SCHEMA, "packer": "x", "processed_by": [], "rust_toolchain": None,
+               "locked": True, "source_digest": entries_digest(src, CLOSURE_DIGEST_SCHEMA), "sdk": None}
+    with_closure = CORE + [("closure.json", json.dumps(closure).encode())] + sorted(src.items())
+    check("a closure record that matches is listed", resolve(_zip(with_closure))["closure"] == closure)
+    edited = [(n, (b"[package]\nname = \"x\"\n" if n == "source/Cargo.toml" else b)) for n, b in with_closure]
+    check("a closure whose source changed is refused", "source does not match" in (refused(edited) or ""))
+    unlocked = [(n, b) for n, b in with_closure if n != "source/Cargo.lock"]
+    check("a closure that claims a lock the source lacks is refused", bool(refused(unlocked)))
     check("the digest is the documented shape",
           extension_digest({"a": b""}) == hashlib.sha256(
               EXTENSION_DIGEST_SCHEMA.encode() + b"\0" + (1).to_bytes(8, "little") + b"a"
@@ -339,7 +391,8 @@ def self_test():
             print(f"  - {f}")
         return 1
     print("krate-records self-test OK -- profile 1 and 2, every class, folded duplicates, backslashes, "
-          "traversal, declared/undeclared/tampered/missing extensions, damaged declarations, the digest shape")
+          "traversal, declared/undeclared/tampered/missing extensions, damaged declarations, closure "
+          "records, the digest shape")
     return 0
 
 

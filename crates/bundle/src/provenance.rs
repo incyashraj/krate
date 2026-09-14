@@ -128,6 +128,7 @@ impl Layer {
                     && !entry.starts_with(crate::EXTENSION_PREFIX)
                     && entry != crate::DERIVED_FROM_ENTRY
                     && entry != crate::EXTENSIONS_ENTRY
+                    && entry != crate::CLOSURE_ENTRY
             }
             Layer::Project => true,
             Layer::Archive => false,

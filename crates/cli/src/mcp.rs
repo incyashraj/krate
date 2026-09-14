@@ -282,6 +282,7 @@ pub(crate) fn inspect_json(target: &str, allow_http: bool) -> Result<Value> {
         "derived_from": bundle.derived_from().ok().flatten(),
         "records": bundle.records(),
         "extensions": bundle.extensions(),
+        "closure": bundle.closure(),
         "requests": requests,
         "note": "Nothing was executed and nothing was granted. Pass the capabilities \
                 you decide to allow to run_component in `grants`.",

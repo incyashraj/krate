@@ -121,7 +121,21 @@ mod tests {
             .expect("bindings Cargo.toml embedded");
         let text = std::str::from_utf8(bytes).expect("utf8");
         assert!(!text.contains(".workspace = true"));
-        assert!(text.contains("version = \"0.1.0-dev\""));
+        // And it is the SAME crate the checkout has, version above all: an
+        // app built in the checkout locks `krate` at the workspace version,
+        // and a rebuild against the shipped SDK must resolve to it (K-340).
+        // This crate inherits its version from the same workspace.
+        assert!(
+            text.contains(&format!("version = \"{}\"", env!("CARGO_PKG_VERSION"))),
+            "{text}"
+        );
+        assert!(
+            text.contains(&format!(
+                "rust-version = \"{}\"",
+                env!("CARGO_PKG_RUST_VERSION")
+            )),
+            "{text}"
+        );
     }
 
     #[test]
