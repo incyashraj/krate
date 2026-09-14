@@ -5427,11 +5427,18 @@ function setShelfOpen(open) {
       t.setAttribute("aria-expanded", open ? "true" : "false");
       t.title = open ? "Hide your workspace" : "Show your workspace";
     }
-    // The scrim dims the page behind a drawer that COVERS it. This one no
-    // longer covers anything -- the views inset by its width -- so a dark
-    // sheet over the page you are working in would be dimming the app for
-    // no reason. Kept in the markup, never shown.
-    if (scrim) scrim.hidden = true;
+    // The scrim dims the page behind a drawer that COVERS it.
+    //
+    // On a desktop the drawer covers nothing: the views inset by its
+    // width, so a dark sheet would be dimming the app for no reason. On a
+    // narrow screen it DOES cover the page -- 320px of a 375px phone --
+    // and then the scrim is doing its real job: saying the drawer is
+    // modal, and giving somebody a way to dismiss it without hunting for
+    // the toggle.
+    if (scrim) {
+      const covers = window.matchMedia("(max-width: 760px)").matches;
+      scrim.hidden = !(open && covers);
+    }
   }
 
   // Restore it before anything paints, so the window does not open closed

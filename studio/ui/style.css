@@ -4118,6 +4118,74 @@ body.side-resizing .shelf { transition: none; }
   body.side-open .shelf { left: 0; }
 }
 
+/* ---- the drawer on a phone -------------------------------------------
+ *
+ * Measured at 375px: the drawer is 320 wide, so with it open the app had
+ * 55px of screen and the composer was unreachable. On a desktop the drawer
+ * shares the window; on a phone there is no window to share, so it becomes
+ * an overlay with a scrim, the way every mobile app does it -- and tapping
+ * the scrim closes it, which is the gesture people already know.
+ */
+@media (max-width: 760px) {
+  .side {
+    position: fixed; top: 0; bottom: 0; left: 0; z-index: 60;
+    width: min(300px, 86vw);
+    box-shadow: 0 0 60px rgba(0, 0, 0, 0.6);
+  }
+  /* The room keeps its full width underneath, so closing the drawer needs
+     no reflow and the app never sits in a 55px strip. */
+  body.side-open .view { margin-left: 0; }
+  body.side-open .rail, body.side-open .home { margin-left: 0; }
+}
+
+/* ---- touch targets ----------------------------------------------------
+ *
+ * Studio was drawn for a pointer: its icon buttons are 30px and its
+ * sidebar rows 34. A thumb needs 44. Applied only on touch-sized screens
+ * so the desktop's density is untouched.
+ */
+@media (max-width: 760px) {
+  .icon-btn, .tool, .send, .set-mini { min-width: 44px; min-height: 44px; }
+  .side-nav a, .side-nav button, .side-item { min-height: 44px; }
+  .side-mark { min-height: 44px; }
+  #sideSearch { min-height: 44px; }
+  .side-foot .side-card { padding: 12px 14px; }
+  .web-mode button { min-height: 36px; padding: 8px 14px; }
+}
+
+/* ---- the home screen on a phone --------------------------------------- */
+@media (max-width: 760px) {
+  .home { padding-left: 14px; padding-right: 14px; }
+  .home-title { font-size: clamp(22px, 7vw, 30px); }
+  .home-hail { width: 100%; }
+  .composer-shell, .bigbar { width: 100%; }
+  /* One line, not wrapped: wrapping pushed the second row out of the bar
+     and onto the suggestions below it. What gives instead is the "Built
+     by" chip -- on the web there is only one agent, so the label is the
+     least useful thing in the row. */
+  .bigbar-row { flex-wrap: nowrap; gap: 6px; }
+  .bigbar-row .aichip { display: none; }
+  .bigbar-row .web-mode { margin-right: 0; }
+  .bigbar { padding-bottom: 10px; }
+  .sugg-list button { font-size: 13px; padding: 11px 12px; }
+  /* The ambient mark is sized off the smaller axis, which on a tall phone
+     is the width -- so it filled the screen. Held back. */
+  .home-hero::before { width: min(60vh, 86vw); opacity: 0.20; }
+}
+
+/* ---- a built app, on a phone ------------------------------------------ */
+@media (max-width: 760px) {
+  /* The done card's four actions were a single row of 34px buttons at the
+     screen's edge. Two per row, full height, reachable. */
+  .done-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .done-actions .btn { width: 100%; min-height: 44px; }
+  .done-card { border-radius: 16px; }
+  .shot-stage { border-radius: 12px; }
+  /* The build view is two columns on a desktop; one on a phone, with the
+     transcript above the app rather than beside it. */
+  .cols { grid-template-columns: 1fr; }
+}
+
 /* API keys: the no-CLI way in. Sits under the tool list because a tool
    that is already signed in is the shorter path when it exists; this is
    for when it does not. */
