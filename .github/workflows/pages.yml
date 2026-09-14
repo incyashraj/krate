@@ -121,6 +121,9 @@ jobs:
           # And that Plan mode cannot build: it is a promise to a new
           # person, and a mode that sometimes builds is not a mode.
           node docs/landing/studio/modes-test.mjs
+          # And that the source download reads a real .krate and writes a
+          # zip the rest of the world can open.
+          node docs/landing/studio/source-test.mjs
 
           mkdir -p _site/app
           cp -R studio/ui/. _site/app/

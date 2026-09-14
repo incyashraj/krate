@@ -162,10 +162,20 @@ async function downloadApp(url, fileName) {
 /* The current app's URL and name, from the session Studio is showing or
  * the last build this page watched. */
 function currentWebApp(path) {
-  const url = String(path || (bridge.jobResult && `${BUILDER}${bridge.jobResult.download}`) || "");
-  if (!/^https?:/.test(url)) return null;
-  const name = (bridge.jobResult && bridge.jobResult.name) ? `${bridge.jobResult.name}.krate` : "app.krate";
-  return { url, name };
+  let url = String(path || (bridge.jobResult && `${BUILDER}${bridge.jobResult.download}`) || "");
+  let name = (bridge.jobResult && bridge.jobResult.name) ? `${bridge.jobResult.name}.krate` : "";
+  if (!/^https?:/.test(url)) {
+    // Nothing in memory: this tab did not do the build, or it was
+    // reloaded. The sessions carry the same URL, so an app that is on
+    // screen is never refused as "not made here" (K-366).
+    const saved = localSessions()
+      .filter((s) => s && s.result && /^https?:/.test(String(s.result.path || "")))
+      .sort((a, b) => (b.updated || 0) - (a.updated || 0))[0];
+    if (!saved) return null;
+    url = String(saved.result.path);
+    name = name || String(saved.result.name || "");
+  }
+  return { url, name: name || "app.krate" };
 }
 
 /* Publish an app the build service holds: the same door `krate publish`
@@ -199,6 +209,177 @@ async function publishWebApp({ path, name, description, shot, unlisted } = {}, t
     } catch (e) {}
   }
   return out.full_url || out.url;
+}
+
+/* ---- the source, handed over ------------------------------------------
+ *
+ * Every .krate carries the Cargo project that made it -- Cargo.toml,
+ * Cargo.lock, manifest.toml, src/ -- because a Krate app is meant to be
+ * something you can keep and change, not a black box. On a desktop the
+ * Source button opens that folder. In a browser it refused, which for a
+ * developer audience is the difference between a toy and a tool.
+ *
+ * There is nothing to add server-side: the bytes are already on the build
+ * service and the source is already inside them. This reads the archive in
+ * the tab, pulls out the `source/` entries, and hands back a plain folder
+ * as a zip.
+ *
+ * Enough of the zip format to list the central directory and inflate one
+ * entry, mirroring cloud/worker/src/index.js so there is one shape to
+ * learn. Deflate uses the browser's own DecompressionStream -- no library,
+ * nothing to keep up to date.
+ */
+function zipU16(b, i) { return b[i] | (b[i + 1] << 8); }
+function zipU32(b, i) { return (b[i] | (b[i + 1] << 8) | (b[i + 2] << 16) | (b[i + 3] << 24)) >>> 0; }
+
+function zipEntries(bytes) {
+  // EOCD: signature 06054b50, at least 22 bytes, comment up to 65535.
+  const floor = Math.max(0, bytes.length - 22 - 65535);
+  let eocd = -1;
+  for (let i = bytes.length - 22; i >= floor; i -= 1) {
+    if (bytes[i] === 0x50 && bytes[i + 1] === 0x4b && bytes[i + 2] === 0x05 && bytes[i + 3] === 0x06) {
+      eocd = i;
+      break;
+    }
+  }
+  if (eocd < 0) return [];
+  const count = zipU16(bytes, eocd + 10);
+  let at = zipU32(bytes, eocd + 16);
+  const out = [];
+  const dec = new TextDecoder();
+  for (let n = 0; n < count && at + 46 <= bytes.length; n += 1) {
+    if (zipU32(bytes, at) !== 0x02014b50) break;
+    const method = zipU16(bytes, at + 10);
+    const compressed = zipU32(bytes, at + 20);
+    const size = zipU32(bytes, at + 24);
+    const nameLen = zipU16(bytes, at + 28);
+    const extraLen = zipU16(bytes, at + 30);
+    const commentLen = zipU16(bytes, at + 32);
+    const local = zipU32(bytes, at + 42);
+    out.push({
+      name: dec.decode(bytes.subarray(at + 46, at + 46 + nameLen)),
+      method, compressed, size, local,
+    });
+    at += 46 + nameLen + extraLen + commentLen;
+  }
+  return out;
+}
+
+/// The bytes of one entry, inflated when it is deflated. Returns null for
+/// anything this reader does not understand rather than guessing.
+async function zipRead(bytes, entry) {
+  if (entry.local + 30 > bytes.length) return null;
+  if (zipU32(bytes, entry.local) !== 0x04034b50) return null;
+  const nameLen = zipU16(bytes, entry.local + 26);
+  const extraLen = zipU16(bytes, entry.local + 28);
+  const from = entry.local + 30 + nameLen + extraLen;
+  const raw = bytes.subarray(from, from + (entry.method === 0 ? entry.size : entry.compressed));
+  if (entry.method === 0) return raw;
+  if (entry.method !== 8) return null;
+  const stream = new Blob([raw]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+/// A minimal STORED zip, written by hand.
+///
+/// Stored, not deflated: source files are small, the saving is irrelevant
+/// next to the .krate they came from, and a compressor here would be a
+/// second implementation of something the platform only gives us one
+/// direction of.
+function zipWrite(files) {
+  const enc = new TextEncoder();
+  const chunks = [];
+  const central = [];
+  let offset = 0;
+  // CRC-32, the one piece a zip cannot be written without.
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n += 1) {
+    let c = n;
+    for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    table[n] = c >>> 0;
+  }
+  const crc32 = (buf) => {
+    let c = 0xffffffff;
+    for (let i = 0; i < buf.length; i += 1) c = table[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  };
+  const put32 = (view, at, v) => { view.setUint32(at, v, true); };
+  const put16 = (view, at, v) => { view.setUint16(at, v, true); };
+
+  for (const [name, body] of files) {
+    const nameBytes = enc.encode(name);
+    const crc = crc32(body);
+    const local = new Uint8Array(30 + nameBytes.length);
+    const lv = new DataView(local.buffer);
+    put32(lv, 0, 0x04034b50);
+    put16(lv, 4, 20);          // version needed
+    put16(lv, 8, 0);           // stored
+    put32(lv, 14, crc);
+    put32(lv, 18, body.length);
+    put32(lv, 22, body.length);
+    put16(lv, 26, nameBytes.length);
+    local.set(nameBytes, 30);
+    chunks.push(local, body);
+
+    const dir = new Uint8Array(46 + nameBytes.length);
+    const dv = new DataView(dir.buffer);
+    put32(dv, 0, 0x02014b50);
+    put16(dv, 4, 20);
+    put16(dv, 6, 20);
+    put16(dv, 10, 0);
+    put32(dv, 16, crc);
+    put32(dv, 20, body.length);
+    put32(dv, 24, body.length);
+    put16(dv, 28, nameBytes.length);
+    put32(dv, 42, offset);
+    dir.set(nameBytes, 46);
+    central.push(dir);
+    offset += local.length + body.length;
+  }
+
+  let centralSize = 0;
+  for (const d of central) centralSize += d.length;
+  const end = new Uint8Array(22);
+  const ev = new DataView(end.buffer);
+  put32(ev, 0, 0x06054b50);
+  put16(ev, 8, central.length);
+  put16(ev, 10, central.length);
+  put32(ev, 12, centralSize);
+  put32(ev, 16, offset);
+  return new Blob([...chunks, ...central, end], { type: "application/zip" });
+}
+
+/* The Cargo project inside an app, as a download. */
+async function downloadSource(path, appName) {
+  const app = currentWebApp(path);
+  if (!app) throw new Error("This app was not made here, so its source is not here either.");
+  const headers = {};
+  if (bridge.token) headers.authorization = `Bearer ${bridge.token}`;
+  const res = await fetch(app.url, { headers });
+  if (!res.ok) throw new Error((await res.text().catch(() => "")) || "the file is not there any more; make it again");
+  const bytes = new Uint8Array(await res.arrayBuffer());
+
+  const wanted = zipEntries(bytes).filter((e) => e.name.startsWith("source/") && !e.name.endsWith("/"));
+  if (!wanted.length) throw new Error("this app does not carry its source");
+  const files = [];
+  for (const entry of wanted) {
+    const body = await zipRead(bytes, entry);
+    // An entry this reader cannot inflate is skipped, not guessed at: a
+    // source folder missing one file is worth having and saying so; a
+    // folder with one corrupt file in it is not.
+    if (body) files.push([entry.name.slice("source/".length), body]);
+  }
+  if (!files.length) throw new Error("this app's source could not be read");
+
+  const stem = (appName || "app").replace(/\.krate$/, "").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(zipWrite(files));
+  link.download = `${stem}-source.zip`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(link.href), 60_000);
+  return files.length;
 }
 
 /* The build id inside an app's URL, `${BUILDER}/build/<id>/file`. */
@@ -663,10 +844,22 @@ const COMMANDS = {
     if (/^(https?:|data:)/.test(String(path || ""))) return path;
     return refuse("That picture lives on your computer, not on this page.");
   },
+  /* Studio asks for a folder to reveal; a browser has no folders, so the
+   * honest equivalent is the project itself, handed over. Returning a
+   * non-empty string keeps the UI's Source button enabled -- it checks for
+   * one before offering the button -- and `reveal` below does the work. */
   async session_source_dir() {
-    return refuse("The source travels inside the .krate; download it and open it in Studio to edit the files by hand.");
+    return currentWebApp(null) ? "source" : "";
   },
   async reveal({ path } = {}) {
+    // Studio's Source button reveals the folder session_source_dir gave it.
+    // In a tab that is the marker above, and revealing it means handing the
+    // Cargo project over.
+    if (path === "source") {
+      const name = (bridge.jobResult && bridge.jobResult.name) || "app";
+      const n = await downloadSource(null, name);
+      return refuse(`Downloaded the project -- ${n} file${n === 1 ? "" : "s"}. Open the folder with cargo, or in Studio on your computer.`);
+    }
     const app = currentWebApp(path);
     if (!app) return refuse("Check your downloads folder.");
     await downloadApp(app.url, app.name);
