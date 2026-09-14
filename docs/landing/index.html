@@ -474,8 +474,11 @@ img { max-width: 100%; display: block; }
 @media (max-width: 760px) { .stepGrid { grid-template-columns: 1fr; } }
 /* The scrolling stat cards were wider than a phone, so every card was cut
    off at both edges and none could be read whole. */
-@media (max-width: 760px) {
-  .marqTrack .stat { width: min(78vw, 300px); }
+@media (max-width: 860px) {
+  /* Cards were clipped at both edges: a fixed width wider than the screen
+     with a track that starts off-canvas. */
+  .marqTrack .stat { width: min(74vw, 290px); white-space: normal; }
+  .marqTrack { gap: 12px; }
   .marqLabel { font-size: 11.5px; padding: 0 16px; text-align: center; }
 }
 .step {
@@ -647,7 +650,15 @@ img { max-width: 100%; display: block; }
   /* The eclipse's bright arc crossed the CTAs, washing the download row
      until its text was barely there. Pushed down and dimmed so it stays
      scenery behind the words rather than over them. */
-  .eclipse { transform: translateX(-50%) translateY(26%) scale(1.3); opacity: 0.38; }
+  .eclipse { transform: translateX(-50%) translateY(40%) scale(1.35); opacity: 0.30; }
+  /* The download row sits on its own ground so the arc cannot wash it
+     out; measured at 412px the button's text was lighter than the glow
+     behind it. */
+  .dlLine .btn-primary {
+    background: rgba(20, 20, 24, 0.92); color: #fff;
+    border-color: rgba(255, 255, 255, 0.22);
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  }
   /* Clear of the brand bar: the headline was rendering at top 0, tucked
      behind it. */
   .heroContent { padding: 84px 20px 0; justify-content: flex-start; }
