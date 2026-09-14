@@ -16384,6 +16384,7 @@ fn check_app(dir: &Path, shoot: Option<&Path>, no_run: bool, json: bool) -> Resu
                         "imports": summary.imports,
                         "shoot": summary.shoot.as_ref().map(|p| p.display().to_string()),
                         "usability_notes": summary.usability_notes,
+                        "source_changes": summary.source_changes,
                     })
                 );
             } else {
@@ -16439,6 +16440,49 @@ struct CheckSummary {
     /// failures: a green check-app with a note here means the app passed
     /// everything that could be checked, and says which checks those were.
     usability_notes: Vec<String>,
+    /// Files the build stage rewrote, said out loud (IC-295): a build must
+    /// not change source without the change being shown and recorded.
+    source_changes: Vec<String>,
+}
+
+/// The files a build is allowed to rewrite, watched across the build stage
+/// so a change is reported rather than passed off as "the build" (IC-295:
+/// "validation/build must not change source unless an explicit action
+/// shows and records the change"). Cargo.lock and src/bindings.rs are
+/// generated; Cargo.toml is the one file check-app itself repairs.
+const BUILD_MAY_REWRITE: [&str; 3] = ["Cargo.lock", "src/bindings.rs", "Cargo.toml"];
+
+fn source_snapshot(dir: &Path) -> Vec<(&'static str, Option<Vec<u8>>)> {
+    BUILD_MAY_REWRITE
+        .iter()
+        .map(|name| (*name, fs::read(dir.join(name)).ok()))
+        .collect()
+}
+
+/// What changed on disk since the snapshot, one sentence per file.
+fn source_changes_since(dir: &Path, before: &[(&'static str, Option<Vec<u8>>)]) -> Vec<String> {
+    let mut changes = Vec::new();
+    for (name, was) in before {
+        let now = fs::read(dir.join(name)).ok();
+        let what = match (was, &now) {
+            (None, Some(_)) => "created",
+            (Some(a), Some(b)) if a != b => "updated",
+            (Some(_), None) => "removed",
+            _ => continue,
+        };
+        let why = match *name {
+            "Cargo.lock" if what == "created" => {
+                "the first build resolved every dependency version; commit it, it ships inside the app"
+            }
+            "Cargo.lock" => "a dependency or its version changed; the new lock ships inside the app",
+            "src/bindings.rs" => {
+                "cargo-component regenerates it from the WIT on every build; it is not source you edit"
+            }
+            _ => "check-app repaired it before building (see the note above)",
+        };
+        changes.push(format!("{name}: {what} by this build -- {why}"));
+    }
+    changes
 }
 
 fn run_check_app(
@@ -16549,12 +16593,14 @@ fn run_check_app(
     // required", neither of which names the missing dep. Telling it not to did
     // not work; the pack said so in capitals and it still went missing. So put
     // the line back instead of complaining about it.
+    let watched = source_snapshot(dir);
     let restored_sdk_dep = restore_krate_dependency(dir);
     let wasm = build_component_captured(dir).map_err(|detail| CheckFailure {
         stage: CheckStage::Build,
         fix: build_fix(&detail),
         detail,
     })?;
+    let source_changes = source_changes_since(dir, &watched);
     if restored_sdk_dep {
         // Not a failure -- the build passed -- but say it happened, so an author
         // reading the output learns the rule rather than silently relying on it.
@@ -16563,6 +16609,9 @@ fn run_check_app(
              check-app put it back. The SDK owns the allocator, panic handler, and memory \
              intrinsics a no_std guest needs; do not remove it."
         );
+    }
+    for change in &source_changes {
+        eprintln!("note: {change}");
     }
     passed.push("build");
 
@@ -16629,6 +16678,7 @@ fn run_check_app(
             imports,
             shoot: None,
             usability_notes,
+            source_changes,
         });
     }
 
@@ -16854,6 +16904,7 @@ fn run_check_app(
         imports,
         shoot: shot,
         usability_notes,
+        source_changes,
     })
 }
 
@@ -20873,6 +20924,45 @@ mod check_app_tests {
         assert!(
             !restore_krate_dependency(no_prefix.path()),
             "never guess an SDK path"
+        );
+    }
+
+    /// A build that rewrites source says which file and why (IC-295): the
+    /// lock a first build creates, a lock a dependency change updates, the
+    /// bindings cargo-component regenerates. An unchanged file is silence.
+    #[test]
+    fn a_build_that_rewrites_source_says_so() {
+        let dir = tempfile::tempdir().expect("temp");
+        std::fs::create_dir_all(dir.path().join("src")).expect("src");
+        std::fs::write(dir.path().join("Cargo.toml"), "[package]\n").expect("cargo");
+        std::fs::write(dir.path().join("src/bindings.rs"), "// v1").expect("bindings");
+        let before = super::source_snapshot(dir.path());
+        assert!(
+            super::source_changes_since(dir.path(), &before).is_empty(),
+            "nothing changed, nothing said"
+        );
+        std::fs::write(dir.path().join("Cargo.lock"), "# resolved").expect("lock");
+        std::fs::write(dir.path().join("src/bindings.rs"), "// v2").expect("bindings");
+        let changes = super::source_changes_since(dir.path(), &before);
+        assert_eq!(changes.len(), 2, "{changes:?}");
+        assert!(
+            changes[0].starts_with("Cargo.lock: created by this build")
+                && changes[0].contains("commit it"),
+            "{changes:?}"
+        );
+        assert!(
+            changes[1].starts_with("src/bindings.rs: updated by this build")
+                && changes[1].contains("regenerates it from the WIT"),
+            "{changes:?}"
+        );
+        let later = super::source_snapshot(dir.path());
+        std::fs::write(dir.path().join("Cargo.lock"), "# resolved again").expect("lock");
+        let changes = super::source_changes_since(dir.path(), &later);
+        assert_eq!(changes.len(), 1, "{changes:?}");
+        assert!(
+            changes[0].starts_with("Cargo.lock: updated by this build")
+                && changes[0].contains("ships inside the app"),
+            "{changes:?}"
         );
     }
 

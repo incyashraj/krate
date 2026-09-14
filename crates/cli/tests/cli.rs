@@ -3616,6 +3616,18 @@ fn check_app_passes_a_known_good_app_and_emits_json() {
             .all(|i| i.as_str().unwrap().starts_with("krate:")),
         "a passing app imports only krate:*: {imports:?}"
     );
+    // A build that rewrites source says so in the report (IC-295). This
+    // app's lock is committed and current, so a warm build changes nothing
+    // -- the field is there, and empty, which is the honest answer.
+    let changes = value["source_changes"]
+        .as_array()
+        .expect("source_changes is reported, empty or not");
+    assert!(
+        changes
+            .iter()
+            .all(|c| !c.as_str().unwrap_or("").starts_with("Cargo.lock: updated")),
+        "a current lock must not be rewritten by a check: {changes:?}"
+    );
 }
 
 #[test]
