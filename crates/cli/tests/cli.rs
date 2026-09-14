@@ -6754,6 +6754,10 @@ fn an_editable_bundle_rebuilds_locked_from_what_it_carries() {
         eprintln!("skipping the rebuild proof: cargo-component is not on PATH");
         return;
     }
+    // Two cargo-component builds at once make the other one skip
+    // componentizing its artifact (measured: the skeleton test beside this
+    // one packed a core module on macOS CI while this test was building).
+    let _build_lock = cargo_build_guard();
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let app = repo.join("apps/krate-hello-gui");
     let toolchain = repo.join("rust-toolchain.toml");
