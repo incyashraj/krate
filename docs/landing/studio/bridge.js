@@ -38,6 +38,37 @@ const PENDING_KEY = "krate_pending_request";
 
 try { bridge.token = localStorage.getItem(TOKEN_KEY); } catch (e) {}
 
+/* A browser has no traffic lights, so the drawer's two-row header is one
+ * row of wasted space.
+ *
+ * Studio splits its sidebar header in two because macOS draws the window
+ * buttons over the first strip at x:20..74 -- the toggle sits on that line
+ * and the mark takes the row beneath, clear of anything the system paints.
+ * In a tab nothing is painted there, so the mark sat in a pocket of empty
+ * drawer below the toggle instead of beside it. This collapses the lights
+ * row and lifts the mark onto the toggle's line, which is what the desktop
+ * would do too if the system were not in the way.
+ *
+ * Web-only, injected here rather than added to Studio's stylesheet: on a
+ * desktop the two rows are correct and must stay. */
+const WEB_CSS = `
+body.macos .side-top, body:not(.macos) .side-top {
+  height: 0; margin: 0; padding: 0; overflow: visible;
+}
+body.macos .side-brandrow, body:not(.macos) .side-brandrow {
+  height: 44px; margin-top: 0; margin-bottom: 4px;
+  padding: 0 2px; justify-content: space-between; align-items: center;
+}
+body.macos .side-top .side-toggle, body:not(.macos) .side-top .side-toggle {
+  position: absolute; top: 7px; right: 12px; z-index: 3;
+}
+`;
+try {
+  const sheet = document.createElement("style");
+  sheet.textContent = WEB_CSS;
+  document.head.appendChild(sheet);
+} catch (e) {}
+
 /* A tab has no onboarding. Every question it asks is already answered here:
  * the agent is ours and the only one, there is nothing to install, and the
  * name comes from the account they signed in with. Studio reads this flag
