@@ -7259,7 +7259,15 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
         return Ok(0);
     }
 
+    // An API vendor is not a program on PATH, and resolve_agent refuses it
+    // below before anything else runs. `create` has always routed those to
+    // api_author; plan did not, so on the build service -- KRATE_AGENT is
+    // `anthropic` there, which is every browser request -- planning died
+    // with "unknown AI provider" (K-358). Resolved before the provider so
+    // the API path never touches it.
+    let api_vendor = agent.and_then(api_key::ApiVendor::parse);
     let provider = match agent {
+        _ if api_vendor.is_some() => agent_provider::PROVIDERS[0],
         Some(name) => resolve_agent(name)?,
         None => agent_provider::first_installed().ok_or_else(|| {
             anyhow::anyhow!("no AI is installed to plan with; run `krate ai` to see the options")
@@ -7311,9 +7319,26 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
          interaction and data pattern, never its topic -- or \"none\" if nothing fits. \
          The build will start FROM that example's working code and transform it, so \
          pick the one whose structure carries the most. The shapes:\n\
-{shape_menu}",
+{shape_menu}\n\n\
+         A Krate app may only touch what it declares, and this is the whole list:\n\
+         {capabilities}\n\
+         Everything else -- a window, drawing, keyboard and mouse -- every app has \
+         already and never declares. So: put in \"needs\" ONLY names from that list, \
+         and only ones this app truly requires. An app that just shows and computes \
+         needs nothing, and \"needs\": [] is the right answer for most requests. \
+         Never invent a capability name, and never promise the app will do something \
+         the list cannot cover -- say plainly what it will do instead.",
         shape_menu = authoring_context::shape_menu(),
+        capabilities = authoring_context::plan_capability_names(),
     );
+
+    // The API answer joins plan's OWN parsing below -- same extractor, same
+    // fallbacks, same words -- rather than growing a second plan path that
+    // drifts from this one.
+    if let Some(vendor) = api_vendor {
+        let answer = api_author::ask_once(vendor, &prompt).unwrap_or_default();
+        return finish_plan(&answer, provider, false);
+    }
 
     let program = agent_provider::which_on_path(provider.program())
         .unwrap_or_else(|| PathBuf::from(provider.program()));
@@ -7351,6 +7376,21 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+    finish_plan(&text, provider, wants_session)
+}
+
+/// Turn an AI's answer into the one JSON object `krate plan` prints.
+///
+/// Shared by both ways of asking -- a CLI provider through a process, an
+/// API vendor through one HTTP call -- because the interesting part is not
+/// the asking: it is the extraction, and the rule that a plan is optional
+/// intelligence which must never become a gate. Two copies of that would
+/// mean two different answers to "what happens when the AI says nothing".
+fn finish_plan(
+    text: &str,
+    provider: &dyn agent_provider::AgentProvider,
+    wants_session: bool,
+) -> Result<u8> {
     // The plan is optional intelligence, never a gate. If the AI's answer
     // cannot be read as a plan -- an output shape we have not seen, a timeout, a
     // provider that frames things a new way tomorrow -- the request must NOT
@@ -7371,8 +7411,8 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
     //
     // Reuses agent_failure_reason, the same reader the authoring path uses,
     // so a provider only has to be understood once.
-    if extract_plan_json(&text).is_none() {
-        if let Some(reason) = agent_failure_reason_in(&text) {
+    if extract_plan_json(text).is_none() {
+        if let Some(reason) = agent_failure_reason_in(text) {
             anyhow::bail!(
                 "{} could not look at your request:\n\n  {reason}\n\n\
                  Nothing was built. This is a problem with the AI tool, not \
@@ -7382,7 +7422,7 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
         }
     }
 
-    let json = extract_plan_json(&text).unwrap_or_else(|| {
+    let json = extract_plan_json(text).unwrap_or_else(|| {
         if text.trim().is_empty() {
             eprintln!("note: the planning AI returned nothing; building directly.");
         } else {
@@ -7397,7 +7437,7 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
     let json = if wants_session {
         match (
             serde_json::from_str::<serde_json::Value>(&json),
-            provider.session_id_in_transcript(&text),
+            provider.session_id_in_transcript(text),
         ) {
             (Ok(mut value), Some(id)) if value.is_object() => {
                 value["agent_session"] = serde_json::json!(format!("{}:{}", provider.name(), id));

@@ -432,6 +432,28 @@ pub(crate) fn sdk_surface_section() -> String {
 /// than the bare name list the old contract used: it names each capability's
 /// phase, whether it is granted to every app by default, and how a scoped one
 /// is written.
+/// The capability names a plan may promise, one line, comma separated.
+///
+/// The plan step used to invent `needs` in free text: it had never seen the
+/// capability list, so it could promise an app that "reads your calendar"
+/// or "runs in the background" and the build would then declare something
+/// else or nothing at all. A plan that names what the app will actually
+/// declare is a contract; one that paraphrases is a guess.
+///
+/// Names only, and default-granted ones excluded -- those are granted to
+/// every app and must never be declared, so listing them would invite a
+/// plan to promise something that is not a decision.
+pub(crate) fn plan_capability_names() -> String {
+    let mut names: Vec<String> = krate_manifest::supported_capability_specs()
+        .iter()
+        .filter(|spec| !spec.default_granted())
+        .map(|spec| spec.display_pattern())
+        .collect();
+    names.sort();
+    names.dedup();
+    names.join(", ")
+}
+
 pub(crate) fn capability_catalog_section() -> String {
     let mut out = String::from("\n---\n\n# 2. Capabilities: what a manifest may declare\n\n");
     out.push_str(
@@ -2162,6 +2184,45 @@ pub fn closest_example(request: &str) -> &'static EmbeddedExample {
 
 #[cfg(test)]
 mod tests {
+    /// The plan may only promise what an app can actually declare.
+    ///
+    /// Before this the plan step had never seen the capability list, so its
+    /// "needs" were free text -- it could promise a calendar or a background
+    /// service, and the build would then declare something else or nothing.
+    /// The list comes from the same manifest code the packer enforces, so a
+    /// capability added or removed there cannot leave the plan behind.
+    #[test]
+    fn a_plan_may_only_promise_capabilities_that_exist() {
+        let names = super::plan_capability_names();
+        assert!(!names.is_empty(), "the plan needs a list to choose from");
+
+        // Real, declarable capabilities are offered.
+        for expected in ["fs.read", "net.connect", "store.kv", "ui.notify"] {
+            assert!(
+                names.contains(expected),
+                "{expected} is declarable, so a plan must be able to name it: {names}"
+            );
+        }
+
+        // Default-granted ones are NOT: every app has them and declaring one
+        // is an error, so offering them would invite a plan to promise a
+        // decision that is not a decision.
+        for granted in krate_manifest::supported_capability_specs()
+            .into_iter()
+            .filter(|spec| spec.default_granted())
+        {
+            let pattern = granted.display_pattern();
+            assert!(
+                !names.split(", ").any(|n| n == pattern),
+                "{pattern} is granted to every app and must not be offered: {names}"
+            );
+        }
+
+        // One line, comma separated: this rides on every plan request, and
+        // a multi-line table here would be tokens spent on formatting.
+        assert!(!names.contains('\n'), "the plan list stays one line");
+    }
+
     /// A windowed app is taught to reach Phase 3 through the SDK's `gui`
     /// feature, not through a generated bindings copy of its own, and the
     /// old warning against the SDK helpers in GUI apps is gone (IC-298).

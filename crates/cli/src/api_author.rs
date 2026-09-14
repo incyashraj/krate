@@ -100,7 +100,9 @@ fn prices(model: &str) -> ((f64, f64, f64, f64), bool) {
 /// Emitted on every exit that spent anything, success or not -- a build
 /// that failed on the fourth round still cost four rounds.
 pub(crate) fn announce_spend(dollars: f64, model: &str, rounds: usize) {
-    eprintln!("krate-spend: {{\"usd\": {dollars:.4}, \"model\": \"{model}\", \"rounds\": {rounds}}}");
+    eprintln!(
+        "krate-spend: {{\"usd\": {dollars:.4}, \"model\": \"{model}\", \"rounds\": {rounds}}}"
+    );
 }
 
 /// What the run has cost so far, in dollars, from the API's own counts.
@@ -513,6 +515,27 @@ fn tool_schema(vendor: ApiVendor) -> serde_json::Value {
                 .collect(),
         ),
     }
+}
+
+/// Ask the model one question and return its text. No tools, no loop.
+///
+/// `krate plan` needs this. It only ever knew how to drive a CLI provider,
+/// so on a machine whose agent is an API vendor -- which is exactly the
+/// build service, `KRATE_AGENT=anthropic` -- planning failed with "unknown
+/// AI provider" while building worked. The browser's plan step was answering
+/// from the failure path, not from the model.
+///
+/// Deliberately small: one call, one answer, no tool schema and no retry.
+/// A plan is a sentence, and anything more here would be spend on a step
+/// whose whole job is to cost almost nothing.
+pub fn ask_once(vendor: ApiVendor, prompt: &str) -> Result<String> {
+    let (key, _source) = api_key::load(vendor)
+        .ok_or_else(|| anyhow::anyhow!("no {} API key is set", vendor.label()))?;
+    let model = model_for(vendor);
+    let messages = vec![serde_json::json!({"role": "user", "content": prompt})];
+    let reply = call_api(vendor, &key, &model, &messages, "")?;
+    let (text, _calls, _stop) = parse_reply(vendor, &reply);
+    Ok(text)
 }
 
 /// One HTTP round trip to the vendor.

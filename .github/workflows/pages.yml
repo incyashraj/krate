@@ -118,6 +118,9 @@ jobs:
           # hub, never in the browser, and never handed back to the
           # page. That is the one mistake here worth a deploy gate.
           node docs/landing/studio/keys-test.mjs
+          # And that Plan mode cannot build: it is a promise to a new
+          # person, and a mode that sometimes builds is not a mode.
+          node docs/landing/studio/modes-test.mjs
 
           mkdir -p _site/app
           cp -R studio/ui/. _site/app/

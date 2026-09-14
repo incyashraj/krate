@@ -361,7 +361,7 @@ async function allowedToBuild(token, device) {
  * the same command the desktop runs, so a change made in a tab and a change
  * made in Studio cannot come out different. `revise` names the finished job
  * it starts from: { parentId, source, change, caseId, name }. */
-async function startBuild({ request, token, account, device, revise = null }) {
+async function startBuild({ request, token, account, device, revise = null, shape = "" }) {
   // 128 random bits. The id appears in URLs and is all a page holds, so it
   // must not be guessable -- the truncated UUID this used to be was the only
   // thing between anyone on the internet and another person's app file.
@@ -409,6 +409,11 @@ async function startBuild({ request, token, account, device, revise = null }) {
     : ["create", request, "--output", output, "--agent", AGENT, "--transcript", transcript];
   const runEnv = { ...process.env };
   if (theirKey) runEnv[API_AGENTS[AGENT]] = theirKey;
+  // The shape the plan picked: the engine seeds that working example as
+  // src/lib.rs and the model transforms it rather than writing a file from
+  // nothing. This is the single biggest lever on how long a build takes,
+  // and the browser was not using it.
+  if (shape && /^[a-z0-9-]{1,40}$/i.test(shape)) runEnv.KRATE_STARTER_SHAPE = shape;
   const proc = spawn(KRATE, args, { cwd: dir, env: runEnv });
   job.proc = proc;
 
@@ -749,6 +754,7 @@ const server = createServer(async (req, res) => {
         return json(res, 503, { wall: true, download: true, message: off });
       }
 
+      const shape = String(body.shape || "").trim();
       const allowed = await allowedToBuild(token, device);
       if (!allowed.ok) {
         // JSON for a wall, plain text for everything else.
@@ -771,7 +777,7 @@ const server = createServer(async (req, res) => {
         return send(res, 429, "One app is already being made. It will be a few minutes.");
       }
 
-      const job = await startBuild({ request, token, account: allowed.account, device });
+      const job = await startBuild({ request, token, account: allowed.account, device, shape });
       return json(res, 200, { id: job.id });
     }
 

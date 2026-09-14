@@ -411,7 +411,15 @@ const COMMANDS = {
    * builder, which parses the same engine output Studio parses locally.
    */
 
-  async create_app({ request, session } = {}) {
+  async create_app({ request, session, starterShape } = {}) {
+    // Plan mode means plan mode. Studio's chat has an escape hatch -- typing
+    // "build it" during planning starts the build -- and on a desktop that
+    // is right, because the person chose to plan in that moment. Here they
+    // chose a MODE, before typing, and a mode that sometimes builds is not
+    // a mode. The refusal says how to change it.
+    if (webMode() === "plan") {
+      return refuse("You are in Plan mode, so nothing is built. Switch to Build in the box below to make this app.");
+    }
     // Nobody makes an app without an account: it is how the funded first
     // app is counted, and how the work belongs to someone. But the
     // sentence they just typed must survive the round trip -- being asked
@@ -449,7 +457,7 @@ const COMMANDS = {
     try {
       started = await builder("/build", {
         method: "POST",
-        body: JSON.stringify({ request, device: deviceId() }),
+        body: JSON.stringify({ request, device: deviceId(), shape: starterShape || "" }),
       });
     } catch (err) {
       // The one-app wall. The builder answers with `download: true` when the
@@ -839,6 +847,85 @@ async function paintSpend() {
   `;
 }
 
+/* ---- Plan or Build, chosen before you type ------------------------------
+ *
+ * Studio's desktop flow always plans first: the request is looked at, a
+ * question or a plan comes back, and the build starts after that. Good for
+ * somebody who has used it before; on the web it means a new person types a
+ * sentence and gets a conversation when they expected an app.
+ *
+ * So the browser asks once, in the composer, before anything is typed:
+ *
+ *   Build  -- the default. Up to three questions when the answer would
+ *             change what gets built, then it builds. (Today's behaviour.)
+ *   Plan   -- a plan and nothing else. No build, no file, no spend beyond
+ *             the one short answer.
+ *
+ * Plan mode is a promise: choosing it must never produce an app. That is
+ * enforced in `create_app` below, not only in the UI, because a stray
+ * "build it" in the chat would otherwise walk straight past the choice.
+ */
+const MODE_KEY = "krate_web_mode";
+function webMode() {
+  try { return localStorage.getItem(MODE_KEY) === "plan" ? "plan" : "build"; } catch (e) { return "build"; }
+}
+function setWebMode(mode) {
+  try { localStorage.setItem(MODE_KEY, mode === "plan" ? "plan" : "build"); } catch (e) {}
+  paintMode();
+}
+
+const MODE_CSS = `
+.web-mode { display: inline-flex; align-items: center; gap: 2px;
+  padding: 2px; border-radius: 999px; background: var(--film);
+  border: 1px solid var(--line); margin-right: 8px; }
+.web-mode button {
+  appearance: none; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: 11.5px; font-weight: 500; line-height: 1;
+  color: var(--muted); padding: 5px 11px; border-radius: 999px;
+  transition: background 0.15s, color 0.15s;
+}
+.web-mode button:hover { color: var(--text); }
+.web-mode button[aria-pressed="true"] { background: var(--text); color: var(--bg); }
+.web-mode-hint { font-size: 11px; color: var(--muted); margin-left: 2px; }
+`;
+
+function paintMode() {
+  const mode = webMode();
+  document.querySelectorAll(".web-mode button").forEach((b) => {
+    b.setAttribute("aria-pressed", String(b.dataset.mode === mode));
+  });
+  const box = document.getElementById("homePrompt");
+  if (box) {
+    box.placeholder = mode === "plan"
+      ? "Describe an app -- you will get a plan, not a build…"
+      : "Describe an app, or paste code to port…";
+  }
+  const send = document.getElementById("homeSend");
+  if (send) send.title = mode === "plan" ? "Plan it (Enter)" : "Make it (Enter)";
+}
+
+/* The toggle lives in the composer row, beside the AI chip: the two
+ * decisions about a message -- who writes it, and whether this is a plan or
+ * a build -- belong in the same place, on the bar you are typing into. */
+function mountMode() {
+  const row = document.querySelector("#viewHome .bigbar-row");
+  if (!row || document.querySelector(".web-mode")) return;
+  const wrap = document.createElement("div");
+  wrap.className = "web-mode";
+  wrap.setAttribute("role", "group");
+  wrap.setAttribute("aria-label", "Plan or build");
+  wrap.innerHTML = `
+    <button type="button" data-mode="build" title="Answer a question or two, then build the app">Build</button>
+    <button type="button" data-mode="plan" title="Get a plan only -- nothing is built">Plan</button>`;
+  wrap.querySelectorAll("button").forEach((b) => {
+    b.addEventListener("click", () => setWebMode(b.dataset.mode));
+  });
+  const grow = row.querySelector(".grow");
+  if (grow) row.insertBefore(wrap, grow.nextSibling);
+  else row.appendChild(wrap);
+  paintMode();
+}
+
 function speakWeb() {
   // Nothing to swap in onboarding: a tab never shows it (see the
   // krate-onboarded flag at the top). The desktop's wording is its own.
@@ -858,9 +945,14 @@ function speakWeb() {
   }
   try {
     const sheet = document.createElement("style");
-    sheet.textContent = SPEND_CSS;
+    sheet.textContent = SPEND_CSS + MODE_CSS;
     document.head.appendChild(sheet);
   } catch (e) {}
+  // Studio paints its home a beat after boot, so the composer may not
+  // exist yet when this first runs.
+  mountMode();
+  setTimeout(mountMode, 400);
+  setTimeout(mountMode, 1200);
   // Drawn when the AI settings open, because that is where the key lives
   // and the two questions -- whose key, and what has it cost -- are one
   // question. Re-read every time rather than cached: a number about money
