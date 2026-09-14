@@ -912,23 +912,22 @@
   <div class="sheet-wrap hidden" id="sendSheet">
     <div class="sheet sheet-send">
       <h2>Ship it</h2>
-      <p class="sheet-sub">One file, three platforms, no installer.</p>
+      <p class="sheet-sub">Three ways to hand this app to someone.</p>
       <div class="send-opts">
         <button class="send-opt" id="sendCardBtn" type="button">
-          <b>The file</b>
-          <span>A .krate carrying its own source. Wrapped as a card -- a PNG
-          of the app that IS the app -- so it survives clients that strip
-          unknown attachments.</span>
+          <b>Send the file</b>
+          <span>Email or message it like a photo. It arrives as a picture of
+          your app, and the app is inside it.</span>
         </button>
         <button class="send-opt" id="sendLinkBtn" type="button">
-          <b>A link</b>
-          <span>Published to the hub and opened by URL. Republishing replaces
-          it in place, so the link in your README stays good.</span>
+          <b>Share a link</b>
+          <span>Post it anywhere. Anyone who opens the link gets the app, and
+          the link keeps working when you make changes.</span>
         </button>
         <button class="send-opt send-opt-quiet" id="sendWrapBtn" type="button">
-          <b>For someone without the runtime</b>
-          <span>A double-clickable that fetches the player once, then opens
-          this app. Every .krate they get after that just opens.</span>
+          <b>For someone new to Krate</b>
+          <span>They double-click once and it sets itself up. After that,
+          every Krate app just opens.</span>
         </button>
         <div class="send-wrap-os hidden" id="sendWrapOs">
           <button class="btn" data-wrap="mac" type="button">Mac</button>
@@ -939,7 +938,7 @@
       <div class="send-done hidden" id="sendCardDone">
         <img id="sendCardImg" alt="The card: your app's picture with the app inside" />
         <p id="sendCardNote"></p>
-        <button class="send-quiet-link" id="sendRawBtn" type="button">Show the raw .krate</button>
+        <button class="send-quiet-link" id="sendRawBtn" type="button">Use the plain file instead</button>
       </div>
       <div class="detail-actions">
         <button class="btn btn-ghost sheet-close" data-close="sendSheet">Close</button>
