@@ -1,75 +1,57 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1200" width="1200" height="1200" aria-hidden="true">
-  <!-- The Krate mark as ambient light.
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1000" width="1400" height="1000" aria-hidden="true">
+  <!-- The Krate mark, as the faintest wash of light.
 
-       Not the logo placed on the page, and not the logo blurred either: a
-       blurred solid becomes a featureless blob at any radius soft enough to
-       sit behind text. That was tried first and measured on screen; the
-       shape was gone at every setting.
+       The mark is a STACK: a wide flat cap over three horizontal slabs,
+       each slab a shallow diamond seen from slightly above, with a thin
+       gap of background between them. Wider than it is tall. It is not a
+       triangle, and an earlier version of this file drew it as one.
 
-       What survives is the mark's EDGES, glowing. The apex is brightest
-       where its two top edges meet, the light runs down them and fades out,
-       and the stack below shows as a faint diamond. That is a shape a person
-       recognises without being able to say why, which is what a watermark is
-       for.
+       Held deliberately quiet. This sits under everything a person came
+       here to read, so it is a suggestion of the shape and its colour, not
+       a picture of the logo: low alpha, generous blur, no bright edge
+       anywhere to pull the eye. If it is the first thing noticed, it is
+       wrong.
 
-       One file for both themes. Each sets its own opacity: a glow that works
-       on near-black is a smudge on off-white, so light mode wants less of
-       the same picture, not a different one. -->
+       One file for both themes; each sets its own opacity, because the same
+       wash that reads on near-black is a smudge on off-white. -->
   <defs>
-    <!-- Along each beam: hot at the apex, gone by the floor. -->
-    <linearGradient id="beam" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#c9b6ff" stop-opacity="0.95"/>
-      <stop offset="0.35" stop-color="#8b5cf6" stop-opacity="0.55"/>
-      <stop offset="1" stop-color="#6d28d9" stop-opacity="0"/>
+    <!-- The logo's own range: pale periwinkle at the lit top edge down to
+         the deeper blue-violet of the slab fronts. -->
+    <linearGradient id="slab" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#b9b0ff" stop-opacity="0.55"/>
+      <stop offset="0.5" stop-color="#7b6bf2" stop-opacity="0.38"/>
+      <stop offset="1" stop-color="#4733d9" stop-opacity="0.22"/>
     </linearGradient>
-    <!-- The body of the wedge: a wash, so its middle is not empty black. -->
-    <linearGradient id="wash" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#7c3aed" stop-opacity="0.40"/>
-      <stop offset="0.6" stop-color="#6d28d9" stop-opacity="0.12"/>
-      <stop offset="1" stop-color="#4c1d95" stop-opacity="0"/>
-    </linearGradient>
-    <radialGradient id="crown" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0" stop-color="#e9deff" stop-opacity="0.95"/>
-      <stop offset="0.45" stop-color="#a78bfa" stop-opacity="0.45"/>
-      <stop offset="1" stop-color="#7c3aed" stop-opacity="0"/>
-    </radialGradient>
-    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#a78bfa" stop-opacity="0.55"/>
-      <stop offset="1" stop-color="#7c3aed" stop-opacity="0.10"/>
+    <linearGradient id="cap" x1="0.15" y1="0" x2="0.85" y2="1">
+      <stop offset="0" stop-color="#cdc6ff" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#7b6bf2" stop-opacity="0.30"/>
     </linearGradient>
 
-    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
-      <feGaussianBlur stdDeviation="9"/>
+    <!-- Enough blur to lose every edge while keeping the silhouette. -->
+    <filter id="wash" x="-35%" y="-35%" width="170%" height="170%">
+      <feGaussianBlur stdDeviation="34"/>
     </filter>
-    <filter id="softer" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="22"/>
-    </filter>
-    <filter id="softest" x="-60%" y="-60%" width="220%" height="220%">
-      <feGaussianBlur stdDeviation="44"/>
-    </filter>
+
+    <!-- Fades the whole stack out at its own edges, so nothing ends on a
+         line: the wash meets the page instead of stopping against it. -->
+    <radialGradient id="falloff" cx="0.5" cy="0.48" r="0.58">
+      <stop offset="0" stop-color="#fff" stop-opacity="1"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <mask id="soften">
+      <rect width="1400" height="1000" fill="url(#falloff)"/>
+    </mask>
   </defs>
 
-  <!-- The apex wedge, filled as a wash so its inside carries some light. -->
-  <path d="M600 170 L980 700 L220 700 Z" fill="url(#wash)" filter="url(#softer)"/>
+  <g mask="url(#soften)" filter="url(#wash)">
+    <!-- The cap: a wide, shallow pyramid over the stack. -->
+    <path d="M700 250 L1240 420 L160 420 Z" fill="url(#cap)"/>
 
-  <!-- Its two top edges, the brightest thing here. Drawn twice: a wide soft
-       pass for the halo, a narrow one for the line inside it. -->
-  <g filter="url(#softer)" opacity="0.85">
-    <path d="M600 170 L980 700" stroke="url(#beam)" stroke-width="26" fill="none" stroke-linecap="round"/>
-    <path d="M600 170 L220 700" stroke="url(#beam)" stroke-width="26" fill="none" stroke-linecap="round"/>
-  </g>
-  <g filter="url(#soft)">
-    <path d="M600 170 L980 700" stroke="url(#beam)" stroke-width="7" fill="none" stroke-linecap="round"/>
-    <path d="M600 170 L220 700" stroke="url(#beam)" stroke-width="7" fill="none" stroke-linecap="round"/>
-  </g>
-
-  <!-- The crown: where the edges meet, light pools. -->
-  <ellipse cx="600" cy="205" rx="150" ry="110" fill="url(#crown)" filter="url(#softer)"/>
-
-  <!-- The stack below, as a faint diamond: enough to close the shape and no
-       more, because this half sits under the page's own content. -->
-  <g filter="url(#softest)" opacity="0.5">
-    <path d="M220 700 L600 900 L980 700" stroke="url(#rim)" stroke-width="20" fill="none" stroke-linejoin="round"/>
-    <path d="M300 620 L600 780 L900 620" stroke="url(#rim)" stroke-width="14" fill="none" stroke-linejoin="round"/>
+    <!-- Three slabs, each a shallow diamond with a front face below it.
+         The gaps between them are what makes the mark read as layers. -->
+    <path d="M160 460 L700 700 L1240 460 L1240 520 L700 760 L160 520 Z" fill="url(#slab)"/>
+    <path d="M160 590 L700 830 L1240 590 L1240 650 L700 890 L160 650 Z" fill="url(#slab)" opacity="0.75"/>
+    <path d="M200 330 L700 555 L1200 330 L1200 380 L700 605 L200 380 Z" fill="url(#slab)" opacity="0.85"/>
   </g>
 </svg>

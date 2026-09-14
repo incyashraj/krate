@@ -139,19 +139,19 @@ body::before {
   pointer-events: none;
   background-image: url("ambient-mark.svg");
   background-repeat: no-repeat;
-  background-position: 50% -6%;
+  background-position: 50% 2%;
   /* Capped in viewport-height units as well as percent: on a very wide
      window a percentage-only size makes the triangle short and stretched. */
-  background-size: min(155vh, 135%) auto;
-  opacity: 0.46;
+  background-size: min(120vh, 100%) auto;
+  opacity: 0.22;
 }
-body.light::before { opacity: 0.16; }
+body.light::before { opacity: 0.09; }
 
 /* Centred on the CONTENT, not the window. With the drawer open the two are
    not the same place, and an apex off the axis of the column it lights
    reads as a mistake rather than as lighting. */
 body.side-open::before {
-  background-position: calc(50% + (var(--side-w, 240px) / 2)) -6%;
+  background-position: calc(50% + (var(--side-w, 240px) / 2)) 2%;
 }
 
 /* Everything the app draws sits above the lighting. The views already
