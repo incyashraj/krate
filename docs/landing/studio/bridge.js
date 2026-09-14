@@ -38,6 +38,13 @@ const PENDING_KEY = "krate_pending_request";
 
 try { bridge.token = localStorage.getItem(TOKEN_KEY); } catch (e) {}
 
+/* A tab has no onboarding. Every question it asks is already answered here:
+ * the agent is ours and the only one, there is nothing to install, and the
+ * name comes from the account they signed in with. Studio reads this flag
+ * during boot, so it is written now -- before its script runs -- and the
+ * onboarding view is never shown rather than shown and dismissed. */
+try { localStorage.setItem("krate-onboarded", "1"); } catch (e) {}
+
 async function hub(path, opts = {}) {
   const headers = { ...(opts.headers || {}) };
   if (bridge.token) headers.authorization = `Bearer ${bridge.token}`;
@@ -665,19 +672,8 @@ function restorePending() {
 }
 
 function speakWeb() {
-  const swaps = [
-    [".ob-p", "Krate hands your words to our AI. Nothing to install."],
-    // On a desktop, signing in is for publishing and nothing else -- the
-    // build runs on your own machine either way. Here every build runs on
-    // ours, so an account is how the free first app is counted and how the
-    // work belongs to somebody. "Sign in to publish later" told a web
-    // visitor the opposite of what the very next screen enforces.
-    ["#obSignIn", "Sign in -- your first app is free"],
-  ];
-  for (const [selector, words] of swaps) {
-    const el = document.querySelector(selector);
-    if (el) el.textContent = words;
-  }
+  // Nothing to swap in onboarding: a tab never shows it (see the
+  // krate-onboarded flag at the top). The desktop's wording is its own.
   // On a desktop, a failed build can be retried with a different AI --
   // that is the point of Studio driving the one you already have. Here
   // there is only ours, so the button would lead to a picker with one
@@ -702,5 +698,25 @@ if (document.readyState === "loading") {
 } else {
   speakWeb();
 }
+
+/* Sign in before the Studio, not in the middle of it.
+ *
+ * Every build in a browser runs on our machine, so an account is required
+ * whatever happens. Asking at the moment somebody presses Make meant taking
+ * away the sentence they had just written and handing back a login page --
+ * the request survives (PENDING_KEY) but the interruption does not need to
+ * exist. Arriving signed out now goes straight to the sign-in and comes
+ * back to a Studio that is ready to work.
+ *
+ * `?stay` is the way back in for anyone who deliberately signed out and
+ * wants to look around, and /login itself must never bounce: without that
+ * guard a failed sign-in would ping-pong between the two pages. */
+function requireSignIn() {
+  if (bridge.token) return;
+  const params = new URLSearchParams(location.search);
+  if (params.has("stay")) return;
+  location.replace("/login/?next=studio");
+}
+requireSignIn();
 
 console.info("krate: studio bridge ready (hub + builder)");

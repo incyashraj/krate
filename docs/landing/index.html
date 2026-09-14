@@ -177,6 +177,11 @@ img { max-width: 100%; display: block; }
 .btn > span { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 8px; pointer-events: none; }
 .btn-primary { background: #fff; color: #0a0a0a; box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
 .btn-primary:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
+.btn-make { background: rgba(139, 92, 246, 0.16); color: #fff;
+  border: 1px solid rgba(167, 139, 250, 0.45); border-radius: 12px; }
+.btn-make:hover { background: rgba(139, 92, 246, 0.26);
+  box-shadow: 0 4px 18px rgba(124, 58, 237, 0.35); }
+.btn-make[data-pressed="true"] { border-radius: 20px; }
 .btn-ghost { background: transparent; color: #fff; border-radius: 12px; }
 .btn-ghost:hover { background: rgba(255,255,255,0.1); }
 .btn-ghost[data-pressed="true"] { border-radius: 20px; }
@@ -618,7 +623,7 @@ img { max-width: 100%; display: block; }
     <span><span class="num" id="starNum">open source</span></span>
   </a>
   <nav class="bnav" aria-label="Primary">
-    <a href="/app/">Make an app</a>
+    <a href="/login/?next=studio">Make an app</a>
     <a href="#receipts">Why Krate</a>
     <a href="/cloud/">Apps</a>
     <a href="/docs/">Docs</a>
@@ -662,14 +667,17 @@ img { max-width: 100%; display: block; }
               <a href="/studio/#get">All downloads &rarr;</a>
             </div>
           </div>
+          <a class="btn btn-make" id="makeBtn" data-pressed="false"
+             href="/login/?next=studio">
+            <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M3 12h18"/></svg>Sign in and make an app</span>
+            <span class="hoverco"></span><span class="ripple"></span>
+          </a>
           <a class="btn btn-ghost" id="srcBtn" data-pressed="false"
              href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">
             <span><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>Source</span>
             <span class="hoverco"></span><span class="ripple"></span>
           </a>
         </div>
-        <p class="secondDoor">Rather not install anything yet?
-        <a href="/app/">Make your first app in the browser.</a></p>
         <p class="secondDoor">Someone sent you a file?
         <a href="/open/">Here's how it opens.</a></p>
       </div>
@@ -770,7 +778,7 @@ img { max-width: 100%; display: block; }
       <p>Rust today, compiled to WebAssembly. Bring an app you already have
       with <code>krate port</code>, start from a template, or let an AI draft
       it and take over from there -- on your machine, or
-      <a href="/app/">in your browser</a>.</p>
+      <a href="/login/?next=studio">in your browser</a>.</p>
     </div>
     <div class="step">
       <div class="n">2</div>

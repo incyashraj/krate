@@ -108,6 +108,13 @@ jobs:
           # commands against the hub and the build service. Copying means
           # the two surfaces cannot drift -- a fix to the build card lands
           # on both at once, because there is one copy of it.
+          # The web Studio's two sign-in decisions, checked before the
+          # site is assembled: a signed-out visitor is sent to /login, a
+          # signed-in one is not, and ?stay is still a way back in. The
+          # cost of getting these wrong is a redirect loop on the front
+          # door, which no Rust lane would ever catch.
+          node docs/landing/studio/redirect-test.mjs
+
           mkdir -p _site/app
           cp -R studio/ui/. _site/app/
           rm -f _site/app/*.bak

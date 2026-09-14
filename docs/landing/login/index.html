@@ -92,6 +92,20 @@
   // origin's storage so it survives the provider round trip.
   var next = new URLSearchParams(location.search).get("next") || "";
   try { if (next) localStorage.setItem("krate_next", next); } catch (e) {}
+  // Already signed in and on the way somewhere? Go there.
+  //
+  // Every "Make an app" door on the site points here rather than straight
+  // at /app, so that signing in happens before the Studio opens instead of
+  // interrupting the first sentence somebody types. For a person who
+  // signed in last week that would otherwise mean a sign-in page they do
+  // not need, asking for an account they already have. The token is this
+  // origin's, written by /login/done; if it has expired the Studio's own
+  // check sends them back here, and `stay` stops that becoming a loop.
+  if (next === "studio" && !fromApp) {
+    var token = null;
+    try { token = localStorage.getItem("krate_tok"); } catch (e) {}
+    if (token) { location.replace("/app/"); return; }
+  }
   // A referral link lands here directly. The code is noted NOW -- before
   // any provider round trip -- and claimed automatically on the first
   // sign-in, whichever button they pick. Nothing for them to type.
