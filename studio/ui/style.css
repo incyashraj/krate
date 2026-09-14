@@ -115,6 +115,48 @@ body {
   overflow: hidden;
   user-select: none;
 }
+
+/* The mark, as the light in the room.
+ *
+ * The Krate mark's edges, glowing, sitting behind everything: a shape a
+ * person recognises without being able to name it. Drawn from the mark's
+ * own geometry (ambient-mark.svg), not a blurred copy of the logo -- a
+ * blurred solid is a featureless blob at any radius soft enough to sit
+ * under text, which is what the first attempt measured as.
+ *
+ * On ::before of body rather than an element, so no view has to remember
+ * to include it and nothing can be layered above it by accident. Fixed,
+ * because it is the room's lighting and does not scroll with the content.
+ *
+ * Both themes share the file and differ only in how much of it shows:
+ * near-black takes a real glow, off-white takes a hint, and the same
+ * picture at 0.46 would be a bruise on the light theme. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: url("ambient-mark.svg");
+  background-repeat: no-repeat;
+  background-position: 50% -6%;
+  /* Capped in viewport-height units as well as percent: on a very wide
+     window a percentage-only size makes the triangle short and stretched. */
+  background-size: min(155vh, 135%) auto;
+  opacity: 0.46;
+}
+body.light::before { opacity: 0.16; }
+
+/* Centred on the CONTENT, not the window. With the drawer open the two are
+   not the same place, and an apex off the axis of the column it lights
+   reads as a mistake rather than as lighting. */
+body.side-open::before {
+  background-position: calc(50% + (var(--side-w, 240px) / 2)) -6%;
+}
+
+/* Everything the app draws sits above the lighting. The views already
+   stack; this only guarantees they are not BELOW it. */
+.view, .win-controls { position: relative; z-index: 1; }
 /* Buttons inherit nothing by default -- not colour, not font. That is how
    card titles ended up black on near-black. */
 button { font: inherit; color: inherit; letter-spacing: inherit; }
