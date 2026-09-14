@@ -62,6 +62,26 @@ body.macos .side-brandrow, body:not(.macos) .side-brandrow {
 body.macos .side-top .side-toggle, body:not(.macos) .side-top .side-toggle {
   position: absolute; top: 7px; right: 12px; z-index: 3;
 }
+/* No traffic lights in a browser, so no 84px reservation for them.
+   Studio adds that padding on macOS and a Mac browser gets body.macos,
+   which pushed the back arrow and the session title a third of the way
+   across the screen. The nudge that goes with it (top: -6px, to sit the
+   row on the lights' line) goes too. */
+body.macos .titlebar { padding-left: 12px; }
+body.macos .titlebar > * { top: 0; }
+
+/* On a phone the drawer is an off-canvas overlay, so anything positioned
+   against it travels off-screen with it. The drawer's own toggle sits in
+   the flow instead, and each VIEW has its own toggle for opening it. */
+@media (max-width: 760px) {
+  body.macos .side-top .side-toggle, body:not(.macos) .side-top .side-toggle {
+    position: static;
+  }
+  body.macos .side-top, body:not(.macos) .side-top {
+    height: 44px; display: flex; align-items: center; justify-content: flex-end;
+    padding-right: 8px;
+  }
+}
 `;
 try {
   const sheet = document.createElement("style");
