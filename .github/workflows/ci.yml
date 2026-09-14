@@ -1207,7 +1207,13 @@ jobs:
   replay-ported-apps:
     name: Replay ported apps (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    # 35, not 20: the warm Windows job is 13 minutes, the cold one (registry
+    # cache evicted, which GitHub does without notice) is 20 -- and a job
+    # that dies AT its limit dies inside the cache-save step, so the cache
+    # is never rebuilt and every later push is cold and cancelled too. That
+    # loop ran three pushes deep on 2026-09-14 (K-350). The limit has to
+    # clear the cold path with room for the save.
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
