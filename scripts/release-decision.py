@@ -93,7 +93,7 @@ def lane_slug(lane):
 
 def lane_record(sha, tree, lane, state, why, ci, now, supersedes=None, suffix=""):
     os_name, arch, oracle = LANE_FACTS.get(lane, ("unknown", "unknown", "the lane concluded"))
-    run_id = ci.get("run_id", "")
+    run_id = (ci.get("sources") or {}).get(lane) or ci.get("run_id", "")
     times = (ci.get("times") or {}).get(lane) or {}
     return {
         "id": f"E-CI-{sha[:9]}-{lane_slug(lane)}{suffix}",
@@ -162,28 +162,44 @@ def emit_registry_records(sha, tree, ci, findings, records_dir=REGISTRY_RECORDS,
 
 
 def gather_ci(sha):
-    """Every required lane's conclusion on this exact commit."""
+    """Every required lane's conclusion on this exact commit.
+
+    One commit can have several CI runs: the push run carries the quick
+    lanes only, and the full lanes come from a nightly, a [full-ci] push or
+    a manual dispatch -- a different run on the same sha. Reading the first
+    run alone reported "Full test (macos-latest): missing" for a commit whose
+    dispatched run had passed it. So every CI run on the commit is read, and
+    each lane takes the verdict from the run where it actually ran: a
+    concluded verdict beats "skipped", and among concluded verdicts the
+    newest run wins. The record names the run behind every lane.
+    """
     code, out, _err = sh([
-        "gh", "api", f"repos/{REPO}/actions/runs?head_sha={sha}&per_page=10",
-        "--jq", '[.workflow_runs[] | select(.name == "CI")][0].id // empty',
+        "gh", "api", f"repos/{REPO}/actions/runs?head_sha={sha}&per_page=20",
+        "--jq", '.workflow_runs[] | select(.name == "CI") | .id',
     ])
     if code != 0:
         return {"assessed": False, "why": "gh is unavailable or unauthenticated"}
-    if not out:
+    run_ids = [line.strip() for line in out.splitlines() if line.strip()]
+    if not run_ids:
         return {"assessed": False, "why": f"no CI run exists for {sha}"}
-    run_id = out
-    code, out, _err = sh([
-        "gh", "api", f"repos/{REPO}/actions/runs/{run_id}/jobs?per_page=100", "--paginate",
-        "--jq", '.jobs[] | "\\(.name)\\t\\(.conclusion // "pending")\\t\\(.started_at // "")\\t\\(.completed_at // "")"',
-    ])
-    if code != 0:
-        return {"assessed": False, "why": "could not list the run's jobs"}
-    lanes, times = {}, {}
-    for line in out.splitlines():
-        name, conclusion, started, completed = (line.split("\t") + ["", "", ""])[:4]
-        lanes[name] = conclusion
-        times[name] = {"started_at": started or None, "completed_at": completed or None}
-    return {"assessed": True, "run_id": run_id, "lanes": lanes, "times": times}
+    lanes, times, sources = {}, {}, {}
+    for run_id in run_ids:
+        code, out, _err = sh([
+            "gh", "api", f"repos/{REPO}/actions/runs/{run_id}/jobs?per_page=100", "--paginate",
+            "--jq", '.jobs[] | "\\(.name)\\t\\(.conclusion // "pending")\\t\\(.started_at // "")\\t\\(.completed_at // "")"',
+        ])
+        if code != 0:
+            return {"assessed": False, "why": f"could not list the jobs of run {run_id}"}
+        for line in out.splitlines():
+            name, conclusion, started, completed = (line.split("\t") + ["", "", ""])[:4]
+            seen = lanes.get(name)
+            if seen is not None and not (seen == "skipped" and conclusion != "skipped"):
+                continue
+            lanes[name] = conclusion
+            times[name] = {"started_at": started or None, "completed_at": completed or None}
+            sources[name] = run_id
+    return {"assessed": True, "run_id": run_ids[0], "run_ids": run_ids, "lanes": lanes,
+            "times": times, "sources": sources}
 
 
 def classify_lanes(ci):

@@ -6,7 +6,7 @@
   "release"
  ],
  "subject": {
-  "commit": "a8af9f6e1"
+  "commit": "c2f9a1e08"
  },
  "requires": {
   "evidence_classes": [
@@ -21,11 +21,11 @@
   "same_bytes": false
  },
  "evidence": [
-  "E-CI-a8af9f6e1-full-test-macos-latest",
-  "E-CI-a8af9f6e1-full-test-ubuntu-latest",
-  "E-CI-a8af9f6e1-full-test-windows-2022",
-  "E-CI-a8af9f6e1-dependency-audit-cargo-deny",
-  "E-CI-a8af9f6e1-fuzz-evidence-freshness"
+  "E-CI-c2f9a1e08-full-test-macos-latest-r2",
+  "E-CI-c2f9a1e08-full-test-ubuntu-latest-r2",
+  "E-CI-c2f9a1e08-full-test-windows-2022-r2",
+  "E-CI-c2f9a1e08-dependency-audit-cargo-deny-r2",
+  "E-CI-c2f9a1e08-fuzz-evidence-freshness-r2"
  ],
  "declared_state": "UNSUPPORTED",
  "exclusions": [
@@ -40,7 +40,7 @@
    "source-change"
   ]
  },
- "revision": 2,
+ "revision": 3,
  "history": [
   {
    "wording": "Every required CI lane passed on the release commit: the full test suite on macOS, Ubuntu and Windows, the dependency audit, and fresh fuzz evidence.",
@@ -52,6 +52,18 @@
     "E-CI-f33217251-fuzz-evidence-freshness"
    ],
    "reason": "re-based on the first full run since the profile 2 and closure work: macOS and Ubuntu passed, Windows ran to the ceiling on K-240 and was cancelled; f33217251's lanes were blocked and skipped",
+   "at": "2026-09-14"
+  },
+  {
+   "wording": "Every required CI lane passed on the release commit: the full test suite on macOS, Ubuntu and Windows, the dependency audit, and fresh fuzz evidence.",
+   "evidence": [
+    "E-CI-a8af9f6e1-full-test-macos-latest",
+    "E-CI-a8af9f6e1-full-test-ubuntu-latest",
+    "E-CI-a8af9f6e1-full-test-windows-2022",
+    "E-CI-a8af9f6e1-dependency-audit-cargo-deny",
+    "E-CI-a8af9f6e1-fuzz-evidence-freshness"
+   ],
+   "reason": "re-based on the release head's full run 34810418660: macOS and Ubuntu passed, Windows ran to the ceiling on K-240 and was cancelled",
    "at": "2026-09-14"
   }
  ]

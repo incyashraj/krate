@@ -1,0 +1,70 @@
+{
+ "id": "E-CI-c2f9a1e08-full-test-ubuntu-latest",
+ "claims": [
+  "C-RELEASE-GATES"
+ ],
+ "subject": {
+  "kind": "source tree",
+  "source": {
+   "commit": "c2f9a1e087b807bc7320b4633941399bfb8e0805",
+   "tree": "cbd23bb5e81e5eaee1b3f645d5565937be9fae2d"
+  },
+  "binary_digest": null,
+  "package_digest": null,
+  "relationship": "the CI workflow checked out this commit and built it inside the lane"
+ },
+ "environment": {
+  "kind": "hosted",
+  "os": "ubuntu",
+  "arch": "x86_64",
+  "runner": "GitHub-hosted"
+ },
+ "toolchain": {
+  "rust": "as pinned by .github/workflows/ci.yml at this commit"
+ },
+ "command": "GitHub Actions job 'Full test (ubuntu-latest)' of CI run 34810418892",
+ "inputs": {
+  "prerequisites": []
+ },
+ "oracle": {
+  "class": "execution",
+  "description": "the whole workspace test suite plus the replay and open-every-bundle steps ran and reported no failure"
+ },
+ "raw_result": {
+  "conclusion": "missing",
+  "run_id": "34810418892",
+  "location": "https://github.com/incyashraj/krate/actions/runs/34810418892",
+  "note": "this lane never ran on the commit -- a platform gap, not a pass"
+ },
+ "outcome": "blocked",
+ "scope": {
+  "supports": "Full test (ubuntu-latest) concluded missing on commit c2f9a1e08",
+  "exclusions": [
+   "anything the lane does not exercise",
+   "clean recipients",
+   "published artifacts"
+  ]
+ },
+ "independence": "first-party API observation",
+ "time": {
+  "start": "2026-09-14T07:20:19Z",
+  "finish": "2026-09-14T07:20:19Z"
+ },
+ "operator": "GitHub Actions, CI workflow",
+ "privacy": {
+  "audience": "public",
+  "redact": []
+ },
+ "retention": {
+  "raw": "the GitHub Actions run log",
+  "until": "GitHub's log retention"
+ },
+ "expiry": {
+  "triggers": [
+   "source-change"
+  ],
+  "on": null
+ },
+ "supersedes": null,
+ "invalidated_by": null
+}

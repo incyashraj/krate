@@ -1,0 +1,70 @@
+{
+ "id": "E-CI-c2f9a1e08-full-test-ubuntu-latest-r2",
+ "claims": [
+  "C-RELEASE-GATES"
+ ],
+ "subject": {
+  "kind": "source tree",
+  "source": {
+   "commit": "c2f9a1e087b807bc7320b4633941399bfb8e0805",
+   "tree": "cbd23bb5e81e5eaee1b3f645d5565937be9fae2d"
+  },
+  "binary_digest": null,
+  "package_digest": null,
+  "relationship": "the CI workflow checked out this commit and built it inside the lane"
+ },
+ "environment": {
+  "kind": "hosted",
+  "os": "ubuntu",
+  "arch": "x86_64",
+  "runner": "GitHub-hosted"
+ },
+ "toolchain": {
+  "rust": "as pinned by .github/workflows/ci.yml at this commit"
+ },
+ "command": "GitHub Actions job 'Full test (ubuntu-latest)' of CI run 34810418660",
+ "inputs": {
+  "prerequisites": []
+ },
+ "oracle": {
+  "class": "execution",
+  "description": "the whole workspace test suite plus the replay and open-every-bundle steps ran and reported no failure"
+ },
+ "raw_result": {
+  "conclusion": "success",
+  "run_id": "34810418660",
+  "location": "https://github.com/incyashraj/krate/actions/runs/34810418660",
+  "note": ""
+ },
+ "outcome": "pass",
+ "scope": {
+  "supports": "Full test (ubuntu-latest) concluded pass on commit c2f9a1e08",
+  "exclusions": [
+   "anything the lane does not exercise",
+   "clean recipients",
+   "published artifacts"
+  ]
+ },
+ "independence": "first-party API observation",
+ "time": {
+  "start": "2026-09-14T05:46:59Z",
+  "finish": "2026-09-14T06:36:58Z"
+ },
+ "operator": "GitHub Actions, CI workflow",
+ "privacy": {
+  "audience": "public",
+  "redact": []
+ },
+ "retention": {
+  "raw": "the GitHub Actions run log",
+  "until": "GitHub's log retention"
+ },
+ "expiry": {
+  "triggers": [
+   "source-change"
+  ],
+  "on": null
+ },
+ "supersedes": "E-CI-c2f9a1e08-full-test-ubuntu-latest",
+ "invalidated_by": null
+}
