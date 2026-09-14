@@ -52,7 +52,19 @@
   .foot-inner a:hover { color: var(--text); }
   .page-wrap a, .page-wide a { color: var(--blue-soft); }
   code { font-family: var(--mono); font-size: 0.86em; }
-  </style>
+  
+  /* Touch, not width: a thumb needs 44px whatever the screen size, and
+     these pages' nav and footer links were 19-20px tall. */
+  @media (pointer: coarse) {
+    nav a[href], .foot a[href], footer a[href] {
+      display: inline-block; padding-top: 11px; padding-bottom: 11px;
+    }
+    button, input[type=submit] { min-height: 44px; }
+    /* Buttons that are links, and the brand mark, which is a tap target
+       on every page (it goes home). */
+    a.btn, a.pill, a.cta, .brandbar .name { min-height: 44px; display: inline-flex; align-items: center; }
+  }
+</style>
   <link rel="icon" href="/krate-favicon.png" />
   <style>
     /* The step flow below is this page's own; the shell (header, footer,

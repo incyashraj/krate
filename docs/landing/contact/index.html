@@ -80,6 +80,18 @@ h1.page { font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
 .foot nav a:hover { color: #d4d4d8; }
 
 @media (prefers-reduced-motion: reduce) { .card { animation: none; opacity: 1; transform: none; filter: none; } }
+
+  /* Touch, not width: a thumb needs 44px whatever the screen size, and
+     these pages' nav and footer links were 19-20px tall. */
+  @media (pointer: coarse) {
+    nav a[href], .foot a[href], footer a[href] {
+      display: inline-block; padding-top: 11px; padding-bottom: 11px;
+    }
+    button, input[type=submit] { min-height: 44px; }
+    /* Buttons that are links, and the brand mark, which is a tap target
+       on every page (it goes home). */
+    a.btn, a.pill, a.cta, .brandbar .name { min-height: 44px; display: inline-flex; align-items: center; }
+  }
 </style>
 </head>
 <body>
