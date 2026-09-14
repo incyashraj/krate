@@ -116,48 +116,46 @@ body {
   user-select: none;
 }
 
-/* The mark, as the light in the room.
+/* The mark, as the light behind the thing you came to use.
  *
- * The Krate mark's edges, glowing, sitting behind everything: a shape a
- * person recognises without being able to name it. Drawn from the mark's
- * own geometry (ambient-mark.svg), not a blurred copy of the logo -- a
- * blurred solid is a featureless blob at any radius soft enough to sit
- * under text, which is what the first attempt measured as.
+ * The Krate mark's shape (ambient-mark.svg): a wide flat cap over three
+ * horizontal slabs, held very quiet -- low alpha, heavy blur, no bright
+ * edge anywhere to pull the eye. If it is the first thing noticed, it is
+ * wrong.
  *
- * On ::before of body rather than an element, so no view has to remember
- * to include it and nothing can be layered above it by accident. Fixed,
- * because it is the room's lighting and does not scroll with the content.
+ * Anchored to the CONTENT, not the window. Three earlier attempts put it
+ * on the body and nudged it with percentages, and each one was measurably
+ * off: on a 1280x900 window the greeting-to-suggestions block runs
+ * 317..685, whose middle is 501, while the window's middle is 450. Fifty
+ * pixels low, every time, and the drawer moved the horizontal centre as
+ * well. Drawing it on .home-hero instead means "centred on the content" is
+ * true by construction rather than by a number that has to be re-guessed
+ * whenever the layout moves.
  *
- * Both themes share the file and differ only in how much of it shows:
- * near-black takes a real glow, off-white takes a hint, and the same
- * picture at 0.46 would be a bruise on the light theme. */
-body::before {
+ * Both themes share the file and differ only in how much shows: the same
+ * wash that reads on near-black is a smudge on off-white. */
+.home-hero { position: relative; }
+.home-hero::before {
   content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 0;
+  position: absolute;
+  /* Square, centred on this block, and larger than it so the falloff
+     happens off the edges rather than against them. */
+  width: min(115vh, 115vw);
+  aspect-ratio: 1;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: -1;
   pointer-events: none;
   background-image: url("ambient-mark.svg");
   background-repeat: no-repeat;
   background-position: 50% 50%;
-  /* contain, not a percentage: a percentage is measured against the
-     window's width, so a wide window stretched the mark sideways. The
-     artboard is square and stays square; this just decides how much of
-     the viewport it fills. */
-  background-size: min(105vh, 105vw) auto;
+  background-size: 100% auto;
   opacity: 0.30;
 }
-body.light::before { opacity: 0.13; }
+body.light .home-hero::before { opacity: 0.13; }
 
-/* Centred on the CONTENT, not the window. With the drawer open the two are
-   not the same place, and an apex off the axis of the column it lights
-   reads as a mistake rather than as lighting. */
-body.side-open::before {
-  background-position: calc(50% + (var(--side-w, 240px) / 2)) 50%;
-}
-
-/* Everything the app draws sits above the lighting. The views already
-   stack; this only guarantees they are not BELOW it. */
+/* Everything the app draws sits above the lighting. */
 .view, .win-controls { position: relative; z-index: 1; }
 /* Buttons inherit nothing by default -- not colour, not font. That is how
    card titles ended up black on near-black. */
