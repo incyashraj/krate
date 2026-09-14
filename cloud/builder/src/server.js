@@ -218,6 +218,65 @@ function authoringOff() {
   return "Making apps in the browser is not switched on yet. Krate Studio is free, and it makes apps on your own machine.";
 }
 
+/* The caller's own API key, if they have set one.
+ *
+ * Asked with THEIR session, so the hub only ever decrypts a key for the
+ * account that owns it and only while that account is building. Returns
+ * null when they have none, which is the ordinary case for a first app.
+ *
+ * A failure here is a null, never an error: the funded path still works,
+ * and a person whose key could not be read gets a build rather than a
+ * broken page. What they must never get is a SILENT charge to us when they
+ * believed they were paying -- so the caller checks which key it used and
+ * records the spend against the right bucket.
+ */
+async function ownKey(token, vendor) {
+  if (!token) return null;
+  try {
+    const res = await fetch(`${HUB}/keys/use`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ vendor }),
+    });
+    if (!res.ok) return null;
+    const out = await res.json();
+    return out.key || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/* Tell the hub what a build cost, so the person can see it.
+ *
+ * Best effort and never in the way of a build: a ledger entry that does not
+ * land is worth less than the app the person is waiting for.
+ */
+async function noteSpend(token, entry) {
+  if (!token || !entry || !(entry.usd > 0)) return;
+  try {
+    await fetch(`${HUB}/spend`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify(entry),
+    });
+  } catch (e) {}
+}
+
+/* The engine prices every run from the API's own token counts and prints it
+ * as `krate-spend: {...}`. This is the only honest source for what a build
+ * cost -- anything else would be a guess presented as a number. */
+function spendFromLines(lines) {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const m = String(lines[i]).match(/^krate-spend:\s*(\{.*\})\s*$/);
+    if (!m) continue;
+    try {
+      const parsed = JSON.parse(m[1]);
+      if (Number.isFinite(parsed.usd)) return parsed;
+    } catch (e) {}
+  }
+  return null;
+}
+
 /* ---- the wall ------------------------------------------------------------
  * Asked of the hub, never of the browser. A counter the page owns is a
  * counter anyone can edit, and this one costs us money to be wrong about.
@@ -255,6 +314,14 @@ async function allowedToBuild(token, device) {
     // The refusal names where their work went, because the session is
     // already on their account: signing into Studio brings the conversation
     // with it, editable. A wall that just says no would throw that away.
+    // Somebody paying for their own inference is not using our funding, so
+    // the one-app wall does not apply to them. That is the whole bargain of
+    // bringing a key: Krate pays for the first app, and after it you either
+    // move to Studio or bring your own key and carry on here.
+    if (API_AGENTS[AGENT] && (await ownKey(token, AGENT))) {
+      return { ok: true, account, byok: true };
+    }
+
     const BROWSER_FREE_BUILDS = 1;
     if (made >= BROWSER_FREE_BUILDS) {
       return {
@@ -263,7 +330,8 @@ async function allowedToBuild(token, device) {
         download: true,
         message:
           "You have made your app. Krate Studio is free and unlimited, and " +
-          "this session is waiting in it -- sign in and carry on editing.",
+          "this session is waiting in it -- sign in and carry on editing. " +
+          "Or add your own API key in Settings and keep building here.",
       };
     }
 
@@ -331,10 +399,17 @@ async function startBuild({ request, token, account, device, revise = null }) {
   // (`krate create` has no --shoot; `krate run` does), which is also the
   // more honest picture: it is the app that was actually made.
   const transcript = join(dir, "transcript.json");
+  // Their key if they have one, ours otherwise. Held in this process for
+  // the life of one build and passed to the engine through the environment,
+  // never written to the job record or to disk.
+  const theirKey = API_AGENTS[AGENT] ? await ownKey(token, AGENT) : null;
+  job.paidBy = theirKey ? "own" : "krate";
   const args = revise
     ? ["revise", revise.source, revise.change, "--agent", AGENT, "--output", output]
     : ["create", request, "--output", output, "--agent", AGENT, "--transcript", transcript];
-  const proc = spawn(KRATE, args, { cwd: dir, env: { ...process.env } });
+  const runEnv = { ...process.env };
+  if (theirKey) runEnv[API_AGENTS[AGENT]] = theirKey;
+  const proc = spawn(KRATE, args, { cwd: dir, env: runEnv });
   job.proc = proc;
 
   let tail = "";
@@ -350,6 +425,11 @@ async function startBuild({ request, token, account, device, revise = null }) {
           job.stage = rule.stage;
         }
       }
+      // What the run has cost so far, priced by the engine from the API's
+      // own token counts. Kept as it goes by: the last one wins, and a
+      // build that ends badly still spent what it spent.
+      const spent = spendFromLines([line]);
+      if (spent) job.spend = spent;
       // The engine's own sentence, when it is one a person can read.
       if (/^[a-z]/.test(line) && line.length < 90 && !line.startsWith("==>")) {
         job.line = line;
@@ -398,6 +478,11 @@ async function startBuild({ request, token, account, device, revise = null }) {
         timedOut ? "infra-failed" : "krate-failed",
         tail.split("\n").filter(Boolean).pop() || "",
       );
+      await noteSpend(token, job.spend && {
+        ...job.spend,
+        app: "(build failed)",
+        paid_by: job.paidBy || "krate",
+      });
       return cleanup(job);
     }
 
@@ -451,6 +536,12 @@ async function startBuild({ request, token, account, device, revise = null }) {
       // case's funding. An app that is not what was asked is recorded as
       // "off-request" and the case stays open for the change that fixes it.
       await caseAttempt(token, device, job.caseId, offRequest ? "off-request" : "made", verdict || "");
+      // What it cost, against the right money: their key or ours.
+      await noteSpend(token, job.spend && {
+        ...job.spend,
+        app: job.result ? job.result.name : "",
+        paid_by: job.paidBy || "krate",
+      });
     } catch (err) {
       job.state = "failed";
       job.error = "The app was made but could not be read back.";
@@ -467,11 +558,13 @@ async function startBuild({ request, token, account, device, revise = null }) {
 /* `krate plan <request>`: the engine's own pre-build answer, as JSON text.
  * Bounded, because a model that never answers must not hold the request
  * open; and one answer at a time is plenty. */
-async function planRequest(request) {
+async function planRequest(request, theirKey = null) {
   return new Promise((resolve) => {
     let out = "";
     let err = "";
-    const proc = spawn(KRATE, ["plan", request, "--agent", AGENT], { env: { ...process.env } });
+    const env = { ...process.env };
+    if (theirKey) env[API_AGENTS[AGENT]] = theirKey;
+    const proc = spawn(KRATE, ["plan", request, "--agent", AGENT], { env });
     const killer = setTimeout(() => { try { proc.kill("SIGKILL"); } catch (e) {} }, PLAN_TIMEOUT_MS);
     proc.stdout.on("data", (b) => { out += b.toString(); });
     proc.stderr.on("data", (b) => { err = (err + b.toString()).slice(-2000); });
@@ -644,12 +737,15 @@ const server = createServer(async (req, res) => {
       if (!request) return send(res, 400, "Say what to make.");
       if (request.length > 2000) return send(res, 400, "That is longer than we can work from.");
 
-      // Before the wall, and before any process: a box with no key cannot
-      // make anything, and saying so costs nothing. Sent as the same shape
-      // the wall uses, so the page already knows how to offer the download
-      // instead of showing a bare failure.
+      // Before the wall, and before any process: a box with no key of OUR
+      // own cannot make anything, and saying so costs nothing. Sent as the
+      // same shape the wall uses, so the page already knows how to offer
+      // the download instead of showing a bare failure. Somebody who
+      // brought their own key is not asking us to spend anything, so this
+      // is not their wall -- `allowedToBuild` checks that for real and
+      // lets them straight through.
       const off = authoringOff();
-      if (off) {
+      if (off && !(API_AGENTS[AGENT] && (await ownKey(token, AGENT)))) {
         return json(res, 503, { wall: true, download: true, message: off });
       }
 
@@ -688,11 +784,12 @@ const server = createServer(async (req, res) => {
       const request = String(body.request || "").trim();
       if (!request) return send(res, 400, "Say what to make.");
       if (request.length > 2000) return send(res, 400, "That is longer than we can work from.");
-      const off = authoringOff();
-      if (off) return json(res, 503, { wall: true, download: true, message: off });
       const account = await resolveAccount(token);
       if (!account) return send(res, 401, "Sign in first.");
-      const answer = await planRequest(request);
+      const theirs = API_AGENTS[AGENT] ? await ownKey(token, AGENT) : null;
+      const off = authoringOff();
+      if (off && !theirs) return json(res, 503, { wall: true, download: true, message: off });
+      const answer = await planRequest(request, theirs);
       if (!answer.ok) return send(res, 502, answer.message);
       res.statusCode = 200;
       res.setHeader("content-type", "application/json");
@@ -706,10 +803,12 @@ const server = createServer(async (req, res) => {
       const device = String(body.device || "").trim();
       if (!change) return send(res, 400, "Say what to change.");
       if (change.length > 2000) return send(res, 400, "That is longer than we can work from.");
-      const off = authoringOff();
-      if (off) return json(res, 503, { wall: true, download: true, message: off });
       const account = await resolveAccount(token);
       if (!account) return send(res, 401, "Sign in first.");
+      const off = authoringOff();
+      if (off && !(API_AGENTS[AGENT] && (await ownKey(token, AGENT)))) {
+        return json(res, 503, { wall: true, download: true, message: off });
+      }
       const job = jobs.get(id);
       if (!job || job.account !== account) {
         if (job) await audit({ action: "denied", account, job: id });

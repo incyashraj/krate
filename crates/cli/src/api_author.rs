@@ -90,6 +90,19 @@ fn prices(model: &str) -> ((f64, f64, f64, f64), bool) {
     ((5.00, 25.00, 6.25, 0.50), false)
 }
 
+/// Announce what this run cost, for anything downstream that has to
+/// account for it: the build service records it against the account, and a
+/// person who brought their own key deserves to see the number rather than
+/// be told it is "a few cents". Stderr, because stdout is the app's own
+/// output; a fixed prefix, because a log line that has to be guessed at is
+/// a log line that will be parsed wrong.
+///
+/// Emitted on every exit that spent anything, success or not -- a build
+/// that failed on the fourth round still cost four rounds.
+pub(crate) fn announce_spend(dollars: f64, model: &str, rounds: usize) {
+    eprintln!("krate-spend: {{\"usd\": {dollars:.4}, \"model\": \"{model}\", \"rounds\": {rounds}}}");
+}
+
 /// What the run has cost so far, in dollars, from the API's own counts.
 #[derive(Default)]
 struct Spend {
@@ -743,6 +756,7 @@ pub fn run(vendor: ApiVendor, app_dir: &str, request: &str) -> Result<u8> {
         // stopped converging, and the round just spent must be admitted.
         let so_far = spend.dollars(&model);
         if so_far >= budget {
+            announce_spend(so_far, &model, round + 1);
             anyhow::bail!(
                 "this app has taken more work than we allow for one build \
                  (${so_far:.2} of a ${budget:.2} ceiling, {n} rounds). It is \
@@ -774,6 +788,7 @@ pub fn run(vendor: ApiVendor, app_dir: &str, request: &str) -> Result<u8> {
                 },
             );
             if verdict.starts_with("check-app PASSED") {
+                announce_spend(spend.dollars(&model), &model, round + 1);
                 return Ok(0);
             }
             if round + 1 >= MAX_ROUNDS {
@@ -819,6 +834,7 @@ pub fn run(vendor: ApiVendor, app_dir: &str, request: &str) -> Result<u8> {
         // confusion or intent, the answer is the same: the verdict belongs
         // to the bytes on disk, and a later write takes it back.
         if batch_ends_verified(&events) {
+            announce_spend(spend.dollars(&model), &model, round + 1);
             return Ok(0);
         }
 

@@ -293,6 +293,25 @@ export default {
         return cors(await caseList(request, env));
       }
       // ---- the account: profile, apps, referrals, the portal ----------
+      // A person's own API key, and what their builds have cost.
+      if (request.method === "GET" && pathname === "/keys") {
+        return cors(await listKeys(request, env));
+      }
+      if (request.method === "POST" && pathname === "/keys") {
+        return cors(await putKey(request, env));
+      }
+      if (request.method === "POST" && pathname === "/keys/forget") {
+        return cors(await forgetKey(request, env));
+      }
+      if (request.method === "POST" && pathname === "/keys/use") {
+        return cors(await useKey(request, env));
+      }
+      if (request.method === "GET" && pathname === "/spend") {
+        return cors(await spendReport(request, env));
+      }
+      if (request.method === "POST" && pathname === "/spend") {
+        return cors(await recordSpend(request, env));
+      }
       if (request.method === "GET" && pathname === "/me") {
         return cors(await meProfile(request, env));
       }
@@ -3277,6 +3296,218 @@ async function getOrMakeRefCode(env, user) {
   await env.APPS.put(`user:${user.id}`, JSON.stringify(user));
   await env.APPS.put(`rcode:${code}`, user.id);
   return code;
+}
+
+/* ---- a person's own API key -------------------------------------------
+ *
+ * Krate pays for the first app in a browser and no more than that: after
+ * it, somebody who wants to keep building in a tab brings their own key.
+ * The desktop already works this way (`krate api-key set`), storing the key
+ * in the OS keychain -- a browser has no keychain, so the hub holds it.
+ *
+ * Held ENCRYPTED, not merely private. KV is not a secret store: anything
+ * with read access to the namespace would otherwise see every customer's
+ * API key in plain text. AES-GCM under a server-held secret means a KV dump
+ * is useless on its own, and the key is decrypted only in the moment a
+ * build needs it.
+ *
+ * It never travels back to the browser. `GET /keys` answers whether one is
+ * set and the last four characters, which is enough for a person to
+ * recognise which key they pasted and useless to anybody else.
+ */
+const KEY_VENDORS = { anthropic: "Anthropic (Claude)", openai: "OpenAI" };
+
+/// The wrapping key, derived from a server secret. Absent in a dev worker
+/// with no secret set, and every key route then refuses rather than storing
+/// something it cannot protect.
+async function wrappingKey(env) {
+  const secret = env.KEY_WRAP_SECRET || "";
+  if (!secret) return null;
+  const material = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret));
+  return crypto.subtle.importKey("raw", material, { name: "AES-GCM" }, false, [
+    "encrypt",
+    "decrypt",
+  ]);
+}
+
+async function sealKey(env, plaintext) {
+  const wrap = await wrappingKey(env);
+  if (!wrap) return null;
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const sealed = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    wrap,
+    new TextEncoder().encode(plaintext),
+  );
+  const b64 = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes)));
+  return { iv: b64(iv), body: b64(sealed) };
+}
+
+/// Decrypt one stored key. Used by the build service through /keys/use, and
+/// nowhere that answers a browser.
+async function openKey(env, record) {
+  const wrap = await wrappingKey(env);
+  if (!wrap || !record || !record.body) return null;
+  const bytes = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  try {
+    const out = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: bytes(record.iv) },
+      wrap,
+      bytes(record.body),
+    );
+    return new TextDecoder().decode(out);
+  } catch (e) {
+    return null;
+  }
+}
+
+async function listKeys(request, env) {
+  const user = await authedUser(request, env);
+  if (!user) return text("Sign in first.", 401);
+  const held = JSON.parse((await env.APPS.get(`keys:${user.id}`)) || "{}");
+  return json({
+    keys: Object.entries(KEY_VENDORS).map(([vendor, label]) => {
+      const record = held[vendor];
+      return {
+        vendor,
+        label,
+        set: Boolean(record),
+        // Enough to recognise the key, useless to anyone else.
+        tail: record ? record.tail || "" : "",
+        added: record ? record.added || 0 : 0,
+      };
+    }),
+  });
+}
+
+async function putKey(request, env) {
+  const user = await authedUser(request, env);
+  if (!user) return text("Sign in first.", 401);
+  if (!(await wrappingKey(env))) {
+    return text("This Krate cannot store keys safely yet; ask us to finish setting it up.", 503);
+  }
+  let body;
+  try {
+    body = await request.json();
+  } catch (e) {
+    return text("expected JSON", 400);
+  }
+  const vendor = String(body.vendor || "");
+  const key = String(body.key || "").trim();
+  if (!KEY_VENDORS[vendor]) return text("unknown vendor", 400);
+  // Shape only -- whether it WORKS is the build's business, and a key that
+  // looks wrong is worth refusing before it is stored and puzzled over.
+  if (key.length < 20 || key.length > 400 || /\s/.test(key)) {
+    return text("that does not look like an API key", 422);
+  }
+  if (vendor === "anthropic" && !key.startsWith("sk-ant-")) {
+    return text("an Anthropic key starts with sk-ant-", 422);
+  }
+  if (vendor === "openai" && !key.startsWith("sk-")) {
+    return text("an OpenAI key starts with sk-", 422);
+  }
+  const sealed = await sealKey(env, key);
+  if (!sealed) return text("could not store that key", 500);
+  const held = JSON.parse((await env.APPS.get(`keys:${user.id}`)) || "{}");
+  held[vendor] = { ...sealed, tail: key.slice(-4), added: Math.floor(Date.now() / 1000) };
+  await env.APPS.put(`keys:${user.id}`, JSON.stringify(held));
+  return json({ ok: true, vendor, tail: key.slice(-4) });
+}
+
+async function forgetKey(request, env) {
+  const user = await authedUser(request, env);
+  if (!user) return text("Sign in first.", 401);
+  let body;
+  try {
+    body = await request.json();
+  } catch (e) {
+    return text("expected JSON", 400);
+  }
+  const vendor = String(body.vendor || "");
+  if (!KEY_VENDORS[vendor]) return text("unknown vendor", 400);
+  const held = JSON.parse((await env.APPS.get(`keys:${user.id}`)) || "{}");
+  delete held[vendor];
+  await env.APPS.put(`keys:${user.id}`, JSON.stringify(held));
+  return json({ ok: true });
+}
+
+/// Hand one decrypted key to the build service, for a build this very
+/// person started. Called with THEIR session, never a service token: the
+/// key belongs to the account that pasted it, and the only thing entitled
+/// to ask for it is a build that account is running. Answers 404 when they
+/// have not set one, so the caller falls back to whatever it has.
+async function useKey(request, env) {
+  const user = await authedUser(request, env);
+  if (!user) return text("Sign in first.", 401);
+  let body;
+  try {
+    body = await request.json();
+  } catch (e) {
+    return text("expected JSON", 400);
+  }
+  const vendor = String(body.vendor || "");
+  if (!KEY_VENDORS[vendor]) return text("unknown vendor", 400);
+  const held = JSON.parse((await env.APPS.get(`keys:${user.id}`)) || "{}");
+  if (!held[vendor]) return text("no key set", 404);
+  const key = await openKey(env, held[vendor]);
+  if (!key) return text("that key could not be read", 500);
+  return json({ vendor, key });
+}
+
+/* ---- what the builds cost ----------------------------------------------
+ *
+ * Anybody spending their own money on inference is owed the number, per
+ * build, not a monthly total they cannot check. The engine already prices
+ * each run from the API's own token counts; the build service forwards it
+ * here and this keeps the ledger.
+ *
+ * Two buckets, because they are different money: `krate` is the funded
+ * first app, which we paid for, and `own` is spend on the person's own key.
+ */
+async function recordSpend(request, env) {
+  const user = await authedUser(request, env);
+  if (!user) return text("Sign in first.", 401);
+  let body;
+  try {
+    body = await request.json();
+  } catch (e) {
+    return text("expected JSON", 400);
+  }
+  const usd = Number(body.usd);
+  if (!Number.isFinite(usd) || usd < 0 || usd > 1000) return text("bad amount", 400);
+  const entry = {
+    at: Math.floor(Date.now() / 1000),
+    usd: Math.round(usd * 10000) / 10000,
+    model: String(body.model || "").slice(0, 60),
+    rounds: Number(body.rounds) || 0,
+    app: String(body.app || "").slice(0, 80),
+    paid_by: body.paid_by === "own" ? "own" : "krate",
+  };
+  const log = JSON.parse((await env.APPS.get(`spend:${user.id}`)) || "[]");
+  log.unshift(entry);
+  // A person's own history, not an audit trail: the last 200 builds is more
+  // than anyone scrolls, and an unbounded list in one KV value eventually
+  // stops being writable at all.
+  await env.APPS.put(`spend:${user.id}`, JSON.stringify(log.slice(0, 200)));
+  return json({ ok: true });
+}
+
+async function spendReport(request, env) {
+  const user = await authedUser(request, env);
+  if (!user) return text("Sign in first.", 401);
+  const log = JSON.parse((await env.APPS.get(`spend:${user.id}`)) || "[]");
+  const now = Math.floor(Date.now() / 1000);
+  const since = (days) => now - days * 86400;
+  const sum = (rows) => Math.round(rows.reduce((t, r) => t + (r.usd || 0), 0) * 10000) / 10000;
+  const own = log.filter((r) => r.paid_by === "own");
+  const krate = log.filter((r) => r.paid_by !== "own");
+  return json({
+    builds: log.length,
+    total: { own: sum(own), krate: sum(krate) },
+    month: { own: sum(own.filter((r) => r.at >= since(30))), krate: sum(krate.filter((r) => r.at >= since(30))) },
+    week: { own: sum(own.filter((r) => r.at >= since(7))), krate: sum(krate.filter((r) => r.at >= since(7))) },
+    recent: log.slice(0, 50),
+  });
 }
 
 async function meProfile(request, env) {

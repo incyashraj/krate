@@ -114,6 +114,10 @@ jobs:
           # cost of getting these wrong is a redirect loop on the front
           # door, which no Rust lane would ever catch.
           node docs/landing/studio/redirect-test.mjs
+          # And the key commands: a person's API key is stored on the
+          # hub, never in the browser, and never handed back to the
+          # page. That is the one mistake here worth a deploy gate.
+          node docs/landing/studio/keys-test.mjs
 
           mkdir -p _site/app
           cp -R studio/ui/. _site/app/

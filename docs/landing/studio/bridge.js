@@ -303,6 +303,51 @@ const COMMANDS = {
     }
   },
 
+  /* ---- your own AI ------------------------------------------------------
+   *
+   * Studio's key sheet is already built and already speaks these three
+   * commands; on a desktop they reach the OS keychain. A browser has no
+   * keychain, so the hub holds the key instead -- encrypted, and never
+   * handed back to this page. What comes back is whether a key is set and
+   * its last four characters, which is enough to recognise it.
+   *
+   * The bargain: Krate pays for the first app in a tab. After that, bring a
+   * key and keep building here, or move to Studio where your own AI is
+   * already installed.
+   */
+  async api_keys() {
+    if (!bridge.token) return [];
+    const out = await hub("/keys");
+    return (out.keys || []).map((k) => ({
+      vendor: k.vendor,
+      label: k.label,
+      set: Boolean(k.set),
+      // Studio shows this where the desktop shows "macOS keychain".
+      where_kept: k.set ? `saved to your account${k.tail ? ` -- ends ${k.tail}` : ""}` : "",
+      from_env: false,
+    }));
+  },
+
+  async api_key_set({ vendor, key } = {}) {
+    if (!bridge.token) return refuse("Sign in first.");
+    await hub("/keys", { method: "POST", body: JSON.stringify({ vendor, key }) });
+    return "Saved. Your builds here now run on your key.";
+  },
+
+  async api_key_forget({ vendor } = {}) {
+    if (!bridge.token) return refuse("Sign in first.");
+    await hub("/keys/forget", { method: "POST", body: JSON.stringify({ vendor }) });
+    return "Removed.";
+  },
+
+  /* What the builds have cost, from the engine's own token counts. Two
+   * buckets because they are different money: what Krate funded, and what
+   * came off your own key. */
+  async spend_report() {
+    if (!bridge.token) return { builds: 0, total: { own: 0, krate: 0 }, recent: [] };
+    return hub("/spend");
+  },
+
   async me_info() {
     if (!bridge.me) await COMMANDS.account_status();
     return bridge.me || {};
@@ -702,6 +747,98 @@ function restorePending() {
   try { box.setSelectionRange(box.value.length, box.value.length); } catch (e) {}
 }
 
+/* ---- what you have spent ------------------------------------------------
+ *
+ * Anybody paying for their own inference is owed the number, per build, not
+ * a monthly total they cannot check. The engine prices every run from the
+ * API's own token counts; the hub keeps the ledger; this draws it.
+ *
+ * Two columns because it is two different pockets: what Krate funded, and
+ * what came off the person's own key. A single total would hide exactly the
+ * thing somebody with a key wants to see.
+ *
+ * Built here rather than in Studio's HTML because only the browser has this
+ * problem: on a desktop the key is in the keychain and the spend is on the
+ * person's own API bill, where their provider already shows it.
+ */
+const SPEND_CSS = `
+.web-spend { margin-top: 22px; }
+.web-spend h3 { font-size: 13px; font-weight: 600; margin: 0 0 4px; }
+.web-spend .set-sub { margin-bottom: 12px; }
+.web-spend-cards { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.web-spend-card {
+  flex: 1 1 130px; padding: 11px 13px; border-radius: 11px;
+  border: 1px solid var(--line); background: var(--film);
+}
+.web-spend-card .n { font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.web-spend-card .k { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.web-spend-rows { border-top: 1px solid var(--line); }
+.web-spend-row {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 7px 2px; border-bottom: 1px solid var(--line); font-size: 12px;
+}
+.web-spend-row .app { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.web-spend-row .who { font-size: 10.5px; color: var(--muted); }
+.web-spend-row .usd { font-variant-numeric: tabular-nums; }
+.web-spend-empty { font-size: 12px; color: var(--muted); padding: 10px 0; }
+`;
+
+function money(n) {
+  const v = Number(n) || 0;
+  // Under a cent is still a number somebody can check, and "$0.00" next to
+  // a real build reads as broken rather than cheap.
+  if (v > 0 && v < 0.01) return "<$0.01";
+  return `$${v.toFixed(2)}`;
+}
+
+async function paintSpend() {
+  const pane = document.querySelector('[data-ai="keys"]');
+  if (!pane) return;
+  let box = document.getElementById("webSpend");
+  if (!box) {
+    box = document.createElement("div");
+    box.className = "web-spend";
+    box.id = "webSpend";
+    pane.appendChild(box);
+  }
+  let report;
+  try {
+    report = await COMMANDS.spend_report();
+  } catch (e) {
+    box.innerHTML = '<p class="web-spend-empty">Could not read your usage just now.</p>';
+    return;
+  }
+  const rows = (report.recent || []).map((r) => {
+    const when = r.at ? new Date(r.at * 1000).toLocaleDateString() : "";
+    const who = r.paid_by === "own" ? "your key" : "on Krate";
+    const app = (r.app || "an app").replace(/[<>]/g, "");
+    const model = (r.model || "").replace(/[<>]/g, "");
+    return `<div class="web-spend-row">
+      <span class="app">${app}</span>
+      <span class="who">${who}${model ? ` -- ${model}` : ""}${r.rounds ? ` -- ${r.rounds} rounds` : ""}</span>
+      <span class="who">${when}</span>
+      <span class="usd">${money(r.usd)}</span>
+    </div>`;
+  }).join("");
+  const t = report.total || { own: 0, krate: 0 };
+  const m = report.month || { own: 0, krate: 0 };
+  box.innerHTML = `
+    <h3>What you have spent</h3>
+    <p class="set-sub">Priced from the model's own token counts, per build.
+    Krate paid for your first app; anything on your key is billed by your
+    provider, not by us.</p>
+    <div class="web-spend-cards">
+      <div class="web-spend-card"><div class="n">${money(t.own)}</div><div class="k">your key, all time</div></div>
+      <div class="web-spend-card"><div class="n">${money(m.own)}</div><div class="k">your key, 30 days</div></div>
+      <div class="web-spend-card"><div class="n">${money(t.krate)}</div><div class="k">funded by Krate</div></div>
+      <div class="web-spend-card"><div class="n">${report.builds || 0}</div><div class="k">builds</div></div>
+    </div>
+    ${rows
+      ? `<div class="web-spend-rows">${rows}</div>`
+      : '<p class="web-spend-empty">Nothing yet. Your first build will show up here with what it cost.</p>'}
+  `;
+}
+
 function speakWeb() {
   // Nothing to swap in onboarding: a tab never shows it (see the
   // krate-onboarded flag at the top). The desktop's wording is its own.
@@ -719,6 +856,20 @@ function speakWeb() {
     const el = document.getElementById(id);
     if (el) el.remove();
   }
+  try {
+    const sheet = document.createElement("style");
+    sheet.textContent = SPEND_CSS;
+    document.head.appendChild(sheet);
+  } catch (e) {}
+  // Drawn when the AI settings open, because that is where the key lives
+  // and the two questions -- whose key, and what has it cost -- are one
+  // question. Re-read every time rather than cached: a number about money
+  // that is quietly stale is worse than no number.
+  document.addEventListener("click", (event) => {
+    const opener = event.target.closest('[data-ai], #aiBtn, [data-sheet="ai"]');
+    if (opener) setTimeout(paintSpend, 60);
+  }, true);
+
   // Studio paints its home a beat after boot, so the box may not exist
   // yet when this first runs.
   restorePending();

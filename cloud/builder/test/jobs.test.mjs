@@ -35,6 +35,30 @@ const hub = createServer((req, res) => {
     return res.end(JSON.stringify({ user: { login: who }, plan: { active: true } }));
   }
   if (req.url === "/plan/count") { res.statusCode = 200; return res.end("{}"); }
+  // Whose key is on file, and what the builds cost. `heldKeys` is set per
+  // case below so one account can bring a key and another cannot.
+  if (req.url === "/keys/use") {
+    let raw = "";
+    req.on("data", (c) => { raw += c; });
+    req.on("end", () => {
+      const held = who ? heldKeys[who] : null;
+      if (!held) { res.statusCode = 404; return res.end("no key set"); }
+      keyCalls.push({ who });
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ vendor: "anthropic", key: held }));
+    });
+    return;
+  }
+  if (req.url === "/spend") {
+    let raw = "";
+    req.on("data", (c) => { raw += c; });
+    req.on("end", () => {
+      spendCalls.push({ who, body: JSON.parse(raw || "{}") });
+      res.setHeader("content-type", "application/json");
+      res.end("{}");
+    });
+    return;
+  }
   if (req.url === "/case/open" || req.url === "/case/attempt") {
     let raw = "";
     req.on("data", (c) => { raw += c; });
@@ -54,6 +78,10 @@ const hub = createServer((req, res) => {
 
 // Every ledger call the builder makes, in order, for the assertions below.
 const caseCalls = [];
+// What each account has stored, and every spend the builder reported.
+const heldKeys = {};
+const keyCalls = [];
+const spendCalls = [];
 
 /* ---- a krate that "builds" in half a second ------------------------------ */
 async function fakeKrate(dir) {
@@ -96,6 +124,10 @@ if [ "$1" = "create" ]; then
   sleep 0.4
   echo "==> packing"
   printf 'not-a-real-bundle' > "$out"
+  # The engine prices every run from the API's own token counts and says so.
+  # KEYECHO proves WHICH key the build ran on, which no other output can.
+  echo 'krate-spend: {"usd": 0.4231, "model": "claude-opus-5", "rounds": 5}' >&2
+  case "$*" in *KEYECHO*) echo "ran-with-key:\${ANTHROPIC_API_KEY:-none}" >&2;; esac
   [ -n "$transcript" ] && printf '{"ok":true,"requested_permissions":["ui.window:create","store.kv"],"verdict":"authored a working, permission-gated .krate that serves the request"}' > "$transcript"
   # OFFREQ: the app builds and runs, and the engine's request verdict says
   # it is not what was asked -- exit 6, the file kept, the verdict written.
@@ -301,6 +333,69 @@ const firstCase = caseCalls.find((c) => c.path === "/case/attempt").body.id;
 const revisedAttempt = caseCalls.filter((c) => c.path === "/case/attempt").pop().body;
 assert.strictEqual(revisedAttempt.id, firstCase, `the change stays inside the case the app was made in: ${JSON.stringify(revisedAttempt)}`);
 assert.strictEqual(caseCalls.filter((c) => c.path === "/case/open").length, 2, "a change opens no new case (only the two apps did)");
+
+/* ---- what it cost, and whose money ------------------------------------- */
+// The engine's own price for the run reaches the ledger, against the right
+// bucket. Nothing else in the system knows what a build cost.
+const spentOnKrate = spendCalls.filter((c) => c.who === "alice");
+assert.ok(spentOnKrate.length > 0, "a build's cost is recorded");
+assert.strictEqual(spentOnKrate[0].body.usd, 0.4231, "the engine's number, not an estimate");
+assert.strictEqual(spentOnKrate[0].body.model, "claude-opus-5");
+assert.strictEqual(spentOnKrate[0].body.paid_by, "krate", "funded builds are OUR money");
+
+/* ---- bringing your own key --------------------------------------------- */
+// Krate pays for the first app; after that a person can bring their own
+// key and keep building. What matters most is whose money is spent, so
+// this checks the two things that decide it: the engine runs with THEIR
+// key, and the ledger says so.
+//
+// (The one-app wall itself is not exercised here -- this harness runs with
+// KRATE_BUILDER_DEV=1, which skips the wall by design so the build path can
+// be tested without a real session.)
+{
+  builder.kill("SIGKILL");
+  await new Promise((r) => builder.on("exit", r));
+  builder = startBuilder(stateDir, krateBin, {
+    KRATE_AGENT: "anthropic",
+    ANTHROPIC_API_KEY: "sk-ant-ours",
+  });
+  await until(async () => (await get("/health")).status === 200);
+
+  heldKeys.alice = "sk-ant-hers";
+  const spendBefore = spendCalls.length;
+  const started = await post("/build", { request: "an app on my own key KEYECHO" }, asAlice);
+  assert.strictEqual(started.status, 200, `build starts: ${started.body}`);
+  const id = JSON.parse(started.body).id;
+  await until(async () => {
+    const st = JSON.parse((await get(`/build/${id}`, asAlice)).body);
+    return st.state === "done" || st.state === "failed";
+  });
+  const done = JSON.parse((await get(`/build/${id}`, asAlice)).body);
+  assert.strictEqual(done.state, "done", `it builds: ${JSON.stringify(done)}`);
+  assert.ok(keyCalls.some((c) => c.who === "alice"), "her key was fetched with her own session");
+
+  const mine = spendCalls.slice(spendBefore).filter((c) => c.who === "alice");
+  assert.ok(mine.length > 0, `the build on her key is recorded: ${JSON.stringify(spendCalls.slice(spendBefore))} (before=${spendBefore}, all=${spendCalls.length})`);
+  assert.strictEqual(mine.at(-1).body.paid_by, "own", "against HER money, not ours");
+  assert.strictEqual(mine.at(-1).body.usd, 0.4231, "the engine's own number");
+  delete heldKeys.alice;
+
+  // And with no key on file, the same build is ours to pay for.
+  const spendMid = spendCalls.length;
+  const ours = await post("/build", { request: "an app on the house" }, asAlice);
+  const oursId = JSON.parse(ours.body).id;
+  await until(async () => {
+    const st = JSON.parse((await get(`/build/${oursId}`, asAlice)).body);
+    return st.state === "done" || st.state === "failed";
+  });
+  const after = spendCalls.slice(spendMid).filter((c) => c.who === "alice");
+  assert.strictEqual(after.at(-1).body.paid_by, "krate", "no key on file means we paid");
+
+  builder.kill("SIGKILL");
+  await new Promise((r) => builder.on("exit", r));
+  builder = startBuilder(stateDir, krateBin);
+  await until(async () => (await get("/health")).status === 200);
+}
 
 /* ---- restart ------------------------------------------------------------- */
 // Alice starts another build and the machine dies mid-build.
