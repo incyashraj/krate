@@ -436,7 +436,9 @@ fn private_dir(path: &Path) {
 /// 0600 before anything is written to it.
 fn write_private_atomic(path: &Path, body: &[u8]) -> Result<(), String> {
     use std::io::Write as _;
-    let parent = path.parent().ok_or_else(|| "no parent directory".to_string())?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| "no parent directory".to_string())?;
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -2849,7 +2851,7 @@ fn share_file(window: tauri::WebviewWindow, path: String) -> Result<(), String> 
                 let Some(content) = ns_window.contentView() else {
                     return;
                 };
-                let url = unsafe { NSURL::fileURLWithPath(&NSString::from_str(&path)) };
+                let url = NSURL::fileURLWithPath(&NSString::from_str(&path));
                 let item: Retained<AnyObject> = Retained::into_super(Retained::into_super(url));
                 let items: Retained<NSArray<AnyObject>> = NSArray::from_retained_slice(&[item]);
                 let picker = unsafe {
@@ -2863,7 +2865,7 @@ fn share_file(window: tauri::WebviewWindow, path: String) -> Result<(), String> 
                     objc2_foundation::NSPoint::new(bounds.size.width / 2.0 - 2.0, 80.0),
                     objc2_foundation::NSSize::new(4.0, 4.0),
                 );
-                unsafe {
+                {
                     picker.showRelativeToRect_ofView_preferredEdge(
                         rect,
                         &content,
@@ -3493,7 +3495,7 @@ fn plan_write(device: &str, month: &str, n: u64) {
 fn plan_makes(seed_month: Option<String>, seed_n: Option<u64>) -> serde_json::Value {
     let device = device_hash();
     let now = month_key_now();
-    let (stored_dev, stored_month, stored_n) = plan_read();
+    let (stored_dev, _stored_month, stored_n) = plan_read();
     // Three EVER, not three a month (IC-639). The stored month is kept in
     // the file and reported for compatibility, but it no longer resets the
     // count: the hub has always counted `mkacct:`/`mkdev:` with no month in
@@ -3660,6 +3662,90 @@ fn human_size(bytes: u64) -> String {
 #[tauri::command]
 fn studio_version(app: tauri::AppHandle) -> String {
     app.package_info().version.to_string()
+}
+
+/// The engine this Studio is driving, and whether it is older than the
+/// Studio itself (K-171).
+///
+/// On macOS the engine lives inside the bundle, so the two always match.
+/// On Windows and Linux the Studio resolves its engine sibling-then-bin,
+/// and an installer that leaves an older `bin\krate.exe` behind -- or a
+/// source build somebody copied there -- gives a current Studio an ancient
+/// engine with nothing saying so. Measured on the PC: a 0.1.53 Studio over
+/// a `krate.exe` that answered 0.1.28. The capability probe
+/// (`probe_speaks_plan`) catches an engine that lacks what the Studio
+/// needs; this catches one that merely reports an older version, which is
+/// the shape K-171 took. Silent when either version cannot be read: a
+/// warning built on a guess is worse than none.
+#[derive(serde::Serialize)]
+struct EngineStatus {
+    path: String,
+    version: Option<String>,
+    studio_version: String,
+    lags: bool,
+}
+
+#[tauri::command]
+fn engine_status(app: tauri::AppHandle) -> Result<EngineStatus, String> {
+    let engine = engine()?;
+    let studio_version = app.package_info().version.to_string();
+    let version = engine_version(&engine);
+    let lags = version
+        .as_deref()
+        .map(|v| engine_lags(&studio_version, v))
+        .unwrap_or(false);
+    Ok(EngineStatus {
+        path: engine.display().to_string(),
+        version,
+        studio_version,
+        lags,
+    })
+}
+
+/// What `krate --version` answers, reduced to its number.
+fn engine_version(engine: &Path) -> Option<String> {
+    let out = silent_cmd(engine).arg("--version").output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    parse_engine_version(&String::from_utf8_lossy(&out.stdout))
+}
+
+/// "krate 0.4.0 (debug build -- not what a user runs)" -> "0.4.0";
+/// "krate 0.1.28" -> "0.1.28"; anything else -> None.
+fn parse_engine_version(text: &str) -> Option<String> {
+    let first = text.lines().next()?.trim();
+    let rest = first.strip_prefix("krate")?.trim_start();
+    let token = rest.split_whitespace().next()?;
+    let core: String = token
+        .trim_start_matches('v')
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '.')
+        .collect();
+    semver_triple(&core).map(|_| core)
+}
+
+fn semver_triple(version: &str) -> Option<(u64, u64, u64)> {
+    let mut parts = version.trim_start_matches('v').split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let patch = parts
+        .next()?
+        .split(|c: char| !c.is_ascii_digit())
+        .next()?
+        .parse()
+        .ok()?;
+    Some((major, minor, patch))
+}
+
+/// True when the engine is OLDER than the Studio driving it. Equal or
+/// newer is fine (a dev Studio at 0.1.0 drives a 0.4.0 engine all day);
+/// unreadable on either side is not a lag.
+fn engine_lags(studio: &str, engine: &str) -> bool {
+    match (semver_triple(studio), semver_triple(engine)) {
+        (Some(s), Some(e)) => e < s,
+        _ => false,
+    }
 }
 
 /// Download a new Studio and stage it for install.
@@ -4341,6 +4427,7 @@ fn main() {
             autorun,
             build_progress,
             studio_version,
+            engine_status,
             open_external,
             sign_in_agent,
             refresh_agents,
@@ -4643,6 +4730,73 @@ mod tests {
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
             .expect("chmod stub");
         path
+    }
+
+    /// A Studio driving an engine older than itself says so (K-171); a
+    /// dev Studio at 0.1.0 driving a 0.4.0 engine, equal versions, and an
+    /// engine whose answer cannot be read, do not raise a word.
+    #[test]
+    fn an_engine_older_than_the_studio_is_a_lag_and_nothing_else_is() {
+        assert_eq!(
+            super::parse_engine_version("krate 0.4.0 (debug build -- not what a user runs)\n")
+                .as_deref(),
+            Some("0.4.0")
+        );
+        assert_eq!(
+            super::parse_engine_version("krate 0.1.28\n").as_deref(),
+            Some("0.1.28")
+        );
+        assert_eq!(
+            super::parse_engine_version("krate v0.3.0-rc1").as_deref(),
+            Some("0.3.0")
+        );
+        assert_eq!(super::parse_engine_version("error: unrecognized"), None);
+        assert_eq!(super::parse_engine_version(""), None);
+
+        assert!(
+            super::engine_lags("0.1.53", "0.1.28"),
+            "the PC's shape: the installer left 0.1.28 behind"
+        );
+        assert!(super::engine_lags("1.0.0", "0.9.9"));
+        assert!(
+            !super::engine_lags("0.1.0", "0.4.0"),
+            "a dev Studio over a newer engine is not a lag"
+        );
+        assert!(!super::engine_lags("0.4.0", "0.4.0"));
+        assert!(
+            !super::engine_lags("0.4.0", "0.4.0-rc1"),
+            "a suffix is not a lower version"
+        );
+        assert!(
+            !super::engine_lags("0.4.0", "unknown"),
+            "an unreadable engine version raises nothing"
+        );
+        assert!(
+            !super::engine_lags("dev", "0.1.0"),
+            "an unreadable studio version raises nothing"
+        );
+    }
+
+    /// The version is read from the engine the way the Studio runs it.
+    #[cfg(unix)]
+    #[test]
+    fn the_engine_version_is_what_the_engine_answers() {
+        let dir = std::env::temp_dir().join(format!("krate-engine-version-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let old = stub_engine(
+            &dir,
+            "old",
+            "#!/bin/sh\ncase \"$1\" in\n  --version) echo 'krate 0.1.28' ;;\n  *) exit 2 ;;\nesac\n",
+        );
+        let mute = stub_engine(&dir, "mute", "#!/bin/sh\nexit 1\n");
+        assert_eq!(super::engine_version(&old).as_deref(), Some("0.1.28"));
+        assert_eq!(
+            super::engine_version(&mute),
+            None,
+            "a failing engine has no version, and no panic"
+        );
+        assert_eq!(super::engine_version(&dir.join("does-not-exist")), None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The stale-engine probe has to answer the question that actually

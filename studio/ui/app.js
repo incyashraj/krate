@@ -2561,6 +2561,30 @@ async function refreshAgents() {
     : chosen.state === "not-ready" ? `${chosen.label} · needs a fix`
     : `${chosen.label} · not installed`;
   setChips(dot, text, chosen.detail || "");
+  await checkEngineAge();
+}
+
+/* Is the engine this Studio drives older than the Studio itself? (K-171)
+ *
+ * On Windows and Linux the engine is found beside the Studio or in bin/,
+ * and an installer that left an old krate.exe there gives a current Studio
+ * an ancient engine with nothing saying so. The chip says so, in the same
+ * place it says "engine trouble", and the AI sheet repeats it with the fix.
+ * The engine speaks for itself here: the Studio never guesses a version. */
+async function checkEngineAge() {
+  try {
+    const es = await invoke("engine_status");
+    state.engineStatus = es;
+    if (es && es.lags) {
+      setChips(
+        "warn",
+        "engine out of date",
+        `Studio ${es.studio_version} is driving engine ${es.version} at ${es.path}, which is older. Reinstall Krate from krate.tech/open to update the engine.`
+      );
+    }
+  } catch (e) {
+    state.engineStatus = null;
+  }
 }
 
 /// The one name for the current AI, everywhere it is painted. The chips,
@@ -2680,6 +2704,12 @@ function openAiSheet() {
     const p = document.createElement("p");
     p.className = "ai-error";
     p.textContent = state.agentsError;
+    list.appendChild(p);
+  }
+  if (state.engineStatus && state.engineStatus.lags) {
+    const p = document.createElement("p");
+    p.className = "ai-error";
+    p.textContent = `This Studio (${state.engineStatus.studio_version}) is driving an older engine (${state.engineStatus.version}) at ${state.engineStatus.path}. Reinstall Krate from krate.tech/open to update it.`;
     list.appendChild(p);
   }
   /* Installed tools only.
