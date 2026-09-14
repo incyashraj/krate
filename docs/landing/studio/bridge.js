@@ -926,6 +926,46 @@ function mountMode() {
   paintMode();
 }
 
+/* ---- what a tab must not be offered -------------------------------------
+ *
+ * Studio's settings are written for a computer: a folder apps are written
+ * to, a terminal to install a command into, a command of your own to author
+ * with. In a browser every one of those is either a refusal dressed as a
+ * button or, worse, a control that looks live and does nothing.
+ *
+ * A refusal in plain words is right when somebody ASKED for the thing (Run
+ * it, Reveal). It is wrong for a settings row, which nobody asked for and
+ * which is read as a list of what this product can do. So these are
+ * removed, not disabled: a greyed-out row still says "this exists, but not
+ * for you", and that is not true either -- it exists on the desktop, which
+ * is one download away and is named in the rows that stay.
+ *
+ * Removed by the label the person reads, not by an id: a row that gets
+ * renamed should stop matching and be re-judged, rather than silently keep
+ * hiding the wrong thing.
+ */
+const DESKTOP_ONLY_ROWS = [
+  "Output folder",       // no folder to write to
+  "Where your apps are", // the browser's downloads folder is the OS's business
+  "Your own command",    // no processes to run
+];
+
+function trimDesktopOnly() {
+  document.querySelectorAll(".set-row").forEach((row) => {
+    const label = row.querySelector(".lab");
+    if (label && DESKTOP_ONLY_ROWS.includes(label.textContent.trim())) row.remove();
+  });
+  // The terminal group ships hidden and is unhidden on a desktop; make sure
+  // nothing here ever shows it.
+  const term = document.getElementById("setTerminalGroup");
+  if (term) term.remove();
+  // A settings group whose every row has gone should go too, or the sheet
+  // grows headings standing over nothing.
+  document.querySelectorAll(".set-group, .set-panel").forEach((group) => {
+    if (!group.querySelector(".set-row")) group.remove();
+  });
+}
+
 function speakWeb() {
   // Nothing to swap in onboarding: a tab never shows it (see the
   // krate-onboarded flag at the top). The desktop's wording is its own.
@@ -953,6 +993,10 @@ function speakWeb() {
   mountMode();
   setTimeout(mountMode, 400);
   setTimeout(mountMode, 1200);
+  trimDesktopOnly();
+  // The settings sheet is in the page from the start, but a pane can be
+  // painted later; trim again when one is opened.
+  document.addEventListener("click", () => setTimeout(trimDesktopOnly, 50), true);
   // Drawn when the AI settings open, because that is where the key lives
   // and the two questions -- whose key, and what has it cost -- are one
   // question. Re-read every time rather than cached: a number about money

@@ -541,6 +541,18 @@ async function enterHome() {
   renderBuilding();
   refreshAgents();
 
+  // Anything made on the web, brought home (K-362). The wall in the
+  // browser promises "this session is waiting in Studio"; this is what
+  // keeps that promise. It runs AFTER the first paint because it is a
+  // network call and the apps already on this machine must not wait for
+  // it, and it fails silently because a local list that is already right
+  // is not improved by an error about the network.
+  invoke("sessions_pull")
+    .then(async (merged) => {
+      if (merged > 0) renderSessions(await invoke("sessions_list"));
+    })
+    .catch(() => {});
+
   /* Land in the box.
    *
    * Home asks a question -- "What are we building?" -- and the answer is

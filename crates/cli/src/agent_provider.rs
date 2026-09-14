@@ -292,6 +292,13 @@ fn probe_home() -> Option<std::path::PathBuf> {
         .or_else(|| std::env::var_os("USERPROFILE"))
         .filter(|h| !h.is_empty())
         .map(std::path::PathBuf::from)?;
+    // KRATE_AGENT_HOME=real: no override of HOME at all, so the probe reads
+    // the same home the build will (see agent_home_for in main.rs). Kept in
+    // step here deliberately: a probe that answers about a different home
+    // than the build uses is the bug this function was written to kill.
+    if std::env::var("KRATE_AGENT_HOME").is_ok_and(|v| v.trim().eq_ignore_ascii_case("real")) {
+        return None;
+    }
     let agent_home = home.join(".krate").join("agent-home");
     agent_home.is_dir().then_some(agent_home)
 }

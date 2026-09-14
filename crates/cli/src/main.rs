@@ -8895,6 +8895,22 @@ fn run_provider_author_resuming(
 /// seeding, on a credential existing, or on anything about how long the
 /// person has used Krate. A fresh account confines exactly like an old one.
 fn agent_home_for(real_home: &Path) -> PathBuf {
+    // KRATE_AGENT_HOME=real removes the confinement, deliberately.
+    //
+    // The confined home (K-179) stops the agent reading the person's files
+    // in Krate's name, and it is the default for everyone. It can also make
+    // a perfectly signed-in tool unusable: Claude keeps its OAuth token in
+    // the login keychain, macOS refuses to add a real keychain to a rebased
+    // HOME's search list, and the agent then fails "OAuth session expired"
+    // while `claude -p` answers fine in the same shell (K-363). A developer
+    // with a working subscription had no way to use it and no way to test
+    // Krate without paying for API calls instead.
+    //
+    // Opt-in, never set by us, and it says what it costs: the agent runs
+    // with the person's own home, which is the trade only they can make.
+    if std::env::var("KRATE_AGENT_HOME").is_ok_and(|v| v.trim().eq_ignore_ascii_case("real")) {
+        return real_home.to_path_buf();
+    }
     real_home.join(".krate").join("agent-home")
 }
 
@@ -10555,6 +10571,18 @@ fn ai_status(json: bool) -> Result<u8> {
         println!("You can also build an app without AI:");
         println!("  krate create \"a checklist\" --output checklist.krate");
         return Ok(0);
+    }
+
+    // Seed before probing, or the answer is about a home nothing has put a
+    // credential into. The probe runs under the confined agent home
+    // (K-179); a sign-in that happened after the last build has not been
+    // linked across yet, so Claude reads as "not signed in" while `claude
+    // -p` works perfectly in the same shell. The picker already seeds for
+    // this reason -- this is the command people are SENT to when a build
+    // says no AI is ready, so it has to agree with the build (K-363).
+    if let Some(home) = home_dir() {
+        let agent_home = agent_home_for(&home);
+        let _ = seed_agent_home(&home, &agent_home);
     }
 
     // Probe rather than trust PATH. Every provider is checked in parallel so
