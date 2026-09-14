@@ -28,6 +28,17 @@ on:
         description: Why the gate is being bypassed. Required when emergency is set.
         required: false
         type: string
+      accept_lanes:
+        description: >-
+          CI jobs allowed to be red or cancelled on this commit, comma-separated
+          by their exact names (e.g. "Full test (windows-2022)"). Each is named
+          in the release summary with the reason. Nothing else is bypassed.
+        required: false
+        type: string
+      accept_reason:
+        description: Why those lanes are accepted. Required when accept_lanes is set.
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -81,63 +92,82 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ steps.commit.outputs.sha }}
           TAG: ${{ inputs.tag || github.ref_name }}
+          ACCEPT_LANES: ${{ inputs.accept_lanes }}
+          ACCEPT_REASON: ${{ inputs.accept_reason }}
         run: |
           set -euo pipefail
-          # Every CI run for this exact commit, newest first. A rerun that is
-          # still going, or one that was cancelled, is not a pass.
-          #
-          # Each field is asked for on its own rather than pulling the run
-          # objects into a variable and re-parsing them: a commit message with
-          # a newline in it -- which every commit here has -- makes that
-          # variable something jq will not read back.
+          # One commit can carry several CI runs: the push run with the fast
+          # jobs, and the full lanes from a [full-ci] push or a manual
+          # dispatch. Reading only the newest run refused v0.4.0 at a commit
+          # whose dispatched run had passed everything but the Windows lane.
+          # So every CI run on the commit is read, and every job takes its
+          # best verdict across them: success beats anything, and a job
+          # that ran beats one that was skipped.
           api="repos/${{ github.repository }}/actions/runs?head_sha=${SHA}&per_page=100"
-          count=$(gh api "$api" --jq '[.workflow_runs[] | select(.name == "CI")] | length')
-          if [ "$count" -eq 0 ]; then
+          runs=$(gh api "$api" --jq '[.workflow_runs[] | select(.name == "CI") | .id] | join(" ")')
+          if [ -z "$runs" ]; then
             echo "::error::No CI run exists for $SHA. A release must be built from a commit CI has actually tested."
             exit 1
           fi
-
-          status=$(gh api "$api" --jq '[.workflow_runs[] | select(.name == "CI")][0].status')
-          conclusion=$(gh api "$api" --jq '[.workflow_runs[] | select(.name == "CI")][0].conclusion // "none"')
-          url=$(gh api "$api" --jq '[.workflow_runs[] | select(.name == "CI")][0].html_url')
-          run_id=$(gh api "$api" --jq '[.workflow_runs[] | select(.name == "CI")][0].id')
-          echo "Newest CI run for $SHA: status=$status conclusion=$conclusion"
-          echo "$url"
-          if [ "$status" != "completed" ]; then
-            echo "::error::CI for $SHA is still $status. Wait for it rather than releasing on an unknown result."
+          verdicts=$(mktemp)
+          for rid in $runs; do
+            status=$(gh api "repos/${{ github.repository }}/actions/runs/${rid}" --jq .status)
+            if [ "$status" != "completed" ]; then
+              echo "::error::CI run $rid for $SHA is still $status. Wait for it rather than releasing on an unknown result."
+              exit 1
+            fi
+            gh api "repos/${{ github.repository }}/actions/runs/${rid}/jobs?per_page=100" --paginate \
+              --jq '.jobs[] | "\(.name)\t\(.conclusion // "pending")"' >> "$verdicts"
+          done
+          # Best verdict per job name, newest run first (runs are listed newest first).
+          best=$(mktemp)
+          python3 - "$verdicts" "$best" <<'PY'
+          import sys
+          seen = {}
+          for line in open(sys.argv[1]):
+              name, _, verdict = line.rstrip("\n").partition("\t")
+              if not name:
+                  continue
+              rank = {"success": 3}.get(verdict, 1 if verdict != "skipped" else 0)
+              if name not in seen or rank > seen[name][0]:
+                  seen[name] = (rank, verdict)
+          with open(sys.argv[2], "w") as out:
+              for name, (_, verdict) in sorted(seen.items()):
+                  out.write(f"{name}\t{verdict}\n")
+          PY
+          if ! grep -qi "full test\|cold install" "$best"; then
+            echo "::error::CI ran on $SHA but the full suite never did -- only the fast jobs, and a stable release is exactly what the platform and cold-install jobs exist to check. Push the release commit with [full-ci] in its message, or dispatch CI with full=true on $SHA, then tag."
+            case "$TAG" in *-rc*|*-alpha*|*-beta*) echo "Pre-release $TAG: the fast suite is the bar." ;; *) exit 1 ;; esac
+          fi
+          failed=0
+          if [ -n "${ACCEPT_LANES// }" ] && [ -z "${ACCEPT_REASON// }" ]; then
+            echo "::error::accept_lanes needs accept_reason: a lane accepted red without a reason is a bypass, not an acceptance."
             exit 1
           fi
-          if [ "$conclusion" != "success" ]; then
-            echo "::error::CI for $SHA concluded '$conclusion'. A release is not built from a commit whose tests did not pass."
-            exit 1
-          fi
-
-          # A release candidate ships on the fast suite. A stable release does
-          # not: the jobs that only run under [full-ci] are the platform and
-          # cold-install ones, which is exactly what a stable release exposes
-          # to people who are not us.
-          case "$TAG" in
-            *-rc*|*-alpha*|*-beta*)
-              echo "Pre-release $TAG: the fast suite is the bar."
-              ;;
-            *)
-              # Did the heavy jobs actually run here? Whether they passed is
-              # already settled -- the run's own conclusion is checked above,
-              # and a failed job makes that conclusion a failure. What is asked
-              # here is only whether they were present at all, because a run
-              # that skipped them is green on a narrower claim than a stable
-              # release makes. A skipped job is not a job that ran.
-              full=$(gh api "repos/${{ github.repository }}/actions/runs/${run_id}/jobs?per_page=100" \
-                --jq '[.jobs[]
-                       | select(.name | test("cold install|full test"; "i"))
-                       | select(.conclusion != "skipped")] | length')
-              if [ "$full" -eq 0 ]; then
-                echo "::error::CI passed on $SHA but the full suite never ran there -- only the fast jobs did, and a stable release is exactly what the platform and cold-install jobs exist to check. Push the release commit with [full-ci] in its message, or dispatch CI with full=true on $SHA, then tag."
-                exit 1
-              fi
-              echo "Full suite ran on $SHA: $full of its jobs were executed."
-              ;;
-          esac
+          while IFS=$'\t' read -r name verdict; do
+            [ -z "$name" ] && continue
+            case "$verdict" in
+              success|skipped) echo "  ok        $name ($verdict)" ;;
+              *)
+                if [ -n "${ACCEPT_LANES:-}" ] && printf '%s\n' "${ACCEPT_LANES//,/$'\n'}" | sed 's/^ *//; s/ *$//' | grep -qxF "$name"; then
+                  echo "  accepted  $name ($verdict) -- $ACCEPT_REASON"
+                  {
+                    echo "## Accepted lane"
+                    echo ""
+                    echo "- job: \`$name\` concluded \`$verdict\` on \`$SHA\`"
+                    echo "- by: @${{ github.actor }}"
+                    echo "- reason: $ACCEPT_REASON"
+                    echo ""
+                  } >> "$GITHUB_STEP_SUMMARY"
+                else
+                  echo "::error::$name concluded '$verdict' on $SHA. A release is not built from a commit whose tests did not pass; name the lane in accept_lanes with a reason if that is a decision, not an accident."
+                  failed=1
+                fi
+                ;;
+            esac
+          done < "$best"
+          [ "$failed" -eq 0 ] || exit 1
+          echo "Every CI job on $SHA passed, was skipped, or was accepted by name."
 
       - name: Record the emergency exception
         if: ${{ inputs.emergency == true }}
