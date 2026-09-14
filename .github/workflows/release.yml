@@ -1459,7 +1459,12 @@ jobs:
 
           pin=""
           if [ -f CHANNEL ]; then
-            pin="$(grep -v '^[[:space:]]*#' CHANNEL | tr -d '[:space:]' | head -1)"
+            # `|| true` because a CHANNEL that is all comments -- the normal
+            # case, no pin -- makes `grep -v` exit 1 with nothing selected;
+            # under pipefail that failed the assignment and, under -e, ended
+            # the job with exit 1 and not one line of output. v0.4.0 was
+            # published and left a pre-release that way (K-347).
+            pin="$(grep -v '^[[:space:]]*#' CHANNEL | tr -d '[:space:]' | head -1 || true)"
           fi
           if [ -n "$pin" ] && [ "$pin" != "$TAG" ]; then
             echo "::warning::CHANNEL pins the website to $pin, so $TAG stays a pre-release."
