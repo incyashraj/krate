@@ -66,5 +66,14 @@ assert.equal(spend.total.krate, 0.76);
 bridge.token = null;
 assert.deepEqual(await COMMANDS.api_keys(), [], "signed out shows no keys");
 
+// The spending panel must land in the PANE, not the nav button that opens
+// it. Both carry data-ai="keys" and the button comes first in the document,
+// so a bare attribute selector picks the wrong one -- which is exactly what
+// happened: the panel rendered inside the sheet's left-hand nav column.
+const paint = src.slice(src.indexOf("async function paintSpend"));
+assert.match(paint.slice(0, 400), /querySelector\('\.ai-pane\[data-ai="keys"\]'\)/,
+  "paintSpend targets the pane, not the nav button that shares its attribute");
+
+console.log("ok  the spending panel targets the pane, not the nav button");
 console.log("ok  keys are stored server-side, never in the browser");
 console.log("ok  spend separates your key from Krate's");

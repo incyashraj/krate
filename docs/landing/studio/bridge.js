@@ -993,7 +993,7 @@ function money(n) {
 }
 
 async function paintSpend() {
-  const pane = document.querySelector('[data-ai="keys"]');
+  const pane = document.querySelector('.ai-pane[data-ai="keys"]');
   if (!pane) return;
   let box = document.getElementById("webSpend");
   if (!box) {
