@@ -667,6 +667,12 @@ function restorePending() {
 function speakWeb() {
   const swaps = [
     [".ob-p", "Krate hands your words to our AI. Nothing to install."],
+    // On a desktop, signing in is for publishing and nothing else -- the
+    // build runs on your own machine either way. Here every build runs on
+    // ours, so an account is how the free first app is counted and how the
+    // work belongs to somebody. "Sign in to publish later" told a web
+    // visitor the opposite of what the very next screen enforces.
+    ["#obSignIn", "Sign in -- your first app is free"],
   ];
   for (const [selector, words] of swaps) {
     const el = document.querySelector(selector);
