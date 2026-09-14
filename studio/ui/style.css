@@ -139,7 +139,7 @@ body::before {
   pointer-events: none;
   background-image: url("ambient-mark.svg");
   background-repeat: no-repeat;
-  background-position: 50% -22%;
+  background-position: 50% 50%;
   /* contain, not a percentage: a percentage is measured against the
      window's width, so a wide window stretched the mark sideways. The
      artboard is square and stays square; this just decides how much of
@@ -153,7 +153,7 @@ body.light::before { opacity: 0.13; }
    not the same place, and an apex off the axis of the column it lights
    reads as a mistake rather than as lighting. */
 body.side-open::before {
-  background-position: calc(50% + (var(--side-w, 240px) / 2)) -22%;
+  background-position: calc(50% + (var(--side-w, 240px) / 2)) 50%;
 }
 
 /* Everything the app draws sits above the lighting. The views already
