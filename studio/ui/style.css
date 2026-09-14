@@ -4126,7 +4126,7 @@ body.side-resizing .shelf { transition: none; }
  * an overlay with a scrim, the way every mobile app does it -- and tapping
  * the scrim closes it, which is the gesture people already know.
  */
-@media (max-width: 760px) {
+@media (max-width: 860px) {
   .side {
     position: fixed; top: 0; bottom: 0; left: 0; z-index: 60;
     width: min(300px, 86vw);
@@ -4153,7 +4153,7 @@ body.side-resizing .shelf { transition: none; }
   #sideSearch { min-height: 44px; }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 860px) {
   .icon-btn, .tool, .send, .set-mini { min-width: 44px; min-height: 44px; }
   .side-nav a, .side-nav button, .side-item { min-height: 44px; }
   .side-mark { min-height: 44px; }
@@ -4163,7 +4163,7 @@ body.side-resizing .shelf { transition: none; }
 }
 
 /* ---- the home screen on a phone --------------------------------------- */
-@media (max-width: 760px) {
+@media (max-width: 860px) {
   .home { padding-left: 14px; padding-right: 14px; }
   .home-title { font-size: clamp(22px, 7vw, 30px); }
   .home-hail { width: 100%; }
@@ -4194,7 +4194,7 @@ body.side-resizing .shelf { transition: none; }
  * whole width beneath them. The strip scrolls sideways if there are more
  * sections than fit, which is the one place sideways scrolling is right.
  */
-@media (max-width: 760px) {
+@media (max-width: 860px) {
   .set-modal {
     grid-template-columns: 1fr;
     grid-template-rows: auto minmax(0, 1fr);
@@ -4247,14 +4247,17 @@ body.side-resizing .shelf { transition: none; }
  * you made is what you came back to see, and the conversation reads fine
  * underneath it.
  */
-@media (max-width: 760px) {
+@media (max-width: 860px) {
   .session-body { flex-direction: column; overflow-y: auto; }
   .rail {
     width: 100%; min-width: 0; max-height: none;
     border-right: 0; border-top: 1px solid var(--line);
     order: 2;
   }
-  .thread { padding: 16px 14px; overflow: visible; }
+  .thread { padding: 16px 14px 16px 18px; overflow: visible; }
+  /* The timeline rail is drawn at the thread's left edge; without a
+     gutter its dots and divider sat half off the screen. */
+  .thread .msg { padding-left: 2px; }
   .stage { order: 1; padding: 16px 14px 20px; overflow: visible; }
   .stage-state { width: 100%; }
   .done-card { width: 100%; max-width: 100%; }
@@ -4264,7 +4267,7 @@ body.side-resizing .shelf { transition: none; }
 }
 
 /* ---- a built app, on a phone ------------------------------------------ */
-@media (max-width: 760px) {
+@media (max-width: 860px) {
   /* The done card's four actions were a single row of 34px buttons at the
      screen's edge. Two per row, full height, reachable. */
   .done-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -4559,7 +4562,7 @@ body:not(.macos).light .side-top .side-toggle:hover { color: #000; }
  * which is why they carry their own !important below: nothing in a file
  * can out-order a stylesheet appended at runtime.
  */
-@media (max-width: 760px) {
+@media (max-width: 860px) {
   .ai-key-row {
     display: grid; grid-template-columns: minmax(0, 1fr) auto;
     gap: 6px 10px; align-items: center;
@@ -4579,4 +4582,71 @@ body:not(.macos).light .side-top .side-toggle:hover { color: #000; }
   .web-spend-row .app { grid-column: 1; grid-row: 1; font-weight: 500; }
   .web-spend-row .usd { grid-column: 2; grid-row: 1; text-align: right; }
   .web-spend-row .who { grid-column: 1 / -1; font-size: 10.5px; }
+}
+
+/* ---- a phone, measured ------------------------------------------------
+ *
+ * Last in the file on purpose: several of the rules below correct
+ * declarations that appear later than any media query placed mid-file,
+ * and equal specificity is settled by source order.
+ *
+ * Every number here came off a 412x915 screen with the layout on it.
+ */
+@media (max-width: 860px) {
+  /* The shelf header ran "My apps | Examples ... Browse all" on one line
+     and pushed Browse all to x=427 on a 412px screen. The tabs keep the
+     line; the link wraps under them when there is no room. */
+  .shelf-head { flex-wrap: wrap; row-gap: 8px; }
+  .shelf-all { margin-left: auto; }
+
+  /* The composer's "Built by Krate AI · change" chip wrapped onto three
+     lines, which is what pushed the dictation button off the right edge.
+     It is one line or it is not shown. */
+  .aichip { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; }
+  .aichip .chev { display: none; }
+  .bigbar-row { min-width: 0; }
+  .bigbar-row > * { flex: none; }
+  .bigbar-row .grow { flex: 1 1 auto; min-width: 0; }
+
+  /* Nothing in the app view may sit outside the screen. */
+  .view { overflow-x: hidden; }
+}
+
+/* ---- the session view, on a phone ------------------------------------
+ *
+ * The founder's screenshot showed the "Krate AI" chip cut in half at the
+ * right edge and the composer floating in the transcript rather than
+ * pinned. The header is a three-part row that assumes desktop width.
+ */
+@media (max-width: 860px) {
+  #viewSession .titlebar {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-auto-flow: column;
+    align-items: center;
+    gap: 8px; padding-right: 10px;
+    height: auto; min-height: var(--titlebar);
+  }
+  /* Left-aligned, not centred in its column: the title belongs beside the
+     back arrow, reading as one unit with it. */
+  #viewSession .crumb { justify-self: start; text-align: left; }
+  #viewSession .spacer { display: none; }
+  #viewSession .crumb {
+    max-width: 100%; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* The agent chip shrinks to its dot and name, and never past the edge. */
+  #viewSession .agent-chip {
+    max-width: 38vw; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  /* The composer belongs at the bottom of the screen, above nothing. */
+  .rail .composer-shell {
+    position: sticky; bottom: 0; z-index: 4;
+    background: var(--bg);
+    padding-top: 8px;
+    border-top: 1px solid var(--line);
+  }
+  .rail .composer-hint { padding-bottom: 6px; }
 }

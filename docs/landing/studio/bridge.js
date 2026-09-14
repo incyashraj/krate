@@ -913,6 +913,32 @@ const COMMANDS = {
   async install_update() {},
   async restart_for_update() {},
   async first_run_setup() {},
+
+  /* ---- the gallery ------------------------------------------------------
+   *
+   * Apps other people published. This is a hub listing and needs nothing
+   * from a desktop, but the bridge had no answer for it -- so the Shared
+   * screen showed "That part of Studio needs the app on your computer"
+   * over a feature that works perfectly in a tab.
+   *
+   * Studio hands the JSON straight to its own renderer, so this returns
+   * the hub's body as text exactly as the desktop command does.
+   */
+  async cloud_apps({ q, cat } = {}) {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (cat) params.set("cat", cat);
+    const query = params.toString();
+    const out = await hub(`/apps${query ? `?${query}` : ""}`);
+    return typeof out === "string" ? out : JSON.stringify(out);
+  },
+
+  /* Opening one: a browser cannot run a .krate, so this hands over the
+   * app's page, where it can be downloaded and read about. */
+  async cloud_run({ url } = {}) {
+    if (!url) return refuse("That app has no link yet.");
+    window.open(url, "_blank", "noopener");
+  },
 };
 
 /* The door itself. Anything not named above is a command the browser has
