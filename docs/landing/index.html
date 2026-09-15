@@ -71,12 +71,43 @@ img { max-width: 100%; display: block; }
    760px, so a phone visitor had a download button and nothing else. The
    bar keeps the first link and drops the rest. */
 @media (max-width: 760px) {
-  /* No nav in the bar on a phone: at this width a brand, a star pill and
-     a link cannot share one centred row without the link wrapping over
-     the logo. The hero's own "Make an app" button is the action, and it
-     is the first thing under the fold. */
-  .bnav { display: none; }
-  .brandbar { gap: 10px; }
+  /* ---- a real header, not a floating badge ---------------------------
+   *
+   * This used to hide the nav entirely, on the argument that a brand, a
+   * star pill and four links cannot share one centred row. That is true
+   * -- so the answer is to stop it being a centred row. As shipped, a
+   * phone visitor had no navigation at all: no menu, no links, no way to
+   * reach Apps or Docs except by scrolling to the footer.
+   *
+   * A full-width bar instead, pinned to the top: brand on the left, the
+   * one action on the right, the way every other site does it. The star
+   * pill goes -- it is a badge, and a badge is not worth the only other
+   * slot on a phone's header. */
+  .brandbar {
+    left: 0; right: 0; top: 0;
+    width: 100%; max-width: none;
+    transform: none !important;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px;
+    padding: 10px 16px calc(10px + env(safe-area-inset-top)) 16px;
+    padding-top: calc(10px + env(safe-area-inset-top));
+    border-radius: 0;
+    background: rgba(10, 10, 10, 0.72);
+    -webkit-backdrop-filter: blur(16px) saturate(1.4);
+    backdrop-filter: blur(16px) saturate(1.4);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  }
+  .brandbar .starpill { display: none; }
+  /* One link, the one the page is for. The rest of the site is reachable
+     from the footer, and four 12.5px links in a phone header would be
+     four targets nobody can hit. */
+  .bnav { display: flex; margin-left: 0; }
+  .bnav a:not([href="/login/?next=studio"]) { display: none; }
+  .bnav a[href="/login/?next=studio"] {
+    font-size: 13.5px; font-weight: 500; color: #0a0a0a;
+    background: #fff; padding: 9px 16px; border-radius: 999px;
+    min-height: 40px; display: inline-flex; align-items: center;
+  }
 }
 .brandbar.in { opacity: 1; transform: translateX(-50%) translateY(0); }
 .brandbar .name {
@@ -89,7 +120,11 @@ img { max-width: 100%; display: block; }
   border-radius: 999px; background: rgba(24, 24, 27, 0.8); padding: 5px 11px;
   font-size: 10px; font-weight: 500; color: #d4d4d8;
   box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 4px 12px -4px rgba(0,0,0,0.6);
-  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  /* No backdrop-filter. It blurs everything BEHIND the element's own box,
+     and since this pill sits 10px from the wordmark its blur reached back
+     over the final letters of KRATE -- the "E" looked smeared, and every
+     geometric check said the two boxes did not overlap, because they do
+     not. The pill is already 80% opaque; the blur bought nothing. */
   transition: box-shadow 0.2s ease, background-color 0.2s ease, scale 0.2s ease;
 }
 .starpill:hover {
@@ -670,24 +705,51 @@ img { max-width: 100%; display: block; }
    * Sized off the VIEWPORT instead, so the rim always falls below the
    * content rather than at whatever height a 1890px disc happens to
    * reach: the arc sits under the hero, the way it does on a desktop. */
-  /* The script sets this element's transform inline
-     (`translateY(-143vh)`, animated on scroll), so CSS cannot position it
-     -- any `top` or `bottom` here is moved by that. The disc is sized and
-     placed to land correctly UNDER that offset instead: 143vh up from a
-     top of 218vh puts its upper rim just below the hero, which is where
-     the arc belongs. */
+  /* ---- the glow ------------------------------------------------------
+   *
+   * On a desktop the eclipse is a horizon: a huge disc whose bright rim
+   * arcs below the hero, with the page's content standing on it. That
+   * reading needs width. On a phone the disc is mostly off-screen and
+   * what is left is a pale curve at the very bottom, under content that
+   * has already ended -- scenery for a landscape that is not there.
+   *
+   * Behind the headline instead, as a light source rather than a horizon:
+   * a soft bloom the words sit in front of, which is what the mark on the
+   * Studio home does and what the shape actually reads as at this size.
+   * The script's inline `translateY(-143vh)` still applies, so the disc
+   * is placed to land under it -- 143vh up from 148vh puts the glow's
+   * centre just behind the headline.
+   *
+   * Centred by margin, not by transform: the transform is the script's. */
+  /* The element is named for what it is: a white rim, two coloured glows,
+     and a BLACK core disc in front of them. The colour is only ever seen
+     as the ring the core does not cover -- hide the core and the whole
+     thing becomes a solid purple wall, which is exactly what happened on
+     the first attempt here.
+     So the eclipse stays an eclipse; it is only moved and softened. */
+  /* Placed so the ring's LOWER arc crosses the top of the screen -- the
+     glow comes from above and falls on the hero, the way a sky lights a
+     landscape. A ring centred on the hero encircles the words instead of
+     lighting them, and the same ring below the fold is scenery for a
+     horizon that is not there. This is the founder's suggestion and it is
+     the right one: the light belongs at the top.
+     143vh of the script's inline transform is subtracted from this. */
   .eclipse {
-    width: 210vw; height: 210vw;
-    /* Centred by margin, not by transform: the transform is the script's.
-       The margin is always half the width. */
-    left: 50%; margin-left: -105vw;
-    /* 236, not 218: at 218 the rim's first light landed on "Someone sent
-       you a file?" -- the last line of the hero -- and dimmed it. Checked
-       down to a 640px screen, where the hero ends lowest relative to the
-       viewport and the margin is thinnest. */
-    top: 236vh; bottom: auto;
-    opacity: 0.38;
+    /* Sized and placed in vh only. Mixing vw into the offset made the
+       arc's landing depend on the aspect ratio: at 390x844 it ended 202px
+       ABOVE the screen and left nothing but a smudge.
+       The disc is 150vh tall and its top is 143vh (the script's offset)
+       minus 118vh, so its lower arc crosses at 32vh -- a third of the way
+       down, above the headline, lighting it from the sky. */
+    width: 150vh; height: 150vh;
+    left: 50%; margin-left: -75vh;
+    top: 25vh; bottom: auto;
+    opacity: 0.55;
   }
+  /* The rim is the one hard edge -- a bright white hairline that reads as
+     a horizon on a wide screen and as a stray arc on a narrow one. The
+     glow keeps its shape without it. */
+  .eclipse .rim { display: none; }
   /* With the arc below the content, the download button no longer needs a
      plate of its own to be legible -- but it keeps a quiet one, because
      it is the second action on the screen and should not compete with
