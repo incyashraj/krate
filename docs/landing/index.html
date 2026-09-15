@@ -374,6 +374,10 @@ img { max-width: 100%; display: block; }
    display that reads as a page that failed to load rather than as air. */
 /* ---- what it is: the phone's answer, hidden on a desktop -------------- */
 .whatis { display: none; }
+/* The forwards-facing subtitle is the phone's; the desktop keeps the one
+   that leads with the denials, because its marquee explains them
+   immediately underneath. */
+.heroSubPhone { display: none; }
 .works {
   position: relative; z-index: 30; width: 100%;
   background: #000; padding: 96px 24px;
@@ -956,6 +960,10 @@ img { max-width: 100%; display: block; }
    * A plain sentence, then the seven facts as a list. Seven rows of one
    * bold phrase and one sentence: scannable in a thumb-flick, readable if
    * you stop. */
+  /* The two subtitles swap: what it IS, not what it is not. */
+  #heroSub { display: none; }
+  .heroSubPhone { display: block; }
+
   .whatis {
     display: block;
     padding: 40px 20px 8px;
@@ -1191,6 +1199,18 @@ img { max-width: 100%; display: block; }
       <p class="heroSub" id="heroSub">No installer. No per-OS port. No signing
       dance. A Krate app is tens of kilobytes, runs on Mac, Windows and Linux
       from the same file, and cannot touch anything it did not declare.</p>
+      <!-- The same promise, said forwards.
+           The line above opens with three things Krate is NOT, which lands
+           for somebody who has felt those problems and means nothing to
+           anybody else. On a desktop that is fine: the marquee sits
+           directly beneath it and explains. On a phone the marquee is gone
+           and the explanation is 660px further down, so the first thing a
+           visitor reads is a list of denials about a product they cannot
+           yet name. This says what it is first; the phone shows this one
+           and the desktop shows the other. -->
+      <p class="heroSub heroSubPhone">An app you make with Krate is one small
+      file. Send it to anyone, on Mac, Windows or Linux -- they open it like a
+      photo. No installer, no app store, no version for each machine.</p>
       <div class="heroCtas" id="heroCtas">
         <div class="ctaRow">
           <a class="btn btn-primary" id="makeBtn" data-pressed="false"
@@ -1531,12 +1551,17 @@ requestAnimationFrame(function () { requestAnimationFrame(function () {
   ecl.style.transform = "translateY(-143vh) scaleY(1)";
   setTimeout(function () { ecl.style.transition = ""; }, 1700);
   setTimeout(function () { $("heroH1").classList.add("in"); }, 250);
-  setTimeout(function () { $("heroSub").classList.add("in"); }, 420);
+  /* Both subtitles: CSS decides which one is displayed, so the class goes
+     on either and only the visible one is ever seen fading in. */
+  setTimeout(function () {
+    document.querySelectorAll(".heroSub").forEach(function (e) { e.classList.add("in"); });
+  }, 420);
   setTimeout(function () { $("heroCtas").classList.add("in"); }, 580);
   setTimeout(function () { $("marqWrap").classList.add("in"); $("marqLabel").classList.add("in"); }, 800);
 }); });
 if (reduced) {
   ["heroH1","heroSub","heroCtas","marqWrap","marqLabel"].forEach(function (i) { $(i).classList.add("in"); });
+  document.querySelectorAll(".heroSub").forEach(function (e) { e.classList.add("in"); });
 }
 
 /* -------------------------------------------- headline glyph carousel */
