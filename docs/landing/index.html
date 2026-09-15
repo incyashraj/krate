@@ -1044,10 +1044,52 @@ img { max-width: 100%; display: block; }
     padding: 6px 14px 6px 12px;
     padding-top: calc(6px + env(safe-area-inset-top));
     border-radius: 0;
-    background: rgba(10, 10, 10, 0.78);
+    /* The bar used to be a flat near-black panel with a 1px white
+       hairline under it, sitting directly on the hero's purple glow. Two
+       hard edges in the same place -- the tone step from near-black to
+       purple, and the line itself -- and it read as two stacked
+       rectangles rather than one surface.
+       The panel now fades out over its last few pixels instead, so the
+       bar meets the glow rather than cutting it. */
+    background: linear-gradient(
+      to bottom,
+      rgba(10, 10, 10, 0.88) 0%,
+      rgba(10, 10, 10, 0.82) 62%,
+      rgba(10, 10, 10, 0.55) 88%,
+      rgba(10, 10, 10, 0) 100%
+    );
     -webkit-backdrop-filter: blur(16px) saturate(1.4);
     backdrop-filter: blur(16px) saturate(1.4);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    /* No hairline. A border draws the same crisp edge the gradient
+       exists to avoid; the blur behind the bar is what separates it
+       from the page. */
+    border-bottom: 0;
+  }
+  /* The glow begins at full strength at y=0, because the eclipse's box
+     sits entirely above the fold (measured: its lowest layer ends at
+     -33px) and only its 90px blur spills into view -- so there is
+     nothing above it to fade from, and it met the bar as a flat wash.
+     This is the missing top of that falloff: a short, dark veil over the
+     first stretch of the hero, behind the content and above the glow, so
+     the colour arrives instead of starting.
+
+     Kept SHORT and light on purpose: a first pass at 190px and 0.72
+     alpha softened the seam and flattened the glow with it, which trades
+     one problem for a worse one -- the colour is the hero. This reaches
+     just past the bar and is gone by 96px. */
+  .heroStick::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 76px;
+    z-index: 1;
+    pointer-events: none;
+    background: linear-gradient(
+      to bottom,
+      rgba(10, 10, 10, 0.42) 0%,
+      rgba(10, 10, 10, 0.16) 60%,
+      rgba(10, 10, 10, 0) 100%
+    );
   }
   /* The entrance animation re-centres with a transform; on a full-width
      bar there is nothing to centre and it would slide the bar sideways. */
