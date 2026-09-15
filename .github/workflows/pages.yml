@@ -278,6 +278,16 @@ jobs:
           cp scripts/install.ps1 _site/install.ps1
           # A trailing-slash-free alias, so `krate.tech/install` works too.
           cp scripts/install.sh _site/install
+          # Once every page is in place, before the stylesheet is hashed:
+          # give them all the phone rules. Every page on this site inlines
+          # its own CSS -- there is no shared sheet -- so the 44px touch
+          # rule was copy-pasted into seven pages and MISSING from three
+          # (faq, privacy, login), whose links measured 20px on a phone.
+          # Nothing reported that, because a missing rule looks exactly
+          # like a page that does not need one. Doing it here means a new
+          # page is covered the day it is added.
+          python3 scripts/ensure-touch-targets.py --self-test
+          python3 scripts/ensure-touch-targets.py _site
           # Last, once every page is in place: name the stylesheet after a hash
           # of its contents and repoint every reference at it. Pages serves CSS
           # with max-age=600, so a deploy that changed the stylesheet shipped

@@ -4150,20 +4150,58 @@ body.side-resizing .shelf { transition: none; }
  */
 /* Touch, not width: a tablet is operated by the same thumb as a phone, so
    the targets are decided by the input device rather than by how wide the
-   screen happens to be. */
+   screen happens to be.
+   This used to be two near-identical blocks, one keyed on `pointer:
+   coarse` and one on width, and BOTH listed the controls by name -- which
+   is why the drawer's foot was missed for so long: it uses .side-row,
+   .side-avatar and .side-bell, and neither list mentioned them. Measured
+   with the drawer actually open at 390px: Settings 279x34, account 28x28,
+   notifications 28x28, all of them things a thumb is meant to hit.
+   One block now, and it sweeps every control in the drawer rather than
+   naming them, so a new one is covered the day it is added. */
 @media (pointer: coarse) {
   .icon-btn, .tool, .send, .set-mini { min-width: 44px; min-height: 44px; }
-  .side-nav a, .side-nav button, .side-item, .side-mark { min-height: 44px; }
   #sideSearch { min-height: 44px; }
+
+  /* Everything clickable inside the drawer, by structure not by name. */
+  .side button,
+  .side a[href],
+  .side [role="button"] { min-height: 44px; }
+  /* The square ones need the other axis too, or they stay 28 wide. */
+  .side-avatar, .side-bell, .side .icon-btn { min-width: 44px; }
+  /* A square control that grew to 44 keeps its shape rather than becoming
+     a rounded rectangle with its glyph adrift in the middle. */
+  .side-avatar, .side-bell { display: grid; place-items: center; }
+
+  .side-foot .side-card { padding: 12px 14px; }
+  /* The Build/Plan toggle is sized in bridge.js, not here: that CSS is
+     injected into the head at runtime and wins on source order, so a rule
+     for it in this file would be silently overridden. */
+
+  /* The gallery's search field. The input itself is 21px, but a tap
+     anywhere on its wrapper focuses it, so the wrapper is the real
+     target -- and at 39px it was still five short. */
+  .cloud-search { min-height: 44px; }
 }
 
+/* ---- a floor under the type, on a phone -------------------------------
+ *
+ * Studio is dense on purpose: it is a tool, and a desktop user sits close
+ * to a large screen. A phone is held at arm's length, and the same setting
+ * that reads as precise on a monitor reads as a smudge there.
+ *
+ * Measured across the app at 390px: labels at 10.5, a "soon" tag at 9.5,
+ * the drawer's section headings at 10.5. Raised to 11.5, which is the
+ * smallest size that still reads, and applied only on phones so the
+ * desktop's density is untouched. Sized in one place rather than per
+ * class, so a label added later is covered.
+ */
 @media (max-width: 860px) {
-  .icon-btn, .tool, .send, .set-mini { min-width: 44px; min-height: 44px; }
-  .side-nav a, .side-nav button, .side-item { min-height: 44px; }
-  .side-mark { min-height: 44px; }
-  #sideSearch { min-height: 44px; }
-  .side-foot .side-card { padding: 12px 14px; }
-  .web-mode button { min-height: 36px; padding: 8px 14px; }
+  .build-shot-tag, .side-key, .side-label, .soon-tag, .term-what,
+  .l, .label, .tag, .aichip, .pub-opt, .info-note,
+  .msg .who {
+    font-size: 11.5px;
+  }
 }
 
 /* ---- the home screen on a phone --------------------------------------- */
@@ -4413,7 +4451,9 @@ body.side-resizing .shelf { transition: none; }
     border-radius: 26px;
   }
   .composer-box .send { border-radius: 50%; }
-  .composer-box .clip { border-radius: 50%; flex: none; }
+  /* The paperclip was 30 wide against a 44-tall box: a tall thin target
+     beside a round one. Square and round, matching the send button. */
+  .composer-box .clip { border-radius: 50%; flex: none; min-width: 44px; }
   #prompt { align-self: center; }
 
   /* The hint was right-aligned at 11px, so when it wrapped it left a

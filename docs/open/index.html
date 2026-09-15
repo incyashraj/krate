@@ -104,7 +104,10 @@ h1.page { font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
   .termbox { flex-direction: column; align-items: stretch; gap: 6px; }
   .termbox code { width: 100%; }
   .termbox button {
-    align-self: flex-start; min-height: 32px; padding: 6px 12px;
+    /* 44, not the 32 this first shipped with: Copy is the whole point of
+       the row -- the command is too long to retype -- and a thumb needs
+       44. Measured at 55x34 before this. */
+    align-self: flex-start; min-height: 44px; padding: 6px 16px;
     border: 1px solid rgba(255,255,255,0.14); border-radius: 8px;
     background: rgba(255,255,255,0.05);
   }

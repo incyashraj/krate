@@ -1126,6 +1126,15 @@ const MODE_CSS = `
 .web-mode button:hover { color: var(--text); }
 .web-mode button[aria-pressed="true"] { background: var(--text); color: var(--bg); }
 .web-mode-hint { font-size: 11px; color: var(--muted); margin-left: 2px; }
+/* A thumb needs 44. Set here rather than in style.css because this block
+   is injected into the head at runtime and so wins on source order --
+   a rule in the stylesheet for these buttons would be silently overridden.
+   Build and Plan are the choice the composer is built around, so they are
+   not the place to save eight pixels. */
+@media (pointer: coarse) {
+  .web-mode button { min-height: 44px; padding: 8px 16px; }
+  .web-mode-hint { font-size: 11.5px; }
+}
 `;
 
 function paintMode() {

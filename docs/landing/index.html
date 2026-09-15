@@ -679,8 +679,18 @@ img { max-width: 100%; display: block; }
   .secondDoor { font-size: 13px; line-height: 1.7; color: #c7c7d1; }
   .secondDoor a { color: #fff; }
   .dlLine { flex-direction: column; gap: 8px; }
-  .dlLine .btn { min-height: 40px; }
+  /* 44, not 40. This was trimmed to buy back four pixels of hero height,
+     which is the wrong trade for the button that downloads the product --
+     and the hero now fits without it (the marquee gave up the space
+     instead). The split's chevron is the same control, so it matches. */
+  .dlLine .btn, .dlLine .split > * { min-height: 44px; }
   .marqWrap { opacity: 1 !important; filter: none !important; transform: translateY(-50%) !important; }
+
+  /* 10px is a label on a monitor you are sitting two feet from and a smudge
+     on a phone held at arm's length. These are all short chips -- the star
+     count, the plan badges -- so a point and a half costs no layout and
+     makes them legible. The desktop keeps its finer setting. */
+  .starpill, .plan .badge { font-size: 11.5px; }
 
   /* The headline cycles a vendor glyph between its two sentences: on a wide
      screen all three sit on one line and it reads as a separator. Here the
