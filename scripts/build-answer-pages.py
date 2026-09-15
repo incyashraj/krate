@@ -67,6 +67,64 @@ def chrome():
     return head, nav, foot
 
 
+# These pages inline the LANDING page's head, which does not carry the
+# `.answer-cmd` rule -- that one lives in docs/landing/krate.css, a
+# stylesheet these pages never load. So the command blocks shipped as bare
+# <pre>: `white-space: pre`, no overflow rule, no max width. Measured at
+# 390px, one `krate run ... --grant` line made the whole document 655px
+# wide and the PAGE scrolled sideways, on every answer page.
+#
+# The commands must stay unwrapped -- a shell line broken across lines is a
+# line somebody pastes wrong -- so the block scrolls inside its own box
+# instead, and `max-width: 100%` stops it widening its parents.
+ANSWER_CSS = """  <style>
+    /* Command blocks: scroll inside the box, never widen the page. */
+    .answer-cmd {
+      margin: 0 0 18px;
+      padding: 14px 16px;
+      max-width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-x: contain;
+      color: #7fb2ff;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.65;
+      white-space: pre;
+    }
+    /* Nothing inside the page shell may widen it either: a long URL or an
+       inline <code> token is the other way a page starts scrolling. */
+    .page-wrap { overflow-x: clip; }
+    .page-wrap :is(p, li, h1, h2, h3, td) { overflow-wrap: anywhere; }
+    /* The two pills at the foot of the page. They wrap rather than squeeze,
+       and they are a real tap target rather than a line of text: measured
+       at 26px before this, against the 44px the same pill gets in the nav. */
+    .answer-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 18px;
+    }
+    .answer-actions .pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 0 20px;
+    }
+    @media (max-width: 760px) {
+      .answer-cmd { font-size: 12.5px; padding: 12px 14px; }
+      /* One per line on a phone, each full width: two pills side by side
+         at this width leaves each too narrow to read comfortably. */
+      .answer-actions { flex-direction: column; align-items: stretch; }
+      .answer-actions .pill { width: 100%; }
+    }
+  </style>
+"""
+
+
 def faq_schema(pairs):
     """Structured data so a search result can carry the answer, not just a link."""
     return json.dumps(
@@ -108,7 +166,8 @@ def render(page):
     )
     head = head.replace(
         "</head>",
-        f'  <script type="application/ld+json">\n{faq_schema(page["faq"])}\n  </script>\n</head>',
+        f'  <script type="application/ld+json">\n{faq_schema(page["faq"])}\n  </script>\n'
+        f"{ANSWER_CSS}</head>",
     )
 
     sections = "\n".join(
@@ -131,10 +190,15 @@ def render(page):
     <section>
       <h2>Try it</h2>
       <p>Krate is open source and installs with one command. Nothing to sign up for.</p>
-      <p style="display:flex; gap:12px; margin-top:18px">
+      <!-- A <p> turned into a flex row made these two pills flex children,
+           so they took the line-box height (measured 26px) instead of their
+           own padding, while the identical pill in the nav measured 44px.
+           A div with a class, so the rule below can reach it and the two
+           wrap instead of squeezing on a narrow screen. -->
+      <div class="answer-actions">
         <a class="pill pill-primary" href="/#install">Get Krate</a>
         <a class="pill" href="/cloud/">Open the store</a>
-      </p>
+      </div>
     </section>
     </main>
 {foot}

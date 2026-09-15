@@ -8,14 +8,14 @@
 <meta name="description" content="One file that opens on all three desktop operating systems, without a separate build, an installer, or a bundled browser engine. How the .krate format works and where it does not fit." />
 <link rel="icon" href="/krate-favicon.png" />
   <link rel="canonical" href="https://krate.tech/portable-desktop-app-format.html" />
-  <meta property="og:title" content="Krate: make an app you can send" />
+  <meta property="og:title" content="Krate: build once, ship one file" />
   <meta property="og:description" content="Build once, ship one file. Desktop software in tens of kilobytes that runs on Mac, Windows and Linux -- no per-app installer, no port, no signing dance." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://krate.tech/" />
-  <meta property="og:image" content="https://krate.tech/og-v2.png" />
+  <meta property="og:image" content="https://krate.tech/og-v3.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="Krate turns an AI request into one app file for Mac, Windows, and Linux." />
+  <meta property="og:image:alt" content="Build once. Ship one file. Desktop software in tens of kilobytes that runs on Mac, Windows, and Linux." />
   <meta name="twitter:card" content="summary_large_image" />
 
 <style>
@@ -66,7 +66,49 @@ img { max-width: 100%; display: block; }
 .bnav a { font-size: 12.5px; color: #a1a1aa; padding: 5px 9px; border-radius: 999px;
   transition: color 0.15s ease, background 0.15s ease; }
 .bnav a:hover { color: #fff; background: rgba(255,255,255,0.06); }
-@media (max-width: 760px) { .bnav { display: none; } }
+/* The nav is where "Make an app" lives, and on a phone that is the
+   primary action of the whole page. It used to be hidden wholesale under
+   760px, so a phone visitor had a download button and nothing else. The
+   bar keeps the first link and drops the rest. */
+@media (max-width: 760px) {
+  /* ---- a real header, not a floating badge ---------------------------
+   *
+   * This used to hide the nav entirely, on the argument that a brand, a
+   * star pill and four links cannot share one centred row. That is true
+   * -- so the answer is to stop it being a centred row. As shipped, a
+   * phone visitor had no navigation at all: no menu, no links, no way to
+   * reach Apps or Docs except by scrolling to the footer.
+   *
+   * A full-width bar instead, pinned to the top: brand on the left, the
+   * one action on the right, the way every other site does it. The star
+   * pill goes -- it is a badge, and a badge is not worth the only other
+   * slot on a phone's header. */
+  /* The bar's own layout -- full width, square, inset for the notch --
+     is set further down this file, in the block that also drops its old
+     pill radius. Putting it in two places is what left the header a
+     rounded badge for a whole deploy: these rules come FIRST, so at equal
+     specificity the later ones win, and half of what was written here
+     never applied. Only what nothing else touches stays. */
+  .brandbar .starpill { display: none; }
+  /* One link, the one the page is for. The rest of the site is reachable
+     from the footer, and four 12.5px links in a phone header would be
+     four targets nobody can hit. */
+  .bnav { display: flex; margin-left: 0; }
+  .bnav a:not([href="/login/?next=studio"]) { display: none; }
+  /* A quiet link, not a second white button.
+     The hero already has "Make an app" as a full-width white button a
+     few hundred pixels down -- the page's one action. Repeating it in the
+     header as another white pill made the header heavier than the
+     wordmark beside it and asked the same question twice. Here it is a
+     link: present if you want it before you have read anything, and out
+     of the way if you do not. */
+  .bnav a[href="/login/?next=studio"] {
+    font-size: 14px; font-weight: 500; color: #e4e4e7;
+    background: none; padding: 10px 2px; border-radius: 0;
+    min-height: 44px; display: inline-flex; align-items: center;
+  }
+
+}
 .brandbar.in { opacity: 1; transform: translateX(-50%) translateY(0); }
 .brandbar .name {
   display: flex; align-items: center; gap: 0.34em;
@@ -78,7 +120,11 @@ img { max-width: 100%; display: block; }
   border-radius: 999px; background: rgba(24, 24, 27, 0.8); padding: 5px 11px;
   font-size: 10px; font-weight: 500; color: #d4d4d8;
   box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 4px 12px -4px rgba(0,0,0,0.6);
-  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  /* No backdrop-filter. It blurs everything BEHIND the element's own box,
+     and since this pill sits 10px from the wordmark its blur reached back
+     over the final letters of KRATE -- the "E" looked smeared, and every
+     geometric check said the two boxes did not overlap, because they do
+     not. The pill is already 80% opaque; the blur bought nothing. */
   transition: box-shadow 0.2s ease, background-color 0.2s ease, scale 0.2s ease;
 }
 .starpill:hover {
@@ -158,6 +204,10 @@ img { max-width: 100%; display: block; }
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   padding: 10px 16px; font-size: 14px; font-weight: 500; letter-spacing: 0.01em;
   white-space: nowrap; user-select: none;
+  /* A thumb is not a mouse pointer: every button clears 44px, which is
+     what both platform guidelines ask for and what this page's 34px
+     buttons failed. */
+  min-height: 44px;  /* a thumb needs 44; a pointer does not mind */
   transition: background-color 0.3s, color 0.3s, box-shadow 0.3s,
               border-radius 0.3s cubic-bezier(0.2, 0.8, 0.2, 1.2);
 }
@@ -175,8 +225,26 @@ img { max-width: 100%; display: block; }
   opacity: 0; transition: opacity 0.375s linear;
 }
 .btn > span { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 8px; pointer-events: none; }
-.btn-primary { background: #fff; color: #0a0a0a; box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+.btn-primary { background: #fff; color: #0a0a0a; border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
 .btn-primary:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
+.btn-primary[data-pressed="true"] { border-radius: 20px; }
+/* The download, demoted.
+ *
+ * Making an app is the product; downloading a tool is how somebody does
+ * more of it later. So the hero leads with Make in the white primary, and
+ * the download sits on the quiet line under it -- the same split button,
+ * every id and handler intact, wearing a smaller and softer skin. */
+.dlLine { display: flex; align-items: center; justify-content: center;
+  gap: 10px; flex-wrap: wrap; }
+.dlLine .split { transform: none; }
+.dlLine .btn { padding: 6px 12px; font-size: 12.5px; }
+.dlLine .btn svg { width: 14px; height: 14px; }
+.dlLine .split .more { padding: 6px 8px; }
+.dlLine .btn-primary { background: rgba(255,255,255,0.10); color: #d4d4d8;
+  box-shadow: none; border: 1px solid rgba(255,255,255,0.14); }
+.dlLine .btn-primary:hover { background: rgba(255,255,255,0.16); color: #fff;
+  box-shadow: none; }
 .btn-ghost { background: transparent; color: #fff; border-radius: 12px; }
 .btn-ghost:hover { background: rgba(255,255,255,0.1); }
 .btn-ghost[data-pressed="true"] { border-radius: 20px; }
@@ -304,6 +372,12 @@ img { max-width: 100%; display: block; }
 /* Sized to what it holds, not to the window. `min-height: 100vh` forced a
    whole screen of black for one paragraph and a graphic, and on a tall
    display that reads as a page that failed to load rather than as air. */
+/* ---- what it is: the phone's answer, hidden on a desktop -------------- */
+.whatis { display: none; }
+/* The forwards-facing subtitle is the phone's; the desktop keeps the one
+   that leads with the denials, because its marquee explains them
+   immediately underneath. */
+.heroSubPhone { display: none; }
 .works {
   position: relative; z-index: 30; width: 100%;
   background: #000; padding: 96px 24px;
@@ -314,6 +388,13 @@ img { max-width: 100%; display: block; }
   display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center;
 }
 @media (max-width: 900px) { .worksGrid { grid-template-columns: 1fr; } }
+/* A grid item's default `min-width: auto` is its content's minimum, and the
+   orbit's rings are positioned to overflow their box -- so on a 320px screen
+   this column sized itself to 322 and the whole page scrolled sideways to
+   346. The rings are decoration and are meant to spill; the column must not
+   grow to contain them. */
+.worksGrid > * { min-width: 0; }
+.orbitStage { min-width: 0; overflow: hidden; }
 .works h2 {
   font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
   font-size: clamp(28px, 4vw, 46px); line-height: 1.12; color: #fff;
@@ -439,6 +520,15 @@ img { max-width: 100%; display: block; }
   display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
 }
 @media (max-width: 760px) { .stepGrid { grid-template-columns: 1fr; } }
+/* The scrolling stat cards were wider than a phone, so every card was cut
+   off at both edges and none could be read whole. */
+@media (max-width: 860px) {
+  /* Cards were clipped at both edges: a fixed width wider than the screen
+     with a track that starts off-canvas. */
+  .marqTrack .stat { width: min(74vw, 290px); white-space: normal; }
+  .marqTrack { gap: 12px; }
+  .marqLabel { font-size: 11.5px; padding: 0 16px; text-align: center; }
+}
 .step {
   border-radius: 20px; padding: 26px 24px 28px;
   background: rgba(24, 24, 27, 0.5);
@@ -601,8 +691,553 @@ img { max-width: 100%; display: block; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .eclipse { opacity: 1 !important; filter: none !important; transform: translateY(-50%) !important; }
   .heroContent h1, .heroSub, .heroCtas { opacity: 1 !important; filter: none !important; transform: none !important; }
-  .marqWrap { opacity: 1 !important; filter: none !important; transform: translateY(-50%) !important; }
 }
+
+/* ---- the hero, on a phone -------------------------------------------- */
+@media (max-width: 760px) {
+  /* ---- the arc ---------------------------------------------------------
+   *
+   * The eclipse is a 1890px disc whose bright rim is the page's one piece
+   * of colour. On a desktop it arcs below the buttons and reads as a
+   * horizon. On a phone it was drawn straight THROUGH them: measured at
+   * 390x700 the disc's top edge is at 315 and the download row occupies
+   * 420-494, so the rim crossed "Want it on your machine?" and washed the
+   * button behind it until the text was barely there.
+   *
+   * A previous pass tried pushing it down 40% and dimming it, which is
+   * why those numbers look deliberate -- but 40% of 1890px, on an element
+   * already scaled 1.35, lands it back over the same buttons.
+   *
+   * Sized off the VIEWPORT instead, so the rim always falls below the
+   * content rather than at whatever height a 1890px disc happens to
+   * reach: the arc sits under the hero, the way it does on a desktop. */
+  /* ---- the glow ------------------------------------------------------
+   *
+   * On a desktop the eclipse is a horizon: a huge disc whose bright rim
+   * arcs below the hero, with the page's content standing on it. That
+   * reading needs width. On a phone the disc is mostly off-screen and
+   * what is left is a pale curve at the very bottom, under content that
+   * has already ended -- scenery for a landscape that is not there.
+   *
+   * Behind the headline instead, as a light source rather than a horizon:
+   * a soft bloom the words sit in front of, which is what the mark on the
+   * Studio home does and what the shape actually reads as at this size.
+   * The script's inline `translateY(-143vh)` still applies, so the disc
+   * is placed to land under it -- 143vh up from 148vh puts the glow's
+   * centre just behind the headline.
+   *
+   * Centred by margin, not by transform: the transform is the script's. */
+  /* The element is named for what it is: a white rim, two coloured glows,
+     and a BLACK core disc in front of them. The colour is only ever seen
+     as the ring the core does not cover -- hide the core and the whole
+     thing becomes a solid purple wall, which is exactly what happened on
+     the first attempt here.
+     So the eclipse stays an eclipse; it is only moved and softened. */
+  /* Placed so the ring's LOWER arc crosses the top of the screen -- the
+     glow comes from above and falls on the hero, the way a sky lights a
+     landscape. A ring centred on the hero encircles the words instead of
+     lighting them, and the same ring below the fold is scenery for a
+     horizon that is not there. This is the founder's suggestion and it is
+     the right one: the light belongs at the top.
+     143vh of the script's inline transform is subtracted from this. */
+  .eclipse {
+    /* Sized and placed in vh only. Mixing vw into the offset made the
+       arc's landing depend on the aspect ratio: at 390x844 it ended 202px
+       ABOVE the screen and left nothing but a smudge.
+       The disc is 150vh tall and its top is 143vh (the script's offset)
+       minus 118vh, so its lower arc crosses at 32vh -- a third of the way
+       down, above the headline, lighting it from the sky. */
+    width: 150vh; height: 150vh;
+    left: 50%; margin-left: -75vh;
+    /* 18, not 25: the arc was crossing at 0.32 of the screen and the
+       headline starts at 0.26, so the brightest part of the light landed
+       ON the words. Lifted so the glow peaks above them and the headline
+       reads against the fade. */
+    top: 18vh; bottom: auto;
+    /* 0.42, not 0.55: at full strength the band is a colour the words sit
+       ON rather than a light falling across them. */
+    opacity: 0.42;
+  }
+  /* The rim is the one hard edge -- a bright white hairline that reads as
+     a horizon on a wide screen and as a stray arc on a narrow one. The
+     glow keeps its shape without it. */
+  .eclipse .rim { display: none; }
+  /* The two coloured layers are blurred 22px, which against a 2880px
+     desktop disc is a soft haze and against a 1266px phone disc is a
+     crisp band -- a purple stripe with visible top and bottom edges,
+     sliced across the headline. Blurred far harder so the colour falls
+     off gradually and reads as light rather than as a painted shape. */
+  .eclipse .glo1, .eclipse .glo2 { filter: blur(90px); }
+
+  /* ---- the scroll transition -----------------------------------------
+   *
+   * The hero sits in a 195vh track: you scroll a screen of sticky nothing
+   * while the words fade out and a picture of Studio fades in. On a
+   * desktop that is a cinematic worth its length, and the picture it
+   * lands on is 1080px wide.
+   *
+   * On a phone it was 802px of scrolling -- most of two screens -- to
+   * arrive at one static image 304px across. The transition cost more
+   * than it delivered. The mechanism is untouched: the script reads this
+   * height, so the same fades simply happen over a shorter distance.
+   *
+   * (This belongs in THIS block, not the earlier `max-width: 760px` one
+   * further up the file: the base `.heroTrack` rule sits between the two,
+   * at equal specificity, so a copy in the earlier block loses on source
+   * order and silently does nothing.)
+   *
+   * 112vh, not 130: the transition costs scroll distance to reveal a
+   * 304px picture, and on a phone that reveal is a toll on the way to the
+   * next sentence rather than the moment it is on a desktop. Trimmed to
+   * the least that still lets the fade read as a fade. */
+  .heroTrack { height: 112vh; }
+  /* With the arc below the content, the download button no longer needs a
+     plate of its own to be legible -- but it keeps a quiet one, because
+     it is the second action on the screen and should not compete with
+     "Make an app" for attention. */
+  .dlLine .btn-primary {
+    background: rgba(20, 20, 24, 0.92); color: #fff;
+    border-color: rgba(255, 255, 255, 0.22);
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  }
+
+  /* ---- the hero as one composition -------------------------------------
+   *
+   * It was `justify-content: flex-start` with 84px of top padding: the
+   * content stacked from the top and stopped at 534 in a 700px screen,
+   * leaving 166px of nothing beneath it and no reason for the eye to go
+   * there. Centred in the space between the brand bar and the foot
+   * instead, so the screen reads as one composed thing rather than a
+   * column that ran out. */
+  .heroContent {
+    padding: 78px 20px 24px;
+    justify-content: center;
+  }
+  /* The headline's second line is #a1a1aa -- the same grey as the
+     paragraph under it -- so the largest words on the page were also the
+     faintest. It keeps the contrast step it has on a desktop, where it
+     sits against a much darker ground. */
+  #heroH1 { font-size: clamp(30px, 9vw, 40px); line-height: 1.12; }
+  #heroH1 .dim { color: #d4d4d8; }
+  /* Two lines, always. The h1 is a wrapping flexbox and the cycling glyph
+     was the only thing between its two sentences -- hiding that glyph on
+     phones (it stranded at the end of line one and read as a typo) left
+     them touching: "Build once.Ship one file." with no space at all. The
+     break is made explicit rather than left to whatever happens to sit
+     between them. */
+  #heroH1 { flex-direction: column; }
+  .heroSub { font-size: 14.5px; line-height: 1.6; }
+  /* Each action on its own full-width row: two buttons side by side at
+     this width leaves both too narrow to read and too small to hit. */
+  .ctaRow { flex-direction: column; align-items: stretch; gap: 10px; }
+  .ctaRow .btn, .ctaRow .split { width: 100%; }
+  .split .main { flex: 1; }
+  .secondDoor { font-size: 13px; line-height: 1.7; color: #c7c7d1; }
+  .secondDoor a { color: #fff; }
+  .dlLine { flex-direction: column; gap: 8px; }
+  /* 44, not 40. This was trimmed to buy back four pixels of hero height,
+     which is the wrong trade for the button that downloads the product --
+     and the hero now fits without it (the marquee gave up the space
+     instead). The split's chevron is the same control, so it matches. */
+  .dlLine .btn, .dlLine .split > * { min-height: 44px; }
+  /* The marquee is gone on a phone, and this is the reason it stayed so
+     long: it was the only thing on the small screen that said what Krate
+     gives you. Now `.whatis` says it in a list you can read at rest,
+     built from the SAME seven STATS entries -- so keeping both printed
+     every point twice, once scrolling past and once standing still.
+     Measured: whatis items=7, marquee uniq=7, shared=7. A marquee is also
+     the wrong instrument here: it moves text away from a reader who
+     cannot hover to pause it. The desktop keeps it as ambient texture
+     beside a hero that has room to spare. */
+  .marqWrap { display: none; }
+
+  /* 10px is a label on a monitor you are sitting two feet from and a smudge
+     on a phone held at arm's length. These are all short chips -- the star
+     count, the plan badges -- so a point and a half costs no layout and
+     makes them legible. The desktop keeps its finer setting. */
+  .starpill, .plan .badge { font-size: 11.5px; }
+
+  /* ---- the download button at the foot of the page -------------------
+   *
+   * `.ctaRow` above is the hero's button row; this is the other one, in
+   * the closing card, and it had no phone rule at all. Measured at 390px:
+   * the block was `align-self: flex-end` so it took 180px of a 321px
+   * card, and inside it the main button collapsed to 26px around 110px of
+   * text while the chevron kept 153 -- "…oad f" beside an empty white
+   * slab, which is what the founder's screenshot shows.
+   *
+   * A flex child may shrink below its content unless told not to: that is
+   * `min-width: auto` losing to `flex: 1 1 0%`. */
+  .ctaActs { align-self: stretch; width: 100%; }
+  .ctaActs .split { display: flex; width: 100%; }
+  .ctaActs .split .main { flex: 1 1 auto; min-width: 0; }
+  .ctaActs .split .more { flex: 0 0 52px; }
+  .ctaActs .split > * { min-height: 44px; }
+
+  /* ---- the footer ----------------------------------------------------
+   *
+   * Ten links wrapping 5 / 4 / 1 across three rows 64px apart, under a
+   * copyright line that takes the full width. It reads as a list that ran
+   * out of room rather than a list that was arranged.
+   *
+   * Two even columns instead: the same ten links, in a shape that fits
+   * the screen it is on. */
+  .foot {
+    flex-direction: column; align-items: flex-start;
+    gap: 22px; margin-top: 40px; padding-top: 26px;
+  }
+  .foot nav {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 2px 18px; width: 100%;
+  }
+  .foot nav a { padding-top: 11px; padding-bottom: 11px; }
+
+  /* ---- the length ----------------------------------------------------
+   *
+   * The page is 7150px on a phone: five sections of about 1100px each,
+   * every one of them padded 88-96px top AND bottom because that is what
+   * suits a 1440px monitor. On a phone that is a screen and a half of
+   * nothing between each idea. Halved -- the sections still breathe, and
+   * the page loses roughly 500px of pure gap. */
+  section.works, section.how, section.price, section.ctaSec {
+    padding-top: 40px; padding-bottom: 40px;
+  }
+  .ctaSec { padding-bottom: 28px; }
+
+  /* ---- the cards ------------------------------------------------------
+   *
+   * The page is 7.8 screens of scrolling for 768 words. Most of that is
+   * the cards: measured at 390x844 each one holds 55-72 words in 400px,
+   * padded 26px, stacked one per screen. Side by side on a desktop they
+   * are a comparison you read across; stacked on a phone they become a
+   * queue where every card is its own screen and the comparison is gone.
+   *
+   * They keep their words. What comes down is the air around the words --
+   * padding, leading, the gaps between cards and between their rows --
+   * which is what was sized for a monitor. */
+  .plan, .step {
+    padding: 18px 18px 20px;
+    border-radius: 16px;
+  }
+  .priceGrid, .stepGrid { gap: 12px; }
+  .plan ul, .step p { line-height: 1.5; }
+  /* `padding: 4px 0` here was the bug: the shorthand reset padding-left to
+     0 while the tick stayed absolutely positioned at left:2px, so every
+     line drew its checkmark straight through its own first letter. Set the
+     vertical padding only and the 20px runway for the tick survives. */
+  .plan li { padding-top: 4px; padding-bottom: 4px; }
+  .plan ul { margin-bottom: 14px; }
+  /* The footnote under each card is a source citation -- true and worth
+     keeping, but it is set at the size of body copy and takes 60px. */
+  .plan .note { font-size: 11.5px; line-height: 1.5; }
+  /* NOT trimmed: the evidence cards keep all four claims.
+     They are the longest thing on the page -- 1.9 screens of three cards
+     with four detailed proofs each -- and dropping two per card takes the
+     page from 7.8 screens to 6.8. But which two is a judgement about what
+     convinces somebody, not about layout: "Ten complete apps together:
+     283 KB" is stronger proof than the markdown viewer above it, and
+     "956 tests, and a fuzzer on the bundle parser" is the sort of line a
+     sceptical reader is looking for. Cutting by position would have
+     dropped both.
+     That call belongs to the founder, so the section stays whole and
+     only its spacing comes down. (Shrinking the type instead made the
+     cards TALLER: 16px to 14px turned a 405px card into 411, because the
+     lines rewrapped worse.) */
+  /* The section headings and their ledes carry a desktop's spacing too. */
+  .price h2, .how h2 { margin-bottom: 8px; }
+  .price .lead, .how .lead { margin-bottom: 20px; font-size: 14px; }
+  /* The big number on a plan card is display type for a wide screen. */
+  .plan .amount { font-size: 26px; }
+
+  /* The orbit: five vendor logos circling a Krate mark, 420px tall, whose
+     whole message is "works with the AI you already pay for" -- which the
+     paragraph beside it already says. On a desktop it is the right half of
+     a two-column section and earns its space; stacked on a phone it is
+     half a screen of animation under the sentence it illustrates. */
+  .orbitStage { min-height: 260px; }
+  .orbitBox { height: 260px; }
+  .worksGrid { gap: 20px; }
+
+  /* The closing section's card and the footer were 212px apart -- a
+     desktop's breathing room between the last thing you read and the
+     links under it. */
+  .ctaSec .foot { margin-top: 28px; }
+
+  /* ---- what it is ----------------------------------------------------
+   *
+   * The first thing after the headline, because it is the first question:
+   * what IS this. The hero opens with what Krate is not -- "no installer,
+   * no per-OS port, no signing dance" -- which lands for somebody who has
+   * felt those problems and means nothing to anybody else.
+   *
+   * A plain sentence, then the seven facts as a list. Seven rows of one
+   * bold phrase and one sentence: scannable in a thumb-flick, readable if
+   * you stop. */
+  /* The two subtitles swap: what it IS, not what it is not. */
+  #heroSub { display: none; }
+  /* `max-width: 620px` on a 375px screen means edge to edge with no side
+     padding at all, so the sentence ran the full width of the glass. A
+     measure of roughly 34 characters is what a phone paragraph wants. */
+  .heroSubPhone {
+    display: block;
+    max-width: 34ch;
+    margin-left: auto; margin-right: auto;
+    padding: 0 18px;
+  }
+
+  .whatis {
+    display: block;
+    padding: 40px 20px 8px;
+    max-width: 640px; margin: 0 auto;
+  }
+  .whatis h2 {
+    font-family: var(--disp); font-weight: 700;
+    font-size: clamp(24px, 7.5vw, 32px); line-height: 1.14;
+    letter-spacing: -0.02em; color: #fff;
+  }
+  .whatis .lead {
+    margin-top: 12px; font-size: 15px; line-height: 1.6; color: #a1a1aa;
+  }
+  .whatisList {
+    list-style: none; margin: 24px 0 0; padding: 0;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .whatisList li {
+    display: flex; gap: 13px; align-items: flex-start;
+    padding: 13px 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+  }
+  .whatisList li:first-child { border-top: 0; }
+  .wIc {
+    flex: none; width: 19px; height: 19px; margin-top: 1px;
+    display: grid; place-items: center;
+  }
+  .wIc svg { width: 19px; height: 19px; display: block; }
+  .wTx { font-size: 13.5px; line-height: 1.55; color: #a1a1aa; }
+  /* The claim on its own line, in white, with the explanation under it:
+     the eye can take the seven claims alone and stop at the one it wants. */
+  .wTx b {
+    display: block; margin-bottom: 2px;
+    font-size: 14.5px; font-weight: 500; color: #fff; letter-spacing: -0.005em;
+  }
+
+  /* ---- the brand bar -------------------------------------------------
+   *
+   * It is fixed at top 20 with a transparent background, so the page
+   * scrolls under it and the words collide with the mark -- visible in
+   * every one of the founder's screenshots.
+   *
+   * This started as a pill drawn around the floating badge. It is a real
+   * bar now (see the header block near the top of the file), and the
+   * settings live HERE rather than there because the rules in that block
+   * come earlier in the file: at equal specificity this one wins on
+   * source order, and a pill radius left behind here kept the bar looking
+   * like a floating badge however square the earlier rule asked for. */
+  .brandbar {
+    left: 0; right: 0; top: 0;
+    width: 100%; max-width: none;
+    transform: none;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px;
+    /* The notch. Without viewport-fit=cover in the page head this resolves
+       to 0 and costs nothing, which is the correct fallback. */
+    padding: 6px 14px 6px 12px;
+    padding-top: calc(6px + env(safe-area-inset-top));
+    border-radius: 0;
+    background: rgba(10, 10, 10, 0.78);
+    -webkit-backdrop-filter: blur(16px) saturate(1.4);
+    backdrop-filter: blur(16px) saturate(1.4);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  }
+  /* The entrance animation re-centres with a transform; on a full-width
+     bar there is nothing to centre and it would slide the bar sideways. */
+  .brandbar.in { transform: none; }
+  /* A vertical rule between a brand and a button is a desktop nav's
+     separator -- with one link on either side of it, it is just a line
+     down the middle of the header. */
+  .brandbar .bnav { border-left: 0; padding-left: 0; }
+
+  /* ---- the Studio screenshot -----------------------------------------
+   *
+   * A 1240x800 capture of a desktop window, shown at 221x143. Nothing in
+   * it is legible at that size -- it is a grey smudge that happens to be
+   * rectangular, and the founder is right that shrinking it further is
+   * not the answer.
+   *
+   * The box reserves 130px of the viewport for the chips that float at
+   * its corners, and those chips are already hidden here. So the picture
+   * gets the full width back.
+   *
+   * It shows the WHOLE window, not a crop. The earlier version zoomed
+   * 175% into the top-left corner, which measured out at 27% of the
+   * picture: the conversation panel and nothing else. So a phone visitor
+   * saw Studio talking and never saw the app it made -- and the app is
+   * the proof. Individual words are small at this size, but the shape is
+   * legible: a conversation on one side, a finished app on the other, and
+   * that shape is the whole claim. */
+  .shotBox {
+    max-width: none; margin: 0 16px;
+    aspect-ratio: 1240 / 800;
+  }
+  .shotBox .frame img {
+    width: 100%; height: 100%; max-width: none;
+    object-fit: contain; object-position: center;
+  }
+  /* The remaining two chips float at negative offsets, which is a nice
+     touch beside a 1080px frame and a pair of half-cropped squares beside
+     a 304px one. The other three are already hidden here; these join
+     them. */
+  .chip { display: none; }
+
+  /* The headline cycles a vendor glyph between its two sentences: on a wide
+     screen all three sit on one line and it reads as a separator. Here the
+     line wraps, the glyph is stranded at the end of "Build once." and the
+     site's first sentence appears to contain a stray mark -- an X, when the
+     cycle happens to be showing Grok. Hidden: the sentence is the point,
+     and the logos are already shown further down the page. */
+  .heroCycle { display: none !important; }
+
+  /* The marquee was pinned at 78vh, a share of the screen, while the hero
+     above it stacks to a fixed pixel height. The two only clear each other
+     on a tall screen. Measured at 390 wide, the hero's last line ends at
+     554px and 78vh lands at:
+         844 -> 600   (46px clear)
+         800 -> 566   (12px clear)
+         760 -> 535   (19px OVERLAP)
+         700 -> 488   (66px overlap)
+         667 -> 462   (92px overlap)
+     Every iPhone in Safari, whose visible height is around 700 once the
+     toolbars are counted, buries "Someone sent you a file?" under the
+     cards. Pinning it to the bottom instead keeps it in the same dark band
+     and makes the gap grow with the screen rather than shrink. */
+  .marqWrap { top: auto; bottom: 74px; }
+  .marqWrap, .marqWrap.in { transform: none !important; }
+
+  /* The hero read as an empty screen with a headline floating in it.
+     Measured at 390x700: the sticky box is 100vh and `.heroContent`
+     centres about 200px of real content inside it, so 22% of the first
+     screen was black above the headline and the rest below it.
+
+     The cause is that this hero is a DESKTOP mechanism: `.heroContent`
+     and `.shotWrap` are stacked absolutely in one sticky 100vh box, and
+     scrolling cross-fades the headline out as the Studio shot comes in.
+     That needs a tall scroll runway (112vh here) whose only job is to
+     drive an animation, and on a phone it spends a whole screen of
+     height to show one screen of content.
+
+     So on a phone the two stop being one cross-fade and become two
+     things in a row: the headline sits at the top of the screen where it
+     is read, and the Studio shot follows it as an ordinary block. The
+     scroll driver is disabled here (`data-hero-static`) rather than
+     fought with CSS -- it sets inline opacity/transform every frame and
+     would win over any rule written here.
+
+     Do NOT give .heroTrack `height: auto` while the driver still runs:
+     the runway collapses to a few px, `span` goes to ~0 and the headline
+     fades out within one flick of the thumb. Measured that way first. */
+  .heroTrack { height: auto; }
+  /* `overflow: hidden` STAYS. The eclipse is a deliberately oversized
+     glow -- measured 1050px wide, from -330 to 720 at a 390px viewport --
+     and this box is what clips it. Changing this to `visible` while
+     unsticking the box made the whole page scroll sideways to 720px. */
+  /* `position: relative`, not `static`. The eclipse is absolutely
+     positioned, so it is clipped by the nearest POSITIONED ancestor --
+     a static box with `overflow: hidden` does not contain it and the
+     glow leaked to 720px on a 390px screen, scrolling the page sideways.
+     Relative keeps it the containing block while still flowing in the
+     normal document, which is what unsticks the hero. */
+  .heroStick { position: relative; height: auto; overflow: hidden; }
+  .heroContent {
+    position: static; height: auto;
+    /* The brandbar is FIXED, so it is out of flow and reserves no space:
+       with `padding-top: 22px` the bar's bottom edge sat at 57px and the
+       headline began at 22px, hiding 35px of "Build once." behind it.
+       Measured, not guessed. The bar is 44px of content plus its
+       safe-area inset, so clear that and then add the air. */
+    padding: calc(44px + env(safe-area-inset-top) + 26px) 0 4px;
+    justify-content: flex-start;
+  }
+  /* Absolutely positioned for the cross-fade; in the stacked phone layout
+     it is just the next block down the page. */
+  .shotWrap {
+    position: static; height: auto;
+    margin-top: 26px; padding: 0;
+    /* The base rule hides this (`opacity: 0`) because on a desktop the
+       scroll driver fades it in. Nothing fades it in here, so without
+       these three it stayed invisible and the phone hero lost the one
+       picture of the product. */
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
+}
+
+/* Short screens, whatever the width. The hero and the marquee both live
+   inside one 100vh sticky box, absolutely positioned, so neither can push
+   the other along -- they simply collide once the screen is short enough.
+   Measured at 375x629: the hero stack ends at 497px and the marquee needs
+   the last 190, which is 687 of an available 629. There is no arrangement
+   of two fixed blocks that fits 687px into 629.
+   So first, buy back what can be bought: tighter leading and a smaller
+   headline recover about 50px. */
+@media (max-height: 800px) and (max-width: 760px) {
+  /* The top padding is set with the rest of the hero above (78px, which
+     is the brand bar's 64px end plus daylight); only the type comes down
+     here, to buy back height on a short screen. */
+  #heroH1 { font-size: clamp(27px, 8vw, 34px); }
+  .heroSub { font-size: 13.5px; line-height: 1.55; }
+  .heroCtas { gap: 10px; }
+}
+
+/* And below that, stop trying. The marquee is scenery -- the same numbers
+   appear as full cards further down the page -- while the hero carries the
+   one button the page exists for. On a screen this short the choice is
+   which of the two to lose, and it is never the call to action.
+
+   A single height cutoff cannot express this, and trying one was wrong:
+   the hero's own height is not constant. The subtitle rewraps with the
+   width, so at 390px wide the stack ends anywhere between 504 and 543,
+   and a threshold tuned to one of those is off by a line at the other:
+
+       height  heroEnds  clearance with a 691px cutoff
+          691       505   hidden, fine
+          692       516   -13  <- still overlapping
+          700       512   -2   <- still overlapping
+          736       504   +42
+
+   So the marquee yields to the hero instead of to a number. It is hidden
+   unless the screen can hold the hero's tallest form (543) plus the
+   marquee's own 190, which is 733 -- and 740 leaves a margin for a font
+   that loads a little wider than the one measured here. Above that the
+   bottom anchor keeps the gap growing with the screen.
+
+   Verified by loading the page in an iframe at each height, because a
+   screenshot taken after a viewport resize could not be trusted to have
+   painted. */
+/* On every phone, not below a threshold. The hero is centred in its
+   screen now rather than stacked from the top, so it always ends lower
+   and there is no height at which both it and the marquee sit
+   comfortably: at 844 the cards landed on "Someone sent you a file?"
+   again, and tuning the cutoff just moves which screen loses.
+   The marquee is scenery. Its four numbers appear as full cards a
+   screen further down, where they can be read rather than glimpsed
+   sideways through a mask. The hero carries the button the page is for,
+   and on a phone it gets the screen to itself. */
+@media (max-width: 760px) {
+  .marqWrap, .marqLabel { display: none; }
+}
+
+  /* Touch, not width: a thumb needs 44px whatever the screen size, and
+     these pages' nav and footer links were 19-20px tall. */
+  @media (pointer: coarse) {
+    nav a[href], .foot a[href], footer a[href] {
+      display: inline-block; padding-top: 11px; padding-bottom: 11px;
+    }
+    button, input[type=submit] { min-height: 44px; }
+    /* Buttons that are links, and the brand mark, which is a tap target
+       on every page (it goes home). */
+    a.btn, a.pill, a.cta, .brandbar .name { min-height: 44px; display: inline-flex; align-items: center; }
+  }
 </style>
   <script type="application/ld+json">
 {
@@ -636,18 +1271,63 @@ img { max-width: 100%; display: block; }
   ]
 }
   </script>
+  <style>
+    /* Command blocks: scroll inside the box, never widen the page. */
+    .answer-cmd {
+      margin: 0 0 18px;
+      padding: 14px 16px;
+      max-width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-x: contain;
+      color: #7fb2ff;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.65;
+      white-space: pre;
+    }
+    /* Nothing inside the page shell may widen it either: a long URL or an
+       inline <code> token is the other way a page starts scrolling. */
+    .page-wrap { overflow-x: clip; }
+    .page-wrap :is(p, li, h1, h2, h3, td) { overflow-wrap: anywhere; }
+    /* The two pills at the foot of the page. They wrap rather than squeeze,
+       and they are a real tap target rather than a line of text: measured
+       at 26px before this, against the 44px the same pill gets in the nav. */
+    .answer-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 18px;
+    }
+    .answer-actions .pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 0 20px;
+    }
+    @media (max-width: 760px) {
+      .answer-cmd { font-size: 12.5px; padding: 12px 14px; }
+      /* One per line on a phone, each full width: two pills side by side
+         at this width leaves each too narrow to read comfortably. */
+      .answer-actions { flex-direction: column; align-items: stretch; }
+      .answer-actions .pill { width: 100%; }
+    }
+  </style>
 </head>
 <body>
 <header class="subnav">
   <div class="wrap subnav-inner">
     <a class="brand" href="/"><img src="/krate-logo.png" alt="" width="22" height="22" /> KRATE</a>
     <nav>
-      <a href="/#ctaSec">Start</a>
+      <a href="/#install">Start</a>
       <a href="/docs/">Docs</a>
       <a href="/cloud/">Apps</a>
       <a href="https://github.com/incyashraj/krate">GitHub</a>
     </nav>
-    <a class="pill pill-primary" href="/#ctaSec">Install</a>
+    <a class="pill pill-primary" href="/#install">Install</a>
   </div>
 </header>
     <main id="main" class="page-wrap">
@@ -678,10 +1358,15 @@ img { max-width: 100%; display: block; }
     <section>
       <h2>Try it</h2>
       <p>Krate is open source and installs with one command. Nothing to sign up for.</p>
-      <p style="display:flex; gap:12px; margin-top:18px">
-        <a class="pill pill-primary" href="/#ctaSec">Get Krate</a>
+      <!-- A <p> turned into a flex row made these two pills flex children,
+           so they took the line-box height (measured 26px) instead of their
+           own padding, while the identical pill in the nav measured 44px.
+           A div with a class, so the rule below can reach it and the two
+           wrap instead of squeezing on a narrow screen. -->
+      <div class="answer-actions">
+        <a class="pill pill-primary" href="/#install">Get Krate</a>
         <a class="pill" href="/cloud/">Open the store</a>
-      </p>
+      </div>
     </section>
     </main>
 <footer class="subfoot">

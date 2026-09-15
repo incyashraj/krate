@@ -51,6 +51,89 @@ PEERS = [
 ]
 
 
+def add_contents(page):
+    """Give every <h2> an id and put a contents list under the lede.
+
+    This page is ten sections and, measured at 390px wide, 16 screens tall
+    with no in-page links and nothing collapsible: on a phone the only way
+    to reach the last section was to scroll past every other one, with no
+    way to tell what was coming or how far in you were.
+
+    Derived from the headings themselves rather than written by hand, so a
+    renamed or reordered section cannot leave a contents list pointing at
+    something that is no longer there.
+    """
+    heads = []
+
+    def slug(text):
+        s = re.sub(r"<[^>]+>", "", text)
+        s = s.replace("&ndash;", "-").replace("&nbsp;", " ").replace("&amp;", "&")
+        s = re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")
+        return s[:48] or "section"
+
+    def tag(m):
+        inner = m.group(1)
+        base = slug(inner)
+        ident = base
+        n = 2
+        while ident in [h[0] for h in heads]:
+            ident, n = f"{base}-{n}", n + 1
+        # The plain-text heading, for the link label.
+        label = re.sub(r"<[^>]+>", "", inner)
+        label = label.replace("&ndash;", "-").replace("&nbsp;", " ").replace("&amp;", "&")
+        heads.append((ident, label.strip().rstrip(".")))
+        return f'<h2 id="{ident}">{inner}</h2>'
+
+    page = re.sub(r"<h2>(.*?)</h2>", tag, page, flags=re.S)
+    if len(heads) < 3:
+        return page
+
+    items = "\n".join(
+        f'        <li><a href="#{i}">{html_escape(t)}</a></li>' for i, t in heads
+    )
+    toc = f"""
+    <nav class="toc" aria-label="What is in this report">
+      <h2 class="toc-h">What is in here</h2>
+      <ol>
+{items}
+      </ol>
+    </nav>
+"""
+    # After the page's opening lede, before the first section.
+    idx = page.find('<section')
+    if idx == -1:
+        return page
+    page = page[:idx] + toc + page[idx:]
+
+    css = """
+    /* Contents for a long report. Ten sections and 16 screens on a phone
+       is a blind scroll without it. Numbers come from the <ol>, so a
+       section added or removed renumbers itself. */
+    .toc { margin: 26px 0 8px; padding: 16px 18px; border: 1px solid var(--line-soft, rgba(255,255,255,0.1));
+           border-radius: 10px; background: rgba(255,255,255,0.02); }
+    .toc .toc-h { margin: 0 0 10px; font-size: 12px; text-transform: uppercase;
+                  letter-spacing: 0.06em; color: var(--quiet, rgba(255,255,255,0.45)); font-weight: 500; }
+    .toc ol { margin: 0; padding-left: 1.25em; }
+    .toc li { margin: 0; }
+    .toc a { display: block; padding: 9px 0; color: var(--text, #fff);
+             text-decoration: none; line-height: 1.35; }
+    .toc a:hover { text-decoration: underline; }
+    /* The headings these link to sit under a sticky header on some
+       screens; scroll-margin stops the jump hiding the title. */
+    h2[id] { scroll-margin-top: 72px; }
+    @media (max-width: 760px) {
+      /* 9px top and bottom on a 1.35 line: a real tap target per row. */
+      .toc { margin: 22px 0 6px; padding: 14px 16px; }
+      .toc a { padding: 11px 0; }
+    }
+"""
+    return page.replace("</style>", css + "  </style>", 1)
+
+
+def html_escape(s):
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 def peer_sizes():
     """Peer apps, largest first.
 
@@ -719,6 +802,7 @@ def main():
 </body>
 </html>
 """
+    html = add_contents(html)
     out = ROOT / "docs/landing/reports.html"
     out.write_text(html)
     measured = f", {len(startup)} apps timed" if startup else ", startup skipped"

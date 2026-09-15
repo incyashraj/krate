@@ -171,6 +171,16 @@ def main():
   .page-wide td {{ color: var(--muted); }}
   .page-wide td:first-child {{ color: var(--text); }}
   .num {{ text-align: right; font-variant-numeric: tabular-nums; }}
+  /* A wide table scrolls inside this box instead of widening the page.
+     `width: max-content` stops the table shrinking its columns into a
+     tall unreadable stack, so it keeps one row per app and slides. */
+  .table-scroll {{ overflow-x: auto; -webkit-overflow-scrolling: touch;
+                   overscroll-behavior-x: contain; }}
+  .table-scroll > table {{ min-width: max-content; }}
+  /* Nothing else may widen the page either: a long bundle name or a URL
+     in a cell is the other way this starts scrolling sideways. */
+  .page-wide {{ overflow-x: clip; }}
+  .page-wide :is(p, li, h1, h2, h3) {{ overflow-wrap: anywhere; }}
   code {{ font-family: var(--mono); font-size: 0.86em; }}
   ul, ol {{ padding-left: 1.3em; color: var(--muted); }}
   li {{ margin: 4px 0; }}
@@ -209,6 +219,11 @@ def main():
     <p class="generated">Generated {today} from commit <code>{commit()}</code>.</p>
 
     <h2>Apps that exist and run</h2>
+    <!-- Five columns do not fit a phone. Measured at 390px wide the table
+         needed 426px and took the whole PAGE sideways with it, which is
+         the one layout failure a reader cannot work around. It scrolls
+         inside its own box now, the same way /reports/ already did. -->
+    <div class="table-scroll">
     <table>
       <thead>
         <tr><th>App</th><th class="num">Bytes</th><th class="num">vs Discord</th><th>What it is</th><th>Nightly</th></tr>
@@ -217,6 +232,7 @@ def main():
 {chr(10).join(rows)}
       </tbody>
     </table>
+    </div>
     <p>
       <strong>All {len(bundles())} apps together: {total:,} bytes ({total / 1024:,.0f}&nbsp;KB).</strong>
       Discord, which solves the same one-codebase-three-systems problem with a
