@@ -750,7 +750,12 @@ img { max-width: 100%; display: block; }
     -webkit-backdrop-filter: blur(14px) saturate(1.4);
     backdrop-filter: blur(14px) saturate(1.4);
     border-radius: 999px;
-    padding: 6px 14px 6px 10px;
+    /* Side padding only. Padding the top and bottom made the bar 56px
+       instead of 44, and the short-screen rule below clears the headline
+       by 64 -- so the bar's own new height ate the gap and the headline
+       rendered under it. The pill is drawn around what is already there
+       rather than made taller. */
+    padding: 0 12px 0 8px;
   }
 
   /* ---- the Studio screenshot -----------------------------------------
@@ -819,7 +824,10 @@ img { max-width: 100%; display: block; }
    So first, buy back what can be bought: tighter leading and a smaller
    headline recover about 50px. */
 @media (max-height: 800px) and (max-width: 760px) {
-  .heroContent { padding-top: 64px; }
+  /* 78, not 64: the brand bar sits at top 20 and is 44 tall, so it ends
+     at 64 and a 64px padding put the headline's first pixel exactly on
+     its last one. 14px of daylight between them. */
+  .heroContent { padding-top: 78px; }
   #heroH1 { font-size: clamp(27px, 8vw, 34px); }
   .heroSub { font-size: 13.5px; line-height: 1.55; }
   .heroCtas { gap: 10px; }
