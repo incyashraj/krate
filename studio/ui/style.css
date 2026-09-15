@@ -4253,6 +4253,53 @@ body.side-resizing .shelf { transition: none; }
   .home { padding-top: 24px; }
 }
 
+/* ---- the ten other sheets, on a phone ---------------------------------
+ *
+ * Report, Send, Publish, Details, Account, the limit and make-it prompts:
+ * every sheet Studio can raise over a screen, none of which any earlier
+ * sweep had opened. Measured at 390x700 they share three faults, so they
+ * are fixed once here rather than ten times:
+ *
+ *   - Buttons are 41px and inputs 38-39. Four short of a thumb, across
+ *     every sheet, because the base sizes were set for a pointer.
+ *   - The report sheet's second button ran to x=439 on a 390px screen:
+ *     its footer is a row that never wraps.
+ *   - The publish sheet keeps a desktop two-column layout, squeezing the
+ *     preview slot to 125px -- the same fault as the gallery detail page.
+ */
+@media (max-width: 860px) {
+  .sheet { padding: 20px 18px; width: min(460px, 94%); }
+  /* Every control in a sheet, by structure rather than by name: these are
+     ten different sheets and naming their buttons is how the drawer's
+     foot went unfixed for so long. */
+  .sheet .btn,
+  .sheet button:not(.set-mini):not(.share-copy),
+  .sheet input:not([type="checkbox"]):not([type="radio"]),
+  .sheet select,
+  .sheet textarea { min-height: 44px; }
+  /* A checkbox stays its own size -- blowing it up to 44 would make a
+     tick the size of a button -- but its label becomes the target. */
+  .sheet input[type="checkbox"] { width: 18px; height: 18px; }
+  .sheet label:has(input[type="checkbox"]) {
+    display: flex; align-items: center; gap: 10px; min-height: 44px;
+  }
+
+  /* Action rows wrap instead of running off the edge. `.detail-actions`
+     is a nowrap flex row, which is what put the report sheet's second
+     button at x=439 on a 390px screen. */
+  .sheet .detail-actions,
+  .sheet .sheet-actions,
+  .sheet .row,
+  .sheet .actions { flex-wrap: wrap; gap: 8px; }
+
+  /* The publish sheet's side-by-side slots stack. The container is
+     .pub-media: the screenshot slot beside the icon slot, which at this
+     width left each 125px. */
+  .pub-media { flex-direction: column; }
+  .pub-slot, .pub-slot-icon { flex: 1 1 auto; width: 100%; min-width: 0; }
+  .pub-preview-icon { width: 96px; }
+}
+
 /* ---- the settings and AI sheets, on a phone ---------------------------
  *
  * Both are a 216px nav column beside a content pane. At 375px that leaves
