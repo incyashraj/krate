@@ -95,10 +95,17 @@ img { max-width: 100%; display: block; }
      four targets nobody can hit. */
   .bnav { display: flex; margin-left: 0; }
   .bnav a:not([href="/login/?next=studio"]) { display: none; }
+  /* A quiet link, not a second white button.
+     The hero already has "Make an app" as a full-width white button a
+     few hundred pixels down -- the page's one action. Repeating it in the
+     header as another white pill made the header heavier than the
+     wordmark beside it and asked the same question twice. Here it is a
+     link: present if you want it before you have read anything, and out
+     of the way if you do not. */
   .bnav a[href="/login/?next=studio"] {
-    font-size: 13.5px; font-weight: 500; color: #0a0a0a;
-    background: #fff; padding: 9px 16px; border-radius: 999px;
-    min-height: 40px; display: inline-flex; align-items: center;
+    font-size: 14px; font-weight: 500; color: #e4e4e7;
+    background: none; padding: 10px 2px; border-radius: 0;
+    min-height: 44px; display: inline-flex; align-items: center;
   }
 
 }
@@ -736,13 +743,25 @@ img { max-width: 100%; display: block; }
        down, above the headline, lighting it from the sky. */
     width: 150vh; height: 150vh;
     left: 50%; margin-left: -75vh;
-    top: 25vh; bottom: auto;
-    opacity: 0.55;
+    /* 18, not 25: the arc was crossing at 0.32 of the screen and the
+       headline starts at 0.26, so the brightest part of the light landed
+       ON the words. Lifted so the glow peaks above them and the headline
+       reads against the fade. */
+    top: 18vh; bottom: auto;
+    /* 0.42, not 0.55: at full strength the band is a colour the words sit
+       ON rather than a light falling across them. */
+    opacity: 0.42;
   }
   /* The rim is the one hard edge -- a bright white hairline that reads as
      a horizon on a wide screen and as a stray arc on a narrow one. The
      glow keeps its shape without it. */
   .eclipse .rim { display: none; }
+  /* The two coloured layers are blurred 22px, which against a 2880px
+     desktop disc is a soft haze and against a 1266px phone disc is a
+     crisp band -- a purple stripe with visible top and bottom edges,
+     sliced across the headline. Blurred far harder so the colour falls
+     off gradually and reads as light rather than as a painted shape. */
+  .eclipse .glo1, .eclipse .glo2 { filter: blur(90px); }
 
   /* ---- the scroll transition -----------------------------------------
    *
