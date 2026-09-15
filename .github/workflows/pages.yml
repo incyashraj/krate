@@ -30,6 +30,12 @@ on:
       - "scripts/ensure-touch-targets.py"
       - "scripts/install.sh"
       - "scripts/install.ps1"
+      # Studio's own interface IS the web Studio: the build copies
+      # studio/ui/ wholesale to _site/app/. Without this line a fix to
+      # Studio's stylesheet changes the repo and not krate.tech, which is
+      # how a day of phone fixes reached the site only because each commit
+      # happened to touch a watched file as well.
+      - "studio/ui/**"
       # The bundles the site serves. Without these paths, repacking the store
       # apps commits new .krate files that never reach the live site -- which
       # is how every store download spent days failing on the released runtime
