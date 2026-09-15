@@ -834,6 +834,11 @@ body.windows.light .titlebar .side-toggle:hover { color: #000; }
 /* No picture: a quiet placeholder rather than a broken-image glyph. An old
    session or a failed --shoot both land here. */
 .shot-stage.no-shot { padding: 0; min-height: 96px; align-items: center; }
+/* With no src the <img> still paints: a broken-image glyph and its alt
+   text, on top of the "no preview" line that exists precisely to replace
+   it. Not a phone bug -- it looks the same on a desktop, and was simply
+   easier to see on a small screen. */
+.shot-stage.no-shot img { display: none; }
 .shot-stage.no-shot::after {
   content: "no preview for this one";
   color: var(--ghost); font-size: 12px;
@@ -4466,14 +4471,71 @@ body.side-resizing .shelf { transition: none; }
   }
 }
 
-/* ---- a built app, on a phone ------------------------------------------ */
+/* ---- a built app, on a phone ------------------------------------------
+ *
+ * The finished card is desktop-shaped: a large picture of the app, its
+ * name at 17px, every capability it declares as its own chip, and four
+ * buttons. Measured at 390x700 it wanted 407px inside a 363px stage, so
+ * it scrolled and cut "Ship it" and "Details" in half -- which is what
+ * the founder's screenshot shows. Each piece is reasonable; together they
+ * are a desktop's worth of card on a phone's worth of screen.
+ *
+ * So the card is rebuilt for the shape it is actually in, rather than
+ * shrunk until it fits:
+ *
+ *   - the capability chips become one quiet line, not four rows of
+ *     pills. Measured: "asks save your data on this computer" is 253px
+ *     wide on its own, so two never pair at this width and four chips
+ *     cost 129px -- a third of the card -- to say what one sentence says.
+ *     The full list is a tap away under Details, where it belongs.
+ *   - the picture keeps a share of the card rather than a fixed height,
+ *     and when there is no preview it stops reserving 220px to say so.
+ *   - the type comes down a step: 17px on a 354px card is a headline for
+ *     a filename.
+ */
 @media (max-width: 860px) {
-  /* The done card's four actions were a single row of 34px buttons at the
-     screen's edge. Two per row, full height, reachable. */
-  .done-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .done-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
   .done-actions .btn { width: 100%; min-height: 44px; }
   .done-card { border-radius: 16px; }
-  .shot-stage { border-radius: 12px; }
+  .shot-stage { border-radius: 12px; padding: 14px 14px 0; }
+  /* "no preview for this one" does not need a picture's worth of room to
+     say so -- it was holding a 220px box above a card that had none to
+     spare. One line, and the card gets the space back. */
+  .shot-stage.no-shot { min-height: 54px; padding: 0; }
+  .shot-stage.no-shot::after { font-size: 11.5px; }
+  .done-meta { padding: 14px 16px 16px; }
+  .done-name { font-size: 15px; }
+  .done-sub { font-size: 12px; }
+
+  /* One line instead of four rows. The chips keep their own words -- this
+     is the app telling you what it will touch -- but they read as a
+     sentence rather than as a stack of buttons. */
+  .asks {
+    margin-top: 10px;
+    display: block;
+    font-size: 11.5px; line-height: 1.5; color: var(--muted);
+  }
+  /* The <li>s are emitted with no whitespace between them, so going
+     inline ran the words together -- "open a windowuse the microphone".
+     The separator therefore has to carry its own spaces, and `white-space:
+     pre` is what stops them being collapsed away again. */
+  .asks li {
+    display: inline; border: 0; padding: 0; border-radius: 0;
+  }
+  .asks li::before { content: none; }
+  .asks li + li::before {
+    /* Non-breaking spaces on BOTH sides. A generated string's ordinary
+       spaces are collapsed at the edges of the box, which is why " · "
+       rendered as " ·" and ran into the next words. */
+    content: "\00a0\00b7\00a0"; color: var(--ghost);
+  }
+  /* Said once, at the front, instead of on every chip. */
+  .asks::before { content: "asks\00a0"; color: var(--ghost); }
+  /* The first capability is highlighted in the chip layout, where it reads
+     as the headline one. In a sentence it is just the first thing before a
+     comma, and colouring it differently looks like a mistake. */
+  .asks li:first-child { color: inherit; }
+
   /* The build view is two columns on a desktop; one on a phone, with the
      transcript above the app rather than beside it. */
   .cols { grid-template-columns: 1fr; }
