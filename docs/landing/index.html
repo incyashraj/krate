@@ -83,20 +83,12 @@ img { max-width: 100%; display: block; }
    * one action on the right, the way every other site does it. The star
    * pill goes -- it is a badge, and a badge is not worth the only other
    * slot on a phone's header. */
-  .brandbar {
-    left: 0; right: 0; top: 0;
-    width: 100%; max-width: none;
-    transform: none !important;
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 10px;
-    padding: 10px 16px calc(10px + env(safe-area-inset-top)) 16px;
-    padding-top: calc(10px + env(safe-area-inset-top));
-    border-radius: 0;
-    background: rgba(10, 10, 10, 0.72);
-    -webkit-backdrop-filter: blur(16px) saturate(1.4);
-    backdrop-filter: blur(16px) saturate(1.4);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-  }
+  /* The bar's own layout -- full width, square, inset for the notch --
+     is set further down this file, in the block that also drops its old
+     pill radius. Putting it in two places is what left the header a
+     rounded badge for a whole deploy: these rules come FIRST, so at equal
+     specificity the later ones win, and half of what was written here
+     never applied. Only what nothing else touches stays. */
   .brandbar .starpill { display: none; }
   /* One link, the one the page is for. The rest of the site is reachable
      from the footer, and four 12.5px links in a phone header would be
@@ -877,20 +869,37 @@ img { max-width: 100%; display: block; }
    *
    * It is fixed at top 20 with a transparent background, so the page
    * scrolls under it and the words collide with the mark -- visible in
-   * every one of the founder's screenshots. The blur strip behind it only
-   * softens what passes beneath; it does not hide it. */
+   * every one of the founder's screenshots.
+   *
+   * This started as a pill drawn around the floating badge. It is a real
+   * bar now (see the header block near the top of the file), and the
+   * settings live HERE rather than there because the rules in that block
+   * come earlier in the file: at equal specificity this one wins on
+   * source order, and a pill radius left behind here kept the bar looking
+   * like a floating badge however square the earlier rule asked for. */
   .brandbar {
-    background: rgba(10, 10, 10, 0.82);
-    -webkit-backdrop-filter: blur(14px) saturate(1.4);
-    backdrop-filter: blur(14px) saturate(1.4);
-    border-radius: 999px;
-    /* Side padding only. Padding the top and bottom made the bar 56px
-       instead of 44, and the short-screen rule below clears the headline
-       by 64 -- so the bar's own new height ate the gap and the headline
-       rendered under it. The pill is drawn around what is already there
-       rather than made taller. */
-    padding: 0 12px 0 8px;
+    left: 0; right: 0; top: 0;
+    width: 100%; max-width: none;
+    transform: none;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px;
+    /* The notch. Without viewport-fit=cover in the page head this resolves
+       to 0 and costs nothing, which is the correct fallback. */
+    padding: 6px 14px 6px 12px;
+    padding-top: calc(6px + env(safe-area-inset-top));
+    border-radius: 0;
+    background: rgba(10, 10, 10, 0.78);
+    -webkit-backdrop-filter: blur(16px) saturate(1.4);
+    backdrop-filter: blur(16px) saturate(1.4);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   }
+  /* The entrance animation re-centres with a transform; on a full-width
+     bar there is nothing to centre and it would slide the bar sideways. */
+  .brandbar.in { transform: none; }
+  /* A vertical rule between a brand and a button is a desktop nav's
+     separator -- with one link on either side of it, it is just a line
+     down the middle of the header. */
+  .brandbar .bnav { border-left: 0; padding-left: 0; }
 
   /* ---- the Studio screenshot -----------------------------------------
    *
