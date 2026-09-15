@@ -716,6 +716,13 @@ img { max-width: 100%; display: block; }
      sits against a much darker ground. */
   #heroH1 { font-size: clamp(30px, 9vw, 40px); line-height: 1.12; }
   #heroH1 .dim { color: #d4d4d8; }
+  /* Two lines, always. The h1 is a wrapping flexbox and the cycling glyph
+     was the only thing between its two sentences -- hiding that glyph on
+     phones (it stranded at the end of line one and read as a typo) left
+     them touching: "Build once.Ship one file." with no space at all. The
+     break is made explicit rather than left to whatever happens to sit
+     between them. */
+  #heroH1 { flex-direction: column; }
   .heroSub { font-size: 14.5px; line-height: 1.6; }
   /* Each action on its own full-width row: two buttons side by side at
      this width leaves both too narrow to read and too small to hit. */
