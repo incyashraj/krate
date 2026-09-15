@@ -7,7 +7,7 @@
 use std::{fmt, str::FromStr};
 
 use krate_manifest::{Capability, ManifestError};
-use krate_policy::{PolicyError, SessionPolicy};
+use krate_policy::{Decision, PolicyError, SessionPolicy};
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -294,6 +294,27 @@ impl UapiGuard {
         self.policy.check(&required)?;
         Ok(required)
     }
+
+    /// The same dispatch decision, with the reason attached (CP2).
+    ///
+    /// `check` answers yes or no, which is all the guest ABI can carry
+    /// today. This is the same gate stated in full, so the layers that CAN
+    /// carry a reason -- a `--json` result, a consent UI, a Studio session --
+    /// stop flattening "the recipient revoked this" and "this Mac cannot do
+    /// it" into one denial.
+    ///
+    /// Both paths run the same `required_capability()` first, so a call that
+    /// cannot be mapped to a capability is an error here exactly as it is
+    /// there; the two cannot drift into disagreeing about what a call needs.
+    pub fn decide(
+        &self,
+        call: &UapiCall,
+        declared: Option<&std::collections::BTreeSet<Capability>>,
+    ) -> Result<(Capability, Decision)> {
+        let required = call.required_capability()?;
+        let decision = self.policy.decide(&required, declared);
+        Ok((required, decision))
+    }
 }
 
 impl Default for UapiGuard {
@@ -315,6 +336,70 @@ pub type Result<T> = std::result::Result<T, UapiError>;
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
+
+    /// The two gates must never disagree about the same call.
+    ///
+    /// `check` is what the guest ABI runs; `decide` is the same gate with a
+    /// reason attached for the layers that can carry one. If they could
+    /// diverge, the reason shown to a person would describe a decision the
+    /// runtime did not actually make -- which is worse than no reason at
+    /// all. Swept over a realistic spread of calls and several policies
+    /// rather than one example, because the ways these two could drift are
+    /// per-capability.
+    #[test]
+    fn the_reasoned_gate_and_the_enforcing_gate_always_agree() {
+        use krate_policy::SessionPolicy;
+
+        let calls = [
+            UapiCall::Fs(FsCall::List {
+                path: "data/x".into(),
+            }),
+            UapiCall::Fs(FsCall::Read {
+                path: "picked/f.txt".into(),
+            }),
+            UapiCall::Fs(FsCall::Write {
+                path: "data/out.txt".into(),
+            }),
+        ];
+        let policies = [
+            SessionPolicy::default(),
+            SessionPolicy::from_grants(vec!["fs.read:data/**".parse().expect("cap")]),
+            SessionPolicy::from_grants(vec!["ui.dialog:open-folder".parse().expect("cap")]),
+            SessionPolicy::from_grants(vec![
+                "fs.read:**".parse().expect("cap"),
+                "fs.write:**".parse().expect("cap"),
+                "fs.list:**".parse().expect("cap"),
+            ]),
+        ];
+
+        let mut allowed = 0;
+        let mut refused = 0;
+        for policy in policies {
+            let guard = UapiGuard::new(policy);
+            for call in &calls {
+                let enforced = guard.check(call).is_ok();
+                let (_, decision) = guard
+                    .decide(call, None)
+                    .expect("the call maps to a capability");
+                assert_eq!(
+                    enforced,
+                    decision.is_granted(),
+                    "check() and decide() disagreed about {call:?}"
+                );
+                if enforced {
+                    allowed += 1;
+                } else {
+                    refused += 1;
+                }
+            }
+        }
+        // A sweep where everything landed the same way would pass while
+        // proving nothing about agreement.
+        assert!(
+            allowed > 0 && refused > 0,
+            "the sweep must exercise both outcomes: {allowed} allowed, {refused} refused"
+        );
+    }
 
     /// K-075's full-stack rule, tested at the layer the adapter tests
     /// skipped: a `picked/` path is authorized by the DIALOG grant, so a

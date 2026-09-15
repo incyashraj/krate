@@ -10,16 +10,272 @@ use krate_adapter_common::path::LogicalPath;
 use krate_manifest::{default_granted_capabilities, Capability, Manifest, ManifestError};
 use thiserror::Error;
 
+/// Why a capability is not available, when it is not (CP2, IC-236, IC-573).
+///
+/// The policy layer used to answer one question -- granted, or not -- and an
+/// app could not tell "you refused this" from "this machine cannot do it".
+/// Those are different facts and they deserve different behaviour: a refusal
+/// is the recipient's decision and the app should degrade politely; an
+/// unavailable capability is a platform gap and the app may reasonably say
+/// "not on this computer". The clipboard is the case that already exists in
+/// the tree: wired in the Linux adapter, `Unsupported` on macOS, and today
+/// both reach the guest as the same flat denial.
+///
+/// Ordering matters where two reasons could both apply. A capability that was
+/// never declared is `Undeclared` whatever else is true of it, because the
+/// manifest is the contract a recipient read; and a revoked grant reads as
+/// `Revoked` rather than a plain denial, so an app can tell that it *had*
+/// this and lost it mid-run.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Refusal {
+    /// The manifest never declared it. Declaration is the contract; an
+    /// undeclared call is denied at dispatch no matter what was granted
+    /// (IC-733).
+    Undeclared,
+    /// Declared, and the recipient did not grant it.
+    Denied,
+    /// Granted, then withdrawn during the run.
+    Revoked,
+    /// Granted, and the grant has passed its expiry.
+    Expired,
+    /// Granted, but this platform or build cannot provide it -- the macOS
+    /// clipboard case. Not a permission decision at all.
+    Unavailable,
+    /// Declared optional, not yet decided, and the app asked before anyone
+    /// was available to answer. The app may ask again later.
+    Deferred,
+}
+
+impl Refusal {
+    /// The stable word for this reason: what a `--json` result carries and
+    /// what a guest sees, so the vocabulary does not drift per call site.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Undeclared => "undeclared",
+            Self::Denied => "denied",
+            Self::Revoked => "revoked",
+            Self::Expired => "expired",
+            Self::Unavailable => "unavailable",
+            Self::Deferred => "deferred",
+        }
+    }
+
+    /// Is this the recipient's decision, as opposed to a fact about the
+    /// machine or the manifest?
+    ///
+    /// The distinction an app needs before it writes an error message: a
+    /// person chose this and can choose differently, or nobody chose
+    /// anything and asking again is pointless.
+    pub fn is_recipient_decision(&self) -> bool {
+        matches!(self, Self::Denied | Self::Revoked)
+    }
+
+    /// Could asking again in this same run plausibly succeed?
+    ///
+    /// Only a deferred decision. A denial stands until the recipient changes
+    /// it, and nothing about an undeclared, expired or unavailable capability
+    /// changes by asking twice -- an app that retries those is a busy loop.
+    pub fn may_retry(&self) -> bool {
+        matches!(self, Self::Deferred)
+    }
+}
+
+impl std::fmt::Display for Refusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// What the broker decided about one capability, and why.
+///
+/// `Granted` carries where the authority came from, so a result can say
+/// whether a person approved this or it arrived from the ambient defaults --
+/// which is the difference between "the recipient allowed the microphone"
+/// and "nobody was ever asked" (IC-236 provenance).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Decision {
+    Granted { via: Provenance },
+    Refused { reason: Refusal },
+}
+
+impl Decision {
+    pub fn is_granted(&self) -> bool {
+        matches!(self, Self::Granted { .. })
+    }
+
+    /// The refusal reason, or `None` when this was granted.
+    pub fn refusal(&self) -> Option<&Refusal> {
+        match self {
+            Self::Refused { reason } => Some(reason),
+            Self::Granted { .. } => None,
+        }
+    }
+}
+
+/// Where a grant's authority came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Provenance {
+    /// Allowed to every app without asking: the ambient defaults that cannot
+    /// reach past the app's own window.
+    Ambient,
+    /// A person said yes to this capability.
+    Recipient,
+    /// The operator passed it on the command line (`--grant`).
+    CommandLine,
+    /// An automated path granted it with nobody asked -- a thumbnail run, a
+    /// preview, `--auto-grant`. Recorded so a result can never present this
+    /// as though a person approved it (IC-219, IC-221, IC-341).
+    Automatic,
+}
+
+impl Provenance {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Ambient => "ambient",
+            Self::Recipient => "recipient",
+            Self::CommandLine => "command-line",
+            Self::Automatic => "automatic",
+        }
+    }
+
+    /// Did a person actually decide this?
+    ///
+    /// The question every "the user approved X" sentence has to pass before
+    /// it is written down.
+    pub fn is_person(&self) -> bool {
+        matches!(self, Self::Recipient)
+    }
+}
+
+impl std::fmt::Display for Provenance {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionPolicy {
     grants: BTreeSet<Capability>,
+    /// Where each grant's authority came from. A grant with no entry here is
+    /// `Ambient`: the defaults are added by `from_grants` itself, so the map
+    /// only ever needs the ones somebody decided.
+    provenance: std::collections::BTreeMap<Capability, Provenance>,
+    /// Withdrawn during this run. Kept separate from removing the grant so
+    /// the decision can say `Revoked` rather than a bare `Denied`.
+    revoked: BTreeSet<Capability>,
 }
 
 impl SessionPolicy {
     pub fn from_grants(grants: impl IntoIterator<Item = Capability>) -> Self {
-        let mut resolved = default_granted_capabilities();
-        resolved.extend(grants);
-        Self { grants: resolved }
+        let defaults = default_granted_capabilities();
+        let mut resolved = defaults.clone();
+        let mut provenance = std::collections::BTreeMap::new();
+        for cap in grants {
+            // Anything the caller passes was decided by somebody; the
+            // defaults it may re-state stay ambient. Callers that know who
+            // decided use `with_provenance` and overwrite this.
+            if !defaults.contains(&cap) {
+                provenance.insert(cap.clone(), Provenance::Recipient);
+            }
+            resolved.insert(cap);
+        }
+        Self {
+            grants: resolved,
+            provenance,
+            revoked: BTreeSet::new(),
+        }
+    }
+
+    /// Same grants, recorded as coming from `via`.
+    ///
+    /// Used where the caller knows the authority: `--grant` on the command
+    /// line, an automated thumbnail run, a person answering a prompt. Without
+    /// this every grant would read as though a recipient approved it, and a
+    /// `--auto-grant` preview would be indistinguishable from consent
+    /// (IC-219, IC-221, IC-341).
+    pub fn with_provenance(grants: impl IntoIterator<Item = Capability>, via: Provenance) -> Self {
+        let defaults = default_granted_capabilities();
+        let mut resolved = defaults.clone();
+        let mut provenance = std::collections::BTreeMap::new();
+        for cap in grants {
+            if !defaults.contains(&cap) {
+                provenance.insert(cap.clone(), via);
+            }
+            resolved.insert(cap);
+        }
+        Self {
+            grants: resolved,
+            provenance,
+            revoked: BTreeSet::new(),
+        }
+    }
+
+    /// Withdraw a grant mid-run.
+    ///
+    /// The grant stays in `grants` and joins `revoked`, so `decide` can say
+    /// `Revoked` instead of a bare `Denied` -- an app can tell it had this
+    /// and lost it, which is the difference between "ask the user to enable
+    /// the microphone" and "stop recording, they just turned it off".
+    pub fn revoke(&mut self, cap: Capability) {
+        self.revoked.insert(cap);
+    }
+
+    /// Has this capability been withdrawn during this run?
+    pub fn is_revoked(&self, cap: &Capability) -> bool {
+        self.revoked
+            .iter()
+            .any(|withdrawn| capability_allows(withdrawn, cap))
+    }
+
+    /// Where this capability's authority came from, if it is granted.
+    pub fn provenance_of(&self, cap: &Capability) -> Option<Provenance> {
+        if !self.allows(cap) {
+            return None;
+        }
+        // The most specific recorded grant that covers this call wins; with
+        // none recorded the capability came from the ambient defaults.
+        self.provenance
+            .iter()
+            .filter(|(grant, _)| capability_allows(grant, cap))
+            .map(|(_, via)| *via)
+            .max()
+            .or(Some(Provenance::Ambient))
+    }
+
+    /// The full decision for one capability, with its reason (CP2).
+    ///
+    /// `declared` is what the manifest asked for. Declaration is the
+    /// contract a recipient read, so a call outside it is `Undeclared` even
+    /// if a grant would otherwise cover it -- that is IC-733's rule, and it
+    /// is checked first for exactly that reason. Pass `None` where the
+    /// declaration is not available at the call site; the check is then
+    /// skipped rather than silently failing open on an empty list.
+    pub fn decide(
+        &self,
+        required: &Capability,
+        declared: Option<&BTreeSet<Capability>>,
+    ) -> Decision {
+        if let Some(declared) = declared {
+            let ambient = default_granted_capabilities();
+            let covered = declared.iter().any(|cap| capability_allows(cap, required))
+                || ambient.iter().any(|cap| capability_allows(cap, required));
+            if !covered {
+                return Decision::Refused {
+                    reason: Refusal::Undeclared,
+                };
+            }
+        }
+        if self.is_revoked(required) {
+            return Decision::Refused {
+                reason: Refusal::Revoked,
+            };
+        }
+        match self.provenance_of(required) {
+            Some(via) => Decision::Granted { via },
+            None => Decision::Refused {
+                reason: Refusal::Denied,
+            },
+        }
     }
 
     /// What an app may have when Krate is only taking its picture (IC-219,
@@ -113,6 +369,12 @@ impl SessionPolicy {
     }
 
     pub fn allows(&self, required: &Capability) -> bool {
+        // Revocation has to bite here too, not only in `decide`. Every one of
+        // the existing call sites goes through this, so a withdrawn grant
+        // that still answered `true` would be a revocation in name only.
+        if self.is_revoked(required) {
+            return false;
+        }
         self.grants
             .iter()
             .any(|grant| capability_allows(grant, required))
@@ -351,6 +613,175 @@ pub type Result<T> = std::result::Result<T, PolicyError>;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn cap(s: &str) -> Capability {
+        Capability::from_str(s).expect("a capability the manifest crate accepts")
+    }
+
+    /// The reason a capability is unavailable is not always "you said no",
+    /// and an app cannot behave well until it can tell the cases apart.
+    ///
+    /// This is the shape CP2 exists to fix: before it, the policy layer had
+    /// exactly one refusal, so a recipient who revoked the microphone and a
+    /// Mac with no clipboard support produced the same flat denial.
+    #[test]
+    fn a_refusal_says_which_kind_of_no_it_is() {
+        let declared: BTreeSet<Capability> = [cap("audio.capture")].into_iter().collect();
+
+        // Declared, never granted: the recipient's decision.
+        let nothing_granted = SessionPolicy::from_grants([]);
+        let denied = nothing_granted.decide(&cap("audio.capture"), Some(&declared));
+        assert_eq!(denied.refusal(), Some(&Refusal::Denied));
+        assert!(
+            denied.refusal().expect("refused").is_recipient_decision(),
+            "a plain denial is a person's choice, and an app may reasonably ask again later"
+        );
+
+        // Not declared at all: the manifest is the contract, so this is
+        // refused whatever was granted (IC-733).
+        let generous = SessionPolicy::from_grants([cap("net.connect:example.com:443")]);
+        let undeclared = generous.decide(&cap("net.connect:example.com:443"), Some(&declared));
+        assert_eq!(
+            undeclared.refusal(),
+            Some(&Refusal::Undeclared),
+            "a grant cannot authorize what the manifest never declared"
+        );
+        assert!(
+            !undeclared
+                .refusal()
+                .expect("refused")
+                .is_recipient_decision(),
+            "nobody chose this; the app asked for something outside its own contract"
+        );
+
+        // Granted and then withdrawn mid-run: distinguishable from never
+        // having had it, which is what lets an app stop cleanly.
+        let mut live = SessionPolicy::from_grants([cap("audio.capture")]);
+        assert!(live
+            .decide(&cap("audio.capture"), Some(&declared))
+            .is_granted());
+        live.revoke(cap("audio.capture"));
+        let revoked = live.decide(&cap("audio.capture"), Some(&declared));
+        assert_eq!(revoked.refusal(), Some(&Refusal::Revoked));
+        assert!(
+            revoked.refusal().expect("refused").is_recipient_decision(),
+            "a revocation is a person changing their mind, not a platform gap"
+        );
+
+        // Every reason carries a stable word, and only a deferred one is
+        // worth retrying -- an app that retries a denial is a busy loop.
+        assert_eq!(Refusal::Unavailable.as_str(), "unavailable");
+        assert!(Refusal::Deferred.may_retry());
+        for reason in [
+            Refusal::Undeclared,
+            Refusal::Denied,
+            Refusal::Revoked,
+            Refusal::Expired,
+            Refusal::Unavailable,
+        ] {
+            assert!(
+                !reason.may_retry(),
+                "{reason} does not change by asking twice"
+            );
+        }
+    }
+
+    /// Revoking has to bite on the OLD path too.
+    ///
+    /// Every existing call site in the tree goes through `allows`, not
+    /// `decide`. If revocation only affected the new method it would be a
+    /// revocation in name only -- the capability would keep working
+    /// everywhere that matters. Written because that is exactly the mistake
+    /// this shape invites.
+    #[test]
+    fn a_revoked_grant_stops_working_everywhere_not_just_in_decide() {
+        let mut policy = SessionPolicy::from_grants([cap("audio.capture")]);
+        assert!(policy.allows(&cap("audio.capture")));
+        assert!(policy.check(&cap("audio.capture")).is_ok());
+
+        policy.revoke(cap("audio.capture"));
+
+        assert!(
+            !policy.allows(&cap("audio.capture")),
+            "allows() is what the runtime actually calls"
+        );
+        assert!(
+            policy.check(&cap("audio.capture")).is_err(),
+            "check() must refuse it too, or the guard lets it through"
+        );
+        assert!(policy.provenance_of(&cap("audio.capture")).is_none());
+    }
+
+    /// A thumbnail run must never look like consent.
+    ///
+    /// Several paths grant every declared capability just to paint a frame.
+    /// Recording WHO decided is what stops a result saying "the recipient
+    /// approved the microphone" when nobody was asked (IC-219, IC-221,
+    /// IC-341).
+    #[test]
+    fn provenance_separates_a_person_from_an_automatic_grant() {
+        let asked = SessionPolicy::with_provenance([cap("audio.capture")], Provenance::Recipient);
+        let unasked = SessionPolicy::with_provenance([cap("audio.capture")], Provenance::Automatic);
+
+        assert!(asked.decide(&cap("audio.capture"), None).is_granted());
+        assert!(unasked.decide(&cap("audio.capture"), None).is_granted());
+
+        let Decision::Granted { via: by_person } = asked.decide(&cap("audio.capture"), None) else {
+            panic!("granted");
+        };
+        let Decision::Granted { via: by_machine } = unasked.decide(&cap("audio.capture"), None)
+        else {
+            panic!("granted");
+        };
+
+        assert!(by_person.is_person());
+        assert!(
+            !by_machine.is_person(),
+            "an --auto-grant preview is not a person approving anything"
+        );
+        assert_eq!(by_machine.as_str(), "automatic");
+        assert_ne!(
+            by_person, by_machine,
+            "the two must be distinguishable, or a preview can be reported as consent"
+        );
+    }
+
+    /// The ambient defaults are granted, and they are not anyone's decision.
+    ///
+    /// Without this an app that draws its own window would be reported as a
+    /// capability the recipient approved.
+    #[test]
+    fn the_ambient_defaults_are_granted_but_nobody_chose_them() {
+        let policy = SessionPolicy::default();
+        for cap in default_granted_capabilities() {
+            let decision = policy.decide(&cap, None);
+            assert!(decision.is_granted(), "{cap} is an ambient default");
+            let Decision::Granted { via } = decision else {
+                unreachable!()
+            };
+            assert_eq!(via, Provenance::Ambient, "{cap} was never asked about");
+            assert!(!via.is_person());
+        }
+    }
+
+    /// Declaration is checked before the grant, not after.
+    ///
+    /// Order matters: a capability that is both undeclared AND ungranted has
+    /// to report `Undeclared`, because that is the fact that explains it. If
+    /// the grant check ran first the app would be told "denied" and a
+    /// developer would go looking for a permission prompt that was never the
+    /// problem.
+    #[test]
+    fn an_undeclared_capability_reads_as_undeclared_even_when_it_is_also_ungranted() {
+        let declared: BTreeSet<Capability> = [cap("audio.capture")].into_iter().collect();
+        let policy = SessionPolicy::from_grants([]);
+        assert_eq!(
+            policy
+                .decide(&cap("net.connect:example.com:443"), Some(&declared))
+                .refusal(),
+            Some(&Refusal::Undeclared)
+        );
+    }
 
     /// The fuzz campaign's interesting inputs, replayed every run (IC-163).
     /// Same body as fuzz/fuzz_targets/policy_match.rs: grant on line one,
