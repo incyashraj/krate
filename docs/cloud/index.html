@@ -80,6 +80,22 @@ h1.page { font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
 .foot nav a:hover { color: #d4d4d8; }
 
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+/* Two up on a phone. `minmax(250px, 1fr)` gives ONE column below 514px,
+   so the gallery became eighteen 292px cards in a single stack: 5,497px
+   of scrolling -- five and a half screens -- to look at a shelf. Measured
+   at 390x844 that is 119px of page per word.
+   A gallery is a thing you scan, not read, and every app store on a phone
+   scans two across. The cards get smaller; the shelf becomes browsable. */
+@media (max-width: 560px) {
+  .grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .appc { border-radius: 14px; }
+  .appc .b { padding: 9px 10px 11px; }
+  .appc .nm { font-size: 12.5px; line-height: 1.3; }
+  /* At half width the author line and the size cannot share a row. The
+     size is the detail that can go: it is on the app's own page. */
+  .appc .by { font-size: 11.5px; margin-top: 4px; }
+  .appc .kb { display: none; }
+}
 .appc { display: block; border-radius: 18px; overflow: hidden; background: rgba(24,24,27,0.5);
   box-shadow: 0 0 0 1px rgba(255,255,255,0.08);
   opacity: 0; transform: translateY(12px); animation: rise 0.55s cubic-bezier(0.2,0.8,0.2,1) forwards;

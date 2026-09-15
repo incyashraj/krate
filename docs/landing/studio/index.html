@@ -257,6 +257,66 @@ p.sub { color: #a1a1aa; margin-top: 12px; max-width: 62ch; line-height: 1.65; }
   .foot a { display: inline-block; padding: 10px 4px; }
   .foot { line-height: 1.4; }
 }
+
+/* ---- this page on a phone ---------------------------------------------
+ *
+ * Measured at 390x844 before these rules: 6.9 screens of scrolling for
+ * 356 words -- 52 words a screen, so most of what a phone visitor
+ * scrolled past was space. Every number below is a desktop's, applied
+ * unchanged to a 390px screen:
+ *
+ *   sections   88px of padding top AND bottom, each
+ *   hero       148px of padding above the headline
+ *   app cards  321px each, one per row, four of them = 1,331px
+ *   tool grid  1,162px for six items in a single column
+ *
+ * Nothing here removes a word. It is the space around the words that was
+ * sized for a monitor.
+ */
+@media (max-width: 760px) {
+  section.pad { padding-top: 44px; padding-bottom: 44px; }
+  .sHero { padding-top: 96px; padding-bottom: 20px; }
+  .sHero h1 { font-size: clamp(28px, 8.5vw, 38px); line-height: 1.14; }
+
+  /* Four example apps, stacked, at 314px each: 1,291px to make one point
+     -- that Studio builds real things. They are wide pictures of dense
+     interfaces, so two up would turn their grid lines to mush, and all
+     four link to the same gallery page, so dropping two would cost the
+     argument nothing but variety.
+     A sideways shelf keeps all four and costs one card's height. Swiping
+     a row of cards is what a phone does with a set of examples, and the
+     cards stay wide enough to read. */
+  .appRow {
+    display: flex; gap: 12px;
+    overflow-x: auto; scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    /* Bleed to the screen edges so the next card is visibly cut off --
+       that is the affordance that says the row continues. The section's
+       own padding is the width to cancel, and the parent must clip or the
+       negative margin makes the PAGE scroll sideways (measured: 414px of
+       document on a 390px screen). */
+    margin-inline: -24px; padding-inline: 24px;
+    scrollbar-width: none;
+  }
+  #apps { overflow-x: clip; }
+  .appRow::-webkit-scrollbar { display: none; }
+  .appCard {
+    flex: 0 0 82%; scroll-snap-align: start;
+  }
+  .appCard .meta { padding: 10px 12px 12px; }
+
+  /* The tool grid is six short cards; at 1,162px it was a screen and a
+     half of list. */
+  .toolGrid { gap: 10px; }
+  .tool { padding: 14px 16px; }
+  .tool h3 { margin-bottom: 4px; }
+
+  /* Section headings and their ledes carry a desktop's spacing. */
+  section.pad h2 { margin-bottom: 8px; }
+  .lede { font-size: 15px; line-height: 1.6; margin-bottom: 18px; }
+
+  .close { padding-top: 48px; padding-bottom: 56px; }
+}
 .foot a:hover { color: #d4d4d8; }
 .foot .sp { flex: 1; }
 
