@@ -692,6 +692,99 @@ img { max-width: 100%; display: block; }
      makes them legible. The desktop keeps its finer setting. */
   .starpill, .plan .badge { font-size: 11.5px; }
 
+  /* ---- the download button at the foot of the page -------------------
+   *
+   * `.ctaRow` above is the hero's button row; this is the other one, in
+   * the closing card, and it had no phone rule at all. Measured at 390px:
+   * the block was `align-self: flex-end` so it took 180px of a 321px
+   * card, and inside it the main button collapsed to 26px around 110px of
+   * text while the chevron kept 153 -- "…oad f" beside an empty white
+   * slab, which is what the founder's screenshot shows.
+   *
+   * A flex child may shrink below its content unless told not to: that is
+   * `min-width: auto` losing to `flex: 1 1 0%`. */
+  .ctaActs { align-self: stretch; width: 100%; }
+  .ctaActs .split { display: flex; width: 100%; }
+  .ctaActs .split .main { flex: 1 1 auto; min-width: 0; }
+  .ctaActs .split .more { flex: 0 0 52px; }
+  .ctaActs .split > * { min-height: 44px; }
+
+  /* ---- the footer ----------------------------------------------------
+   *
+   * Ten links wrapping 5 / 4 / 1 across three rows 64px apart, under a
+   * copyright line that takes the full width. It reads as a list that ran
+   * out of room rather than a list that was arranged.
+   *
+   * Two even columns instead: the same ten links, in a shape that fits
+   * the screen it is on. */
+  .foot {
+    flex-direction: column; align-items: flex-start;
+    gap: 22px; margin-top: 40px; padding-top: 26px;
+  }
+  .foot nav {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 2px 18px; width: 100%;
+  }
+  .foot nav a { padding-top: 11px; padding-bottom: 11px; }
+
+  /* ---- the length ----------------------------------------------------
+   *
+   * The page is 7150px on a phone: five sections of about 1100px each,
+   * every one of them padded 88-96px top AND bottom because that is what
+   * suits a 1440px monitor. On a phone that is a screen and a half of
+   * nothing between each idea. Halved -- the sections still breathe, and
+   * the page loses roughly 500px of pure gap. */
+  section.works, section.how, section.price, section.ctaSec {
+    padding-top: 52px; padding-bottom: 52px;
+  }
+  .ctaSec { padding-bottom: 28px; }
+
+  /* ---- the brand bar -------------------------------------------------
+   *
+   * It is fixed at top 20 with a transparent background, so the page
+   * scrolls under it and the words collide with the mark -- visible in
+   * every one of the founder's screenshots. The blur strip behind it only
+   * softens what passes beneath; it does not hide it. */
+  .brandbar {
+    background: rgba(10, 10, 10, 0.82);
+    -webkit-backdrop-filter: blur(14px) saturate(1.4);
+    backdrop-filter: blur(14px) saturate(1.4);
+    border-radius: 999px;
+    padding: 6px 14px 6px 10px;
+  }
+
+  /* ---- the Studio screenshot -----------------------------------------
+   *
+   * A 1240x800 capture of a desktop window, shown at 221x143. Nothing in
+   * it is legible at that size -- it is a grey smudge that happens to be
+   * rectangular, and the founder is right that shrinking it further is
+   * not the answer.
+   *
+   * The box reserves 130px of the viewport for the chips that float at
+   * its corners, and those chips are already hidden here. So the picture
+   * gets the full width back, and instead of showing the whole 1240px
+   * window it shows the left portion at a phone-shaped ratio: the
+   * conversation, which is the half that reads at this size and the half
+   * that says what Studio is. The rest of the window is what a person
+   * sees when they open it on the machine the page is asking them to
+   * download it to. */
+  .shotBox {
+    max-width: none; margin: 0 16px;
+    aspect-ratio: 4 / 3;
+  }
+  .shotBox .frame img {
+    object-fit: cover;
+    object-position: left top;
+    /* Scaled up so the text inside is the size it would be on a phone
+       looking at a window, not a whole desktop pressed into 390px. */
+    width: 175%; max-width: none; height: 175%;
+  }
+  /* The remaining two chips float at negative offsets, which is a nice
+     touch beside a 1080px frame and a pair of half-cropped squares beside
+     a 304px one. The other three are already hidden here; these join
+     them. */
+  .chip { display: none; }
+
   /* The headline cycles a vendor glyph between its two sentences: on a wide
      screen all three sit on one line and it reads as a separator. Here the
      line wraps, the glyph is stranded at the end of "Build once." and the
