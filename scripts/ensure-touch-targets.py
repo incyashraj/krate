@@ -55,9 +55,19 @@ BLOCK = """
    The pages set these per-page too, and drifted the same way the touch
    rules did -- the star pill is 11.5px on the homepage and 10px on
    /studio, from the same design. Scoped to small chips and captions, so
-   body copy and headings keep whatever the page chose. */
+   body copy and headings keep whatever the page chose.
+
+   Written `:where(html) .x` so it reads as 0-1-0 in the cascade but still
+   outranks a page's own single-class rule by source order -- and, more to
+   the point, so a DESCENDANT rule like the gallery's `.appc .kb` (0-2-0)
+   does not silently beat it. That one kept the size at 11px through a
+   whole deploy while this block was present and correct further down the
+   page. Doubling the class is the smallest thing that wins without
+   reaching for !important, which would also override a page that has a
+   good reason to be smaller. */
 @media (max-width: 860px) {
-  .starpill, .badge, .tag, .kicker, .ta-kicker, .num, .dlnote, .note, .kb {
+  .starpill.starpill, .badge.badge, .tag.tag, .kicker.kicker,
+  .ta-kicker.ta-kicker, .num.num, .dlnote.dlnote, .note.note, .kb.kb {
     font-size: 11.5px;
   }
 }
