@@ -654,22 +654,68 @@ img { max-width: 100%; display: block; }
 
 /* ---- the hero, on a phone -------------------------------------------- */
 @media (max-width: 760px) {
-  /* The eclipse's bright arc crossed the CTAs, washing the download row
-     until its text was barely there. Pushed down and dimmed so it stays
-     scenery behind the words rather than over them. */
-  .eclipse { transform: translateX(-50%) translateY(40%) scale(1.35); opacity: 0.30; }
-  /* The download row sits on its own ground so the arc cannot wash it
-     out; measured at 412px the button's text was lighter than the glow
-     behind it. */
+  /* ---- the arc ---------------------------------------------------------
+   *
+   * The eclipse is a 1890px disc whose bright rim is the page's one piece
+   * of colour. On a desktop it arcs below the buttons and reads as a
+   * horizon. On a phone it was drawn straight THROUGH them: measured at
+   * 390x700 the disc's top edge is at 315 and the download row occupies
+   * 420-494, so the rim crossed "Want it on your machine?" and washed the
+   * button behind it until the text was barely there.
+   *
+   * A previous pass tried pushing it down 40% and dimming it, which is
+   * why those numbers look deliberate -- but 40% of 1890px, on an element
+   * already scaled 1.35, lands it back over the same buttons.
+   *
+   * Sized off the VIEWPORT instead, so the rim always falls below the
+   * content rather than at whatever height a 1890px disc happens to
+   * reach: the arc sits under the hero, the way it does on a desktop. */
+  /* The script sets this element's transform inline
+     (`translateY(-143vh)`, animated on scroll), so CSS cannot position it
+     -- any `top` or `bottom` here is moved by that. The disc is sized and
+     placed to land correctly UNDER that offset instead: 143vh up from a
+     top of 218vh puts its upper rim just below the hero, which is where
+     the arc belongs. */
+  .eclipse {
+    width: 210vw; height: 210vw;
+    /* Centred by margin, not by transform: the transform is the script's.
+       The margin is always half the width. */
+    left: 50%; margin-left: -105vw;
+    /* 236, not 218: at 218 the rim's first light landed on "Someone sent
+       you a file?" -- the last line of the hero -- and dimmed it. Checked
+       down to a 640px screen, where the hero ends lowest relative to the
+       viewport and the margin is thinnest. */
+    top: 236vh; bottom: auto;
+    opacity: 0.38;
+  }
+  /* With the arc below the content, the download button no longer needs a
+     plate of its own to be legible -- but it keeps a quiet one, because
+     it is the second action on the screen and should not compete with
+     "Make an app" for attention. */
   .dlLine .btn-primary {
     background: rgba(20, 20, 24, 0.92); color: #fff;
     border-color: rgba(255, 255, 255, 0.22);
     -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
   }
-  /* Clear of the brand bar: the headline was rendering at top 0, tucked
-     behind it. */
-  .heroContent { padding: 84px 20px 0; justify-content: flex-start; }
+
+  /* ---- the hero as one composition -------------------------------------
+   *
+   * It was `justify-content: flex-start` with 84px of top padding: the
+   * content stacked from the top and stopped at 534 in a 700px screen,
+   * leaving 166px of nothing beneath it and no reason for the eye to go
+   * there. Centred in the space between the brand bar and the foot
+   * instead, so the screen reads as one composed thing rather than a
+   * column that ran out. */
+  .heroContent {
+    padding: 78px 20px 24px;
+    justify-content: center;
+  }
+  /* The headline's second line is #a1a1aa -- the same grey as the
+     paragraph under it -- so the largest words on the page were also the
+     faintest. It keeps the contrast step it has on a desktop, where it
+     sits against a much darker ground. */
   #heroH1 { font-size: clamp(30px, 9vw, 40px); line-height: 1.12; }
+  #heroH1 .dim { color: #d4d4d8; }
   .heroSub { font-size: 14.5px; line-height: 1.6; }
   /* Each action on its own full-width row: two buttons side by side at
      this width leaves both too narrow to read and too small to hit. */
@@ -824,10 +870,9 @@ img { max-width: 100%; display: block; }
    So first, buy back what can be bought: tighter leading and a smaller
    headline recover about 50px. */
 @media (max-height: 800px) and (max-width: 760px) {
-  /* 78, not 64: the brand bar sits at top 20 and is 44 tall, so it ends
-     at 64 and a 64px padding put the headline's first pixel exactly on
-     its last one. 14px of daylight between them. */
-  .heroContent { padding-top: 78px; }
+  /* The top padding is set with the rest of the hero above (78px, which
+     is the brand bar's 64px end plus daylight); only the type comes down
+     here, to buy back height on a short screen. */
   #heroH1 { font-size: clamp(27px, 8vw, 34px); }
   .heroSub { font-size: 13.5px; line-height: 1.55; }
   .heroCtas { gap: 10px; }
@@ -858,7 +903,16 @@ img { max-width: 100%; display: block; }
    Verified by loading the page in an iframe at each height, because a
    screenshot taken after a viewport resize could not be trusted to have
    painted. */
-@media (max-height: 739px) and (max-width: 760px) {
+/* On every phone, not below a threshold. The hero is centred in its
+   screen now rather than stacked from the top, so it always ends lower
+   and there is no height at which both it and the marquee sit
+   comfortably: at 844 the cards landed on "Someone sent you a file?"
+   again, and tuning the cutoff just moves which screen loses.
+   The marquee is scenery. Its four numbers appear as full cards a
+   screen further down, where they can be read rather than glimpsed
+   sideways through a mask. The hero carries the button the page is for,
+   and on a phone it gets the screen to itself. */
+@media (max-width: 760px) {
   .marqWrap, .marqLabel { display: none; }
 }
 
