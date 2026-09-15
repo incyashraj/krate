@@ -10,6 +10,11 @@
   <style>
     /* Admin surface: dense, plain, no decoration. Its job is to let one
        person read twenty reports quickly. */
+    /* The token field is `width: 100%` with .9rem of side padding, and
+       nothing on this page reset the box model -- so on a 390px phone it
+       measured 411 and the whole page scrolled sideways. Border-box makes
+       a stated width mean the width. */
+    *, *::before, *::after { box-sizing: border-box; }
     .bar { display: flex; gap: .8rem; align-items: center; margin: 1.6rem 0 1.2rem; flex-wrap: wrap; }
     .bar input {
       flex: 1; min-width: 240px;
