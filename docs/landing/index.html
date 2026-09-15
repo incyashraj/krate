@@ -347,6 +347,13 @@ img { max-width: 100%; display: block; }
   display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center;
 }
 @media (max-width: 900px) { .worksGrid { grid-template-columns: 1fr; } }
+/* A grid item's default `min-width: auto` is its content's minimum, and the
+   orbit's rings are positioned to overflow their box -- so on a 320px screen
+   this column sized itself to 322 and the whole page scrolled sideways to
+   346. The rings are decoration and are meant to spill; the column must not
+   grow to contain them. */
+.worksGrid > * { min-width: 0; }
+.orbitStage { min-width: 0; overflow: hidden; }
 .works h2 {
   font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
   font-size: clamp(28px, 4vw, 46px); line-height: 1.12; color: #fff;
@@ -674,6 +681,74 @@ img { max-width: 100%; display: block; }
   .dlLine { flex-direction: column; gap: 8px; }
   .dlLine .btn { min-height: 40px; }
   .marqWrap { opacity: 1 !important; filter: none !important; transform: translateY(-50%) !important; }
+
+  /* The headline cycles a vendor glyph between its two sentences: on a wide
+     screen all three sit on one line and it reads as a separator. Here the
+     line wraps, the glyph is stranded at the end of "Build once." and the
+     site's first sentence appears to contain a stray mark -- an X, when the
+     cycle happens to be showing Grok. Hidden: the sentence is the point,
+     and the logos are already shown further down the page. */
+  .heroCycle { display: none !important; }
+
+  /* The marquee was pinned at 78vh, a share of the screen, while the hero
+     above it stacks to a fixed pixel height. The two only clear each other
+     on a tall screen. Measured at 390 wide, the hero's last line ends at
+     554px and 78vh lands at:
+         844 -> 600   (46px clear)
+         800 -> 566   (12px clear)
+         760 -> 535   (19px OVERLAP)
+         700 -> 488   (66px overlap)
+         667 -> 462   (92px overlap)
+     Every iPhone in Safari, whose visible height is around 700 once the
+     toolbars are counted, buries "Someone sent you a file?" under the
+     cards. Pinning it to the bottom instead keeps it in the same dark band
+     and makes the gap grow with the screen rather than shrink. */
+  .marqWrap { top: auto; bottom: 74px; }
+  .marqWrap, .marqWrap.in { transform: none !important; }
+}
+
+/* Short screens, whatever the width. The hero and the marquee both live
+   inside one 100vh sticky box, absolutely positioned, so neither can push
+   the other along -- they simply collide once the screen is short enough.
+   Measured at 375x629: the hero stack ends at 497px and the marquee needs
+   the last 190, which is 687 of an available 629. There is no arrangement
+   of two fixed blocks that fits 687px into 629.
+   So first, buy back what can be bought: tighter leading and a smaller
+   headline recover about 50px. */
+@media (max-height: 800px) and (max-width: 760px) {
+  .heroContent { padding-top: 64px; }
+  #heroH1 { font-size: clamp(27px, 8vw, 34px); }
+  .heroSub { font-size: 13.5px; line-height: 1.55; }
+  .heroCtas { gap: 10px; }
+}
+
+/* And below that, stop trying. The marquee is scenery -- the same numbers
+   appear as full cards further down the page -- while the hero carries the
+   one button the page exists for. On a screen this short the choice is
+   which of the two to lose, and it is never the call to action.
+
+   A single height cutoff cannot express this, and trying one was wrong:
+   the hero's own height is not constant. The subtitle rewraps with the
+   width, so at 390px wide the stack ends anywhere between 504 and 543,
+   and a threshold tuned to one of those is off by a line at the other:
+
+       height  heroEnds  clearance with a 691px cutoff
+          691       505   hidden, fine
+          692       516   -13  <- still overlapping
+          700       512   -2   <- still overlapping
+          736       504   +42
+
+   So the marquee yields to the hero instead of to a number. It is hidden
+   unless the screen can hold the hero's tallest form (543) plus the
+   marquee's own 190, which is 733 -- and 740 leaves a margin for a font
+   that loads a little wider than the one measured here. Above that the
+   bottom anchor keeps the gap growing with the screen.
+
+   Verified by loading the page in an iframe at each height, because a
+   screenshot taken after a viewport resize could not be trusted to have
+   painted. */
+@media (max-height: 739px) and (max-width: 760px) {
+  .marqWrap, .marqLabel { display: none; }
 }
 
   /* Touch, not width: a thumb needs 44px whatever the screen size, and
