@@ -23,6 +23,11 @@ on:
       - "scripts/store-listing.py"
       - "scripts/build-answer-pages.py"
       - "scripts/fingerprint-css.py"
+      # Injects the phone rules into every assembled page. Editing it
+      # without this line changes the repo and not the site -- which is
+      # precisely the trap the comment above describes, and it caught the
+      # very commit that added the script.
+      - "scripts/ensure-touch-targets.py"
       - "scripts/install.sh"
       - "scripts/install.ps1"
       # The bundles the site serves. Without these paths, repacking the store
