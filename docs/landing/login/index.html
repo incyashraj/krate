@@ -7,7 +7,68 @@
   <meta name="robots" content="noindex" />
   <title>Sign in to Krate</title>
   <link rel="icon" href="/krate-favicon.png" />
+
+  <!-- Decide BEFORE the first paint.
+       The redirect for an already-signed-in person used to live in the
+       script at the bottom of the body, which runs only after the sign-in
+       UI has been parsed and painted. On a phone that showed the full
+       "Sign in with GitHub or Google" screen for a beat, then replaced it
+       -- so the site appeared to ask for an account and then change its
+       mind. Reading the token here, in the head, means the navigation
+       starts before there is anything on screen to flash.
+
+       `krate-booting` on <html> keeps the sign-in form hidden while we do
+       not yet know, and the loader visible in its place. Both are undone
+       below the moment we know a redirect is NOT happening, so a person
+       who does need to sign in never waits on this. -->
+  <script>
+  (function () {
+    try {
+      var q = new URLSearchParams(location.search);
+      var next = q.get("next") || "";
+      var fromApp = q.get("from") === "app";
+      if (next === "studio" && !fromApp) {
+        var token = null;
+        try { token = localStorage.getItem("krate_tok"); } catch (e) {}
+        if (token) {
+          document.documentElement.className += " krate-booting";
+          location.replace("/app/");
+        }
+      }
+    } catch (e) {
+      /* Any failure here just means the normal sign-in page renders,
+         which is the correct fallback. */
+    }
+  })();
+  </script>
   <style>
+  /* While a redirect is in flight: no sign-in UI, just the loader. */
+  html.krate-booting .login-card { display: none; }
+  html.krate-booting .booting { display: flex; }
+  .booting {
+    display: none;
+    flex-direction: column; align-items: center; gap: 14px;
+    text-align: center; color: var(--text);
+    font-family: var(--sans); padding: 30px 24px;
+  }
+  .booting p { font-size: 15px; font-weight: 500; }
+  .booting .booting-sub { font-size: 13px; font-weight: 400; color: var(--muted); }
+  .booting .spin {
+    width: 22px; height: 22px; border-radius: 50%;
+    border: 2px solid var(--line-strong); border-top-color: var(--text);
+    animation: krate-spin 0.7s linear infinite;
+  }
+  @keyframes krate-spin { to { transform: rotate(360deg); } }
+  .booting .dots i { animation: krate-dot 1.2s infinite; opacity: 0; font-style: normal; }
+  .booting .dots i:nth-child(2) { animation-delay: 0.2s; }
+  .booting .dots i:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes krate-dot { 0%, 60%, 100% { opacity: 0; } 30% { opacity: 1; } }
+  /* Someone who asked for less motion gets a still loader, not a stalled
+     one: the text still says what is happening. */
+  @media (prefers-reduced-motion: reduce) {
+    .booting .spin { animation: none; border-top-color: var(--line-strong); }
+    .booting .dots i { animation: none; opacity: 1; }
+  }
   @font-face { font-family: "Geist"; src: url("/fonts/geist-400.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
   @font-face { font-family: "Geist"; src: url("/fonts/geist-500.woff2") format("woff2"); font-weight: 500; font-style: normal; font-display: swap; }
   :root {
@@ -73,6 +134,16 @@
 </head>
 <body>
 <main class="login-wrap">
+  <!-- Shown INSTEAD of the sign-in card when the head script found a
+       session and started the trip to the Studio. It says where the person
+       is going, because a bare spinner reads as a stall. -->
+  <div class="booting" aria-live="polite">
+    <img src="/krate-logo.png" alt="" width="34" height="34" />
+    <div class="spin" aria-hidden="true"></div>
+    <p>Opening your Studio<span class="dots"><i>.</i><i>.</i><i>.</i></span></p>
+    <p class="booting-sub">You are already signed in.</p>
+  </div>
+
   <div class="login-card">
     <img src="/krate-logo.png" alt="" width="34" height="34" />
     <h1 id="loginH">Sign in to Krate</h1>
@@ -106,7 +177,10 @@
   // origin's storage so it survives the provider round trip.
   var next = new URLSearchParams(location.search).get("next") || "";
   try { if (next) localStorage.setItem("krate_next", next); } catch (e) {}
-  // Already signed in and on the way somewhere? Go there.
+  // Already signed in and on the way somewhere? The head script has
+  // already started that navigation -- before the first paint, so the
+  // sign-in card never flashes. This one only has to stand down while it
+  // completes, so nothing below rewrites a card that is on its way out.
   //
   // Every "Make an app" door on the site points here rather than straight
   // at /app, so that signing in happens before the Studio opens instead of
@@ -115,11 +189,7 @@
   // not need, asking for an account they already have. The token is this
   // origin's, written by /login/done; if it has expired the Studio's own
   // check sends them back here, and `stay` stops that becoming a loop.
-  if (next === "studio" && !fromApp) {
-    var token = null;
-    try { token = localStorage.getItem("krate_tok"); } catch (e) {}
-    if (token) { location.replace("/app/"); return; }
-  }
+  if (document.documentElement.classList.contains("krate-booting")) { return; }
   // A referral link lands here directly. The code is noted NOW -- before
   // any provider round trip -- and claimed automatically on the first
   // sign-in, whichever button they pick. Nothing for them to type.

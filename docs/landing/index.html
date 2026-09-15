@@ -840,7 +840,16 @@ img { max-width: 100%; display: block; }
      and the hero now fits without it (the marquee gave up the space
      instead). The split's chevron is the same control, so it matches. */
   .dlLine .btn, .dlLine .split > * { min-height: 44px; }
-  .marqWrap { opacity: 1 !important; filter: none !important; transform: translateY(-50%) !important; }
+  /* The marquee is gone on a phone, and this is the reason it stayed so
+     long: it was the only thing on the small screen that said what Krate
+     gives you. Now `.whatis` says it in a list you can read at rest,
+     built from the SAME seven STATS entries -- so keeping both printed
+     every point twice, once scrolling past and once standing still.
+     Measured: whatis items=7, marquee uniq=7, shared=7. A marquee is also
+     the wrong instrument here: it moves text away from a reader who
+     cannot hover to pause it. The desktop keeps it as ambient texture
+     beside a hero that has room to spare. */
+  .marqWrap { display: none; }
 
   /* 10px is a label on a monitor you are sitting two feet from and a smudge
      on a phone held at arm's length. These are all short chips -- the star
@@ -912,7 +921,11 @@ img { max-width: 100%; display: block; }
   }
   .priceGrid, .stepGrid { gap: 12px; }
   .plan ul, .step p { line-height: 1.5; }
-  .plan li { padding: 4px 0; }
+  /* `padding: 4px 0` here was the bug: the shorthand reset padding-left to
+     0 while the tick stayed absolutely positioned at left:2px, so every
+     line drew its checkmark straight through its own first letter. Set the
+     vertical padding only and the 20px runway for the tick survives. */
+  .plan li { padding-top: 4px; padding-bottom: 4px; }
   .plan ul { margin-bottom: 14px; }
   /* The footnote under each card is a source citation -- true and worth
      keeping, but it is set at the size of body copy and takes 60px. */
@@ -962,7 +975,15 @@ img { max-width: 100%; display: block; }
    * you stop. */
   /* The two subtitles swap: what it IS, not what it is not. */
   #heroSub { display: none; }
-  .heroSubPhone { display: block; }
+  /* `max-width: 620px` on a 375px screen means edge to edge with no side
+     padding at all, so the sentence ran the full width of the glass. A
+     measure of roughly 34 characters is what a phone paragraph wants. */
+  .heroSubPhone {
+    display: block;
+    max-width: 34ch;
+    margin-left: auto; margin-right: auto;
+    padding: 0 18px;
+  }
 
   .whatis {
     display: block;
@@ -1091,6 +1112,64 @@ img { max-width: 100%; display: block; }
      and makes the gap grow with the screen rather than shrink. */
   .marqWrap { top: auto; bottom: 74px; }
   .marqWrap, .marqWrap.in { transform: none !important; }
+
+  /* The hero read as an empty screen with a headline floating in it.
+     Measured at 390x700: the sticky box is 100vh and `.heroContent`
+     centres about 200px of real content inside it, so 22% of the first
+     screen was black above the headline and the rest below it.
+
+     The cause is that this hero is a DESKTOP mechanism: `.heroContent`
+     and `.shotWrap` are stacked absolutely in one sticky 100vh box, and
+     scrolling cross-fades the headline out as the Studio shot comes in.
+     That needs a tall scroll runway (112vh here) whose only job is to
+     drive an animation, and on a phone it spends a whole screen of
+     height to show one screen of content.
+
+     So on a phone the two stop being one cross-fade and become two
+     things in a row: the headline sits at the top of the screen where it
+     is read, and the Studio shot follows it as an ordinary block. The
+     scroll driver is disabled here (`data-hero-static`) rather than
+     fought with CSS -- it sets inline opacity/transform every frame and
+     would win over any rule written here.
+
+     Do NOT give .heroTrack `height: auto` while the driver still runs:
+     the runway collapses to a few px, `span` goes to ~0 and the headline
+     fades out within one flick of the thumb. Measured that way first. */
+  .heroTrack { height: auto; }
+  /* `overflow: hidden` STAYS. The eclipse is a deliberately oversized
+     glow -- measured 1050px wide, from -330 to 720 at a 390px viewport --
+     and this box is what clips it. Changing this to `visible` while
+     unsticking the box made the whole page scroll sideways to 720px. */
+  /* `position: relative`, not `static`. The eclipse is absolutely
+     positioned, so it is clipped by the nearest POSITIONED ancestor --
+     a static box with `overflow: hidden` does not contain it and the
+     glow leaked to 720px on a 390px screen, scrolling the page sideways.
+     Relative keeps it the containing block while still flowing in the
+     normal document, which is what unsticks the hero. */
+  .heroStick { position: relative; height: auto; overflow: hidden; }
+  .heroContent {
+    position: static; height: auto;
+    /* The brandbar is FIXED, so it is out of flow and reserves no space:
+       with `padding-top: 22px` the bar's bottom edge sat at 57px and the
+       headline began at 22px, hiding 35px of "Build once." behind it.
+       Measured, not guessed. The bar is 44px of content plus its
+       safe-area inset, so clear that and then add the air. */
+    padding: calc(44px + env(safe-area-inset-top) + 26px) 0 4px;
+    justify-content: flex-start;
+  }
+  /* Absolutely positioned for the cross-fade; in the stacked phone layout
+     it is just the next block down the page. */
+  .shotWrap {
+    position: static; height: auto;
+    margin-top: 26px; padding: 0;
+    /* The base rule hides this (`opacity: 0`) because on a desktop the
+       scroll driver fades it in. Nothing fades it in here, so without
+       these three it stayed invisible and the phone hero lost the one
+       picture of the product. */
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
 }
 
 /* Short screens, whatever the width. The hero and the marquee both live
@@ -1208,9 +1287,15 @@ img { max-width: 100%; display: block; }
            visitor reads is a list of denials about a product they cannot
            yet name. This says what it is first; the phone shows this one
            and the desktop shows the other. -->
-      <p class="heroSub heroSubPhone">An app you make with Krate is one small
-      file. Send it to anyone, on Mac, Windows or Linux -- they open it like a
-      photo. No installer, no app store, no version for each machine.</p>
+      <!-- Three sentences and 36 words filled 93px under a 34px headline
+           on a phone. The denials that came after ("no installer, no app
+           store, no version for each machine") are the FIRST thing a
+           reader met, before they knew what the thing was -- and they are
+           already made, in full, in "What you get" immediately below.
+           One sentence that lands the idea; the list does the rest. -->
+      <p class="heroSub heroSubPhone">Build a desktop app, get one small
+      file, and send it to anyone on Mac, Windows or Linux. They open it
+      like a photo.</p>
       <div class="heroCtas" id="heroCtas">
         <div class="ctaRow">
           <a class="btn btn-primary" id="makeBtn" data-pressed="false"
@@ -1291,10 +1376,15 @@ img { max-width: 100%; display: block; }
      argument about AI or toolchains. The desktop keeps its marquee and
      never renders this. -->
 <section class="whatis" id="whatis" aria-label="What a Krate app is">
-  <h2>One file. It just opens.</h2>
-  <p class="lead">You write an app, Krate packs it into a single file, and
-  you send that file to anyone. They double-click it. There is no
-  installer, no app store, and no version for each operating system.</p>
+  <!-- This heading used to read "One file. It just opens." directly under
+       a hero reading "Build once. Ship one file." -- two headlines making
+       the same promise back to back, so the second one bought nothing. The
+       hero makes the promise; this section answers the question a reader
+       actually has next, which is what they get for it. -->
+  <h2>What you get</h2>
+  <p class="lead">Seven things that are true of every app you build with
+  Krate. Each one is measured, and the evidence is further down this
+  page.</p>
   <ul class="whatisList" id="whatisList"></ul>
 </section>
 
@@ -1646,9 +1736,45 @@ function apply(p) {
   var on = p > 0.5;
   chips.forEach(function (c) { c.classList.toggle("in", on); });
 }
-addEventListener("scroll", onScroll, { passive: true });
+/* The hero cross-fade is a desktop mechanism, and on a phone it costs a
+   whole screen of height to animate one screen of content: the headline
+   and the Studio shot are stacked absolutely inside a sticky 100vh box,
+   so the tall `.heroTrack` exists only to give the fade somewhere to run.
+   Below 760px the phone rules stack the two as ordinary blocks instead,
+   and this driver must stand down -- it writes inline opacity, filter and
+   transform on every frame, which beats any stylesheet rule and would
+   leave the headline faded out and the shot invisible.
+
+   Matched to the same 760px breakpoint as the CSS. Re-evaluated on
+   resize, so rotating a phone or dragging a desktop window narrow moves
+   between the two treatments instead of keeping whichever was true at
+   load. */
+var heroStatic = matchMedia("(max-width: 760px)");
+function heroStaticApply() {
+  if (!heroStatic.matches) return;
+  /* Leave the hero exactly as the stylesheet draws it: no inline styles
+     from a previous wide-window frame left behind. */
+  [content, shot, marq].forEach(function (el) {
+    if (!el) return;
+    el.style.opacity = "";
+    el.style.filter = "";
+    el.style.transform = "";
+    el.style.pointerEvents = "";
+  });
+  var mlab = $("marqLabel");
+  if (mlab) { mlab.style.opacity = ""; mlab.style.transition = ""; }
+  if (ecl) { ecl.style.transform = ""; ecl.style.opacity = ""; }
+  chips.forEach(function (c) { c.classList.add("in"); });
+}
+addEventListener("scroll", function () {
+  if (heroStatic.matches) return;
+  onScroll();
+}, { passive: true });
+heroStatic.addEventListener("change", function () {
+  if (heroStatic.matches) heroStaticApply(); else onScroll();
+});
 if (reduced) { apply = function () {}; }
-onScroll();
+if (heroStatic.matches) heroStaticApply(); else onScroll();
 
 /* ----------------------------------------------------------- marquee */
 // Receipts, not tweets: every number here was measured, and dated code
