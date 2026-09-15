@@ -1,21 +1,48 @@
 {
- "id": "C-NOTES-ENERGY",
- "sentence": "A Krate notes app uses less energy than the compared Electron app over the same scrolling work.",
- "audience": "nobody: this sentence is not published anywhere and must not be",
- "surfaces": ["website"],
- "subject": {"commit": "a53dbf7c5"},
- "requires": {
-  "evidence_classes": ["execution"],
-  "platforms": ["macos-arm64"],
-  "environment": "native",
-  "same_bytes": false
- },
- "evidence": [],
- "declared_state": "UNSUPPORTED",
- "exclusions": ["everything: no energy measurement survives"],
- "owner": "lead",
- "approval": null,
- "expiry": {"triggers": ["source-change"]},
- "revision": 1,
- "history": []
+  "id": "C-NOTES-ENERGY",
+  "sentence": "A Krate notes app uses less energy than the compared Electron app over the same scrolling work.",
+  "audience": "nobody: this sentence is not published anywhere and must not be",
+  "surfaces": [
+    "internal"
+  ],
+  "subject": {
+    "commit": "a53dbf7c5"
+  },
+  "requires": {
+    "evidence_classes": [
+      "execution"
+    ],
+    "platforms": [
+      "macos-arm64"
+    ],
+    "environment": "native",
+    "same_bytes": false
+  },
+  "evidence": [],
+  "declared_state": "UNSUPPORTED",
+  "exclusions": [
+    "everything: no energy measurement survives"
+  ],
+  "owner": "lead",
+  "approval": null,
+  "expiry": {
+    "triggers": [
+      "source-change"
+    ]
+  },
+  "revision": 2,
+  "history": [
+    {
+      "revision": 1,
+      "surfaces": [
+        "website"
+      ],
+      "declared_state": "UNSUPPORTED",
+      "reason": "this sentence was listed on the website surface while its own audience field read 'nobody: this sentence is not published anywhere and must not be'. Being material is what made it block publication. No energy measurement survives: the 2026-08-16 leg was rejected for live trackpad contamination, and the 2026-08-25 reproducible run did not measure energy at all and says so. The surface is corrected to match the audience, which is the honest fix. The claim stays in the registry, unpublishable, so the absence of an energy measurement stays visible rather than being deleted.",
+      "wording": "A Krate notes app uses less energy than the compared Electron app over the same scrolling work.",
+      "at": "2026-09-15",
+      "evidence": []
+    }
+  ],
+  "note": "held open deliberately. To publish any power or battery sentence, measure energy with the benchmark kit under a frozen profile, retain the raw samples, and raise this back to a material surface in a reviewed change. Until then there is no energy number."
 }

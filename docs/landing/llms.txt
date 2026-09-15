@@ -17,9 +17,13 @@ Key facts, all measured and published rather than estimated:
   browser, no per-app runtime. Real published apps are 15-40 KB, against
   80-200 MB for a typical Electron app.
 - A markdown editor rebuilt in Krate and benchmarked against MarkText
-  (Electron) on the same machine: 37 KB vs 271 MB installed, opens in a
-  fifth of a second vs 1.8 s, holds a 50,000-word document in 95 MB of
-  memory vs 2.3 GB. Methodology at krate.tech/reports.html.
+  (Electron) on the same Apple M4 Mac, both builds ARM64, in one
+  reproducible run with raw samples retained: 36.6 KiB of app payload vs
+  284.6 MiB installed; a 50,000-line document opens in 237 ms vs 612 ms
+  (median of 10 warm runs each) and is held in 178.5 MiB across one process
+  vs 2,299.4 MiB across four. The Krate player is installed once at 88.6
+  MiB, so the size win is per app, not per install. Energy was not measured
+  and no battery-life claim is made. Methodology at krate.tech/reports.html.
 - Permissions are capability-based and enforced in code: an app declares
   what it needs, the person sees it in plain words before first run, and a
   denied capability is structurally unreachable. An app that organizes

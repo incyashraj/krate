@@ -1,39 +1,54 @@
 {
- "id": "C-NOTES-PERFORMANCE",
- "sentence": "A Krate notes app opens a 50,000-line document in about 0.2 seconds, holds about 95 MB in one process, and idles at 0.8% of a core.",
- "audience": "developers reading the README",
- "surfaces": [
-  "website"
- ],
- "subject": {
-  "commit": "a53dbf7c5"
- },
- "requires": {
-  "evidence_classes": [
-   "execution"
+  "id": "C-NOTES-PERFORMANCE",
+  "sentence": "A Krate notes app opens a 50,000-line document in 237 ms (median of ten warm runs), holds it in 178.5 MiB in one process, and uses 1.97% of a core with it open, against 611.5 ms, 2,299.4 MiB across four processes and 7.38% for the compared Electron app on the same Mac.",
+  "audience": "developers reading the README",
+  "surfaces": [
+    "website"
   ],
-  "platforms": [
-   "macos-arm64"
+  "subject": {
+    "commit": "c3d6f644db30c132f040b860279bd72cfd548497"
+  },
+  "requires": {
+    "evidence_classes": [
+      "timing"
+    ],
+    "platforms": [
+      "macos-arm64"
+    ],
+    "environment": "native",
+    "same_bytes": false
+  },
+  "evidence": [
+    "E-2026-08-25-NOTES-MARKTEXT-MACOS"
   ],
-  "environment": "native",
-  "same_bytes": false
- },
- "evidence": [],
- "declared_state": "OBSERVED",
- "exclusions": [
-  "every other operating system and architecture",
-  "energy and battery life, whose leg was rejected",
-  "scroll pacing as a head-to-head comparison: there is no comparison instrument on macOS"
- ],
- "owner": "lead",
- "approval": null,
- "expiry": {
-  "triggers": [
-   "source-change",
-   "time"
-  ]
- },
- "revision": 1,
- "history": [],
- "note": "evidence is empty on purpose: the measurement exists as a benchmark note and as a run under results/, but not yet as a retained evidence record with its raw material and digests. Until it does, the gate reads UNSUPPORTED, which is the honest answer -- the numbers are real and nothing in the registry can check them. Linking it is IC-829's work (immutable retained evidence and independent reproduction), not IC-828's."
+  "declared_state": "PROVED",
+  "exclusions": [
+    "every other operating system and architecture",
+    "energy and battery life: not measured in this run, so no power claim follows from it",
+    "feature parity with the compared app: this is an equivalent-workload comparison",
+    "scroll pacing as a head-to-head comparison: there is no comparison instrument on macOS"
+  ],
+  "owner": "lead",
+  "approval": null,
+  "expiry": {
+    "triggers": [
+      "source-change",
+      "time"
+    ]
+  },
+  "revision": 2,
+  "history": [
+    {
+      "revision": 1,
+      "evidence": [],
+      "declared_state": "OBSERVED",
+      "reason": "the numbers named here (0.2 s, 95 MB, 0.8%) came from the 2026-08-16 lab note, whose own header records that its raw samples and harness were never committed. A reproducible run under evidence/benchmarks/marktext-vs-krate/runs/20260825T085644Z, with retained raw samples and a verifying seal, measures the same workload on the same machine at 237.1 ms median, 178.5 MiB and 1.97% of a core. Memory was understated about 1.9x and idle CPU about 2.5x. The sentence is corrected to the reproducible figures rather than linked to evidence that cannot check it. The required oracle class is also corrected from execution to timing: every figure in this sentence is a duration, a footprint or a rate, which is what a timing oracle measures and what rule 1508's warm-up, sample count and distribution requirements exist to discipline. Requiring execution here would have been satisfied by a record that merely proved the app ran.",
+      "wording": "A Krate notes app opens a 50,000-line document in about 0.2 seconds, holds about 95 MB in one process, and idles at 0.8% of a core.",
+      "at": "2026-09-15",
+      "requires_evidence_classes_was": [
+        "execution"
+      ]
+    }
+  ],
+  "note": "corrected at revision 2 and linked to E-2026-08-25-NOTES-MARKTEXT-MACOS, whose raw samples, input digests and machine state are committed under evidence/benchmarks/marktext-vs-krate/runs/20260825T085644Z and covered by a seal whose 274 files all verify. Revision 1 carried numbers from a lab note whose raw material was never committed; they understated memory about 1.9x and idle CPU about 2.5x."
 }

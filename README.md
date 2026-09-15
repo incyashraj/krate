@@ -65,24 +65,29 @@ things with the same engine underneath.
 Sent a `.krate` and just want to open it?
 [krate.tech/open](https://krate.tech/open/).
 
-## 271 MB became 37 KB
+## 285 MB became 37 KB
 
-The same 50,000-line notes workload, same Apple silicon Mac, head to head
-against MarkText 0.17.1 (Electron). Historical internal measurements; an
-architecture-matched public reproduction is in progress.
+The same 50,000-line notes workload, same Apple M4 Mac, head to head against
+MarkText 0.17.1 (Electron). Both builds ARM64. Every number below comes from
+one reproducible run whose raw samples, input digests and machine state are
+committed beside it and covered by a seal.
 
 | | MarkText | Krate |
 |---|---:|---:|
-| The file itself | 271 MB installed | **37 KB** |
-| Memory, 50,000 lines | 2.3 GB across five processes | **95 MB, one process** |
-| Opens in | 1.97 s (17.1 s on its first run) | **0.25 s** |
-| Idle CPU, document open | 21.2% of a core | **0.8%** |
-| Scrolling | -- | **58 fps, jitter under 0.3 ms** |
+| The file itself | 284.6 MiB installed | **36.6 KiB** |
+| Memory, 50,000 lines | 2,299.4 MiB across four processes | **178.5 MiB, one process** |
+| Opens in, 50,000 lines | 611.5 ms median of 10 | **237.1 ms median of 10** |
+| CPU, document open | 7.38% of a core | **1.97% of a core** |
 
-Krate does not put another browser inside every app. Install the shared
-player once, then every app is one file. Method and raw numbers: the
-[lab note](evidence/benchmarks/2026-08-16-notes-battery-macos.md) and the
-[reproducible benchmark kit](evidence/benchmarks/marktext-vs-krate/README.md).
+Krate does not put another browser inside every app. The 36.6 KiB is the
+per-app payload: the shared player is installed once at 88.6 MiB, so the
+first app you ship costs 3.21x less disk than the Electron build, and every
+app after that costs almost nothing.
+
+Method, raw samples and seal: the
+[reproducible benchmark kit](evidence/benchmarks/marktext-vs-krate/README.md)
+and [this run](evidence/benchmarks/marktext-vs-krate/runs/20260825T085644Z/analysis.md).
+Energy was not measured and no battery-life claim is made from it.
 
 ## Why a file
 

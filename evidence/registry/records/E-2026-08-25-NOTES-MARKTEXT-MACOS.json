@@ -1,0 +1,119 @@
+{
+  "id": "E-2026-08-25-NOTES-MARKTEXT-MACOS",
+  "claims": [
+    "C-NOTES-PERFORMANCE"
+  ],
+  "subject": {
+    "kind": ".krate",
+    "source": {
+      "commit": "c3d6f644db30c132f040b860279bd72cfd548497",
+      "tree": "6ec066cff19758b853a7384319841796a0f72c5f"
+    },
+    "binary_digest": "91ad5b12aaca958c4adf802e3a977c9a78bd481cfe1ee8407f5851e35e00238e",
+    "package_digest": "f2f8027ed356e8217e2e1d2764a8befe2d02be58fef5f4e1ce4bd932f074be44",
+    "relationship": "the mark-replica notes app packed from this commit and run by the installed krate 0.1.57 player; binary_digest is code.wasm inside the bundle, package_digest the .krate archive itself, and the archive digest matches the run's seal"
+  },
+  "environment": {
+    "kind": "native",
+    "os": "macos",
+    "arch": "arm64",
+    "version": "27.0 (build 26A5388g)"
+  },
+  "toolchain": {
+    "krate": "0.1.57",
+    "marktext": "0.17.1 ARM64"
+  },
+  "command": "evidence/benchmarks/marktext-vs-krate/scripts run against config.env; the run directory 20260825T085644Z holds the invocation, its config snapshot and every raw sample",
+  "inputs": {
+    "fixtures": [
+      "evidence/benchmarks/marktext-vs-krate/fixtures/notes-50000.md"
+    ],
+    "fixture_digest": "e2f69c96593e3d936d5f8f72e87c0775cde0fa432aaa3d3a9a180788c9f1baa2",
+    "prerequisites": [
+      "MarkText 0.17.1 ARM64 installed",
+      "krate player 0.1.57 installed"
+    ]
+  },
+  "oracle": {
+    "class": "timing",
+    "description": "an external window probe records the moment each app's window becomes visible, and a footprint/CPU sampler records the settled process tree. Both apps are measured by the same instrument on the same machine over the same 50,000-line fixture, so the comparison is of the workload rather than of two measuring methods"
+  },
+  "raw_result": {
+    "exit": 0,
+    "measurement": {
+      "warmup": 1,
+      "samples": 10,
+      "distribution": {
+        "unit": "milliseconds to a visible window, 50,000 lines, warm",
+        "values": [
+          239.8,
+          248.8,
+          218.7,
+          237.2,
+          245.7,
+          230.4,
+          218.7,
+          244.0,
+          237.0,
+          217.3
+        ],
+        "min": 217.3,
+        "median": 237.1,
+        "max": 248.8
+      },
+      "environment": {
+        "os": "macos 27.0 build 26A5388g",
+        "arch": "arm64",
+        "commit": "c3d6f644db30c132f040b860279bd72cfd548497",
+        "state": "Apple M4, 16 GiB, 10 logical CPUs, AC power, low-power mode off, main display 2560x1664 Retina at 60 Hz"
+      }
+    },
+    "comparison": {
+      "marktext_window_ms_median": 611.5,
+      "krate_footprint_bytes": 187155512,
+      "krate_processes": 1,
+      "marktext_footprint_bytes": 2411141816,
+      "marktext_processes": 4,
+      "krate_cpu_percent_of_core": 1.97,
+      "marktext_cpu_percent_of_core": 7.38
+    },
+    "location": "evidence/benchmarks/marktext-vs-krate/runs/20260825T085644Z/raw",
+    "audit": "PASS: evidence is complete enough for publication under the stated scope",
+    "seal": "evidence/benchmarks/marktext-vs-krate/runs/20260825T085644Z/seal.sha256; 274 files, all verified 2026-09-15"
+  },
+  "outcome": "pass",
+  "scope": {
+    "supports": "on this Mac, against MarkText 0.17.1 ARM64 over a 50,000-line markdown fixture, the Krate notes replica reached a visible window in 237.1 ms median of ten warm runs, settled at 178.5 MiB in one process, and used 1.97% of a core",
+    "exclusions": [
+      "every other operating system and architecture",
+      "energy and battery life: this run did not measure power and its audit says so",
+      "feature parity: MarkText is a full editor and this is an equivalent-workload comparison",
+      "scroll pacing as a head-to-head number: no comparison instrument exists on macOS",
+      "the 5,000-line workload, whose numbers are different and must not be shown in a 50,000-line row"
+    ]
+  },
+  "independence": "local reproduction",
+  "time": {
+    "start": "2026-08-25T08:56:44Z",
+    "finish": "2026-08-25T09:05:30Z"
+  },
+  "operator": "lead workstation",
+  "privacy": {
+    "audience": "public",
+    "redact": [
+      "raw_result.location"
+    ]
+  },
+  "retention": {
+    "raw": "evidence/benchmarks/marktext-vs-krate/runs/20260825T085644Z, committed: raw samples, input digests, machine state, config snapshot and the sealed artifact",
+    "until": "superseded by a later run of the same kit"
+  },
+  "expiry": {
+    "triggers": [
+      "source-change"
+    ],
+    "on": null
+  },
+  "supersedes": null,
+  "invalidated_by": null
+}
