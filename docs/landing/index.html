@@ -1081,7 +1081,7 @@ img { max-width: 100%; display: block; }
     content: "";
     position: absolute;
     top: 0; left: 0; right: 0;
-    height: 76px;
+    height: 70px;
     z-index: 1;
     pointer-events: none;
     background: linear-gradient(
@@ -1196,7 +1196,16 @@ img { max-width: 100%; display: block; }
        headline began at 22px, hiding 35px of "Build once." behind it.
        Measured, not guessed. The bar is 44px of content plus its
        safe-area inset, so clear that and then add the air. */
-    padding: calc(44px + env(safe-area-inset-top) + 26px) 0 4px;
+    /* +52, not +26. The bar's `backdrop-filter: blur(16px)` blurs what is
+       BEHIND its box, and that sampling feathers past the box edge -- so
+       a headline sitting 14px under the bar gets softened by it even
+       though the geometry says the two never overlap. Measured on a real
+       render: "Build once." came out at maxEdge 27 / avgEdge 2.01 while
+       "Ship one file." on the next line was 36 / 3.32. Only the first
+       line was affected, which is the signature of a blur that reaches
+       down rather than of anything wrong with the type.
+       Clearing the blur radius with room to spare fixes it. */
+    padding: calc(44px + env(safe-area-inset-top) + 52px) 0 4px;
     justify-content: flex-start;
   }
   /* Absolutely positioned for the cross-fade; in the stacked phone layout
@@ -1676,25 +1685,66 @@ addEventListener("load", function () {
   setTimeout(function () { $("brandbar").classList.add("in"); }, 150);
 });
 var ecl = $("eclipse");
+
+/* Reveal the hero, and never leave it hidden.
+ *
+ * The words start at `opacity: 0` with a blur and are uncovered by an
+ * `.in` class. That class used to be added ONLY from inside a double
+ * requestAnimationFrame, which ran the eclipse's entrance -- so the
+ * headline's legibility depended on a decoration's animation frame
+ * arriving. On a phone it often does not: Safari defers rAF callbacks
+ * when a tab is restored, backgrounded during load, or under memory
+ * pressure, and the whole hero then sits at opacity 0 with blur(8px)
+ * forever. Measured on this page: heroH1 opacity=0 filter=blur(8px)
+ * with no `.in` class, on a fully loaded page with reduced-motion off.
+ * That is what made "Build once." read as permanently out of focus
+ * while "Ship one file." -- further from the header, and so judged
+ * against a different background -- looked sharp.
+ *
+ * So the reveal is its own function, driven by a plain timer that always
+ * runs, and a belt-and-braces `load` fallback that forces it if anything
+ * above was skipped. Decoration may fail; the words may not. */
+function revealHero() {
+  $("heroH1").classList.add("in");
+  /* Both subtitles: CSS decides which one is displayed, so the class goes
+     on either and only the visible one is ever seen fading in. */
+  document.querySelectorAll(".heroSub").forEach(function (e) { e.classList.add("in"); });
+  $("heroCtas").classList.add("in");
+  var m = $("marqWrap"), ml = $("marqLabel");
+  if (m) m.classList.add("in");
+  if (ml) ml.classList.add("in");
+}
+
+if (reduced) {
+  revealHero();
+} else {
+  setTimeout(function () { $("heroH1").classList.add("in"); }, 250);
+  setTimeout(function () {
+    document.querySelectorAll(".heroSub").forEach(function (e) { e.classList.add("in"); });
+  }, 420);
+  setTimeout(function () { $("heroCtas").classList.add("in"); }, 580);
+  setTimeout(function () {
+    var m = $("marqWrap"), ml = $("marqLabel");
+    if (m) m.classList.add("in");
+    if (ml) ml.classList.add("in");
+  }, 800);
+  /* If the timers above were throttled or the tab was restored mid-load,
+     this guarantees the text is readable regardless. */
+  addEventListener("load", function () { setTimeout(revealHero, 1200); });
+}
+
+/* The eclipse is decoration and keeps its rAF: if these frames never
+   arrive the glow simply stays where CSS put it, and no words are lost
+   with it. */
 requestAnimationFrame(function () { requestAnimationFrame(function () {
   if (reduced) return;
   ecl.style.transition = "opacity 1.4s ease, filter 1.4s ease, transform 1.6s cubic-bezier(0.2, 0.8, 0.2, 1)";
   ecl.style.opacity = "1"; ecl.style.filter = "blur(0px)";
   ecl.style.transform = "translateY(-143vh) scaleY(1)";
   setTimeout(function () { ecl.style.transition = ""; }, 1700);
-  setTimeout(function () { $("heroH1").classList.add("in"); }, 250);
-  /* Both subtitles: CSS decides which one is displayed, so the class goes
-     on either and only the visible one is ever seen fading in. */
-  setTimeout(function () {
-    document.querySelectorAll(".heroSub").forEach(function (e) { e.classList.add("in"); });
-  }, 420);
-  setTimeout(function () { $("heroCtas").classList.add("in"); }, 580);
-  setTimeout(function () { $("marqWrap").classList.add("in"); $("marqLabel").classList.add("in"); }, 800);
 }); });
-if (reduced) {
-  ["heroH1","heroSub","heroCtas","marqWrap","marqLabel"].forEach(function (i) { $(i).classList.add("in"); });
-  document.querySelectorAll(".heroSub").forEach(function (e) { e.classList.add("in"); });
-}
+/* The reduced-motion reveal moved up into revealHero(), which this block
+   used to duplicate. */
 
 /* -------------------------------------------- headline glyph carousel */
 // The icon between the phrases cycles through what people actually make.
