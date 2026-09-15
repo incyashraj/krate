@@ -108,6 +108,7 @@ img { max-width: 100%; display: block; }
     background: #fff; padding: 9px 16px; border-radius: 999px;
     min-height: 40px; display: inline-flex; align-items: center;
   }
+
 }
 .brandbar.in { opacity: 1; transform: translateX(-50%) translateY(0); }
 .brandbar .name {
@@ -750,6 +751,24 @@ img { max-width: 100%; display: block; }
      a horizon on a wide screen and as a stray arc on a narrow one. The
      glow keeps its shape without it. */
   .eclipse .rim { display: none; }
+
+  /* ---- the scroll transition -----------------------------------------
+   *
+   * The hero sits in a 195vh track: you scroll a screen of sticky nothing
+   * while the words fade out and a picture of Studio fades in. On a
+   * desktop that is a cinematic worth its length, and the picture it
+   * lands on is 1080px wide.
+   *
+   * On a phone it was 802px of scrolling -- most of two screens -- to
+   * arrive at one static image 304px across. The transition cost more
+   * than it delivered. The mechanism is untouched: the script reads this
+   * height, so the same fades simply happen over a shorter distance.
+   *
+   * (This belongs in THIS block, not the earlier `max-width: 760px` one
+   * further up the file: the base `.heroTrack` rule sits between the two,
+   * at equal specificity, so a copy in the earlier block loses on source
+   * order and silently does nothing.) */
+  .heroTrack { height: 130vh; }
   /* With the arc below the content, the download button no longer needs a
      plate of its own to be legible -- but it keeps a quiet one, because
      it is the second action on the screen and should not compete with
