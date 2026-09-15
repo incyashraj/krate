@@ -95,6 +95,20 @@ h1.page { font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
 .termbox code { flex: 1; font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #d4d4d8; overflow-x: auto; white-space: nowrap; }
 .termbox button { font-size: 12px; color: #a1a1aa; flex: none; }
 .termbox button:hover { color: #fff; }
+/* On a phone the command and the Copy button cannot share a line: measured
+   at 412px the code box was 249 wide holding 325 of text, so the command
+   was cut off mid-URL and nobody could read what they were about to run.
+   Stacked, the command gets the whole width, and the box still scrolls
+   sideways for the tail of the longer one. */
+@media (max-width: 560px) {
+  .termbox { flex-direction: column; align-items: stretch; gap: 6px; }
+  .termbox code { width: 100%; }
+  .termbox button {
+    align-self: flex-start; min-height: 32px; padding: 6px 12px;
+    border: 1px solid rgba(255,255,255,0.14); border-radius: 8px;
+    background: rgba(255,255,255,0.05);
+  }
+}
 
 @media (prefers-reduced-motion: reduce) { .card { animation: none; opacity: 1; transform: none; filter: none; } }
 

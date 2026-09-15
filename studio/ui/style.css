@@ -3532,6 +3532,10 @@ body.light #viewSession .done-card .done-meta { background: rgba(255, 255, 255, 
   border: 1px solid var(--line); border-radius: 99px; padding: 5px 12px;
   font-variant-numeric: tabular-nums;
 }
+/* Before the count is known the span is empty, and the border and padding
+   still paint: a 26x12 empty pill sitting beside the button, which reads as
+   a broken control rather than a chip waiting for a number. */
+.apps-count:empty { display: none; }
 /* The unfinished banner's delete: present, quiet, and not the row's click.
    Three children now, so the first takes the room and the rest sit right. */
 .apps-finish { justify-content: flex-start; gap: 10px; }
@@ -4180,6 +4184,17 @@ body.side-resizing .shelf { transition: none; }
   /* The ambient mark is sized off the smaller axis, which on a tall phone
      is the width -- so it filled the screen. Held back. */
   .home-hero::before { width: min(60vh, 86vw); opacity: 0.20; }
+
+  /* The hero sat too low and too far down. `--dock-clear` is 108px, and
+     matching the top padding to it is right on a desktop, where the window
+     is tall enough that 108 at each end is a small share of it. On a 915px
+     phone it is not: measured before this rule the greeting had 255px of
+     nothing above it and 186 below, so the block read as pushed into the
+     lower half of the screen.
+     The shelf overlays the bottom, so the bottom padding still has to clear
+     it; the top does not, and 24px there both balances the gaps and gives
+     the hero back a fifth of the screen. */
+  .home { padding-top: 24px; }
 }
 
 /* ---- the settings and AI sheets, on a phone ---------------------------
@@ -4207,10 +4222,25 @@ body.side-resizing .shelf { transition: none; }
     padding: 14px 14px 10px;
     border-right: 0; border-bottom: 1px solid var(--glass-edge-soft);
     overflow: visible;
+    /* A grid item's `min-width: auto` is its content's minimum, and the
+       chip row below refuses to shrink -- so this column grew to 521px
+       inside a 412px sheet and carried "Appearance" off the screen. The
+       scrolling the chip row asks for cannot start until its parent
+       stops growing to fit it. */
+    min-width: 0;
   }
   .set-side-head { margin-bottom: 10px; }
+  /* A settings row is a label beside its control, which needs roughly 500px
+     to read well. At 326 the two halves each take about 150: the
+     explanation wrapped to four lines and the value beside it ("Krate AI")
+     broke across two. Stacked, the sentence gets the full width and the
+     control sits under it, left-aligned with everything else. */
+  .set-row { flex-direction: column; align-items: stretch; gap: 10px; }
+  .set-row .ctl { margin-left: 0; flex-wrap: wrap; }
+  .set-row .set-val { white-space: nowrap; }
   /* The section list becomes a row of chips. */
   .set-nav {
+    min-width: 0;
     flex-direction: row; gap: 8px;
     overflow-x: auto; overflow-y: hidden;
     scrollbar-width: none; -webkit-overflow-scrolling: touch;
@@ -4640,6 +4670,11 @@ body:not(.macos).light .side-top .side-toggle:hover { color: #000; }
     max-width: 38vw; min-width: 0;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
+
+  /* A command in the transcript has no space to break at, so a long flag
+     broke mid-word and read as truncated text. Breaking anywhere keeps the
+     whole command readable in the column rather than hiding its tail. */
+  .thread .msg .body code { overflow-wrap: anywhere; }
 
   /* The composer belongs at the bottom of the screen, above nothing. */
   .rail .composer-shell {

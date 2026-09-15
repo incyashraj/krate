@@ -1205,6 +1205,45 @@ function trimDesktopOnly() {
   });
 }
 
+/* Wording that is true on a desktop and false in a tab.
+ *
+ * Studio says "on this computer" because that is where a desktop Studio
+ * keeps things. In a browser the apps live in the account, reachable from
+ * any machine the person signs in on -- which is the whole reason the web
+ * Studio exists. Leaving the desktop sentence in place tells somebody
+ * their work is stuck on the device they happen to be holding.
+ *
+ * Rewritten rather than removed: each of these sentences is doing a job,
+ * and a blank where an explanation was is its own defect. Matched on the
+ * exact desktop string so a future edit to the copy fails loudly here
+ * (the sentence simply stays) instead of silently rewriting something
+ * else. */
+const WEB_WORDING = [
+  [
+    "Everything you have made on this computer. Open one to change it or send it on.",
+    "Everything you have made. Open one to change it or send it on.",
+  ],
+  ["all together, on this computer", "all together"],
+  ["Your apps stay on this computer", "Your apps stay in your account"],
+  ["How Krate looks on this computer.", "How Krate looks for you."],
+];
+
+function speakWebWording() {
+  // Text nodes only: rewriting innerHTML would drop the handlers Studio
+  // has already bound to the buttons inside these blocks.
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const hits = [];
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const text = n.nodeValue.trim();
+    if (!text) continue;
+    for (const [desktop, web] of WEB_WORDING) {
+      if (text === desktop) hits.push([n, n.nodeValue.replace(desktop, web)]);
+    }
+  }
+  for (const [node, value] of hits) node.nodeValue = value;
+  return hits.length;
+}
+
 function speakWeb() {
   // Nothing to swap in onboarding: a tab never shows it (see the
   // krate-onboarded flag at the top). The desktop's wording is its own.
@@ -1233,9 +1272,13 @@ function speakWeb() {
   setTimeout(mountMode, 400);
   setTimeout(mountMode, 1200);
   trimDesktopOnly();
+  speakWebWording();
   // The settings sheet is in the page from the start, but a pane can be
   // painted later; trim again when one is opened.
-  document.addEventListener("click", () => setTimeout(trimDesktopOnly, 50), true);
+  document.addEventListener("click", () => setTimeout(() => {
+    trimDesktopOnly();
+    speakWebWording();
+  }, 50), true);
   // Drawn when the AI settings open, because that is where the key lives
   // and the two questions -- whose key, and what has it cost -- are one
   // question. Re-read every time rather than cached: a number about money

@@ -124,6 +124,11 @@ jobs:
           # And that the source download reads a real .krate and writes a
           # zip the rest of the world can open.
           node docs/landing/studio/source-test.mjs
+          # And that Studio's desktop wording is rewritten for the web:
+          # "on this computer" is false in a tab, where the apps live in
+          # the account. The rewrite matches exact strings, so this fails
+          # the deploy if the UI copy changes and the table goes stale.
+          node docs/landing/studio/wording-test.mjs
 
           mkdir -p _site/app
           cp -R studio/ui/. _site/app/

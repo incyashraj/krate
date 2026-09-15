@@ -295,6 +295,10 @@ h1 .soft { color: var(--faint); }
     button, a[href], input[type=submit], .sugg button, .pill { min-height: 44px; }
     a[href] { display: inline-block; }
     nav a[href], .foot a[href] { padding-top: 10px; padding-bottom: 10px; }
+    /* A square icon button needs the other axis too. Measured on a 412px
+       phone these were 44 tall and 28-30 wide, which is a miss waiting to
+       happen -- the attach and send controls sit next to each other. */
+    .tool, .send, .avatar { min-width: 44px; }
   }
 </style>
 </head>
