@@ -1228,6 +1228,54 @@ const WEB_WORDING = [
   ["How Krate looks on this computer.", "How Krate looks for you."],
 ];
 
+/* The composer's hints are written for a keyboard and a wide screen. On a
+ * touch screen the first is untrue -- there is no Return key to press --
+ * and the second is 74 characters, which wrapped to two right-aligned
+ * lines and left the word "edits" sitting alone against the edge.
+ *
+ * Applied only under `pointer: coarse`, so a laptop keeps the longer
+ * sentence, and re-applied on a timer because Studio rewrites this line
+ * itself when a build finishes (setRevisePlaceholders). */
+const TOUCH_WORDING = [
+  ["↩ to make it · shift-↩ for a new line", "Describe it in a sentence"],
+  [
+    "changes edit the app in place · a few minutes, the AI reads before it edits",
+    "Changes edit the app in place · a few minutes",
+  ],
+];
+
+/* The placeholders have the same problem for the same reason. Measured in
+ * the phone composer: the field is 249px wide and "Want it different? Say
+ * what to change…" needs 252, so it was cut mid-sentence -- the screenshot
+ * showed "Say what to" and nothing after it. */
+const TOUCH_PLACEHOLDERS = [
+  ["Want it different? Say what to change…", "What should change?"],
+  ["Describe the app you want…", "Describe your app…"],
+];
+
+function speakTouchWording() {
+  // Width as well as touch. A touchscreen laptop reports `pointer: coarse`
+  // at 1440px, where the composer has all the room the long sentence needs
+  // -- shortening it there would be a downgrade for no reason. The
+  // breakpoint matches the stylesheet's own phone rules.
+  if (!window.matchMedia) return;
+  if (!matchMedia("(pointer: coarse)").matches) return;
+  if (!matchMedia("(max-width: 860px)").matches) return;
+  const hint = document.getElementById("composerHint");
+  if (hint) {
+    const text = hint.textContent.trim();
+    for (const [wide, touch] of TOUCH_WORDING) {
+      if (text === wide) { hint.textContent = touch; break; }
+    }
+  }
+  const box = document.getElementById("prompt");
+  if (box) {
+    for (const [wide, touch] of TOUCH_PLACEHOLDERS) {
+      if (box.placeholder === wide) { box.placeholder = touch; break; }
+    }
+  }
+}
+
 function speakWebWording() {
   // Text nodes only: rewriting innerHTML would drop the handlers Studio
   // has already bound to the buttons inside these blocks.
@@ -1273,6 +1321,30 @@ function speakWeb() {
   setTimeout(mountMode, 1200);
   trimDesktopOnly();
   speakWebWording();
+  speakTouchWording();
+  // Studio rewrites the composer's hint itself when a build finishes, so
+  // a one-shot pass at boot would be undone a minute later. Watching the
+  // one element is cheaper and more honest than re-scanning on a timer.
+  const hintEl = document.getElementById("composerHint");
+  const promptEl = document.getElementById("prompt");
+  if (window.MutationObserver) {
+    const watch = new MutationObserver(speakTouchWording);
+    if (hintEl) watch.observe(hintEl, { childList: true, characterData: true, subtree: true });
+    // The placeholder is an attribute, not a text node, so it needs its
+    // own filter -- the hint's childList watch would never see it change.
+    if (promptEl) watch.observe(promptEl, { attributes: true, attributeFilter: ["placeholder"] });
+  }
+  // Crossing the breakpoint the other way needs Studio's own longer text
+  // back, which only it knows -- so ask for it rather than keeping a copy:
+  // the screen that owns this line repaints it.
+  if (window.matchMedia) {
+    matchMedia("(max-width: 860px)").addEventListener?.("change", (e) => {
+      if (!e.matches && typeof window.setRevisePlaceholders === "function") {
+        try { window.setRevisePlaceholders(); } catch (err) {}
+      }
+      speakTouchWording();
+    });
+  }
   // The settings sheet is in the page from the start, but a pane can be
   // painted later; trim again when one is opened.
   document.addEventListener("click", () => setTimeout(() => {

@@ -4278,22 +4278,152 @@ body.side-resizing .shelf { transition: none; }
  * underneath it.
  */
 @media (max-width: 860px) {
-  .session-body { flex-direction: column; overflow-y: auto; }
   .rail {
     width: 100%; min-width: 0; max-height: none;
-    border-right: 0; border-top: 1px solid var(--line);
-    order: 2;
+    border-right: 0; border-top: 0;
   }
-  .thread { padding: 16px 14px 16px 18px; overflow: visible; }
-  /* The timeline rail is drawn at the thread's left edge; without a
-     gutter its dots and divider sat half off the screen. */
-  .thread .msg { padding-left: 2px; }
-  .stage { order: 1; padding: 16px 14px 20px; overflow: visible; }
+  /* ---- the timeline rail ----------------------------------------------
+   *
+   * The rail is one vertical line with a dot per message. Three numbers
+   * have to agree: the thread's left padding (where a message starts),
+   * the line's own `left`, and the dot's negative offset from the message.
+   * The desktop set is 30 / 21 / -13, which puts the dot's centre at 21.5
+   * -- dead on the line.
+   *
+   * This block used to change the padding to 18 and leave the other two
+   * alone, so the dot's centre landed at 9 against a line at 21.5:
+   * 12.5px adrift, every dot hanging off the left of its own rail, which
+   * is exactly what the phone screenshot showed.
+   *
+   * Written as one relationship instead of three loose numbers: the
+   * gutter is the padding, the line sits at its middle, and the dot is
+   * pulled back by its own half-width plus the distance to that middle.
+   */
+  .thread {
+    --rail-gutter: 26px;   /* where a message's text starts */
+    --rail-line: 13px;     /* the line's centre, half the gutter */
+    --rail-dot: 7px;
+    padding: 16px 14px 16px var(--rail-gutter);
+    overflow: visible;
+  }
+  /* The line is drawn on the thread, so it runs the container's full
+     height and carried on past the last dot into empty space. Drawn as a
+     gradient that fades out over its last stretch instead, so it reads as
+     a timeline that ends rather than a border that was cut off. */
+  .thread::before {
+    left: calc(var(--rail-line) - 0.5px);
+    top: 20px; bottom: 8px;
+    background: linear-gradient(
+      to bottom, var(--line) 0, var(--line) calc(100% - 56px), transparent 100%
+    );
+  }
+  .thread .msg { padding-left: 0; }
+  .thread .msg::before {
+    width: var(--rail-dot); height: var(--rail-dot);
+    /* Back out to the line's centre, then back by the dot's own radius. */
+    left: calc(-1 * (var(--rail-gutter) - var(--rail-line)) - var(--rail-dot) / 2);
+    /* The dot aligns with the cap-height of the name beside it, not with
+       the top of its line box. */
+    top: 4px;
+  }
+
+  /* ---- the header -----------------------------------------------------
+   *
+   * It was transparent and 60px tall at the top of the document, so in
+   * Safari -- where the page draws behind the status bar -- the app's
+   * title rendered on top of the clock and the battery. Opaque, inset by
+   * the notch, and stuck to the top so the thread scrolls under it
+   * rather than through it. (viewport-fit=cover in the page's head is
+   * what makes the inset resolve to anything but zero.) */
+  #viewSession .titlebar {
+    position: sticky; top: 0; z-index: 30;
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
+    padding-top: env(safe-area-inset-top);
+    min-height: calc(52px + env(safe-area-inset-top));
+    height: auto;
+  }
+
+  /* ---- the preview and the conversation, both --------------------------
+   *
+   * The app you just made and the conversation about it are the two
+   * halves of this screen, and one must not squeeze the other to nothing.
+   * Measured before this rule at 390x700: the stage got 182px and the
+   * thread 328, with the composer's block taking 129 -- so the app was a
+   * strip and the chat was half a screen.
+   *
+   * The stage now takes a share of the viewport rather than whatever is
+   * left over, and the thread keeps the rest and scrolls on its own.
+   * `dvh` follows Safari's collapsing toolbars; `vh` does not, and the
+   * difference is the 44px that pushed the composer off the bottom.
+   */
+  .session-body {
+    flex-direction: column;
+    /* The header's real height, whatever the notch adds to it. */
+    height: calc(100dvh - 52px - env(safe-area-inset-top));
+    min-height: 0;
+    overflow: hidden;
+  }
+  .stage {
+    order: 1;
+    flex: 0 0 auto;
+    height: 34dvh; min-height: 180px; max-height: 320px;
+    padding: 12px 14px; overflow-y: auto;
+    border-bottom: 1px solid var(--line);
+  }
+  /* A finished build is the one thing worth more room: its card carries
+     the app's picture and the four things you can do with it (Run it,
+     Source, Ship it, Details). Measured at 390x700 the card wanted 251px
+     against a 238px stage, so the bottom row of buttons was cut in half.
+     The conversation can give up the difference -- it scrolls, the
+     buttons do not. */
+  .stage:has(#stateDone:not(.hidden)) {
+    height: auto; max-height: 52dvh;
+  }
+  .rail {
+    order: 2;
+    flex: 1 1 auto; min-height: 0;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .rail .thread { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
   .stage-state { width: 100%; }
   .done-card { width: 100%; max-width: 100%; }
   /* The composer is pinned to the rail's foot on a desktop; on a phone it
      belongs at the bottom of the screen, where a thumb is. */
   .rail .composer-shell { position: sticky; bottom: 0; background: var(--bg); }
+
+  /* ---- the composer, on a phone ---------------------------------------
+   *
+   * Measured on the founder's screenshot: a 66px-tall box with an 18px
+   * radius holding a 28px line of text, and a 44x44 send button still
+   * carrying its desktop 8px corner -- a square sitting inside a lozenge,
+   * which is what read as "weird shaped".
+   *
+   * The button is 44 because a thumb needs 44; the shape is the thing to
+   * fix, not the size. A round button inside a pill-shaped field is one
+   * idea instead of two, and the field's own radius is now tied to its
+   * height so the two curves agree at any size.
+   */
+  .composer { padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); }
+  .composer-box {
+    align-items: center;
+    gap: 8px;
+    padding: 7px 7px 7px 14px;
+    border-radius: 26px;
+  }
+  .composer-box .send { border-radius: 50%; }
+  .composer-box .clip { border-radius: 50%; flex: none; }
+  #prompt { align-self: center; }
+
+  /* The hint was right-aligned at 11px, so when it wrapped it left a
+     single word ("edits") alone against the right edge. Centred, and
+     allowed only one line: it is a keyboard tip, and a phone has no
+     keyboard to tip about. */
+  .composer-hint {
+    text-align: center; margin-top: 7px;
+    font-size: 11px; line-height: 1.45;
+  }
 }
 
 /* ---- a built app, on a phone ------------------------------------------ */

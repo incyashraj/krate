@@ -19,11 +19,19 @@ assert.match(bridge, /speakWebWording\(\);/, "the rewrite runs on the web");
 
 // 2. Every desktop string the table promises to rewrite is really in the
 //    UI. A stale entry rewrites nothing and hides that it does nothing.
-const table = bridge.slice(
-  bridge.indexOf("const WEB_WORDING = ["),
-  bridge.indexOf("function speakWebWording"),
-);
-const pairs = [...table.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]);
+// Each table is read to its OWN closing "];" -- slicing to the next
+// function would swallow the tables that follow it, and their strings are
+// not in studio/ui at all (they are set by app.js at runtime).
+function tableOf(name) {
+  const at = bridge.indexOf(`const ${name} = [`);
+  assert.ok(at > 0, `${name} exists`);
+  const end = bridge.indexOf("\n];", at);
+  assert.ok(end > at, `${name} is closed`);
+  const body = bridge.slice(at, end);
+  return [...body.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]);
+}
+
+const pairs = tableOf("WEB_WORDING");
 assert.ok(pairs.length >= 8, `expected at least four pairs, found ${pairs.length / 2}`);
 
 for (let i = 0; i < pairs.length; i += 2) {
@@ -55,5 +63,38 @@ assert.equal(
     " -- a new one needs an entry in WEB_WORDING",
 );
 
+// 4. The touch rewrites. These shorten the composer's hint and
+//    placeholder, which on a phone were cut mid-sentence and wrapped to a
+//    stranded word. Their originals live in app.js, not the HTML, because
+//    Studio writes them at runtime -- so that is where to check they are
+//    still real.
+const appJs = readFileSync("studio/ui/app.js", "utf8");
+
+for (const name of ["TOUCH_WORDING", "TOUCH_PLACEHOLDERS"]) {
+  const t = tableOf(name);
+  assert.ok(t.length >= 2 && t.length % 2 === 0, `${name} holds whole pairs`);
+  for (let i = 0; i < t.length; i += 2) {
+    const wide = t[i], touch = t[i + 1];
+    assert.ok(
+      appJs.includes(wide) || ui.includes(wide),
+      `${name} rewrites ${JSON.stringify(wide)}, which Studio no longer says`,
+    );
+    assert.ok(
+      touch.length < wide.length,
+      `${name}: the touch text is not shorter -- ${JSON.stringify(touch)} vs ${JSON.stringify(wide)}`,
+    );
+  }
+}
+
+// And it must be scoped to a phone. A touchscreen laptop reports
+// `pointer: coarse` at 1440px, where the long sentence fits fine.
+const fn = bridge.slice(
+  bridge.indexOf("function speakTouchWording"),
+  bridge.indexOf("function speakWeb("),
+);
+assert.match(fn, /pointer: coarse/, "the touch rewrite checks for touch");
+assert.match(fn, /max-width: 860px/, "the touch rewrite is scoped to a phone too");
+
 console.log("ok  the web rewrites Studio's desktop wording");
 console.log("ok  every rewrite still matches a real string in the UI");
+console.log("ok  the touch rewrites shorten real strings, on phones only");

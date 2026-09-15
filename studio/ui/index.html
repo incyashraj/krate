@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- viewport-fit=cover is what makes env(safe-area-inset-*) resolve to
+       anything but zero. Without it the session header drew under an
+       iPhone's status bar, so the app's title sat on top of the clock. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Krate</title>
   <link rel="stylesheet" href="style.css" />
 </head>
