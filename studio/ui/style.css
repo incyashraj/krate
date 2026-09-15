@@ -4414,13 +4414,17 @@ body.side-resizing .shelf { transition: none; }
     padding: 12px 14px; overflow-y: auto;
     border-bottom: 1px solid var(--line);
   }
-  /* A finished build is the one thing worth more room: its card carries
-     the app's picture and the four things you can do with it (Run it,
-     Source, Ship it, Details). Measured at 390x700 the card wanted 251px
-     against a 238px stage, so the bottom row of buttons was cut in half.
-     The conversation can give up the difference -- it scrolls, the
-     buttons do not. */
-  .stage:has(#stateDone:not(.hidden)) {
+  /* A card with something to say gets the room to say it. The idle state
+     is a logo and a line, and 34dvh suits it; the other three carry either
+     the four things you can do with a finished app, or the title, progress
+     line and elapsed time that are the whole point of watching a build.
+     Measured at 390x700 against a 238px stage: done 251, planning 430,
+     building 495 -- so all three scrolled and cut their last lines off.
+     The conversation gives up the difference, because it scrolls and these
+     do not. */
+  .stage:has(#stateDone:not(.hidden)),
+  .stage:has(#statePlanning:not(.hidden)),
+  .stage:has(#stateBuilding:not(.hidden)) {
     height: auto; max-height: 52dvh;
   }
   .rail {
@@ -4535,6 +4539,84 @@ body.side-resizing .shelf { transition: none; }
      as the headline one. In a sentence it is just the first thing before a
      comma, and colouring it differently looks like a mistake. */
   .asks li:first-child { color: inherit; }
+
+  /* ---- while it is being made ---------------------------------------
+   *
+   * The same problem as the finished card, in the state a person spends
+   * most of their time looking at. Measured at 390x700: the planning card
+   * wants 430px and the building card 495 in a 238px stage, so the title,
+   * the progress line and the elapsed time -- the four lines that say what
+   * is happening -- all fell below the fold. You watch a shimmering
+   * rectangle and are told nothing.
+   *
+   * The shimmering rectangle is 244px of that card and the words are 89.
+   * So the rectangle gives up the room: it is a placeholder for an app
+   * that does not exist yet, and its job is to suggest shape, which it
+   * does just as well at 120px.
+   */
+  /* `.brail .build-shot` sets height 300 and min-height 140 at 0-2-0, so
+     a bare `.build-shot` here lost -- and because min-height beats
+     max-height, the box stayed at 140 however low the max was set. Matched
+     at the same specificity, and the min is lowered rather than the max
+     raised. */
+  .brail .build-shot, .build-shot {
+    /* flex-basis and no shrinking: the card is a column flexbox, so a
+       `0 1 auto` child gets compressed when the card is tall -- this went
+       to 68px, well under the 124 asked for, and read as a squashed
+       letterbox rather than a window taking shape.
+       Sized off the viewport so a short phone spends less on it: at
+       667px tall a fixed 124 pushed the Stop button off the bottom, and
+       Stop is the one control that must never be out of reach while
+       something is running. */
+    flex: 0 0 auto;
+    min-height: 0; height: clamp(84px, 18dvh, 124px); margin: 8px 0 10px;
+  }
+  .build-shot img { max-height: 100%; }
+  /* The card's own bottom margin was the last 4px of scroll in a stage
+     that otherwise fit exactly. */
+  .stage .build-card { margin-bottom: 0; }
+  /* Measured at 375x667: of a 286px card, 48 was its own padding (26 top,
+     22 bottom) and 44 more was margin between five rows -- 92px of air
+     around 194px of content, which is a desktop card's generosity on a
+     screen that has none to give. The rows keep their order and their
+     words; they just stop being spaced like a poster. */
+  /* `.build-card.brail` (0-2-0) sets both the padding and a
+     `max-height: calc(100% - 56px)`, so a bare `.build-card` lost on both
+     -- the card stayed capped at 296px while its rows needed 330, and the
+     last one, the footer holding Stop, fell out of the bottom. The
+     comment on that rule records the same button vanishing once before on
+     a short desktop window; a phone is that window, always.
+     Here the stage already bounds the card and scrolls if it must, so the
+     cap has nothing left to protect and is removed rather than retuned. */
+  .build-card, .build-card.brail {
+    gap: 6px; padding: 14px 16px 16px;
+    max-height: none;
+  }
+  /* The gap now does the spacing, so the rows' own margins would double
+     it. Listed after the shot's rule above, so it clears that one too --
+     which is intended: the card's gap covers it. */
+  .build-card > * { margin-top: 0; margin-bottom: 0; }
+  .build-title { font-size: 13.5px; }
+  .bpeek, .build-elapsed, .bfoot { font-size: 11.5px; }
+  /* Stop sits a little apart from the status lines above it: it is an
+     action among readouts, and must not be tapped by accident. The gap is
+     the card's, not a margin: a margin here escaped the card's padding and
+     put the button 33px BELOW the card's own bottom edge. */
+  /* `.build-card.brail .bfoot` sets this margin at 0-3-0, so a bare
+     `.bfoot` lost and the 18px stayed -- which is what pushed the button
+     33px past the card's bottom edge. Matched at the same specificity.
+     (The build shot two rules up had the identical problem; this file
+     styles the build card at three different specificities.) */
+  .build-card.brail .bfoot, .brail .bfoot, .bfoot {
+    margin-top: 0; padding-top: 6px;
+  }
+  /* And it was an 18px transparent word. Stop is the only way out of a
+     build that is going wrong, so it gets a real target and an outline
+     that says it is pressable. */
+  .bfoot #stopBtn {
+    min-height: 44px; padding: 0 18px;
+    border: 1px solid var(--line); border-radius: 999px;
+  }
 
   /* The build view is two columns on a desktop; one on a phone, with the
      transcript above the app rather than beside it. */
