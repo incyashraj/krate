@@ -1037,22 +1037,22 @@ img { max-width: 100%; display: block; }
    *
    * The box reserves 130px of the viewport for the chips that float at
    * its corners, and those chips are already hidden here. So the picture
-   * gets the full width back, and instead of showing the whole 1240px
-   * window it shows the left portion at a phone-shaped ratio: the
-   * conversation, which is the half that reads at this size and the half
-   * that says what Studio is. The rest of the window is what a person
-   * sees when they open it on the machine the page is asking them to
-   * download it to. */
+   * gets the full width back.
+   *
+   * It shows the WHOLE window, not a crop. The earlier version zoomed
+   * 175% into the top-left corner, which measured out at 27% of the
+   * picture: the conversation panel and nothing else. So a phone visitor
+   * saw Studio talking and never saw the app it made -- and the app is
+   * the proof. Individual words are small at this size, but the shape is
+   * legible: a conversation on one side, a finished app on the other, and
+   * that shape is the whole claim. */
   .shotBox {
     max-width: none; margin: 0 16px;
-    aspect-ratio: 4 / 3;
+    aspect-ratio: 1240 / 800;
   }
   .shotBox .frame img {
-    object-fit: cover;
-    object-position: left top;
-    /* Scaled up so the text inside is the size it would be on a phone
-       looking at a window, not a whole desktop pressed into 390px. */
-    width: 175%; max-width: none; height: 175%;
+    width: 100%; height: 100%; max-width: none;
+    object-fit: contain; object-position: center;
   }
   /* The remaining two chips float at negative offsets, which is a nice
      touch beside a 1080px frame and a pair of half-cropped squares beside
