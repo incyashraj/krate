@@ -1661,7 +1661,15 @@ body.resizing .divider { background: var(--blue); }
   gap: 26px; margin-top: 26px; align-items: start;
   opacity: 0; transform: translateY(14px); animation: rise 0.5s ease 0.16s forwards;
 }
-@media (max-width: 880px) { .cols { grid-template-columns: 1fr; } }
+/* `.detail .cols` above is 0-2-0 and this override was 0-1-0, so it lost
+   and the two-column desktop layout stayed on a phone. Measured at 390px:
+   the columns resolved to `11.99px 280px`, which squeezed "What it is
+   allowed to do" into a 42px-wide, 503px-tall ribbon reading one word per
+   line, with the right column overlapping it. Matched at the same
+   specificity. */
+@media (max-width: 880px) {
+  .detail .cols, .cols { grid-template-columns: minmax(0, 1fr); }
+}
 .detail .card {
   background: var(--panel); border: 1px solid var(--line);
   border-radius: var(--radius-card); padding: 20px;
@@ -1694,7 +1702,12 @@ body.resizing .divider { background: var(--blue); }
 
 .detail-desc { margin: 12px 0 4px; color: var(--muted); font-size: 13.5px; line-height: 1.65; }
 .detail .facts {
-  display: grid; grid-template-columns: auto 1fr; gap: 11px 18px;
+  /* `auto 1fr` lets the label column collapse to nothing when the value
+     column claims the row: measured at 390px it resolved to `0px 220px`,
+     so "Runs on" and "Download" had literally no width. max-content for
+     the label keeps it as wide as its longest word and no wider. */
+  display: grid; grid-template-columns: max-content minmax(0, 1fr);
+  gap: 11px 18px;
   margin-top: 14px; font-size: 13px;
 }
 .detail .facts dt { color: var(--faint); }
