@@ -880,9 +880,64 @@ img { max-width: 100%; display: block; }
    * nothing between each idea. Halved -- the sections still breathe, and
    * the page loses roughly 500px of pure gap. */
   section.works, section.how, section.price, section.ctaSec {
-    padding-top: 52px; padding-bottom: 52px;
+    padding-top: 40px; padding-bottom: 40px;
   }
   .ctaSec { padding-bottom: 28px; }
+
+  /* ---- the cards ------------------------------------------------------
+   *
+   * The page is 7.8 screens of scrolling for 768 words. Most of that is
+   * the cards: measured at 390x844 each one holds 55-72 words in 400px,
+   * padded 26px, stacked one per screen. Side by side on a desktop they
+   * are a comparison you read across; stacked on a phone they become a
+   * queue where every card is its own screen and the comparison is gone.
+   *
+   * They keep their words. What comes down is the air around the words --
+   * padding, leading, the gaps between cards and between their rows --
+   * which is what was sized for a monitor. */
+  .plan, .step {
+    padding: 18px 18px 20px;
+    border-radius: 16px;
+  }
+  .priceGrid, .stepGrid { gap: 12px; }
+  .plan ul, .step p { line-height: 1.5; }
+  .plan li { padding: 4px 0; }
+  .plan ul { margin-bottom: 14px; }
+  /* The footnote under each card is a source citation -- true and worth
+     keeping, but it is set at the size of body copy and takes 60px. */
+  .plan .note { font-size: 11.5px; line-height: 1.5; }
+  /* NOT trimmed: the evidence cards keep all four claims.
+     They are the longest thing on the page -- 1.9 screens of three cards
+     with four detailed proofs each -- and dropping two per card takes the
+     page from 7.8 screens to 6.8. But which two is a judgement about what
+     convinces somebody, not about layout: "Ten complete apps together:
+     283 KB" is stronger proof than the markdown viewer above it, and
+     "956 tests, and a fuzzer on the bundle parser" is the sort of line a
+     sceptical reader is looking for. Cutting by position would have
+     dropped both.
+     That call belongs to the founder, so the section stays whole and
+     only its spacing comes down. (Shrinking the type instead made the
+     cards TALLER: 16px to 14px turned a 405px card into 411, because the
+     lines rewrapped worse.) */
+  /* The section headings and their ledes carry a desktop's spacing too. */
+  .price h2, .how h2 { margin-bottom: 8px; }
+  .price .lead, .how .lead { margin-bottom: 20px; font-size: 14px; }
+  /* The big number on a plan card is display type for a wide screen. */
+  .plan .amount { font-size: 26px; }
+
+  /* The orbit: five vendor logos circling a Krate mark, 420px tall, whose
+     whole message is "works with the AI you already pay for" -- which the
+     paragraph beside it already says. On a desktop it is the right half of
+     a two-column section and earns its space; stacked on a phone it is
+     half a screen of animation under the sentence it illustrates. */
+  .orbitStage { min-height: 260px; }
+  .orbitBox { height: 260px; }
+  .worksGrid { gap: 20px; }
+
+  /* The closing section's card and the footer were 212px apart -- a
+     desktop's breathing room between the last thing you read and the
+     links under it. */
+  .ctaSec .foot { margin-top: 28px; }
 
   /* ---- the brand bar -------------------------------------------------
    *
