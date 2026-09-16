@@ -5433,6 +5433,42 @@ fn choose_file_on_host(title: &str, filter: &str) -> Result<Option<std::path::Pa
 mod tests {
     use super::*;
 
+    /// "You cannot" and "this Mac cannot" must not reach a GUI app as the
+    /// same error (CP2).
+    ///
+    /// The Phase 3 world already has `unsupported(string)` beside
+    /// `permission-denied`, and this mapping already keeps them apart -- but
+    /// nothing pinned it, and the two are one careless match arm away from
+    /// collapsing. The clipboard is the live case: wired in the Linux
+    /// adapter, `Unsupported` on macOS. An app told "permission denied" for
+    /// it would prompt the person to grant something no grant can fix.
+    ///
+    /// The message has to survive too: "the host cannot support this UI
+    /// feature yet" is only useful if it says which feature.
+    #[test]
+    fn a_platform_gap_does_not_reach_the_app_as_a_permission_denial() {
+        let refused = dispatch_error_to_ui_error(UiDispatchError::PermissionDenied);
+        assert!(
+            matches!(refused, ui::types::UiError::PermissionDenied),
+            "a policy refusal is a permission denial: {refused:?}"
+        );
+
+        let gap = dispatch_error_to_ui_error(UiDispatchError::Adapter(
+            UiAdapterError::Unsupported("clipboard is not wired on this platform".into()),
+        ));
+        match gap {
+            ui::types::UiError::Unsupported(why) => assert!(
+                why.contains("clipboard"),
+                "the reason must name the feature, or an app cannot report it: {why}"
+            ),
+            other => panic!(
+                "a platform gap must reach the app as unsupported, not as {other:?} -- \
+                 an app told 'permission denied' will ask the person to grant \
+                 something no grant can fix"
+            ),
+        }
+    }
+
     #[test]
     fn scroll_offset_clamps_to_content_extent() {
         // Content 192 tall in a 120 viewport: max offset 72.
