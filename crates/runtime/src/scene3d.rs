@@ -165,8 +165,18 @@ struct TexturedFace {
     uv: [[f32; 2]; 3],
     /// Tint multiplied into every sample.
     tint: (f32, f32, f32, f32),
-    /// Lambertian shading for the whole face.
+    /// Lambertian shading for the whole face, used when `corner_shade` is
+    /// `None`.
     shade: f32,
+    /// Shading at each corner, interpolated across the triangle. `Some` only
+    /// for a mesh drawn through `smooth`, which carries a normal per vertex.
+    ///
+    /// The shade is computed per CORNER at queue time rather than the normal
+    /// being interpolated and the dot product taken per pixel: the light does
+    /// not change across a triangle, so the two give the same answer to within
+    /// the interpolation, and one costs three dot products per triangle while
+    /// the other costs one per pixel.
+    corner_shade: Option<[f32; 3]>,
 }
 
 /// One uploaded image, kept in the sampling format rather than the guest's.
@@ -466,6 +476,53 @@ impl Scene {
                 uv,
                 tint,
                 shade,
+                corner_shade: None,
+            }),
+            alpha,
+            sort_z: (pa.2 + pb.2 + pc.2) / 3.0,
+        });
+    }
+
+    /// Queue one triangle whose shading is given per corner.
+    #[allow(clippy::too_many_arguments)]
+    fn smooth_triangle(
+        &mut self,
+        a: Vec3,
+        b: Vec3,
+        c: Vec3,
+        uv: [[f32; 2]; 3],
+        corner_shade: [f32; 3],
+        texture: usize,
+        tint: (f32, f32, f32, f32),
+    ) {
+        let (Some(pa), Some(pb), Some(pc)) = (self.project(a), self.project(b), self.project(c))
+        else {
+            return;
+        };
+        let area = (pb.0 - pa.0) * (pc.1 - pa.1) - (pc.0 - pa.0) * (pb.1 - pa.1);
+        if area.abs() < 1e-6 || self.culled(area) {
+            return;
+        }
+        let alpha = if tint.3.is_nan() {
+            1.0
+        } else {
+            tint.3.clamp(0.0, 1.0)
+        };
+        self.queued.push(Queued {
+            a: pa,
+            b: pb,
+            c: pc,
+            area,
+            packed: None,
+            texture: Some(TexturedFace {
+                index: texture,
+                uv,
+                tint,
+                // Unused when corner shading is present, but a sane middle
+                // value rather than something that would look wrong if the
+                // fill ever fell back to it.
+                shade: (corner_shade[0] + corner_shade[1] + corner_shade[2]) / 3.0,
+                corner_shade: Some(corner_shade),
             }),
             alpha,
             sort_z: (pa.2 + pb.2 + pc.2) / 3.0,
@@ -497,6 +554,60 @@ impl Scene {
                 [uv_chunk[4], uv_chunk[5]],
             ];
             self.textured_triangle(a, b, c, uv, index, tint);
+        }
+    }
+
+    /// Draw a mesh with a normal per vertex, so curvature shades smoothly.
+    ///
+    /// The shading is computed per CORNER here and interpolated across the
+    /// triangle in the fill, which gives Gouraud shading: the classic way to
+    /// make a low-poly sphere look round without a normal lookup per pixel.
+    ///
+    /// The light term is one-sided, unlike the face-normal path. A face-normal
+    /// renderer has to take `.abs()` because a closed mesh's winding decides
+    /// which way its normals point and half come out inward; an author who
+    /// supplies normals has said which way is out, so the dark side can
+    /// actually be dark. That is most of what makes a lit scene look lit.
+    pub fn smooth(
+        &mut self,
+        vertices: &[f32],
+        normals: &[f32],
+        uvs: &[f32],
+        texture: u64,
+        tint: (f32, f32, f32, f32),
+    ) {
+        let Some(index) = (texture as usize).checked_sub(1) else {
+            return;
+        };
+        if index >= self.textures.len() {
+            return;
+        }
+        let triples = vertices
+            .chunks_exact(9)
+            .zip(normals.chunks_exact(9))
+            .zip(uvs.chunks_exact(6));
+        for ((triangle, normal_chunk), uv_chunk) in triples {
+            let a = Vec3::new(triangle[0], triangle[1], triangle[2]);
+            let b = Vec3::new(triangle[3], triangle[4], triangle[5]);
+            let c = Vec3::new(triangle[6], triangle[7], triangle[8]);
+            let uv = [
+                [uv_chunk[0], uv_chunk[1]],
+                [uv_chunk[2], uv_chunk[3]],
+                [uv_chunk[4], uv_chunk[5]],
+            ];
+            let corner = |i: usize| -> f32 {
+                let n = Vec3::new(
+                    normal_chunk[i * 3],
+                    normal_chunk[i * 3 + 1],
+                    normal_chunk[i * 3 + 2],
+                )
+                .normalized();
+                // One-sided: a surface facing away from the light gets the
+                // ambient floor and nothing more.
+                let facing = (-n.dot(self.light)).max(0.0);
+                0.22 + 0.78 * facing
+            };
+            self.smooth_triangle(a, b, c, uv, [corner(0), corner(1), corner(2)], index, tint);
         }
     }
 
@@ -735,7 +846,16 @@ fn fill_band(
                         let Some(image) = textures.get(face.index) else {
                             continue;
                         };
-                        shade_sample(image.sample(u, v), face.tint, face.shade)
+                        // Gouraud: interpolate the three corner shades in
+                        // SCREEN space rather than perspective-correctly.
+                        // Lighting varies slowly across a surface and the
+                        // difference is invisible, while a perspective divide
+                        // per pixel for it is not free.
+                        let shade = match face.corner_shade {
+                            Some(k) => w2 * k[0] + w1 * k[1] + w0 * k[2],
+                            None => face.shade,
+                        };
+                        shade_sample(image.sample(u, v), face.tint, shade)
                     }
                     _ => continue,
                 };
@@ -1209,6 +1329,15 @@ mod tests {
 
     /// A 2x2 texture: red, green / blue, white. Small enough that every
     /// sample is identifiable by colour alone.
+    /// A plain white 1x1, so a shading test reads the shade and nothing else.
+    /// `quad_texture` is four coloured quadrants, which is right for testing
+    /// UV orientation and wrong for testing brightness.
+    fn white_texture(scene: &mut Scene) -> u64 {
+        scene
+            .upload_texture(1, 1, &[255, 255, 255, 255])
+            .expect("texture")
+    }
+
     fn quad_texture(scene: &mut Scene) -> u64 {
         let rgba = vec![
             255, 0, 0, 255, //
@@ -1623,6 +1752,85 @@ mod tests {
             middle[0] > middle[2],
             "the NEARER pane must end up on top whatever order it was queued \
              in: {middle:?}"
+        );
+    }
+
+    #[test]
+    fn corner_normals_shade_a_triangle_across_its_face() {
+        // The difference between a faceted sphere and a smooth one. With a
+        // face normal the whole triangle takes one shade; with corner normals
+        // the shade varies across it, so adjacent triangles meet without a
+        // visible step.
+        let mut scene = Scene::new(64, 64).expect("scene");
+        scene.set_camera([0.0, 0.0, 6.0], [0.0, 0.0, 0.0], 60.0);
+        scene.set_light([0.0, -1.0, 0.0]);
+        scene.clear(0xFF00_0000);
+        let white = white_texture(&mut scene);
+
+        // One big triangle facing the camera, with normals swinging from
+        // straight up at the top corner to straight down at the bottom two.
+        let tri: Vec<f32> = vec![0.0, 2.5, 0.0, -2.5, -2.0, 0.0, 2.5, -2.0, 0.0];
+        let normals: Vec<f32> = vec![0.0, 1.0, 0.0, 0.0, -1.0, 0.0, 0.0, -1.0, 0.0];
+        let uvs: Vec<f32> = vec![0.5, 0.0, 0.0, 1.0, 1.0, 1.0];
+        scene.smooth(&tri, &normals, &uvs, white, (1.0, 1.0, 1.0, 1.0));
+
+        let image = scene.render_image().expect("image");
+        // Sample near the top corner and near the bottom edge. The light
+        // travels straight down, so the UPWARD-facing normal at the top is
+        // lit and the downward ones below are not.
+        let high = pixel(&image, 32, 20)[1] as i32;
+        let low = pixel(&image, 32, 42)[1] as i32;
+        assert!(
+            (high - low).abs() > 25,
+            "shading must vary across the triangle, not be flat: top {high}, \
+             bottom {low}"
+        );
+    }
+
+    #[test]
+    fn corner_normals_light_one_side_only() {
+        // The face-normal path takes the absolute value of the light term,
+        // because a closed mesh's winding decides which way its normals point
+        // and half come out inward. That lights the dark side of everything as
+        // brightly as the lit side, which is why a face-shaded scene looks
+        // flat. An author who supplies normals has said which way is out, so
+        // the dark side can actually be dark.
+        let mut scene = Scene::new(64, 64).expect("scene");
+        scene.set_camera([0.0, 0.0, 6.0], [0.0, 0.0, 0.0], 60.0);
+        // Light travelling toward -Z, i.e. away from the camera.
+        scene.set_light([0.0, 0.0, -1.0]);
+        scene.clear(0xFF00_0000);
+        let white = white_texture(&mut scene);
+
+        let quad: Vec<f32> = vec![
+            -2.0, -2.0, 0.0, 2.0, -2.0, 0.0, 2.0, 2.0, 0.0, //
+            -2.0, -2.0, 0.0, 2.0, 2.0, 0.0, -2.0, 2.0, 0.0,
+        ];
+        let uvs: Vec<f32> = vec![0.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0];
+
+        // Facing the light (+Z, back toward the camera): lit.
+        let toward: Vec<f32> = core::iter::repeat_n([0.0_f32, 0.0, 1.0], 6)
+            .flatten()
+            .collect();
+        scene.smooth(&quad, &toward, &uvs, white, (1.0, 1.0, 1.0, 1.0));
+        let lit = pixel(&scene.render_image().expect("image"), 32, 32)[1] as i32;
+
+        // Facing away (-Z): ambient only.
+        let mut away_scene = Scene::new(64, 64).expect("scene");
+        away_scene.set_camera([0.0, 0.0, 6.0], [0.0, 0.0, 0.0], 60.0);
+        away_scene.set_light([0.0, 0.0, -1.0]);
+        away_scene.clear(0xFF00_0000);
+        let white2 = white_texture(&mut away_scene);
+        let away: Vec<f32> = core::iter::repeat_n([0.0_f32, 0.0, -1.0], 6)
+            .flatten()
+            .collect();
+        away_scene.smooth(&quad, &away, &uvs, white2, (1.0, 1.0, 1.0, 1.0));
+        let dark = pixel(&away_scene.render_image().expect("image"), 32, 32)[1] as i32;
+
+        assert!(
+            lit > dark + 40,
+            "a surface facing the light must be brighter than one facing away: \
+             lit {lit}, away {dark}"
         );
     }
 

@@ -732,6 +732,38 @@ pub mod gfx {
             crate::bindings::krate::gfx::scene3d::textured(scene, vertices, uvs, texture, tint)
         }
 
+        /// Draw textured triangles with a normal per corner, so curved surfaces
+        /// shade smoothly instead of faceting.
+        ///
+        /// `normals` is x,y,z per corner -- nine floats per triangle -- and need not
+        /// be unit length; the host normalises. The lighting term is interpolated
+        /// across the triangle from the three corner normals, which is what turns a
+        /// sphere of a few hundred facets into a smooth ball.
+        ///
+        /// Without this, shading comes from the FACE normal and every triangle is
+        /// flat. The only way to look smooth is to subdivide until the facets are
+        /// finer than the shading steps between them, which costs triangles for
+        /// something a normal per corner gives away.
+        ///
+        /// Corner normals also make the lighting one-sided, which face normals
+        /// cannot be: a face-normal renderer has to take the absolute value of the
+        /// light term, because a closed mesh's winding decides which way its normals
+        /// point and half of them come out inward. That absolute value lights the
+        /// dark side of everything exactly as brightly as the lit side, which is why
+        /// a face-shaded scene looks flat however many lights it has.
+        pub fn smooth(
+            scene: u64,
+            vertices: &[f32],
+            normals: &[f32],
+            uvs: &[f32],
+            texture: u64,
+            tint: Color,
+        ) -> Result<(), GfxError> {
+            crate::bindings::krate::gfx::scene3d::smooth(
+                scene, vertices, normals, uvs, texture, tint,
+            )
+        }
+
         /// Skip triangles facing away from the camera.
         ///
         /// Off by default, and that is deliberate: it is only correct for a closed

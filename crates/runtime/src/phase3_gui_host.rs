@@ -4837,6 +4837,29 @@ impl gfx::scene3d::Host for Phase3GuiHost {
         Ok(Ok(()))
     }
 
+    fn smooth(
+        &mut self,
+        scene: u64,
+        vertices: Vec<f32>,
+        normals: Vec<f32>,
+        uvs: Vec<f32>,
+        texture: u64,
+        tint: gfx::types::Color,
+    ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        let mut scenes = self.scenes.borrow_mut();
+        let Some((_, _, surface)) = scenes.get_mut(&scene) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        surface.smooth(
+            &vertices,
+            &normals,
+            &uvs,
+            texture,
+            (tint.r, tint.g, tint.b, tint.a),
+        );
+        Ok(Ok(()))
+    }
+
     fn cull_back_faces(
         &mut self,
         scene: u64,
