@@ -1430,4 +1430,87 @@ mod tests {
         assert!(Scene::new(0, 10).is_err());
         assert!(Scene::new(10, MAX_EDGE + 1).is_err());
     }
+
+    #[test]
+    fn a_chase_camera_keeps_the_ground_below_the_horizon() {
+        // The arrangement every third-person game uses, and the one that drew
+        // krate-drift upside down: the eye is ABOVE the target and looks down
+        // at it. A tilted camera exercises the `up` axis, which a camera on
+        // the level leaves as exactly world up and so never tests.
+        let mut scene = Scene::new(64, 64).expect("scene");
+        scene.set_camera([0.0, 12.0, -26.0], [0.0, 2.0, 0.0], 58.0);
+        scene.clear(0xFF00_0000);
+
+        // Two markers at the same distance, one high in the world and one low.
+        let high: Vec<f32> = vec![-3.0, 14.0, 0.0, 3.0, 14.0, 0.0, 0.0, 20.0, 0.0];
+        let low: Vec<f32> = vec![-3.0, -8.0, 0.0, 3.0, -8.0, 0.0, 0.0, -14.0, 0.0];
+        scene.triangles(&high, (1.0, 1.0, 1.0, 1.0));
+        scene.triangles(&low, (1.0, 1.0, 1.0, 1.0));
+
+        let image = scene.render_image().expect("image");
+        let (mut top, mut bottom) = (0, 0);
+        for y in 0..64 {
+            for x in 0..64 {
+                if pixel(&image, x, y)[0] > 40 {
+                    if y < 32 {
+                        top += 1;
+                    } else {
+                        bottom += 1;
+                    }
+                }
+            }
+        }
+        assert!(top > 0 && bottom > 0, "both markers should be in frame");
+        assert!(
+            top > bottom,
+            "the world-high marker must be drawn above the world-low one, \
+             not below it: top={top} bottom={bottom}"
+        );
+    }
+
+    #[test]
+    fn ground_under_a_chase_camera_recedes_to_a_horizon_near_the_top() {
+        // krate-drift's exact opening camera: 26 behind in -Z, 12 up, looking
+        // at a point 2 above the ground.
+        //
+        // The check is the column directly ahead, NOT a count of lit pixels
+        // across the frame. A ground plane running to the horizon puts most of
+        // its area in the far, compressed band just under the horizon, so
+        // "more lit pixels above the midline than below" is what a CORRECT
+        // render of a receding plane looks like. Counting pixels reads that as
+        // an upside-down world and accuses the projection of a bug it does not
+        // have.
+        let mut scene = Scene::new(64, 64).expect("scene");
+        scene.set_camera([0.0, 12.0, -26.0], [0.0, 2.0, 0.0], 58.0);
+        scene.set_light([0.0, -1.0, 0.0]);
+        scene.clear(0xFF00_0000);
+
+        // A ground quad at y = 0, entirely IN FRONT of the camera. A quad that
+        // straddles the eye is rejected whole, because a triangle with any
+        // corner behind the camera is dropped rather than clipped -- which
+        // draws nothing and looks like an orientation bug of its own.
+        let ground: Vec<f32> = vec![
+            -80.0, 0.0, -24.0, 80.0, 0.0, -24.0, 80.0, 0.0, 400.0, //
+            -80.0, 0.0, -24.0, 80.0, 0.0, 400.0, -80.0, 0.0, 400.0,
+        ];
+        scene.triangles(&ground, (1.0, 1.0, 1.0, 1.0));
+
+        let image = scene.render_image().expect("image");
+        // Walk the centre column from the top. Sky first, then ground all the
+        // way down: the ground must be CONTIGUOUS to the bottom edge, which is
+        // the thing an inverted camera gets wrong however the areas fall.
+        let lit = |y: u32| pixel(&image, 32, y)[0] > 40;
+        let horizon = (0..64).find(|&y| lit(y)).expect("ground must be in view");
+        assert!(
+            horizon > 4,
+            "the horizon should sit below the top edge, not at it: {horizon}"
+        );
+        assert!(lit(63), "ground must reach the bottom edge of the frame");
+        for y in horizon..64 {
+            assert!(
+                lit(y),
+                "ground must be unbroken from the horizon down; row {y} is sky"
+            );
+        }
+    }
 }
