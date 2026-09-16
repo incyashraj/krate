@@ -160,9 +160,16 @@ pub struct SessionPolicy {
     /// `Ambient`: the defaults are added by `from_grants` itself, so the map
     /// only ever needs the ones somebody decided.
     provenance: std::collections::BTreeMap<Capability, Provenance>,
-    /// Withdrawn during this run. Kept separate from removing the grant so
-    /// the decision can say `Revoked` rather than a bare `Denied`.
-    revoked: BTreeSet<Capability>,
+    /// Withdrawn during this run, and why. Kept separate from removing the
+    /// grant so the decision can say `Revoked` or `Expired` rather than a
+    /// bare `Denied` -- an app that is told "denied" for something it has
+    /// been using will go looking for a permission prompt, when what it
+    /// needs to do is stop.
+    ///
+    /// One map rather than a set per reason: withdrawal is one mechanism and
+    /// the reason is an attribute of it, so a new reason cannot be added
+    /// without deciding what `decide` reports for it.
+    withdrawn: std::collections::BTreeMap<Capability, Refusal>,
 }
 
 impl SessionPolicy {
@@ -182,7 +189,7 @@ impl SessionPolicy {
         Self {
             grants: resolved,
             provenance,
-            revoked: BTreeSet::new(),
+            withdrawn: std::collections::BTreeMap::new(),
         }
     }
 
@@ -206,7 +213,7 @@ impl SessionPolicy {
         Self {
             grants: resolved,
             provenance,
-            revoked: BTreeSet::new(),
+            withdrawn: std::collections::BTreeMap::new(),
         }
     }
 
@@ -217,14 +224,33 @@ impl SessionPolicy {
     /// and lost it, which is the difference between "ask the user to enable
     /// the microphone" and "stop recording, they just turned it off".
     pub fn revoke(&mut self, cap: Capability) {
-        self.revoked.insert(cap);
+        self.withdrawn.insert(cap, Refusal::Revoked);
+    }
+
+    /// Withdraw a grant because it ran out, not because anyone changed their
+    /// mind.
+    ///
+    /// Distinct from `revoke` on purpose. A revocation is a person acting; an
+    /// expiry is a clock, and an app may reasonably ask for the capability
+    /// again where it would not re-prompt after a refusal. The clock itself
+    /// lives with persistent grants in a later phase -- this crate is
+    /// session-scoped and has no time source -- so what CP2 owes is the
+    /// vocabulary and a decision that can carry it.
+    pub fn expire(&mut self, cap: Capability) {
+        self.withdrawn.insert(cap, Refusal::Expired);
     }
 
     /// Has this capability been withdrawn during this run?
     pub fn is_revoked(&self, cap: &Capability) -> bool {
-        self.revoked
+        self.withdrawal_reason(cap).is_some()
+    }
+
+    /// Why this capability was withdrawn, if it was.
+    pub fn withdrawal_reason(&self, cap: &Capability) -> Option<Refusal> {
+        self.withdrawn
             .iter()
-            .any(|withdrawn| capability_allows(withdrawn, cap))
+            .find(|(withdrawn, _)| capability_allows(withdrawn, cap))
+            .map(|(_, reason)| reason.clone())
     }
 
     /// Where this capability's authority came from, if it is granted.
@@ -265,10 +291,10 @@ impl SessionPolicy {
                 };
             }
         }
-        if self.is_revoked(required) {
-            return Decision::Refused {
-                reason: Refusal::Revoked,
-            };
+        if let Some(reason) = self.withdrawal_reason(required) {
+            // Revoked or expired: report which, so an app can tell a person
+            // changing their mind from a grant running out.
+            return Decision::Refused { reason };
         }
         match self.provenance_of(required) {
             Some(via) => Decision::Granted { via },
@@ -385,6 +411,33 @@ impl SessionPolicy {
             .required_capabilities()?
             .into_iter()
             .filter(|cap| !self.allows(cap))
+            .collect())
+    }
+
+    /// The same missing capabilities, each with the reason it is missing.
+    ///
+    /// `missing_required_for_manifest` answers *what*; a caller that wants to
+    /// tell somebody what to do about it needs *why*. The difference is not
+    /// cosmetic: "grant this and run it again" is sound advice for a denial
+    /// and useless for a revoked grant, wrong for an expired one, and a
+    /// retry loop for a capability this platform cannot provide at all.
+    ///
+    /// Declared here means the manifest's required set, so an undeclared
+    /// capability cannot appear -- this list is built from the declaration
+    /// itself. That is why nothing returns `Undeclared`: reaching this
+    /// function already proves the capability was declared.
+    pub fn missing_required_with_reasons(
+        &self,
+        manifest: &Manifest,
+    ) -> Result<Vec<(Capability, Refusal)>> {
+        let declared: BTreeSet<Capability> =
+            manifest.required_capabilities()?.into_iter().collect();
+        Ok(declared
+            .iter()
+            .filter_map(|cap| match self.decide(cap, Some(&declared)) {
+                Decision::Granted { .. } => None,
+                Decision::Refused { reason } => Some((cap.clone(), reason)),
+            })
             .collect())
     }
 }
@@ -684,6 +737,100 @@ mod tests {
                 "{reason} does not change by asking twice"
             );
         }
+    }
+
+    /// An expired grant is not a revoked one, and neither is a denial.
+    ///
+    /// All three stop the capability working, so it would be easy to fold
+    /// them together -- and then an app told "denied" for something it had
+    /// been using all session would go looking for a permission prompt when
+    /// what it should do is stop. Both withdrawals must also bite on
+    /// `allows`, since that is the path the runtime actually calls.
+    #[test]
+    fn an_expired_grant_is_reported_as_expired_and_not_as_revoked() {
+        let declared: BTreeSet<Capability> = [cap("audio.capture")].into_iter().collect();
+
+        let mut ran_out = SessionPolicy::from_grants([cap("audio.capture")]);
+        ran_out.expire(cap("audio.capture"));
+        assert_eq!(
+            ran_out
+                .decide(&cap("audio.capture"), Some(&declared))
+                .refusal(),
+            Some(&Refusal::Expired)
+        );
+        assert!(
+            !ran_out.allows(&cap("audio.capture")),
+            "expiry has to stop the capability on the path the runtime calls"
+        );
+
+        let mut withdrawn = SessionPolicy::from_grants([cap("audio.capture")]);
+        withdrawn.revoke(cap("audio.capture"));
+        assert_eq!(
+            withdrawn
+                .decide(&cap("audio.capture"), Some(&declared))
+                .refusal(),
+            Some(&Refusal::Revoked)
+        );
+
+        // The distinction an app acts on: a person changed their mind, or a
+        // clock ran out. Only the first is somebody's decision.
+        assert!(Refusal::Revoked.is_recipient_decision());
+        assert!(
+            !Refusal::Expired.is_recipient_decision(),
+            "a clock is not a person; re-prompting for an expiry is the wrong response"
+        );
+    }
+
+    /// A caller that reports missing capabilities needs the reason with them.
+    ///
+    /// The MCP run report tells an agent "grant these and try again". That is
+    /// right for a denial and wrong for everything else -- a retry after an
+    /// expiry, a revocation, or on a platform that cannot provide the
+    /// capability is a loop. The reasoned list is what lets a caller tell
+    /// those apart.
+    ///
+    /// Nothing here can be `Undeclared`: the list is built from the
+    /// manifest's own required set, so reaching it proves declaration.
+    #[test]
+    fn the_missing_list_carries_why_each_one_is_missing() {
+        let manifest = manifest_declaring(&["audio.capture", "fs.write:data/**"]);
+
+        // Nothing granted: both required capabilities are plain denials.
+        let none = SessionPolicy::from_grants([]);
+        let missing = none
+            .missing_required_with_reasons(&manifest)
+            .expect("reasons");
+        assert_eq!(missing.len(), 2, "both required capabilities are missing");
+        assert!(
+            missing.iter().all(|(_, why)| *why == Refusal::Denied),
+            "ungranted declared capabilities are denials: {missing:?}"
+        );
+
+        // Grant both, then take one back each way. The list must now
+        // distinguish them rather than reporting two identical denials.
+        let mut live = SessionPolicy::from_grants([cap("audio.capture"), cap("fs.write:data/**")]);
+        assert!(
+            live.missing_required_with_reasons(&manifest)
+                .expect("reasons")
+                .is_empty(),
+            "everything required is granted"
+        );
+        live.revoke(cap("audio.capture"));
+        live.expire(cap("fs.write:data/**"));
+
+        let missing = live
+            .missing_required_with_reasons(&manifest)
+            .expect("reasons");
+        let reasons: std::collections::BTreeMap<String, Refusal> = missing
+            .into_iter()
+            .map(|(cap, why)| (cap.to_string(), why))
+            .collect();
+        assert_eq!(reasons.get("audio.capture"), Some(&Refusal::Revoked));
+        assert_eq!(reasons.get("fs.write:data/**"), Some(&Refusal::Expired));
+        assert!(
+            reasons.values().all(|why| !why.may_retry()),
+            "none of these are fixed by asking again, so a caller must not advise a retry"
+        );
     }
 
     /// Revoking has to bite on the OLD path too.

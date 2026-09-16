@@ -378,14 +378,51 @@ fn run_component_tool(arguments: &Value) -> Result<Value> {
     // like the CLI, so agents see the denial as data instead of a trap.
     if let Some(manifest) = &manifest {
         let missing = policy
-            .missing_required_for_manifest(manifest)
+            .missing_required_with_reasons(manifest)
             .context("check required capabilities")?;
         if !missing.is_empty() {
-            let denied: Vec<String> = missing.iter().map(|cap| cap.to_string()).collect();
+            let denied: Vec<String> = missing.iter().map(|(cap, _)| cap.to_string()).collect();
+            // Why each one is missing, beside what is missing (CP2). Every
+            // refusal here is a plain denial today -- this list is built from
+            // the manifest's own required set, so the capability was
+            // declared, and nothing in this path revokes or expires a grant.
+            // Reporting the reason anyway is what stops a later caller from
+            // reading "denied" into a refusal that is not one.
+            let reasons: Vec<Value> = missing
+                .iter()
+                .map(|(cap, why)| json!({ "capability": cap.to_string(), "reason": why.as_str() }))
+                .collect();
+            // Only advise a retry for refusals a grant can actually fix. An
+            // agent told to grant-and-retry an unavailable or expired
+            // capability retries forever.
+            let retryable: Vec<String> = missing
+                .iter()
+                .filter(|(_, why)| *why == krate_policy::Refusal::Denied)
+                .map(|(cap, _)| cap.to_string())
+                .collect();
+            let remedy = if retryable.is_empty() {
+                json!({
+                    "action": "no-retry",
+                    "grants": [],
+                    "note": "None of these are fixed by granting them again. \
+                            See `capabilities.reasons` for why each one was refused.",
+                })
+            } else {
+                json!({
+                    "action": "grant-and-retry",
+                    "grants": retryable,
+                    "note": "Call run_component again with these strings in `grants`. \
+                            Each one is narrow: granting it allows only what it names.",
+                })
+            };
             return Ok(json!({
                 "schema": "krate.run.v1",
                 "app": app,
-                "capabilities": { "granted": granted, "denied": denied.clone() },
+                "capabilities": {
+                    "granted": granted,
+                    "denied": denied.clone(),
+                    "reasons": reasons,
+                },
                 "exit": {
                     "code": 5,
                     "class": "permission-denied",
@@ -393,12 +430,7 @@ fn run_component_tool(arguments: &Value) -> Result<Value> {
                 },
                 // A refusal an agent cannot act on is just a failure. Name the
                 // exact retry so the model does not have to infer it.
-                "remedy": {
-                    "action": "grant-and-retry",
-                    "grants": denied,
-                    "note": "Call run_component again with these strings in `grants`. \
-                            Each one is narrow: granting it allows only what it names.",
-                },
+                "remedy": remedy,
                 "duration_ms": Value::Null,
                 "stdout": "",
             }));
@@ -656,13 +688,38 @@ required = true
             .as_array()
             .expect("denied array");
         // The remedy must name exactly what was refused, so an agent can
-        // re-issue the call without inferring anything.
+        // re-issue the call without inferring anything. These are all plain
+        // denials -- declared, required, never granted -- so granting them
+        // and retrying is the correct advice and covers the whole list.
         assert_eq!(
             &report["remedy"]["grants"],
             &report["capabilities"]["denied"]
         );
         assert_eq!(report["remedy"]["action"], "grant-and-retry");
         assert!(!denied.is_empty());
+
+        // And each one says WHY it is missing, not only that it is (CP2).
+        // Without the reason an agent cannot tell a denial it can fix by
+        // granting from a refusal that no grant will ever change, and the
+        // only safe behaviour left to it is to retry until it gives up.
+        let reasons = report["capabilities"]["reasons"]
+            .as_array()
+            .expect("reasons array");
+        assert_eq!(
+            reasons.len(),
+            denied.len(),
+            "every refused capability carries its reason"
+        );
+        for entry in reasons {
+            assert_eq!(
+                entry["reason"], "denied",
+                "declared, required and ungranted is a plain denial: {entry}"
+            );
+            assert!(
+                denied.contains(&entry["capability"]),
+                "a reason must name a capability that was actually refused: {entry}"
+            );
+        }
     }
 
     #[test]
