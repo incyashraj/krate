@@ -28,7 +28,11 @@
 extern crate alloc;
 
 use krate::audio::playback;
-use krate::audio::playback::{SampleFormat, StreamConfig};
+use krate::audio::playback::StreamConfig;
+// `SampleFormat` is shared across the audio package, so it lives in
+// `krate::audio::types` rather than in `playback` -- the SDK path exists, it
+// is just one module over from where you first look.
+use krate::audio::types::SampleFormat;
 use krate::bindings::krate::io::{args, stdio};
 use krate::bindings::krate::time::clock;
 use krate::gfx::{canvas2d, types as gfx};
