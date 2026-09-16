@@ -34,11 +34,20 @@ struct Camera {
     // is set at all, so the shader can skip it rather than adding black.
     fill_dir: vec4<f32>,
     fill_color: vec4<f32>,
+    // World to light clip space, for the shadow lookup.
+    light_view_proj: mat4x4<f32>,
+    // x: 1 when shadows are on, y: softness in texels, z: one texel in light
+    // clip units, w: unused.
+    shadow: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> camera: Camera;
 @group(0) @binding(1) var atlas: texture_2d_array<f32>;
 @group(0) @binding(2) var atlas_sampler: sampler;
+@group(0) @binding(3) var shadow_map: texture_depth_2d;
+// A COMPARISON sampler: the hardware does the depth test and averages the
+// results of several taps for free, which is what makes a soft edge cheap.
+@group(0) @binding(4) var shadow_sampler: sampler_comparison;
 
 struct VertexIn {
     @location(0) position: vec3<f32>,
@@ -125,6 +134,52 @@ fn vs_main(in: VertexIn) -> VertexOut {
     return out;
 }
 
+/// How much of the key light reaches this point: 1 lit, 0 fully shadowed.
+fn shadow_factor(world: vec3<f32>, n: vec3<f32>) -> f32 {
+    if (camera.shadow.x < 0.5) {
+        return 1.0;
+    }
+    let clip = camera.light_view_proj * vec4<f32>(world, 1.0);
+    // Orthographic, so w is 1 and the divide is a formality -- but doing it
+    // anyway keeps this correct if the light ever becomes a spot.
+    let ndc = clip.xyz / clip.w;
+    // Clip space is -1..1 in x and y and 0..1 in z; the texture is 0..1 with
+    // y running the other way.
+    let uv = vec2<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || ndc.z > 1.0) {
+        // Outside the map is outside the radius the app asked for, and the
+        // honest answer there is "lit" -- a scene that went dark past the
+        // shadow radius would look like a wall of night at a fixed distance.
+        return 1.0;
+    }
+
+    // Slope-scaled bias. A surface nearly edge-on to the light spans a lot of
+    // depth inside one texel, so comparing against a single stored value makes
+    // it shadow itself in stripes -- the classic acne. The bias grows with the
+    // angle, which is where the error is.
+    let facing = clamp(dot(n, -camera.light.xyz), 0.0, 1.0);
+    let bias = 0.0015 + 0.006 * (1.0 - facing);
+    let reference = ndc.z - bias;
+
+    let softness = camera.shadow.y;
+    if (softness <= 0.0) {
+        return textureSampleCompare(shadow_map, shadow_sampler, uv, reference);
+    }
+    // Percentage-closer filtering: several taps around the point, averaged.
+    // The comparison sampler already blends each tap, so a 3x3 here is really
+    // a 6x6 of hardware samples.
+    let step = camera.shadow.z * softness;
+    var total = 0.0;
+    for (var y = -1; y <= 1; y = y + 1) {
+        for (var x = -1; x <= 1; x = x + 1) {
+            let offset = vec2<f32>(f32(x), f32(y)) * step;
+            total = total + textureSampleCompare(
+                shadow_map, shadow_sampler, uv + offset, reference);
+        }
+    }
+    return total / 9.0;
+}
+
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let n = normalize(in.normal);
@@ -148,7 +203,11 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
         floor_term = camera.surface.x;
         lambert = abs(facing);
     }
-    var shade = floor_term + (1.0 - floor_term) * lambert;
+    // The shadow multiplies the DIRECT term only. Taking it off the ambient
+    // floor as well would make a shadowed surface black, and a shadow is an
+    // absence of the sun rather than an absence of light.
+    let lit = shadow_factor(in.world, n);
+    var shade = floor_term + (1.0 - floor_term) * lambert * lit;
 
     // A second directional light, standing in for light bounced off
     // everything else. A key light alone leaves the shadow side black; a key
@@ -203,7 +262,9 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
         let to_light = -camera.light.xyz;
         let halfway = normalize(to_eye + to_light);
         let spec = pow(max(dot(n, halfway), 0.0), max(camera.surface.w, 1.0));
-        base = base + vec3<f32>(spec * specular_strength);
+        // Shadowed too: a highlight is the sun reflected, and a surface the
+        // sun cannot reach cannot reflect it.
+        base = base + vec3<f32>(spec * specular_strength * lit);
     }
 
     // Fog last, because it is what the air does to everything in front of it,

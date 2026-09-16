@@ -7447,6 +7447,19 @@ pub mod krate {
             /// opposite side, standing in for light bounced off everything else. A key
             /// light alone leaves shadows black; a key and a fill is most of what reads
             /// as a lit room rather than a lamp in a void.
+            /// `shadow-radius` turns on cast shadows and says how far around the camera
+            /// they reach, in world units. Zero is off.
+            ///
+            /// A radius rather than a world box because a shadow map is a fixed grid of
+            /// texels spread over whatever area it covers: cover a whole two-kilometre
+            /// circuit and each texel is metres wide, which is a shadow with visible
+            /// stairs on it. Following the camera keeps the detail where somebody is
+            /// looking. Pick roughly the distance at which a shadow stops mattering --
+            /// 40 units for a plaza, 120 for a landscape.
+            ///
+            /// `shadow-softness` blurs the shadow edge, in texels. Zero is a hard edge,
+            /// which reads as cut paper; 1 to 2 looks like a real penumbra. It costs
+            /// samples, so it is the app's choice rather than always on.
             #[derive(Clone)]
             pub struct Lighting {
                 pub ambient: f32,
@@ -7456,6 +7469,8 @@ pub mod krate {
                 pub fog_color: Color,
                 pub fill_direction: _rt::Vec<f32>,
                 pub fill_color: Color,
+                pub shadow_radius: f32,
+                pub shadow_softness: f32,
             }
             impl ::core::fmt::Debug for Lighting {
                 fn fmt(
@@ -7470,6 +7485,8 @@ pub mod krate {
                         .field("fog-color", &self.fog_color)
                         .field("fill-direction", &self.fill_direction)
                         .field("fill-color", &self.fill_color)
+                        .field("shadow-radius", &self.shadow_radius)
+                        .field("shadow-softness", &self.shadow_softness)
                         .finish()
                 }
             }
@@ -8672,166 +8689,146 @@ pub mod krate {
                 lighting: &Lighting,
             ) -> Result<(), GfxError> {
                 unsafe {
-                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
-                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    #[repr(align(8))]
                     struct RetArea(
                         [::core::mem::MaybeUninit<
                             u8,
-                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                        >; 64 + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit(); 4
-                            * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 64
+                            + 2 * ::core::mem::size_of::<*const u8>()],
                     );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    *ptr0.add(0).cast::<i64>() = _rt::as_i64(&scene);
                     let Lighting {
-                        ambient: ambient0,
-                        specular: specular0,
-                        shininess: shininess0,
-                        fog_density: fog_density0,
-                        fog_color: fog_color0,
-                        fill_direction: fill_direction0,
-                        fill_color: fill_color0,
+                        ambient: ambient1,
+                        specular: specular1,
+                        shininess: shininess1,
+                        fog_density: fog_density1,
+                        fog_color: fog_color1,
+                        fill_direction: fill_direction1,
+                        fill_color: fill_color1,
+                        shadow_radius: shadow_radius1,
+                        shadow_softness: shadow_softness1,
                     } = lighting;
+                    *ptr0.add(8).cast::<f32>() = _rt::as_f32(ambient1);
+                    *ptr0.add(12).cast::<f32>() = _rt::as_f32(specular1);
+                    *ptr0.add(16).cast::<f32>() = _rt::as_f32(shininess1);
+                    *ptr0.add(20).cast::<f32>() = _rt::as_f32(fog_density1);
                     let super::super::super::krate::gfx::types::Color {
-                        r: r1,
-                        g: g1,
-                        b: b1,
-                        a: a1,
-                    } = fog_color0;
-                    let vec2 = fill_direction0;
-                    let ptr2 = vec2.as_ptr().cast::<u8>();
-                    let len2 = vec2.len();
+                        r: r2,
+                        g: g2,
+                        b: b2,
+                        a: a2,
+                    } = fog_color1;
+                    *ptr0.add(24).cast::<f32>() = _rt::as_f32(r2);
+                    *ptr0.add(28).cast::<f32>() = _rt::as_f32(g2);
+                    *ptr0.add(32).cast::<f32>() = _rt::as_f32(b2);
+                    *ptr0.add(36).cast::<f32>() = _rt::as_f32(a2);
+                    let vec3 = fill_direction1;
+                    let ptr3 = vec3.as_ptr().cast::<u8>();
+                    let len3 = vec3.len();
+                    *ptr0
+                        .add(40 + 1 * ::core::mem::size_of::<*const u8>())
+                        .cast::<usize>() = len3;
+                    *ptr0.add(40).cast::<*mut u8>() = ptr3.cast_mut();
                     let super::super::super::krate::gfx::types::Color {
-                        r: r3,
-                        g: g3,
-                        b: b3,
-                        a: a3,
-                    } = fill_color0;
-                    let ptr4 = ret_area.0.as_mut_ptr().cast::<u8>();
+                        r: r4,
+                        g: g4,
+                        b: b4,
+                        a: a4,
+                    } = fill_color1;
+                    *ptr0
+                        .add(40 + 2 * ::core::mem::size_of::<*const u8>())
+                        .cast::<f32>() = _rt::as_f32(r4);
+                    *ptr0
+                        .add(44 + 2 * ::core::mem::size_of::<*const u8>())
+                        .cast::<f32>() = _rt::as_f32(g4);
+                    *ptr0
+                        .add(48 + 2 * ::core::mem::size_of::<*const u8>())
+                        .cast::<f32>() = _rt::as_f32(b4);
+                    *ptr0
+                        .add(52 + 2 * ::core::mem::size_of::<*const u8>())
+                        .cast::<f32>() = _rt::as_f32(a4);
+                    *ptr0
+                        .add(56 + 2 * ::core::mem::size_of::<*const u8>())
+                        .cast::<f32>() = _rt::as_f32(shadow_radius1);
+                    *ptr0
+                        .add(60 + 2 * ::core::mem::size_of::<*const u8>())
+                        .cast::<f32>() = _rt::as_f32(shadow_softness1);
+                    let ptr5 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
                     #[link(wasm_import_module = "krate:gfx/scene3d@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "set-lighting"]
-                        fn wit_import5(
-                            _: i64,
-                            _: f32,
-                            _: f32,
-                            _: f32,
-                            _: f32,
-                            _: f32,
-                            _: f32,
-                            _: f32,
-                            _: f32,
-                            _: *mut u8,
-                            _: usize,
-                            _: f32,
-                            _: f32,
-                            _: f32,
-                            _: f32,
-                            _: *mut u8,
-                        );
+                        fn wit_import6(_: *mut u8, _: *mut u8);
                     }
                     #[cfg(not(target_arch = "wasm32"))]
-                    unsafe extern "C" fn wit_import5(
-                        _: i64,
-                        _: f32,
-                        _: f32,
-                        _: f32,
-                        _: f32,
-                        _: f32,
-                        _: f32,
-                        _: f32,
-                        _: f32,
-                        _: *mut u8,
-                        _: usize,
-                        _: f32,
-                        _: f32,
-                        _: f32,
-                        _: f32,
-                        _: *mut u8,
-                    ) {
+                    unsafe extern "C" fn wit_import6(_: *mut u8, _: *mut u8) {
                         unreachable!()
                     }
-                    unsafe {
-                        wit_import5(
-                            _rt::as_i64(&scene),
-                            _rt::as_f32(ambient0),
-                            _rt::as_f32(specular0),
-                            _rt::as_f32(shininess0),
-                            _rt::as_f32(fog_density0),
-                            _rt::as_f32(r1),
-                            _rt::as_f32(g1),
-                            _rt::as_f32(b1),
-                            _rt::as_f32(a1),
-                            ptr2.cast_mut(),
-                            len2,
-                            _rt::as_f32(r3),
-                            _rt::as_f32(g3),
-                            _rt::as_f32(b3),
-                            _rt::as_f32(a3),
-                            ptr4,
-                        )
-                    };
-                    let l6 = i32::from(*ptr4.add(0).cast::<u8>());
-                    let result15 = match l6 {
+                    unsafe { wit_import6(ptr0, ptr5) };
+                    let l7 = i32::from(*ptr5.add(0).cast::<u8>());
+                    let result16 = match l7 {
                         0 => {
                             let e = ();
                             Ok(e)
                         }
                         1 => {
                             let e = {
-                                let l7 = i32::from(
-                                    *ptr4.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                let l8 = i32::from(
+                                    *ptr5.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                 );
-                                use super::super::super::krate::gfx::types::GfxError as V14;
-                                let v14 = match l7 {
-                                    0 => V14::PermissionDenied,
-                                    1 => V14::InvalidTarget,
+                                use super::super::super::krate::gfx::types::GfxError as V15;
+                                let v15 = match l8 {
+                                    0 => V15::PermissionDenied,
+                                    1 => V15::InvalidTarget,
                                     2 => {
-                                        let e14 = {
-                                            let l8 = *ptr4
+                                        let e15 = {
+                                            let l9 = *ptr5
                                                 .add(2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<*mut u8>();
-                                            let l9 = *ptr4
+                                            let l10 = *ptr5
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
-                                            let len10 = l9;
-                                            let bytes10 = _rt::Vec::from_raw_parts(
-                                                l8.cast(),
-                                                len10,
-                                                len10,
+                                            let len11 = l10;
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
                                             );
-                                            _rt::string_lift(bytes10)
+                                            _rt::string_lift(bytes11)
                                         };
-                                        V14::Unsupported(e14)
+                                        V15::Unsupported(e15)
                                     }
                                     n => {
                                         debug_assert_eq!(n, 3, "invalid enum discriminant");
-                                        let e14 = {
-                                            let l11 = *ptr4
+                                        let e15 = {
+                                            let l12 = *ptr5
                                                 .add(2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<*mut u8>();
-                                            let l12 = *ptr4
+                                            let l13 = *ptr5
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
-                                            let len13 = l12;
-                                            let bytes13 = _rt::Vec::from_raw_parts(
-                                                l11.cast(),
-                                                len13,
-                                                len13,
+                                            let len14 = l13;
+                                            let bytes14 = _rt::Vec::from_raw_parts(
+                                                l12.cast(),
+                                                len14,
+                                                len14,
                                             );
-                                            _rt::string_lift(bytes13)
+                                            _rt::string_lift(bytes14)
                                         };
-                                        V14::Platform(e14)
+                                        V15::Platform(e15)
                                     }
                                 };
-                                v14
+                                v15
                             };
                             Err(e)
                         }
                         _ => _rt::invalid_enum_discriminant(),
                     };
-                    result15
+                    result16
                 }
             }
             #[allow(unused_unsafe, clippy::all)]
@@ -20635,8 +20632,8 @@ pub(crate) use __export_gui_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 12741] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xcbb\x01A\x02\x01Aw\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 12773] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xebb\x01A\x02\x01Aw\x01\
 B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x09log-level\x03\
 \0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eof\0\0\x0cinvalid-\
 utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x14krate:io/types@0.1\
@@ -20865,69 +20862,70 @@ widthy\x06heighty\x04rgba(\0\x18\x04\0\x0bdraw-pixels\x010\x01@\x07\x06canvasw\x
 center\x03\x03dst\x07\x05anglev\x05widthy\x06heighty\x04rgba(\0\x18\x04\0\x0bdra\
 w-sprite\x011\x04\0\x07present\x01\x1b\x03\0\x18krate:gfx/canvas2d@0.1.0\x05>\x01\
 B\"\x02\x03\x02\x014\x04\0\x05color\x03\0\0\x02\x03\x02\x019\x04\0\x09gfx-error\x03\
-\0\x02\x01pv\x01r\x07\x07ambientv\x08specularv\x09shininessv\x0bfog-densityv\x09\
-fog-color\x01\x0efill-direction\x04\x0afill-color\x01\x04\0\x08lighting\x03\0\x05\
-\x01j\x01w\x01\x03\x01@\x02\x06windoww\x06widgetw\0\x07\x04\0\x04bind\x01\x08\x01\
-j\0\x01\x03\x01@\x02\x05scenew\x03sky\x01\0\x09\x04\0\x05clear\x01\x0a\x01@\x04\x05\
-scenew\x03eye\x04\x07look-at\x04\x0bfov-degreesv\0\x09\x04\0\x06camera\x01\x0b\x01\
-@\x02\x05scenew\x09direction\x04\0\x09\x04\0\x05light\x01\x0c\x01@\x03\x05scenew\
-\x08vertices\x04\x04tint\x01\0\x09\x04\0\x09triangles\x01\x0d\x01@\x06\x05scenew\
-\x08vertices\x04\x09translate\x04\x0erotate-degrees\x04\x05scalev\x04tint\x01\0\x09\
-\x04\0\x05place\x01\x0e\x01p}\x01@\x04\x05scenew\x05widthy\x06heighty\x04rgba\x0f\
-\0\x07\x04\0\x0eupload-texture\x01\x10\x01@\x05\x05scenew\x08vertices\x04\x03uvs\
-\x04\x07texturew\x04tint\x01\0\x09\x04\0\x08textured\x01\x11\x01@\x06\x05scenew\x08\
-vertices\x04\x07normals\x04\x03uvs\x04\x07texturew\x04tint\x01\0\x09\x04\0\x06sm\
-ooth\x01\x12\x01@\x02\x05scenew\x08lighting\x06\0\x09\x04\0\x0cset-lighting\x01\x13\
-\x01@\x02\x05scenew\x07enabled\x7f\0\x09\x04\0\x0fcull-back-faces\x01\x14\x01@\x01\
-\x05scenew\0\x09\x04\0\x07present\x01\x15\x03\0\x17krate:gfx/scene3d@0.1.0\x05?\x01\
-B\x06\x01m\x02\x07pcm-s16\x07float32\x04\0\x0dsample-format\x03\0\0\x01r\x04\x0b\
-sample-ratey\x08channels{\x06format\x01\x0dbuffer-framesy\x04\0\x0dstream-config\
-\x03\0\x02\x01q\x05\x11permission-denied\0\0\x0einvalid-stream\0\0\x12device-una\
-vailable\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x0baudio-error\x03\0\
-\x04\x03\0\x17krate:audio/types@0.1.0\x05@\x02\x03\0\"\x0baudio-error\x02\x03\0\"\
-\x0dstream-config\x01B\x15\x02\x03\x02\x01A\x04\0\x0baudio-error\x03\0\0\x02\x03\
-\x02\x01B\x04\0\x0dstream-config\x03\0\x02\x01j\x01w\x01\x01\x01@\x01\x06config\x03\
-\0\x04\x04\0\x04open\x01\x05\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x06\x04\0\x05\
-start\x01\x07\x04\0\x04stop\x01\x07\x01p}\x01j\x01y\x01\x01\x01@\x02\x09stream-i\
-dw\x05bytes\x08\0\x09\x04\0\x05write\x01\x0a\x01@\x02\x09stream-idw\x05bytes\x08\
-\0\x04\x04\0\x0aload-sound\x01\x0b\x01@\x03\x09stream-idw\x05soundw\x04gainv\0\x06\
-\x04\0\x0aplay-sound\x01\x0c\x01@\x02\x09stream-idw\x05soundw\0\x06\x04\0\x0asto\
-p-sound\x01\x0d\x03\0\x1akrate:audio/playback@0.1.0\x05C\x01B\x0f\x02\x03\x02\x01\
-A\x04\0\x0baudio-error\x03\0\0\x02\x03\x02\x01B\x04\0\x0dstream-config\x03\0\x02\
-\x01j\x01w\x01\x01\x01@\x01\x06config\x03\0\x04\x04\0\x04open\x01\x05\x01j\0\x01\
-\x01\x01@\x01\x09stream-idw\0\x06\x04\0\x05start\x01\x07\x04\0\x04stop\x01\x07\x01\
-p}\x01j\x01\x08\x01\x01\x01@\x02\x09stream-idw\x09max-bytesy\0\x09\x04\0\x04read\
-\x01\x0a\x03\0\x19krate:audio/capture@0.1.0\x05D\x01B\x0d\x01m\x01\x05rgba8\x04\0\
-\x0cframe-format\x03\0\0\x01r\x04\x05widthy\x06heighty\x03fpsy\x06format\x01\x04\
-\0\x0dstream-config\x03\0\x02\x01r\x04\x05widthy\x06heighty\x03fpsy\x06format\x01\
-\x04\0\x0aframe-info\x03\0\x04\x01r\x02\x02ids\x05labels\x04\0\x0bdevice-info\x03\
-\0\x06\x01p}\x01r\x04\x05bytes\x08\x05widthy\x06heighty\x0eelapsed-millisw\x04\0\
-\x05frame\x03\0\x09\x01q\x06\x11permission-denied\0\0\x0einvalid-stream\0\0\x12d\
-evice-unavailable\0\0\x0dsystem-denied\0\0\x0bunsupported\x01s\0\x08platform\x01\
-s\0\x04\0\x0ccamera-error\x03\0\x0b\x03\0\x18krate:camera/types@0.1.0\x05E\x02\x03\
-\0%\x0ccamera-error\x02\x03\0%\x0bdevice-info\x02\x03\0%\x05frame\x02\x03\0%\x0a\
-frame-info\x02\x03\0%\x0dstream-config\x01B\x1d\x02\x03\x02\x01F\x04\0\x0ccamera\
--error\x03\0\0\x02\x03\x02\x01G\x04\0\x0bdevice-info\x03\0\x02\x02\x03\x02\x01H\x04\
-\0\x05frame\x03\0\x04\x02\x03\x02\x01I\x04\0\x0aframe-info\x03\0\x06\x02\x03\x02\
-\x01J\x04\0\x0dstream-config\x03\0\x08\x01p\x03\x01j\x01\x0a\x01\x01\x01@\0\0\x0b\
-\x04\0\x07devices\x01\x0c\x01j\x01w\x01\x01\x01@\x02\x06devices\x06config\x09\0\x0d\
-\x04\0\x04open\x01\x0e\x01j\x01\x07\x01\x01\x01@\x01\x09stream-idw\0\x0f\x04\0\x04\
-info\x01\x10\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x11\x04\0\x05start\x01\x12\x04\
-\0\x04stop\x01\x12\x01k\x05\x01j\x01\x13\x01\x01\x01@\x01\x09stream-idw\0\x14\x04\
-\0\x04read\x01\x15\x04\0\x05close\x01\x12\x03\0\x1akrate:camera/capture@0.1.0\x05\
-K\x01B\x12\x01r\x01\x04texts\x04\0\x0atranscript\x03\0\0\x01q\x05\x0finvalid-req\
-uest\x01s\0\x0fmodel-not-found\0\0\x0dmodel-invalid\x01s\0\x0bunsupported\x01s\0\
-\x09inference\x01s\0\x04\0\x0cspeech-error\x03\0\x02\x01m\x05\x0finvalid-request\
-\x0fmodel-not-found\x0dmodel-invalid\x0bunsupported\x09inference\x04\0\x0bmatch-\
-error\x03\0\x04\x01p}\x01ks\x01j\x01\x01\x01\x03\x01@\x04\x0bmodel-assets\x0apcm\
--s16-le\x06\x0bsample-ratey\x08language\x07\0\x08\x04\0\x0atranscribe\x01\x09\x01\
-j\x01}\x01\x05\x01@\x05\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample-ratey\x08lan\
-guage\x07\x08expecteds\0\x0a\x04\0\x0amatch-line\x01\x0b\x01k}\x01j\x01\x0c\x01\x05\
-\x01@\x06\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample-ratey\x08language\x07\x08e\
-xpecteds\x06finish\x7f\0\x0d\x04\0\x11match-line-stream\x01\x0e\x03\0\x20krate:s\
-peech/transcription@0.1.0\x05L\x01@\0\0z\x04\0\x03run\x01M\x04\0\x13krate:app/gu\
-i@0.2.0\x04\0\x0b\x09\x01\0\x03gui\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\
-\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
+\0\x02\x01pv\x01r\x09\x07ambientv\x08specularv\x09shininessv\x0bfog-densityv\x09\
+fog-color\x01\x0efill-direction\x04\x0afill-color\x01\x0dshadow-radiusv\x0fshado\
+w-softnessv\x04\0\x08lighting\x03\0\x05\x01j\x01w\x01\x03\x01@\x02\x06windoww\x06\
+widgetw\0\x07\x04\0\x04bind\x01\x08\x01j\0\x01\x03\x01@\x02\x05scenew\x03sky\x01\
+\0\x09\x04\0\x05clear\x01\x0a\x01@\x04\x05scenew\x03eye\x04\x07look-at\x04\x0bfo\
+v-degreesv\0\x09\x04\0\x06camera\x01\x0b\x01@\x02\x05scenew\x09direction\x04\0\x09\
+\x04\0\x05light\x01\x0c\x01@\x03\x05scenew\x08vertices\x04\x04tint\x01\0\x09\x04\
+\0\x09triangles\x01\x0d\x01@\x06\x05scenew\x08vertices\x04\x09translate\x04\x0er\
+otate-degrees\x04\x05scalev\x04tint\x01\0\x09\x04\0\x05place\x01\x0e\x01p}\x01@\x04\
+\x05scenew\x05widthy\x06heighty\x04rgba\x0f\0\x07\x04\0\x0eupload-texture\x01\x10\
+\x01@\x05\x05scenew\x08vertices\x04\x03uvs\x04\x07texturew\x04tint\x01\0\x09\x04\
+\0\x08textured\x01\x11\x01@\x06\x05scenew\x08vertices\x04\x07normals\x04\x03uvs\x04\
+\x07texturew\x04tint\x01\0\x09\x04\0\x06smooth\x01\x12\x01@\x02\x05scenew\x08lig\
+hting\x06\0\x09\x04\0\x0cset-lighting\x01\x13\x01@\x02\x05scenew\x07enabled\x7f\0\
+\x09\x04\0\x0fcull-back-faces\x01\x14\x01@\x01\x05scenew\0\x09\x04\0\x07present\x01\
+\x15\x03\0\x17krate:gfx/scene3d@0.1.0\x05?\x01B\x06\x01m\x02\x07pcm-s16\x07float\
+32\x04\0\x0dsample-format\x03\0\0\x01r\x04\x0bsample-ratey\x08channels{\x06forma\
+t\x01\x0dbuffer-framesy\x04\0\x0dstream-config\x03\0\x02\x01q\x05\x11permission-\
+denied\0\0\x0einvalid-stream\0\0\x12device-unavailable\0\0\x0bunsupported\x01s\0\
+\x08platform\x01s\0\x04\0\x0baudio-error\x03\0\x04\x03\0\x17krate:audio/types@0.\
+1.0\x05@\x02\x03\0\"\x0baudio-error\x02\x03\0\"\x0dstream-config\x01B\x15\x02\x03\
+\x02\x01A\x04\0\x0baudio-error\x03\0\0\x02\x03\x02\x01B\x04\0\x0dstream-config\x03\
+\0\x02\x01j\x01w\x01\x01\x01@\x01\x06config\x03\0\x04\x04\0\x04open\x01\x05\x01j\
+\0\x01\x01\x01@\x01\x09stream-idw\0\x06\x04\0\x05start\x01\x07\x04\0\x04stop\x01\
+\x07\x01p}\x01j\x01y\x01\x01\x01@\x02\x09stream-idw\x05bytes\x08\0\x09\x04\0\x05\
+write\x01\x0a\x01@\x02\x09stream-idw\x05bytes\x08\0\x04\x04\0\x0aload-sound\x01\x0b\
+\x01@\x03\x09stream-idw\x05soundw\x04gainv\0\x06\x04\0\x0aplay-sound\x01\x0c\x01\
+@\x02\x09stream-idw\x05soundw\0\x06\x04\0\x0astop-sound\x01\x0d\x03\0\x1akrate:a\
+udio/playback@0.1.0\x05C\x01B\x0f\x02\x03\x02\x01A\x04\0\x0baudio-error\x03\0\0\x02\
+\x03\x02\x01B\x04\0\x0dstream-config\x03\0\x02\x01j\x01w\x01\x01\x01@\x01\x06con\
+fig\x03\0\x04\x04\0\x04open\x01\x05\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x06\x04\
+\0\x05start\x01\x07\x04\0\x04stop\x01\x07\x01p}\x01j\x01\x08\x01\x01\x01@\x02\x09\
+stream-idw\x09max-bytesy\0\x09\x04\0\x04read\x01\x0a\x03\0\x19krate:audio/captur\
+e@0.1.0\x05D\x01B\x0d\x01m\x01\x05rgba8\x04\0\x0cframe-format\x03\0\0\x01r\x04\x05\
+widthy\x06heighty\x03fpsy\x06format\x01\x04\0\x0dstream-config\x03\0\x02\x01r\x04\
+\x05widthy\x06heighty\x03fpsy\x06format\x01\x04\0\x0aframe-info\x03\0\x04\x01r\x02\
+\x02ids\x05labels\x04\0\x0bdevice-info\x03\0\x06\x01p}\x01r\x04\x05bytes\x08\x05\
+widthy\x06heighty\x0eelapsed-millisw\x04\0\x05frame\x03\0\x09\x01q\x06\x11permis\
+sion-denied\0\0\x0einvalid-stream\0\0\x12device-unavailable\0\0\x0dsystem-denied\
+\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x0ccamera-error\x03\0\x0b\x03\
+\0\x18krate:camera/types@0.1.0\x05E\x02\x03\0%\x0ccamera-error\x02\x03\0%\x0bdev\
+ice-info\x02\x03\0%\x05frame\x02\x03\0%\x0aframe-info\x02\x03\0%\x0dstream-confi\
+g\x01B\x1d\x02\x03\x02\x01F\x04\0\x0ccamera-error\x03\0\0\x02\x03\x02\x01G\x04\0\
+\x0bdevice-info\x03\0\x02\x02\x03\x02\x01H\x04\0\x05frame\x03\0\x04\x02\x03\x02\x01\
+I\x04\0\x0aframe-info\x03\0\x06\x02\x03\x02\x01J\x04\0\x0dstream-config\x03\0\x08\
+\x01p\x03\x01j\x01\x0a\x01\x01\x01@\0\0\x0b\x04\0\x07devices\x01\x0c\x01j\x01w\x01\
+\x01\x01@\x02\x06devices\x06config\x09\0\x0d\x04\0\x04open\x01\x0e\x01j\x01\x07\x01\
+\x01\x01@\x01\x09stream-idw\0\x0f\x04\0\x04info\x01\x10\x01j\0\x01\x01\x01@\x01\x09\
+stream-idw\0\x11\x04\0\x05start\x01\x12\x04\0\x04stop\x01\x12\x01k\x05\x01j\x01\x13\
+\x01\x01\x01@\x01\x09stream-idw\0\x14\x04\0\x04read\x01\x15\x04\0\x05close\x01\x12\
+\x03\0\x1akrate:camera/capture@0.1.0\x05K\x01B\x12\x01r\x01\x04texts\x04\0\x0atr\
+anscript\x03\0\0\x01q\x05\x0finvalid-request\x01s\0\x0fmodel-not-found\0\0\x0dmo\
+del-invalid\x01s\0\x0bunsupported\x01s\0\x09inference\x01s\0\x04\0\x0cspeech-err\
+or\x03\0\x02\x01m\x05\x0finvalid-request\x0fmodel-not-found\x0dmodel-invalid\x0b\
+unsupported\x09inference\x04\0\x0bmatch-error\x03\0\x04\x01p}\x01ks\x01j\x01\x01\
+\x01\x03\x01@\x04\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample-ratey\x08language\x07\
+\0\x08\x04\0\x0atranscribe\x01\x09\x01j\x01}\x01\x05\x01@\x05\x0bmodel-assets\x0a\
+pcm-s16-le\x06\x0bsample-ratey\x08language\x07\x08expecteds\0\x0a\x04\0\x0amatch\
+-line\x01\x0b\x01k}\x01j\x01\x0c\x01\x05\x01@\x06\x0bmodel-assets\x0apcm-s16-le\x06\
+\x0bsample-ratey\x08language\x07\x08expecteds\x06finish\x7f\0\x0d\x04\0\x11match\
+-line-stream\x01\x0e\x03\0\x20krate:speech/transcription@0.1.0\x05L\x01@\0\0z\x04\
+\0\x03run\x01M\x04\0\x13krate:app/gui@0.2.0\x04\0\x0b\x09\x01\0\x03gui\x03\0\0\0\
+G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindge\
+n-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {

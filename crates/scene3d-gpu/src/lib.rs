@@ -45,6 +45,14 @@ pub const MAX_TEXTURE_EDGE: u32 = 1_024;
 /// this is chosen large enough that no scene a Krate app builds reaches it.
 const FAR: f32 = 10_000.0;
 
+/// Edge of the shadow map, in texels.
+///
+/// 2048 rather than 1024: the map covers a square the app sizes with
+/// `shadow_radius`, so every doubling of radius halves the detail. At 2048 a
+/// 40-unit plaza gets a texel every 4 cm, which is finer than an eye finds an
+/// edge at that distance. It costs 16 MB of depth, once.
+const SHADOW_EDGE: u32 = 2_048;
+
 /// Every texture layer is this square. One size for all of them is what an
 /// array texture requires, and 1024 matches `MAX_TEXTURE_EDGE` so no upload
 /// the CPU path accepts has to be shrunk here.
@@ -131,6 +139,8 @@ struct CameraUniform {
     fog: [f32; 4],
     fill_dir: [f32; 4],
     fill_color: [f32; 4],
+    light_view_proj: [[f32; 4]; 4],
+    shadow: [f32; 4],
 }
 
 /// How a scene is lit, beyond the one directional light.
@@ -155,6 +165,16 @@ pub struct Lighting {
     pub fog_color: [f32; 3],
     /// A second directional light, or `None`.
     pub fill: Option<([f32; 3], [f32; 3])>,
+    /// How far around the camera cast shadows reach, in world units. Zero is
+    /// off.
+    ///
+    /// A radius rather than a world box because a shadow map is a fixed grid
+    /// of texels spread over whatever area it covers: cover a two-kilometre
+    /// circuit and each texel is metres wide, which is a shadow with stairs on
+    /// it. Following the camera keeps the detail where somebody is looking.
+    pub shadow_radius: f32,
+    /// Shadow edge blur, in texels. Zero is a hard edge.
+    pub shadow_softness: f32,
 }
 
 impl Default for Lighting {
@@ -169,6 +189,8 @@ impl Default for Lighting {
             fog_density: 0.0,
             fog_color: [0.6, 0.7, 0.8],
             fill: None,
+            shadow_radius: 0.0,
+            shadow_softness: 1.0,
         }
     }
 }
@@ -194,6 +216,14 @@ pub struct GpuScene {
     blend_pipeline: wgpu::RenderPipeline,
     bind_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
+
+    /// The shadow pass: the scene drawn from the light, depth only.
+    shadow_pipeline: wgpu::RenderPipeline,
+    shadow_layout: wgpu::BindGroupLayout,
+    shadow_map: wgpu::Texture,
+    /// A COMPARISON sampler, so the hardware does the depth test and averages
+    /// several taps for free -- which is what makes a soft edge cheap.
+    shadow_sampler: wgpu::Sampler,
 
     width: u32,
     height: u32,
@@ -292,6 +322,22 @@ impl GpuScene {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Depth,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
+                    count: None,
+                },
             ],
         });
 
@@ -367,6 +413,88 @@ impl GpuScene {
             ..Default::default()
         });
 
+        // The shadow pass: its own shader, layout and pipeline. Depth only,
+        // so there is no fragment stage and it costs a fraction of the main
+        // pass -- no texturing, no lighting, no blending.
+        let shadow_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("scene3d shadow"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shadow.wgsl").into()),
+        });
+        let shadow_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("scene3d shadow bindings"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+        let shadow_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("scene3d shadow layout"),
+                bind_group_layouts: &[Some(&shadow_layout)],
+                ..Default::default()
+            });
+        let shadow_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("scene3d shadow pipeline"),
+            layout: Some(&shadow_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shadow_shader,
+                entry_point: Some("vs_main"),
+                // The same vertex layout as the main pass, so one buffer
+                // serves both. The shadow shader reads only position and
+                // ignores the rest.
+                buffers: &[Vertex::layout()],
+                compilation_options: Default::default(),
+            },
+            fragment: None,
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: Default::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+        let shadow_map = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("scene3d shadow map"),
+            size: wgpu::Extent3d {
+                width: SHADOW_EDGE,
+                height: SHADOW_EDGE,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Depth32Float,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let shadow_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("scene3d shadow sampler"),
+            // Clamp: a point outside the map is outside the radius the app
+            // asked for, and repeating would wrap a shadow round the world.
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            compare: Some(wgpu::CompareFunction::LessEqual),
+            ..Default::default()
+        });
+
         let (colour, depth) = Self::targets(&device, width, height);
         let padded_row_bytes = padded_row(width);
         let readback = device.create_buffer(&wgpu::BufferDescriptor {
@@ -383,6 +511,10 @@ impl GpuScene {
             blend_pipeline,
             bind_layout,
             sampler,
+            shadow_pipeline,
+            shadow_layout,
+            shadow_map,
+            shadow_sampler,
             width,
             height,
             colour,
@@ -489,6 +621,8 @@ impl GpuScene {
             fog_density: clean(lighting.fog_density, 0.0).max(0.0),
             fog_color: lighting.fog_color,
             fill: lighting.fill.map(|(dir, colour)| (normalize(dir), colour)),
+            shadow_radius: clean(lighting.shadow_radius, 0.0).max(0.0),
+            shadow_softness: clean(lighting.shadow_softness, 1.0).clamp(0.0, 4.0),
         };
     }
 
@@ -842,6 +976,19 @@ impl GpuScene {
                 Some((_, colour)) => [colour[0], colour[1], colour[2], 1.0],
                 None => [0.0, 0.0, 0.0, 0.0],
             },
+            light_view_proj: light_matrix(self.light, self.eye, self.lighting.shadow_radius),
+            shadow: [
+                if self.lighting.shadow_radius > 0.0 {
+                    1.0
+                } else {
+                    0.0
+                },
+                self.lighting.shadow_softness,
+                // One texel in light clip units, which the shader steps by to
+                // blur the edge.
+                2.0 / SHADOW_EDGE as f32,
+                0.0,
+            ],
         };
         let uniform_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("scene3d camera"),
@@ -865,6 +1012,7 @@ impl GpuScene {
             array_layer_count: Some(self.layers.len().max(1) as u32),
             ..Default::default()
         });
+        let shadow_view = self.shadow_map.create_view(&Default::default());
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("scene3d bind group"),
             layout: &self.bind_layout,
@@ -880,6 +1028,14 @@ impl GpuScene {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&shadow_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::Sampler(&self.shadow_sampler),
                 },
             ],
         });
@@ -902,6 +1058,59 @@ impl GpuScene {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("scene3d frame"),
             });
+
+        // The shadow pass, first: the scene from the light, depth only.
+        //
+        // The map is cleared and redrawn even when shadows are off, because a
+        // stale map bound into the main pass would shadow the scene with
+        // whatever was there last -- and a cleared one reads as "nothing in
+        // the way", which is what off should look like.
+        {
+            let shadow_uniform = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("scene3d shadow camera"),
+                size: core::mem::size_of::<[[f32; 4]; 4]>() as u64,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.queue.write_buffer(
+                &shadow_uniform,
+                0,
+                bytemuck::bytes_of(&uniform.light_view_proj),
+            );
+            let shadow_bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("scene3d shadow bind group"),
+                layout: &self.shadow_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: shadow_uniform.as_entire_binding(),
+                }],
+            });
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("scene3d shadow pass"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &shadow_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            // Only the OPAQUE triangles cast. A pane of glass casting a solid
+            // black shadow is worse than it casting none, and sorting out what
+            // a transparent caster should do needs more than a depth buffer.
+            if self.lighting.shadow_radius > 0.0 && blend_from > 0 {
+                pass.set_pipeline(&self.shadow_pipeline);
+                pass.set_bind_group(0, &shadow_bind, &[]);
+                pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+                pass.draw(0..blend_from as u32, 0..1);
+            }
+        }
+
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("scene3d pass"),
@@ -1043,6 +1252,53 @@ fn normalize(v: [f32; 3]) -> [f32; 3] {
     } else {
         [v[0] / l, v[1] / l, v[2] / l]
     }
+}
+
+/// World-to-light-clip for a directional light, orthographic.
+///
+/// ORTHOGRAPHIC, not perspective: a directional light has no position, its
+/// rays are parallel, and a perspective divide would bend them into a point
+/// source. The box is centred on `focus` -- the camera, so the detail follows
+/// whoever is looking -- and sized by `radius`.
+///
+/// Returned column-major, which is what WGSL's `mat4x4` reads.
+fn light_matrix(direction: [f32; 3], focus: [f32; 3], radius: f32) -> [[f32; 4]; 4] {
+    let forward = normalize(direction);
+    // Any axis not parallel to the light will do for the cross product; the
+    // usual +Y fails for a light pointing straight down, which is exactly
+    // where a sun ends up at noon.
+    let reference = if forward[1].abs() > 0.95 {
+        [0.0, 0.0, 1.0]
+    } else {
+        [0.0, 1.0, 0.0]
+    };
+    let right = normalize(cross(reference, forward));
+    let up = cross(forward, right);
+
+    // Stand the light back far enough that everything inside the radius is in
+    // front of it, and reach twice that far, so a tall object outside the
+    // radius still casts into it.
+    let back = radius * 2.0;
+    let eye = [
+        focus[0] - forward[0] * back,
+        focus[1] - forward[1] * back,
+        focus[2] - forward[2] * back,
+    ];
+    let depth = back * 2.0;
+    let inv_r = 1.0 / radius.max(0.001);
+    let inv_d = 1.0 / depth.max(0.001);
+
+    // Rows of the view matrix scaled by the orthographic extents, transposed
+    // into columns.
+    let tx = -dot(right, eye) * inv_r;
+    let ty = -dot(up, eye) * inv_r;
+    let tz = -dot(forward, eye) * inv_d;
+    [
+        [right[0] * inv_r, up[0] * inv_r, forward[0] * inv_d, 0.0],
+        [right[1] * inv_r, up[1] * inv_r, forward[1] * inv_d, 0.0],
+        [right[2] * inv_r, up[2] * inv_r, forward[2] * inv_d, 0.0],
+        [tx, ty, tz, 1.0],
+    ]
 }
 
 fn face_normal(a: [f32; 3], b: [f32; 3], c: [f32; 3]) -> [f32; 3] {
@@ -1415,6 +1671,83 @@ mod tests {
         assert!(
             far[0] > near[0] + 40,
             "distance must fade into the fog colour: near {near:?}, far {far:?}"
+        );
+    }
+
+    #[test]
+    fn an_object_casts_a_shadow_on_what_is_below_it() {
+        // The single biggest thing missing from a lit scene: an object with no
+        // shadow floats, however well it is shaded.
+        //
+        // A small quad above a large floor, with the light straight down. The
+        // floor directly under the quad must be darker than the floor beside
+        // it, and only a cast shadow can do that -- both patches have the same
+        // normal, the same texture and the same tint, so shading alone cannot
+        // tell them apart.
+        let Some(mut scene) = gpu(128, 128) else {
+            eprintln!("no GPU adapter on this machine; skipping");
+            return;
+        };
+        let floor: Vec<f32> = vec![
+            -20.0, 0.0, -20.0, -20.0, 0.0, 20.0, 20.0, 0.0, 20.0, //
+            -20.0, 0.0, -20.0, 20.0, 0.0, 20.0, 20.0, 0.0, -20.0,
+        ];
+        // A blocker well above the middle of it.
+        let blocker: Vec<f32> = vec![
+            -2.0, 6.0, -2.0, -2.0, 6.0, 2.0, 2.0, 6.0, 2.0, //
+            -2.0, 6.0, -2.0, 2.0, 6.0, 2.0, 2.0, 6.0, -2.0,
+        ];
+
+        let mut render = |radius: f32| -> ImagePixels {
+            scene.set_camera([0.0, 14.0, 22.0], [0.0, 0.0, 0.0], 60.0);
+            scene.set_light([0.0, -1.0, 0.0]);
+            scene.set_lighting(Lighting {
+                shadow_radius: radius,
+                shadow_softness: 1.0,
+                ..Lighting::default()
+            });
+            scene.clear([0.0, 0.0, 0.0, 1.0]);
+            scene.triangles(&floor, [0.8, 0.8, 0.8, 1.0]);
+            scene.triangles(&blocker, [0.9, 0.3, 0.3, 1.0]);
+            scene.render_image().expect("a frame")
+        };
+
+        let off = render(0.0);
+        let on = render(30.0);
+
+        // Sample the floor well to one side of the blocker, and compare the
+        // same pixel in both renders: with shadows off nothing changes, and
+        // with them on only the shaded patch does.
+        let lit_off = at(&off, 20, 100);
+        let lit_on = at(&on, 20, 100);
+        assert!(
+            lit_on[0].abs_diff(lit_off[0]) < 20,
+            "floor away from the blocker must be unchanged: {lit_off:?} vs {lit_on:?}"
+        );
+
+        // And somewhere under the blocker, the floor must have darkened. The
+        // blocker itself is red and the floor grey, so a green channel that
+        // dropped is floor that went into shadow.
+        let mut darkened = 0;
+        for y in 60..120u32 {
+            for x in 40..90u32 {
+                let a = at(&off, x, y);
+                let b = at(&on, x, y);
+                // Grey floor: red and green close together. Excludes the
+                // red blocker, which is drawn over part of this region.
+                let is_floor = a[0].abs_diff(a[1]) < 24 && a[1] > 30;
+                if is_floor && b[1] + 25 < a[1] {
+                    darkened += 1;
+                }
+            }
+        }
+        // 158 was the count when this was first written, with the 4x4 blocker
+        // covering much of the region being scanned; 100 leaves room for a
+        // driver that rounds an edge differently without letting a shadow that
+        // has stopped working through.
+        assert!(
+            darkened > 100,
+            "the floor under the blocker must darken: only {darkened} pixels did"
         );
     }
 

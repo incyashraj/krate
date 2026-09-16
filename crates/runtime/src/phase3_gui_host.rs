@@ -4910,6 +4910,8 @@ impl gfx::scene3d::Host for Phase3GuiHost {
                 lighting.fog_color.b,
             ],
             fill,
+            shadow_radius: lighting.shadow_radius,
+            shadow_softness: lighting.shadow_softness,
         };
         match surface.set_lighting(value) {
             Ok(()) => Ok(Ok(())),

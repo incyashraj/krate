@@ -438,6 +438,19 @@ interface scene3d {
   /// opposite side, standing in for light bounced off everything else. A key
   /// light alone leaves shadows black; a key and a fill is most of what reads
   /// as a lit room rather than a lamp in a void.
+  /// `shadow-radius` turns on cast shadows and says how far around the camera
+  /// they reach, in world units. Zero is off.
+  ///
+  /// A radius rather than a world box because a shadow map is a fixed grid of
+  /// texels spread over whatever area it covers: cover a whole two-kilometre
+  /// circuit and each texel is metres wide, which is a shadow with visible
+  /// stairs on it. Following the camera keeps the detail where somebody is
+  /// looking. Pick roughly the distance at which a shadow stops mattering --
+  /// 40 units for a plaza, 120 for a landscape.
+  ///
+  /// `shadow-softness` blurs the shadow edge, in texels. Zero is a hard edge,
+  /// which reads as cut paper; 1 to 2 looks like a real penumbra. It costs
+  /// samples, so it is the app's choice rather than always on.
   record lighting {
     ambient: f32,
     specular: f32,
@@ -446,6 +459,8 @@ interface scene3d {
     fog-color: color,
     fill-direction: list<f32>,
     fill-color: color,
+    shadow-radius: f32,
+    shadow-softness: f32,
   }
 
   /// Set how the scene is lit. Refused by a backend that cannot do it, so an

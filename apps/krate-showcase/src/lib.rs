@@ -191,11 +191,16 @@ impl krate::Guest for Component {
                 // is what the sky does outdoors.
                 fill_direction: alloc::vec![0.55, 0.42, 0.72],
                 fill_color: rgb(0.34, 0.42, 0.58),
+                // The plaza is about 90 units across at its widest, so 70
+                // covers everything that can cast onto what the camera sees
+                // while keeping the map's texels small.
+                shadow_radius: 70.0,
+                shadow_softness: 1.4,
             },
         )
         .is_ok();
         if lit {
-            say("showcase: specular, fog and a fill light are on");
+            say("showcase: specular, fog, a fill light and cast shadows are on");
         } else {
             say("showcase: this renderer has one flat light; drawing without");
         }
@@ -248,13 +253,18 @@ impl krate::Guest for Component {
         // The floor's UV scale, shared with the shadow patches so they sample
         // the same texture the floor does.
         const FLOOR_UV: f32 = 26.0;
-        // One blended quad per shadow, now that the rasterizer blends. The
-        // previous version was a grid of opaque patches sampling the floor
-        // underneath at a darkening tint -- the workaround for having no
-        // alpha. It cost 361 draw calls per shadow and still showed its patch
-        // edges. This is one call, and the falloff lives in the texture's
-        // alpha channel where it belongs.
+        // A painted shadow blob under each object, used ONLY when the
+        // renderer cannot cast a real one.
+        //
+        // This has now been three things. First a grid of 361 opaque patches
+        // sampling the floor at a darkening tint, which was the workaround for
+        // having no alpha at all. Then one blended quad, once the rasterizer
+        // could blend. Now a fallback, because the GPU casts real shadows and
+        // drawing both puts two shadows under everything.
         let add_shadow = |parts: &mut Vec<Part>, x: f32, y: f32, z: f32, size: f32| {
+            if lit {
+                return;
+            }
             let mut m = Mesh::default();
             let h = size * 0.5;
             m.quad(
