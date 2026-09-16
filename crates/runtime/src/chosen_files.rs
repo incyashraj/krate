@@ -43,7 +43,12 @@ impl ChosenFiles {
     ///
     /// Returns `None` when this run already holds the maximum.
     pub fn remember(&mut self, path: PathBuf) -> Option<String> {
-        if self.by_token.len() >= MAX_CHOSEN_FILES {
+        // The SUM, not just the files (K-389). `remember_folder` has always
+        // counted both, and the comment there calls this one budget -- but
+        // this side counted only files, so filling with folders first and
+        // then files gave 64 of each: twice the bound the constant exists
+        // to enforce.
+        if self.held() >= MAX_CHOSEN_FILES {
             return None;
         }
         self.issued += 1;
@@ -60,7 +65,7 @@ impl ChosenFiles {
     /// Shares the run-wide bound with files: one budget for everything a
     /// person can be asked to click through.
     pub fn remember_folder(&mut self, path: PathBuf) -> Option<String> {
-        if self.by_token.len() + self.folders_by_token.len() >= MAX_CHOSEN_FILES {
+        if self.held() >= MAX_CHOSEN_FILES {
             return None;
         }
         self.issued += 1;
@@ -92,6 +97,16 @@ impl ChosenFiles {
         path.file_name()
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_else(|| "file".to_string())
+    }
+
+    /// Everything this run is holding, files and folders together.
+    ///
+    /// One number because there is one budget: both kinds are handles a
+    /// person clicked into existence, and both cost memory for the run.
+    /// Keeping the two counts separate is what let the bound be exceeded
+    /// (K-389).
+    fn held(&self) -> usize {
+        self.by_token.len() + self.folders_by_token.len()
     }
 
     /// How many files this run is holding, for tests and evidence.
@@ -188,5 +203,60 @@ mod tests {
         assert_eq!(files.len(), MAX_CHOSEN_FILES);
         // A loop calling the picker stops here rather than growing forever.
         assert_eq!(files.remember(PathBuf::from("/tmp/extra.txt")), None);
+    }
+
+    /// Files and folders share ONE budget, in either order (K-389).
+    ///
+    /// The test above only ever adds files, so it passed while the mixed
+    /// case did not hold: `remember` counted only files while
+    /// `remember_folder` counted both, and filling with folders first then
+    /// files gave 64 of each -- 128 handles against a bound of 64.
+    ///
+    /// Both orders, because checking one would pass with the bug still
+    /// present on the other side.
+    #[test]
+    fn files_and_folders_share_one_budget_whichever_comes_first() {
+        for folders_first in [true, false] {
+            let mut held = ChosenFiles::new();
+            let mut issued = 0;
+
+            // Half the budget in one kind.
+            let half = MAX_CHOSEN_FILES / 2;
+            for i in 0..half {
+                let got = if folders_first {
+                    held.remember_folder(PathBuf::from(format!("/tmp/dir{i}")))
+                } else {
+                    held.remember(PathBuf::from(format!("/tmp/{i}.txt")))
+                };
+                assert!(got.is_some(), "the first half fits");
+                issued += 1;
+            }
+
+            // Then the other kind until everything refuses.
+            loop {
+                let got = if folders_first {
+                    held.remember(PathBuf::from("/tmp/extra.txt"))
+                } else {
+                    held.remember_folder(PathBuf::from("/tmp/extra"))
+                };
+                match got {
+                    Some(_) => issued += 1,
+                    None => break,
+                }
+                assert!(
+                    issued <= MAX_CHOSEN_FILES,
+                    "issued {issued} handles against a bound of {MAX_CHOSEN_FILES} \
+                     (folders_first={folders_first})"
+                );
+            }
+
+            assert_eq!(
+                issued, MAX_CHOSEN_FILES,
+                "the budget is spent exactly once (folders_first={folders_first})"
+            );
+            // And the other kind is refused too, rather than having its own.
+            assert_eq!(held.remember(PathBuf::from("/tmp/more.txt")), None);
+            assert_eq!(held.remember_folder(PathBuf::from("/tmp/more")), None);
+        }
     }
 }
