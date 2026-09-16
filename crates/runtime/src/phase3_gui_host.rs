@@ -2313,6 +2313,40 @@ fn dispatch_error_to_ui_error(err: UiDispatchError) -> ui::types::UiError {
 }
 
 impl Phase3GuiHost {
+    /// Wait out the rest of the frame budget, so a guest loop that never
+    /// sleeps does not spin a core producing frames no display can show.
+    ///
+    /// The 2D path has its own copy of this inline, wrapped in the canvas-list
+    /// and frame-stats branches that only apply there. This is the same wait
+    /// for the 3D path, which had none at all.
+    fn pace_frame(&self) {
+        // An adapter whose own present blocks for the panel IS the pacing;
+        // waiting here as well is the second wait that puts input a frame
+        // behind.
+        if self.dispatcher().supports_canvas_lists() {
+            self.last_present.set(Some(std::time::Instant::now()));
+            return;
+        }
+        if let Some(previous) = self.last_present.get() {
+            let elapsed = previous.elapsed();
+            if elapsed < FRAME_BUDGET {
+                // Sleep short, then close the gap by yielding: every OS rounds
+                // a sleep UP to its timer granularity, and on Windows that is
+                // ~15.6 ms, so asking for the exact remainder overshoots by a
+                // whole frame.
+                const SPIN_MARGIN: std::time::Duration = std::time::Duration::from_micros(1_200);
+                let remainder = FRAME_BUDGET - elapsed;
+                if remainder > SPIN_MARGIN {
+                    std::thread::sleep(remainder - SPIN_MARGIN);
+                }
+                while previous.elapsed() < FRAME_BUDGET {
+                    std::thread::yield_now();
+                }
+            }
+        }
+        self.last_present.set(Some(std::time::Instant::now()));
+    }
+
     /// Resolve a guest-supplied raw window id against the windows this
     /// component created. Guests cannot reference windows they do not own.
     /// The laid-out size of a canvas widget, in logical pixels.
@@ -4536,7 +4570,6 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         if self.close_ignored_by_guest() {
             std::process::exit(0);
         }
-        const FRAME_BUDGET: std::time::Duration = std::time::Duration::from_micros(16_667);
         // A GPU adapter's present blocks for the panel inside
         // get_current_texture, and that IS the pacing. Adding our own timer
         // on top made the guest free-run into FIFO's queue: measured on
@@ -4823,6 +4856,15 @@ impl gfx::scene3d::Host for Phase3GuiHost {
         if self.close_ignored_by_guest() {
             std::process::exit(0);
         }
+        // Pace the frame, exactly as the 2D path does.
+        //
+        // This was missing entirely: a 3D game loop calls present with no
+        // sleep of its own, so it free-ran at whatever the rasterizer could
+        // manage -- measured at roughly three times the display's rate --
+        // burning a core to draw frames no panel would ever show. A 2D canvas
+        // has paced since it shipped; a scene never did, and the difference
+        // was invisible because both look fine in a screenshot.
+        self.pace_frame();
         let (window, widget, image) = {
             // Mutable because presenting is what fills the frame: triangles
             // are queued as they are drawn and rasterized here, once, across
@@ -4854,6 +4896,10 @@ impl gfx::scene3d::Host for Phase3GuiHost {
         Ok(result)
     }
 }
+
+/// One frame at 60 Hz. Both present paths wait out the remainder of this, so
+/// a guest loop that never sleeps does not spin a core.
+const FRAME_BUDGET: std::time::Duration = std::time::Duration::from_micros(16_667);
 
 /// Version of the sidecar a shot carries.
 pub const SHOT_SIDECAR_SCHEMA: &str = "krate.shot.v1";
@@ -5997,6 +6043,42 @@ mod tests {
             .expect("set_root call")
             .expect("a canvas may be the root");
         (host, window, widget)
+    }
+
+    #[test]
+    fn a_3d_scene_paces_its_frames_like_a_canvas_does() {
+        // A guest game loop calls present with no sleep of its own. The 2D
+        // path has always waited out the frame budget; the 3D path did not,
+        // so a 3D app free-ran at roughly three times the display rate and
+        // spent a third of a core drawing frames nothing would show (K-399).
+        //
+        // Timed rather than read off the source: the question is whether
+        // presenting twice in a row actually takes a frame, which is the thing
+        // that was wrong and the thing a future edit could quietly undo.
+        let (mut host, window, widget) = host_with_canvas_widget();
+        let scene = gfx::scene3d::Host::bind(&mut host, window, widget)
+            .expect("bind call")
+            .expect("a canvas widget binds a scene");
+
+        let present = |host: &mut Phase3GuiHost| {
+            gfx::scene3d::Host::present(host, scene)
+                .expect("present call")
+                .expect("present succeeds");
+        };
+
+        // The first present has no previous frame to pace against.
+        present(&mut host);
+        let started = std::time::Instant::now();
+        present(&mut host);
+        let elapsed = started.elapsed();
+
+        // Most of a frame, not all of it: the wait ends by yielding, and a
+        // loaded test machine can land a little under. Unpaced this was
+        // microseconds, so the margin is wide and still catches the bug.
+        assert!(
+            elapsed >= std::time::Duration::from_millis(12),
+            "a second present should wait out most of the frame budget, took {elapsed:?}"
+        );
     }
 
     #[test]
