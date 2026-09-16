@@ -116,13 +116,20 @@ const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
     CapabilitySpec::resource_free(CapabilityPhase::Phase3, "ui", "open-url", false),
     // Desktop notifications, for the same reason.
     CapabilitySpec::resource_free(CapabilityPhase::Phase3, "ui", "notify", false),
+    // K-175: declarable since Phase 3, and the runtime has never had a host
+    // function for it. The wordings, the mime scoping and the validation are
+    // all correct; what is missing is winit's DroppedFile/HoveredFile reaching
+    // an event an app can poll. Kept in the specs -- the design is wanted --
+    // and marked so nothing can put the promise in front of a person until
+    // the runtime can keep it.
     CapabilitySpec::resource_scoped(
         CapabilityPhase::Phase3,
         "ui",
         "dropzone",
         "<mime-type>",
         false,
-    ),
+    )
+    .not_implemented(),
     // Message and confirm boxes show text and take a click -- no data
     // moves -- so they are granted to every app. The WILDCARD is not: a
     // default-granted `ui.dialog:*` silently covered file-open, file-save
@@ -363,6 +370,20 @@ pub struct CapabilitySpec {
     action: &'static str,
     resource: Option<&'static str>,
     default_granted: bool,
+    /// Can the runtime actually do this?
+    ///
+    /// A capability the manifest accepts is a promise: it is shown on the
+    /// consent sheet in plain words, and a person reads it before they say
+    /// yes. `ui.dropzone` has been declarable since Phase 3 with zero host
+    /// functions behind it -- an app could declare it, a person could be
+    /// told the app would "accept files you drag onto it", and nothing would
+    /// ever arrive (K-175, the same hollow-permission shape as K-086).
+    ///
+    /// Recorded here rather than fixed by deleting the capability, because
+    /// the design is wanted and the wordings, the mime scoping and the
+    /// validation are all correct already. What was missing is anything that
+    /// stops the promise reaching a person before the runtime can keep it.
+    implemented: bool,
 }
 
 impl CapabilitySpec {
@@ -378,6 +399,7 @@ impl CapabilitySpec {
             action,
             resource: None,
             default_granted,
+            implemented: true,
         }
     }
 
@@ -394,7 +416,25 @@ impl CapabilitySpec {
             action,
             resource: Some(resource),
             default_granted,
+            implemented: true,
         }
+    }
+
+    /// A capability the specs name and the runtime cannot yet honour.
+    ///
+    /// Declared here so the gap is a fact the code carries rather than a
+    /// line in a bug report, and so `krate check` can refuse it instead of
+    /// letting the promise reach a consent sheet.
+    const fn not_implemented(self) -> Self {
+        Self {
+            implemented: false,
+            ..self
+        }
+    }
+
+    /// Whether the runtime can honour this capability today.
+    pub fn implemented(&self) -> bool {
+        self.implemented
     }
 
     pub fn phase(&self) -> CapabilityPhase {
@@ -446,12 +486,30 @@ impl Capability {
         validate_ident("capability action", action)?;
 
         let cap_name = format!("{module}.{action}");
-        let resource_required = capability_resource_required(module, action).ok_or_else(|| {
-            ManifestError::InvalidCapability {
+        let spec = supported_capability_specs()
+            .iter()
+            .find(|spec| spec.module == module && spec.action == action)
+            .ok_or_else(|| ManifestError::InvalidCapability {
                 cap: cap_name.clone(),
                 reason: "unknown Krate capability".to_string(),
-            }
-        })?;
+            })?;
+
+        // A capability the runtime cannot honour must not become a promise on
+        // a consent sheet (K-175). Refused here, at the one place every
+        // capability string passes through, so a manifest carrying it fails
+        // where the fix is one line -- rather than at run time, after a
+        // person has already been told the app can do it.
+        if !spec.implemented {
+            return Err(ManifestError::InvalidCapability {
+                cap: cap_name,
+                reason: "this capability is named in Krate's specs but the runtime cannot \
+                         honour it yet, so declaring it would promise the person running \
+                         the app something that never happens. Remove it; for files, \
+                         `ui.dialog:file-open` works today"
+                    .to_string(),
+            });
+        }
+        let resource_required = spec.resource.is_some();
         let resource_was_present = resource.is_some();
         let mut resource = resource
             .map(str::trim)
@@ -723,12 +781,10 @@ fn validate_ident(field: &'static str, value: &str) -> Result<()> {
     Ok(())
 }
 
-fn capability_resource_required(module: &str, action: &str) -> Option<bool> {
-    supported_capability_specs()
-        .iter()
-        .find(|spec| spec.module == module && spec.action == action)
-        .map(|spec| spec.resource.is_some())
-}
+// `capability_resource_required` lived here. `Capability::new` now looks the
+// whole spec up once -- it needs the implemented flag as well as the resource
+// shape -- so a second lookup that answered only half the question was dead
+// weight and a second place for the two to disagree.
 
 fn validate_capability_resource(
     module: &str,
@@ -1436,12 +1492,16 @@ mod tests {
 
     #[test]
     fn rejects_invalid_phase3_gui_capability_resources() {
+        // `ui.dropzone:not-a-mime` used to live in this list. It is refused
+        // now before the resource is ever looked at, because the capability
+        // itself is unimplemented -- so it would pass this test for a reason
+        // that has nothing to do with the mime type. Its own test below says
+        // what actually happens.
         for input in [
             "ui.window:read",
             "ui.clipboard:delete",
             "ui.dialog:camera",
             "gfx.gpu:admin",
-            "ui.dropzone:not-a-mime",
         ] {
             let err = input
                 .parse::<Capability>()
@@ -1451,6 +1511,60 @@ mod tests {
                 "unexpected error type for `{input}`: {err:?}"
             );
         }
+    }
+
+    /// K-175: a capability the runtime cannot honour must not be declarable.
+    ///
+    /// `ui.dropzone` has been in the specs since Phase 3 with zero host
+    /// functions behind it. An app could declare it, and the consent sheet
+    /// would tell a person the app can "accept files you drag onto it" --
+    /// a promise nothing in the runtime can keep. That is the hollow
+    /// permission K-086 was about, and a person cannot tell the difference
+    /// from the outside.
+    ///
+    /// Refused at parse, where the fix is one line in a manifest, rather
+    /// than at run time after somebody has already agreed to it. The reason
+    /// has to say WHY and name what does work, or the author just sees a
+    /// valid-looking capability rejected for no stated cause.
+    #[test]
+    fn a_capability_the_runtime_cannot_honour_is_not_declarable() {
+        let err = "ui.dropzone:image/png"
+            .parse::<Capability>()
+            .expect_err("an unimplemented capability must not parse");
+        let ManifestError::InvalidCapability { cap, reason } = err else {
+            panic!("expected InvalidCapability, got {err:?}");
+        };
+        assert_eq!(cap, "ui.dropzone");
+        assert!(
+            reason.contains("runtime cannot"),
+            "the reason must say the runtime cannot do it: {reason}"
+        );
+        assert!(
+            reason.contains("ui.dialog:file-open"),
+            "and name the capability that does work today: {reason}"
+        );
+
+        // The spec is still there -- the design is wanted, and deleting it
+        // would lose the wordings, the mime scoping and this decision.
+        let spec = supported_capability_specs()
+            .iter()
+            .find(|s| s.module() == "ui" && s.action() == "dropzone")
+            .expect("dropzone stays in the specs");
+        assert!(!spec.implemented(), "and it is marked as not implemented");
+
+        // Every other capability in the specs IS implemented. Without this,
+        // marking something unimplemented by mistake would silently make it
+        // undeclarable and no test would notice.
+        let hollow: Vec<_> = supported_capability_specs()
+            .iter()
+            .filter(|s| !s.implemented())
+            .map(|s| format!("{}.{}", s.module(), s.action()))
+            .collect();
+        assert_eq!(
+            hollow,
+            vec!["ui.dropzone"],
+            "exactly one capability is known-unimplemented; adding another needs a bug filed"
+        );
     }
 
     #[test]
