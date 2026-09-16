@@ -174,6 +174,43 @@ async function until(what, tries = 50) {
   throw new Error("timed out waiting");
 }
 
+// Wait for a build to finish AND for its accounting to land (K-386).
+//
+// `state === "done"` and the POSTs to /case/attempt and /spend are different
+// events: the builder reports the state from its own store, and tells the
+// hub separately. Nothing orders the two. So a test that waits on the state
+// and then reads caseCalls or spendCalls is reading a list the previous
+// build may still be writing to -- which is exactly how this file went red
+// on CI and stayed green on a fast laptop, twice, at two different
+// assertions:
+//
+//   jobs.test.mjs:392  TypeError: Cannot read properties of undefined
+//                      (the spend call had not arrived)
+//   jobs.test.mjs:304  actual [ 'made' ] / expected [ 'off-request' ]
+//                      (the PREVIOUS build's attempt landed inside the slice)
+//
+// Waiting for the attempt count to rise is what makes a later slice mean
+// what it says. Every build that opens a funded case records exactly one
+// attempt, so the count is the signal; a build that records none (a plan)
+// must not use this.
+async function settled(id, who, attemptsBefore) {
+  await until(async () => {
+    const s = JSON.parse((await get(`/build/${id}`, who)).body);
+    return s.state === "done" || s.state === "failed";
+  });
+  await until(
+    async () =>
+      caseCalls.filter((c) => c.path === "/case/attempt").length > attemptsBefore,
+  );
+  return JSON.parse((await get(`/build/${id}`, who)).body);
+}
+
+// How many attempts have been recorded so far. Taken before starting a
+// build, and handed to `settled` after it, so the two cannot drift apart.
+function attemptCount() {
+  return caseCalls.filter((c) => c.path === "/case/attempt").length;
+}
+
 const asAlice = { authorization: "Bearer alice-token" };
 const asAliceRefreshed = { authorization: "Bearer alice-token-2" };
 const asBob = { authorization: "Bearer bob-token" };
@@ -287,15 +324,20 @@ for (const round of [1, 2]) {
 // The engine's request verdict (exit 6) is a result with a verdict, not a
 // failure: the file is there, the page is told why it falls short, and the
 // funded case is not spent by it.
-const casesBeforeOff = caseCalls.filter((c) => c.path === "/case/attempt").length;
+// The build above reached `done` before this line, but its own
+// /case/attempt POST is a separate call and may not have landed yet. Wait
+// for THAT build's attempt by name -- not for a count, which would have to
+// encode how many builds ran above and break the moment one is added --
+// or the count taken next is short by one and its "made" falls inside this
+// build's slice (K-386).
+await until(async () =>
+  caseCalls.some((c) => c.path === "/case/attempt" && c.body.outcome === "made"),
+);
+const casesBeforeOff = attemptCount();
 const off = await post("/build", { request: "a timer OFFREQ" }, asAlice);
 assert.strictEqual(off.status, 200, `off-request start: ${off.body}`);
 const offId = JSON.parse(off.body).id;
-await until(async () => {
-  const s = JSON.parse((await get(`/build/${offId}`, asAlice)).body);
-  return s.state === "done" || s.state === "failed";
-});
-const offStatus = JSON.parse((await get(`/build/${offId}`, asAlice)).body);
+const offStatus = await settled(offId, asAlice, casesBeforeOff);
 assert.strictEqual(offStatus.state, "done", `an off-request app is a result, not a failure: ${JSON.stringify(offStatus)}`);
 assert.strictEqual(offStatus.result.verdict, "off-request");
 assert.match(offStatus.result.verdict_detail, /asked for a timer/, "the engine's reason reaches the page");
@@ -324,7 +366,13 @@ const revisedId = JSON.parse(revised.body).id;
 assert.match(revisedId, /^[0-9a-f]{32}$/);
 assert.strictEqual(JSON.parse(revised.body).parent, jobId, "the change names the app it starts from");
 assert.strictEqual((await post(`/build/${revisedId}/revise`, { change: "again" }, asAlice)).status, 409, "a change cannot start from an unfinished one");
+// Three attempts have been recorded once this one lands: the app, the
+// off-request build, and this change. Waiting for the count is what makes
+// `.pop()` below the change's attempt rather than whichever one happened to
+// arrive last (K-386).
+const attemptsBeforeRevise = attemptCount();
 await until(async () => JSON.parse((await get(`/build/${revisedId}`, asAlice)).body).state === "done");
+await until(async () => attemptCount() > attemptsBeforeRevise);
 const revisedStatus = JSON.parse((await get(`/build/${revisedId}`, asAlice)).body);
 assert.strictEqual(revisedStatus.parent, jobId, "the status carries the parent");
 const revisedFile = await get(`/build/${revisedId}/file`, asAlice);
@@ -374,6 +422,12 @@ assert.strictEqual(spentOnKrate[0].body.paid_by, "krate", "funded builds are OUR
   assert.strictEqual(done.state, "done", `it builds: ${JSON.stringify(done)}`);
   assert.ok(keyCalls.some((c) => c.who === "alice"), "her key was fetched with her own session");
 
+  // The state says done; the /spend POST is a separate call that may not
+  // have landed. Wait for it rather than for the state, or this slice is
+  // empty and `.at(-1)` is undefined (K-386, the original failure).
+  await until(
+    async () => spendCalls.slice(spendBefore).some((c) => c.who === "alice"),
+  );
   const mine = spendCalls.slice(spendBefore).filter((c) => c.who === "alice");
   assert.ok(mine.length > 0, `the build on her key is recorded: ${JSON.stringify(spendCalls.slice(spendBefore))} (before=${spendBefore}, all=${spendCalls.length})`);
   assert.strictEqual(mine.at(-1).body.paid_by, "own", "against HER money, not ours");
@@ -388,6 +442,10 @@ assert.strictEqual(spentOnKrate[0].body.paid_by, "krate", "funded builds are OUR
     const st = JSON.parse((await get(`/build/${oursId}`, asAlice)).body);
     return st.state === "done" || st.state === "failed";
   });
+  // Same again: wait for the spend, not the state.
+  await until(
+    async () => spendCalls.slice(spendMid).some((c) => c.who === "alice"),
+  );
   const after = spendCalls.slice(spendMid).filter((c) => c.who === "alice");
   assert.strictEqual(after.at(-1).body.paid_by, "krate", "no key on file means we paid");
 
