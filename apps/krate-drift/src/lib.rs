@@ -1089,10 +1089,12 @@ impl krate::Guest for Component {
 
             frames += 1;
             if frames >= frame_cap {
+                say("drift: frame cap reached, stopping");
                 break;
             }
 
             if let Some(types::Event::CloseRequested(id)) = events::poll() {
+                say("drift: window closed, stopping");
                 let _ = window::close(id);
                 break;
             }
