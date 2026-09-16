@@ -168,6 +168,38 @@ impl krate::Guest for Component {
         // costs more than culling saves on a scene this size.
         let _ = scene3d::cull_back_faces(scene, false);
 
+        // Ask for everything the renderer can do beyond one flat light. This
+        // is refused on a machine with no GPU, and the scene still draws --
+        // it just draws the way it did before, which is the point of the
+        // feature being opt-in rather than a new default.
+        let lit = scene3d::set_lighting(
+            scene,
+            &scene3d::Lighting {
+                // A little darker than the 0.35 default: with a fill light
+                // doing the work the floor no longer has to, and a lower floor
+                // is what lets a shadow side actually read as dark.
+                ambient: 0.16,
+                // Enough to see, not enough to look like wet plastic.
+                specular: 0.55,
+                shininess: 48.0,
+                // Gentle: the plaza is about 200 units across and this should
+                // put air between the near pillars and the far ones without
+                // hiding anything.
+                fog_density: 0.0042,
+                fog_color: rgb(0.62, 0.70, 0.84),
+                // A cool fill from the opposite side of the key light, which
+                // is what the sky does outdoors.
+                fill_direction: alloc::vec![0.55, 0.42, 0.72],
+                fill_color: rgb(0.34, 0.42, 0.58),
+            },
+        )
+        .is_ok();
+        if lit {
+            say("showcase: specular, fog and a fill light are on");
+        } else {
+            say("showcase: this renderer has one flat light; drawing without");
+        }
+
         // ---- textures
         let t0 = clock::monotonic_nanos();
         let upload = |t: paint::Texture| -> u64 {

@@ -863,6 +863,30 @@ impl SceneBackend {
         }
     }
 
+    /// Set how the scene is lit beyond the one directional light.
+    ///
+    /// REFUSED on the software rasterizer rather than silently ignored. An app
+    /// that asks for specular and fog and gets neither, with no error, has no
+    /// way to tell that from having asked wrongly -- and the honest answer is
+    /// that this machine's renderer cannot do it, which is something the app
+    /// can act on by choosing a look that does not depend on it.
+    pub fn set_lighting(
+        &mut self,
+        lighting: krate_scene3d_gpu::Lighting,
+    ) -> Result<(), UiAdapterError> {
+        match self {
+            SceneBackend::Gpu(gpu) => {
+                gpu.set_lighting(lighting);
+                Ok(())
+            }
+            SceneBackend::Cpu(_) => Err(UiAdapterError::Unsupported(
+                "this machine has no GPU for 3D, and the software renderer has \
+                 one directional light with no specular, fog or fill light"
+                    .to_string(),
+            )),
+        }
+    }
+
     pub fn set_light(&mut self, direction: [f32; 3]) {
         match self {
             SceneBackend::Gpu(gpu) => gpu.set_light(direction),

@@ -4864,6 +4864,59 @@ impl gfx::scene3d::Host for Phase3GuiHost {
         Ok(Ok(()))
     }
 
+    fn set_lighting(
+        &mut self,
+        scene: u64,
+        lighting: gfx::scene3d::Lighting,
+    ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        // Three floats each, or the direction describes nothing. Refused
+        // rather than padded, the same way `camera` refuses a short vector.
+        if !lighting.fill_direction.is_empty() && lighting.fill_direction.len() != 3 {
+            return Ok(Err(gfx::types::GfxError::Unsupported(
+                "a fill light takes three floats for its direction, or none at all".to_string(),
+            )));
+        }
+        let mut scenes = self.scenes.borrow_mut();
+        let Some((_, _, surface)) = scenes.get_mut(&scene) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        // An empty direction means no fill light, which is how an app turns
+        // one off without a second call.
+        let fill = if lighting.fill_direction.len() == 3 {
+            Some((
+                [
+                    lighting.fill_direction[0],
+                    lighting.fill_direction[1],
+                    lighting.fill_direction[2],
+                ],
+                [
+                    lighting.fill_color.r,
+                    lighting.fill_color.g,
+                    lighting.fill_color.b,
+                ],
+            ))
+        } else {
+            None
+        };
+        let value = krate_scene3d_gpu::Lighting {
+            ambient_flat: lighting.ambient,
+            ambient_smooth: lighting.ambient,
+            specular: lighting.specular,
+            shininess: lighting.shininess,
+            fog_density: lighting.fog_density,
+            fog_color: [
+                lighting.fog_color.r,
+                lighting.fog_color.g,
+                lighting.fog_color.b,
+            ],
+            fill,
+        };
+        match surface.set_lighting(value) {
+            Ok(()) => Ok(Ok(())),
+            Err(error) => Ok(Err(gfx::types::GfxError::Unsupported(error.to_string()))),
+        }
+    }
+
     fn cull_back_faces(
         &mut self,
         scene: u64,

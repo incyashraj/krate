@@ -7104,6 +7104,55 @@ pub mod krate {
             use super::super::super::_rt;
             pub type Color = super::super::super::krate::gfx::types::Color;
             pub type GfxError = super::super::super::krate::gfx::types::GfxError;
+            /// How a scene is lit, beyond the one directional light.
+            ///
+            /// Everything here is OFF by default and an app that never calls this looks
+            /// exactly as it did before, on both backends. That is deliberate: the
+            /// software rasterizer and the GPU one are checked against each other pixel
+            /// by pixel, and a feature that changed the default picture would break that
+            /// check for every app that never asked for it.
+            ///
+            /// `ambient` replaces the shading floor -- the brightness a surface facing
+            /// away from the light still has. The default floor is 0.35 for a mesh drawn
+            /// through `triangles` or `textured` and 0.22 for one drawn through
+            /// `smooth`; setting this uses one number for both.
+            ///
+            /// `specular` is how sharp a highlight the surface takes, 0 for chalk and 1
+            /// for polished. `shininess` is how tight it is: 8 is a wide sheen, 128 a
+            /// small hot spot. Without these every surface in a scene is matte, which is
+            /// most of why a rendered object can look like paper.
+            ///
+            /// `fog-density` fades distant geometry into `fog-color`. Zero is off. Air
+            /// is what tells an eye how far away something is, and a scene without it
+            /// reads flat however well it is lit.
+            ///
+            /// `fill-light` is a second directional light, usually dimmer and from the
+            /// opposite side, standing in for light bounced off everything else. A key
+            /// light alone leaves shadows black; a key and a fill is most of what reads
+            /// as a lit room rather than a lamp in a void.
+            #[derive(Clone)]
+            pub struct Lighting {
+                pub ambient: f32,
+                pub specular: f32,
+                pub shininess: f32,
+                pub fog_density: f32,
+                pub fog_color: Color,
+                pub fill_direction: _rt::Vec<f32>,
+                pub fill_color: Color,
+            }
+            impl ::core::fmt::Debug for Lighting {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    f.debug_struct("Lighting")
+                        .field("ambient", &self.ambient)
+                        .field("specular", &self.specular)
+                        .field("shininess", &self.shininess)
+                        .field("fog-density", &self.fog_density)
+                        .field("fog-color", &self.fog_color)
+                        .field("fill-direction", &self.fill_direction)
+                        .field("fill-color", &self.fill_color)
+                        .finish()
+                }
+            }
             #[allow(unused_unsafe, clippy::all)]
             /// Create a 3D scene that draws into a window widget.
             pub fn bind(window: u64, widget: u64) -> Result<u64, GfxError> {
@@ -8169,6 +8218,170 @@ pub mod krate {
                             ptr2.cast_mut(),
                             len2,
                             _rt::as_i64(&texture),
+                            _rt::as_f32(r3),
+                            _rt::as_f32(g3),
+                            _rt::as_f32(b3),
+                            _rt::as_f32(a3),
+                            ptr4,
+                        )
+                    };
+                    let l6 = i32::from(*ptr4.add(0).cast::<u8>());
+                    let result15 = match l6 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l7 = i32::from(
+                                    *ptr4.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                use super::super::super::krate::gfx::types::GfxError as V14;
+                                let v14 = match l7 {
+                                    0 => V14::PermissionDenied,
+                                    1 => V14::InvalidTarget,
+                                    2 => {
+                                        let e14 = {
+                                            let l8 = *ptr4
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l9 = *ptr4
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len10 = l9;
+                                            let bytes10 =
+                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
+
+                                            _rt::string_lift(bytes10)
+                                        };
+                                        V14::Unsupported(e14)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                        let e14 = {
+                                            let l11 = *ptr4
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l12 = *ptr4
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len13 = l12;
+                                            let bytes13 =
+                                                _rt::Vec::from_raw_parts(l11.cast(), len13, len13);
+
+                                            _rt::string_lift(bytes13)
+                                        };
+                                        V14::Platform(e14)
+                                    }
+                                };
+
+                                v14
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result15
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Set how the scene is lit. Refused by a backend that cannot do it, so an
+            /// app can ask once at startup and fall back rather than discovering per
+            /// frame that nothing changed.
+            pub fn set_lighting(scene: u64, lighting: &Lighting) -> Result<(), GfxError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let Lighting {
+                        ambient: ambient0,
+                        specular: specular0,
+                        shininess: shininess0,
+                        fog_density: fog_density0,
+                        fog_color: fog_color0,
+                        fill_direction: fill_direction0,
+                        fill_color: fill_color0,
+                    } = lighting;
+                    let super::super::super::krate::gfx::types::Color {
+                        r: r1,
+                        g: g1,
+                        b: b1,
+                        a: a1,
+                    } = fog_color0;
+                    let vec2 = fill_direction0;
+                    let ptr2 = vec2.as_ptr().cast::<u8>();
+                    let len2 = vec2.len();
+                    let super::super::super::krate::gfx::types::Color {
+                        r: r3,
+                        g: g3,
+                        b: b3,
+                        a: a3,
+                    } = fill_color0;
+                    let ptr4 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:gfx/scene3d@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "set-lighting"]
+                        fn wit_import5(
+                            _: i64,
+                            _: f32,
+                            _: f32,
+                            _: f32,
+                            _: f32,
+                            _: f32,
+                            _: f32,
+                            _: f32,
+                            _: f32,
+                            _: *mut u8,
+                            _: usize,
+                            _: f32,
+                            _: f32,
+                            _: f32,
+                            _: f32,
+                            _: *mut u8,
+                        );
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import5(
+                        _: i64,
+                        _: f32,
+                        _: f32,
+                        _: f32,
+                        _: f32,
+                        _: f32,
+                        _: f32,
+                        _: f32,
+                        _: f32,
+                        _: *mut u8,
+                        _: usize,
+                        _: f32,
+                        _: f32,
+                        _: f32,
+                        _: f32,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import5(
+                            _rt::as_i64(&scene),
+                            _rt::as_f32(ambient0),
+                            _rt::as_f32(specular0),
+                            _rt::as_f32(shininess0),
+                            _rt::as_f32(fog_density0),
+                            _rt::as_f32(r1),
+                            _rt::as_f32(g1),
+                            _rt::as_f32(b1),
+                            _rt::as_f32(a1),
+                            ptr2.cast_mut(),
+                            len2,
                             _rt::as_f32(r3),
                             _rt::as_f32(g3),
                             _rt::as_f32(b3),
@@ -19615,8 +19828,8 @@ pub(crate) use __export_gui_impl as export;
 #[unsafe(link_section = "component-type:wit-bindgen:0.41.0:krate:app@0.2.0:gui:encoded world")]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 12603] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xc1a\x01A\x02\x01Aw\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 12741] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xcbb\x01A\x02\x01Aw\x01\
 B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x09log-level\x03\
 \0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eof\0\0\x0cinvalid-\
 utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x14krate:io/types@0.1\
@@ -19844,68 +20057,70 @@ font-sizev\x03ink\x01\0\x18\x04\0\x09draw-text\x01.\x01@\x03\x06canvasw\x04texts
 widthy\x06heighty\x04rgba(\0\x18\x04\0\x0bdraw-pixels\x010\x01@\x07\x06canvasw\x06\
 center\x03\x03dst\x07\x05anglev\x05widthy\x06heighty\x04rgba(\0\x18\x04\0\x0bdra\
 w-sprite\x011\x04\0\x07present\x01\x1b\x03\0\x18krate:gfx/canvas2d@0.1.0\x05>\x01\
-B\x1e\x02\x03\x02\x014\x04\0\x05color\x03\0\0\x02\x03\x02\x019\x04\0\x09gfx-erro\
-r\x03\0\x02\x01j\x01w\x01\x03\x01@\x02\x06windoww\x06widgetw\0\x04\x04\0\x04bind\
-\x01\x05\x01j\0\x01\x03\x01@\x02\x05scenew\x03sky\x01\0\x06\x04\0\x05clear\x01\x07\
-\x01pv\x01@\x04\x05scenew\x03eye\x08\x07look-at\x08\x0bfov-degreesv\0\x06\x04\0\x06\
-camera\x01\x09\x01@\x02\x05scenew\x09direction\x08\0\x06\x04\0\x05light\x01\x0a\x01\
-@\x03\x05scenew\x08vertices\x08\x04tint\x01\0\x06\x04\0\x09triangles\x01\x0b\x01\
-@\x06\x05scenew\x08vertices\x08\x09translate\x08\x0erotate-degrees\x08\x05scalev\
-\x04tint\x01\0\x06\x04\0\x05place\x01\x0c\x01p}\x01@\x04\x05scenew\x05widthy\x06\
-heighty\x04rgba\x0d\0\x04\x04\0\x0eupload-texture\x01\x0e\x01@\x05\x05scenew\x08\
-vertices\x08\x03uvs\x08\x07texturew\x04tint\x01\0\x06\x04\0\x08textured\x01\x0f\x01\
-@\x06\x05scenew\x08vertices\x08\x07normals\x08\x03uvs\x08\x07texturew\x04tint\x01\
-\0\x06\x04\0\x06smooth\x01\x10\x01@\x02\x05scenew\x07enabled\x7f\0\x06\x04\0\x0f\
-cull-back-faces\x01\x11\x01@\x01\x05scenew\0\x06\x04\0\x07present\x01\x12\x03\0\x17\
-krate:gfx/scene3d@0.1.0\x05?\x01B\x06\x01m\x02\x07pcm-s16\x07float32\x04\0\x0dsa\
-mple-format\x03\0\0\x01r\x04\x0bsample-ratey\x08channels{\x06format\x01\x0dbuffe\
-r-framesy\x04\0\x0dstream-config\x03\0\x02\x01q\x05\x11permission-denied\0\0\x0e\
-invalid-stream\0\0\x12device-unavailable\0\0\x0bunsupported\x01s\0\x08platform\x01\
-s\0\x04\0\x0baudio-error\x03\0\x04\x03\0\x17krate:audio/types@0.1.0\x05@\x02\x03\
-\0\"\x0baudio-error\x02\x03\0\"\x0dstream-config\x01B\x15\x02\x03\x02\x01A\x04\0\
-\x0baudio-error\x03\0\0\x02\x03\x02\x01B\x04\0\x0dstream-config\x03\0\x02\x01j\x01\
-w\x01\x01\x01@\x01\x06config\x03\0\x04\x04\0\x04open\x01\x05\x01j\0\x01\x01\x01@\
-\x01\x09stream-idw\0\x06\x04\0\x05start\x01\x07\x04\0\x04stop\x01\x07\x01p}\x01j\
-\x01y\x01\x01\x01@\x02\x09stream-idw\x05bytes\x08\0\x09\x04\0\x05write\x01\x0a\x01\
-@\x02\x09stream-idw\x05bytes\x08\0\x04\x04\0\x0aload-sound\x01\x0b\x01@\x03\x09s\
-tream-idw\x05soundw\x04gainv\0\x06\x04\0\x0aplay-sound\x01\x0c\x01@\x02\x09strea\
-m-idw\x05soundw\0\x06\x04\0\x0astop-sound\x01\x0d\x03\0\x1akrate:audio/playback@\
-0.1.0\x05C\x01B\x0f\x02\x03\x02\x01A\x04\0\x0baudio-error\x03\0\0\x02\x03\x02\x01\
-B\x04\0\x0dstream-config\x03\0\x02\x01j\x01w\x01\x01\x01@\x01\x06config\x03\0\x04\
-\x04\0\x04open\x01\x05\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x06\x04\0\x05star\
-t\x01\x07\x04\0\x04stop\x01\x07\x01p}\x01j\x01\x08\x01\x01\x01@\x02\x09stream-id\
-w\x09max-bytesy\0\x09\x04\0\x04read\x01\x0a\x03\0\x19krate:audio/capture@0.1.0\x05\
-D\x01B\x0d\x01m\x01\x05rgba8\x04\0\x0cframe-format\x03\0\0\x01r\x04\x05widthy\x06\
-heighty\x03fpsy\x06format\x01\x04\0\x0dstream-config\x03\0\x02\x01r\x04\x05width\
-y\x06heighty\x03fpsy\x06format\x01\x04\0\x0aframe-info\x03\0\x04\x01r\x02\x02ids\
-\x05labels\x04\0\x0bdevice-info\x03\0\x06\x01p}\x01r\x04\x05bytes\x08\x05widthy\x06\
-heighty\x0eelapsed-millisw\x04\0\x05frame\x03\0\x09\x01q\x06\x11permission-denie\
-d\0\0\x0einvalid-stream\0\0\x12device-unavailable\0\0\x0dsystem-denied\0\0\x0bun\
-supported\x01s\0\x08platform\x01s\0\x04\0\x0ccamera-error\x03\0\x0b\x03\0\x18kra\
-te:camera/types@0.1.0\x05E\x02\x03\0%\x0ccamera-error\x02\x03\0%\x0bdevice-info\x02\
-\x03\0%\x05frame\x02\x03\0%\x0aframe-info\x02\x03\0%\x0dstream-config\x01B\x1d\x02\
-\x03\x02\x01F\x04\0\x0ccamera-error\x03\0\0\x02\x03\x02\x01G\x04\0\x0bdevice-inf\
-o\x03\0\x02\x02\x03\x02\x01H\x04\0\x05frame\x03\0\x04\x02\x03\x02\x01I\x04\0\x0a\
-frame-info\x03\0\x06\x02\x03\x02\x01J\x04\0\x0dstream-config\x03\0\x08\x01p\x03\x01\
-j\x01\x0a\x01\x01\x01@\0\0\x0b\x04\0\x07devices\x01\x0c\x01j\x01w\x01\x01\x01@\x02\
-\x06devices\x06config\x09\0\x0d\x04\0\x04open\x01\x0e\x01j\x01\x07\x01\x01\x01@\x01\
-\x09stream-idw\0\x0f\x04\0\x04info\x01\x10\x01j\0\x01\x01\x01@\x01\x09stream-idw\
-\0\x11\x04\0\x05start\x01\x12\x04\0\x04stop\x01\x12\x01k\x05\x01j\x01\x13\x01\x01\
-\x01@\x01\x09stream-idw\0\x14\x04\0\x04read\x01\x15\x04\0\x05close\x01\x12\x03\0\
-\x1akrate:camera/capture@0.1.0\x05K\x01B\x12\x01r\x01\x04texts\x04\0\x0atranscri\
-pt\x03\0\0\x01q\x05\x0finvalid-request\x01s\0\x0fmodel-not-found\0\0\x0dmodel-in\
-valid\x01s\0\x0bunsupported\x01s\0\x09inference\x01s\0\x04\0\x0cspeech-error\x03\
-\0\x02\x01m\x05\x0finvalid-request\x0fmodel-not-found\x0dmodel-invalid\x0bunsupp\
-orted\x09inference\x04\0\x0bmatch-error\x03\0\x04\x01p}\x01ks\x01j\x01\x01\x01\x03\
-\x01@\x04\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample-ratey\x08language\x07\0\x08\
-\x04\0\x0atranscribe\x01\x09\x01j\x01}\x01\x05\x01@\x05\x0bmodel-assets\x0apcm-s\
-16-le\x06\x0bsample-ratey\x08language\x07\x08expecteds\0\x0a\x04\0\x0amatch-line\
-\x01\x0b\x01k}\x01j\x01\x0c\x01\x05\x01@\x06\x0bmodel-assets\x0apcm-s16-le\x06\x0b\
-sample-ratey\x08language\x07\x08expecteds\x06finish\x7f\0\x0d\x04\0\x11match-lin\
-e-stream\x01\x0e\x03\0\x20krate:speech/transcription@0.1.0\x05L\x01@\0\0z\x04\0\x03\
-run\x01M\x04\0\x13krate:app/gui@0.2.0\x04\0\x0b\x09\x01\0\x03gui\x03\0\0\0G\x09p\
-roducers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\
-\x060.41.0";
+B\"\x02\x03\x02\x014\x04\0\x05color\x03\0\0\x02\x03\x02\x019\x04\0\x09gfx-error\x03\
+\0\x02\x01pv\x01r\x07\x07ambientv\x08specularv\x09shininessv\x0bfog-densityv\x09\
+fog-color\x01\x0efill-direction\x04\x0afill-color\x01\x04\0\x08lighting\x03\0\x05\
+\x01j\x01w\x01\x03\x01@\x02\x06windoww\x06widgetw\0\x07\x04\0\x04bind\x01\x08\x01\
+j\0\x01\x03\x01@\x02\x05scenew\x03sky\x01\0\x09\x04\0\x05clear\x01\x0a\x01@\x04\x05\
+scenew\x03eye\x04\x07look-at\x04\x0bfov-degreesv\0\x09\x04\0\x06camera\x01\x0b\x01\
+@\x02\x05scenew\x09direction\x04\0\x09\x04\0\x05light\x01\x0c\x01@\x03\x05scenew\
+\x08vertices\x04\x04tint\x01\0\x09\x04\0\x09triangles\x01\x0d\x01@\x06\x05scenew\
+\x08vertices\x04\x09translate\x04\x0erotate-degrees\x04\x05scalev\x04tint\x01\0\x09\
+\x04\0\x05place\x01\x0e\x01p}\x01@\x04\x05scenew\x05widthy\x06heighty\x04rgba\x0f\
+\0\x07\x04\0\x0eupload-texture\x01\x10\x01@\x05\x05scenew\x08vertices\x04\x03uvs\
+\x04\x07texturew\x04tint\x01\0\x09\x04\0\x08textured\x01\x11\x01@\x06\x05scenew\x08\
+vertices\x04\x07normals\x04\x03uvs\x04\x07texturew\x04tint\x01\0\x09\x04\0\x06sm\
+ooth\x01\x12\x01@\x02\x05scenew\x08lighting\x06\0\x09\x04\0\x0cset-lighting\x01\x13\
+\x01@\x02\x05scenew\x07enabled\x7f\0\x09\x04\0\x0fcull-back-faces\x01\x14\x01@\x01\
+\x05scenew\0\x09\x04\0\x07present\x01\x15\x03\0\x17krate:gfx/scene3d@0.1.0\x05?\x01\
+B\x06\x01m\x02\x07pcm-s16\x07float32\x04\0\x0dsample-format\x03\0\0\x01r\x04\x0b\
+sample-ratey\x08channels{\x06format\x01\x0dbuffer-framesy\x04\0\x0dstream-config\
+\x03\0\x02\x01q\x05\x11permission-denied\0\0\x0einvalid-stream\0\0\x12device-una\
+vailable\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x0baudio-error\x03\0\
+\x04\x03\0\x17krate:audio/types@0.1.0\x05@\x02\x03\0\"\x0baudio-error\x02\x03\0\"\
+\x0dstream-config\x01B\x15\x02\x03\x02\x01A\x04\0\x0baudio-error\x03\0\0\x02\x03\
+\x02\x01B\x04\0\x0dstream-config\x03\0\x02\x01j\x01w\x01\x01\x01@\x01\x06config\x03\
+\0\x04\x04\0\x04open\x01\x05\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x06\x04\0\x05\
+start\x01\x07\x04\0\x04stop\x01\x07\x01p}\x01j\x01y\x01\x01\x01@\x02\x09stream-i\
+dw\x05bytes\x08\0\x09\x04\0\x05write\x01\x0a\x01@\x02\x09stream-idw\x05bytes\x08\
+\0\x04\x04\0\x0aload-sound\x01\x0b\x01@\x03\x09stream-idw\x05soundw\x04gainv\0\x06\
+\x04\0\x0aplay-sound\x01\x0c\x01@\x02\x09stream-idw\x05soundw\0\x06\x04\0\x0asto\
+p-sound\x01\x0d\x03\0\x1akrate:audio/playback@0.1.0\x05C\x01B\x0f\x02\x03\x02\x01\
+A\x04\0\x0baudio-error\x03\0\0\x02\x03\x02\x01B\x04\0\x0dstream-config\x03\0\x02\
+\x01j\x01w\x01\x01\x01@\x01\x06config\x03\0\x04\x04\0\x04open\x01\x05\x01j\0\x01\
+\x01\x01@\x01\x09stream-idw\0\x06\x04\0\x05start\x01\x07\x04\0\x04stop\x01\x07\x01\
+p}\x01j\x01\x08\x01\x01\x01@\x02\x09stream-idw\x09max-bytesy\0\x09\x04\0\x04read\
+\x01\x0a\x03\0\x19krate:audio/capture@0.1.0\x05D\x01B\x0d\x01m\x01\x05rgba8\x04\0\
+\x0cframe-format\x03\0\0\x01r\x04\x05widthy\x06heighty\x03fpsy\x06format\x01\x04\
+\0\x0dstream-config\x03\0\x02\x01r\x04\x05widthy\x06heighty\x03fpsy\x06format\x01\
+\x04\0\x0aframe-info\x03\0\x04\x01r\x02\x02ids\x05labels\x04\0\x0bdevice-info\x03\
+\0\x06\x01p}\x01r\x04\x05bytes\x08\x05widthy\x06heighty\x0eelapsed-millisw\x04\0\
+\x05frame\x03\0\x09\x01q\x06\x11permission-denied\0\0\x0einvalid-stream\0\0\x12d\
+evice-unavailable\0\0\x0dsystem-denied\0\0\x0bunsupported\x01s\0\x08platform\x01\
+s\0\x04\0\x0ccamera-error\x03\0\x0b\x03\0\x18krate:camera/types@0.1.0\x05E\x02\x03\
+\0%\x0ccamera-error\x02\x03\0%\x0bdevice-info\x02\x03\0%\x05frame\x02\x03\0%\x0a\
+frame-info\x02\x03\0%\x0dstream-config\x01B\x1d\x02\x03\x02\x01F\x04\0\x0ccamera\
+-error\x03\0\0\x02\x03\x02\x01G\x04\0\x0bdevice-info\x03\0\x02\x02\x03\x02\x01H\x04\
+\0\x05frame\x03\0\x04\x02\x03\x02\x01I\x04\0\x0aframe-info\x03\0\x06\x02\x03\x02\
+\x01J\x04\0\x0dstream-config\x03\0\x08\x01p\x03\x01j\x01\x0a\x01\x01\x01@\0\0\x0b\
+\x04\0\x07devices\x01\x0c\x01j\x01w\x01\x01\x01@\x02\x06devices\x06config\x09\0\x0d\
+\x04\0\x04open\x01\x0e\x01j\x01\x07\x01\x01\x01@\x01\x09stream-idw\0\x0f\x04\0\x04\
+info\x01\x10\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x11\x04\0\x05start\x01\x12\x04\
+\0\x04stop\x01\x12\x01k\x05\x01j\x01\x13\x01\x01\x01@\x01\x09stream-idw\0\x14\x04\
+\0\x04read\x01\x15\x04\0\x05close\x01\x12\x03\0\x1akrate:camera/capture@0.1.0\x05\
+K\x01B\x12\x01r\x01\x04texts\x04\0\x0atranscript\x03\0\0\x01q\x05\x0finvalid-req\
+uest\x01s\0\x0fmodel-not-found\0\0\x0dmodel-invalid\x01s\0\x0bunsupported\x01s\0\
+\x09inference\x01s\0\x04\0\x0cspeech-error\x03\0\x02\x01m\x05\x0finvalid-request\
+\x0fmodel-not-found\x0dmodel-invalid\x0bunsupported\x09inference\x04\0\x0bmatch-\
+error\x03\0\x04\x01p}\x01ks\x01j\x01\x01\x01\x03\x01@\x04\x0bmodel-assets\x0apcm\
+-s16-le\x06\x0bsample-ratey\x08language\x07\0\x08\x04\0\x0atranscribe\x01\x09\x01\
+j\x01}\x01\x05\x01@\x05\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample-ratey\x08lan\
+guage\x07\x08expecteds\0\x0a\x04\0\x0amatch-line\x01\x0b\x01k}\x01j\x01\x0c\x01\x05\
+\x01@\x06\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample-ratey\x08language\x07\x08e\
+xpecteds\x06finish\x7f\0\x0d\x04\0\x11match-line-stream\x01\x0e\x03\0\x20krate:s\
+peech/transcription@0.1.0\x05L\x01@\0\0z\x04\0\x03run\x01M\x04\0\x13krate:app/gu\
+i@0.2.0\x04\0\x0b\x09\x01\0\x03gui\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\
+\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
 
 #[inline(never)]
 #[doc(hidden)]

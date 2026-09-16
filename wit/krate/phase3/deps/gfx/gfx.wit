@@ -412,6 +412,47 @@ interface scene3d {
   /// a face-shaded scene looks flat however many lights it has.
   smooth: func(scene: u64, vertices: list<f32>, normals: list<f32>, uvs: list<f32>, texture: u64, tint: color) -> result<_, gfx-error>;
 
+  /// How a scene is lit, beyond the one directional light.
+  ///
+  /// Everything here is OFF by default and an app that never calls this looks
+  /// exactly as it did before, on both backends. That is deliberate: the
+  /// software rasterizer and the GPU one are checked against each other pixel
+  /// by pixel, and a feature that changed the default picture would break that
+  /// check for every app that never asked for it.
+  ///
+  /// `ambient` replaces the shading floor -- the brightness a surface facing
+  /// away from the light still has. The default floor is 0.35 for a mesh drawn
+  /// through `triangles` or `textured` and 0.22 for one drawn through
+  /// `smooth`; setting this uses one number for both.
+  ///
+  /// `specular` is how sharp a highlight the surface takes, 0 for chalk and 1
+  /// for polished. `shininess` is how tight it is: 8 is a wide sheen, 128 a
+  /// small hot spot. Without these every surface in a scene is matte, which is
+  /// most of why a rendered object can look like paper.
+  ///
+  /// `fog-density` fades distant geometry into `fog-color`. Zero is off. Air
+  /// is what tells an eye how far away something is, and a scene without it
+  /// reads flat however well it is lit.
+  ///
+  /// `fill-light` is a second directional light, usually dimmer and from the
+  /// opposite side, standing in for light bounced off everything else. A key
+  /// light alone leaves shadows black; a key and a fill is most of what reads
+  /// as a lit room rather than a lamp in a void.
+  record lighting {
+    ambient: f32,
+    specular: f32,
+    shininess: f32,
+    fog-density: f32,
+    fog-color: color,
+    fill-direction: list<f32>,
+    fill-color: color,
+  }
+
+  /// Set how the scene is lit. Refused by a backend that cannot do it, so an
+  /// app can ask once at startup and fall back rather than discovering per
+  /// frame that nothing changed.
+  set-lighting: func(scene: u64, lighting: lighting) -> result<_, gfx-error>;
+
   /// Skip triangles facing away from the camera.
   ///
   /// Off by default, and that is deliberate: it is only correct for a closed

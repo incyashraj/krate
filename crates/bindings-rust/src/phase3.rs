@@ -628,7 +628,7 @@ pub mod gfx {
     }
     /// `krate:gfx/scene3d`.
     pub mod scene3d {
-        pub use crate::bindings::krate::gfx::scene3d::{Color, GfxError};
+        pub use crate::bindings::krate::gfx::scene3d::{Color, GfxError, Lighting};
 
         /// Create a 3D scene that draws into a window widget.
         pub fn bind(window: u64, widget: u64) -> Result<u64, GfxError> {
@@ -762,6 +762,13 @@ pub mod gfx {
             crate::bindings::krate::gfx::scene3d::smooth(
                 scene, vertices, normals, uvs, texture, tint,
             )
+        }
+
+        /// Set how the scene is lit. Refused by a backend that cannot do it, so an
+        /// app can ask once at startup and fall back rather than discovering per
+        /// frame that nothing changed.
+        pub fn set_lighting(scene: u64, lighting: &Lighting) -> Result<(), GfxError> {
+            crate::bindings::krate::gfx::scene3d::set_lighting(scene, lighting)
         }
 
         /// Skip triangles facing away from the camera.

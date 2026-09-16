@@ -127,6 +127,50 @@ struct CameraUniform {
     eye: [f32; 4],
     lens: [f32; 4],
     light: [f32; 4],
+    surface: [f32; 4],
+    fog: [f32; 4],
+    fill_dir: [f32; 4],
+    fill_color: [f32; 4],
+}
+
+/// How a scene is lit, beyond the one directional light.
+///
+/// The default is exactly what the software rasterizer does, so a scene that
+/// never sets this is pixel-identical on both backends. Every field here is
+/// something the CPU path cannot do, which is why the default has to be "as
+/// though none of it exists".
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Lighting {
+    /// Brightness a surface facing away from the light still has, for a mesh
+    /// drawn through `triangles` or `textured`.
+    pub ambient_flat: f32,
+    /// The same, for a mesh drawn through `smooth`.
+    pub ambient_smooth: f32,
+    /// How sharp a highlight the surface takes: 0 is chalk, 1 is polished.
+    pub specular: f32,
+    /// How tight the highlight is: 8 is a wide sheen, 128 a small hot spot.
+    pub shininess: f32,
+    /// How quickly distance fades into `fog_color`. Zero is off.
+    pub fog_density: f32,
+    pub fog_color: [f32; 3],
+    /// A second directional light, or `None`.
+    pub fill: Option<([f32; 3], [f32; 3])>,
+}
+
+impl Default for Lighting {
+    fn default() -> Self {
+        Self {
+            // The two shading floors the software rasterizer uses. Changing
+            // either default would change every existing scene.
+            ambient_flat: 0.35,
+            ambient_smooth: 0.22,
+            specular: 0.0,
+            shininess: 32.0,
+            fog_density: 0.0,
+            fog_color: [0.6, 0.7, 0.8],
+            fill: None,
+        }
+    }
 }
 
 /// A triangle waiting to be drawn, kept so the blended pass can be sorted.
@@ -176,6 +220,7 @@ pub struct GpuScene {
     light: [f32; 3],
     cull_back_faces: bool,
     clear: [f32; 4],
+    lighting: Lighting,
     queued: Vec<Queued>,
 }
 
@@ -353,6 +398,7 @@ impl GpuScene {
             light: normalize([-0.4, -0.7, -0.6]),
             cull_back_faces: false,
             clear: [0.063, 0.078, 0.125, 1.0],
+            lighting: Lighting::default(),
             queued: Vec::new(),
         })
     }
@@ -425,6 +471,29 @@ impl GpuScene {
 
     pub fn set_cull_back_faces(&mut self, enabled: bool) {
         self.cull_back_faces = enabled;
+    }
+
+    /// Set how the scene is lit beyond the one directional light.
+    ///
+    /// Sanitised rather than refused: a NaN shininess or a negative fog
+    /// density is an app bug, and the honest response is to render something
+    /// sensible rather than to fail a frame the author cannot see.
+    pub fn set_lighting(&mut self, lighting: Lighting) {
+        let clean = |v: f32, fallback: f32| if v.is_finite() { v } else { fallback };
+        self.lighting = Lighting {
+            ambient_flat: clean(lighting.ambient_flat, 0.35).clamp(0.0, 1.0),
+            ambient_smooth: clean(lighting.ambient_smooth, 0.22).clamp(0.0, 1.0),
+            specular: clean(lighting.specular, 0.0).clamp(0.0, 4.0),
+            // Below 1 the exponent inverts the highlight into a dark patch.
+            shininess: clean(lighting.shininess, 32.0).clamp(1.0, 512.0),
+            fog_density: clean(lighting.fog_density, 0.0).max(0.0),
+            fog_color: lighting.fog_color,
+            fill: lighting.fill.map(|(dir, colour)| (normalize(dir), colour)),
+        };
+    }
+
+    pub fn lighting(&self) -> Lighting {
+        self.lighting
     }
 
     pub fn set_light(&mut self, direction: [f32; 3]) {
@@ -753,6 +822,26 @@ impl GpuScene {
                 0.0,
             ],
             light: [self.light[0], self.light[1], self.light[2], 0.0],
+            surface: [
+                self.lighting.ambient_flat,
+                self.lighting.ambient_smooth,
+                self.lighting.specular,
+                self.lighting.shininess,
+            ],
+            fog: [
+                self.lighting.fog_color[0],
+                self.lighting.fog_color[1],
+                self.lighting.fog_color[2],
+                self.lighting.fog_density,
+            ],
+            fill_dir: match self.lighting.fill {
+                Some((dir, _)) => [dir[0], dir[1], dir[2], 1.0],
+                None => [0.0, 0.0, 0.0, 0.0],
+            },
+            fill_color: match self.lighting.fill {
+                Some((_, colour)) => [colour[0], colour[1], colour[2], 1.0],
+                None => [0.0, 0.0, 0.0, 0.0],
+            },
         };
         let uniform_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("scene3d camera"),
@@ -1228,6 +1317,139 @@ mod tests {
         let centre = at(&image, 32, 32);
         assert!(moved[0] > 60, "the mesh moved where it was put: {moved:?}");
         assert_eq!(centre, [0, 0, 0, 255], "and left the centre empty");
+    }
+
+    /// Render one quad and read the middle pixel, with whatever lighting.
+    fn lit_pixel(lighting: Lighting, normal: [f32; 3]) -> Option<[u8; 4]> {
+        let mut scene = gpu(64, 64)?;
+        scene.set_camera([0.0, 0.0, 6.0], [0.0, 0.0, 0.0], 60.0);
+        scene.set_light([0.0, 0.0, -1.0]);
+        scene.set_lighting(lighting);
+        scene.clear([0.0, 0.0, 0.0, 1.0]);
+        let white = scene
+            .upload_texture(1, 1, &[255, 255, 255, 255])
+            .expect("texture");
+        let quad = facing_quad(2.0, 0.0);
+        let normals: Vec<f32> = core::iter::repeat_n(normal, 6).flatten().collect();
+        let uvs: Vec<f32> = vec![0.5; 12];
+        scene.smooth(&quad, &normals, &uvs, white, [0.5, 0.5, 0.5, 1.0]);
+        Some(at(&scene.render_image().expect("a frame"), 32, 32))
+    }
+
+    #[test]
+    fn specular_puts_a_highlight_where_the_eye_sees_the_light() {
+        // Without this every surface in a scene is chalk however well it is
+        // lit. The quad faces the camera and the light travels away from it,
+        // so the reflection comes straight back and the highlight is at its
+        // brightest -- which is the easiest case to tell apart from none.
+        let Some(matte) = lit_pixel(Lighting::default(), [0.0, 0.0, 1.0]) else {
+            eprintln!("no GPU adapter on this machine; skipping");
+            return;
+        };
+        let shiny = lit_pixel(
+            Lighting {
+                specular: 0.8,
+                shininess: 24.0,
+                ..Lighting::default()
+            },
+            [0.0, 0.0, 1.0],
+        )
+        .expect("a frame");
+        assert!(
+            shiny[0] > matte[0] + 30,
+            "a specular surface must be brighter where the highlight falls: \
+             matte {matte:?}, shiny {shiny:?}"
+        );
+    }
+
+    #[test]
+    fn a_fill_light_lifts_the_side_the_key_light_misses() {
+        // A key light alone leaves the shadow side at the ambient floor, and
+        // a scene lit that way reads as a lamp in a void. The normal here
+        // faces AWAY from the key light, so anything above the floor came
+        // from the fill.
+        let away = [0.0, 0.0, -1.0];
+        let Some(unfilled) = lit_pixel(Lighting::default(), away) else {
+            eprintln!("no GPU adapter on this machine; skipping");
+            return;
+        };
+        let filled = lit_pixel(
+            Lighting {
+                // Travelling toward +Z, so it strikes the face the key misses.
+                fill: Some(([0.0, 0.0, 1.0], [0.6, 0.6, 0.7])),
+                ..Lighting::default()
+            },
+            away,
+        )
+        .expect("a frame");
+        assert!(
+            filled[2] > unfilled[2] + 10,
+            "a fill light must lift the side the key misses: unfilled \
+             {unfilled:?}, filled {filled:?}"
+        );
+    }
+
+    #[test]
+    fn fog_fades_distance_into_its_colour() {
+        let Some(mut scene) = gpu(64, 64) else {
+            eprintln!("no GPU adapter on this machine; skipping");
+            return;
+        };
+        scene.set_camera([0.0, 0.0, 6.0], [0.0, 0.0, 0.0], 60.0);
+        scene.set_light([0.0, 0.0, -1.0]);
+        scene.set_lighting(Lighting {
+            fog_density: 0.08,
+            fog_color: [1.0, 1.0, 1.0],
+            ..Lighting::default()
+        });
+        scene.clear([0.0, 0.0, 0.0, 1.0]);
+        // Two quads of the same colour at very different depths. Fog is the
+        // only thing that can tell them apart.
+        scene.triangles(&facing_quad(1.0, 4.0), [0.1, 0.1, 0.1, 1.0]);
+        let near = at(&scene.render_image().expect("a frame"), 32, 32);
+
+        scene.clear([0.0, 0.0, 0.0, 1.0]);
+        scene.triangles(&facing_quad(1.0, -40.0), [0.1, 0.1, 0.1, 1.0]);
+        let far = at(&scene.render_image().expect("a frame"), 32, 32);
+
+        assert!(
+            far[0] > near[0] + 40,
+            "distance must fade into the fog colour: near {near:?}, far {far:?}"
+        );
+    }
+
+    #[test]
+    fn lighting_defaults_are_what_the_software_rasterizer_does() {
+        // The whole opt-in promise in one assertion. If either floor changed,
+        // every existing scene would shade differently on the GPU and the
+        // parity tests would start failing for a reason nobody intended.
+        let default = Lighting::default();
+        assert_eq!(default.ambient_flat, 0.35);
+        assert_eq!(default.ambient_smooth, 0.22);
+        assert_eq!(default.specular, 0.0);
+        assert_eq!(default.fog_density, 0.0);
+        assert!(default.fill.is_none());
+    }
+
+    #[test]
+    fn nonsense_lighting_is_sanitised_rather_than_rendered() {
+        let Some(mut scene) = gpu(16, 16) else {
+            eprintln!("no GPU adapter on this machine; skipping");
+            return;
+        };
+        scene.set_lighting(Lighting {
+            ambient_flat: f32::NAN,
+            specular: f32::INFINITY,
+            // Below 1 an exponent inverts the highlight into a dark patch.
+            shininess: 0.2,
+            fog_density: -4.0,
+            ..Lighting::default()
+        });
+        let got = scene.lighting();
+        assert_eq!(got.ambient_flat, 0.35, "NaN falls back to the default");
+        assert!(got.specular.is_finite(), "infinity is clamped");
+        assert!(got.shininess >= 1.0, "an inverting exponent is clamped");
+        assert_eq!(got.fog_density, 0.0, "negative density is off, not inverse");
     }
 
     #[test]

@@ -25,6 +25,15 @@ struct Camera {
     lens: vec4<f32>,
     // Direction the light travels, normalised.
     light: vec4<f32>,
+    // x: ambient floor for face-normal shading, y: the floor for smooth
+    // shading, z: specular strength, w: shininess.
+    surface: vec4<f32>,
+    // rgb: fog colour, a: density. Zero density is off.
+    fog: vec4<f32>,
+    // Direction the fill light travels, normalised. w is 1 when a fill light
+    // is set at all, so the shader can skip it rather than adding black.
+    fill_dir: vec4<f32>,
+    fill_color: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> camera: Camera;
@@ -60,6 +69,14 @@ struct VertexOut {
     // tint DIFFERENTLY and the difference is load-bearing, so the GPU has to
     // know which it is reproducing -- see the fragment shader.
     @location(5) textured_flag: f32,
+    // World position, so the fragment can work out which way the eye is and
+    // put a highlight where one would fall. Specular is the difference
+    // between a surface that looks like plastic and one that looks like
+    // paper, and it cannot be computed without knowing where you are
+    // standing.
+    @location(6) world: vec3<f32>,
+    // Distance from the eye, for fog.
+    @location(7) view_depth: f32,
 };
 
 const FLAG_SMOOTH: u32 = 1u;
@@ -103,6 +120,8 @@ fn vs_main(in: VertexIn) -> VertexOut {
     out.smooth_flag = f32(in.flags & FLAG_SMOOTH);
     out.textured_flag = f32((in.flags & FLAG_TEXTURED) >> 1u);
     out.layer = f32(in.flags >> 8u);
+    out.world = in.position;
+    out.view_depth = cz;
     return out;
 }
 
@@ -111,16 +130,36 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let n = normalize(in.normal);
     let facing = dot(n, camera.light.xyz);
 
-    var shade: f32;
+    // The ambient floor. `surface.x` and `surface.y` carry the defaults --
+    // 0.35 for face-normal shading, 0.22 for smooth -- unless the app has set
+    // its own, so a scene that never calls `set-lighting` shades exactly as
+    // the software rasterizer does.
+    var floor_term: f32;
+    var lambert: f32;
     if (in.smooth_flag > 0.5) {
         // One-sided, matching `Scene::smooth`: an author who supplied normals
         // has said which way is out, so the dark side can be dark.
-        shade = 0.22 + 0.78 * max(-facing, 0.0);
+        floor_term = camera.surface.y;
+        lambert = max(-facing, 0.0);
     } else {
         // Two-sided, matching `Scene::triangle`: a closed mesh's winding
         // decides which way its face normals point and half come out inward,
         // so the term is absolute and the dark side is lit like the light one.
-        shade = 0.35 + 0.65 * abs(facing);
+        floor_term = camera.surface.x;
+        lambert = abs(facing);
+    }
+    var shade = floor_term + (1.0 - floor_term) * lambert;
+
+    // A second directional light, standing in for light bounced off
+    // everything else. A key light alone leaves the shadow side black; a key
+    // and a fill is most of what reads as a lit room rather than a lamp in a
+    // void. Added to the shade rather than replacing it, and only when the
+    // app has actually set one.
+    var fill_rgb = vec3<f32>(0.0);
+    if (camera.fill_dir.w > 0.5) {
+        let fill_facing = dot(n, camera.fill_dir.xyz);
+        let fill_lambert = select(abs(fill_facing), max(-fill_facing, 0.0), in.smooth_flag > 0.5);
+        fill_rgb = camera.fill_color.rgb * fill_lambert;
     }
 
     let layer = i32(round(in.layer));
@@ -139,12 +178,46 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     //
     // Clamping both ways broke the HUD; clamping neither blew out the sky. So
     // the flag says which, and each is reproduced exactly.
-    var rgb: vec3<f32>;
+    var base: vec3<f32>;
     if (in.textured_flag > 0.5) {
         let tint = clamp(in.tint.rgb, vec3<f32>(0.0), vec3<f32>(1.0));
-        rgb = clamp(sampled.rgb * tint * shade, vec3<f32>(0.0), vec3<f32>(1.0));
+        base = sampled.rgb * tint * shade;
     } else {
-        rgb = clamp(in.tint.rgb * shade, vec3<f32>(0.0), vec3<f32>(1.0));
+        base = in.tint.rgb * shade;
     }
+    base = base + base * fill_rgb;
+
+    // Specular: a Blinn-Phong highlight where the eye would see the light
+    // reflected. Without it every surface in a scene is chalk, however well
+    // it is lit -- it is the single cheapest thing that makes a rendered
+    // object look like a material rather than a coloured shape.
+    //
+    // Off by default (`surface.z` is zero), so a scene that never asks is
+    // pixel-identical to the software rasterizer.
+    let specular_strength = camera.surface.z;
+    if (specular_strength > 0.0) {
+        let to_eye = normalize(camera.eye.xyz - in.world);
+        // The light TRAVELS along `camera.light`, so the direction toward it
+        // is the negative. Getting this backwards puts the highlight on the
+        // dark side, which reads as a rendering bug rather than a sign error.
+        let to_light = -camera.light.xyz;
+        let halfway = normalize(to_eye + to_light);
+        let spec = pow(max(dot(n, halfway), 0.0), max(camera.surface.w, 1.0));
+        base = base + vec3<f32>(spec * specular_strength);
+    }
+
+    // Fog last, because it is what the air does to everything in front of it,
+    // including the highlight.
+    let density = camera.fog.a;
+    if (density > 0.0) {
+        // Exponential-squared: distance fades slowly at first and then
+        // quickly, which is what atmosphere actually does and what stops the
+        // near field looking hazy.
+        let f = in.view_depth * density;
+        let fog_amount = clamp(1.0 - exp(-f * f), 0.0, 1.0);
+        base = mix(base, camera.fog.rgb, fog_amount);
+    }
+
+    let rgb = clamp(base, vec3<f32>(0.0), vec3<f32>(1.0));
     return vec4<f32>(rgb, sampled.a * clamp(in.tint.a, 0.0, 1.0));
 }
