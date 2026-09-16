@@ -145,6 +145,15 @@ struct Queued {
     packed: Option<u32>,
     /// How this triangle is textured, if it is.
     texture: Option<TexturedFace>,
+    /// Coverage, 0..1. Below 1 the triangle blends over what is already there
+    /// and does NOT write depth -- two panes of glass both have to be visible,
+    /// and a pane that wrote depth would hide whatever came after it.
+    alpha: f32,
+    /// Depth at the centroid, used to sort the blended pass back to front.
+    /// Sorting per triangle rather than per pixel is what a rasterizer without
+    /// order-independent transparency has to do, and it is why two blended
+    /// surfaces that interpenetrate still resolve wrongly.
+    sort_z: f32,
 }
 
 /// The texturing half of a queued triangle.
@@ -334,6 +343,11 @@ impl Scene {
             return;
         }
 
+        let alpha = if tint.3.is_nan() {
+            1.0
+        } else {
+            tint.3.clamp(0.0, 1.0)
+        };
         self.queued.push(Queued {
             a: pa,
             b: pb,
@@ -341,6 +355,8 @@ impl Scene {
             area,
             packed: Some(pack_shaded(tint, shade)),
             texture: None,
+            alpha,
+            sort_z: (pa.2 + pb.2 + pc.2) / 3.0,
         });
     }
 
@@ -434,6 +450,11 @@ impl Scene {
             return;
         }
 
+        let alpha = if tint.3.is_nan() {
+            1.0
+        } else {
+            tint.3.clamp(0.0, 1.0)
+        };
         self.queued.push(Queued {
             a: pa,
             b: pb,
@@ -446,6 +467,8 @@ impl Scene {
                 tint,
                 shade,
             }),
+            alpha,
+            sort_z: (pa.2 + pb.2 + pc.2) / 3.0,
         });
     }
 
@@ -544,8 +567,34 @@ impl Scene {
         let rows_per_band = (self.height as usize).div_ceil(bands);
 
         let width = self.width as usize;
-        let queued = std::mem::take(&mut self.queued);
+        let mut queued = std::mem::take(&mut self.queued);
         let textures = &self.textures;
+
+        // Opaque first, then blended back to front.
+        //
+        // A blended triangle cannot write depth -- two panes of glass both have
+        // to be visible, and a pane that wrote depth would hide whatever was
+        // drawn after it. But that means a blended triangle has no depth test
+        // against its own kind, so the only thing deciding which of two blends
+        // lands on top is the order they are drawn in. Sorting the blended pass
+        // furthest-first is what makes that order correct.
+        //
+        // `sort_unstable_by` on a partition point rather than two vectors: the
+        // allocation is reused between frames and splitting it would give that
+        // up for nothing.
+        queued.sort_unstable_by(|a, b| {
+            let a_blend = a.alpha < 1.0;
+            let b_blend = b.alpha < 1.0;
+            match (a_blend, b_blend) {
+                // Opaque before blended.
+                (false, true) => core::cmp::Ordering::Less,
+                (true, false) => core::cmp::Ordering::Greater,
+                // Within the blended pass, far before near.
+                (true, true) => b.sort_z.total_cmp(&a.sort_z),
+                // Opaque order does not matter; the depth buffer decides.
+                (false, false) => core::cmp::Ordering::Equal,
+            }
+        });
 
         // `scope` rather than spawn-and-join: the threads borrow the buffers
         // and the texture list directly, so nothing is cloned per frame.
@@ -691,9 +740,16 @@ fn fill_band(
                     _ => continue,
                 };
 
-                *slot = z;
                 if let Some(pixel) = colour.get_mut(index) {
-                    *pixel = value;
+                    if tri.alpha >= 1.0 {
+                        *slot = z;
+                        *pixel = value;
+                    } else {
+                        // Source-over, and NO depth write: the surface behind
+                        // this one is still visible through it, so it must
+                        // stay available for anything drawn later.
+                        *pixel = blend(*pixel, value, tri.alpha);
+                    }
                 }
             }
         }
@@ -715,6 +771,26 @@ fn shade_sample(sampled: u32, tint: (f32, f32, f32, f32), shade: f32) -> u32 {
         | (channel((sampled >> 16) & 0xFF, tint.0) << 16)
         | (channel((sampled >> 8) & 0xFF, tint.1) << 8)
         | channel(sampled & 0xFF, tint.2)
+}
+
+/// Source-over blend of `src` onto `dst` at coverage `alpha`.
+///
+/// Integer arithmetic on the packed words rather than unpacking to floats:
+/// this runs once per covered pixel of every transparent surface, which on a
+/// window full of glass is the whole frame several times over.
+#[inline]
+fn blend(dst: u32, src: u32, alpha: f32) -> u32 {
+    // 0..256 so the multiply-shift below is exact at both ends: 256 gives the
+    // source unchanged, 0 gives the destination unchanged.
+    let a = (alpha.clamp(0.0, 1.0) * 256.0) as u32;
+    let inv = 256 - a;
+    let mix = |shift: u32| -> u32 {
+        let d = (dst >> shift) & 0xFF;
+        let s = (src >> shift) & 0xFF;
+        ((s * a + d * inv) >> 8) & 0xFF
+    };
+    // Alpha channel stays opaque: this is the frame buffer, not a layer.
+    0xFF00_0000 | (mix(16) << 16) | (mix(8) << 8) | mix(0)
 }
 
 /// Pack a colour scaled by a shading factor into `0xAARRGGBB`.
@@ -1454,6 +1530,99 @@ mod tests {
             pixel(&culled.render_image().expect("image"), 24, 26),
             [0, 0, 0, 255],
             "with culling on, a back-facing triangle is skipped"
+        );
+    }
+
+    #[test]
+    fn a_half_transparent_surface_shows_what_is_behind_it() {
+        // The change that unlocks glass, smoke, particles and soft shadows.
+        // Before it the rasterizer wrote `*pixel = value` and alpha was
+        // carried into the packed word and then ignored, so a 50% pane was
+        // indistinguishable from a solid one.
+        let mut scene = Scene::new(64, 64).expect("scene");
+        scene.set_light([0.0, 0.0, -1.0]);
+        scene.clear(0xFF00_0000);
+
+        // The default camera sits at z = 4 looking toward the origin, so a
+        // SMALLER z is further away. The red wall goes at z = 0 and the blue
+        // pane at z = 2, between it and the eye.
+        let back: Vec<f32> = vec![
+            -3.0, -3.0, 0.0, 3.0, -3.0, 0.0, 3.0, 3.0, 0.0, //
+            -3.0, -3.0, 0.0, 3.0, 3.0, 0.0, -3.0, 3.0, 0.0,
+        ];
+        let front: Vec<f32> = vec![
+            -2.0, -2.0, 2.0, 2.0, -2.0, 2.0, 2.0, 2.0, 2.0, //
+            -2.0, -2.0, 2.0, 2.0, 2.0, 2.0, -2.0, 2.0, 2.0,
+        ];
+        scene.triangles(&back, (1.0, 0.0, 0.0, 1.0));
+        scene.triangles(&front, (0.0, 0.0, 1.0, 0.5));
+
+        let image = scene.render_image().expect("image");
+        let middle = pixel(&image, 32, 32);
+        assert!(
+            middle[0] > 30 && middle[2] > 30,
+            "a half-transparent blue pane over a red wall must show BOTH: {middle:?}"
+        );
+
+        // And the pane must not have written depth: a solid green wall drawn
+        // afterwards, between the two, still has to appear.
+        let mut later = Scene::new(64, 64).expect("scene");
+        later.set_light([0.0, 0.0, -1.0]);
+        later.clear(0xFF00_0000);
+        later.triangles(&back, (1.0, 0.0, 0.0, 1.0));
+        later.triangles(&front, (0.0, 0.0, 1.0, 0.5));
+        let between: Vec<f32> = vec![
+            -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0, 1.0, 1.0, //
+            -1.0, -1.0, 1.0, 1.0, 1.0, 1.0, -1.0, 1.0, 1.0,
+        ];
+        later.triangles(&between, (0.0, 1.0, 0.0, 1.0));
+        let image = later.render_image().expect("image");
+        let centre = pixel(&image, 32, 32);
+        // Green sits BEHIND the pane, so the blue is still on top -- what
+        // matters is that the green is visible through it at all. Had the
+        // pane written depth, the green would have been depth-rejected and
+        // this channel would be zero.
+        assert!(
+            centre[1] > 20,
+            "an opaque surface drawn behind a transparent one must still show \
+             through it rather than being depth-rejected: {centre:?}"
+        );
+        assert!(
+            centre[0] < centre[1],
+            "and it must hide the red wall further back: {centre:?}"
+        );
+    }
+
+    #[test]
+    fn transparent_surfaces_draw_back_to_front() {
+        // Two panes at different depths, queued NEAR first. Without sorting,
+        // the near one blends into the sky and the far one then blends over
+        // it, which puts the far pane on top -- visibly wrong and the classic
+        // symptom of a renderer that forgot to sort its blended pass.
+        let mut scene = Scene::new(64, 64).expect("scene");
+        scene.set_light([0.0, 0.0, -1.0]);
+        scene.clear(0xFF00_0000);
+
+        // Nearer the eye at z = 4 means a LARGER z.
+        let near: Vec<f32> = vec![
+            -2.0, -2.0, 2.0, 2.0, -2.0, 2.0, 2.0, 2.0, 2.0, //
+            -2.0, -2.0, 2.0, 2.0, 2.0, 2.0, -2.0, 2.0, 2.0,
+        ];
+        let far: Vec<f32> = vec![
+            -2.0, -2.0, -1.0, 2.0, -2.0, -1.0, 2.0, 2.0, -1.0, //
+            -2.0, -2.0, -1.0, 2.0, 2.0, -1.0, -2.0, 2.0, -1.0,
+        ];
+        // Near is RED and queued first; far is BLUE.
+        scene.triangles(&near, (1.0, 0.0, 0.0, 0.5));
+        scene.triangles(&far, (0.0, 0.0, 1.0, 0.5));
+
+        let image = scene.render_image().expect("image");
+        let middle = pixel(&image, 32, 32);
+        // Correct order draws blue first, then red over it, so red dominates.
+        assert!(
+            middle[0] > middle[2],
+            "the NEARER pane must end up on top whatever order it was queued \
+             in: {middle:?}"
         );
     }
 
