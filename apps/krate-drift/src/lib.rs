@@ -824,6 +824,44 @@ impl krate::Guest for Component {
         };
         let _ = scene3d::cull_back_faces(scene, true);
 
+        // Ask for everything beyond one flat light. Refused on a machine with
+        // no GPU, where the game still plays -- it just looks the way it did
+        // before, which is what makes this worth asking for rather than
+        // requiring.
+        let rich = scene3d::set_lighting(
+            scene,
+            &scene3d::Lighting {
+                // Lower than the 0.35 default because the fill light now does
+                // that work, and a lower floor is what lets a shadow read as
+                // shade rather than as a slightly darker grey.
+                ambient: 0.18,
+                // Cars are painted metal and the road is wet-looking asphalt;
+                // both want a highlight, and it is most of what stops a car
+                // reading as a coloured box.
+                specular: 0.45,
+                shininess: 40.0,
+                // The circuit is two kilometres round and the camera sees
+                // maybe four hundred units of it. This puts air between the
+                // near kerb and the far treeline.
+                fog_density: 0.0016,
+                fog_color: rgb(0.72, 0.80, 0.92),
+                // A cool fill from the sky's side, opposite the sun.
+                fill_direction: alloc::vec![0.42, 0.55, 0.72],
+                fill_color: rgb(0.30, 0.38, 0.52),
+                // Around the car rather than the whole circuit: at 120 units
+                // the map's texels are about 12 cm, which holds an edge at the
+                // distance a chase camera sees.
+                shadow_radius: 120.0,
+                shadow_softness: 1.2,
+            },
+        )
+        .is_ok();
+        if rich {
+            say("drift: specular, fog, a fill light and cast shadows are on");
+        } else {
+            say("drift: this renderer has one flat light; racing without");
+        }
+
         // The circuit. 360 nodes around roughly 1.9 km is a node every five
         // metres or so, which is fine enough that the road does not visibly
         // facet and fine enough to dodge K-397: a long road quad straddling
