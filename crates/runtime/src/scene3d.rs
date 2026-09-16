@@ -17,11 +17,42 @@ use krate_adapter_common::ui::{ImagePixels, UiAdapterError};
 
 /// Largest edge of a 3D surface, in pixels.
 ///
-/// Software rendering costs pixels linearly, so this is a performance bound as
-/// much as a memory one: at 1024x1024 a full-screen triangle is a million
-/// depth tests, which is still inside frame budget but is the sensible ceiling
-/// for a renderer with no GPU behind it.
-const MAX_EDGE: u32 = 1_024;
+/// This was 1024, which refused every modern screen size: 1280x720 and up
+/// were all rejected at bind, so a 3D app could not fill a window anyone
+/// actually uses. The old value came with a comment estimating that 1024x1024
+/// was "the sensible ceiling for a renderer with no GPU behind it". Measured,
+/// that estimate was far too conservative.
+///
+/// The bound is pixels, so the case that decides it is not a big scene but a
+/// small one drawn over itself: eight full-screen quads back to front, where
+/// the depth test rejects nothing and every pixel is written eight times.
+/// Measured on an M4, release, with the rasterizer's existing per-core banding:
+///
+/// | size | pixels | avg | worst | fps |
+/// |---|---:|---:|---:|---:|
+/// | 1024x640 | 0.66 M | 3.83 ms | 9.33 ms | 261 |
+/// | 1280x720 | 0.92 M | 4.65 ms | 5.53 ms | 215 |
+/// | 1600x900 | 1.44 M | 7.18 ms | 7.91 ms | 139 |
+/// | 1920x1080 | 2.07 M | 10.37 ms | 12.46 ms | 96 |
+///
+/// 1080p holds 60fps in the worst case with room to spare, and a real scene is
+/// nowhere near eight times overdraw -- the driving game measures 2.8 ms at
+/// 1024x640 with 59,684 triangles.
+///
+/// The cap sits at 1920 rather than at whatever the largest display happens to
+/// be, because the cost is per pixel and unbounded upward: memory is the other
+/// half of it, and 1920x1080 is already 8.3 MB of colour plus 8.3 MB of depth.
+/// Raising it further should come with the same measurement, not a guess.
+const MAX_EDGE: u32 = 1_920;
+
+/// Largest edge of an uploaded texture, in pixels.
+///
+/// Separate from the surface cap because the two limit different things: a
+/// surface costs per-frame rasterization, a texture costs one upload and then
+/// cache pressure while sampling. They shared a constant only because they
+/// happened to want the same number, and raising the surface cap for 1080p is
+/// no reason to let a guest upload a 1920x1920 image.
+const MAX_TEXTURE_EDGE: u32 = 1_024;
 
 /// A 3D point or direction. Deliberately plain: the guest sends flat floats,
 /// and this is the only place they become anything else.
@@ -341,9 +372,10 @@ impl Scene {
                 rgba.len()
             )));
         }
-        if width > MAX_EDGE || height > MAX_EDGE {
+        if width > MAX_TEXTURE_EDGE || height > MAX_TEXTURE_EDGE {
             return Err(UiAdapterError::Unsupported(format!(
-                "a texture may be at most {MAX_EDGE}x{MAX_EDGE}, got {width}x{height}"
+                "a texture may be at most {MAX_TEXTURE_EDGE}x{MAX_TEXTURE_EDGE}, \
+                 got {width}x{height}"
             )));
         }
         let mut pixels = Vec::with_capacity(width as usize * height as usize);
@@ -1429,6 +1461,38 @@ mod tests {
     fn an_unreasonable_surface_size_is_refused() {
         assert!(Scene::new(0, 10).is_err());
         assert!(Scene::new(10, MAX_EDGE + 1).is_err());
+    }
+
+    #[test]
+    fn a_full_hd_surface_is_allowed() {
+        // The sizes people actually run windows at. 1024 refused every one of
+        // these, which meant a 3D app could not fill a screen anyone owns --
+        // the single thing standing between scene3d and a shippable game.
+        for (w, h) in [(1280, 720), (1600, 900), (1920, 1080)] {
+            assert!(
+                Scene::new(w, h).is_ok(),
+                "a {w}x{h} 3D surface must be allowed"
+            );
+        }
+    }
+
+    #[test]
+    fn a_texture_keeps_its_own_smaller_limit() {
+        // Surface and texture limits are separate things: raising the surface
+        // cap so a window can be 1080p is no reason to accept a 1920-edge
+        // texture, which is an upload and cache cost rather than a
+        // rasterization one. They shared a constant only by coincidence.
+        let mut scene = Scene::new(64, 64).expect("scene");
+        let edge = MAX_TEXTURE_EDGE + 1;
+        let rgba = vec![0_u8; edge as usize * 4];
+        assert!(
+            scene.upload_texture(edge, 1, &rgba).is_err(),
+            "a texture wider than {MAX_TEXTURE_EDGE} must still be refused"
+        );
+        assert!(
+            MAX_TEXTURE_EDGE < MAX_EDGE,
+            "the two limits are independent"
+        );
     }
 
     #[test]

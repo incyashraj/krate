@@ -1,26 +1,42 @@
-//! Drift -- a 3D driving game, built to find out exactly where the software
-//! rasterizer stops being enough.
+//! Drift -- a racing game.
 //!
-//! CP-E of Plan/Proof-Checkpoints-2026-09-16.md, and the one written expecting
-//! to fail. `gfx.scene3d` rasterizes on the CPU, caps a surface at 1024x1024,
-//! takes one flat tint per draw call, and re-sends a mesh's vertices on every
-//! `place`. A GTA-class engine is none of those things. The point is not to
-//! discover that; it is to find out WHICH of them is the wall, with numbers,
-//! so the GPU work that follows is aimed rather than guessed.
+//! Written for CP-E2 of Plan/Proof-Checkpoints-2026-09-16.md, after the first
+//! attempt at CP-E produced a benchmark with a car in it and was recorded as a
+//! pass. That version had no objective, no opponents, no collision against
+//! anything but the ground, no score and no end. It proved the rasterizer was
+//! fast and proved nothing about whether Krate can carry a game.
 //!
-//! The game: a car you drive over a heightmapped landscape, buildings, trees,
-//! road markers, a chase camera, collision against the terrain, and a HUD.
-//! `bench` sweeps the scene from nearly empty to several hundred objects and
-//! reports frame time at each step, which is the measurement CP-E exists for.
+//! This one is a game: a closed circuit, three laps, five opponents that drive
+//! the same physics you do, collisions between every pair of cars, a barrier
+//! you can lean on, a countdown, a HUD, engine and tyre sound that track what
+//! the car is doing, and a results screen you can restart from.
 //!
-//! `#![no_std]`: the vertex buffers are the allocation that matters and they
-//! are built once, not per frame.
+//! What it found, in the order it hurt:
+//!
+//! - **K-398**: nothing can be drawn OVER a 3D scene. `scene3d` has no text,
+//!   and the only containers are flow containers, so a 2D canvas cannot
+//!   overlay a 3D one. Every number here is seven-segment digits built out of
+//!   triangles in `hud.rs`. Every 3D game has a HUD; this one has one only
+//!   because it was worth the effort to prove the hole is real.
+//! - **K-396**: the 3D surface was capped at 1024 on an edge, so no 3D app
+//!   could fill a modern window. Raised to 1920 after measuring the worst
+//!   case, which is what let this run at 1600x900.
+//! - **K-397**: a triangle with any corner behind the camera is dropped whole
+//!   rather than clipped, so the road surface has to be tessellated finely
+//!   near the car or it vanishes as you drive onto it.
+//!
+//! `#![no_std]`: the meshes are built once at startup, and the per-frame
+//! allocation is the HUD's triangle list, which is reused.
 
 #![no_std]
-#![allow(clippy::needless_range_loop)]
 #![allow(clippy::too_many_arguments)]
 
 extern crate alloc;
+
+mod car;
+mod hud;
+mod mathx;
+mod track;
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -30,86 +46,38 @@ use krate::bindings::krate::time::clock;
 use krate::gfx::{scene3d, types as gfx};
 use krate::ui::{events, tree, types, window};
 
+use car::{drive_ai, Car, MAX_LAPS};
+use hud::Hud;
+use mathx::{abs, cos_approx, hash2, sin_approx};
+use track::{ground_height, Track, ROAD_HALF};
+
 const ROOT_ID: u64 = 1;
 const SCENE_ID: u64 = 2;
 
-/// The surface cap is 1024 (`MAX_EDGE` in the host), so a 1080p window is not
-/// reachable. This is the largest square the runtime will give.
-const WIDTH: f32 = 1024.0;
-const HEIGHT: f32 = 640.0;
+/// 1600x900 rather than 1920x1080: the cap now allows 1080p, but the window
+/// has to fit on the machine running it, and this leaves room for a dock.
+const WIDTH: u32 = 1600;
+const HEIGHT: u32 = 900;
 
-/// Terrain grid. 48x48 cells is 4,608 triangles before anything else is drawn.
-const GRID: usize = 48;
-const CELL: f32 = 8.0;
+/// Cars on the grid, including the player.
+const FIELD: usize = 6;
 
-// ------------------------------------------------------------------- world
+/// Seconds of countdown before the lights go out.
+const COUNTDOWN: f32 = 3.5;
 
-fn hash2(x: i32, y: i32) -> f32 {
-    let mut h = (x as u32).wrapping_mul(374_761_393) ^ (y as u32).wrapping_mul(668_265_263);
-    h ^= h >> 13;
-    h = h.wrapping_mul(1_274_126_177);
-    ((h >> 8) & 0xFFFF) as f32 / 65_535.0
-}
+// ------------------------------------------------------------------ meshes
 
-/// Round toward negative infinity.
-///
-/// `as i32` truncates toward ZERO, so for a negative coordinate it lands on
-/// the cell above rather than below and the fraction comes out negative. The
-/// smoothstep below is only a smooth 0..1 ramp for t in 0..1; feed it -0.7 and
-/// it returns -2.3, which multiplies the octave's amplitude into terrain that
-/// reaches -75 instead of staying inside 0..13. Half the map ended up above
-/// the chase camera, which reads on screen as an upside-down world rather
-/// than as bad noise.
-fn floor_i32(v: f32) -> i32 {
-    let t = v as i32;
-    if v < 0.0 && v != t as f32 {
-        t - 1
-    } else {
-        t
-    }
-}
-
-/// Smooth-ish height at a world point: two octaves of value noise.
-fn height_at(x: f32, z: f32) -> f32 {
-    let mut h = 0.0;
-    let mut amp = 9.0;
-    let mut freq = 0.012;
-    for _ in 0..2 {
-        let fx = x * freq;
-        let fz = z * freq;
-        let x0 = floor_i32(fx);
-        let z0 = floor_i32(fz);
-        let tx = fx - x0 as f32;
-        let tz = fz - z0 as f32;
-        let sx = tx * tx * (3.0 - 2.0 * tx);
-        let sz = tz * tz * (3.0 - 2.0 * tz);
-        let a = hash2(x0, z0);
-        let b = hash2(x0 + 1, z0);
-        let c = hash2(x0, z0 + 1);
-        let d = hash2(x0 + 1, z0 + 1);
-        let top = a + (b - a) * sx;
-        let bot = c + (d - c) * sx;
-        h += (top + (bot - top) * sz) * amp;
-        amp *= 0.45;
-        freq *= 2.7;
-    }
-    // A flat valley down the middle for the road.
-    let road = (x / 26.0).abs().min(1.0);
-    h * road
-}
-
-/// One mesh, built once and placed many times.
 struct Mesh {
     verts: Vec<f32>,
 }
 
 impl Mesh {
-    fn tri_count(&self) -> usize {
+    fn tris(&self) -> usize {
         self.verts.len() / 9
     }
 }
 
-/// A box as twelve triangles, centred on the origin, sitting on y=0.
+/// A box as twelve triangles, centred in x and z, sitting on y=0.
 fn box_mesh(w: f32, h: f32, d: f32) -> Mesh {
     let (x0, x1) = (-w * 0.5, w * 0.5);
     let (y0, y1) = (0.0, h);
@@ -118,13 +86,17 @@ fn box_mesh(w: f32, h: f32, d: f32) -> Mesh {
         [x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0],
         [x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1],
     ];
+    // Wound counter-clockwise seen from OUTSIDE, which is what the host's
+    // back-face test wants. Getting this backwards makes a solid object
+    // render inside-out, which reads as the world being wrong rather than
+    // the mesh.
     let faces: [[usize; 6]; 6] = [
-        [0, 2, 1, 0, 3, 2], // front
-        [5, 7, 4, 5, 6, 7], // back
-        [4, 3, 0, 4, 7, 3], // left
-        [1, 6, 5, 1, 2, 6], // right
-        [3, 6, 2, 3, 7, 6], // top
-        [4, 1, 5, 4, 0, 1], // bottom
+        [0, 2, 1, 0, 3, 2],
+        [5, 7, 4, 5, 6, 7],
+        [4, 3, 0, 4, 7, 3],
+        [1, 6, 5, 1, 2, 6],
+        [3, 6, 2, 3, 7, 6],
+        [4, 1, 5, 4, 0, 1],
     ];
     let mut verts = Vec::with_capacity(12 * 9);
     for f in faces {
@@ -137,12 +109,25 @@ fn box_mesh(w: f32, h: f32, d: f32) -> Mesh {
     Mesh { verts }
 }
 
-/// A cone-ish tree: a trunk box plus a four-sided pyramid.
+/// The car: a body with a cabin on top, so which way it faces is readable at
+/// a glance from behind.
+fn car_mesh() -> Mesh {
+    let mut m = box_mesh(2.2, 0.9, 4.4);
+    let cabin = box_mesh(1.8, 0.7, 2.0);
+    // Lift the cabin onto the body and shift it back a little.
+    for t in cabin.verts.chunks_exact(3) {
+        m.verts.push(t[0]);
+        m.verts.push(t[1] + 0.9);
+        m.verts.push(t[2] - 0.3);
+    }
+    m
+}
+
 fn tree_mesh() -> Mesh {
-    let mut m = box_mesh(0.7, 2.2, 0.7);
+    let mut m = box_mesh(0.7, 2.4, 0.7);
     let r = 2.0;
-    let base = 2.0;
-    let top = 7.0;
+    let base = 2.2;
+    let top = 7.5;
     let corners = [[-r, base, -r], [r, base, -r], [r, base, r], [-r, base, r]];
     for i in 0..4 {
         let a = corners[i];
@@ -153,28 +138,28 @@ fn tree_mesh() -> Mesh {
             m.verts.push(p[2]);
         }
     }
-    Mesh { verts: m.verts }
+    m
 }
 
-/// The terrain, as one mesh. Built once; this is the fixed cost of the world.
-fn terrain_mesh() -> Mesh {
-    let mut verts = Vec::with_capacity(GRID * GRID * 18);
-    let half = GRID as f32 * CELL * 0.5;
-    for gz in 0..GRID {
-        for gx in 0..GRID {
-            let x0 = gx as f32 * CELL - half;
-            let z0 = gz as f32 * CELL - half;
-            let x1 = x0 + CELL;
-            let z1 = z0 + CELL;
-            let y00 = height_at(x0, z0);
-            let y10 = height_at(x1, z0);
-            let y01 = height_at(x0, z1);
-            let y11 = height_at(x1, z1);
-            // Wound so the UP-facing side is the front face. The obvious
-            // order -- (x0,z0), (x1,z0), (x1,z1) -- is clockwise seen from
-            // above, which back-face culling drops: the ground vanished from
-            // under the car and only distant hills survived, because those are
-            // seen at a grazing angle where the near edge still faces the eye.
+/// The land the circuit sits on, as a grid of quads.
+///
+/// Wound UP-facing (see `track::surface`): the obvious corner order is
+/// clockwise from above and back-face culling removes it, which empties the
+/// ground from under the car while distant hills survive at their grazing
+/// angle.
+fn ground_mesh(extent: f32, cells: usize) -> Mesh {
+    let mut verts = Vec::with_capacity(cells * cells * 18);
+    let step = extent * 2.0 / cells as f32;
+    for gz in 0..cells {
+        for gx in 0..cells {
+            let x0 = -extent + gx as f32 * step;
+            let z0 = -extent + gz as f32 * step;
+            let x1 = x0 + step;
+            let z1 = z0 + step;
+            let y00 = ground_height(x0, z0);
+            let y10 = ground_height(x1, z0);
+            let y01 = ground_height(x0, z1);
+            let y11 = ground_height(x1, z1);
             for p in [
                 [x0, y00, z0], [x1, y11, z1], [x1, y10, z0],
                 [x0, y00, z0], [x0, y01, z1], [x1, y11, z1],
@@ -188,7 +173,7 @@ fn terrain_mesh() -> Mesh {
     Mesh { verts }
 }
 
-// -------------------------------------------------------------------- props
+// ------------------------------------------------------------------ scenery
 
 #[derive(Clone, Copy)]
 struct Prop {
@@ -201,157 +186,253 @@ struct Prop {
     tint: gfx::Color,
 }
 
-/// How long the last `present` took, so the benchmark can subtract the
-/// runtime's deliberate frame pacing and report the real render cost.
-static mut PRESENT_NS: u64 = 0;
-static mut SUBMIT_TOTAL: u64 = 0;
-
 fn rgb(r: f32, g: f32, b: f32) -> gfx::Color {
     gfx::Color { r, g, b, a: 1.0 }
 }
 
-/// Scatter buildings and trees across the landscape, avoiding the road.
-fn scatter(n: usize) -> Vec<Prop> {
-    let mut out = Vec::with_capacity(n);
-    let mut i = 0u32;
-    while out.len() < n {
-        i += 1;
-        let x = (hash2(i as i32, 7) - 0.5) * GRID as f32 * CELL * 0.92;
-        let z = (hash2(11, i as i32) - 0.5) * GRID as f32 * CELL * 0.92;
-        if x.abs() < 16.0 {
-            continue; // keep the road clear
+/// Trees and grandstands, kept clear of the road so they decorate rather than
+/// block. Placed relative to the circuit, not scattered over a square, so the
+/// track always looks lined.
+fn scenery(track: &Track, per_node: usize) -> Vec<Prop> {
+    let mut out = Vec::with_capacity(track.nodes.len() * per_node);
+    for (i, node) in track.nodes.iter().enumerate() {
+        for k in 0..per_node {
+            let seed = (i * 31 + k * 7) as i32;
+            let side = if hash2(seed, 1) > 0.5 { 1.0 } else { -1.0 };
+            let out_dist = ROAD_HALF + 8.0 + hash2(seed, 2) * 46.0;
+            let nx = -node.dir_z;
+            let nz = node.dir_x;
+            let jitter = (hash2(seed, 3) - 0.5) * 9.0;
+            let x = node.x + nx * side * out_dist + node.dir_x * jitter;
+            let z = node.z + nz * side * out_dist + node.dir_z * jitter;
+            let building = hash2(seed, 4) > 0.72;
+            let g = 0.30 + hash2(seed, 6) * 0.22;
+            out.push(Prop {
+                x,
+                z,
+                y: ground_height(x, z),
+                rot: hash2(seed, 5) * 360.0,
+                scale: if building {
+                    1.4 + hash2(seed, 8) * 2.2
+                } else {
+                    0.8 + hash2(seed, 9) * 0.9
+                },
+                kind: u8::from(building),
+                tint: if building {
+                    let s = 0.34 + hash2(seed, 10) * 0.2;
+                    rgb(s, s * 0.97, s * 0.93)
+                } else {
+                    rgb(0.10, g, 0.13)
+                },
+            });
         }
-        let r = hash2(i as i32, i as i32);
-        let building = r > 0.45;
-        out.push(Prop {
-            x,
-            z,
-            y: height_at(x, z),
-            rot: hash2(i as i32, 3) * 360.0,
-            scale: if building {
-                0.8 + hash2(i as i32, 5) * 2.4
-            } else {
-                0.6 + hash2(i as i32, 9) * 0.9
-            },
-            kind: if building { 0 } else { 1 },
-            tint: if building {
-                let t = 0.35 + hash2(i as i32, 13) * 0.35;
-                rgb(t, t * 0.95, t * 0.88)
-            } else {
-                let g = 0.30 + hash2(i as i32, 17) * 0.30;
-                rgb(g * 0.45, g, g * 0.40)
-            },
-        });
     }
     out
 }
 
-// --------------------------------------------------------------------- math
+// -------------------------------------------------------------------- audio
 
-fn sin_approx(x: f32) -> f32 {
-    const PI: f32 = 3.141_592_7;
-    const TWO_PI: f32 = 6.283_185_3;
-    let mut a = x % TWO_PI;
-    if a < 0.0 {
-        a += TWO_PI;
+/// Synthesised sounds, so the game carries no audio files.
+mod sfx {
+    use alloc::vec::Vec;
+
+    /// One cycle count of a square-ish engine note at a given pitch, as raw
+    /// 16-bit mono at 44.1 kHz.
+    pub fn engine(freq: f32, millis: u32) -> Vec<u8> {
+        let rate = 44_100.0_f32;
+        let n = (rate * millis as f32 / 1000.0) as usize;
+        let mut out = Vec::with_capacity(n * 2);
+        for i in 0..n {
+            let t = i as f32 / rate;
+            let phase = t * freq;
+            let saw = phase - crate::mathx::floor_f32(phase) - 0.5;
+            // A second voice a fifth up thickens it into something engine-like
+            // rather than a test tone.
+            let p2 = t * freq * 1.5;
+            let saw2 = p2 - crate::mathx::floor_f32(p2) - 0.5;
+            let env = 0.55;
+            let v = (saw * 0.7 + saw2 * 0.3) * env;
+            let s = (v * 9000.0) as i16;
+            out.push((s as u16 & 0xFF) as u8);
+            out.push(((s as u16 >> 8) & 0xFF) as u8);
+        }
+        out
     }
-    let (a, sign) = if a > PI { (a - PI, -1.0) } else { (a, 1.0) };
-    let num = 16.0 * a * (PI - a);
-    let den = 5.0 * PI * PI - 4.0 * a * (PI - a);
-    sign * num / den
+
+    /// Filtered noise, for tyre scrub and impacts.
+    pub fn noise(millis: u32, decay: f32, gain: f32) -> Vec<u8> {
+        let rate = 44_100.0_f32;
+        let n = (rate * millis as f32 / 1000.0) as usize;
+        let mut out = Vec::with_capacity(n * 2);
+        let mut seed = 0x1234_5678_u32;
+        let mut low = 0.0_f32;
+        for i in 0..n {
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let white = ((seed >> 9) & 0xFFFF) as f32 / 32_768.0 - 1.0;
+            low += (white - low) * 0.22;
+            let env = libm_exp(-(i as f32 / rate) * decay);
+            let s = (low * env * gain) as i16;
+            out.push((s as u16 & 0xFF) as u8);
+            out.push(((s as u16 >> 8) & 0xFF) as u8);
+        }
+        out
+    }
+
+    /// A short tone, for the countdown beeps.
+    pub fn beep(freq: f32, millis: u32, gain: f32) -> Vec<u8> {
+        let rate = 44_100.0_f32;
+        let n = (rate * millis as f32 / 1000.0) as usize;
+        let mut out = Vec::with_capacity(n * 2);
+        for i in 0..n {
+            let t = i as f32 / rate;
+            let env = libm_exp(-t * 3.0);
+            let v = crate::mathx::sin_approx(t * freq * core::f32::consts::PI * 2.0);
+            let s = (v * env * gain) as i16;
+            out.push((s as u16 & 0xFF) as u8);
+            out.push(((s as u16 >> 8) & 0xFF) as u8);
+        }
+        out
+    }
+
+    /// `exp(-x)` for x >= 0. A no_std guest has no `f32::exp` either.
+    fn libm_exp(x: f32) -> f32 {
+        // exp(x) = 2^(x/ln2); split into integer and fractional parts and use
+        // a short polynomial on the fraction.
+        let t = x * core::f32::consts::LOG2_E;
+        let k = crate::mathx::floor_f32(t);
+        let f = t - k;
+        // 2^f on 0..1, minimax-ish.
+        let p = 1.0 + f * (0.693_147 + f * (0.240_226 + f * 0.055_504));
+        let mut r = p;
+        let mut e = k as i32;
+        while e > 0 {
+            r *= 2.0;
+            e -= 1;
+        }
+        while e < 0 {
+            r *= 0.5;
+            e += 1;
+        }
+        r
+    }
 }
 
-fn cos_approx(x: f32) -> f32 {
-    sin_approx(x + 1.570_796_4)
+// ------------------------------------------------------------------- state
+
+#[derive(Clone, Copy, PartialEq)]
+enum Phase {
+    Attract,
+    Countdown,
+    Racing,
+    Finished,
 }
 
-fn sqrt_approx(v: f32) -> f32 {
-    if v <= 0.0 {
-        return 0.0;
-    }
-    let mut g = v;
-    for _ in 0..8 {
-        g = 0.5 * (g + v / g);
-    }
-    g
+struct Game {
+    phase: Phase,
+    /// Seconds since the phase began.
+    phase_t: f32,
+    /// Seconds since the lights went out.
+    race_t: f32,
+    cars: Vec<Car>,
+    /// Finishing order, filled as cars cross the line for the last time.
+    order: Vec<usize>,
+    best_lap: f32,
+    last_lap_at: f32,
+    /// Camera state, smoothed rather than snapped to the car.
+    cam: [f32; 3],
+    cam_look: [f32; 3],
+    shake: f32,
+    countdown_step: i32,
 }
 
-fn u64_str(v: u64) -> String {
-    let mut s = String::new();
-    let mut d = [0u8; 24];
-    let mut n = 0;
-    let mut v = v;
-    if v == 0 {
-        s.push('0');
-        return s;
+impl Game {
+    fn new(track: &Track) -> Self {
+        let mut cars = Vec::with_capacity(FIELD);
+        for i in 0..FIELD {
+            cars.push(Car::new(track, i));
+        }
+        Self {
+            phase: Phase::Attract,
+            phase_t: 0.0,
+            race_t: 0.0,
+            cars,
+            order: Vec::with_capacity(FIELD),
+            best_lap: 0.0,
+            last_lap_at: 0.0,
+            cam: [0.0, 40.0, 0.0],
+            cam_look: [0.0, 0.0, 0.0],
+            shake: 0.0,
+            countdown_step: -1,
+        }
     }
-    while v > 0 {
-        d[n] = b'0' + (v % 10) as u8;
-        v /= 10;
-        n += 1;
+
+    fn reset(&mut self, track: &Track) {
+        for (i, c) in self.cars.iter_mut().enumerate() {
+            *c = Car::new(track, i);
+        }
+        self.order.clear();
+        self.race_t = 0.0;
+        self.best_lap = 0.0;
+        self.last_lap_at = 0.0;
+        self.shake = 0.0;
+        self.countdown_step = -1;
+        self.phase = Phase::Countdown;
+        self.phase_t = 0.0;
     }
-    while n > 0 {
-        n -= 1;
-        s.push(d[n] as char);
+
+    /// Where the player sits in the field right now, 1-based.
+    fn player_position(&self) -> u32 {
+        // If the race is over the finishing order is the answer; before then
+        // it is distance travelled, which is why `progress` accumulates
+        // through laps rather than resetting.
+        if let Some(p) = self.order.iter().position(|&i| i == 0) {
+            return p as u32 + 1;
+        }
+        let me = self.cars[0].progress;
+        let mut ahead = 0;
+        for (i, c) in self.cars.iter().enumerate() {
+            if i != 0 && c.progress > me {
+                ahead += 1;
+            }
+        }
+        ahead + 1
     }
-    s
 }
 
-fn say(s: &str) {
-    let out = stdio::stdout();
-    let _ = out.write(s.as_bytes());
-}
+// ------------------------------------------------------------------ drawing
 
-// --------------------------------------------------------------------- car
-
-struct Car {
-    x: f32,
-    z: f32,
-    y: f32,
-    heading: f32,
-    speed: f32,
-}
-
-// -------------------------------------------------------------------- draw
-
-/// Draw one frame. Returns how many `place` calls it made, which is the number
-/// CP-E is really measuring: every one crosses the sandbox boundary carrying
-/// the whole mesh.
-fn draw_scene(
+/// Paint one frame.
+fn draw(
     scene: u64,
-    terrain: &Mesh,
-    building: &Mesh,
-    tree: &Mesh,
-    car_mesh: &Mesh,
+    g: &Game,
+    track: &Track,
+    meshes: &Meshes,
     props: &[Prop],
-    visible: usize,
-    car: &Car,
+    hud: &mut Hud,
+    visible_props: usize,
 ) -> Result<usize, gfx::GfxError> {
-    scene3d::clear(scene, rgb(0.52, 0.68, 0.88))?;
-
-    // Chase camera, behind and above, looking where the car points.
-    let back = 26.0;
-    let ex = car.x - sin_approx(car.heading) * back;
-    let ez = car.z - cos_approx(car.heading) * back;
-    let ey = car.y + 12.0;
-    scene3d::camera(
-        scene,
-        &[ex, ey, ez],
-        &[car.x, car.y + 2.0, car.z],
-        58.0,
-    )?;
-    scene3d::light(scene, &[-0.4, -0.85, -0.3])?;
+    let sky = match g.phase {
+        Phase::Attract => rgb(0.36, 0.47, 0.66),
+        _ => rgb(0.52, 0.70, 0.92),
+    };
+    scene3d::clear(scene, sky)?;
+    scene3d::camera(scene, &g.cam, &g.cam_look, 62.0)?;
+    scene3d::light(scene, &[-0.42, -0.84, -0.34])?;
 
     let mut calls = 0;
 
-    // The landscape: one call, the biggest mesh.
-    scene3d::triangles(scene, &terrain.verts, rgb(0.42, 0.56, 0.34))?;
-    calls += 1;
+    scene3d::triangles(scene, &meshes.ground.verts, rgb(0.30, 0.46, 0.26))?;
+    scene3d::triangles(scene, &track.road, rgb(0.20, 0.20, 0.23))?;
+    scene3d::triangles(scene, &track.kerb_a, rgb(0.82, 0.22, 0.22))?;
+    scene3d::triangles(scene, &track.kerb_b, rgb(0.92, 0.92, 0.92))?;
+    calls += 4;
 
-    // Props, nearest first. `place` sends the mesh EVERY time -- the runtime
-    // has no retained mesh -- so this is where the boundary cost lives.
-    for p in props.iter().take(visible) {
-        let mesh = if p.kind == 0 { building } else { tree };
+    for p in props.iter().take(visible_props) {
+        let mesh = if p.kind == 1 {
+            &meshes.building
+        } else {
+            &meshes.tree
+        };
         scene3d::place(
             scene,
             &mesh.verts,
@@ -363,26 +444,168 @@ fn draw_scene(
         calls += 1;
     }
 
-    // The car.
-    scene3d::place(
-        scene,
-        &car_mesh.verts,
-        &[car.x, car.y + 0.3, car.z],
-        &[0.0, car.heading * 57.295_78, 0.0],
-        1.0,
-        rgb(0.85, 0.22, 0.25),
-    )?;
-    calls += 1;
-
-    let p0 = clock::monotonic_nanos();
-    scene3d::present(scene)?;
-    unsafe {
-        PRESENT_NS = clock::monotonic_nanos().saturating_sub(p0);
+    // Cars. The player is red; the rest are given distinct hues so "the blue
+    // one is ahead of me" is a thing you can say.
+    for (i, c) in g.cars.iter().enumerate() {
+        let tint = car_colour(i, c.hit);
+        scene3d::place(
+            scene,
+            &meshes.car.verts,
+            &[c.x, c.y, c.z],
+            &[0.0, c.body_angle() * 57.295_78, 0.0],
+            1.0,
+            tint,
+        )?;
+        calls += 1;
     }
+
+    if !hud.is_empty() {
+        // Tint over 1.0 on purpose. Every triangle is shaded by its normal
+        // against the one light -- `shade = 0.35 + 0.65 * |n.l|` in the host,
+        // with no unlit path -- so a HUD quad facing the camera comes out at
+        // roughly a third brightness and the numbers read as dark grey rather
+        // than as an overlay. Scaling the tint past white is the only lever an
+        // app has. This is the second half of K-398: even with the geometry
+        // trick, a HUD cannot be drawn at the colour it is asked for.
+        let verts = hud.to_world(g.cam, g.cam_look);
+        scene3d::triangles(scene, &verts, rgb(2.7, 2.7, 2.8))?;
+        calls += 1;
+    }
+
+    scene3d::present(scene)?;
     Ok(calls)
 }
 
-// --------------------------------------------------------------------- main
+fn car_colour(i: usize, hit: f32) -> gfx::Color {
+    let base = match i {
+        0 => (0.88, 0.18, 0.20),
+        1 => (0.20, 0.42, 0.88),
+        2 => (0.95, 0.75, 0.15),
+        3 => (0.20, 0.72, 0.38),
+        4 => (0.72, 0.30, 0.85),
+        _ => (0.95, 0.95, 0.95),
+    };
+    // Flash toward white on contact, so a bump is visible as well as audible.
+    let f = hit.min(1.0) * 0.6;
+    rgb(
+        base.0 + (1.0 - base.0) * f,
+        base.1 + (1.0 - base.1) * f,
+        base.2 + (1.0 - base.2) * f,
+    )
+}
+
+struct Meshes {
+    ground: Mesh,
+    car: Mesh,
+    tree: Mesh,
+    building: Mesh,
+}
+
+/// Build the HUD for this frame.
+fn build_hud(g: &Game, hud: &mut Hud) {
+    hud.clear();
+    // Camera-space units at the HUD plane. The visible half-width at 62 deg
+    // fov and DIST = 3 is about 1.8 vertically; x is that times the aspect.
+    let top = 1.55;
+    let left = -2.7;
+    let right = 2.7;
+
+    match g.phase {
+        Phase::Attract => {
+            // Three bars as a title block, and a prompt that pulses.
+            hud.rect(-1.2, 0.35, 2.4, 0.16);
+            hud.rect(-1.2, 0.08, 1.6, 0.16);
+            hud.rect(-1.2, -0.19, 2.0, 0.16);
+            let pulse = sin_approx(g.phase_t * 3.0) * 0.5 + 0.5;
+            if pulse > 0.45 {
+                hud.rect(-0.75, -0.95, 1.5, 0.10);
+            }
+        }
+        Phase::Countdown => {
+            let left_s = (COUNTDOWN - g.phase_t).max(0.0);
+            let lights = (mathx::ceil_f32(left_s) as i32).clamp(0, 3);
+            for i in 0..3 {
+                let on = i < lights;
+                let cx = -0.85 + i as f32 * 0.85;
+                if on {
+                    hud::disc(cx, 0.55, 0.26, 18, hud);
+                } else {
+                    hud::disc(cx, 0.55, 0.10, 12, hud);
+                }
+            }
+        }
+        Phase::Racing | Phase::Finished => {
+            // Speed, bottom left, big.
+            let kph = (abs(g.cars[0].speed) * 3.6) as u32;
+            hud.number(kph, left + 1.45, -1.30, 0.26, 0.42, 1);
+            // A speed bar under it.
+            let frac = (abs(g.cars[0].speed) / 92.0).min(1.0);
+            hud.rect(left + 0.12, -1.44, 1.35 * frac, 0.06);
+
+            // Lap counter, top left: current / total.
+            let lap = (g.cars[0].lap + 1).min(MAX_LAPS);
+            hud.number(lap, left + 0.55, top - 0.30, 0.18, 0.30, 1);
+            hud.rect(left + 0.62, top - 0.28, 0.05, 0.26);
+            hud.number(MAX_LAPS, left + 1.05, top - 0.30, 0.18, 0.30, 1);
+
+            // Position, top right.
+            hud.number(g.player_position(), right - 0.12, top - 0.34, 0.24, 0.38, 1);
+
+            // Race clock, top centre: m:ss.
+            let t = g.race_t.max(0.0);
+            let mins = (t / 60.0) as u32;
+            let secs = (t as u32) % 60;
+            hud.number(mins, -0.30, top - 0.26, 0.15, 0.25, 1);
+            hud.colon(-0.24, top - 0.26, 0.05, 0.25);
+            hud.number(secs, 0.42, top - 0.26, 0.15, 0.25, 2);
+
+            if g.phase == Phase::Finished {
+                // A results plate: a bar per car, longest for the winner, with
+                // the player's row marked by a notch.
+                for (rank, &ci) in g.order.iter().enumerate() {
+                    let y = 0.75 - rank as f32 * 0.24;
+                    let w = 1.5 - rank as f32 * 0.12;
+                    hud.rect(-w * 0.5, y, w, 0.15);
+                    if ci == 0 {
+                        hud.rect(-w * 0.5 - 0.22, y, 0.14, 0.15);
+                    }
+                }
+                let pulse = sin_approx(g.phase_t * 3.0) * 0.5 + 0.5;
+                if pulse > 0.45 {
+                    hud.rect(-0.75, -0.95, 1.5, 0.10);
+                }
+            }
+        }
+    }
+}
+
+// --------------------------------------------------------------------- misc
+
+fn u64_str(v: u64) -> String {
+    let mut digits = [0u8; 20];
+    let mut n = 0;
+    let mut v = v;
+    if v == 0 {
+        digits[0] = b'0';
+        n = 1;
+    }
+    while v > 0 {
+        digits[n] = b'0' + (v % 10) as u8;
+        v /= 10;
+        n += 1;
+    }
+    let mut s = String::with_capacity(n);
+    for i in (0..n).rev() {
+        s.push(digits[i] as char);
+    }
+    s
+}
+
+fn say(s: &str) {
+    let out = stdio::stdout();
+    let _ = out.write(s.as_bytes());
+    let _ = out.write(b"\n");
+}
 
 fn node(id: u64, parent: Option<u64>, kind: types::WidgetKind) -> types::WidgetNode {
     types::WidgetNode {
@@ -391,10 +614,13 @@ fn node(id: u64, parent: Option<u64>, kind: types::WidgetKind) -> types::WidgetN
         kind,
         label: None,
         role: None,
+        // `grow: 1.0` is what makes the canvas take the whole window. Left at
+        // zero the scene is laid out at its content size, which for a canvas
+        // is nothing, and the window comes up empty.
         style: types::Style {
             width: None,
             height: None,
-            grow: 0.0,
+            grow: 1.0,
             padding: 0.0,
         },
         checked: None,
@@ -404,6 +630,10 @@ fn node(id: u64, parent: Option<u64>, kind: types::WidgetKind) -> types::WidgetN
     }
 }
 
+/// Say which step failed before exiting.
+///
+/// A bare `return 1` tells a checker only that something went wrong and the
+/// log ends with no clue which call it was.
 fn fail(step: &[u8]) -> i32 {
     let out = stdio::stdout();
     let _ = out.write(b"drift: failed at ");
@@ -412,6 +642,10 @@ fn fail(step: &[u8]) -> i32 {
     1
 }
 
+static mut PRESENT_NS: u64 = 0;
+
+// --------------------------------------------------------------------- main
+
 struct Component;
 
 impl krate::Guest for Component {
@@ -419,13 +653,13 @@ impl krate::Guest for Component {
         let raw = args::raw();
         let has = |n: &[u8]| raw.as_bytes().split(|b| *b == b'\n').any(|a| a == n);
         let quick = has(b"quick") || has(b"--quick");
-        let bench = has(b"bench");
+        let auto = has(b"auto");
 
         let win = match window::create(
             "Drift",
             types::WindowSize {
-                width: WIDTH as u32,
-                height: HEIGHT as u32,
+                width: WIDTH,
+                height: HEIGHT,
             },
         ) {
             Ok(w) => w,
@@ -434,6 +668,8 @@ impl krate::Guest for Component {
         if window::show(win).is_err() {
             return fail(b"window::show");
         }
+        // The root MUST go through set_root; upsert_node on the root fails
+        // silently and the app exits with nothing on stdout (K-392).
         if tree::set_root(win, &node(ROOT_ID, None, types::WidgetKind::Stack)).is_err() {
             return fail(b"set_root");
         }
@@ -449,188 +685,332 @@ impl krate::Guest for Component {
             Ok(s) => s,
             Err(_) => return fail(b"scene3d::bind"),
         };
-        // Back-face culling roughly halves the triangles a closed mesh costs.
         let _ = scene3d::cull_back_faces(scene, true);
 
-        let terrain = terrain_mesh();
-        let building = box_mesh(6.0, 9.0, 6.0);
-        let tree = tree_mesh();
-        let car_mesh = box_mesh(2.2, 1.4, 4.4);
-        let props = scatter(4000);
-
-        let mut car = Car {
-            x: 0.0,
-            z: -120.0,
-            y: 0.0,
-            heading: 0.0,
-            speed: 0.0,
+        // The circuit. 360 nodes around roughly 1.9 km is a node every five
+        // metres or so, which is fine enough that the road does not visibly
+        // facet and fine enough to dodge K-397: a long road quad straddling
+        // the camera would be dropped whole rather than clipped.
+        let track = track::build(7, 360);
+        let meshes = Meshes {
+            ground: ground_mesh(700.0, 56),
+            car: car_mesh(),
+            tree: tree_mesh(),
+            building: box_mesh(7.0, 10.0, 7.0),
         };
-        car.y = height_at(car.x, car.z);
+        let props = scenery(&track, 2);
 
-        if bench {
-            say("drift-bench: software rasterizer, 1024x640\n");
-            // Can a 3D scene be 1080p? MAX_EDGE says no; confirm it refuses
-            // rather than silently shrinking, because a game that thinks it
-            // is 1080p and is not would be the worse outcome.
-            match window::create(
-                "probe",
-                types::WindowSize {
-                    width: 1920,
-                    height: 1080,
-                },
-            ) {
-                Ok(w2) => {
-                    let _ = window::show(w2);
-                    let _ = tree::set_root(w2, &node(ROOT_ID, None, types::WidgetKind::Stack));
-                    let _ = tree::upsert_node(
-                        w2,
-                        &node(SCENE_ID, Some(ROOT_ID), types::WidgetKind::Canvas),
-                    );
-                    match scene3d::bind(w2, SCENE_ID) {
-                        Ok(s2) => match scene3d::clear(s2, rgb(0.0, 0.0, 0.0)) {
-                            Ok(_) => say("  1920x1080 3D surface: ACCEPTED\n"),
-                            Err(_) => say("  1920x1080 3D surface: REFUSED at clear\n"),
-                        },
-                        Err(_) => say("  1920x1080 3D surface: REFUSED at bind\n"),
-                    }
-                    let _ = window::close(w2);
-                }
-                Err(_) => say("  1920x1080 window: refused\n"),
-            }
-            let mut m = String::from("  terrain ");
-            m.push_str(&u64_str(terrain.tri_count() as u64));
-            m.push_str(" tris, building ");
-            m.push_str(&u64_str(building.tri_count() as u64));
-            m.push_str(", tree ");
-            m.push_str(&u64_str(tree.tri_count() as u64));
-            m.push('\n');
-            say(&m);
-
-            for visible in [0usize, 100, 400, 1000, 2000, 4000] {
-                // Warm, then measure 30 frames.
-                for _ in 0..3 {
-                    let _ = draw_scene(
-                        scene, &terrain, &building, &tree, &car_mesh, &props, visible, &car,
-                    );
-                }
-                let mut worst = 0u64;
-                let t0 = clock::monotonic_nanos();
-                let mut calls = 0;
-                for i in 0..30 {
-                    car.heading = i as f32 * 0.02;
-                    let f0 = clock::monotonic_nanos();
-                    calls = draw_scene(
-                        scene, &terrain, &building, &tree, &car_mesh, &props, visible, &car,
-                    )
-                    .unwrap_or(0);
-                    let took = clock::monotonic_nanos()
-                        .saturating_sub(f0)
-                        .saturating_sub(unsafe { PRESENT_NS });
-                    unsafe { SUBMIT_TOTAL += took };
-                    if took > worst {
-                        worst = took;
-                    }
-                }
-                let wall = clock::monotonic_nanos().saturating_sub(t0) / 30;
-                let avg = unsafe { SUBMIT_TOTAL } / 30;
-                unsafe { SUBMIT_TOTAL = 0 };
-
-                // Triangles actually submitted this frame.
-                let tris = terrain.tri_count()
-                    + car_mesh.tri_count()
-                    + props
-                        .iter()
-                        .take(visible)
-                        .map(|p| {
-                            if p.kind == 0 {
-                                building.tri_count()
-                            } else {
-                                tree.tri_count()
-                            }
-                        })
-                        .sum::<usize>();
-
-                let mut r = String::from("  objects ");
-                r.push_str(&u64_str(visible as u64 + 2));
-                r.push_str("  calls ");
-                r.push_str(&u64_str(calls as u64));
-                r.push_str("  tris ");
-                r.push_str(&u64_str(tris as u64));
-                r.push_str("  avg ");
-                r.push_str(&u64_str(avg / 1_000));
-                r.push_str("us  worst ");
-                r.push_str(&u64_str(worst / 1_000));
-                r.push_str("us  wall ");
-                r.push_str(&u64_str(wall / 1_000));
-                r.push_str("us  render-fps ");
-                r.push_str(&u64_str(if avg > 0 { 1_000_000_000 / avg } else { 0 }));
-                r.push('\n');
-                say(&r);
-            }
-            say("drift-bench: done\n");
-            return 0;
+        say("drift: a racing game");
+        {
+            let mut s = String::new();
+            s.push_str("  circuit ");
+            s.push_str(&u64_str(track.length as u64));
+            s.push_str(" m, ");
+            s.push_str(&u64_str(track.nodes.len() as u64));
+            s.push_str(" nodes, road ");
+            s.push_str(&u64_str((track.road.len() / 9) as u64));
+            s.push_str(" tris, ground ");
+            s.push_str(&u64_str(meshes.ground.tris() as u64));
+            s.push_str(" tris, ");
+            s.push_str(&u64_str(props.len() as u64));
+            s.push_str(" props");
+            say(&s);
         }
 
-        let _ = draw_scene(
-            scene, &terrain, &building, &tree, &car_mesh, &props, 120, &car,
-        );
-
-        if quick {
-            let mut m = String::from("drift: terrain ");
-            m.push_str(&u64_str(terrain.tri_count() as u64));
-            m.push_str(" tris, ");
-            m.push_str(&u64_str(props.len() as u64));
-            m.push_str(" props\n");
-            say(&m);
-            return 0;
+        // Audio. Every sound is synthesised, so the bundle carries no assets.
+        let audio = krate::audio::playback::open(krate::audio::types::StreamConfig {
+            sample_rate: 44_100,
+            channels: 1,
+            format: krate::audio::types::SampleFormat::PcmS16,
+            buffer_frames: 1_024,
+        })
+        .ok();
+        if let Some(a) = audio {
+            let _ = krate::audio::playback::start(a);
         }
+        let load = |bytes: Vec<u8>| -> Option<u64> {
+            let a = audio?;
+            krate::audio::playback::load_sound(a, &bytes).ok()
+        };
+        // Engine notes at a few pitches; the one played is chosen by speed,
+        // which is a cheap stand-in for a continuously pitched engine and is
+        // the shape `play_sound` supports.
+        let mut engine_steps = Vec::new();
+        for i in 0..6 {
+            let f = 52.0 + i as f32 * 26.0;
+            if let Some(s) = load(sfx::engine(f, 260)) {
+                engine_steps.push(s);
+            }
+        }
+        let skid = load(sfx::noise(300, 5.0, 5200.0));
+        let bump = load(sfx::noise(180, 16.0, 11000.0));
+        let beep_lo = load(sfx::beep(440.0, 180, 8000.0));
+        let beep_hi = load(sfx::beep(880.0, 420, 9000.0));
 
+        let play = |s: Option<u64>, gain: f32| {
+            if let (Some(a), Some(id)) = (audio, s) {
+                let _ = krate::audio::playback::play_sound(a, id, gain);
+            }
+        };
+
+        let mut g = Game::new(&track);
+        let mut hud = Hud::new();
+
+        // Frame timing, measured from the clock rather than assumed, and with
+        // present()'s deliberate pacing tracked separately so the render cost
+        // can be reported honestly.
         let mut last = clock::monotonic_nanos();
+        let mut frames: u64 = 0;
+        let mut engine_next = 0.0_f32;
+        let mut skid_next = 0.0_f32;
+        let mut samples: Vec<u32> = Vec::with_capacity(4096);
+        let mut now_s = 0.0_f32;
+
+        // `auto` drives itself for long enough to run a whole three-lap race
+        // and reach the results screen: a shorter cap reports "lap 0" and
+        // looks like broken lap counting when it is just a race that has not
+        // finished yet.
+        let frame_cap = if quick {
+            30
+        } else if auto {
+            18_000
+        } else {
+            u64::MAX
+        };
+
         loop {
-            let now = clock::monotonic_nanos();
-            let dt = (now.saturating_sub(last) as f32 / 1_000_000_000.0).min(0.05);
-            last = now;
-
-            let left = events::key_held("ArrowLeft") || events::key_held("a");
-            let right = events::key_held("ArrowRight") || events::key_held("d");
-            let gas = events::key_held("ArrowUp") || events::key_held("w");
-            let brake = events::key_held("ArrowDown") || events::key_held("s");
-
-            if gas {
-                car.speed += 26.0 * dt;
-            } else if brake {
-                car.speed -= 34.0 * dt;
-            } else {
-                car.speed *= 1.0 - (1.2 * dt).min(1.0);
+            let t0 = clock::monotonic_nanos();
+            let mut dt = (t0.saturating_sub(last)) as f32 / 1_000_000_000.0;
+            last = t0;
+            // A frame that took a very long time (a breakpoint, a stall, the
+            // window being dragged) must not teleport every car through the
+            // barrier.
+            if dt > 0.1 {
+                dt = 0.1;
             }
-            car.speed = car.speed.clamp(-18.0, 44.0);
+            if dt <= 0.0 {
+                dt = 1.0 / 60.0;
+            }
+            now_s += dt;
+            g.phase_t += dt;
 
-            // Steering scales with speed, so the car does not pivot on the spot.
-            let steer = (car.speed.abs() / 44.0).min(1.0);
+            // ---- input
+            let key = |k: &str| events::key_held(k);
+            let pad_x = events::gamepad_axis("left-x");
+            let accel = key("ArrowUp") || key("w") || events::gamepad_held("a");
+            let brake = key("ArrowDown") || key("s") || events::gamepad_held("b");
+            let left = key("ArrowLeft") || key("a");
+            let right = key("ArrowRight") || key("d");
+            let start = key("Enter") || key(" ") || events::gamepad_held("start");
+
+            let mut steer = 0.0;
             if left {
-                car.heading -= 1.8 * dt * steer;
+                steer -= 1.0;
             }
             if right {
-                car.heading += 1.8 * dt * steer;
+                steer += 1.0;
+            }
+            if abs(pad_x) > 0.15 {
+                steer = pad_x;
+            }
+            let throttle = if accel {
+                1.0
+            } else if brake {
+                -1.0
+            } else {
+                0.0
+            };
+
+            // ---- phase
+            match g.phase {
+                Phase::Attract => {
+                    if start || auto || quick {
+                        g.reset(&track);
+                    }
+                }
+                Phase::Countdown => {
+                    let left_s = COUNTDOWN - g.phase_t;
+                    let step = mathx::ceil_f32(left_s) as i32;
+                    if step != g.countdown_step && (0..=3).contains(&step) {
+                        g.countdown_step = step;
+                        if step == 0 {
+                            play(beep_hi, 0.9);
+                        } else {
+                            play(beep_lo, 0.7);
+                        }
+                    }
+                    if left_s <= 0.0 {
+                        g.phase = Phase::Racing;
+                        g.phase_t = 0.0;
+                    }
+                }
+                Phase::Racing => {
+                    g.race_t += dt;
+                }
+                Phase::Finished => {
+                    if (start && g.phase_t > 1.0) || (auto && g.phase_t > 3.0) {
+                        g.reset(&track);
+                    }
+                }
             }
 
-            car.x += sin_approx(car.heading) * car.speed * dt;
-            car.z += cos_approx(car.heading) * car.speed * dt;
-            let limit = GRID as f32 * CELL * 0.46;
-            car.x = car.x.clamp(-limit, limit);
-            car.z = car.z.clamp(-limit, limit);
+            // ---- simulate
+            if matches!(g.phase, Phase::Racing | Phase::Finished) {
+                let before: Vec<u32> = g.cars.iter().map(|c| c.lap).collect();
 
-            // Follow the ground rather than floating over it.
-            let ground = height_at(car.x, car.z);
-            car.y += (ground - car.y) * (8.0 * dt).min(1.0);
+                for i in 0..g.cars.len() {
+                    let (th, st) = if i == 0 && !auto {
+                        (throttle, steer)
+                    } else {
+                        // Skill varies per car so the field spreads out
+                        // instead of driving as one block. Car 0 is the
+                        // player's, and in `auto` it drives at the MIDDLE of
+                        // the range rather than the bottom -- otherwise the
+                        // self-driving demo always finishes last, which looks
+                        // like the player's car being slower than everyone
+                        // else's when it is only the skill number.
+                        let skill = if i == 0 {
+                            0.93
+                        } else {
+                            0.88 + (i as f32 * 0.018)
+                        };
+                        drive_ai(&g.cars[i], &track, skill.min(1.0))
+                    };
+                    let finished = g.cars[i].finished;
+                    if !finished {
+                        g.cars[i].step(&track, th, st, dt, g.race_t);
+                    } else {
+                        // A finished car coasts to a stop rather than vanishing.
+                        let (ath, ast) = drive_ai(&g.cars[i], &track, 0.35);
+                        g.cars[i].step(&track, ath * 0.2, ast, dt, g.race_t);
+                    }
+                }
 
-            let _ = sqrt_approx(1.0); // keep the helper honest under --release
+                // Every pair, both ways. Six cars is fifteen pairs; a bigger
+                // field would want a grid, but at this size the simple loop is
+                // both correct and free.
+                for i in 0..g.cars.len() {
+                    for j in (i + 1)..g.cars.len() {
+                        let (a, b) = g.cars.split_at_mut(j);
+                        Car::collide(&mut a[i], &mut b[0]);
+                    }
+                }
 
-            if draw_scene(
-                scene, &terrain, &building, &tree, &car_mesh, &props, 120, &car,
-            )
-            .is_err()
+                // Finishing order, in the order they actually cross.
+                for i in 0..g.cars.len() {
+                    if g.cars[i].finished && !g.order.contains(&i) {
+                        g.order.push(i);
+                    }
+                }
+                if g.cars[0].lap != before[0] && g.cars[0].lap > 0 {
+                    let lap_time = g.race_t - g.last_lap_at;
+                    g.last_lap_at = g.race_t;
+                    if g.best_lap == 0.0 || lap_time < g.best_lap {
+                        g.best_lap = lap_time;
+                    }
+                }
+                if g.phase == Phase::Racing && g.cars[0].finished {
+                    g.phase = Phase::Finished;
+                    g.phase_t = 0.0;
+                }
+            }
+
+            // ---- sound tied to what the car is doing
+            let me = &g.cars[0];
+            if matches!(g.phase, Phase::Racing | Phase::Finished) && !engine_steps.is_empty() {
+                let v = abs(me.speed);
+                let idx = ((v / 92.0 * engine_steps.len() as f32) as usize)
+                    .min(engine_steps.len() - 1);
+                if now_s >= engine_next {
+                    play(Some(engine_steps[idx]), 0.16 + (v / 92.0) * 0.22);
+                    // Re-trigger just before the sample ends, so the note is
+                    // continuous rather than stuttering.
+                    engine_next = now_s + 0.22;
+                }
+                let slide = me.slide();
+                if slide > 0.35 && now_s >= skid_next {
+                    play(skid, (slide * 0.5).min(0.5));
+                    skid_next = now_s + 0.24;
+                }
+            }
+            if me.hit > 0.85 {
+                play(bump, 0.7);
+                g.shake = 1.0;
+            }
+
+            // ---- camera
             {
+                let me = &g.cars[0];
+                let (target_eye, target_look) = match g.phase {
+                    Phase::Attract => {
+                        // A slow orbit of the start line, so the attract screen
+                        // shows the circuit rather than a parked car.
+                        let a = g.phase_t * 0.25;
+                        let n = track.nodes[0];
+                        (
+                            [
+                                n.x + sin_approx(a) * 120.0,
+                                n.y + 55.0,
+                                n.z + cos_approx(a) * 120.0,
+                            ],
+                            [n.x, n.y + 4.0, n.z],
+                        )
+                    }
+                    _ => {
+                        // Chase camera. It trails the car's HEADING, not its
+                        // body angle: following the slip makes the camera
+                        // swing wildly through a drift and is unreadable.
+                        let back = 17.0 + abs(me.speed) * 0.10;
+                        let height = 6.4 + abs(me.speed) * 0.020;
+                        (
+                            [
+                                me.x - sin_approx(me.heading) * back,
+                                me.y + height,
+                                me.z - cos_approx(me.heading) * back,
+                            ],
+                            [
+                                me.x + sin_approx(me.heading) * 9.0,
+                                me.y + 2.4,
+                                me.z + cos_approx(me.heading) * 9.0,
+                            ],
+                        )
+                    }
+                };
+                // Smoothing, frame-rate independent. A camera that snaps to the
+                // car transmits every bump into the whole picture.
+                let k = (7.5 * dt).min(1.0);
+                for i in 0..3 {
+                    g.cam[i] += (target_eye[i] - g.cam[i]) * k;
+                    g.cam_look[i] += (target_look[i] - g.cam_look[i]) * k;
+                }
+                if g.shake > 0.0 {
+                    let s = g.shake * 0.5;
+                    g.cam[0] += sin_approx(now_s * 57.0) * s;
+                    g.cam[1] += sin_approx(now_s * 43.0) * s * 0.6;
+                    g.shake = (g.shake - dt * 2.4).max(0.0);
+                }
+            }
+
+            // ---- draw
+            build_hud(&g, &mut hud);
+            let p0 = clock::monotonic_nanos();
+            let visible = props.len();
+            if draw(scene, &g, &track, &meshes, &props, &mut hud, visible).is_err() {
+                break;
+            }
+            unsafe {
+                PRESENT_NS = clock::monotonic_nanos().saturating_sub(p0);
+            }
+
+            let spent = clock::monotonic_nanos().saturating_sub(t0);
+            let present = unsafe { PRESENT_NS };
+            // Record the work, not the deliberate pacing present() does to
+            // hold the frame rate: counting the sleep measures the budget, not
+            // the cost.
+            samples.push((spent.saturating_sub(present) / 1_000) as u32);
+
+            frames += 1;
+            if frames >= frame_cap {
                 break;
             }
 
@@ -638,6 +1018,50 @@ impl krate::Guest for Component {
                 let _ = window::close(id);
                 break;
             }
+        }
+
+        // ---- report
+        if !samples.is_empty() {
+            samples.sort_unstable();
+            let pick = |q: f32| samples[((samples.len() - 1) as f32 * q) as usize];
+            let mut s = String::new();
+            s.push_str("drift: frames ");
+            s.push_str(&u64_str(frames));
+            s.push_str("  render us p50 ");
+            s.push_str(&u64_str(pick(0.50) as u64));
+            s.push_str(" p95 ");
+            s.push_str(&u64_str(pick(0.95) as u64));
+            s.push_str(" p99 ");
+            s.push_str(&u64_str(pick(0.99) as u64));
+            s.push_str(" worst ");
+            s.push_str(&u64_str(samples[samples.len() - 1] as u64));
+            say(&s);
+            let mut l = String::new();
+            l.push_str("  player lap ");
+            l.push_str(&u64_str(g.cars[0].lap as u64));
+            l.push_str(" position ");
+            l.push_str(&u64_str(g.player_position() as u64));
+            l.push_str(" best lap ms ");
+            l.push_str(&u64_str((g.best_lap * 1000.0) as u64));
+            say(&l);
+            let mut d = String::new();
+            d.push_str("  race t ");
+            d.push_str(&u64_str(g.race_t as u64));
+            d.push_str("s  progress m ");
+            d.push_str(&u64_str(g.cars[0].progress as u64));
+            d.push_str(" of ");
+            d.push_str(&u64_str(track.length as u64));
+            d.push_str("  speed ");
+            d.push_str(&u64_str(abs(g.cars[0].speed) as u64));
+            d.push_str("  leader m ");
+            let lead = g
+                .cars
+                .iter()
+                .map(|c| c.progress as u64)
+                .max()
+                .unwrap_or(0);
+            d.push_str(&u64_str(lead));
+            say(&d);
         }
         0
     }
