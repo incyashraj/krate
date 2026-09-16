@@ -1,0 +1,21 @@
+[app]
+id = "dev.krate.showcase"
+name = "Showcase"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_showcase.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the window the scene renders into"
+required = true
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Report triangle counts and frame timings"
+required = true
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read the quick-run flag"
+required = true

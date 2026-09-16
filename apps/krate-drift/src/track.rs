@@ -35,9 +35,13 @@ pub struct Track {
     pub length: f32,
     /// Triangles for the road surface, built once.
     pub road: Vec<f32>,
-    /// Triangles for the kerbs either side, alternating colour by segment.
-    pub kerb_a: Vec<f32>,
-    pub kerb_b: Vec<f32>,
+    /// UV per road vertex. `v` runs along the lap so the asphalt scrolls under
+    /// the car rather than repeating per segment, which is what gives a sense
+    /// of travelling rather than of the same tile flashing past.
+    pub road_uv: Vec<f32>,
+    /// Triangles for the kerbs either side, and their UVs.
+    pub kerb: Vec<f32>,
+    pub kerb_uv: Vec<f32>,
 }
 
 /// Height of the land at a point, so the circuit rises and falls.
@@ -98,13 +102,14 @@ pub fn build(seed: u32, points: usize) -> Track {
     }
     let length = along;
 
-    let (road, kerb_a, kerb_b) = surface(&nodes);
+    let built = surface(&nodes);
     Track {
         nodes,
         length,
-        road,
-        kerb_a,
-        kerb_b,
+        road: built.0,
+        road_uv: built.1,
+        kerb: built.2,
+        kerb_uv: built.3,
     }
 }
 
@@ -115,15 +120,24 @@ pub fn build(seed: u32, points: usize) -> Track {
 /// clockwise seen from above, which back-face culling drops, and the ground
 /// then vanishes from under the car while distant geometry survives at its
 /// grazing angle. That failure looks like a camera bug and is not one.
-fn surface(nodes: &[Node]) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
+fn surface(nodes: &[Node]) -> (Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>) {
     let n = nodes.len();
     let mut road = Vec::with_capacity(n * 18);
-    let mut kerb_a = Vec::with_capacity(n * 18);
-    let mut kerb_b = Vec::with_capacity(n * 18);
+    let mut road_uv = Vec::with_capacity(n * 12);
+    let mut kerb = Vec::with_capacity(n * 36);
+    let mut kerb_uv = Vec::with_capacity(n * 24);
 
     // Slightly above the land so the road is never z-fighting with the grass.
     let lift = 0.12_f32;
     let kerb_w = 1.6_f32;
+    // How many times the tile repeats along one segment. The asphalt tile is
+    // 64 units of texture over about 5 m of road, which is roughly the scale
+    // of real chippings at this camera height.
+    // Tighter than it looks like it should be. At 0.14 the 64-pixel tile
+    // covered seven metres of road and the repeat read as a chequerboard at
+    // speed -- the eye finds the period long before it finds the grain. At
+    // 0.5 the tile is under two metres and reads as surface.
+    let v_per_metre = 0.5_f32;
 
     for i in 0..n {
         let c = nodes[i];
@@ -132,27 +146,48 @@ fn surface(nodes: &[Node]) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
         let (cnx, cnz) = (-c.dir_z, c.dir_x);
         let (dnx, dnz) = (-d.dir_z, d.dir_x);
 
-        let quad = |w0: f32, w1: f32, out: &mut Vec<f32>| {
+        // `v` runs with distance along the lap rather than resetting per
+        // segment, so the surface scrolls under the car continuously. Reset
+        // per segment and the same tile edge flashes past at every node, which
+        // reads as strobing rather than as speed.
+        let v0 = c.along * v_per_metre;
+        let seg = {
+            let dx = d.x - c.x;
+            let dz = d.z - c.z;
+            sqrt_approx(dx * dx + dz * dz)
+        };
+        let v1 = v0 + seg * v_per_metre;
+
+        let quad = |w0: f32, w1: f32, u0: f32, u1: f32,
+                        out: &mut Vec<f32>, out_uv: &mut Vec<f32>| {
             let al = [c.x + cnx * w0, c.y + lift, c.z + cnz * w0];
             let ar = [c.x + cnx * w1, c.y + lift, c.z + cnz * w1];
             let bl = [d.x + dnx * w0, d.y + lift, d.z + dnz * w0];
             let br = [d.x + dnx * w1, d.y + lift, d.z + dnz * w1];
-            for p in [al, bl, ar, ar, bl, br] {
+            // Corner order matches the winding below, one UV per vertex.
+            let uv = [
+                [u0, v0], [u0, v1], [u1, v0],
+                [u1, v0], [u0, v1], [u1, v1],
+            ];
+            for (p, t) in [al, bl, ar, ar, bl, br].iter().zip(uv.iter()) {
                 out.push(p[0]);
                 out.push(p[1]);
                 out.push(p[2]);
+                out_uv.push(t[0]);
+                out_uv.push(t[1]);
             }
         };
 
-        quad(ROAD_HALF, -ROAD_HALF, &mut road);
-        // Kerbs alternate every few segments so corners read as striped.
-        let striped = (i / 3) % 2 == 0;
-        let out_a = if striped { &mut kerb_a } else { &mut kerb_b };
-        quad(ROAD_HALF + kerb_w, ROAD_HALF, out_a);
-        let out_b = if striped { &mut kerb_a } else { &mut kerb_b };
-        quad(-ROAD_HALF, -ROAD_HALF - kerb_w, out_b);
+        // `u` spans four tiles across the road rather than one, so the
+        // chippings stay square instead of being smeared sideways.
+        quad(ROAD_HALF, -ROAD_HALF, 0.0, 4.0, &mut road, &mut road_uv);
+        // Both kerbs are one mesh now: the stripe comes from the texture
+        // rather than from alternating two differently tinted meshes, which
+        // is what the untextured version had to do.
+        quad(ROAD_HALF + kerb_w, ROAD_HALF, 0.0, 1.0, &mut kerb, &mut kerb_uv);
+        quad(-ROAD_HALF, -ROAD_HALF - kerb_w, 1.0, 0.0, &mut kerb, &mut kerb_uv);
     }
-    (road, kerb_a, kerb_b)
+    (road, road_uv, kerb, kerb_uv)
 }
 
 /// Where a point sits relative to the track.

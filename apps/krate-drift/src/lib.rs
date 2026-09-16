@@ -33,6 +33,7 @@
 
 extern crate alloc;
 
+mod art;
 mod car;
 mod hud;
 mod mathx;
@@ -109,6 +110,60 @@ fn box_mesh(w: f32, h: f32, d: f32) -> Mesh {
     Mesh { verts }
 }
 
+/// A building, as world-space triangles with UVs, ready for `textured`.
+///
+/// Pre-transformed rather than instanced because `textured` has no `place`
+/// counterpart: the transform-and-draw call takes one flat tint and no UVs, so
+/// a textured mesh has to arrive already in world space. That is the cost of
+/// texturing the buildings, and at this count it is one the frame budget can
+/// carry -- but it is worth knowing that a textured world cannot reuse a mesh
+/// the way an untextured one can.
+fn building_at(x: f32, z: f32, y: f32, w: f32, h: f32, d: f32) -> (Vec<f32>, Vec<f32>) {
+    let (x0, x1) = (x - w * 0.5, x + w * 0.5);
+    let (y0, y1) = (y, y + h);
+    let (z0, z1) = (z - d * 0.5, z + d * 0.5);
+    let mut verts = Vec::with_capacity(12 * 9);
+    let mut uvs = Vec::with_capacity(12 * 6);
+
+    // One UV span per storey, so a tall building gets more window rows rather
+    // than the same eight rows stretched taller.
+    let storeys = (h / 4.0).max(1.0);
+
+    // Four walls, wound counter-clockwise seen from outside.
+    let walls: [[[f32; 3]; 4]; 4] = [
+        [[x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0]],
+        [[x1, y0, z1], [x0, y0, z1], [x0, y1, z1], [x1, y1, z1]],
+        [[x0, y0, z1], [x0, y0, z0], [x0, y1, z0], [x0, y1, z1]],
+        [[x1, y0, z0], [x1, y0, z1], [x1, y1, z1], [x1, y1, z0]],
+    ];
+    for wall in walls {
+        let span = {
+            let dx = wall[1][0] - wall[0][0];
+            let dz = wall[1][2] - wall[0][2];
+            (mathx::sqrt_approx(dx * dx + dz * dz) / 6.0).max(1.0)
+        };
+        let uv = [[0.0, storeys], [span, storeys], [span, 0.0], [0.0, 0.0]];
+        for i in [0usize, 1, 2, 0, 2, 3] {
+            verts.push(wall[i][0]);
+            verts.push(wall[i][1]);
+            verts.push(wall[i][2]);
+            uvs.push(uv[i][0]);
+            uvs.push(uv[i][1]);
+        }
+    }
+    // A flat roof, drawn with the top of the texture so it reads as concrete
+    // rather than as a window pattern seen from above.
+    let roof = [[x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0]];
+    for i in [0usize, 1, 2, 0, 2, 3] {
+        verts.push(roof[i][0]);
+        verts.push(roof[i][1]);
+        verts.push(roof[i][2]);
+        uvs.push(0.02);
+        uvs.push(0.98);
+    }
+    (verts, uvs)
+}
+
 /// The car: a body with a cabin on top, so which way it faces is readable at
 /// a glance from behind.
 fn car_mesh() -> Mesh {
@@ -147,9 +202,13 @@ fn tree_mesh() -> Mesh {
 /// clockwise from above and back-face culling removes it, which empties the
 /// ground from under the car while distant hills survive at their grazing
 /// angle.
-fn ground_mesh(extent: f32, cells: usize) -> Mesh {
+fn ground_mesh(extent: f32, cells: usize) -> (Mesh, Vec<f32>) {
     let mut verts = Vec::with_capacity(cells * cells * 18);
+    let mut uvs = Vec::with_capacity(cells * cells * 12);
     let step = extent * 2.0 / cells as f32;
+    // Tile every few cells rather than once across the whole field: one UV
+    // span over 1400 units stretches a 64-pixel tile into visible mush.
+    let uv_scale = 0.35_f32;
     for gz in 0..cells {
         for gx in 0..cells {
             let x0 = -extent + gx as f32 * step;
@@ -160,17 +219,24 @@ fn ground_mesh(extent: f32, cells: usize) -> Mesh {
             let y10 = ground_height(x1, z0);
             let y01 = ground_height(x0, z1);
             let y11 = ground_height(x1, z1);
-            for p in [
-                [x0, y00, z0], [x1, y11, z1], [x1, y10, z0],
-                [x0, y00, z0], [x0, y01, z1], [x1, y11, z1],
-            ] {
+            let corners = [
+                ([x0, y00, z0], [x0, z0]),
+                ([x1, y11, z1], [x1, z1]),
+                ([x1, y10, z0], [x1, z0]),
+                ([x0, y00, z0], [x0, z0]),
+                ([x0, y01, z1], [x0, z1]),
+                ([x1, y11, z1], [x1, z1]),
+            ];
+            for (p, uv) in corners {
                 verts.push(p[0]);
                 verts.push(p[1]);
                 verts.push(p[2]);
+                uvs.push(uv[0] * uv_scale * 0.1);
+                uvs.push(uv[1] * uv_scale * 0.1);
             }
         }
     }
-    Mesh { verts }
+    (Mesh { verts }, uvs)
 }
 
 // ------------------------------------------------------------------ scenery
@@ -199,7 +265,10 @@ fn scenery(track: &Track, per_node: usize) -> Vec<Prop> {
         for k in 0..per_node {
             let seed = (i * 31 + k * 7) as i32;
             let side = if hash2(seed, 1) > 0.5 { 1.0 } else { -1.0 };
-            let out_dist = ROAD_HALF + 8.0 + hash2(seed, 2) * 46.0;
+            // Set back from the road. Eight units from the kerb is close
+            // enough that a building fills the windscreen as you pass it,
+            // which reads as a wall rather than as scenery.
+            let out_dist = ROAD_HALF + 20.0 + hash2(seed, 2) * 64.0;
             let nx = -node.dir_z;
             let nz = node.dir_x;
             let jitter = (hash2(seed, 3) - 0.5) * 9.0;
@@ -347,6 +416,9 @@ struct Game {
     /// easing toward it, so a phase change does not sweep the view across the
     /// world.
     snap_camera: bool,
+    /// Whether this race is the attract demo, which drives the player's car
+    /// itself and hands control back the moment someone presses something.
+    demo: bool,
 }
 
 impl Game {
@@ -368,6 +440,7 @@ impl Game {
             shake: 0.0,
             countdown_step: -1,
             snap_camera: true,
+            demo: false,
         }
     }
 
@@ -413,6 +486,7 @@ fn draw(
     g: &Game,
     track: &Track,
     meshes: &Meshes,
+    art: &Art,
     props: &[Prop],
     hud: &mut Hud,
     visible_props: usize,
@@ -427,21 +501,26 @@ fn draw(
 
     let mut calls = 0;
 
-    scene3d::triangles(scene, &meshes.ground.verts, rgb(0.30, 0.46, 0.26))?;
-    scene3d::triangles(scene, &track.road, rgb(0.20, 0.20, 0.23))?;
-    scene3d::triangles(scene, &track.kerb_a, rgb(0.82, 0.22, 0.22))?;
-    scene3d::triangles(scene, &track.kerb_b, rgb(0.92, 0.92, 0.92))?;
+    // The world, textured. A flat tint per mesh is what made the first
+    // version read as 1997: the rasterizer was never the limit, the app just
+    // never used `upload_texture`.
+    let white = rgb(1.0, 1.0, 1.0);
+    scene3d::textured(scene, &meshes.ground.verts, &meshes.ground_uv, art.grass, white)?;
+    scene3d::textured(scene, &track.road, &track.road_uv, art.asphalt, white)?;
+    scene3d::textured(scene, &track.kerb, &track.kerb_uv, art.kerb, white)?;
+    scene3d::textured(scene, &meshes.buildings, &meshes.buildings_uv, art.facade, white)?;
     calls += 4;
 
+    // Trees stay untextured and instanced: a cone of leaves reads fine as a
+    // flat colour, and `place` sends one small mesh instead of a world's worth
+    // of pre-transformed vertices.
     for p in props.iter().take(visible_props) {
-        let mesh = if p.kind == 1 {
-            &meshes.building
-        } else {
-            &meshes.tree
-        };
+        if p.kind == 1 {
+            continue; // buildings are in the textured mesh above
+        }
         scene3d::place(
             scene,
-            &mesh.verts,
+            &meshes.tree.verts,
             &[p.x, p.y, p.z],
             &[0.0, p.rot, 0.0],
             p.scale,
@@ -502,9 +581,21 @@ fn car_colour(i: usize, hit: f32) -> gfx::Color {
 
 struct Meshes {
     ground: Mesh,
+    ground_uv: Vec<f32>,
     car: Mesh,
     tree: Mesh,
-    building: Mesh,
+    /// Every building in the world, pre-transformed into one textured mesh.
+    /// `textured` has no `place`, so they cannot be instanced.
+    buildings: Vec<f32>,
+    buildings_uv: Vec<f32>,
+}
+
+/// Uploaded texture handles.
+struct Art {
+    asphalt: u64,
+    grass: u64,
+    facade: u64,
+    kerb: u64,
 }
 
 /// Build the HUD for this frame.
@@ -738,13 +829,51 @@ impl krate::Guest for Component {
         // facet and fine enough to dodge K-397: a long road quad straddling
         // the camera would be dropped whole rather than clipped.
         let track = track::build(7, 360);
+        let props = scenery(&track, 2);
+        let (ground, ground_uv) = ground_mesh(700.0, 56);
+
+        // Every building, pre-transformed into one mesh. Varied footprints and
+        // heights rather than one box repeated: a skyline of identical blocks
+        // reads as wallpaper however well it is textured.
+        let mut buildings = Vec::new();
+        let mut buildings_uv = Vec::new();
+        for (i, p) in props.iter().enumerate() {
+            if p.kind != 1 {
+                continue;
+            }
+            let seed = i as i32;
+            let w = 7.0 + hash2(seed, 21) * 9.0;
+            let d = 7.0 + hash2(seed, 22) * 9.0;
+            // Mostly low, a few tall. A uniform spread of heights up to 42
+            // units put a tower every few metres and turned a country circuit
+            // into a canyon -- squaring the random pulls most of them down
+            // while leaving the occasional one to break the skyline.
+            let r = hash2(seed, 23);
+            let h = 7.0 + r * r * 30.0;
+            let (v, uv) = building_at(p.x, p.z, p.y, w, h, d);
+            buildings.extend_from_slice(&v);
+            buildings_uv.extend_from_slice(&uv);
+        }
+
         let meshes = Meshes {
-            ground: ground_mesh(700.0, 56),
+            ground,
+            ground_uv,
             car: car_mesh(),
             tree: tree_mesh(),
-            building: box_mesh(7.0, 10.0, 7.0),
+            buildings,
+            buildings_uv,
         };
-        let props = scenery(&track, 2);
+
+        // Textures, synthesised here so the bundle carries no assets.
+        let upload = |t: art::Texture| -> u64 {
+            scene3d::upload_texture(scene, t.width, t.height, &t.rgba).unwrap_or(0)
+        };
+        let art = Art {
+            asphalt: upload(art::asphalt()),
+            grass: upload(art::grass()),
+            facade: upload(art::facade(3)),
+            kerb: upload(art::kerb()),
+        };
 
         say("drift: a racing game");
         {
@@ -875,8 +1004,19 @@ impl krate::Guest for Component {
             // ---- phase
             match g.phase {
                 Phase::Attract => {
+                    // A press starts a real race. Left alone, the title screen
+                    // rolls into a demo one after a few seconds, the way an
+                    // arcade cabinet does -- so the game is never a static
+                    // picture waiting for someone, and a long unattended run
+                    // exercises the race rather than the menu. (A ten-minute
+                    // soak spent all ten in the attract screen and reported
+                    // lap 0, speed 0, which looked like the game not working.)
                     if start || auto || quick {
                         g.reset(&track);
+                        g.demo = false;
+                    } else if g.phase_t > 8.0 {
+                        g.reset(&track);
+                        g.demo = true;
                     }
                 }
                 Phase::Countdown => {
@@ -897,6 +1037,13 @@ impl krate::Guest for Component {
                 }
                 Phase::Racing => {
                     g.race_t += dt * sim_steps as f32;
+                    // Any press during the demo takes the wheel: start the
+                    // race properly rather than leaving the person watching
+                    // their own car being driven for them.
+                    if g.demo && (start || accel || brake || left || right) {
+                        g.reset(&track);
+                        g.demo = false;
+                    }
                 }
                 Phase::Finished => {
                     // `hold` parks on the results screen instead of starting
@@ -906,6 +1053,14 @@ impl krate::Guest for Component {
                     // restarts, and `--shoot` closes the window when it fires.
                     if !hold && ((start && g.phase_t > 1.0) || (auto && g.phase_t > 3.0)) {
                         g.reset(&track);
+                        g.demo = false;
+                    } else if !hold && g.demo && g.phase_t > 6.0 {
+                        // A demo race that has run its course goes back to the
+                        // title rather than looping straight into another one.
+                        g.phase = Phase::Attract;
+                        g.phase_t = 0.0;
+                        g.demo = false;
+                        g.snap_camera = true;
                     }
                 }
             }
@@ -916,7 +1071,7 @@ impl krate::Guest for Component {
                 let before: Vec<u32> = g.cars.iter().map(|c| c.lap).collect();
 
                 for i in 0..g.cars.len() {
-                    let (th, st) = if i == 0 && !auto {
+                    let (th, st) = if i == 0 && !auto && !g.demo {
                         (throttle, steer)
                     } else {
                         // Skill varies per car so the field spreads out
@@ -1068,7 +1223,7 @@ impl krate::Guest for Component {
             build_hud(&g, &mut hud);
             let p0 = clock::monotonic_nanos();
             let visible = props.len();
-            if draw(scene, &g, &track, &meshes, &props, &mut hud, visible).is_err() {
+            if draw(scene, &g, &track, &meshes, &art, &props, &mut hud, visible).is_err() {
                 // Name the exit. A bare `break` here ends the game with a
                 // normal-looking report and no clue that anything went wrong,
                 // which is exactly how a mid-race stop read as "the race just
