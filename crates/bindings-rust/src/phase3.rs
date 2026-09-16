@@ -787,6 +787,11 @@ pub mod audio {
     /// `krate:audio/playback`.
     pub mod playback {
         pub use crate::bindings::krate::audio::playback::{AudioError, StreamConfig};
+        // `StreamConfig::format` needs this, so an app that opens a stream
+        // cannot avoid it. Without the re-export it had to reach past the SDK
+        // into the generated bindings for one enum while every other type it
+        // touched was a tidy `krate::` path (K-391).
+        pub use crate::bindings::krate::audio::types::SampleFormat;
 
         /// Open an output stream and return its id.
         pub fn open(config: StreamConfig) -> Result<u64, AudioError> {
