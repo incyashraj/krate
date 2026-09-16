@@ -56,9 +56,14 @@ struct VertexOut {
     // unchanged, and rounding at the far end recovers the integer.
     @location(3) smooth_flag: f32,
     @location(4) layer: f32,
+    // Whether this triangle wears a real texture. The two CPU paths clamp the
+    // tint DIFFERENTLY and the difference is load-bearing, so the GPU has to
+    // know which it is reproducing -- see the fragment shader.
+    @location(5) textured_flag: f32,
 };
 
 const FLAG_SMOOTH: u32 = 1u;
+const FLAG_TEXTURED: u32 = 2u;
 
 @vertex
 fn vs_main(in: VertexIn) -> VertexOut {
@@ -96,6 +101,7 @@ fn vs_main(in: VertexIn) -> VertexOut {
     out.uv = in.uv;
     out.tint = in.tint;
     out.smooth_flag = f32(in.flags & FLAG_SMOOTH);
+    out.textured_flag = f32((in.flags & FLAG_TEXTURED) >> 1u);
     out.layer = f32(in.flags >> 8u);
     return out;
 }
@@ -119,13 +125,26 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 
     let layer = i32(round(in.layer));
     let sampled = textureSample(atlas, atlas_sampler, in.uv, layer);
-    // The TINT is clamped to 0..1 before it multiplies anything, and the
-    // product is clamped again. Both, in that order, because that is what
-    // `shade_sample` does on the CPU side -- clamping only the product lets a
-    // tint above 1 brighten a surface, and the showcase's sky dome passes 2.6
-    // deliberately. On the CPU that 2.6 becomes 1.0 and the sky keeps its
-    // gradient; on the GPU, before this, it saturated the whole dome to white.
-    let tint = clamp(in.tint.rgb, vec3<f32>(0.0), vec3<f32>(1.0));
-    let rgb = clamp(sampled.rgb * tint * shade, vec3<f32>(0.0), vec3<f32>(1.0));
+
+    // The two CPU paths clamp the tint differently, and the difference is
+    // load-bearing rather than an oversight to tidy away:
+    //
+    // - `pack_shaded`, for an untextured triangle, computes
+    //   `(tint * shade).clamp(0,1)` -- the tint is NOT clamped first, so a
+    //   tint above 1 really does brighten. The racing game's HUD passes 2.7
+    //   to climb out of the 0.35 ambient floor and is white because of it.
+    // - `shade_sample`, for a textured one, clamps the tint to 0..1 BEFORE
+    //   multiplying, so a texture cannot be over-brightened. The showcase's
+    //   sky dome passes 2.6 and stays a gradient because of that.
+    //
+    // Clamping both ways broke the HUD; clamping neither blew out the sky. So
+    // the flag says which, and each is reproduced exactly.
+    var rgb: vec3<f32>;
+    if (in.textured_flag > 0.5) {
+        let tint = clamp(in.tint.rgb, vec3<f32>(0.0), vec3<f32>(1.0));
+        rgb = clamp(sampled.rgb * tint * shade, vec3<f32>(0.0), vec3<f32>(1.0));
+    } else {
+        rgb = clamp(in.tint.rgb * shade, vec3<f32>(0.0), vec3<f32>(1.0));
+    }
     return vec4<f32>(rgb, sampled.a * clamp(in.tint.a, 0.0, 1.0));
 }

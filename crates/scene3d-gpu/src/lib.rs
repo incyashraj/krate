@@ -52,6 +52,10 @@ const LAYER_EDGE: u32 = 1_024;
 
 /// Bit 0 of a vertex's flags: this vertex carries a real normal.
 const FLAG_SMOOTH: u32 = 1;
+/// Bit 1: this triangle wears a real texture rather than the white fallback.
+/// The two CPU shading paths clamp the tint differently and the shader has to
+/// know which it is reproducing.
+const FLAG_TEXTURED: u32 = 2;
 
 /// One vertex as the shader wants it.
 ///
@@ -82,6 +86,7 @@ impl Vertex {
         uv: [f32; 2],
         tint: [f32; 4],
         smooth: bool,
+        textured: bool,
         layer: u32,
     ) -> Self {
         Self {
@@ -89,7 +94,9 @@ impl Vertex {
             normal,
             uv,
             tint,
-            flags: (if smooth { FLAG_SMOOTH } else { 0 }) | (layer << 8),
+            flags: (if smooth { FLAG_SMOOTH } else { 0 })
+                | (if textured { FLAG_TEXTURED } else { 0 })
+                | (layer << 8),
             _pad: [0; 3],
         }
     }
@@ -465,7 +472,7 @@ impl GpuScene {
             let a = [chunk[0], chunk[1], chunk[2]];
             let b = [chunk[3], chunk[4], chunk[5]];
             let c = [chunk[6], chunk[7], chunk[8]];
-            self.push_face(a, b, c, None, [[0.0; 2]; 3], 0, tint, false);
+            self.push_face(a, b, c, None, [[0.0; 2]; 3], 0, tint, false, false);
         }
     }
 
@@ -479,7 +486,7 @@ impl GpuScene {
             let b = [chunk[3], chunk[4], chunk[5]];
             let c = [chunk[6], chunk[7], chunk[8]];
             let uv = [[uv[0], uv[1]], [uv[2], uv[3]], [uv[4], uv[5]]];
-            self.push_face(a, b, c, None, uv, layer, tint, false);
+            self.push_face(a, b, c, None, uv, layer, tint, false, true);
         }
     }
 
@@ -505,7 +512,7 @@ impl GpuScene {
             let c = [chunk[6], chunk[7], chunk[8]];
             let corner = [[n[0], n[1], n[2]], [n[3], n[4], n[5]], [n[6], n[7], n[8]]];
             let uv = [[uv[0], uv[1]], [uv[2], uv[3]], [uv[4], uv[5]]];
-            self.push_face(a, b, c, Some(corner), uv, layer, tint, true);
+            self.push_face(a, b, c, Some(corner), uv, layer, tint, true, true);
         }
     }
 
@@ -538,7 +545,7 @@ impl GpuScene {
             let a = transform([chunk[0], chunk[1], chunk[2]]);
             let b = transform([chunk[3], chunk[4], chunk[5]]);
             let c = transform([chunk[6], chunk[7], chunk[8]]);
-            self.push_face(a, b, c, None, [[0.0; 2]; 3], 0, tint, false);
+            self.push_face(a, b, c, None, [[0.0; 2]; 3], 0, tint, false, false);
         }
     }
 
@@ -562,6 +569,7 @@ impl GpuScene {
         layer: u32,
         tint: [f32; 4],
         smooth: bool,
+        textured: bool,
     ) {
         let basis = self.basis();
         let (Some(pa), Some(pb), Some(pc)) = (
@@ -594,9 +602,9 @@ impl GpuScene {
         };
         self.queued.push(Queued {
             verts: [
-                Vertex::new(a, normals[0], uv[0], tint, smooth, layer),
-                Vertex::new(b, normals[1], uv[1], tint, smooth, layer),
-                Vertex::new(c, normals[2], uv[2], tint, smooth, layer),
+                Vertex::new(a, normals[0], uv[0], tint, smooth, textured, layer),
+                Vertex::new(b, normals[1], uv[1], tint, smooth, textured, layer),
+                Vertex::new(c, normals[2], uv[2], tint, smooth, textured, layer),
             ],
             alpha,
             sort_z: (pa.2 + pb.2 + pc.2) / 3.0,

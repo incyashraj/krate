@@ -241,6 +241,38 @@ fn an_over_bright_tint_is_clamped_the_same_way() {
 }
 
 #[test]
+fn an_untextured_over_bright_tint_still_brightens() {
+    // The OTHER clamp rule, and the one that caught me out. `pack_shaded`,
+    // which an untextured triangle goes through, computes
+    // `(tint * shade).clamp(0,1)` -- the tint is not clamped first, so a tint
+    // above 1 really does brighten. The racing game's HUD passes 2.7 to climb
+    // out of the 0.35 ambient floor and is white because of it.
+    //
+    // `shade_sample`, for a TEXTURED triangle, clamps the tint first instead.
+    // The two CPU paths disagree, the disagreement is load-bearing at both
+    // ends, and making the GPU clamp one way broke whichever app relied on the
+    // other. Both tests exist so neither can be "tidied up" again.
+    let quad = facing_quad(2.0, 0.0);
+    compare(
+        "untextured over-bright tint",
+        |cpu| {
+            cpu.set_camera([0.0, 0.0, 6.0], [0.0, 0.0, 0.0], 60.0);
+            // A light that misses the quad, so shade sits near the ambient
+            // floor and the over-bright tint has something to climb out of.
+            cpu.set_light([0.0, 1.0, 0.0]);
+            cpu.clear(CLEAR_WORD);
+            cpu.triangles(&quad, (2.7, 2.7, 2.8, 1.0));
+        },
+        |gpu| {
+            gpu.set_camera([0.0, 0.0, 6.0], [0.0, 0.0, 0.0], 60.0);
+            gpu.set_light([0.0, 1.0, 0.0]);
+            gpu.clear(CLEAR_RGBA);
+            gpu.triangles(&quad, [2.7, 2.7, 2.8, 1.0]);
+        },
+    );
+}
+
+#[test]
 fn blending_matches_between_backends() {
     // An opaque wall with a half-covering pane in front: the blend arithmetic
     // and the back-to-front ordering, both at once.
