@@ -17,3 +17,10 @@ krate-adapter-common = { path = "../adapter-common" }
 vello = "0.9"
 pollster = "0.4"
 bytemuck = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+# The software rasterizer, as the reference an image diff compares against.
+# A dev-dependency only: the GPU backend must never need the CPU one at run
+# time, and the runtime crate does not depend on this one, so there is no
+# cycle.
+krate-runtime = { path = "../runtime" }

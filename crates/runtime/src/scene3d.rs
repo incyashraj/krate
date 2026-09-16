@@ -894,8 +894,20 @@ fn fill_band(
                 // soft shadow soft and a leaf texture leaf-shaped, and reading
                 // only the tint threw that away -- the shadow would have been
                 // a uniformly grey disc with a hard rim.
-                let texel_alpha = ((value >> 24) & 0xFF) as f32 / 255.0;
-                let coverage = tri.alpha * texel_alpha;
+                //
+                // Only a TEXTURED triangle has a texel. A flat-colour one gets
+                // its packed word from `pack_shaded`, which puts the TINT's
+                // alpha in the top byte -- so reading it back here multiplied
+                // the tint's alpha by itself and a half-covering pane blended
+                // at a quarter. Found by rendering the same scene through the
+                // GPU backend and subtracting.
+                let coverage = match tri.texture {
+                    Some(_) => {
+                        let texel_alpha = ((value >> 24) & 0xFF) as f32 / 255.0;
+                        tri.alpha * texel_alpha
+                    }
+                    None => tri.alpha,
+                };
                 if let Some(pixel) = colour.get_mut(index) {
                     if coverage >= 1.0 {
                         *slot = z;
@@ -1943,10 +1955,10 @@ mod tests {
             scene.upload_texture(edge, 1, &rgba).is_err(),
             "a texture wider than {MAX_TEXTURE_EDGE} must still be refused"
         );
-        assert!(
-            MAX_TEXTURE_EDGE < MAX_EDGE,
-            "the two limits are independent"
-        );
+        // The two limits being different constants is the point; a runtime
+        // assertion comparing them can never fail and says nothing, so the
+        // claim lives in the refusal above instead.
+        const _: () = assert!(MAX_TEXTURE_EDGE < MAX_EDGE);
     }
 
     #[test]

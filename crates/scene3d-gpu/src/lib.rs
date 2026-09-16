@@ -267,7 +267,7 @@ impl GpuScene {
                     module: &shader,
                     entry_point: Some("fs_main"),
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                        format: wgpu::TextureFormat::Rgba8Unorm,
                         blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
@@ -356,13 +356,26 @@ impl GpuScene {
             height,
             depth_or_array_layers: 1,
         };
+        // `Rgba8Unorm`, NOT `Rgba8UnormSrgb`, here and for the texture array.
+        //
+        // The sRGB format makes the hardware encode linear values on write and
+        // decode them on read, and the CPU rasterizer does no such conversion
+        // -- it writes the bytes its arithmetic produced. With an sRGB target
+        // the two backends disagreed by exactly one gamma curve: the parity
+        // test measured cpu 204 against gpu 231 and cpu 16 against gpu 71,
+        // which is `1.055*c^(1/2.4)-0.055` to the integer on every channel.
+        //
+        // Matching the CPU path matters more than being colour-correct here,
+        // because the image reaches the same widget either way. If this
+        // pipeline ever gains real colour management, both backends should
+        // gain it together.
         let colour = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("scene3d colour"),
             size,
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format: wgpu::TextureFormat::Rgba8Unorm,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
@@ -679,7 +692,7 @@ impl GpuScene {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            format: wgpu::TextureFormat::Rgba8Unorm,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
