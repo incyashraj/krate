@@ -2467,6 +2467,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "krate-scene3d-gpu"
+version = "0.4.0"
+dependencies = [
+ "bytemuck",
+ "krate-adapter-common",
+ "pollster",
+ "vello",
+]
+
+[[package]]
 name = "krate-tools"
 version = "0.4.0"
 dependencies = [

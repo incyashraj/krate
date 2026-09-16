@@ -1,0 +1,19 @@
+[package]
+name = "krate-scene3d-gpu"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+# The GPU backend for `gfx.scene3d`. Raw wgpu rather than vello: vello is a 2D
+# vector renderer and this needs triangles with a depth buffer.
+#
+# wgpu comes through vello so the version can never drift from the presenter's,
+# which is what lets a 3D pass share the presenter's device instead of standing
+# up a second one on the same adapter.
+
+[dependencies]
+krate-adapter-common = { path = "../adapter-common" }
+vello = "0.9"
+pollster = "0.4"
+bytemuck = { version = "1", features = ["derive"] }
