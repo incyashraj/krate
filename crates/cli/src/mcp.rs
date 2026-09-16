@@ -362,7 +362,28 @@ fn run_component_tool(arguments: &Value) -> Result<Value> {
 
     // Only what the caller named explicitly. The branch that folded in every
     // declared capability is gone with the argument that reached it.
-    let policy = SessionPolicy::from_cli_grants(&grants).context("parse grants")?;
+    //
+    // And only what the app DECLARED (K-387). Refusing `auto_grant` above
+    // stops an agent approving a capability; without this it could still
+    // name one the manifest never asked for and have it honoured at the
+    // dispatch gate, which reaches the same place by a longer road. The
+    // manifest is what the person running the app was shown, so a
+    // capability outside it was shown to nobody.
+    //
+    // Where no manifest is available -- a bare component with no
+    // manifest_path -- there is no declaration to check against, and the
+    // older behaviour stands rather than refusing everything.
+    let policy = match &manifest {
+        Some(manifest) => {
+            let declared: std::collections::BTreeSet<_> = manifest
+                .declared_capabilities()
+                .context("read declared capabilities")?
+                .into_iter()
+                .collect();
+            SessionPolicy::from_cli_grants_declared(&grants, &declared).context("parse grants")?
+        }
+        None => SessionPolicy::from_cli_grants(&grants).context("parse grants")?,
+    };
 
     let app = manifest.as_ref().map(|manifest| {
         json!({

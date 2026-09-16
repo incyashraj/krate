@@ -417,6 +417,46 @@ impl SessionPolicy {
         Ok(Self::from_grants(parsed))
     }
 
+    /// Grants from an operator, checked against what the app declared
+    /// (K-387, IC-733).
+    ///
+    /// `from_cli_grants` parses whatever it is handed and never looks at the
+    /// manifest, so a grant for a capability the app never declared was
+    /// honoured at the dispatch gate. That makes the declaration advisory,
+    /// when it is supposed to be the contract: it is what a recipient reads
+    /// and what the consent screen is built from, so a capability outside it
+    /// was never shown to anybody.
+    ///
+    /// Refused rather than dropped. Silently granting something narrower
+    /// than was asked for is how a security boundary becomes a surprise --
+    /// the same reasoning that made the MCP server refuse `auto_grant`
+    /// instead of ignoring it.
+    ///
+    /// The ambient defaults are not declarable and are always allowed;
+    /// naming one is not an error here, because a caller echoing the
+    /// policy's own grant list back should not be refused for it.
+    pub fn from_cli_grants_declared(
+        grants: &[String],
+        declared: &BTreeSet<Capability>,
+    ) -> Result<Self> {
+        let parsed = grants
+            .iter()
+            .map(|grant| Capability::from_str(grant))
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        let ambient = default_granted_capabilities();
+        for cap in &parsed {
+            let covered = declared.iter().any(|d| capability_allows(d, cap))
+                || ambient.iter().any(|d| capability_allows(d, cap));
+            if !covered {
+                return Err(PolicyError::Undeclared {
+                    cap: cap.to_string(),
+                });
+            }
+        }
+        Ok(Self::with_provenance(parsed, Provenance::CommandLine))
+    }
+
     pub fn grants(&self) -> &BTreeSet<Capability> {
         &self.grants
     }
@@ -696,6 +736,14 @@ pub enum PolicyError {
     Manifest(#[from] ManifestError),
     #[error("capability `{cap}` was not granted")]
     Denied { cap: String },
+    /// A grant was offered for something the app never declared. Its own
+    /// error rather than a `Denied`, because the remedy is different: no
+    /// amount of granting fixes it, the manifest has to declare it first.
+    #[error(
+        "capability `{cap}` is not declared in the app's manifest, so it cannot be granted -- \
+         the manifest is what the person running the app was shown"
+    )]
+    Undeclared { cap: String },
 }
 
 pub type Result<T> = std::result::Result<T, PolicyError>;
@@ -1117,6 +1165,63 @@ mod tests {
             "they decided; asking again would be pestering them"
         );
         assert!(!decision.refusal().expect("refused").may_retry());
+    }
+
+    /// K-387: an operator cannot grant what the app never declared.
+    ///
+    /// The probe that found this, kept as the test: a manifest declaring one
+    /// file write, and a grant for network access. Before the fix
+    /// `allows()` and `check()` both answered true at the dispatch gate, so
+    /// the declaration was advisory rather than the contract. It is what a
+    /// recipient reads and what the consent screen is built from, so a
+    /// capability outside it was shown to nobody.
+    ///
+    /// Refused, not dropped. Silently granting something narrower than was
+    /// asked for is how a security boundary becomes a surprise.
+    #[test]
+    fn an_operator_cannot_grant_a_capability_the_app_never_declared() {
+        let manifest = manifest_declaring(&["fs.write:data/**"]);
+        let declared: BTreeSet<Capability> = manifest
+            .declared_capabilities()
+            .expect("declared")
+            .into_iter()
+            .collect();
+
+        let refused = SessionPolicy::from_cli_grants_declared(
+            &["net.connect:evil.example:443".to_string()],
+            &declared,
+        );
+        match refused {
+            Err(PolicyError::Undeclared { cap }) => {
+                assert_eq!(cap, "net.connect:evil.example:443")
+            }
+            Err(other) => panic!("the reason must say undeclared, not {other}"),
+            Ok(policy) => panic!(
+                "an undeclared grant was accepted; it allows the capability at dispatch: {}",
+                policy.allows(&cap("net.connect:evil.example:443"))
+            ),
+        }
+
+        // What the app DID declare still works, and records that the
+        // authority came from the command line rather than a person.
+        let ok =
+            SessionPolicy::from_cli_grants_declared(&["fs.write:data/**".to_string()], &declared)
+                .expect("a declared capability may be granted");
+        assert!(ok.allows(&cap("fs.write:data/**")));
+        assert_eq!(
+            ok.provenance_of(&cap("fs.write:data/**")),
+            Some(Provenance::CommandLine),
+            "an operator grant is not a person answering a prompt"
+        );
+
+        // The ambient defaults are not declarable, so naming one must not be
+        // refused -- a caller echoing the policy's own grant list back would
+        // otherwise fail.
+        let ambient = default_granted_capabilities();
+        if let Some(first) = ambient.iter().next() {
+            SessionPolicy::from_cli_grants_declared(&[first.to_string()], &declared)
+                .expect("an ambient default is always allowed");
+        }
     }
 
     /// Optional does not mean undeclared.
