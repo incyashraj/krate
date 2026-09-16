@@ -260,7 +260,7 @@ impl Manifest {
         validate_required("app.version", &self.app.version)?;
         validate_required_path("app.entry", &self.app.entry)?;
 
-        self.app_world()?;
+        let world = self.app_world()?;
 
         let mut seen = BTreeSet::new();
         for request in &self.capabilities {
@@ -272,6 +272,7 @@ impl Manifest {
                     cap: request.cap.clone(),
                 });
             }
+            cap.check_world(world)?;
         }
 
         Ok(())
@@ -565,6 +566,46 @@ impl Capability {
 
     pub fn action(&self) -> &str {
         &self.action
+    }
+
+    /// Can an app built against `world` actually use this capability?
+    /// (IC-243.)
+    ///
+    /// The CLI world imports no `ui`, `gfx`, `audio`, `camera` or `speech`
+    /// interface at all, so a Phase 3 capability in a CLI manifest names
+    /// something the app could not call even if every grant were given.
+    /// Before this it validated fine: a CLI app could declare
+    /// `ui.window:create`, `gfx.gpu:basic` and `ui.menu:system`, and a
+    /// person would be shown all three on the consent sheet -- the same
+    /// hollow-promise shape as K-175, arriving by a different road.
+    ///
+    /// One direction only. A Phase 2 capability in a GUI world is correct
+    /// and ordinary: the GUI world imports the Phase 2 interfaces too, so a
+    /// windowed app reads files and talks to the network like any other.
+    pub fn check_world(&self, world: AppWorld) -> Result<()> {
+        let spec = supported_capability_specs()
+            .iter()
+            .find(|spec| spec.module == self.module && spec.action == self.action);
+        let Some(spec) = spec else {
+            // An unknown capability cannot reach here -- `Capability::new`
+            // refuses one -- and if it somehow did, that is not this
+            // function's error to report.
+            return Ok(());
+        };
+        if spec.phase == CapabilityPhase::Phase3 && world == AppWorld::Phase2Cli {
+            return Err(ManifestError::InvalidCapability {
+                cap: self.to_string(),
+                reason: format!(
+                    "this is a windowed-app capability and `{}` is the command-line \
+                     interface, which imports no ui, gfx, audio, camera or speech at \
+                     all -- the app could not use it even if it were granted. Build \
+                     against `{}` if the app opens a window",
+                    AppWorld::Phase2Cli.world_name(),
+                    AppWorld::Phase3Gui.world_name(),
+                ),
+            });
+        }
+        Ok(())
     }
 
     pub fn resource(&self) -> Option<&str> {
@@ -1232,9 +1273,13 @@ mod tests {
             "Ünïcödé Nötes",
             "ملاحظات",
         ] {
+            // The GUI world, because the capability below is a windowed-app
+            // one. This said `cli` and validated only because nothing
+            // checked the pair (IC-243); the world is incidental here --
+            // what this test is about is the NAME.
             let manifest = format!(
                 "[app]\nid = \"com.example.notes\"\nname = \"{name}\"\nversion = \"1.0.0\"\n\
-                 entry = \"app.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+                 entry = \"app.wasm\"\nworld = \"krate:app/gui@0.2.0\"\n\n\
                  [[capabilities]]\ncap = \"ui.window:create\"\n\
                  rationale = \"Draw the window — it is where you type\"\nrequired = true\n"
             );
@@ -1526,6 +1571,56 @@ mod tests {
     /// than at run time after somebody has already agreed to it. The reason
     /// has to say WHY and name what does work, or the author just sees a
     /// valid-looking capability rejected for no stated cause.
+    /// IC-243: a command-line app cannot declare windowed-app capabilities.
+    ///
+    /// The CLI world imports no ui, gfx, audio, camera or speech interface
+    /// at all, so these name something the app could not call even if every
+    /// grant were given. Before this they validated: a CLI app could declare
+    /// a window, a GPU and a menu, and a person would be shown all three on
+    /// the consent sheet -- the hollow-promise shape of K-175 arriving by a
+    /// different road.
+    ///
+    /// The reverse is correct and must keep working: the GUI world imports
+    /// the Phase 2 interfaces too, so a windowed app reads files and talks
+    /// to the network like any other.
+    #[test]
+    fn a_command_line_app_cannot_declare_a_windowed_capability() {
+        let manifest_with = |world: &str, cap: &str| {
+            format!(
+                "[app]\nid = \"dev.krate.test\"\nname = \"Test\"\nversion = \"1.0.0\"\n\
+                 entry = \"app.wasm\"\nworld = \"{world}\"\n\n\
+                 [[capabilities]]\ncap = \"{cap}\"\nrationale = \"t\"\nrequired = true\n"
+            )
+        };
+
+        for cap in ["ui.window:create", "gfx.gpu:basic", "ui.menu:system"] {
+            let err = Manifest::parse(&manifest_with(PHASE2_CLI_WORLD, cap))
+                .expect_err("a CLI app cannot declare a windowed capability");
+            let ManifestError::InvalidCapability { reason, .. } = &err else {
+                panic!("expected InvalidCapability for {cap}, got {err:?}");
+            };
+            assert!(
+                reason.contains("command-line interface"),
+                "the reason must name the mismatch for {cap}: {reason}"
+            );
+            assert!(
+                reason.contains(PHASE3_GUI_WORLD),
+                "and say which world to build against for {cap}: {reason}"
+            );
+
+            // The same capability in the world that imports it is fine.
+            Manifest::parse(&manifest_with(PHASE3_GUI_WORLD, cap))
+                .unwrap_or_else(|err| panic!("{cap} belongs in the GUI world: {err}"));
+        }
+
+        // A Phase 2 capability in a GUI world is ordinary, not an error --
+        // checking only one direction is the whole point.
+        Manifest::parse(&manifest_with(PHASE3_GUI_WORLD, "fs.read:data/**"))
+            .expect("a windowed app reads files like any other");
+        Manifest::parse(&manifest_with(PHASE2_CLI_WORLD, "fs.read:data/**"))
+            .expect("and so does a command-line one");
+    }
+
     #[test]
     fn a_capability_the_runtime_cannot_honour_is_not_declarable() {
         let err = "ui.dropzone:image/png"
