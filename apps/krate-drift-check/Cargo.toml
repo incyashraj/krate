@@ -1,0 +1,12 @@
+[package]
+name = "krate-drift-check"
+version = "0.1.0-dev"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+publish = false
+
+# Standalone, like the game it checks.
+[workspace]
+
+# No dependencies on purpose: this compiles the game's own logic modules by
+# path, so it always checks the shipped code rather than a copy of it.

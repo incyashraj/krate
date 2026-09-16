@@ -56,6 +56,10 @@ pub struct Car {
     /// Whether the car was already against the barrier last frame, so a long
     /// scrape is one impact rather than one per frame.
     pub on_barrier: bool,
+    /// Set while the brake is being held from a forward roll, so the car stops
+    /// at zero instead of continuing into reverse. Cleared when the brake is
+    /// released, which is what makes reverse a deliberate second press.
+    pub braked_to_stop: bool,
 }
 
 impl Car {
@@ -103,6 +107,7 @@ impl Car {
             surface: Surface::Road,
             hit: 0.0,
             on_barrier: false,
+            braked_to_stop: false,
         }
     }
 
@@ -138,7 +143,26 @@ impl Car {
         } else if throttle < 0.0 {
             // Braking bites harder than reverse accelerates.
             let brake = if self.speed > 0.0 { 78.0 } else { 26.0 };
+            if self.speed > 0.0 {
+                self.braked_to_stop = true;
+            }
             self.speed += throttle * brake * dt;
+            // Braking STOPS the car; it does not drive it backwards in the
+            // same press. Without this, holding the brake to avoid the car in
+            // front carried straight through zero into reverse about a tenth
+            // of a second later and drove into whatever was behind.
+            //
+            // The flag has to LATCH for as long as the brake is held: guarding
+            // only the frame that crosses zero leaves the next frame starting
+            // from a standstill, where nothing says the car was ever moving
+            // forward, and reverse begins anyway. Releasing the brake clears
+            // it, which is what makes reverse a deliberate second press.
+            if self.braked_to_stop && self.speed < 0.0 {
+                self.speed = 0.0;
+            }
+        }
+        if throttle >= 0.0 {
+            self.braked_to_stop = false;
         }
         self.speed -= self.speed * drag * dt;
         self.speed = self.speed.clamp(-22.0, 92.0);
