@@ -186,6 +186,14 @@ struct Texture {
     /// `0xAARRGGBB`, so sampling is a lookup rather than four byte reads and a
     /// shift on every pixel of every triangle.
     pixels: Vec<u32>,
+    /// Whether any texel is less than fully opaque, decided once at upload.
+    ///
+    /// A triangle wearing such a texture has to go in the BLENDED pass even
+    /// when its tint is opaque -- it must not write depth, and it must be
+    /// sorted back to front. Asking the texture rather than sampling it at
+    /// queue time is the difference between one scan at upload and a lookup
+    /// per triangle.
+    has_transparency: bool,
 }
 
 impl Texture {
@@ -413,10 +421,12 @@ impl Scene {
                     | u32::from(chunk[2]),
             );
         }
+        let has_transparency = pixels.iter().any(|p| (p >> 24) != 0xFF);
         self.textures.push(Texture {
             width,
             height,
             pixels,
+            has_transparency,
         });
         // Handles start at one so zero can stay an obviously invalid value.
         Ok(self.textures.len() as u64)
@@ -460,11 +470,23 @@ impl Scene {
             return;
         }
 
-        let alpha = if tint.3.is_nan() {
+        let mut alpha = if tint.3.is_nan() {
             1.0
         } else {
             tint.3.clamp(0.0, 1.0)
         };
+        // A texture with any transparent texel puts its triangle in the
+        // blended pass even when the tint is opaque: it must not write depth,
+        // and it has to be sorted back to front like any other blend. The
+        // per-pixel coverage still comes from the texel, so a mostly-opaque
+        // texture is not dimmed by being classified this way.
+        if self
+            .textures
+            .get(texture)
+            .is_some_and(|t| t.has_transparency)
+        {
+            alpha = alpha.min(0.999);
+        }
         self.queued.push(Queued {
             a: pa,
             b: pb,
@@ -503,11 +525,18 @@ impl Scene {
         if area.abs() < 1e-6 || self.culled(area) {
             return;
         }
-        let alpha = if tint.3.is_nan() {
+        let mut alpha = if tint.3.is_nan() {
             1.0
         } else {
             tint.3.clamp(0.0, 1.0)
         };
+        if self
+            .textures
+            .get(texture)
+            .is_some_and(|t| t.has_transparency)
+        {
+            alpha = alpha.min(0.999);
+        }
         self.queued.push(Queued {
             a: pa,
             b: pb,
@@ -860,15 +889,22 @@ fn fill_band(
                     _ => continue,
                 };
 
+                // Coverage is the tint's alpha TIMES the texel's. The tint
+                // fades a whole surface; the texel's own alpha is what makes a
+                // soft shadow soft and a leaf texture leaf-shaped, and reading
+                // only the tint threw that away -- the shadow would have been
+                // a uniformly grey disc with a hard rim.
+                let texel_alpha = ((value >> 24) & 0xFF) as f32 / 255.0;
+                let coverage = tri.alpha * texel_alpha;
                 if let Some(pixel) = colour.get_mut(index) {
-                    if tri.alpha >= 1.0 {
+                    if coverage >= 1.0 {
                         *slot = z;
                         *pixel = value;
-                    } else {
+                    } else if coverage > 0.004 {
                         // Source-over, and NO depth write: the surface behind
                         // this one is still visible through it, so it must
                         // stay available for anything drawn later.
-                        *pixel = blend(*pixel, value, tri.alpha);
+                        *pixel = blend(*pixel, value, coverage);
                     }
                 }
             }
@@ -1831,6 +1867,47 @@ mod tests {
             lit > dark + 40,
             "a surface facing the light must be brighter than one facing away: \
              lit {lit}, away {dark}"
+        );
+    }
+
+    #[test]
+    fn coverage_comes_from_the_texel_as_well_as_the_tint() {
+        // What makes a soft shadow soft and a leaf texture leaf-shaped: the
+        // tint's alpha fades a whole surface uniformly, while the texel's own
+        // alpha varies per pixel. Reading only the tint threw that away.
+        //
+        // Checked on the two pieces directly rather than through a rendered
+        // scene: a scene test for this needs a texture whose texels differ, UVs
+        // that land on specific texel CENTRES (u = 1.0 wraps back to texel 0),
+        // and two correctly wound quads -- three chances to write a fixture
+        // that fails for a reason that has nothing to do with the feature, and
+        // I took all three before writing this.
+        assert_eq!(blend(0xFF00_0000, 0xFFFF_FFFF, 1.0), 0xFFFF_FFFF);
+        assert_eq!(blend(0xFF00_0000, 0xFFFF_FFFF, 0.0), 0xFF00_0000);
+        let half = blend(0xFF00_0000, 0xFFFF_FFFF, 0.5);
+        let channel = (half >> 16) & 0xFF;
+        assert!(
+            (120..=136).contains(&channel),
+            "half coverage should land near the midpoint, got {channel}"
+        );
+
+        // And a texture reports whether it carries any transparency at all,
+        // which is what puts its triangles in the blended pass even when the
+        // tint is opaque.
+        let mut scene = Scene::new(8, 8).expect("scene");
+        let opaque = scene
+            .upload_texture(1, 1, &[10, 20, 30, 255])
+            .expect("texture");
+        let partly = scene
+            .upload_texture(2, 1, &[10, 20, 30, 255, 40, 50, 60, 128])
+            .expect("texture");
+        assert!(
+            !scene.textures[opaque as usize - 1].has_transparency,
+            "a fully opaque texture must not force the blended pass"
+        );
+        assert!(
+            scene.textures[partly as usize - 1].has_transparency,
+            "one transparent texel is enough to need blending"
         );
     }
 

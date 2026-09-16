@@ -180,6 +180,7 @@ impl krate::Guest for Component {
         let tex_panel = upload(paint::panel(512));
         let tex_red = upload(paint::car_paint(512, (1.0, 0.22, 0.20)));
         let tex_gold = upload(paint::car_paint(512, (1.0, 0.78, 0.30)));
+        let tex_shadow = upload(paint::soft_shadow(256));
         let paint_ms = (clock::monotonic_nanos() - t0) / 1_000_000;
 
         // ---- the scene
@@ -188,8 +189,16 @@ impl krate::Guest for Component {
 
         // A sky dome, big enough that nothing reaches it. Drawn from inside,
         // which is why culling is off.
+        // Normals flipped INWARD: a sky dome is seen from inside, and with
+        // one-sided lighting an outward normal means the whole sky faces away
+        // from the light and renders at the ambient floor. This is the
+        // geometry that smooth shading changed the meaning of.
+        let mut sky_dome = geom::sphere(900.0, 24, 48);
+        for n in sky_dome.normals.iter_mut() {
+            *n = -*n;
+        }
         parts.push(Part {
-            mesh: geom::sphere(900.0, 24, 48),
+            mesh: sky_dome,
             texture: tex_sky,
             // Over 1.0: the shading floor is 0.35 and a sky should not be
             // lit at all. This is the only lever an app has (K-400).
@@ -207,25 +216,28 @@ impl krate::Guest for Component {
         // The floor's UV scale, shared with the shadow patches so they sample
         // the same texture the floor does.
         const FLOOR_UV: f32 = 26.0;
+        // One blended quad per shadow, now that the rasterizer blends. The
+        // previous version was a grid of opaque patches sampling the floor
+        // underneath at a darkening tint -- the workaround for having no
+        // alpha. It cost 361 draw calls per shadow and still showed its patch
+        // edges. This is one call, and the falloff lives in the texture's
+        // alpha channel where it belongs.
         let add_shadow = |parts: &mut Vec<Part>, x: f32, y: f32, z: f32, size: f32| {
-            for (mesh, darkness) in shadow_grid(x, y, z, size, 19, FLOOR_UV) {
-                // Deep enough to read as contact, and shifted cool: a real
-                // shadow is lit by the sky rather than the sun, so it goes
-                // blue as it darkens rather than simply grey. That colour
-                // shift is most of what makes a painted shadow convincing.
-                // Barely tinted, only darkened. Pushing the blue up made the
-                // patches read as blue TILES rather than as shade: without
-                // alpha the patch edges are hard, so any colour difference
-                // from the floor turns each cell into a visible square. A
-                // near-neutral darkening hides the grid; a coloured one
-                // advertises it.
-                let k = 1.0 - darkness * 0.55;
-                parts.push(Part {
-                    mesh,
-                    texture: tex_floor,
-                    tint: rgb(k, k * 1.005, k * 1.02),
-                });
-            }
+            let mut m = Mesh::default();
+            let h = size * 0.5;
+            m.quad(
+                [x - h, y, z - h],
+                [x - h, y, z + h],
+                [x + h, y, z + h],
+                [x + h, y, z - h],
+                [[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [1.0, 0.0]],
+            );
+            m.fill_face_normals();
+            parts.push(Part {
+                mesh: m,
+                texture: tex_shadow,
+                tint: rgb(1.0, 1.0, 1.0),
+            });
         };
 
         // A ring of pillars, each a bevelled column with a marble shaft and a
@@ -293,6 +305,14 @@ impl krate::Guest for Component {
             add_shadow(&mut parts, sx, sy + 0.03, sz, radius * 3.2);
         }
 
+        // Anything built without its own normals gets the face normal, so it
+        // draws through `smooth` looking exactly as it did through `textured`.
+        // Only the sphere and the torus know their real normals, and only they
+        // change.
+        for p in parts.iter_mut() {
+            p.mesh.fill_face_normals();
+        }
+
         let tris: usize = parts.iter().map(|p| p.mesh.tris()).sum();
         {
             let mut s = String::new();
@@ -350,7 +370,15 @@ impl krate::Guest for Component {
             }
             let mut failed = false;
             for p in &parts {
-                if scene3d::textured(scene, &p.mesh.verts, &p.mesh.uvs, p.texture, p.tint).is_err()
+                if scene3d::smooth(
+                    scene,
+                    &p.mesh.verts,
+                    &p.mesh.normals,
+                    &p.mesh.uvs,
+                    p.texture,
+                    p.tint,
+                )
+                .is_err()
                 {
                     failed = true;
                     break;
@@ -392,60 +420,6 @@ impl krate::Guest for Component {
         }
         0
     }
-}
-
-/// A contact shadow, built as a grid of quads that sample the FLOOR texture
-/// at the floor's own UVs and are drawn with a darkening tint.
-///
-/// There is no alpha blending (K-400), so a shadow cannot be a soft dark blob
-/// laid over the floor: an opaque quad replaces the floor pixels entirely, and
-/// the first attempt at this drew white squares under every object. What does
-/// work is a quad that shows the SAME floor, just darker -- so it needs the
-/// floor's texture, the floor's UV mapping, and a tint below 1.
-///
-/// The softness comes from subdivision rather than from alpha: the grid is
-/// built as `cells` squares, and the caller tints each ring darker toward the
-/// middle. One quad would be a hard-edged rectangle; a 7x7 grid reads as a
-/// shadow that fades.
-fn shadow_grid(x: f32, y: f32, z: f32, size: f32, cells: usize, uv_scale: f32) -> Vec<(Mesh, f32)> {
-    let mut out = Vec::with_capacity(cells * cells);
-    let h = size * 0.5;
-    let step = size / cells as f32;
-    for cz in 0..cells {
-        for cx in 0..cells {
-            let x0 = x - h + cx as f32 * step;
-            let z0 = z - h + cz as f32 * step;
-            let x1 = x0 + step;
-            let z1 = z0 + step;
-            // Distance from the centre of the patch to the centre of the
-            // shadow, 0..1, which decides how dark this patch is.
-            let mx = (x0 + x1) * 0.5 - x;
-            let mz = (z0 + z1) * 0.5 - z;
-            let d = (mathx::sqrt_approx(mx * mx + mz * mz) / h).min(1.0);
-            let darkness = (1.0 - d) * (1.0 - d);
-            if darkness < 0.04 {
-                continue; // nothing to draw at the rim
-            }
-            let mut m = Mesh::default();
-            // The floor's UVs: world position times the floor's own scale, so
-            // the patch samples exactly the floor texture underneath it.
-            let uv = |px: f32, pz: f32| -> [f32; 2] {
-                [
-                    (px + 200.0) / 400.0 * uv_scale,
-                    (pz + 200.0) / 400.0 * uv_scale,
-                ]
-            };
-            m.quad(
-                [x0, y, z0],
-                [x0, y, z1],
-                [x1, y, z1],
-                [x1, y, z0],
-                [uv(x0, z0), uv(x0, z1), uv(x1, z1), uv(x1, z0)],
-            );
-            out.push((m, darkness));
-        }
-    }
-    out
 }
 
 krate::export!(Component);

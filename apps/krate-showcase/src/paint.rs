@@ -258,6 +258,39 @@ pub fn panel(size: u32) -> Texture {
     t
 }
 
+/// A soft round shadow, black in the middle fading to nothing at the rim.
+///
+/// Now that the rasterizer blends, this is a single transparent quad rather
+/// than a grid of hundreds of opaque patches sampling the floor underneath.
+/// The alpha channel carries the falloff, which is what alpha is for; the
+/// opaque version needed 361 draw calls per shadow to fake the same gradient
+/// and still showed its patch edges.
+pub fn soft_shadow(size: u32) -> Texture {
+    let mut t = Texture::new(size, size);
+    let s = size as f32;
+    for y in 0..size {
+        for x in 0..size {
+            let dx = x as f32 / s - 0.5;
+            let dy = y as f32 / s - 0.5;
+            let d = (dx * dx + dy * dy).sqrt() * 2.0;
+            // Squared falloff: a linear one has a visible rim where it
+            // reaches zero, because the eye finds the discontinuity in the
+            // gradient's slope.
+            let a = (1.0 - d).max(0.0);
+            let alpha = a * a * 235.0;
+            let i = ((y * t.width + x) * 4) as usize;
+            if i + 3 < t.rgba.len() {
+                // Near-black, so the blend darkens whatever is under it.
+                t.rgba[i] = 12;
+                t.rgba[i + 1] = 14;
+                t.rgba[i + 2] = 22;
+                t.rgba[i + 3] = alpha as u8;
+            }
+        }
+    }
+    t
+}
+
 /// `x.sqrt()` and `x.powi()` come from std; a no_std guest needs its own.
 trait FloatExt {
     fn sqrt(self) -> f32;

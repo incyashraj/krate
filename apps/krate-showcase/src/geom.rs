@@ -20,11 +20,18 @@ use alloc::vec::Vec;
 
 use crate::mathx::{cos_approx, sin_approx, sqrt_approx};
 
-/// Triangles plus their UVs, the pair `scene3d::textured` wants.
+/// Triangles, their UVs, and a normal per vertex.
+///
+/// The normals are what `scene3d::smooth` wants. A builder that knows the
+/// surface it is making -- a sphere knows its normal is the radius direction --
+/// can hand them over and get smooth shading for nothing. A builder that does
+/// not, like the bevelled box, leaves them as the face normal and gets the
+/// same flat shading `textured` would have given.
 #[derive(Default)]
 pub struct Mesh {
     pub verts: Vec<f32>,
     pub uvs: Vec<f32>,
+    pub normals: Vec<f32>,
 }
 
 impl Mesh {
@@ -32,12 +39,52 @@ impl Mesh {
         self.verts.len() / 9
     }
 
+    /// Push a vertex whose normal is filled in later by `close_face`.
     pub fn push(&mut self, p: [f32; 3], uv: [f32; 2]) {
         self.verts.push(p[0]);
         self.verts.push(p[1]);
         self.verts.push(p[2]);
         self.uvs.push(uv[0]);
         self.uvs.push(uv[1]);
+    }
+
+    /// Push a vertex with its own normal.
+    pub fn push_n(&mut self, p: [f32; 3], n: [f32; 3], uv: [f32; 2]) {
+        self.push(p, uv);
+        self.normals.push(n[0]);
+        self.normals.push(n[1]);
+        self.normals.push(n[2]);
+    }
+
+    /// Give every vertex that has no normal yet the FACE normal of the
+    /// triangle it belongs to, so a mesh built without normals still draws
+    /// correctly through `smooth` -- flat, but correct.
+    pub fn fill_face_normals(&mut self) {
+        while self.normals.len() < self.verts.len() {
+            let i = self.normals.len();
+            let tri = i / 9 * 9;
+            let a = [self.verts[tri], self.verts[tri + 1], self.verts[tri + 2]];
+            let b = [
+                self.verts[tri + 3],
+                self.verts[tri + 4],
+                self.verts[tri + 5],
+            ];
+            let c = [
+                self.verts[tri + 6],
+                self.verts[tri + 7],
+                self.verts[tri + 8],
+            ];
+            let u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+            let v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+            let n = normalize([
+                u[1] * v[2] - u[2] * v[1],
+                u[2] * v[0] - u[0] * v[2],
+                u[0] * v[1] - u[1] * v[0],
+            ]);
+            self.normals.push(n[0]);
+            self.normals.push(n[1]);
+            self.normals.push(n[2]);
+        }
     }
 
     /// A quad as two triangles, wound counter-clockwise seen from outside.
@@ -62,6 +109,9 @@ impl Mesh {
         let mut out = Mesh {
             verts: Vec::with_capacity(self.verts.len()),
             uvs: self.uvs.clone(),
+            // Translation does not rotate anything, so the normals carry over
+            // unchanged.
+            normals: self.normals.clone(),
         };
         for p in self.verts.chunks_exact(3) {
             out.verts.push(p[0] + dx);
@@ -77,11 +127,19 @@ impl Mesh {
         let mut out = Mesh {
             verts: Vec::with_capacity(self.verts.len()),
             uvs: self.uvs.clone(),
+            normals: Vec::with_capacity(self.normals.len()),
         };
         for p in self.verts.chunks_exact(3) {
             out.verts.push(p[0] * c + p[2] * s + dx);
             out.verts.push(p[1] + dy);
             out.verts.push(-p[0] * s + p[2] * c + dz);
+        }
+        // Normals rotate with the mesh but are NOT translated: a normal is a
+        // direction, and adding a position to it would point it at the origin.
+        for n in self.normals.chunks_exact(3) {
+            out.normals.push(n[0] * c + n[2] * s);
+            out.normals.push(n[1]);
+            out.normals.push(-n[0] * s + n[2] * c);
         }
         out
     }
@@ -106,13 +164,24 @@ pub fn sphere(radius: f32, rings: usize, segments: usize) -> Mesh {
             let (a0, a1) = (u0 * PI * 2.0, u1 * PI * 2.0);
             let (s0, c0) = (sin_approx(a0), cos_approx(a0));
             let (s1, c1) = (sin_approx(a1), cos_approx(a1));
-            m.quad(
-                [c0 * r0, y0, s0 * r0],
-                [c0 * r1, y1, s0 * r1],
-                [c1 * r1, y1, s1 * r1],
-                [c1 * r0, y0, s1 * r0],
-                [[u0, t0], [u0, t1], [u1, t1], [u1, t0]],
-            );
+            // A sphere's normal at any point IS the direction from its
+            // centre, which is the vertex position over the radius. This is
+            // the case smooth shading was made for: 3,200 facets become a
+            // ball with no visible edges at all.
+            let p = |x: f32, y: f32, z: f32| [x, y, z];
+            let n = |x: f32, y: f32, z: f32| [x / radius, y / radius, z / radius];
+            let (v00, v01) = (p(c0 * r0, y0, s0 * r0), p(c0 * r1, y1, s0 * r1));
+            let (v11, v10) = (p(c1 * r1, y1, s1 * r1), p(c1 * r0, y0, s1 * r0));
+            for (v, uv) in [
+                (v00, [u0, t0]),
+                (v01, [u0, t1]),
+                (v11, [u1, t1]),
+                (v00, [u0, t0]),
+                (v11, [u1, t1]),
+                (v10, [u1, t0]),
+            ] {
+                m.push_n(v, n(v[0], v[1], v[2]), uv);
+            }
         }
     }
     m
@@ -331,13 +400,26 @@ pub fn torus(major: f32, minor: f32, rings: usize, segments: usize) -> Mesh {
                 let r = major + minor * cos_approx(b);
                 [cos_approx(a) * r, minor * sin_approx(b), sin_approx(a) * r]
             };
-            m.quad(
-                point(a0, b0),
-                point(a0, b1),
-                point(a1, b1),
-                point(a1, b0),
-                [[t0, u0], [t0, u1], [t1, u1], [t1, u0]],
-            );
+            // The normal points out from the centre of the TUBE, not from the
+            // centre of the torus: the ring's own axis at angle `a`, swung
+            // round by the tube angle `b`.
+            let normal = |a: f32, b: f32| -> [f32; 3] {
+                [
+                    cos_approx(a) * cos_approx(b),
+                    sin_approx(b),
+                    sin_approx(a) * cos_approx(b),
+                ]
+            };
+            for (a, b, uv) in [
+                (a0, b0, [t0, u0]),
+                (a0, b1, [t0, u1]),
+                (a1, b1, [t1, u1]),
+                (a0, b0, [t0, u0]),
+                (a1, b1, [t1, u1]),
+                (a1, b0, [t1, u0]),
+            ] {
+                m.push_n(point(a, b), normal(a, b), uv);
+            }
         }
     }
     m
