@@ -1,0 +1,31 @@
+[app]
+id = "dev.krate.quill"
+name = "Quill"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_quill.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the editor window"
+required = true
+
+[[capabilities]]
+cap = "ui.dialog:file-open"
+rationale = "Let you pick a file to edit"
+required = false
+
+[[capabilities]]
+cap = "store.kv"
+rationale = "Remember your settings and recent files"
+required = true
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Report the run for automated checks"
+required = true
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read the quick-run flag and a file path"
+required = true
