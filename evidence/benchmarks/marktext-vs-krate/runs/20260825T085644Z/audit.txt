@@ -1,0 +1,3 @@
+WARN: energy was not measured; make no power or battery-life claim
+WARN: feature parity is not established; describe this as an equivalent-workload comparison
+PASS: evidence is complete enough for publication under the stated scope

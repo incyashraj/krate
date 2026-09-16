@@ -2208,7 +2208,7 @@ mod tests {
         // is an error, so offering them would invite a plan to promise a
         // decision that is not a decision.
         for granted in krate_manifest::supported_capability_specs()
-            .into_iter()
+            .iter()
             .filter(|spec| spec.default_granted())
         {
             let pattern = granted.display_pattern();
