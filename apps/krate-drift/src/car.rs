@@ -9,6 +9,7 @@
 use crate::mathx::{abs, angle_delta, atan2_approx, cos_approx, sin_approx, sqrt_approx};
 use crate::track::{Track, ROAD_HALF, VERGE_HALF};
 
+/// Laps in a race.
 pub const MAX_LAPS: u32 = 3;
 
 /// Half-length of the car's body. Collision is a circle around the centre
@@ -58,7 +59,7 @@ pub struct Car {
 }
 
 impl Car {
-    pub fn new(track: &Track, slot: usize) -> Self {
+    pub fn new(track: &Track, slot: usize, field: usize) -> Self {
         // Grid slots stagger back and alternate sides, as a real grid does.
         //
         // The grid sits just AFTER the start line rather than before it. Put
@@ -66,8 +67,14 @@ impl Car {
         // round far enough to arm the counter, so it is correctly ignored and
         // the race silently costs everyone an extra lap -- which reads as "lap
         // counting is broken" when it is the grid that is misplaced.
+        //
+        // Pole is the slot FURTHEST along the lap, so later slots step
+        // backwards down the track. Stepping forwards instead put the last row
+        // ahead of pole, and the player -- always slot 0 -- started behind the
+        // entire field and finished last however fast they drove.
         let n = track.nodes.len();
-        let idx = ((slot / 2) * 9 + 3) % n;
+        let rows = field.div_ceil(2);
+        let idx = (rows.saturating_sub(1 + slot / 2) * 9 + 3) % n;
         let node = track.nodes[idx];
         let side = if slot % 2 == 0 { 4.5 } else { -4.5 };
         let nx = -node.dir_z;

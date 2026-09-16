@@ -353,7 +353,7 @@ impl Game {
     fn new(track: &Track) -> Self {
         let mut cars = Vec::with_capacity(FIELD);
         for i in 0..FIELD {
-            cars.push(Car::new(track, i));
+            cars.push(Car::new(track, i, FIELD));
         }
         Self {
             phase: Phase::Attract,
@@ -373,7 +373,7 @@ impl Game {
 
     fn reset(&mut self, track: &Track) {
         for (i, c) in self.cars.iter_mut().enumerate() {
-            *c = Car::new(track, i);
+            *c = Car::new(track, i, FIELD);
         }
         self.order.clear();
         self.race_t = 0.0;
@@ -567,10 +567,24 @@ fn build_hud(g: &Game, hud: &mut Hud) {
             hud.rect(left + 0.12, -1.44, 1.35 * frac, 0.06);
 
             // Lap counter, top left: current / total.
+            // The separator is a SLASH, not an upright bar.
+            //
+            // A tall thin rectangle between the two numbers is the same shape
+            // as the digit 1, so "lap 2 of 3" read as "21 3" -- the two
+            // numbers were correctly spaced and the divider was being counted
+            // as a digit. Leaning it fixes what the shape says.
             let lap = (g.cars[0].lap + 1).min(MAX_LAPS);
-            hud.number(lap, left + 0.55, top - 0.30, 0.18, 0.30, 1);
-            hud.rect(left + 0.62, top - 0.28, 0.05, 0.26);
-            hud.number(MAX_LAPS, left + 1.05, top - 0.30, 0.18, 0.30, 1);
+            hud.number(lap, left + 0.50, top - 0.30, 0.18, 0.30, 1);
+            for step in 0..6 {
+                let t = step as f32 / 5.0;
+                hud.rect(
+                    left + 0.60 + t * 0.10,
+                    top - 0.30 + t * 0.22,
+                    0.045,
+                    0.06,
+                );
+            }
+            hud.number(MAX_LAPS, left + 1.04, top - 0.30, 0.18, 0.30, 1);
 
             // Position, top right.
             hud.number(g.player_position(), right - 0.12, top - 0.34, 0.24, 0.38, 1);
@@ -579,9 +593,12 @@ fn build_hud(g: &Game, hud: &mut Hud) {
             let t = g.race_t.max(0.0);
             let mins = (t / 60.0) as u32;
             let secs = (t as u32) % 60;
+            // Same right-alignment care as the lap counter: the minutes digit
+            // ends at -0.30, the colon sits just past it, and the two seconds
+            // digits (0.15 wide with a 0.045 gap) end at 0.06.
             hud.number(mins, -0.30, top - 0.26, 0.15, 0.25, 1);
-            hud.colon(-0.24, top - 0.26, 0.05, 0.25);
-            hud.number(secs, 0.42, top - 0.26, 0.15, 0.25, 2);
+            hud.colon(-0.25, top - 0.26, 0.045, 0.25);
+            hud.number(secs, 0.24, top - 0.26, 0.15, 0.25, 2);
 
             if g.phase == Phase::Finished {
                 // A results plate: a bar per car, longest for the winner, with
@@ -678,6 +695,11 @@ impl krate::Guest for Component {
         let has = |n: &[u8]| raw.as_bytes().split(|b| *b == b'\n').any(|a| a == n);
         let quick = has(b"quick") || has(b"--quick");
         let auto = has(b"auto");
+        // `hold` drives itself, runs the clock faster than real time, and then
+        // parks on the results screen rather than restarting -- the only way
+        // to photograph the end of a race without sitting through one.
+        let hold = has(b"hold");
+        let auto = auto || hold;
 
         let win = match window::create(
             "Drift",
@@ -815,8 +837,13 @@ impl krate::Guest for Component {
             if dt <= 0.0 {
                 dt = 1.0 / 60.0;
             }
-            now_s += dt;
-            g.phase_t += dt;
+            // Under `hold` the world advances several steps per drawn frame,
+            // so a three-lap race finishes in seconds of wall time. The step
+            // SIZE is unchanged -- taking bigger steps would change how the
+            // cars behave and make the shot a picture of a different game.
+            let sim_steps = if hold { 10 } else { 1 };
+            now_s += dt * sim_steps as f32;
+            g.phase_t += dt * sim_steps as f32;
 
             // ---- input
             let key = |k: &str| events::key_held(k);
@@ -869,16 +896,22 @@ impl krate::Guest for Component {
                     }
                 }
                 Phase::Racing => {
-                    g.race_t += dt;
+                    g.race_t += dt * sim_steps as f32;
                 }
                 Phase::Finished => {
-                    if (start && g.phase_t > 1.0) || (auto && g.phase_t > 3.0) {
+                    // `hold` parks on the results screen instead of starting
+                    // another race, so a headless shot can be taken of it.
+                    // Without this the only way to see the results is to sit
+                    // through three laps and catch the three seconds before it
+                    // restarts, and `--shoot` closes the window when it fires.
+                    if !hold && ((start && g.phase_t > 1.0) || (auto && g.phase_t > 3.0)) {
                         g.reset(&track);
                     }
                 }
             }
 
             // ---- simulate
+            for _sub in 0..sim_steps {
             if matches!(g.phase, Phase::Racing | Phase::Finished) {
                 let before: Vec<u32> = g.cars.iter().map(|c| c.lap).collect();
 
@@ -937,6 +970,7 @@ impl krate::Guest for Component {
                     g.phase = Phase::Finished;
                     g.phase_t = 0.0;
                 }
+            }
             }
 
             // ---- sound tied to what the car is doing
