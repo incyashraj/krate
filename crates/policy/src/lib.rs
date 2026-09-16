@@ -304,6 +304,43 @@ impl SessionPolicy {
         }
     }
 
+    /// The same decision, knowing which declared capabilities are optional.
+    ///
+    /// An optional capability nobody has decided about is `Deferred`, not
+    /// `Denied`. The difference is the whole point of declaring something
+    /// optional: a denial stands until the recipient changes it, so an app
+    /// that reads one correctly stops asking, and an optional capability
+    /// would then be dead the first time it was touched -- before the person
+    /// had been asked about it at all. `Deferred` is the only refusal
+    /// `may_retry()` allows, which is exactly the "ask at feature time"
+    /// behaviour F-049 and F-103 describe.
+    ///
+    /// A withdrawal still wins: an optional capability a person turned OFF
+    /// reports `Revoked`, because they have now decided and asking again
+    /// would be pestering them.
+    pub fn decide_with_optional(
+        &self,
+        required: &Capability,
+        declared: Option<&BTreeSet<Capability>>,
+        optional: &BTreeSet<Capability>,
+    ) -> Decision {
+        let decision = self.decide(required, declared);
+        let Decision::Refused {
+            reason: Refusal::Denied,
+        } = decision
+        else {
+            // Undeclared, revoked, expired or granted: all unchanged. Only a
+            // plain denial can be a not-yet-asked optional capability.
+            return decision;
+        };
+        if optional.iter().any(|cap| capability_allows(cap, required)) {
+            return Decision::Refused {
+                reason: Refusal::Deferred,
+            };
+        }
+        decision
+    }
+
     /// What an app may have when Krate is only taking its picture (IC-219,
     /// IC-221, IC-341).
     ///
@@ -977,6 +1014,141 @@ mod tests {
             ));
         }
         Manifest::parse(&source).expect("manifest")
+    }
+
+    /// A manifest with both kinds of capability, so a test can tell what the
+    /// broker does with each.
+    fn manifest_with(required: &[&str], optional: &[&str]) -> Manifest {
+        let mut source = String::from(
+            "[app]\nid = \"dev.krate.test\"\nname = \"Test\"\nversion = \"1.0.0\"\n\
+             entry = \"app.wasm\"\nworld = \"krate:app/gui@0.2.0\"\n\n",
+        );
+        for (caps, required) in [(required, true), (optional, false)] {
+            for cap in caps {
+                source.push_str(&format!(
+                    "[[capabilities]]\ncap = \"{cap}\"\nrationale = \"test\"\n\
+                     required = {required}\n\n"
+                ));
+            }
+        }
+        Manifest::parse(&source).expect("manifest")
+    }
+
+    /// An optional capability nobody has decided about is deferred, not
+    /// denied -- and that difference is the whole point of declaring one.
+    ///
+    /// A denial stands until the recipient changes it, so an app that reads
+    /// one correctly stops asking. If an undecided optional capability
+    /// reported `Denied`, it would be dead the first time the app touched it,
+    /// before the person had been asked about it at all. `Deferred` is the
+    /// only refusal `may_retry()` allows, which is exactly the ask-at-feature
+    /// -time behaviour (F-049, F-103).
+    #[test]
+    fn an_undecided_optional_capability_is_deferred_and_a_required_one_is_denied() {
+        let manifest = manifest_with(&["fs.write:data/**"], &["audio.capture"]);
+        let declared: BTreeSet<Capability> = manifest
+            .declared_capabilities()
+            .expect("declared")
+            .into_iter()
+            .collect();
+        let optional: BTreeSet<Capability> = manifest
+            .optional_capabilities()
+            .expect("optional")
+            .into_iter()
+            .collect();
+        assert_eq!(
+            optional.len(),
+            1,
+            "the manifest distinguishes the two kinds: {optional:?}"
+        );
+
+        let policy = SessionPolicy::from_grants([]);
+
+        let deferred =
+            policy.decide_with_optional(&cap("audio.capture"), Some(&declared), &optional);
+        assert_eq!(deferred.refusal(), Some(&Refusal::Deferred));
+        assert!(
+            deferred.refusal().expect("refused").may_retry(),
+            "the app may ask for this when the feature is used"
+        );
+
+        let denied =
+            policy.decide_with_optional(&cap("fs.write:data/**"), Some(&declared), &optional);
+        assert_eq!(
+            denied.refusal(),
+            Some(&Refusal::Denied),
+            "a required capability is not deferred just because another one was optional"
+        );
+        assert!(!denied.refusal().expect("refused").may_retry());
+    }
+
+    /// Deciding about an optional capability is final, both ways.
+    ///
+    /// Granting it makes it granted; turning it off makes it `Revoked`, not
+    /// `Deferred`. Without the second half an app would keep re-asking for
+    /// something the person had just switched off, which is the exact
+    /// behaviour that makes permission prompts hated.
+    #[test]
+    fn an_optional_capability_stops_being_deferred_once_somebody_decides() {
+        let manifest = manifest_with(&[], &["audio.capture"]);
+        let declared: BTreeSet<Capability> = manifest
+            .declared_capabilities()
+            .expect("declared")
+            .into_iter()
+            .collect();
+        let optional: BTreeSet<Capability> = manifest
+            .optional_capabilities()
+            .expect("optional")
+            .into_iter()
+            .collect();
+
+        let granted = SessionPolicy::from_grants([cap("audio.capture")]);
+        assert!(granted
+            .decide_with_optional(&cap("audio.capture"), Some(&declared), &optional)
+            .is_granted());
+
+        let mut turned_off = SessionPolicy::from_grants([cap("audio.capture")]);
+        turned_off.revoke(cap("audio.capture"));
+        let decision =
+            turned_off.decide_with_optional(&cap("audio.capture"), Some(&declared), &optional);
+        assert_eq!(
+            decision.refusal(),
+            Some(&Refusal::Revoked),
+            "they decided; asking again would be pestering them"
+        );
+        assert!(!decision.refusal().expect("refused").may_retry());
+    }
+
+    /// Optional does not mean undeclared.
+    ///
+    /// A capability outside the manifest stays `Undeclared` even when the
+    /// caller passes an optional set -- otherwise "optional" would become a
+    /// way around the declaration contract, and an app could reach anything
+    /// by asking for it at feature time (IC-733).
+    #[test]
+    fn the_optional_set_cannot_smuggle_in_an_undeclared_capability() {
+        let manifest = manifest_with(&[], &["audio.capture"]);
+        let declared: BTreeSet<Capability> = manifest
+            .declared_capabilities()
+            .expect("declared")
+            .into_iter()
+            .collect();
+        // A caller that wrongly lists something the manifest never declared.
+        let optional: BTreeSet<Capability> =
+            [cap("net.connect:example.com:443")].into_iter().collect();
+
+        let policy = SessionPolicy::from_grants([]);
+        assert_eq!(
+            policy
+                .decide_with_optional(
+                    &cap("net.connect:example.com:443"),
+                    Some(&declared),
+                    &optional
+                )
+                .refusal(),
+            Some(&Refusal::Undeclared),
+            "the manifest is the contract; an optional list cannot widen it"
+        );
     }
 
     /// IC-219/IC-221. Several paths ran a bundle with every capability it

@@ -215,6 +215,24 @@ impl Manifest {
             .collect()
     }
 
+    /// The capabilities an app declared but can run without (CP2, F-049,
+    /// F-103).
+    ///
+    /// The manifest has carried `required = false` since Phase 2 and nothing
+    /// in the tree ever read it: every caller asked for the declared set or
+    /// the required set, so an optional capability was declared, shown to a
+    /// person, and then treated exactly like a required one. This is the
+    /// accessor the broker needs to tell them apart -- an optional
+    /// capability that is missing must not stop the app starting, and the
+    /// app may ask for it at the moment the feature is used instead.
+    pub fn optional_capabilities(&self) -> Result<Vec<Capability>> {
+        self.capabilities
+            .iter()
+            .filter(|request| !request.required)
+            .map(|request| request.cap.parse())
+            .collect()
+    }
+
     pub fn required_capabilities(&self) -> Result<Vec<Capability>> {
         self.capabilities
             .iter()
