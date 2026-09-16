@@ -172,6 +172,59 @@ fn main() {
         format!("two minutes: {} laps, {off_pct:.0}% off-track", p.lap),
     );
 
+    // A whole race, to the finish: does everyone actually complete three laps,
+    // does the field finish in a sensible order, and does the player's own car
+    // reach the end? This is the results screen checked by its data -- the
+    // screen itself cannot be photographed, because `--shoot` closes the
+    // window after capturing and the app correctly exits on the close.
+    let mut field: Vec<Car> = (0..6).map(|i| Car::new(&t, i, 6)).collect();
+    let mut order: Vec<usize> = Vec::new();
+    let mut race_t = 0.0_f32;
+    for _ in 0..(60 * 400) {
+        race_t += DT;
+        for i in 0..field.len() {
+            let skill = if i == 0 { 0.93 } else { 0.88 + i as f32 * 0.018 };
+            let (throttle, steer) = drive_ai(&field[i], &t, skill.min(1.0));
+            if !field[i].finished {
+                field[i].step(&t, throttle, steer, DT, race_t);
+            }
+        }
+        for i in 0..field.len() {
+            for j in (i + 1)..field.len() {
+                let (a, b) = field.split_at_mut(j);
+                Car::collide(&mut a[i], &mut b[0]);
+            }
+        }
+        for i in 0..field.len() {
+            if field[i].finished && !order.contains(&i) {
+                order.push(i);
+            }
+        }
+        if order.len() == field.len() {
+            break;
+        }
+    }
+    let all_done = order.len() == field.len();
+    let player_place = order.iter().position(|&i| i == 0).map(|p| p + 1);
+    let winner_time = order.first().map(|&i| field[i].finish_time).unwrap_or(0.0);
+    check(
+        "a full race finishes for every car",
+        all_done && winner_time > 60.0,
+        format!(
+            "{}/6 finished, winner {winner_time:.1} s, player {}",
+            order.len(),
+            player_place.map_or("did not finish".to_string(), |p| format!("P{p}"))
+        ),
+    );
+    // The order must be by finishing time, which is what the results plate
+    // draws top to bottom.
+    let times: Vec<f32> = order.iter().map(|&i| field[i].finish_time).collect();
+    check(
+        "the finishing order is by time",
+        times.windows(2).all(|w| w[0] <= w[1]),
+        format!("{:?}", times.iter().map(|t| (t * 10.0) as i32 as f32 / 10.0).collect::<Vec<_>>()),
+    );
+
     if failures > 0 {
         println!("\n{failures} check(s) failed");
         std::process::exit(1);

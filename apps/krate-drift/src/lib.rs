@@ -1069,6 +1069,11 @@ impl krate::Guest for Component {
             let p0 = clock::monotonic_nanos();
             let visible = props.len();
             if draw(scene, &g, &track, &meshes, &props, &mut hud, visible).is_err() {
+                // Name the exit. A bare `break` here ends the game with a
+                // normal-looking report and no clue that anything went wrong,
+                // which is exactly how a mid-race stop read as "the race just
+                // finished early".
+                say("drift: draw failed, stopping");
                 break;
             }
             unsafe {

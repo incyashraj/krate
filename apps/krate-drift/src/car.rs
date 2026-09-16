@@ -66,11 +66,19 @@ impl Car {
     pub fn new(track: &Track, slot: usize, field: usize) -> Self {
         // Grid slots stagger back and alternate sides, as a real grid does.
         //
-        // The grid sits just AFTER the start line rather than before it. Put
-        // behind the line, the first crossing happens before the car has been
-        // round far enough to arm the counter, so it is correctly ignored and
-        // the race silently costs everyone an extra lap -- which reads as "lap
-        // counting is broken" when it is the grid that is misplaced.
+        // The grid sits BEHIND the start line, as a real one does, and the
+        // counter starts armed. Both halves matter and getting either alone
+        // wrong costs a lap in one direction or the other:
+        //
+        // - grid in front of the line, counter disarmed: the car has to go all
+        //   the way round before it can arm, so the crossing that ends lap one
+        //   is ignored and a three-lap race needs four crossings.
+        // - grid in front of the line, counter armed: the grid is already
+        //   inside the window that banks a lap, so lap one is credited on the
+        //   first frame and the race is a lap short. (Measured: a three-lap
+        //   race finished in 55 s when a lap takes 27.)
+        //
+        // Behind the line and armed, the first crossing is a real one.
         //
         // Pole is the slot FURTHEST along the lap, so later slots step
         // backwards down the track. Stepping forwards instead put the last row
@@ -78,7 +86,11 @@ impl Car {
         // entire field and finished last however fast they drove.
         let n = track.nodes.len();
         let rows = field.div_ceil(2);
-        let idx = (rows.saturating_sub(1 + slot / 2) * 9 + 3) % n;
+        // Nine nodes back per row from a point just before the line. Pole
+        // (row 0) sits closest to the line and later rows step further back.
+        let back = 4 + (slot / 2) * 9;
+        let _ = rows;
+        let idx = (n - back) % n;
         let node = track.nodes[idx];
         let side = if slot % 2 == 0 { 4.5 } else { -4.5 };
         let nx = -node.dir_z;
@@ -101,6 +113,15 @@ impl Car {
             node: idx,
             lap: 0,
             progress: 0.0,
+            // NOT armed. With the grid behind the start line this is correct
+            // on its own: the car crosses the line a few metres after the
+            // lights, which is ignored because it has not armed yet, then arms
+            // in the middle of its first lap and trips at the end of it. Lap
+            // one counts as lap one.
+            //
+            // Pre-arming here instead credited a lap on the first crossing,
+            // twenty metres in, and a three-lap race finished in 57 s when a
+            // lap takes 27.
             lap_armed: false,
             finished: false,
             finish_time: 0.0,
