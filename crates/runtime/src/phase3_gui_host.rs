@@ -27,7 +27,7 @@ use crate::{
     canvas_raster::{pack_color, CanvasSurface},
     phase3_gui_bindings::krate::{audio, camera, gfx, speech, ui},
     phase3_ui::{Phase3HostUiMode, Phase3UiDispatcher, Phase3UiRuntime, UiDispatchError},
-    scene3d::Scene,
+    scene3d::SceneBackend,
     speech_transcription::{LocalSpeechRuntime, SpeechError},
     uapi::{AudioCall, CameraCall, UapiCall, UapiGuard, UiCall},
 };
@@ -155,7 +155,7 @@ pub struct Phase3GuiHost {
     held_keys: std::cell::RefCell<std::collections::BTreeSet<String>>,
     /// Bound 3D scenes, sharing the canvas id space so a scene and a canvas
     /// can never collide on one number.
-    scenes: std::cell::RefCell<std::collections::BTreeMap<u64, (WindowId, WidgetId, Scene)>>,
+    scenes: std::cell::RefCell<std::collections::BTreeMap<u64, (WindowId, WidgetId, SceneBackend)>>,
     /// The next canvas or scene id to hand out; never reused within a run.
     next_canvas_id: std::cell::Cell<u64>,
     /// Per-canvas display lists, recorded only when the adapter renders
@@ -4692,10 +4692,14 @@ impl gfx::scene3d::Host for Phase3GuiHost {
             Ok(rect) => rect,
             Err(error) => return Ok(Err(error)),
         };
-        let scene = match Scene::new(rect.0.max(1.0) as u32, rect.1.max(1.0) as u32) {
+        let scene = match SceneBackend::new(rect.0.max(1.0) as u32, rect.1.max(1.0) as u32) {
             Ok(scene) => scene,
             Err(error) => return Ok(Err(gfx::types::GfxError::Unsupported(error.to_string()))),
         };
+        // One line of truth per scene, the same promise the 2D presenter makes
+        // about which silicon drew the frame. "The game lags" debugging starts
+        // by knowing whether this ran on the GPU at all.
+        eprintln!("krate: 3D scene renders on the {}", scene.backend().name());
         let scene_id = self.next_canvas_id.get();
         self.next_canvas_id.set(scene_id.saturating_add(1));
         self.scenes
@@ -6089,7 +6093,14 @@ mod tests {
                 .expect("present succeeds");
         };
 
-        // The first present has no previous frame to pace against.
+        // Two warm-up frames, not one. The first has no previous frame to
+        // pace against; the SECOND is the first that actually renders on a
+        // freshly created backend, and on the GPU that frame pays for device
+        // and pipeline setup -- which overruns the budget and leaves the frame
+        // after it nothing to wait for. Neither is a pacing failure, and
+        // measuring either would make this test fail on the backend that is
+        // working.
+        present(&mut host);
         present(&mut host);
         let started = std::time::Instant::now();
         present(&mut host);

@@ -2440,6 +2440,7 @@ dependencies = [
  "krate-layout",
  "krate-manifest",
  "krate-policy",
+ "krate-scene3d-gpu",
  "libc",
  "nokhwa",
  "objc2 0.6.4",

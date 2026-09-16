@@ -208,6 +208,39 @@ fn smooth_shading_matches_between_backends() {
 }
 
 #[test]
+fn an_over_bright_tint_is_clamped_the_same_way() {
+    // An app can pass a tint above 1.0 -- the showcase's sky dome passes 2.6,
+    // trying to defeat the ambient floor. The CPU clamps the TINT to 0..1
+    // before multiplying and then clamps the product again; clamping only the
+    // product lets the tint brighten instead, and the GPU did exactly that
+    // until this test existed. The sky came out a saturated white sheet where
+    // the CPU showed a gradient.
+    let quad = facing_quad(2.0, 0.0);
+    let uvs: Vec<f32> = vec![0.5; 12];
+    compare(
+        "over-bright tint",
+        |cpu| {
+            cpu.set_camera([0.0, 0.0, 6.0], [0.0, 0.0, 0.0], 60.0);
+            cpu.set_light([0.0, 0.0, -1.0]);
+            cpu.clear(CLEAR_WORD);
+            let grey = cpu
+                .upload_texture(1, 1, &[120, 130, 150, 255])
+                .expect("texture");
+            cpu.textured(&quad, &uvs, grey, (2.6, 2.6, 2.6, 1.0));
+        },
+        |gpu| {
+            gpu.set_camera([0.0, 0.0, 6.0], [0.0, 0.0, 0.0], 60.0);
+            gpu.set_light([0.0, 0.0, -1.0]);
+            gpu.clear(CLEAR_RGBA);
+            let grey = gpu
+                .upload_texture(1, 1, &[120, 130, 150, 255])
+                .expect("texture");
+            gpu.textured(&quad, &uvs, grey, [2.6, 2.6, 2.6, 1.0]);
+        },
+    );
+}
+
+#[test]
 fn blending_matches_between_backends() {
     // An opaque wall with a half-covering pane in front: the blend arithmetic
     // and the back-to-front ordering, both at once.

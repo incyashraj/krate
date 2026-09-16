@@ -71,6 +71,7 @@ wasmtime.workspace = true
 wasmtime = { version = "46.0.3", default-features = false, features = ["component-model", "runtime", "pulley", "gc", "gc-drc", "std", "custom-virtual-memory"] }
 
 [dependencies]
+krate-scene3d-gpu = { path = "../scene3d-gpu" }
 sha2 = "0.10.9"
 # Real AEAD and a real KDF for the secret store, replacing a hand-rolled
 # SHA-256 keystream and homemade MAC (IC-249). ring is audited, maintained,

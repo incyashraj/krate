@@ -782,6 +782,182 @@ impl Scene {
     }
 }
 
+/// Which renderer a bound scene is actually using.
+///
+/// The GPU is asked for first and the software rasterizer is the fallback, not
+/// the other way round -- but a machine with no usable adapter is a normal
+/// machine, not a broken one, and it gets the CPU path with one line saying so
+/// rather than a failure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Backend {
+    Gpu,
+    Cpu,
+}
+
+impl Backend {
+    pub fn name(self) -> &'static str {
+        match self {
+            Backend::Gpu => "GPU",
+            Backend::Cpu => "CPU",
+        }
+    }
+}
+
+/// A bound 3D scene, on whichever backend this machine can run.
+///
+/// Every method forwards to one of the two implementations, which is why they
+/// were written with the same names and the same behaviour: the host holds
+/// this and never learns which is underneath. The parity test in
+/// `tests/scene3d_parity.rs` is what makes that substitution honest -- three
+/// of its five scenes agree to the exact byte and the other two to within one.
+pub enum SceneBackend {
+    Gpu(Box<krate_scene3d_gpu::GpuScene>),
+    Cpu(Box<Scene>),
+}
+
+impl SceneBackend {
+    /// Build a scene, preferring the GPU.
+    ///
+    /// `KRATE_SCENE3D=cpu` forces the software path. That exists because a
+    /// backend you cannot turn off is a backend you cannot bisect: when a
+    /// scene looks wrong, the first question is whether it looks wrong on
+    /// both, and answering it should not need a rebuild.
+    pub fn new(width: u32, height: u32) -> Result<Self, UiAdapterError> {
+        let forced = std::env::var("KRATE_SCENE3D").unwrap_or_default();
+        if !forced.eq_ignore_ascii_case("cpu") {
+            if let Some(gpu) = krate_scene3d_gpu::GpuScene::new(width, height) {
+                return Ok(SceneBackend::Gpu(Box::new(gpu)));
+            }
+        }
+        Ok(SceneBackend::Cpu(Box::new(Scene::new(width, height)?)))
+    }
+
+    pub fn backend(&self) -> Backend {
+        match self {
+            SceneBackend::Gpu(_) => Backend::Gpu,
+            SceneBackend::Cpu(_) => Backend::Cpu,
+        }
+    }
+
+    pub fn clear(&mut self, sky: u32) {
+        match self {
+            // The CPU path takes a packed `0xAARRGGBB` word because that is
+            // what its colour buffer holds; the GPU wants floats. Unpacking
+            // here keeps the host's one call site unaware of either.
+            SceneBackend::Gpu(gpu) => gpu.clear(unpack(sky)),
+            SceneBackend::Cpu(cpu) => cpu.clear(sky),
+        }
+    }
+
+    pub fn set_camera(&mut self, eye: [f32; 3], look_at: [f32; 3], fov_degrees: f32) {
+        match self {
+            SceneBackend::Gpu(gpu) => gpu.set_camera(eye, look_at, fov_degrees),
+            SceneBackend::Cpu(cpu) => cpu.set_camera(eye, look_at, fov_degrees),
+        }
+    }
+
+    pub fn set_cull_back_faces(&mut self, enabled: bool) {
+        match self {
+            SceneBackend::Gpu(gpu) => gpu.set_cull_back_faces(enabled),
+            SceneBackend::Cpu(cpu) => cpu.set_cull_back_faces(enabled),
+        }
+    }
+
+    pub fn set_light(&mut self, direction: [f32; 3]) {
+        match self {
+            SceneBackend::Gpu(gpu) => gpu.set_light(direction),
+            SceneBackend::Cpu(cpu) => cpu.set_light(direction),
+        }
+    }
+
+    pub fn upload_texture(
+        &mut self,
+        width: u32,
+        height: u32,
+        rgba: &[u8],
+    ) -> Result<u64, UiAdapterError> {
+        match self {
+            SceneBackend::Gpu(gpu) => gpu.upload_texture(width, height, rgba),
+            SceneBackend::Cpu(cpu) => cpu.upload_texture(width, height, rgba),
+        }
+    }
+
+    pub fn triangles(&mut self, vertices: &[f32], tint: (f32, f32, f32, f32)) {
+        match self {
+            SceneBackend::Gpu(gpu) => gpu.triangles(vertices, [tint.0, tint.1, tint.2, tint.3]),
+            SceneBackend::Cpu(cpu) => cpu.triangles(vertices, tint),
+        }
+    }
+
+    pub fn textured(
+        &mut self,
+        vertices: &[f32],
+        uvs: &[f32],
+        texture: u64,
+        tint: (f32, f32, f32, f32),
+    ) {
+        match self {
+            SceneBackend::Gpu(gpu) => {
+                gpu.textured(vertices, uvs, texture, [tint.0, tint.1, tint.2, tint.3])
+            }
+            SceneBackend::Cpu(cpu) => cpu.textured(vertices, uvs, texture, tint),
+        }
+    }
+
+    pub fn smooth(
+        &mut self,
+        vertices: &[f32],
+        normals: &[f32],
+        uvs: &[f32],
+        texture: u64,
+        tint: (f32, f32, f32, f32),
+    ) {
+        match self {
+            SceneBackend::Gpu(gpu) => gpu.smooth(
+                vertices,
+                normals,
+                uvs,
+                texture,
+                [tint.0, tint.1, tint.2, tint.3],
+            ),
+            SceneBackend::Cpu(cpu) => cpu.smooth(vertices, normals, uvs, texture, tint),
+        }
+    }
+
+    pub fn place(
+        &mut self,
+        vertices: &[f32],
+        translate: [f32; 3],
+        rotate_degrees: [f32; 3],
+        scale: f32,
+        tint: (f32, f32, f32, f32),
+    ) {
+        match self {
+            SceneBackend::Gpu(gpu) => gpu.place(
+                vertices,
+                translate,
+                rotate_degrees,
+                scale,
+                [tint.0, tint.1, tint.2, tint.3],
+            ),
+            SceneBackend::Cpu(cpu) => cpu.place(vertices, translate, rotate_degrees, scale, tint),
+        }
+    }
+
+    pub fn render_image(&mut self) -> Result<ImagePixels, UiAdapterError> {
+        match self {
+            SceneBackend::Gpu(gpu) => gpu.render_image(),
+            SceneBackend::Cpu(cpu) => cpu.render_image(),
+        }
+    }
+}
+
+/// `0xAARRGGBB` to the four floats the GPU path takes.
+fn unpack(word: u32) -> [f32; 4] {
+    let channel = |shift: u32| ((word >> shift) & 0xFF) as f32 / 255.0;
+    [channel(16), channel(8), channel(0), channel(24)]
+}
+
 /// Fill one horizontal band from the queued triangles.
 ///
 /// `first_row` is the band's offset in the full frame, so screen coordinates

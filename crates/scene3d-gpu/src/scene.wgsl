@@ -119,9 +119,13 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 
     let layer = i32(round(in.layer));
     let sampled = textureSample(atlas, atlas_sampler, in.uv, layer);
-    // The tint multiplies the sample and the shade scales the result, with the
-    // clamp AFTER the multiply -- which is what lets an app pass a tint over
-    // 1.0 to defeat the ambient floor, as the HUD in the racing game does.
-    let rgb = clamp(sampled.rgb * in.tint.rgb * shade, vec3<f32>(0.0), vec3<f32>(1.0));
-    return vec4<f32>(rgb, sampled.a * in.tint.a);
+    // The TINT is clamped to 0..1 before it multiplies anything, and the
+    // product is clamped again. Both, in that order, because that is what
+    // `shade_sample` does on the CPU side -- clamping only the product lets a
+    // tint above 1 brighten a surface, and the showcase's sky dome passes 2.6
+    // deliberately. On the CPU that 2.6 becomes 1.0 and the sky keeps its
+    // gradient; on the GPU, before this, it saturated the whole dome to white.
+    let tint = clamp(in.tint.rgb, vec3<f32>(0.0), vec3<f32>(1.0));
+    let rgb = clamp(sampled.rgb * tint * shade, vec3<f32>(0.0), vec3<f32>(1.0));
+    return vec4<f32>(rgb, sampled.a * clamp(in.tint.a, 0.0, 1.0));
 }
