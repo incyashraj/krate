@@ -343,6 +343,10 @@ struct Game {
     cam_look: [f32; 3],
     shake: f32,
     countdown_step: i32,
+    /// Put the camera exactly where it belongs on the next frame instead of
+    /// easing toward it, so a phase change does not sweep the view across the
+    /// world.
+    snap_camera: bool,
 }
 
 impl Game {
@@ -363,6 +367,7 @@ impl Game {
             cam_look: [0.0, 0.0, 0.0],
             shake: 0.0,
             countdown_step: -1,
+            snap_camera: true,
         }
     }
 
@@ -376,6 +381,7 @@ impl Game {
         self.last_lap_at = 0.0;
         self.shake = 0.0;
         self.countdown_step = -1;
+        self.snap_camera = true;
         self.phase = Phase::Countdown;
         self.phase_t = 0.0;
     }
@@ -512,13 +518,31 @@ fn build_hud(g: &Game, hud: &mut Hud) {
 
     match g.phase {
         Phase::Attract => {
-            // Three bars as a title block, and a prompt that pulses.
-            hud.rect(-1.2, 0.35, 2.4, 0.16);
-            hud.rect(-1.2, 0.08, 1.6, 0.16);
-            hud.rect(-1.2, -0.19, 2.0, 0.16);
+            // A chequered band instead of blank title bars.
+            //
+            // Three solid rectangles were standing in for a title, and they
+            // read as exactly what they were: three white boxes sitting over
+            // the circuit. There is no text available here (K-398), so the
+            // title screen says what it is with a racing motif rather than
+            // pretending to be lettering.
+            let cell = 0.13;
+            for row in 0..2 {
+                for col in 0..14 {
+                    if (row + col) % 2 == 0 {
+                        hud.rect(
+                            -0.91 + col as f32 * cell,
+                            0.42 - row as f32 * cell,
+                            cell,
+                            cell,
+                        );
+                    }
+                }
+            }
+            // A car-sized bar under it, and a prompt that pulses.
+            hud.rect(-0.30, 0.03, 0.60, 0.10);
             let pulse = sin_approx(g.phase_t * 3.0) * 0.5 + 0.5;
             if pulse > 0.45 {
-                hud.rect(-0.75, -0.95, 1.5, 0.10);
+                hud.rect(-0.55, -0.80, 1.10, 0.09);
             }
         }
         Phase::Countdown => {
@@ -943,17 +967,21 @@ impl krate::Guest for Component {
                 let me = &g.cars[0];
                 let (target_eye, target_look) = match g.phase {
                     Phase::Attract => {
-                        // A slow orbit of the start line, so the attract screen
-                        // shows the circuit rather than a parked car.
+                        // A slow orbit of the start line, high enough to look
+                        // OVER the scenery. At 55 units the grandstands are
+                        // between the camera and the circuit and the shot is
+                        // just a wall of boxes; the buildings scale to 10 units
+                        // times up to 3.6, so the camera has to clear ~36 by a
+                        // wide margin to see the road it is meant to show off.
                         let a = g.phase_t * 0.25;
                         let n = track.nodes[0];
                         (
                             [
-                                n.x + sin_approx(a) * 120.0,
-                                n.y + 55.0,
-                                n.z + cos_approx(a) * 120.0,
+                                n.x + sin_approx(a) * 190.0,
+                                n.y + 150.0,
+                                n.z + cos_approx(a) * 190.0,
                             ],
-                            [n.x, n.y + 4.0, n.z],
+                            [n.x, n.y, n.z],
                         )
                     }
                     _ => {
@@ -978,7 +1006,18 @@ impl krate::Guest for Component {
                 };
                 // Smoothing, frame-rate independent. A camera that snaps to the
                 // car transmits every bump into the whole picture.
-                let k = (7.5 * dt).min(1.0);
+                //
+                // The first frame snaps instead, and so does the frame a race
+                // starts on: easing from wherever the camera happened to be
+                // sweeps it across the whole world, which on frame one is a
+                // shot of the sky and on a restart is a lurch from the results
+                // screen.
+                let k = if frames == 0 || g.snap_camera {
+                    g.snap_camera = false;
+                    1.0
+                } else {
+                    (7.5 * dt).min(1.0)
+                };
                 for i in 0..3 {
                     g.cam[i] += (target_eye[i] - g.cam[i]) * k;
                     g.cam_look[i] += (target_look[i] - g.cam_look[i]) * k;
