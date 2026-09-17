@@ -856,6 +856,8 @@ fn node(id: u64, parent: Option<u64>, kind: types::WidgetKind) -> types::WidgetN
             height: None,
             grow: 1.0,
             padding: 0.0,
+            // The scene canvas and the overlay root carry no label, so no ink.
+            text: None,
         },
         checked: None,
         value: None,

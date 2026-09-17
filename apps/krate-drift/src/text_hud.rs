@@ -97,6 +97,8 @@ fn panel_node(parent: u64) -> types::WidgetNode {
             height: None,
             grow: 0.0,
             padding: 18.0,
+            // The panel paints nothing itself; each line carries its own ink.
+            text: None,
         },
         checked: None,
         value: None,
@@ -105,9 +107,41 @@ fn panel_node(parent: u64) -> types::WidgetNode {
     }
 }
 
+/// How a HUD line is inked: white, in a near-black outline, large.
+///
+/// The outline is doing the real work. This text sits over a 3D scene, so its
+/// background is whatever the camera is pointing at -- sky one moment, dark
+/// asphalt the next. The host's ordinary label colour measured 3.98:1 against
+/// the sky and 1.27:1 against the road, and the second of those is not
+/// readable. White in a dark outline reads at about 19:1 against its own
+/// outline wherever it is, and on the dark road where the outline itself
+/// disappears the white glyph is already high-contrast by itself.
+fn hud_text_style(size: f32, bold: bool) -> types::TextStyle {
+    types::TextStyle {
+        color: Some(types::Color {
+            r: 255,
+            g: 255,
+            b: 255,
+            a: 255,
+        }),
+        outline: Some(types::Color {
+            r: 10,
+            g: 12,
+            b: 18,
+            a: 235,
+        }),
+        outline_width: 2.0,
+        size: Some(size),
+        bold,
+    }
+}
+
 fn line_node(index: usize, text: &str) -> types::WidgetNode {
     let mut label = String::new();
     label.push_str(text);
+    // The first line is the headline -- the lap, the title, the result -- and
+    // is read at a glance at speed; the rest are read when there is a moment.
+    let (size, bold) = if index == 0 { (30.0, true) } else { (20.0, false) };
     types::WidgetNode {
         id: LINE_BASE + index as u64,
         parent: Some(PANEL_ID),
@@ -119,6 +153,7 @@ fn line_node(index: usize, text: &str) -> types::WidgetNode {
             height: None,
             grow: 0.0,
             padding: 0.0,
+            text: Some(hud_text_style(size, bold)),
         },
         checked: None,
         value: None,
