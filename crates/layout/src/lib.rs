@@ -389,6 +389,23 @@ fn build_taffy_node(
     if hidden {
         style.display = Display::None;
     }
+    // A child of an Overlay is pinned to the single cell.
+    //
+    // Declaring one row and one column is not enough on its own: taffy
+    // auto-places the second child into an IMPLICIT row after the first, so
+    // the scene got the window and the HUD got a zero-height strip below it.
+    // Naming line 1 for both axes puts every child in the same cell, which is
+    // what makes them overlap.
+    if is_overlay_child(tree, node) {
+        style.grid_row = taffy::geometry::Line {
+            start: taffy::style::GridPlacement::Line(1.into()),
+            end: taffy::style::GridPlacement::Auto,
+        };
+        style.grid_column = taffy::geometry::Line {
+            start: taffy::style::GridPlacement::Line(1.into()),
+            end: taffy::style::GridPlacement::Auto,
+        };
+    }
     let taffy_node = if children.is_empty() {
         taffy.new_leaf(style).map_err(map_taffy)?
     } else {
@@ -399,6 +416,14 @@ fn build_taffy_node(
 
     node_map.insert(widget, taffy_node);
     Ok(taffy_node)
+}
+
+/// Whether this node's parent is an Overlay, so it must be pinned to the one
+/// cell rather than auto-placed into a row of its own.
+fn is_overlay_child(tree: &WidgetTree, node: &WidgetNode) -> bool {
+    node.parent
+        .and_then(|parent| tree.node(parent))
+        .is_some_and(|parent| parent.kind == WidgetKind::Overlay)
 }
 
 /// Whether this node is a `tabs` panel that is not the selected one.
@@ -485,6 +510,43 @@ fn taffy_style_from_parts(
             width: Dimension::from_length(viewport.width),
             height: Dimension::from_length(viewport.height),
         };
+    }
+
+    // An Overlay is a one-cell GRID, not a flex container.
+    //
+    // Every other container divides its space between its children; this one
+    // gives each of them all of it. A single-cell grid does that, with each
+    // child pinned to line 1 on both axes (see `is_overlay_child`) and
+    // stretched to fill -- and it does so without absolute positioning, which
+    // would take the children out of the flow and stop the overlay sizing
+    // itself from them.
+    //
+    // Painting order is child order, so the LAST child is on top. That matches
+    // how every other container reads its children and how a person describes
+    // an overlay: the thing on top is the thing you mention last.
+    if matches!(kind, WidgetKind::Overlay) {
+        let mut style = Style {
+            display: Display::Grid,
+            grid_template_rows: vec![taffy::style_helpers::fr(1.0)],
+            grid_template_columns: vec![taffy::style_helpers::fr(1.0)],
+            size,
+            ..Default::default()
+        };
+        // An overlay fills its parent unless told otherwise. A HUD over a game
+        // that hugged its content would be a strip at the top of the window.
+        style.flex_grow = if widget_style.grow == 0.0 && widget_style.height.is_none() {
+            1.0
+        } else {
+            widget_style.grow
+        };
+        style.padding = taffy::geometry::Rect::length(widget_style.padding.max(0.0));
+        if is_root {
+            style.size = Size {
+                width: Dimension::from_length(viewport.width),
+                height: Dimension::from_length(viewport.height),
+            };
+        }
+        return style;
     }
 
     Style {
@@ -724,6 +786,64 @@ mod tests {
         assert_eq!(second.x, DEFAULT_ROOT_INSET);
         assert_eq!(second.y, DEFAULT_ROOT_INSET + 40.0 + DEFAULT_CONTAINER_GAP);
         assert_eq!((second.width, second.height), (100.0, 60.0));
+    }
+
+    #[test]
+    fn two_canvases_in_an_overlay_each_get_the_whole_container() {
+        // The reason Overlay exists. A 3D app wants a scene on one canvas and
+        // a HUD on another, on top. In a Stack the two canvases are laid out
+        // one above the other and each gets HALF the window, so the game is
+        // squashed into the top half and the HUD floats in the bottom half.
+        //
+        // In an Overlay both get all of it, at the same origin, and the second
+        // one paints over the first.
+        let root = WidgetNode::new(WidgetId::new(1).expect("root"), WidgetKind::Overlay);
+        let mut tree = WidgetTree::new(root).expect("tree");
+        for id in [2u64, 3] {
+            tree.upsert(
+                WidgetNode::new(WidgetId::new(id).expect("child"), WidgetKind::Canvas)
+                    .with_parent(tree.root()),
+            )
+            .expect("child");
+        }
+
+        let layout = compute_layout(&tree, LayoutViewport::new(400.0, 300.0).expect("viewport"))
+            .expect("layout");
+        let scene = layout
+            .rect(WidgetId::new(2).expect("scene"))
+            .expect("scene");
+        let hud = layout.rect(WidgetId::new(3).expect("hud")).expect("hud");
+
+        // Same rect, both of them, and it is the whole container.
+        assert_eq!(scene, hud, "an overlay gives every child the same rect");
+        assert_eq!(
+            (scene.width, scene.height),
+            (400.0, 300.0),
+            "an overlay child fills the container, it does not share it"
+        );
+        assert_eq!((scene.x, scene.y), (0.0, 0.0));
+
+        // And the contrast that makes the point: the same two canvases in a
+        // Stack split the height. If this ever stops being true the assertion
+        // above has stopped meaning anything.
+        let stack_root = WidgetNode::new(WidgetId::new(1).expect("root"), WidgetKind::Stack);
+        let mut stack = WidgetTree::new(stack_root).expect("tree");
+        for id in [2u64, 3] {
+            stack
+                .upsert(
+                    WidgetNode::new(WidgetId::new(id).expect("child"), WidgetKind::Canvas)
+                        .with_parent(stack.root()),
+                )
+                .expect("child");
+        }
+        let stacked = compute_layout(&stack, LayoutViewport::new(400.0, 300.0).expect("viewport"))
+            .expect("layout");
+        let a = stacked.rect(WidgetId::new(2).expect("a")).expect("a");
+        let b = stacked.rect(WidgetId::new(3).expect("b")).expect("b");
+        assert!(
+            a.height < 300.0 && b.y > a.y,
+            "a Stack shares the height between the two canvases: {a:?} then {b:?}"
+        );
     }
 
     #[test]

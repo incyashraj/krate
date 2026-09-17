@@ -2762,6 +2762,7 @@ fn widget_kind_from_wit(kind: ui::types::WidgetKind) -> WidgetKind {
         ui::types::WidgetKind::TreeView => WidgetKind::TreeView,
         ui::types::WidgetKind::Image => WidgetKind::Image,
         ui::types::WidgetKind::Canvas => WidgetKind::Canvas,
+        ui::types::WidgetKind::Overlay => WidgetKind::Overlay,
     }
 }
 

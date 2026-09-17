@@ -310,6 +310,14 @@ pub enum WidgetKind {
     /// An image view, carrying decoded pixels in `WidgetNode::pixels`.
     Image,
     Canvas,
+    /// A container whose children all fill it and paint back to front.
+    ///
+    /// Every other container divides its space between its children. This one
+    /// gives each of them all of it, so a HUD sits over a game and a caption
+    /// sits over a photo. Without it a 3D app could not have a HUD at all: a
+    /// canvas holding the scene and a canvas holding the overlay were laid out
+    /// one above the other, each getting half the window.
+    Overlay,
 }
 
 /// The largest picture one image widget may carry.

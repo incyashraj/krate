@@ -68,6 +68,7 @@ impl AppKitWidgetPlacement {
                 | WidgetKind::Stack
                 | WidgetKind::Grid
                 | WidgetKind::Tabs
+                | WidgetKind::Overlay
         )
     }
 
@@ -1991,7 +1992,8 @@ mod platform {
                     | WidgetKind::Scroll
                     | WidgetKind::Stack
                     | WidgetKind::Grid
-                    | WidgetKind::Tabs => {
+                    | WidgetKind::Tabs
+                    | WidgetKind::Overlay => {
                         // A layout container paints nothing itself on macOS: its
                         // children are separate placements. Lower it as an empty,
                         // non-editable label so ids and hit testing stay
