@@ -577,6 +577,15 @@ fn draw(
     // The road wears a normal map when the renderer has one, so the chippings
     // are bumps the light reacts to rather than speckle painted on a flat
     // sheet. Falls back to the plain textured path otherwise.
+    // The road is tinted DOWN at the draw call, not darkened in its texture.
+    //
+    // The texture has to be light enough to survive the lighting -- at a true
+    // asphalt albedo the road clipped to pure black over 15% of the frame.
+    // Lifting it fixed that and turned the road into concrete. The tint is
+    // where the two are reconciled: a bright texture carrying its detail,
+    // multiplied down to the tone asphalt actually is, with the detail
+    // surviving the multiply because it was never crushed in the first place.
+    let tarmac = rgb(0.52, 0.52, 0.56);
     if art.road_normals != 0 {
         scene3d::normal_mapped(
             scene,
@@ -586,10 +595,10 @@ fn draw(
             &track.road_uv,
             art.asphalt,
             art.road_normals,
-            white,
+            tarmac,
         )?;
     } else {
-        scene3d::textured(scene, &track.road, &track.road_uv, art.asphalt, white)?;
+        scene3d::textured(scene, &track.road, &track.road_uv, art.asphalt, tarmac)?;
     }
     // Painted markings, over the asphalt and under everything else.
     //
@@ -1310,12 +1319,24 @@ impl krate::Guest for Component {
                 // shade rather than as a slightly darker grey.
                 // Low, because the fill light does this work now and a low
                 // floor is what lets a shadow read as shade.
-                ambient: 0.14,
+                // Raised from 0.14. A low sun plus a dark albedo left the
+                // road and the shaded hillsides with no detail at all -- 15%
+                // of the frame measured as pure black. Ambient is what a
+                // surface still reflects when nothing is shining on it, and
+                // at 0.14 the answer was "nothing".
+                // 0.22 rather than 0.30: enough that shade keeps its detail,
+                // not so much that the whole picture flattens toward grey.
+                ambient: 0.22,
                 // Cars are painted metal and the road is wet-looking asphalt;
                 // both want a highlight, and it is most of what stops a car
                 // reading as a coloured box.
-                specular: 0.45,
-                shininess: 40.0,
+                // Tighter and weaker. At 0.45/40 the sun's highlight spread
+                // across whole hillsides as a blown-out white smear rather
+                // than a glint -- a specular lobe that wide is not a
+                // reflection, it is a wash. A tighter shininess puts the
+                // highlight where a highlight belongs: on the cars.
+                specular: 0.30,
+                shininess: 96.0,
                 // The circuit is two kilometres round and the camera sees
                 // maybe four hundred units of it. This puts air between the
                 // near kerb and the far treeline.

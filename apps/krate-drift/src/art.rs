@@ -67,7 +67,16 @@ pub fn asphalt() -> Texture {
             // with a slight mottle, not a field of gravel -- the fine noise
             // is what the eye reads as texture up close and must not dominate
             // the mid-distance, where most of the road on screen is.
-            let v = 46.0 + coarse * 12.0 + mid * 7.0 + fine * 5.0;
+            // Lighter than real asphalt, on purpose.
+            //
+            // 46/255 is about what tarmac reflects, and under a low sun with
+            // ambient at 0.14 it multiplies down to nothing: measured, the
+            // road was 15% of the frame at pure black, which is not a dark
+            // surface, it is a hole with the kerb floating beside it. A game
+            // surface has to survive its own lighting, so the albedo is lifted
+            // until the LIT result reads as asphalt rather than the raw value
+            // matching a photometer.
+            let v = 88.0 + coarse * 20.0 + mid * 12.0 + fine * 9.0;
 
             // The wheel tracks are drawn in WORLD space by the road mesh's
             // own shading, not baked in here.
