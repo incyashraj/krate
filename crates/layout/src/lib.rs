@@ -1436,6 +1436,9 @@ mod tests {
                     .then_some(20.0 + f32::from((id % 5) as u8) * 7.0),
                 grow: if id % 5 == 0 { 1.0 } else { 0.0 },
                 padding: f32::from(((id + u64::from(shape)) % 3) as u8),
+                // Layout does not read the text style; a label's ink and size
+                // are the painters' business.
+                ..WidgetStyle::default()
             };
             let node = WidgetNode::new(WidgetId::new(id).expect("id"), kind)
                 .with_parent(parent)

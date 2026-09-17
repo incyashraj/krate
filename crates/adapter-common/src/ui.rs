@@ -381,6 +381,93 @@ pub struct WidgetStyle {
     pub height: Option<f32>,
     pub grow: f32,
     pub padding: f32,
+    /// How this widget's label is inked, when the app asked for something
+    /// other than the host's ordinary label style.
+    pub text: Option<TextStyle>,
+}
+
+/// An 8-bit colour, as a widget names one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Color {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+    pub a: u8,
+}
+
+impl Color {
+    /// The colour as the painters want it: `0xAARRGGBB`.
+    pub fn argb(self) -> u32 {
+        (u32::from(self.a) << 24)
+            | (u32::from(self.r) << 16)
+            | (u32::from(self.g) << 8)
+            | u32::from(self.b)
+    }
+}
+
+/// How a label is inked, for text drawn over something the app does not
+/// control.
+///
+/// The `outline` is the part that matters for a HUD. A light glyph with a
+/// dark outline reads at about 19:1 against its own outline whatever is
+/// behind it; where the outline vanishes (dark asphalt, shadow) the light
+/// glyph is already high-contrast against that background by itself. One
+/// fixed colour cannot do that, which is what K-402 was.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TextStyle {
+    /// Ink colour, or the host's ordinary label colour when `None`.
+    pub color: Option<Color>,
+    /// Outline colour, or no outline when `None`.
+    pub outline: Option<Color>,
+    /// Outline thickness in logical pixels.
+    pub outline_width: f32,
+    /// Font size in logical pixels, or the host's default when `None`.
+    pub size: Option<f32>,
+    /// Draw the label bold.
+    pub bold: bool,
+}
+
+impl TextStyle {
+    /// The widest outline a host will draw.
+    ///
+    /// A guest names this number, so it is bounded here rather than trusted:
+    /// the painter strokes the glyph once per offset in a ring of this
+    /// radius, so an unbounded width is an unbounded amount of host work per
+    /// label per frame. Three logical pixels is already a heavier outline
+    /// than any HUD wants.
+    pub const MAX_OUTLINE_WIDTH: f32 = 3.0;
+
+    /// The range of font sizes a host will honour.
+    ///
+    /// Below the floor a label is not readable and is usually a unit mistake;
+    /// above the ceiling one label can cost a whole frame to lay out.
+    pub const MIN_SIZE: f32 = 6.0;
+    pub const MAX_SIZE: f32 = 96.0;
+
+    /// Clamp everything a guest can name into what a host will draw.
+    ///
+    /// Non-finite values fall back to the default rather than being clamped:
+    /// a NaN width is not a big width, it is an app bug, and passing it on
+    /// would put a NaN into a layout.
+    pub fn sanitized(self) -> Self {
+        let outline_width = if self.outline_width.is_finite() {
+            self.outline_width.clamp(0.0, Self::MAX_OUTLINE_WIDTH)
+        } else {
+            0.0
+        };
+        let size = self.size.and_then(|size| {
+            size.is_finite()
+                .then(|| size.clamp(Self::MIN_SIZE, Self::MAX_SIZE))
+        });
+        Self {
+            color: self.color,
+            // An outline of zero width is no outline, however it is coloured.
+            outline: (outline_width > 0.0).then_some(self.outline).flatten(),
+            outline_width,
+            size,
+            bold: self.bold,
+        }
+    }
 }
 
 impl Default for WidgetStyle {
@@ -388,6 +475,7 @@ impl Default for WidgetStyle {
         Self {
             width: None,
             height: None,
+            text: None,
             grow: 0.0,
             padding: 0.0,
         }
@@ -1191,6 +1279,37 @@ pub struct WidgetPlacement {
     /// more time and memory than drawing it; the `Arc` makes a frame cost a
     /// refcount instead.
     pub pixels: Option<Arc<ImagePixels>>,
+    /// How this placement's label is inked, when the app asked for something
+    /// other than the host's ordinary label style. Already sanitized.
+    pub text: Option<TextStyle>,
+}
+
+impl Default for WidgetPlacement {
+    /// An empty placement, for tests to build on with `..Default::default()`.
+    ///
+    /// Added because every new field on this struct broke six test fixtures
+    /// that spell out all of them. A fixture should name the fields it cares
+    /// about and inherit the rest.
+    fn default() -> Self {
+        Self {
+            widget: WidgetId::new(1).expect("1 is a valid widget id"),
+            kind: WidgetKind::Text,
+            label: None,
+            checked: None,
+            value: None,
+            selection: None,
+            text_cursor: None,
+            clip: None,
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+            clickable: false,
+            role: None,
+            pixels: None,
+            text: None,
+        }
+    }
 }
 
 /// One raw pointer sample from a native backend, before hit testing.

@@ -49,6 +49,7 @@ fn generated_stack_tree(node_count: u64) -> WidgetTree {
             height: (id % 3 == 0).then_some(24.0),
             grow: if id % 7 == 0 { 1.0 } else { 0.0 },
             padding: if id % 11 == 0 { 2.0 } else { 0.0 },
+            ..WidgetStyle::default()
         };
         let node = WidgetNode::new(WidgetId::new(id).expect("id"), kind)
             .with_parent(WidgetId::new(parent).expect("parent"))

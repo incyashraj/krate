@@ -874,6 +874,7 @@ mod tests {
             clickable: false,
             role: None,
             pixels: None,
+            text: None,
         }
     }
 

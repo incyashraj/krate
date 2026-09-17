@@ -911,6 +911,7 @@ mod tests {
             width: 100.0,
             height: 20.0,
             pixels: None,
+            text: None,
         };
         // No native session exists in tests; the call used to fail while
         // converting the unsupported kind, before even reaching a session.

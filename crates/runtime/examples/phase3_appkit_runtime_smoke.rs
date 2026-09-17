@@ -57,6 +57,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 height: Some(480.0),
                 grow: 0.0,
                 padding: 16.0,
+                ..WidgetStyle::default()
             },
             checked: None,
             value: None,

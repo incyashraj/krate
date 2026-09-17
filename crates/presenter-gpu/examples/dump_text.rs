@@ -20,6 +20,7 @@ fn main() {
         y: 10.0,
         width: 180.0,
         height: 32.0,
+        text: None,
     };
     let placements = vec![button];
     let interaction = PaintInteraction {

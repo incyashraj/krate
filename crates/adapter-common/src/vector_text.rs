@@ -95,6 +95,27 @@ impl TextEngine {
         self.layout_text(text, scale, None)
     }
 
+    /// Lay out one line of label text at an explicit font size.
+    ///
+    /// The widget path normally fixes the size at `LABEL_FONT_SIZE` and varies
+    /// the display scale. A label that names its own size (K-402) needs both:
+    /// the size it asked for, still multiplied by the display scale, so a HUD
+    /// reading 28px looks the same on a retina panel as on a plain one.
+    fn layout_label_sized(&mut self, text: &str, scale: f32, size: f32, bold: bool) -> Layout<()> {
+        let mut builder = self
+            .layout_cx
+            .ranged_builder(&mut self.font_cx, text, scale, true);
+        builder.push_default(GenericFamily::SansSerif);
+        builder.push_default(StyleProperty::FontSize(size));
+        if bold {
+            builder.push_default(StyleProperty::FontWeight(parley::FontWeight::BOLD));
+        }
+        let mut layout = builder.build(text);
+        layout.break_all_lines(None);
+        layout.align(Alignment::Start, AlignmentOptions::default());
+        layout
+    }
+
     /// Lay out text, wrapping to `max_width` when one is given.
     ///
     /// A single-line field passes `None` and gets the old behavior. A text
@@ -617,6 +638,64 @@ fn fill_rounded(ctx: &mut RenderContext, color: u32, x: f32, y: f32, w: f32, h: 
 }
 
 /// Draw one laid-out label with its top-left corner at `(x, y)`.
+/// Draw a label with an outline around it, then the label itself.
+///
+/// The outline is the same glyph run stroked at a ring of offsets and inked
+/// in the outline colour, drawn before the fill so the fill lands on top. A
+/// ring of eight is what makes a closed edge: four (up, down, left, right)
+/// leaves the diagonals of a glyph bare, and a round `O` shows the gap.
+///
+/// This is the whole answer to K-402. A label over a 3D scene has no fixed
+/// background, so no fixed ink colour can be readable against it -- measured
+/// on the racing game, one near-black sat at 3.98:1 against sky and 1.27:1
+/// against asphalt. A light glyph in a dark outline reads at about 19:1
+/// against its own outline whatever is behind it, and where the outline
+/// itself disappears into a dark background the light glyph is already
+/// high-contrast there by itself.
+///
+/// Returns the glyph count of the FILL pass, so a caller can still tell that
+/// a host produced no glyphs at all and fall back to the bitmap painter.
+#[allow(clippy::too_many_arguments)]
+fn draw_layout_styled(
+    ctx: &mut RenderContext,
+    resources: &mut Resources,
+    layout: &Layout<()>,
+    color: u32,
+    x: f32,
+    y: f32,
+    outline: Option<(u32, f32)>,
+    scale: f32,
+) -> usize {
+    if let Some((outline_color, width)) = outline {
+        // Logical pixels, so an outline is the same thickness on a retina
+        // panel as on a plain one.
+        let w = width * scale;
+        if w > 0.0 {
+            const RING: [(f32, f32); 8] = [
+                (-1.0, -1.0),
+                (0.0, -1.0),
+                (1.0, -1.0),
+                (-1.0, 0.0),
+                (1.0, 0.0),
+                (-1.0, 1.0),
+                (0.0, 1.0),
+                (1.0, 1.0),
+            ];
+            for (dx, dy) in RING {
+                draw_layout(
+                    ctx,
+                    resources,
+                    layout,
+                    outline_color,
+                    x + dx * w,
+                    y + dy * w,
+                );
+            }
+        }
+    }
+    draw_layout(ctx, resources, layout, color, x, y)
+}
+
 fn draw_layout(
     ctx: &mut RenderContext,
     resources: &mut Resources,
@@ -1044,14 +1123,35 @@ pub fn try_paint_placements(
             if label.is_empty() {
                 continue;
             }
-            let layout = engine.layout_label(label, scale);
+            // What the app asked for, if it asked. `sanitized` has already
+            // bounded every number by the time a placement reaches a painter.
+            let style = placement.text;
+            let layout = match style.and_then(|s| s.size.map(|size| (size, s.bold))) {
+                Some((size, bold)) => engine.layout_label_sized(label, scale, size, bold),
+                None => engine.layout_label(label, scale),
+            };
+            let ink = style
+                .and_then(|s| s.color)
+                .map(|c| c.argb())
+                .unwrap_or(text_color);
+            let outline = style.and_then(|s| s.outline.map(|c| (c.argb(), s.outline_width)));
             let (tw, th) = (layout.width(), layout.height());
             let tx = match inset {
                 Some(inset) => px + inset,
                 None => px + (pw - tw) / 2.0,
             };
             let ty = py + (ph - th) / 2.0;
-            if draw_layout(&mut ctx, &mut resources, &layout, text_color, tx, ty) == 0 {
+            if draw_layout_styled(
+                &mut ctx,
+                &mut resources,
+                &layout,
+                ink,
+                tx,
+                ty,
+                outline,
+                scale,
+            ) == 0
+            {
                 return false;
             }
         }
@@ -1123,7 +1223,148 @@ pub fn try_paint_placements(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::WidgetId;
+    use crate::ui::{Color, TextStyle, WidgetId};
+
+    #[test]
+    fn an_outlined_label_reads_against_a_background_its_own_colour() {
+        // K-402. The worst case for a HUD: white text over a background that
+        // is ALSO white. With one fixed ink colour there is nothing to read;
+        // the outline is what draws the edge.
+        let (w, h) = (200u32, 60u32);
+        let white = Color {
+            r: 255,
+            g: 255,
+            b: 255,
+            a: 255,
+        };
+        let ink = Color {
+            r: 10,
+            g: 12,
+            b: 18,
+            a: 255,
+        };
+
+        let mut rgba = Vec::with_capacity((w * h * 4) as usize);
+        for _ in 0..(w * h) {
+            rgba.extend_from_slice(&[255, 255, 255, 255]);
+        }
+        let canvas = WidgetPlacement {
+            widget: WidgetId::new(1).unwrap(),
+            kind: WidgetKind::Canvas,
+            label: None,
+            checked: None,
+            value: None,
+            selection: None,
+            text_cursor: None,
+            clip: None,
+            x: 0.0,
+            y: 0.0,
+            width: w as f32,
+            height: h as f32,
+            clickable: false,
+            role: None,
+            pixels: Some(std::sync::Arc::new(
+                ImagePixels::new(w, h, rgba).expect("white background"),
+            )),
+            text: None,
+        };
+
+        let label = |style: Option<TextStyle>| WidgetPlacement {
+            widget: WidgetId::new(2).unwrap(),
+            kind: WidgetKind::Text,
+            label: Some("LAP 1 OF 3".to_string()),
+            pixels: None,
+            x: 6.0,
+            y: 6.0,
+            width: 180.0,
+            height: 30.0,
+            text: style,
+            ..canvas.clone()
+        };
+
+        let paint = |style: Option<TextStyle>| -> Option<Vec<u32>> {
+            let mut buffer = vec![0u32; (w * h) as usize];
+            try_paint_placements(
+                &mut buffer,
+                w,
+                h,
+                1.0,
+                &[canvas.clone(), label(style)],
+                PaintInteraction::default(),
+            )
+            .then_some(buffer)
+        };
+
+        // White text, NO outline, on white: nothing to see.
+        let plain = TextStyle {
+            color: Some(white),
+            outline: None,
+            outline_width: 0.0,
+            size: Some(24.0),
+            bold: true,
+        };
+        let Some(without) = paint(Some(plain.sanitized())) else {
+            eprintln!("skipping: no usable system fonts on this host");
+            return;
+        };
+        let dark_without = without
+            .iter()
+            .filter(|v| ((**v >> 16) & 0xFF) < 128)
+            .count();
+
+        // The same text WITH an outline: the edge is now drawn.
+        let outlined = TextStyle {
+            outline: Some(ink),
+            outline_width: 2.0,
+            ..plain
+        };
+        let with = paint(Some(outlined.sanitized())).expect("fonts were available a moment ago");
+        let dark_with = with.iter().filter(|v| ((**v >> 16) & 0xFF) < 128).count();
+
+        assert_eq!(
+            dark_without, 0,
+            "white on white must be invisible, or this test proves nothing"
+        );
+        assert!(
+            dark_with > 200,
+            "the outline must draw a readable edge; found {dark_with} dark pixels"
+        );
+    }
+
+    #[test]
+    fn a_text_style_is_bounded_before_it_reaches_a_painter() {
+        // A guest names these numbers, so they are clamped rather than
+        // trusted. An unbounded outline is unbounded host work per label per
+        // frame, and a NaN would travel into a layout.
+        let wild = TextStyle {
+            color: None,
+            outline: Some(Color {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 255,
+            }),
+            outline_width: 4000.0,
+            size: Some(100_000.0),
+            bold: false,
+        }
+        .sanitized();
+        assert_eq!(wild.outline_width, TextStyle::MAX_OUTLINE_WIDTH);
+        assert_eq!(wild.size, Some(TextStyle::MAX_SIZE));
+
+        let nan = TextStyle {
+            outline_width: f32::NAN,
+            size: Some(f32::NAN),
+            ..wild
+        }
+        .sanitized();
+        assert_eq!(nan.outline_width, 0.0, "a NaN width is a bug, not a width");
+        assert_eq!(nan.size, None, "a NaN size falls back to the host default");
+        assert!(
+            nan.outline.is_none(),
+            "a zero-width outline is no outline, whatever colour it names"
+        );
+    }
 
     #[test]
     fn a_label_over_a_full_window_canvas_survives_the_blit() {
@@ -1162,6 +1403,7 @@ mod tests {
             clickable: false,
             role: None,
             pixels: Some(pixels),
+            text: None,
         };
         let label = WidgetPlacement {
             widget: WidgetId::new(2).unwrap(),
@@ -1251,6 +1493,7 @@ mod tests {
             clickable: false,
             role: None,
             pixels: None,
+            text: None,
         }];
         if !try_paint_placements(
             &mut buffer,
@@ -1311,6 +1554,7 @@ mod tests {
             clickable: false,
             role: None,
             pixels: Some(std::sync::Arc::new(red)),
+            text: None,
         }];
         assert!(try_paint_placements(
             &mut buffer,
@@ -1362,6 +1606,7 @@ mod tests {
             clickable: false,
             role: None,
             pixels: None,
+            text: None,
         };
         let placements = [button];
         let mut plain = vec![0u32; (w * h) as usize];
@@ -1425,6 +1670,7 @@ mod text_area_tests {
             clickable: false,
             role: None,
             pixels: None,
+            text: None,
         }
     }
 

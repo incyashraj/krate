@@ -61,6 +61,7 @@ fn main() {
                 y: 40.0 + (phase.cos() * 0.5 + 0.5) * 520.0,
                 width: 32.0,
                 height: 32.0,
+                text: None,
             };
             p.x = p.x.round();
             p.y = p.y.round();
@@ -82,6 +83,7 @@ fn main() {
             y: 12.0,
             width: 200.0,
             height: 20.0,
+            text: None,
         };
         placements.push(score.clone());
         score.widget = WidgetId::new(2).unwrap();

@@ -131,6 +131,7 @@ pub fn lay_out(tree: &WidgetTree, width: f32, height: f32) -> Vec<WidgetPlacemen
             clickable: false,
             role: node.role.clone(),
             pixels: None,
+            text: None,
         });
     }
     placements
@@ -340,6 +341,7 @@ mod tests {
             clickable: true,
             role: None,
             pixels: None,
+            text: None,
         }
     }
 
@@ -394,6 +396,7 @@ mod tests {
             height: None,
             grow: 1.0,
             padding: 12.0,
+            ..WidgetStyle::default()
         };
         let mut tree = WidgetTree::new(root).expect("root");
 
@@ -405,6 +408,7 @@ mod tests {
             height: Some(30.0),
             grow: 0.0,
             padding: 0.0,
+            ..WidgetStyle::default()
         };
         tree.upsert(child).expect("child");
 
