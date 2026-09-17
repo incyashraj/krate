@@ -405,3 +405,65 @@ pub fn sky(sun_u: f32) -> Texture {
     }
     t
 }
+
+/// Road markings: three bands in one texture.
+///
+/// `u` 0.00-0.33 is a DASHED line, 0.33-0.66 is a SOLID line, and the rest is
+/// clear. One upload serves the centre line and both lane edges, which
+/// matters because each texture is a separate draw call and a road that
+/// needed three of them would cost three.
+///
+/// `v` runs with distance along the road, so the dash rhythm is set here in
+/// texture space and comes out the same length whatever the node spacing.
+///
+/// The paint is not pure white. Road paint weathers grey-cream and picks up
+/// the surface under it; pure white reads as a decal laid on top rather than
+/// as something painted onto asphalt and driven over.
+pub fn markings() -> Texture {
+    const W: u32 = 64;
+    const H: u32 = 128;
+    let mut t = blank(W, H);
+
+    for y in 0..H {
+        for x in 0..W {
+            let u = x as f32 / W as f32;
+            let n = hash2(x as i32, y as i32);
+
+            // Which band, and is the paint present at this v?
+            let (in_band, painted) = if u < 0.33 {
+                // Dashed: 56 on, 72 off, over the 128-row tile.
+                let across = (0.04..0.29).contains(&u);
+                (across, y < 56)
+            } else if u < 0.66 {
+                // Solid.
+                ((0.38..0.62).contains(&u), true)
+            } else {
+                (false, false)
+            };
+
+            if in_band && painted {
+                // Weathered: the paint thins in patches, and the asphalt
+                // under it shows through where it has worn.
+                let wear = hash2(x as i32 / 3, y as i32 / 7);
+                let v = if wear > 0.80 {
+                    138.0 + n * 46.0
+                } else {
+                    198.0 + n * 40.0
+                };
+                put(&mut t, x, y, v, v * 0.99, v * 0.93);
+            } else {
+                // Clear. Alpha 0 so the asphalt shows: `textured` multiplies
+                // by the texel's alpha, so a transparent texel leaves what is
+                // underneath alone.
+                let i = ((y * W + x) * 4) as usize;
+                if i + 3 < t.rgba.len() {
+                    t.rgba[i] = 0;
+                    t.rgba[i + 1] = 0;
+                    t.rgba[i + 2] = 0;
+                    t.rgba[i + 3] = 0;
+                }
+            }
+        }
+    }
+    t
+}

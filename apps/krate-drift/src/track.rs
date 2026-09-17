@@ -47,6 +47,16 @@ pub struct Track {
     /// Triangles for the kerbs either side, and their UVs.
     pub kerb: Vec<f32>,
     pub kerb_uv: Vec<f32>,
+    /// Painted markings -- the centre line and the two lane edges -- as their
+    /// own strip lying just above the road, with UVs into `art::markings`.
+    ///
+    /// World space, not baked into the asphalt tile. A dashed line baked into
+    /// a tile repeats with the tile, at whatever angle the road happens to be
+    /// pointing, which reads as wallpaper rather than as paint. Paint follows
+    /// the road, so it has to be built along the centreline like the road
+    /// itself.
+    pub paint: Vec<f32>,
+    pub paint_uv: Vec<f32>,
 }
 
 /// Height of the land at a point, so the circuit rises and falls.
@@ -153,6 +163,8 @@ pub fn build(seed: u32, points: usize) -> Track {
         road_tangents: built.5,
         kerb: built.2,
         kerb_uv: built.3,
+        paint: built.6,
+        paint_uv: built.7,
     }
 }
 
@@ -163,7 +175,16 @@ pub fn build(seed: u32, points: usize) -> Track {
 /// clockwise seen from above, which back-face culling drops, and the ground
 /// then vanishes from under the car while distant geometry survives at its
 /// grazing angle. That failure looks like a camera bug and is not one.
-type Surfaces = (Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>);
+type Surfaces = (
+    Vec<f32>,
+    Vec<f32>,
+    Vec<f32>,
+    Vec<f32>,
+    Vec<f32>,
+    Vec<f32>,
+    Vec<f32>,
+    Vec<f32>,
+);
 
 fn surface(nodes: &[Node]) -> Surfaces {
     let n = nodes.len();
@@ -172,6 +193,8 @@ fn surface(nodes: &[Node]) -> Surfaces {
     let mut road_normals = Vec::with_capacity(n * 18);
     let mut road_tangents = Vec::with_capacity(n * 18);
     let mut kerb = Vec::with_capacity(n * 36);
+    let mut paint = Vec::with_capacity(n * 54);
+    let mut paint_uv = Vec::with_capacity(n * 36);
     let mut kerb_uv = Vec::with_capacity(n * 24);
 
     // Slightly above the land so the road is never z-fighting with the grass.
@@ -256,8 +279,68 @@ fn surface(nodes: &[Node]) -> Surfaces {
         // is what the untextured version had to do.
         quad(ROAD_HALF + kerb_w, ROAD_HALF, 0.0, 1.0, &mut kerb, &mut kerb_uv);
         quad(-ROAD_HALF, -ROAD_HALF - kerb_w, 1.0, 0.0, &mut kerb, &mut kerb_uv);
+
+        // Painted markings: a dashed centre line and a solid line inside each
+        // kerb, lifted a few millimetres above the asphalt.
+        //
+        // Lifted, because two coplanar surfaces fight for the same depth
+        // values and the result is z-fighting -- a shimmer along the line that
+        // is far worse than having no line. Three millimetres is under a
+        // wheel's notice and above the depth buffer's.
+        //
+        // `v` runs with distance so the dashes stay the same length whatever
+        // the node spacing; `u` picks which band of the markings texture a
+        // strip samples, so all three lines come from one upload.
+        let paint_v0 = c.along * 0.25;
+        let paint_v1 = paint_v0 + seg * 0.25;
+        let mut stripe = |w0: f32, w1: f32, u0: f32, u1: f32| {
+            let lift = lift + 0.03;
+            let al = [c.x + cnx * w0, c.y + lift, c.z + cnz * w0];
+            let ar = [c.x + cnx * w1, c.y + lift, c.z + cnz * w1];
+            let bl = [d.x + dnx * w0, d.y + lift, d.z + dnz * w0];
+            let br = [d.x + dnx * w1, d.y + lift, d.z + dnz * w1];
+            let uv = [
+                [u0, paint_v0],
+                [u0, paint_v1],
+                [u1, paint_v0],
+                [u1, paint_v0],
+                [u0, paint_v1],
+                [u1, paint_v1],
+            ];
+            for (p, t) in [al, bl, ar, ar, bl, br].iter().zip(uv.iter()) {
+                paint.push(p[0]);
+                paint.push(p[1]);
+                paint.push(p[2]);
+                paint_uv.push(t[0]);
+                paint_uv.push(t[1]);
+            }
+        };
+        // Real road-marking widths, not decorative ones.
+        //
+        // The first pass used 0.68m for the centre and 0.6m for the edges. A
+        // painted line is about 15cm wide in reality, but a 15cm line on a
+        // 22m road seen from a chase camera is under a pixel at any distance
+        // and vanishes into the aggregate. These are painted wide -- 0.5m for
+        // the dashes, 0.4m for the edges -- because a line that cannot be
+        // seen is not a line, and because this road is twice the width of a
+        // real one anyway.
+        //
+        // A 22m carriageway is two lanes, so the edges sit about 1.6m inside
+        // the kerb, which is where a real road puts them.
+        stripe(0.25, -0.25, 0.02, 0.31);
+        stripe(ROAD_HALF - 1.6, ROAD_HALF - 2.0, 0.36, 0.64);
+        stripe(-ROAD_HALF + 2.0, -ROAD_HALF + 1.6, 0.36, 0.64);
     }
-    (road, road_uv, kerb, kerb_uv, road_normals, road_tangents)
+    (
+        road,
+        road_uv,
+        kerb,
+        kerb_uv,
+        road_normals,
+        road_tangents,
+        paint,
+        paint_uv,
+    )
 }
 
 /// Where a point sits relative to the track.

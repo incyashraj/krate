@@ -434,3 +434,82 @@ pub fn bush(size: f32) -> Build {
     }
     m
 }
+
+/// The car's glass: windscreen, rear screen and side windows.
+///
+/// Its own mesh so it can be drawn in a different colour from the body. On
+/// the body mesh these were part of the shell and took the car's paint, so
+/// every car had opaque coloured panels where its windows should be -- which
+/// is most of why they read as tinted solids rather than as vehicles.
+///
+/// The surfaces here are the SAME planes the body's cabin uses, lifted a
+/// millimetre clear so they land on top rather than fighting for depth.
+pub fn car_glass() -> Build {
+    let mut m = Build::new();
+    let roof_y = 1.62;
+    let (wind_z0, wind_z1) = (0.30, 1.05);
+    let (rear_z1, rear_z0) = (-1.70, -1.05);
+    let w = 0.915;
+    let wr = w * 0.92;
+    let sill = 1.03;
+    let e = 0.012;
+
+    // Windscreen and rear screen.
+    m.quad(
+        [-w, sill, wind_z1],
+        [w, sill, wind_z1],
+        [wr, roof_y + e, wind_z0],
+        [-wr, roof_y + e, wind_z0],
+    );
+    m.quad(
+        [-wr, roof_y + e, rear_z0],
+        [wr, roof_y + e, rear_z0],
+        [w, sill, rear_z1],
+        [-w, sill, rear_z1],
+    );
+    // Side windows.
+    for side in [-1.0f32, 1.0] {
+        let x = (w + e) * side;
+        let xr = (wr + e) * side;
+        if side < 0.0 {
+            m.quad(
+                [x, sill, wind_z1],
+                [xr, roof_y, wind_z0],
+                [xr, roof_y, rear_z0],
+                [x, sill, rear_z1],
+            );
+        } else {
+            m.quad(
+                [x, sill, rear_z1],
+                [xr, roof_y, rear_z0],
+                [xr, roof_y, wind_z0],
+                [x, sill, wind_z1],
+            );
+        }
+    }
+    m
+}
+
+/// The car's lights: two at the front, two at the back.
+///
+/// Drawn unlit so they GLOW rather than being shaded like paint. A headlight
+/// that dims when the car turns away from the sun is a white rectangle; one
+/// that holds its brightness reads as something switched on, and at a sunset
+/// that is the difference between a car and a model of a car.
+///
+/// Returns (front, rear) separately so they can take different colours.
+pub fn car_lights() -> (Build, Build) {
+    let mut front = Build::new();
+    let mut rear = Build::new();
+    // Front: two lenses set into the nose, angled slightly outward.
+    for side in [-1.0f32, 1.0] {
+        let x = 0.40 * side;
+        front.cuboid([x - 0.22, 0.52, 2.18], [x + 0.22, 0.74, 2.30]);
+    }
+    // Rear: a wider pair, lower.
+    for side in [-1.0f32, 1.0] {
+        let x = 0.52 * side;
+        rear.cuboid([x - 0.26, 0.52, -2.26], [x + 0.26, 0.78, -2.16]);
+    }
+    (front, rear)
+}

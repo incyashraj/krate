@@ -515,6 +515,15 @@ fn draw(
     } else {
         scene3d::textured(scene, &track.road, &track.road_uv, art.asphalt, white)?;
     }
+    // Painted markings, over the asphalt and under everything else.
+    //
+    // Drawn after the road so they land on top of it, and they carry alpha --
+    // the clear parts of the texture leave the asphalt showing, which is what
+    // makes a dashed line a dashed line rather than a line with grey gaps.
+    if art.markings != 0 {
+        scene3d::textured(scene, &track.paint, &track.paint_uv, art.markings, white)?;
+        calls += 1;
+    }
     scene3d::textured(scene, &track.kerb, &track.kerb_uv, art.kerb, white)?;
     scene3d::textured(scene, &meshes.buildings, &meshes.buildings_uv, art.facade, white)?;
     calls += 4;
@@ -599,6 +608,48 @@ fn draw(
             tint,
         )?;
         calls += 1;
+
+        // Glass, in its own dark blue-grey rather than the car's paint.
+        //
+        // On the body mesh the windows were part of the shell and took the
+        // paint with them, so every car had opaque coloured panels where its
+        // windows should be. That is most of why they read as tinted solids.
+        scene3d::place(
+            scene,
+            &meshes.glass.verts,
+            &[c.x, c.y, c.z],
+            &[0.0, deg, 0.0],
+            1.0,
+            rgb(0.10, 0.13, 0.18),
+        )?;
+        calls += 1;
+
+        // Lights, UNLIT so they hold their brightness whichever way the car
+        // faces. A headlight shaded like paint is a white rectangle that dims
+        // when the car turns away from the sun; one that glows reads as
+        // something switched on, which at a sunset is the difference between
+        // a car and a model of a car.
+        if art.hud_white != 0 {
+            let head_uv = hud_uvs(meshes.head.verts.len());
+            let tail_uv = hud_uvs(meshes.tail.verts.len());
+            let mut place_unlit = |verts: &[f32], uvs: &[f32], tint: gfx::Color| {
+                let (sh, ch) = (sin_approx(heading), cos_approx(heading));
+                let mut world = Vec::with_capacity(verts.len());
+                for p in verts.chunks_exact(3) {
+                    world.push(c.x + p[0] * ch + p[2] * sh);
+                    world.push(c.y + p[1]);
+                    world.push(c.z - p[0] * sh + p[2] * ch);
+                }
+                scene3d::unlit(scene, &world, uvs, art.hud_white, tint)
+            };
+            place_unlit(
+                &meshes.head.verts,
+                &head_uv,
+                rgb(1.00, 0.96, 0.82),
+            )?;
+            place_unlit(&meshes.tail.verts, &tail_uv, rgb(0.92, 0.14, 0.10))?;
+            calls += 2;
+        }
 
         // Four wheels, placed in world space at the corners of the body.
         //
@@ -695,6 +746,11 @@ struct Meshes {
     rail: Mesh,
     /// A roadside bush.
     bush: Mesh,
+    /// The car's windows, drawn separately from its paint.
+    glass: Mesh,
+    /// Headlights and tail lights, drawn unlit so they glow.
+    head: Mesh,
+    tail: Mesh,
 }
 
 /// Uploaded texture handles.
@@ -711,6 +767,8 @@ struct Art {
     kerb: u64,
     /// The sunset gradient the sky dome is painted with.
     sky: u64,
+    /// Painted road markings: dashed centre, solid lane edges.
+    markings: u64,
 }
 
 /// Build the HUD for this frame.
@@ -1138,6 +1196,9 @@ impl krate::Guest for Component {
         let sky_mesh = Mesh {
             verts: sky_build.verts,
         };
+        let (head_build, tail_build) = models::car_lights();
+        let head_verts = head_build.verts;
+        let tail_verts = tail_build.verts;
 
         // Every building, pre-transformed into one mesh. Varied footprints and
         // heights rather than one box repeated: a skyline of identical blocks
@@ -1207,6 +1268,11 @@ impl krate::Guest for Component {
             bush: Mesh {
                 verts: models::bush(1.5).verts,
             },
+            glass: Mesh {
+                verts: models::car_glass().verts,
+            },
+            head: Mesh { verts: head_verts },
+            tail: Mesh { verts: tail_verts },
             buildings,
             buildings_uv,
         };
@@ -1232,6 +1298,7 @@ impl krate::Guest for Component {
             grass: upload(art::grass()),
             facade: upload(art::facade(3)),
             kerb: upload(art::kerb()),
+            markings: upload(art::markings()),
             sky: upload(art::sky(SUN_BEARING)),
         };
 
