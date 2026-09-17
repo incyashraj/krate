@@ -524,7 +524,9 @@ impl OffscreenPresenter {
     }
 }
 pub mod present;
+pub mod shared;
 pub use present::{PixelPresenter, WindowPresenter};
+pub use shared::{shared_gpu, SharedGpu};
 pub use vello;
 
 /// The GPU a window presenter would draw on, or None when apps will fall

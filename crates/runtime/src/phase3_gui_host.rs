@@ -5087,15 +5087,30 @@ impl gfx::scene3d::Host for Phase3GuiHost {
             let Some((window, widget, surface)) = scenes.get_mut(&scene) else {
                 return Ok(Err(gfx::types::GfxError::InvalidTarget));
             };
-            let image = match surface.render_image() {
+            // Render, publish the GPU texture, and read the frame back only
+            // when something still needs CPU pixels.
+            //
+            // The readback is the single largest cost in the 3D path -- 4,346us
+            // at p50 on a 1600x900 scene, 26% of a frame budget (K-405) -- and
+            // it exists only because a texture cannot cross wgpu devices. Now
+            // that the scene and the window presenter share one device, a host
+            // that can blit the texture never needs the pixels.
+            //
+            // `direct` is false while a screenshot is pending: `--shoot` paints
+            // through the shared CPU painter, which has no texture path, so a
+            // direct frame would photograph an empty canvas.
+            let direct = self.screenshot.is_none() || self.screenshot_taken.get();
+            let image = match surface.render_and_publish(widget.get(), direct) {
                 Ok(image) => image,
                 Err(error) => return Ok(Err(gfx::types::GfxError::Platform(error.to_string()))),
             };
             (*window, *widget, image)
         };
-        self.images
-            .borrow_mut()
-            .insert((window, widget), std::sync::Arc::new(image));
+        if let Some(image) = image {
+            self.images
+                .borrow_mut()
+                .insert((window, widget), std::sync::Arc::new(image));
+        }
         let result = self
             .sync_native_widgets(window)
             .map_err(|error| gfx::types::GfxError::Platform(error.to_string()));

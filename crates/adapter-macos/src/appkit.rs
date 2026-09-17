@@ -1900,7 +1900,17 @@ mod platform {
                         }
                         control_view(view)
                     }
-                    WidgetKind::Canvas if placement.pixels().is_some() => {
+                    // A canvas with CPU pixels, OR a 3D scene whose frame is
+                    // waiting on the GPU. The second has no pixels at all --
+                    // that is the point of it (K-405) -- so the guard asks
+                    // whether there is anything to show rather than whether
+                    // there are bytes.
+                    WidgetKind::Canvas
+                        if placement.pixels().is_some()
+                            || krate_presenter_gpu::shared::scene_frames::has(
+                                placement.widget().get(),
+                            ) =>
+                    {
                         // A drawn canvas presents on a vsynced Metal surface
                         // (S5). The old path built a fresh NSImage per frame
                         // and swapped it into an NSImageView -- an unsynced
@@ -1910,7 +1920,7 @@ mod platform {
                         // GPU-backed view per canvas now, reused across the
                         // sixty re-lowers a second; the NSImageView path
                         // stays as the fallback for machines without Metal.
-                        let pixels = placement.pixels().expect("pixels guarded by match arm");
+                        let pixels = placement.pixels();
                         let mut gpu_view: Option<Retained<NSView>> = None;
                         let gpu_pair = reuse_canvas_gpu(&mut reusable, placement.widget())
                             .or_else(|| {
@@ -1940,11 +1950,37 @@ mod platform {
                             });
                         if let Some((view, mut presenter)) = gpu_pair {
                             view.setFrame(frame);
-                            match presenter.present_pixels(
-                                &pixels.rgba,
-                                pixels.width,
-                                pixels.height,
-                            ) {
+                            // The direct path: a texture the scene rendered on
+                            // the shared device, blitted straight to the
+                            // window. Only when this presenter is ON that
+                            // device -- a machine with two GPUs can put the
+                            // window on the other one, and presenting a
+                            // texture across devices is a validation failure
+                            // that ends the process under panic=abort.
+                            let direct = presenter
+                                .on_shared_device()
+                                .then(|| {
+                                    krate_presenter_gpu::shared::scene_frames::take(
+                                        placement.widget().get(),
+                                    )
+                                })
+                                .flatten();
+                            let presented = match (direct, pixels) {
+                                (Some(texture), _) => {
+                                    let (w, h) = (texture.width().max(1), texture.height().max(1));
+                                    presenter.present_texture(&texture, w, h)
+                                }
+                                (None, Some(pixels)) => presenter.present_pixels(
+                                    &pixels.rgba,
+                                    pixels.width,
+                                    pixels.height,
+                                ),
+                                // Nothing to show this frame: leave the view
+                                // as it was rather than clearing it, which
+                                // would flicker.
+                                (None, None) => Ok(()),
+                            };
+                            match presented {
                                 Ok(()) => {
                                     canvas_gpu.insert(placement.widget(), presenter);
                                     gpu_view = Some(view);

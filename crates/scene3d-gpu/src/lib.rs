@@ -26,6 +26,13 @@ use bytemuck::{Pod, Zeroable};
 use krate_adapter_common::ui::{ImagePixels, UiAdapterError};
 use vello::wgpu;
 
+/// The seam a host uses to pick up a rendered frame without a CPU round trip.
+///
+/// Re-exported rather than made the runtime depend on `krate-presenter-gpu`
+/// itself: the scene crate is where a GPU frame comes from, so it is the
+/// honest place to hand one over.
+pub use krate_presenter_gpu::shared::scene_frames;
+
 /// Largest edge of a GPU 3D surface.
 ///
 /// Higher than the CPU rasterizer's 1920 because the cost is no longer linear
@@ -293,25 +300,24 @@ impl GpuScene {
     }
 
     async fn create(width: u32, height: u32) -> Option<Self> {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                ..Default::default()
-            })
-            .await
-            .ok()?;
-        // A software adapter is not a GPU. WARP and its kin rasterize on the
-        // CPU behind a driver mask, which is SLOWER than our own rasterizer --
-        // so accepting one would make the GPU backend a downgrade. The
-        // presenter declines them for the same reason.
-        if adapter.get_info().device_type == wgpu::DeviceType::Cpu {
-            return None;
-        }
-        let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor::default())
-            .await
-            .ok()?;
+        // The device comes from `krate_presenter_gpu::shared_gpu`, not from a
+        // fresh adapter request.
+        //
+        // A texture belongs to the device that created it. When the scene made
+        // its own device and the window presenter made a second, the only
+        // route from one to the other was to copy the finished frame down to
+        // the CPU and back up again -- 4,346us at p50 on a 1600x900 scene,
+        // 26% of a frame budget (K-405). Sharing the device is what lets
+        // `colour_texture()` be handed straight to the presenter.
+        //
+        // The software-adapter refusal moved in there with it: a CPU adapter
+        // rasterizes behind a driver mask and is SLOWER than this crate's own
+        // rasterizer, so accepting one would make the GPU backend a downgrade.
+        // Both callers checked it separately before; one check cannot
+        // disagree with itself.
+        let shared = krate_presenter_gpu::shared_gpu()?;
+        let device = shared.device.clone();
+        let queue = shared.queue.clone();
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("scene3d"),
@@ -1032,8 +1038,36 @@ impl GpuScene {
         ))
     }
 
-    /// Draw everything queued and read the frame back.
+    /// Draw everything queued and read the frame back to the CPU.
+    ///
+    /// The readback costs about a quarter of a frame budget at 1600x900
+    /// (K-405), so a caller that can present the texture directly should call
+    /// [`Self::render_to_texture`] and [`Self::colour_texture`] instead. This
+    /// stays for headless shots, for the parity tests, and for every host that
+    /// has no path from a texture to its window yet.
     pub fn render_image(&mut self) -> Result<ImagePixels, UiAdapterError> {
+        self.render_to_texture()?;
+        self.read_back()
+    }
+
+    /// The texture the last render landed in.
+    ///
+    /// Made by the shared device, so a `PixelPresenter` on that device can
+    /// blit it to a window without the frame touching the CPU at all.
+    pub fn colour_texture(&self) -> &wgpu::Texture {
+        &self.colour
+    }
+
+    /// The device and queue this scene renders on.
+    ///
+    /// A caller needs them to know whether its own presenter is on the same
+    /// device, which is the condition for using `colour_texture`.
+    pub fn device(&self) -> &wgpu::Device {
+        &self.device
+    }
+
+    /// Draw everything queued, leaving the result in the colour texture.
+    pub fn render_to_texture(&mut self) -> Result<(), UiAdapterError> {
         // Opaque first, then blended back to front -- the same two-pass order
         // the CPU path uses, and for the same reason: a blended triangle does
         // not write depth, so nothing but draw order decides which of two
@@ -1123,7 +1157,7 @@ impl GpuScene {
         self.atlas_dirty = false;
     }
 
-    fn draw(&self, verts: &[Vertex], blend_from: usize) -> Result<ImagePixels, UiAdapterError> {
+    fn draw(&self, verts: &[Vertex], blend_from: usize) -> Result<(), UiAdapterError> {
         let (right, up, forward) = self.basis();
         let uniform = CameraUniform {
             right: [right[0], right[1], right[2], 0.0],
@@ -1337,6 +1371,13 @@ impl GpuScene {
             }
         }
 
+        // The copy into the mappable buffer stays in the render pass's encoder
+        // rather than moving into `read_back`, because a second encoder would
+        // need its own submit and a caller that never reads back would still
+        // pay for one. A caller that presents the texture directly submits
+        // this copy and ignores the buffer, which costs a texture-to-buffer
+        // blit and no stall -- the stall is the map, and that is in
+        // `read_back`.
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
                 texture: &self.colour,
@@ -1359,7 +1400,7 @@ impl GpuScene {
             },
         );
         self.queue.submit(Some(encoder.finish()));
-        self.read_back()
+        Ok(())
     }
 
     /// Map the readback buffer and unpad it into a tight RGBA image.
@@ -1368,6 +1409,11 @@ impl GpuScene {
     /// 256-byte boundary, so the buffer is wider than the image and the rows
     /// have to be copied out one at a time. Returning the padded buffer would
     /// hand every consumer a stride they do not expect.
+    /// Read the last rendered frame back to the CPU.
+    pub fn read_back_image(&self) -> Result<ImagePixels, UiAdapterError> {
+        self.read_back()
+    }
+
     fn read_back(&self) -> Result<ImagePixels, UiAdapterError> {
         let slice = self.readback.slice(..);
         let (tx, rx) = std::sync::mpsc::channel();

@@ -517,6 +517,9 @@ pub struct PixelPresenter {
     upload: Option<(wgpu::Texture, u32, u32)>,
     stats: FrameStats,
     device_failed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Whether `device` is the process-wide shared one, so a texture from
+    /// elsewhere on it can be presented without a CPU round trip (K-405).
+    on_shared_device: bool,
 }
 
 impl PixelPresenter {
@@ -559,12 +562,37 @@ impl PixelPresenter {
         if info.device_type == wgpu::DeviceType::Cpu {
             return Err(format!("{} is a software adapter", info.name));
         }
-        let (device, queue) =
-            pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
-                .map_err(|e| format!("device: {e}"))?;
+        // Take the process-wide shared device when this surface can live on
+        // it, so a 3D scene's texture can be blitted straight to the window
+        // instead of going down to the CPU and back up (K-405).
+        //
+        // Only when the shared device's adapter is THIS adapter. A surface
+        // belongs to the adapter that can present it, and a machine with two
+        // GPUs can hand out a different one here than the scene took. Falling
+        // back to a private device costs the readback and is correct;
+        // presenting from the wrong device is a validation failure, and with
+        // panic=abort that ends the app rather than returning an error.
+        let shared = crate::shared::shared_gpu()
+            .filter(|shared| shared.adapter.get_info().device == info.device);
+        let (device, queue, on_shared_device) = match shared {
+            Some(shared) => (shared.device.clone(), shared.queue.clone(), true),
+            None => {
+                let (device, queue) =
+                    pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
+                        .map_err(|e| format!("device: {e}"))?;
+                (device, queue, false)
+            }
+        };
         eprintln!(
-            "krate: canvas presents on {} ({:?}, {:?})",
-            info.name, info.backend, info.device_type
+            "krate: canvas presents on {} ({:?}, {:?}){}",
+            info.name,
+            info.backend,
+            info.device_type,
+            if on_shared_device {
+                ""
+            } else {
+                ", on its own device (a 3D scene will read back)"
+            }
         );
         let device_failed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         {
@@ -598,6 +626,7 @@ impl PixelPresenter {
             upload: None,
             stats: FrameStats::new(),
             device_failed,
+            on_shared_device,
         })
     }
 
@@ -735,5 +764,102 @@ impl PixelPresenter {
         }
         self.stats.record(started, None);
         Ok(())
+    }
+
+    /// Present a texture this presenter's own device already holds.
+    ///
+    /// The zero-copy path, and the reason `shared_gpu` exists. A 3D scene
+    /// renders into a texture; `present_pixels` could only take CPU bytes, so
+    /// that texture had to be copied down to the CPU and written straight back
+    /// up -- 4,346us at p50 on a 1600x900 scene, 26% of a frame budget
+    /// (K-405). Here the frame never leaves the GPU: one blit, one present.
+    ///
+    /// The texture MUST come from the same device as this presenter. wgpu
+    /// rejects a texture from another device, and with panic=abort that
+    /// rejection ends the process rather than returning an error, so a caller
+    /// checks with [`Self::device_matches`] first rather than finding out.
+    pub fn present_texture(
+        &mut self,
+        source: &wgpu::Texture,
+        width: u32,
+        height: u32,
+    ) -> Result<(), String> {
+        let started = Instant::now();
+        if width == 0 || height == 0 {
+            return Ok(());
+        }
+        if self.device_failed.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("GPU device reported an error".to_string());
+        }
+        self.configure_for(width, height);
+        // Every comment on the ordering in `present_pixels` applies here:
+        // acquire the frame before doing any work that stages memory, and
+        // treat an occluded surface as a quiet skip (K-194).
+        if self.device_failed.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("GPU device reported an error".to_string());
+        }
+        use wgpu::CurrentSurfaceTexture;
+        let frame = match self.surface.get_current_texture() {
+            CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => {
+                frame
+            }
+            CurrentSurfaceTexture::Timeout | CurrentSurfaceTexture::Occluded => return Ok(()),
+            _ => {
+                self.configured = (0, 0);
+                return Ok(());
+            }
+        };
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("krate scene blit"),
+            });
+        let src = source.create_view(&wgpu::TextureViewDescriptor::default());
+        let dst = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        self.blitter.copy(&self.device, &mut encoder, &src, &dst);
+        self.queue.submit([encoder.finish()]);
+        frame.present();
+        if self.device_failed.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("GPU device reported an error".to_string());
+        }
+        self.stats.record(started, None);
+        Ok(())
+    }
+
+    /// Whether this presenter is on the process-wide shared device, and so
+    /// can present a texture made by anything else that uses it.
+    ///
+    /// Recorded when the presenter is built rather than probed here. wgpu
+    /// exposes no device identity to compare, and finding out by ATTEMPTING a
+    /// cross-device present is not an option: that is a validation failure,
+    /// and this process builds with panic=abort, so the attempt would take
+    /// the app down rather than return an error.
+    pub fn on_shared_device(&self) -> bool {
+        self.on_shared_device
+    }
+
+    /// Configure the surface for this size, if it is not already.
+    fn configure_for(&mut self, width: u32, height: u32) {
+        if self.configured == (width, height) {
+            return;
+        }
+        self.surface.configure(
+            &self.device,
+            &wgpu::SurfaceConfiguration {
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                format: self.surface_format,
+                width,
+                height,
+                // See `present_pixels` for why this is AutoNoVsync.
+                present_mode: wgpu::PresentMode::AutoNoVsync,
+                desired_maximum_frame_latency: 2,
+                alpha_mode: wgpu::CompositeAlphaMode::Auto,
+                view_formats: vec![],
+            },
+        );
+        self.configured = (width, height);
+        self.upload = None;
     }
 }

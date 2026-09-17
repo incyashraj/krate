@@ -1029,6 +1029,36 @@ impl SceneBackend {
             SceneBackend::Cpu(cpu) => cpu.render_image(),
         }
     }
+
+    /// Render, and publish the GPU texture for a host that can blit it.
+    ///
+    /// Returns the CPU pixels as well, because every host still needs them:
+    /// the headless screenshot path paints through the shared painter, and
+    /// only macOS has a texture path so far. What this saves is the STALL --
+    /// on the direct path nothing waits for the map (K-405).
+    ///
+    /// On the CPU backend this is exactly `render_image`; there is no texture
+    /// to publish and nothing changes.
+    pub fn render_and_publish(
+        &mut self,
+        widget: u64,
+        direct: bool,
+    ) -> Result<Option<ImagePixels>, UiAdapterError> {
+        match self {
+            SceneBackend::Gpu(gpu) => {
+                gpu.render_to_texture()?;
+                if direct {
+                    krate_scene3d_gpu::scene_frames::publish(widget, gpu.colour_texture().clone());
+                    // No readback at all on this path. Returning None says so
+                    // rather than quietly handing back a stale frame, so a
+                    // caller that still needs pixels has to ask for them.
+                    return Ok(None);
+                }
+                gpu.read_back_image().map(Some)
+            }
+            SceneBackend::Cpu(cpu) => cpu.render_image().map(Some),
+        }
+    }
 }
 
 /// `0xAARRGGBB` to the four floats the GPU path takes.

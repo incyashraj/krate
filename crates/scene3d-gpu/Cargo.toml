@@ -15,6 +15,7 @@ publish = false
 [dependencies]
 krate-adapter-common = { path = "../adapter-common" }
 vello = "0.9"
+krate-presenter-gpu = { path = "../presenter-gpu" }
 pollster = "0.4"
 bytemuck = { version = "1", features = ["derive"] }
 
