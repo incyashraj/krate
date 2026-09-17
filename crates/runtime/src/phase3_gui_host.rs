@@ -4912,11 +4912,55 @@ impl gfx::scene3d::Host for Phase3GuiHost {
             fill,
             shadow_radius: lighting.shadow_radius,
             shadow_softness: lighting.shadow_softness,
+            exposure: lighting.exposure,
         };
         match surface.set_lighting(value) {
             Ok(()) => Ok(Ok(())),
             Err(error) => Ok(Err(gfx::types::GfxError::Unsupported(error.to_string()))),
         }
+    }
+
+    fn normal_mapped(
+        &mut self,
+        scene: u64,
+        vertices: Vec<f32>,
+        normals: Vec<f32>,
+        tangents: Vec<f32>,
+        uvs: Vec<f32>,
+        texture: u64,
+        normal_texture: u64,
+        tint: gfx::types::Color,
+    ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        let mut scenes = self.scenes.borrow_mut();
+        let Some((_, _, surface)) = scenes.get_mut(&scene) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        surface.normal_mapped(
+            &vertices,
+            &normals,
+            &tangents,
+            &uvs,
+            texture,
+            normal_texture,
+            (tint.r, tint.g, tint.b, tint.a),
+        );
+        Ok(Ok(()))
+    }
+
+    fn unlit(
+        &mut self,
+        scene: u64,
+        vertices: Vec<f32>,
+        uvs: Vec<f32>,
+        texture: u64,
+        tint: gfx::types::Color,
+    ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        let mut scenes = self.scenes.borrow_mut();
+        let Some((_, _, surface)) = scenes.get_mut(&scene) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        surface.unlit(&vertices, &uvs, texture, (tint.r, tint.g, tint.b, tint.a));
+        Ok(Ok(()))
     }
 
     fn cull_back_faces(

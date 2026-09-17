@@ -771,6 +771,66 @@ pub mod gfx {
             crate::bindings::krate::gfx::scene3d::set_lighting(scene, lighting)
         }
 
+        /// Draw triangles with a NORMAL MAP: a texture whose pixels are directions
+        /// rather than colours, so a flat surface can have bumps.
+        ///
+        /// `normal-texture` is an image where red, green and blue encode a direction
+        /// in the surface's own frame -- the usual convention, where flat is
+        /// (0.5, 0.5, 1.0) and shows as pale blue. Brick mortar, panel seams, the
+        /// grain in a wooden floor: things that would take thousands of triangles
+        /// each become one texture the light reacts to.
+        ///
+        /// This is most of what "detail" means in a modern renderer. A wall with a
+        /// normal map has visible depth from any angle and costs two triangles; the
+        /// same wall modelled has the same look and costs ten thousand.
+        ///
+        /// `tangents` is x,y,z per corner -- nine floats per triangle -- giving the
+        /// direction the texture's +u runs in world space. Without it the host
+        /// cannot know which way "along the texture" points, and the bumps light
+        /// from the wrong side.
+        pub fn normal_mapped(
+            scene: u64,
+            vertices: &[f32],
+            normals: &[f32],
+            tangents: &[f32],
+            uvs: &[f32],
+            texture: u64,
+            normal_texture: u64,
+            tint: Color,
+        ) -> Result<(), GfxError> {
+            crate::bindings::krate::gfx::scene3d::normal_mapped(
+                scene,
+                vertices,
+                normals,
+                tangents,
+                uvs,
+                texture,
+                normal_texture,
+                tint,
+            )
+        }
+
+        /// Draw triangles at exactly the colour asked for: no shading, no fog, no
+        /// tone mapping.
+        ///
+        /// For anything that is an OVERLAY rather than part of the world -- a HUD, a
+        /// marker, a highlight on a selected object. Such a thing is not lit by the
+        /// scene's sun, is not behind the scene's air, and is not part of the image
+        /// a tone curve is grading; putting it through any of those makes it come
+        /// out a colour the app did not choose.
+        ///
+        /// Still depth-tested, so an overlay meant to sit behind geometry does. An
+        /// app wanting one in front of everything draws it close to the camera.
+        pub fn unlit(
+            scene: u64,
+            vertices: &[f32],
+            uvs: &[f32],
+            texture: u64,
+            tint: Color,
+        ) -> Result<(), GfxError> {
+            crate::bindings::krate::gfx::scene3d::unlit(scene, vertices, uvs, texture, tint)
+        }
+
         /// Skip triangles facing away from the camera.
         ///
         /// Off by default, and that is deliberate: it is only correct for a closed

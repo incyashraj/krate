@@ -506,7 +506,23 @@ fn draw(
     // never used `upload_texture`.
     let white = rgb(1.0, 1.0, 1.0);
     scene3d::textured(scene, &meshes.ground.verts, &meshes.ground_uv, art.grass, white)?;
-    scene3d::textured(scene, &track.road, &track.road_uv, art.asphalt, white)?;
+    // The road wears a normal map when the renderer has one, so the chippings
+    // are bumps the light reacts to rather than speckle painted on a flat
+    // sheet. Falls back to the plain textured path otherwise.
+    if art.road_normals != 0 {
+        scene3d::normal_mapped(
+            scene,
+            &track.road,
+            &track.road_normals,
+            &track.road_tangents,
+            &track.road_uv,
+            art.asphalt,
+            art.road_normals,
+            white,
+        )?;
+    } else {
+        scene3d::textured(scene, &track.road, &track.road_uv, art.asphalt, white)?;
+    }
     scene3d::textured(scene, &track.kerb, &track.kerb_uv, art.kerb, white)?;
     scene3d::textured(scene, &meshes.buildings, &meshes.buildings_uv, art.facade, white)?;
     calls += 4;
@@ -545,16 +561,22 @@ fn draw(
     }
 
     if !hud.is_empty() {
-        // Tint over 1.0 on purpose. Every triangle is shaded by its normal
-        // against the one light -- `shade = 0.35 + 0.65 * |n.l|` in the host,
-        // with no unlit path -- so a HUD quad facing the camera comes out at
-        // roughly a third brightness and the numbers read as dark grey rather
-        // than as an overlay. Scaling the tint past white is the only lever an
-        // app has. This is the second half of K-398: even with the geometry
-        // trick, a HUD cannot be drawn at the colour it is asked for.
+        // The HUD through the UNLIT path where there is one: an overlay is not
+        // lit by the scene's sun, is not behind its air, and is not part of
+        // the image a tone curve grades. Before this it was all three, and the
+        // white numbers came out grey the moment tone mapping went on.
         let verts = hud.to_world(g.cam, g.cam_look);
-        scene3d::triangles(scene, &verts, rgb(2.7, 2.7, 2.8))?;
-        calls += 1;
+        if art.hud_white != 0 {
+            scene3d::unlit(scene, &verts, &hud_uvs(verts.len()), art.hud_white, white)?;
+            calls += 1;
+        } else {
+            // The fallback: tint over 1.0 to climb out of the shading
+            // floor, which is the only lever an app has on a renderer with no
+            // unlit path. It is why K-398 recorded that a HUD cannot be drawn
+            // at the colour it is asked for -- true until `unlit` existed.
+            scene3d::triangles(scene, &verts, rgb(2.7, 2.7, 2.8))?;
+            calls += 1;
+        }
     }
 
     scene3d::present(scene)?;
@@ -593,6 +615,12 @@ struct Meshes {
 /// Uploaded texture handles.
 struct Art {
     asphalt: u64,
+    /// A single white texel, so the HUD can go through the textured `unlit`
+    /// path. `unlit` needs a texture because every GPU draw samples one; a
+    /// white one multiplies the tint by 1 and changes nothing.
+    hud_white: u64,
+    /// The road's normal map, or 0 when this renderer has none.
+    road_normals: u64,
     grass: u64,
     facade: u64,
     kerb: u64,
@@ -762,6 +790,20 @@ fn node(id: u64, parent: Option<u64>, kind: types::WidgetKind) -> types::WidgetN
     }
 }
 
+/// One UV per HUD vertex, all pointing at the middle of the white texel.
+///
+/// `unlit` takes UVs because every GPU draw samples a texture; for a HUD the
+/// texture is a single white pixel and the UV is a formality.
+fn hud_uvs(vert_floats: usize) -> Vec<f32> {
+    let corners = vert_floats / 3;
+    let mut uvs = Vec::with_capacity(corners * 2);
+    for _ in 0..corners {
+        uvs.push(0.5);
+        uvs.push(0.5);
+    }
+    uvs
+}
+
 /// Say which step failed before exiting.
 ///
 /// A bare `return 1` tells a checker only that something went wrong and the
@@ -853,6 +895,9 @@ impl krate::Guest for Component {
                 // distance a chase camera sees.
                 shadow_radius: 120.0,
                 shadow_softness: 1.2,
+                // Tone mapping rather than a hard clamp, so the sunlit side of
+                // a car keeps its shape instead of becoming a white patch.
+                exposure: 1.1,
             },
         )
         .is_ok();
@@ -908,6 +953,18 @@ impl krate::Guest for Component {
         };
         let art = Art {
             asphalt: upload(art::asphalt()),
+            // Only worth uploading when the renderer can use it. On the
+            // software path this stays 0 and the road draws plain.
+            road_normals: if rich {
+                upload(art::asphalt_normals())
+            } else {
+                0
+            },
+            hud_white: if rich {
+                scene3d::upload_texture(scene, 1, 1, &[255, 255, 255, 255]).unwrap_or(0)
+            } else {
+                0
+            },
             grass: upload(art::grass()),
             facade: upload(art::facade(3)),
             kerb: upload(art::kerb()),

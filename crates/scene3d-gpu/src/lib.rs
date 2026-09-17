@@ -64,6 +64,12 @@ const FLAG_SMOOTH: u32 = 1;
 /// The two CPU shading paths clamp the tint differently and the shader has to
 /// know which it is reproducing.
 const FLAG_TEXTURED: u32 = 2;
+/// Bit 2: this triangle wears a normal map, in the layer named by
+/// `normal_layer`.
+const FLAG_NORMAL_MAP: u32 = 4;
+/// Bit 3: draw at exactly the tint asked for -- no shading, no fog, no tone
+/// mapping. For overlays.
+const FLAG_UNLIT: u32 = 8;
 
 /// One vertex as the shader wants it.
 ///
@@ -79,15 +85,17 @@ pub struct Vertex {
     pub normal: [f32; 3],
     pub uv: [f32; 2],
     pub tint: [f32; 4],
-    /// Bit 0 is the smooth flag; bits 8 and up are the texture layer.
+    /// Bits 0-2 are the smooth, textured and normal-map flags; bits 8 and up
+    /// are the colour texture layer.
     pub flags: u32,
-    /// Padding to a 16-byte multiple, which wgpu requires of a vertex stride
-    /// and which is cheaper to state than to let the layout accidentally
-    /// depend on the field order.
-    pub _pad: [u32; 3],
+    /// The direction the texture's +u runs, in world space.
+    pub tangent: [f32; 3],
+    /// Which layer holds this triangle's normal map.
+    pub normal_layer: u32,
 }
 
 impl Vertex {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         position: [f32; 3],
         normal: [f32; 3],
@@ -96,6 +104,9 @@ impl Vertex {
         smooth: bool,
         textured: bool,
         layer: u32,
+        tangent: Option<[f32; 3]>,
+        normal_layer: u32,
+        unlit: bool,
     ) -> Self {
         Self {
             position,
@@ -104,18 +115,27 @@ impl Vertex {
             tint,
             flags: (if smooth { FLAG_SMOOTH } else { 0 })
                 | (if textured { FLAG_TEXTURED } else { 0 })
+                | (if tangent.is_some() {
+                    FLAG_NORMAL_MAP
+                } else {
+                    0
+                })
+                | (if unlit { FLAG_UNLIT } else { 0 })
                 | (layer << 8),
-            _pad: [0; 3],
+            tangent: tangent.unwrap_or([1.0, 0.0, 0.0]),
+            normal_layer,
         }
     }
 
     fn layout() -> wgpu::VertexBufferLayout<'static> {
-        const ATTRS: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![
+        const ATTRS: [wgpu::VertexAttribute; 7] = wgpu::vertex_attr_array![
             0 => Float32x3,
             1 => Float32x3,
             2 => Float32x2,
             3 => Float32x4,
             4 => Uint32,
+            5 => Float32x3,
+            6 => Uint32,
         ];
         wgpu::VertexBufferLayout {
             array_stride: core::mem::size_of::<Vertex>() as wgpu::BufferAddress,
@@ -175,6 +195,10 @@ pub struct Lighting {
     pub shadow_radius: f32,
     /// Shadow edge blur, in texels. Zero is a hard edge.
     pub shadow_softness: f32,
+    /// How hard to roll bright values back toward white instead of clipping
+    /// them. Zero keeps the old hard clamp, so a scene that never asks is
+    /// unchanged.
+    pub exposure: f32,
 }
 
 impl Default for Lighting {
@@ -191,6 +215,7 @@ impl Default for Lighting {
             fill: None,
             shadow_radius: 0.0,
             shadow_softness: 1.0,
+            exposure: 0.0,
         }
     }
 }
@@ -623,6 +648,17 @@ impl GpuScene {
             fill: lighting.fill.map(|(dir, colour)| (normalize(dir), colour)),
             shadow_radius: clean(lighting.shadow_radius, 0.0).max(0.0),
             shadow_softness: clean(lighting.shadow_softness, 1.0).clamp(0.0, 4.0),
+            // Zero stays zero -- it means "keep the clamp" rather than "no
+            // exposure" -- so only a positive value is floored at something
+            // usable.
+            exposure: {
+                let e = clean(lighting.exposure, 0.0).clamp(0.0, 8.0);
+                if e > 0.0 {
+                    e.max(0.05)
+                } else {
+                    0.0
+                }
+            },
         };
     }
 
@@ -675,7 +711,20 @@ impl GpuScene {
             let a = [chunk[0], chunk[1], chunk[2]];
             let b = [chunk[3], chunk[4], chunk[5]];
             let c = [chunk[6], chunk[7], chunk[8]];
-            self.push_face(a, b, c, None, [[0.0; 2]; 3], 0, tint, false, false);
+            self.push_face(
+                a,
+                b,
+                c,
+                None,
+                [[0.0; 2]; 3],
+                0,
+                tint,
+                false,
+                false,
+                None,
+                0,
+                false,
+            );
         }
     }
 
@@ -689,7 +738,7 @@ impl GpuScene {
             let b = [chunk[3], chunk[4], chunk[5]];
             let c = [chunk[6], chunk[7], chunk[8]];
             let uv = [[uv[0], uv[1]], [uv[2], uv[3]], [uv[4], uv[5]]];
-            self.push_face(a, b, c, None, uv, layer, tint, false, true);
+            self.push_face(a, b, c, None, uv, layer, tint, false, true, None, 0, false);
         }
     }
 
@@ -715,7 +764,90 @@ impl GpuScene {
             let c = [chunk[6], chunk[7], chunk[8]];
             let corner = [[n[0], n[1], n[2]], [n[3], n[4], n[5]], [n[6], n[7], n[8]]];
             let uv = [[uv[0], uv[1]], [uv[2], uv[3]], [uv[4], uv[5]]];
-            self.push_face(a, b, c, Some(corner), uv, layer, tint, true, true);
+            self.push_face(
+                a,
+                b,
+                c,
+                Some(corner),
+                uv,
+                layer,
+                tint,
+                true,
+                true,
+                None,
+                0,
+                false,
+            );
+        }
+    }
+
+    /// Draw triangles with a normal map, so a flat surface has bumps.
+    ///
+    /// `tangents` gives the direction the texture's +u runs, per vertex, in
+    /// world space. The host cannot derive it: two triangles sharing a normal
+    /// can have their textures laid on at different angles, and the light has
+    /// to react to the one the author chose.
+    #[allow(clippy::too_many_arguments)]
+    pub fn normal_mapped(
+        &mut self,
+        vertices: &[f32],
+        normals: &[f32],
+        tangents: &[f32],
+        uvs: &[f32],
+        texture: u64,
+        normal_texture: u64,
+        tint: [f32; 4],
+    ) {
+        let (Some(layer), Some(normal_layer)) =
+            (self.layer_of(texture), self.layer_of(normal_texture))
+        else {
+            return;
+        };
+        let quads = vertices
+            .chunks_exact(9)
+            .zip(normals.chunks_exact(9))
+            .zip(tangents.chunks_exact(9))
+            .zip(uvs.chunks_exact(6));
+        for (((chunk, n), t), uv) in quads {
+            let a = [chunk[0], chunk[1], chunk[2]];
+            let b = [chunk[3], chunk[4], chunk[5]];
+            let c = [chunk[6], chunk[7], chunk[8]];
+            let corner = [[n[0], n[1], n[2]], [n[3], n[4], n[5]], [n[6], n[7], n[8]]];
+            let tan = [[t[0], t[1], t[2]], [t[3], t[4], t[5]], [t[6], t[7], t[8]]];
+            let uv = [[uv[0], uv[1]], [uv[2], uv[3]], [uv[4], uv[5]]];
+            self.push_face(
+                a,
+                b,
+                c,
+                Some(corner),
+                uv,
+                layer,
+                tint,
+                true,
+                true,
+                Some(tan),
+                normal_layer,
+                false,
+            );
+        }
+    }
+
+    /// Draw triangles at exactly the tint asked for: no shading, no fog, no
+    /// tone mapping.
+    ///
+    /// For overlays -- a HUD, a marker, a highlight. Such a thing is not lit
+    /// by the scene's sun and is not part of the image a tone curve grades,
+    /// and putting it through either gives the app a colour it did not choose.
+    pub fn unlit(&mut self, vertices: &[f32], uvs: &[f32], texture: u64, tint: [f32; 4]) {
+        let Some(layer) = self.layer_of(texture) else {
+            return;
+        };
+        for (chunk, uv) in vertices.chunks_exact(9).zip(uvs.chunks_exact(6)) {
+            let a = [chunk[0], chunk[1], chunk[2]];
+            let b = [chunk[3], chunk[4], chunk[5]];
+            let c = [chunk[6], chunk[7], chunk[8]];
+            let uv = [[uv[0], uv[1]], [uv[2], uv[3]], [uv[4], uv[5]]];
+            self.push_face(a, b, c, None, uv, layer, tint, false, true, None, 0, true);
         }
     }
 
@@ -748,7 +880,20 @@ impl GpuScene {
             let a = transform([chunk[0], chunk[1], chunk[2]]);
             let b = transform([chunk[3], chunk[4], chunk[5]]);
             let c = transform([chunk[6], chunk[7], chunk[8]]);
-            self.push_face(a, b, c, None, [[0.0; 2]; 3], 0, tint, false, false);
+            self.push_face(
+                a,
+                b,
+                c,
+                None,
+                [[0.0; 2]; 3],
+                0,
+                tint,
+                false,
+                false,
+                None,
+                0,
+                false,
+            );
         }
     }
 
@@ -773,6 +918,9 @@ impl GpuScene {
         tint: [f32; 4],
         smooth: bool,
         textured: bool,
+        tangents: Option<[[f32; 3]; 3]>,
+        normal_layer: u32,
+        unlit: bool,
     ) {
         let basis = self.basis();
         let (Some(pa), Some(pb), Some(pc)) = (
@@ -805,9 +953,42 @@ impl GpuScene {
         };
         self.queued.push(Queued {
             verts: [
-                Vertex::new(a, normals[0], uv[0], tint, smooth, textured, layer),
-                Vertex::new(b, normals[1], uv[1], tint, smooth, textured, layer),
-                Vertex::new(c, normals[2], uv[2], tint, smooth, textured, layer),
+                Vertex::new(
+                    a,
+                    normals[0],
+                    uv[0],
+                    tint,
+                    smooth,
+                    textured,
+                    layer,
+                    tangents.map(|t| t[0]),
+                    normal_layer,
+                    unlit,
+                ),
+                Vertex::new(
+                    b,
+                    normals[1],
+                    uv[1],
+                    tint,
+                    smooth,
+                    textured,
+                    layer,
+                    tangents.map(|t| t[1]),
+                    normal_layer,
+                    unlit,
+                ),
+                Vertex::new(
+                    c,
+                    normals[2],
+                    uv[2],
+                    tint,
+                    smooth,
+                    textured,
+                    layer,
+                    tangents.map(|t| t[2]),
+                    normal_layer,
+                    unlit,
+                ),
             ],
             alpha,
             sort_z: (pa.2 + pb.2 + pc.2) / 3.0,
@@ -987,7 +1168,7 @@ impl GpuScene {
                 // One texel in light clip units, which the shader steps by to
                 // blur the edge.
                 2.0 / SHADOW_EDGE as f32,
-                0.0,
+                self.lighting.exposure,
             ],
         };
         let uniform_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -1748,6 +1929,135 @@ mod tests {
         assert!(
             darkened > 100,
             "the floor under the blocker must darken: only {darkened} pixels did"
+        );
+    }
+
+    #[test]
+    fn tone_mapping_keeps_detail_where_a_clamp_would_flatten_it() {
+        // Two surfaces, both brighter than white by different amounts. A hard
+        // clamp makes them the SAME flat white and the difference between them
+        // is lost; tone mapping bends the top of the range so they stay
+        // distinguishable, which is the difference between a photograph and a
+        // photocopy.
+        let Some(mut scene) = gpu(64, 64) else {
+            eprintln!("no GPU adapter on this machine; skipping");
+            return;
+        };
+        let mut brightness = |tint: f32, exposure: f32| -> u8 {
+            scene.set_camera([0.0, 0.0, 6.0], [0.0, 0.0, 0.0], 60.0);
+            scene.set_light([0.0, 0.0, -1.0]);
+            scene.set_lighting(Lighting {
+                exposure,
+                ..Lighting::default()
+            });
+            scene.clear([0.0, 0.0, 0.0, 1.0]);
+            scene.triangles(&facing_quad(2.0, 0.0), [tint, tint, tint, 1.0]);
+            at(&scene.render_image().expect("a frame"), 32, 32)[1]
+        };
+
+        // Clamped: 1.4 and 2.4 both saturate, so they are indistinguishable.
+        let clamped_dim = brightness(1.4, 0.0);
+        let clamped_bright = brightness(2.4, 0.0);
+        assert_eq!(
+            clamped_dim, clamped_bright,
+            "a hard clamp should flatten both to the same white"
+        );
+
+        // Tone mapped: the brighter one is still brighter.
+        let mapped_dim = brightness(1.4, 1.0);
+        let mapped_bright = brightness(2.4, 1.0);
+        assert!(
+            mapped_bright > mapped_dim,
+            "tone mapping must keep the two apart: {mapped_dim} vs {mapped_bright}"
+        );
+    }
+
+    #[test]
+    fn a_normal_map_changes_how_a_flat_surface_lights() {
+        // The whole point: a surface with no geometry variation shading as
+        // though it had some. The quad is flat and faces the camera, so any
+        // difference in brightness across it came from the map.
+        let Some(mut scene) = gpu(64, 64) else {
+            eprintln!("no GPU adapter on this machine; skipping");
+            return;
+        };
+        let colour = scene
+            .upload_texture(1, 1, &[255, 255, 255, 255])
+            .expect("texture");
+        // A 2x1 normal map: the left texel tilts one way, the right the other.
+        // Flat would be (128, 128, 255); these lean hard in x.
+        let bumps = scene
+            .upload_texture(2, 1, &[20, 128, 200, 255, 235, 128, 200, 255])
+            .expect("texture");
+
+        let quad = facing_quad(2.0, 0.0);
+        let normals: Vec<f32> = core::iter::repeat_n([0.0_f32, 0.0, 1.0], 6)
+            .flatten()
+            .collect();
+        let tangents: Vec<f32> = core::iter::repeat_n([1.0_f32, 0.0, 0.0], 6)
+            .flatten()
+            .collect();
+        // UVs run across the quad so each half samples a different texel.
+        let uvs: Vec<f32> = vec![
+            0.25, 0.5, 0.75, 0.5, 0.75, 0.5, //
+            0.25, 0.5, 0.75, 0.5, 0.25, 0.5,
+        ];
+
+        scene.set_camera([0.0, 0.0, 6.0], [0.0, 0.0, 0.0], 60.0);
+        // A light from the side, so a normal tilted toward it is bright and
+        // one tilted away is dark. Straight-on light would shade both halves
+        // nearly the same and the test would prove nothing.
+        scene.set_light([-1.0, 0.0, -0.3]);
+        scene.set_lighting(Lighting::default());
+
+        scene.clear([0.0, 0.0, 0.0, 1.0]);
+        scene.smooth(&quad, &normals, &uvs, colour, [1.0, 1.0, 1.0, 1.0]);
+        let flat = at(&scene.render_image().expect("a frame"), 32, 32);
+
+        scene.clear([0.0, 0.0, 0.0, 1.0]);
+        scene.normal_mapped(
+            &quad,
+            &normals,
+            &tangents,
+            &uvs,
+            colour,
+            bumps,
+            [1.0, 1.0, 1.0, 1.0],
+        );
+        let bumpy = at(&scene.render_image().expect("a frame"), 32, 32);
+
+        assert!(
+            bumpy[1].abs_diff(flat[1]) > 20,
+            "a normal map must change how the surface lights: flat {flat:?}, \
+             mapped {bumpy:?}"
+        );
+    }
+
+    #[test]
+    fn a_normal_map_needs_both_textures_to_exist() {
+        // A handle that was never uploaded draws nothing rather than sampling
+        // whatever happens to be in that layer.
+        let Some(mut scene) = gpu(32, 32) else {
+            eprintln!("no GPU adapter on this machine; skipping");
+            return;
+        };
+        let real = scene
+            .upload_texture(1, 1, &[255, 255, 255, 255])
+            .expect("texture");
+        let quad = facing_quad(2.0, 0.0);
+        let nine: Vec<f32> = core::iter::repeat_n([0.0_f32, 0.0, 1.0], 6)
+            .flatten()
+            .collect();
+        let uvs: Vec<f32> = vec![0.5; 12];
+        scene.set_camera([0.0, 0.0, 6.0], [0.0, 0.0, 0.0], 60.0);
+        scene.clear([0.0, 0.0, 0.0, 1.0]);
+        // 99 was never uploaded.
+        scene.normal_mapped(&quad, &nine, &nine, &uvs, real, 99, [1.0, 1.0, 1.0, 1.0]);
+        let image = scene.render_image().expect("a frame");
+        assert_eq!(
+            at(&image, 16, 16),
+            [0, 0, 0, 255],
+            "an unknown normal-map handle must draw nothing"
         );
     }
 

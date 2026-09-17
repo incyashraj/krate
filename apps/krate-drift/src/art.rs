@@ -29,7 +29,12 @@ fn blank(width: u32, height: u32) -> Texture {
     }
 }
 
-fn put(t: &mut Texture, x: u32, y: u32, r: u8, g: u8, b: u8) {
+fn put(t: &mut Texture, x: u32, y: u32, r: impl Into<f64>, g: impl Into<f64>, b: impl Into<f64>) {
+    let (r, g, b) = (
+        r.into().clamp(0.0, 255.0) as u8,
+        g.into().clamp(0.0, 255.0) as u8,
+        b.into().clamp(0.0, 255.0) as u8,
+    );
     let i = ((y * t.width + x) * 4) as usize;
     if i + 3 < t.rgba.len() {
         t.rgba[i] = r;
@@ -63,6 +68,51 @@ pub fn asphalt() -> Texture {
             };
             let v = (base + track) as u8;
             put(&mut t, x, y, v, v, (v as f32 * 1.04) as u8);
+        }
+    }
+    t
+}
+
+/// A normal map for the asphalt: the chippings, as directions rather than
+/// shading.
+///
+/// The colour texture already has speckle painted into it, but painted
+/// speckle is the same whichever way the light falls -- it reads as dirt on a
+/// flat sheet. A normal map makes each chipping a real bump the light reacts
+/// to, so the road looks different driving into the sun and away from it. That
+/// reaction is what separates a surface from a picture of one.
+///
+/// The convention is the usual one: red and green carry the x and y of the
+/// direction, offset so 128 is zero, and blue carries z, so flat is
+/// (128, 128, 255) and an unused map reads as pale blue.
+pub fn asphalt_normals() -> Texture {
+    let mut t = blank(64, 64);
+    for y in 0..64u32 {
+        for x in 0..64u32 {
+            // The height field the normals come from: the same hash the colour
+            // texture speckles with, so a bump sits where a light chipping is
+            // rather than somewhere unrelated.
+            let h = |ix: i32, iy: i32| -> f32 { hash2(ix & 63, iy & 63) };
+            // Slope from the neighbours. A central difference rather than a
+            // forward one, so a bump leans evenly instead of shifting half a
+            // texel toward the light.
+            let dx = h(x as i32 + 1, y as i32) - h(x as i32 - 1, y as i32);
+            let dy = h(x as i32, y as i32 + 1) - h(x as i32, y as i32 - 1);
+            // Strength: enough to catch a low sun, not so much that the road
+            // looks like gravel.
+            let strength = 0.55;
+            let nx = -dx * strength;
+            let ny = -dy * strength;
+            let nz = 1.0;
+            let len = crate::mathx::sqrt_approx(nx * nx + ny * ny + nz * nz).max(0.0001);
+            put(
+                &mut t,
+                x,
+                y,
+                (nx / len * 0.5 + 0.5) * 255.0,
+                (ny / len * 0.5 + 0.5) * 255.0,
+                (nz / len * 0.5 + 0.5) * 255.0,
+            );
         }
     }
     t

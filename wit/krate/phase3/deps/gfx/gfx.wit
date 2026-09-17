@@ -461,12 +461,57 @@ interface scene3d {
     fill-color: color,
     shadow-radius: f32,
     shadow-softness: f32,
+    /// How hard to roll bright values back toward white instead of clipping
+    /// them. Zero keeps the old hard clamp.
+    ///
+    /// Without this a surface that comes out brighter than white -- a
+    /// highlight, a sunlit wall, anything an app tinted up -- turns into a
+    /// flat white patch with no shape in it. Tone mapping bends the top of the
+    /// range instead of cutting it, so a bright thing stays bright AND keeps
+    /// its detail. It is the difference between a photograph and a
+    /// photocopy.
+    ///
+    /// 1.0 is a normal exposure. Above that brightens the whole image before
+    /// the roll-off, below darkens it.
+    exposure: f32,
   }
 
   /// Set how the scene is lit. Refused by a backend that cannot do it, so an
   /// app can ask once at startup and fall back rather than discovering per
   /// frame that nothing changed.
   set-lighting: func(scene: u64, lighting: lighting) -> result<_, gfx-error>;
+
+  /// Draw triangles with a NORMAL MAP: a texture whose pixels are directions
+  /// rather than colours, so a flat surface can have bumps.
+  ///
+  /// `normal-texture` is an image where red, green and blue encode a direction
+  /// in the surface's own frame -- the usual convention, where flat is
+  /// (0.5, 0.5, 1.0) and shows as pale blue. Brick mortar, panel seams, the
+  /// grain in a wooden floor: things that would take thousands of triangles
+  /// each become one texture the light reacts to.
+  ///
+  /// This is most of what "detail" means in a modern renderer. A wall with a
+  /// normal map has visible depth from any angle and costs two triangles; the
+  /// same wall modelled has the same look and costs ten thousand.
+  ///
+  /// `tangents` is x,y,z per corner -- nine floats per triangle -- giving the
+  /// direction the texture's +u runs in world space. Without it the host
+  /// cannot know which way "along the texture" points, and the bumps light
+  /// from the wrong side.
+  normal-mapped: func(scene: u64, vertices: list<f32>, normals: list<f32>, tangents: list<f32>, uvs: list<f32>, texture: u64, normal-texture: u64, tint: color) -> result<_, gfx-error>;
+
+  /// Draw triangles at exactly the colour asked for: no shading, no fog, no
+  /// tone mapping.
+  ///
+  /// For anything that is an OVERLAY rather than part of the world -- a HUD, a
+  /// marker, a highlight on a selected object. Such a thing is not lit by the
+  /// scene's sun, is not behind the scene's air, and is not part of the image
+  /// a tone curve is grading; putting it through any of those makes it come
+  /// out a colour the app did not choose.
+  ///
+  /// Still depth-tested, so an overlay meant to sit behind geometry does. An
+  /// app wanting one in front of everything draws it close to the camera.
+  unlit: func(scene: u64, vertices: list<f32>, uvs: list<f32>, texture: u64, tint: color) -> result<_, gfx-error>;
 
   /// Skip triangles facing away from the camera.
   ///

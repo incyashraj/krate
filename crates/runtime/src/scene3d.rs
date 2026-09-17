@@ -968,6 +968,61 @@ impl SceneBackend {
         }
     }
 
+    /// Draw triangles with a normal map.
+    ///
+    /// The software rasterizer has no such path -- it shades from one normal
+    /// per face or per corner and has nowhere to put a per-pixel one -- so it
+    /// draws the mesh WITHOUT the bumps rather than not at all. An app that
+    /// falls back to a flat wall still has a wall; one that falls back to a
+    /// hole in the world does not.
+    #[allow(clippy::too_many_arguments)]
+    pub fn normal_mapped(
+        &mut self,
+        vertices: &[f32],
+        normals: &[f32],
+        tangents: &[f32],
+        uvs: &[f32],
+        texture: u64,
+        normal_texture: u64,
+        tint: (f32, f32, f32, f32),
+    ) {
+        match self {
+            SceneBackend::Gpu(gpu) => gpu.normal_mapped(
+                vertices,
+                normals,
+                tangents,
+                uvs,
+                texture,
+                normal_texture,
+                [tint.0, tint.1, tint.2, tint.3],
+            ),
+            SceneBackend::Cpu(cpu) => cpu.smooth(vertices, normals, uvs, texture, tint),
+        }
+    }
+
+    /// Draw triangles at exactly the tint asked for.
+    ///
+    /// The software rasterizer has no tone curve and no fog, so its `textured`
+    /// path already gives an overlay nearly what it asked for -- except the
+    /// shading floor, which an overlay does not want either. Passing a tint
+    /// over 1.0 is how an app defeats that floor there, and that is exactly
+    /// what the racing game's HUD does, so routing this to `textured` keeps
+    /// the fallback looking as it always has.
+    pub fn unlit(
+        &mut self,
+        vertices: &[f32],
+        uvs: &[f32],
+        texture: u64,
+        tint: (f32, f32, f32, f32),
+    ) {
+        match self {
+            SceneBackend::Gpu(gpu) => {
+                gpu.unlit(vertices, uvs, texture, [tint.0, tint.1, tint.2, tint.3])
+            }
+            SceneBackend::Cpu(cpu) => cpu.textured(vertices, uvs, texture, tint),
+        }
+    }
+
     pub fn render_image(&mut self) -> Result<ImagePixels, UiAdapterError> {
         match self {
             SceneBackend::Gpu(gpu) => gpu.render_image(),

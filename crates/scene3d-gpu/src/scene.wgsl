@@ -37,7 +37,7 @@ struct Camera {
     // World to light clip space, for the shadow lookup.
     light_view_proj: mat4x4<f32>,
     // x: 1 when shadows are on, y: softness in texels, z: one texel in light
-    // clip units, w: unused.
+    // clip units, w: exposure. Zero exposure means the old hard clamp.
     shadow: vec4<f32>,
 };
 
@@ -54,9 +54,16 @@ struct VertexIn {
     @location(1) normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
     @location(3) tint: vec4<f32>,
-    // Bit 0: this vertex carries a real normal rather than a face normal.
-    // Bits 8..: the texture layer to sample.
+    // Bit 0: a real normal rather than a face normal.
+    // Bit 1: wears a real texture.
+    // Bit 2: wears a normal map, in the layer named by `normal_layer`.
+    // Bits 8..: the colour texture layer.
     @location(4) flags: u32,
+    // The direction the texture's +u runs, in world space. Without it the
+    // host cannot know which way "along the texture" points and a normal
+    // map's bumps light from the wrong side.
+    @location(5) tangent: vec3<f32>,
+    @location(6) normal_layer: u32,
 };
 
 struct VertexOut {
@@ -86,10 +93,16 @@ struct VertexOut {
     @location(6) world: vec3<f32>,
     // Distance from the eye, for fog.
     @location(7) view_depth: f32,
+    @location(8) tangent: vec3<f32>,
+    @location(9) normal_map_flag: f32,
+    @location(10) normal_layer: f32,
+    @location(11) unlit_flag: f32,
 };
 
 const FLAG_SMOOTH: u32 = 1u;
 const FLAG_TEXTURED: u32 = 2u;
+const FLAG_NORMAL_MAP: u32 = 4u;
+const FLAG_UNLIT: u32 = 8u;
 
 @vertex
 fn vs_main(in: VertexIn) -> VertexOut {
@@ -131,7 +144,27 @@ fn vs_main(in: VertexIn) -> VertexOut {
     out.layer = f32(in.flags >> 8u);
     out.world = in.position;
     out.view_depth = cz;
+    out.tangent = in.tangent;
+    out.normal_map_flag = f32((in.flags & FLAG_NORMAL_MAP) >> 2u);
+    out.normal_layer = f32(in.normal_layer);
+    out.unlit_flag = f32((in.flags & FLAG_UNLIT) >> 3u);
     return out;
+}
+
+/// ACES filmic tone mapping, the curve most engines settled on.
+///
+/// A rational approximation of the response film has: it darkens the very
+/// bottom slightly, keeps the middle roughly linear, and bends the top so that
+/// values above 1 approach white instead of hitting it. The constants are the
+/// published fit rather than anything derived here.
+fn tone_map(colour: vec3<f32>) -> vec3<f32> {
+    let a = 2.51;
+    let b = 0.03;
+    let c = 2.43;
+    let d = 0.59;
+    let e = 0.14;
+    let mapped = (colour * (a * colour + b)) / (colour * (c * colour + d) + e);
+    return clamp(mapped, vec3<f32>(0.0), vec3<f32>(1.0));
 }
 
 /// How much of the key light reaches this point: 1 lit, 0 fully shadowed.
@@ -182,7 +215,40 @@ fn shadow_factor(world: vec3<f32>, n: vec3<f32>) -> f32 {
 
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
-    let n = normalize(in.normal);
+    // An overlay: exactly the colour asked for, with no shading, no fog and
+    // no tone mapping. A HUD is not lit by the scene's sun, is not behind the
+    // scene's air, and is not part of the image a tone curve is grading --
+    // putting it through any of those gives the app a colour it did not
+    // choose, and before this the racing game's white HUD came out grey.
+    if (in.unlit_flag > 0.5) {
+        let layer = i32(round(in.layer));
+        let sampled = textureSample(atlas, atlas_sampler, in.uv, layer);
+        let rgb = clamp(sampled.rgb * in.tint.rgb, vec3<f32>(0.0), vec3<f32>(1.0));
+        return vec4<f32>(rgb, sampled.a * clamp(in.tint.a, 0.0, 1.0));
+    }
+
+    var n = normalize(in.normal);
+
+    // A normal map: a texture whose pixels are directions rather than
+    // colours, so a flat surface can have bumps the light reacts to. This is
+    // most of what "detail" means in a modern renderer -- a wall with one has
+    // visible depth from any angle and costs two triangles, where the same
+    // wall modelled costs ten thousand.
+    //
+    // The map is in the surface's own frame, so it needs a basis to come out
+    // of: the tangent along the texture's +u, the normal, and their cross.
+    // Gram-Schmidt against the normal first, because an interpolated tangent
+    // stops being perpendicular to an interpolated normal.
+    if (in.normal_map_flag > 0.5) {
+        let t = normalize(in.tangent - n * dot(n, in.tangent));
+        let b = cross(n, t);
+        let layer = i32(round(in.normal_layer));
+        let sampled_n = textureSample(atlas, atlas_sampler, in.uv, layer).rgb;
+        // 0..1 back to -1..1. Flat is (0.5, 0.5, 1.0), which is why an unused
+        // normal map reads as pale blue.
+        let tangent_space = sampled_n * 2.0 - 1.0;
+        n = normalize(t * tangent_space.x + b * tangent_space.y + n * tangent_space.z);
+    }
     let facing = dot(n, camera.light.xyz);
 
     // The ambient floor. `surface.x` and `surface.y` carry the defaults --
@@ -279,6 +345,22 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
         base = mix(base, camera.fog.rgb, fog_amount);
     }
 
-    let rgb = clamp(base, vec3<f32>(0.0), vec3<f32>(1.0));
+    // Tone mapping, last of all.
+    //
+    // A hard clamp turns anything brighter than white into a flat white patch
+    // with no shape in it -- a highlight loses its centre, a sunlit wall loses
+    // its texture. Rolling the top of the range off instead keeps a bright
+    // thing bright AND keeps its detail, which is the difference between a
+    // photograph and a photocopy.
+    //
+    // Zero exposure keeps the clamp, so a scene that never asks is unchanged
+    // and the parity tests still hold.
+    let exposure = camera.shadow.w;
+    var rgb: vec3<f32>;
+    if (exposure > 0.0) {
+        rgb = tone_map(base * exposure);
+    } else {
+        rgb = clamp(base, vec3<f32>(0.0), vec3<f32>(1.0));
+    }
     return vec4<f32>(rgb, sampled.a * clamp(in.tint.a, 0.0, 1.0));
 }

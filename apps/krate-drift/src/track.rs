@@ -39,6 +39,11 @@ pub struct Track {
     /// the car rather than repeating per segment, which is what gives a sense
     /// of travelling rather than of the same tile flashing past.
     pub road_uv: Vec<f32>,
+    /// A normal per road vertex -- straight up, since the road is flat-ish --
+    /// and the direction the texture's +u runs, which a normal map needs to
+    /// know which way "across the road" points.
+    pub road_normals: Vec<f32>,
+    pub road_tangents: Vec<f32>,
     /// Triangles for the kerbs either side, and their UVs.
     pub kerb: Vec<f32>,
     pub kerb_uv: Vec<f32>,
@@ -108,6 +113,8 @@ pub fn build(seed: u32, points: usize) -> Track {
         length,
         road: built.0,
         road_uv: built.1,
+        road_normals: built.4,
+        road_tangents: built.5,
         kerb: built.2,
         kerb_uv: built.3,
     }
@@ -120,10 +127,14 @@ pub fn build(seed: u32, points: usize) -> Track {
 /// clockwise seen from above, which back-face culling drops, and the ground
 /// then vanishes from under the car while distant geometry survives at its
 /// grazing angle. That failure looks like a camera bug and is not one.
-fn surface(nodes: &[Node]) -> (Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>) {
+type Surfaces = (Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>);
+
+fn surface(nodes: &[Node]) -> Surfaces {
     let n = nodes.len();
     let mut road = Vec::with_capacity(n * 18);
     let mut road_uv = Vec::with_capacity(n * 12);
+    let mut road_normals = Vec::with_capacity(n * 18);
+    let mut road_tangents = Vec::with_capacity(n * 18);
     let mut kerb = Vec::with_capacity(n * 36);
     let mut kerb_uv = Vec::with_capacity(n * 24);
 
@@ -180,14 +191,24 @@ fn surface(nodes: &[Node]) -> (Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>) {
 
         // `u` spans four tiles across the road rather than one, so the
         // chippings stay square instead of being smeared sideways.
+        let before = road.len();
         quad(ROAD_HALF, -ROAD_HALF, 0.0, 4.0, &mut road, &mut road_uv);
+        // One normal and one tangent per vertex the quad just pushed. The
+        // normal is straight up: the road banks only slightly and treating it
+        // as flat costs nothing a driver can see. The tangent is the LEFT
+        // normal of the centreline, because `u` runs across the road -- get
+        // this wrong and the bumps light from ninety degrees off.
+        for _ in 0..(road.len() - before) / 3 {
+            road_normals.extend_from_slice(&[0.0, 1.0, 0.0]);
+            road_tangents.extend_from_slice(&[cnx, 0.0, cnz]);
+        }
         // Both kerbs are one mesh now: the stripe comes from the texture
         // rather than from alternating two differently tinted meshes, which
         // is what the untextured version had to do.
         quad(ROAD_HALF + kerb_w, ROAD_HALF, 0.0, 1.0, &mut kerb, &mut kerb_uv);
         quad(-ROAD_HALF, -ROAD_HALF - kerb_w, 1.0, 0.0, &mut kerb, &mut kerb_uv);
     }
-    (road, road_uv, kerb, kerb_uv)
+    (road, road_uv, kerb, kerb_uv, road_normals, road_tangents)
 }
 
 /// Where a point sits relative to the track.
