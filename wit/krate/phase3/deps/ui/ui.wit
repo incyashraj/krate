@@ -206,6 +206,19 @@ interface types {
     image,
     /// Custom drawing canvas.
     canvas,
+    /// A container whose children all fill it and paint in order, back to
+    /// front.
+    ///
+    /// Every other container gives its children a share of the space. This one
+    /// gives each of them ALL of it, so a HUD sits over a game, a pause menu
+    /// over a board, a caption over a photo. Without it a 3D app could not have
+    /// a HUD at all: a canvas holding a scene and a canvas holding an overlay
+    /// were laid out one above the other, each getting half the window.
+    ///
+    /// Appended at the end of this enum on purpose. Every case before it keeps
+    /// the number it had, so an app built before this existed still means what
+    /// it meant.
+    overlay,
   }
 
   /// Caret and selection inside a text widget, as byte offsets into its label.
