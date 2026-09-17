@@ -1126,7 +1126,8 @@ impl krate::Guest for Component {
         let mut frames: u64 = 0;
         let mut engine_next = 0.0_f32;
         let mut skid_next = 0.0_f32;
-        let mut samples: Vec<u32> = Vec::with_capacity(4096);
+        let mut guest_samples: Vec<u32> = Vec::with_capacity(4096);
+        let mut wall_samples: Vec<u32> = Vec::with_capacity(4096);
         let mut now_s = 0.0_f32;
 
         // `auto` drives itself for long enough to run a whole three-lap race
@@ -1428,10 +1429,23 @@ impl krate::Guest for Component {
 
             let spent = clock::monotonic_nanos().saturating_sub(t0);
             let present = unsafe { PRESENT_NS };
-            // Record the work, not the deliberate pacing present() does to
-            // hold the frame rate: counting the sleep measures the budget, not
-            // the cost.
-            samples.push((spent.saturating_sub(present) / 1_000) as u32);
+            // TWO numbers, because one of them was a lie (K-406).
+            //
+            // This used to record `spent - present` alone and call it "render
+            // us". The intent was to leave out the pacing sleep, but
+            // `present()` renders the scene, reads it back off the GPU and
+            // THEN paces -- so subtracting all of it also subtracted the
+            // rendering. The app reported 35us a frame while the GPU readback
+            // alone measured 4,346us (K-405), about 1/124 of the truth.
+            //
+            // `guest` is the game's own work: physics, AI, building the mesh
+            // lists. `wall` is everything, pacing included, and is what
+            // decides whether the game holds 60. Reporting both means neither
+            // can flatter: if wall sits at the frame budget the game is
+            // pacing, and if it exceeds it the game is late whatever the
+            // guest half says.
+            guest_samples.push((spent.saturating_sub(present) / 1_000) as u32);
+            wall_samples.push((spent / 1_000) as u32);
 
             frames += 1;
             if frames >= frame_cap {
@@ -1447,21 +1461,32 @@ impl krate::Guest for Component {
         }
 
         // ---- report
-        if !samples.is_empty() {
-            samples.sort_unstable();
-            let pick = |q: f32| samples[((samples.len() - 1) as f32 * q) as usize];
+        if !wall_samples.is_empty() {
+            guest_samples.sort_unstable();
+            wall_samples.sort_unstable();
+            let q = |v: &Vec<u32>, p: f32| v[((v.len() - 1) as f32 * p) as usize];
+            // Wall first: it is the number that says whether the game holds
+            // its frame rate, and putting the smaller number first is how the
+            // old report read as three times faster than it was.
             let mut s = String::new();
             s.push_str("drift: frames ");
             s.push_str(&u64_str(frames));
-            s.push_str("  render us p50 ");
-            s.push_str(&u64_str(pick(0.50) as u64));
+            s.push_str("  wall us p50 ");
+            s.push_str(&u64_str(q(&wall_samples, 0.50) as u64));
             s.push_str(" p95 ");
-            s.push_str(&u64_str(pick(0.95) as u64));
+            s.push_str(&u64_str(q(&wall_samples, 0.95) as u64));
             s.push_str(" p99 ");
-            s.push_str(&u64_str(pick(0.99) as u64));
+            s.push_str(&u64_str(q(&wall_samples, 0.99) as u64));
             s.push_str(" worst ");
-            s.push_str(&u64_str(samples[samples.len() - 1] as u64));
+            s.push_str(&u64_str(wall_samples[wall_samples.len() - 1] as u64));
             say(&s);
+            let mut w = String::new();
+            w.push_str("  guest us p50 ");
+            w.push_str(&u64_str(q(&guest_samples, 0.50) as u64));
+            w.push_str(" p95 ");
+            w.push_str(&u64_str(q(&guest_samples, 0.95) as u64));
+            w.push_str("  (the rest is the host: render, readback, pacing)");
+            say(&w);
             let mut l = String::new();
             l.push_str("  player lap ");
             l.push_str(&u64_str(g.cars[0].lap as u64));
