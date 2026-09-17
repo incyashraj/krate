@@ -1375,8 +1375,22 @@ impl krate::Guest for Component {
                 // than a glint -- a specular lobe that wide is not a
                 // reflection, it is a wash. A tighter shininess puts the
                 // highlight where a highlight belongs: on the cars.
-                specular: 0.30,
-                shininess: 96.0,
+                // Specular is SCENE-WIDE, and grass and car paint want
+                // opposite values.
+                //
+                // There is one `specular` for the whole scene, so the number
+                // is a compromise rather than a choice: at 0.30 the sun laid a
+                // desaturated white blob across the hillside, because grass
+                // was taking a highlight that grass does not have. Measured in
+                // the glare, lit grass read (151,155,135) against (48,69,22)
+                // outside it -- not brighter green, GREY.
+                //
+                // 0.12 with a tight lobe keeps enough glint on the cars, which
+                // are the only genuinely shiny things here, and stops the
+                // ground pretending to be wet. A per-surface specular would
+                // let both be right; that is a runtime change.
+                specular: 0.12,
+                shininess: 120.0,
                 // The circuit is two kilometres round and the camera sees
                 // maybe four hundred units of it. This puts air between the
                 // near kerb and the far treeline.
