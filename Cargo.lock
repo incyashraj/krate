@@ -2473,6 +2473,7 @@ version = "0.4.0"
 dependencies = [
  "bytemuck",
  "krate-adapter-common",
+ "krate-presenter-gpu",
  "krate-runtime",
  "pollster",
  "vello",
