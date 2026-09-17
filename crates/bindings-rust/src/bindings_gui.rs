@@ -15912,6 +15912,78 @@ pub mod krate {
                         .finish()
                 }
             }
+            /// A colour, as 8-bit channels.
+            ///
+            /// Bytes rather than floats because a widget colour is picked, not
+            /// computed: an app writes 255 or 0x11 and means it. `krate:gfx` uses
+            /// floats because a shader multiplies them.
+            #[repr(C)]
+            #[derive(Clone, Copy)]
+            pub struct Color {
+                /// Red channel, 0-255.
+                pub r: u8,
+                /// Green channel, 0-255.
+                pub g: u8,
+                /// Blue channel, 0-255.
+                pub b: u8,
+                /// Alpha channel, 0-255. 0 is invisible, 255 is opaque.
+                pub a: u8,
+            }
+            impl ::core::fmt::Debug for Color {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    f.debug_struct("Color")
+                        .field("r", &self.r)
+                        .field("g", &self.g)
+                        .field("b", &self.b)
+                        .field("a", &self.a)
+                        .finish()
+                }
+            }
+            /// How a label is inked, for text that has to be read over something the
+            /// app does not control.
+            ///
+            /// Every label used to be painted in one near-black at one size, which is
+            /// right for a form on a pale panel and wrong the moment the background is
+            /// a photograph or a 3D scene. Over a racing game the same fixed colour sat
+            /// at 3.98:1 against the sky and 1.27:1 against asphalt -- the second of
+            /// those is unreadable, and no single colour fixes both, because the
+            /// background changes as the camera turns (K-402).
+            ///
+            /// The `outline` is what makes that solvable rather than a compromise. A
+            /// light glyph with a dark outline reads at roughly 19:1 against its own
+            /// outline whatever is behind it, which is why every game HUD and every
+            /// subtitle is drawn this way. Where the outline itself disappears -- on
+            /// asphalt, in shadow -- the glyph is already high-contrast against that
+            /// dark background on its own, so the pair covers both ends.
+            #[repr(C)]
+            #[derive(Clone, Copy)]
+            pub struct TextStyle {
+                /// Ink colour. Omitted means the host's ordinary label colour, which is
+                /// what every existing app gets.
+                pub color: Option<Color>,
+                /// Outline colour, drawn around the glyphs. Omitted means no outline.
+                pub outline: Option<Color>,
+                /// Outline thickness in logical pixels. Clamped by the host to something
+                /// it can draw; 1 to 2 is the useful range, and 0 means no outline
+                /// however `outline` is set.
+                pub outline_width: f32,
+                /// Font size in logical pixels. Omitted means the host's default, which
+                /// is 13 -- right for a form and small for a HUD read at speed.
+                pub size: Option<f32>,
+                /// Draw the label bold.
+                pub bold: bool,
+            }
+            impl ::core::fmt::Debug for TextStyle {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    f.debug_struct("TextStyle")
+                        .field("color", &self.color)
+                        .field("outline", &self.outline)
+                        .field("outline-width", &self.outline_width)
+                        .field("size", &self.size)
+                        .field("bold", &self.bold)
+                        .finish()
+                }
+            }
             /// Minimal style block for the first widget protocol draft.
             #[repr(C)]
             #[derive(Clone, Copy)]
@@ -15924,6 +15996,9 @@ pub mod krate {
                 pub grow: f32,
                 /// Padding in logical pixels.
                 pub padding: f32,
+                /// How this widget's label is inked. Omitted everywhere means every
+                /// existing app looks exactly as it did.
+                pub text: Option<TextStyle>,
             }
             impl ::core::fmt::Debug for Style {
                 fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
@@ -15932,6 +16007,7 @@ pub mod krate {
                         .field("height", &self.height)
                         .field("grow", &self.grow)
                         .field("padding", &self.padding)
+                        .field("text", &self.text)
                         .finish()
                 }
             }
@@ -16840,11 +16916,11 @@ pub mod krate {
                     #[repr(align(8))]
                     struct RetArea(
                         [::core::mem::MaybeUninit<u8>;
-                            96 + 6 * ::core::mem::size_of::<*const u8>()],
+                            128 + 6 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
                         [::core::mem::MaybeUninit::uninit();
-                            96 + 6 * ::core::mem::size_of::<*const u8>()],
+                            128 + 6 * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     *ptr0.add(0).cast::<i64>() = _rt::as_i64(&window);
@@ -16918,6 +16994,7 @@ pub mod krate {
                         height: height4,
                         grow: grow4,
                         padding: padding4,
+                        text: text4,
                     } = style1;
                     match width4 {
                         Some(e) => {
@@ -16955,14 +17032,99 @@ pub mod krate {
                     *ptr0
                         .add(52 + 7 * ::core::mem::size_of::<*const u8>())
                         .cast::<f32>() = _rt::as_f32(padding4);
-                    match checked1 {
+                    match text4 {
                         Some(e) => {
                             *ptr0
                                 .add(56 + 7 * ::core::mem::size_of::<*const u8>())
                                 .cast::<u8>() = (1i32) as u8;
+                            let super::super::super::krate::ui::types::TextStyle {
+                                color: color5,
+                                outline: outline5,
+                                outline_width: outline_width5,
+                                size: size5,
+                                bold: bold5,
+                            } = e;
+                            match color5 {
+                                Some(e) => {
+                                    *ptr0
+                                        .add(60 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>() = (1i32) as u8;
+                                    let super::super::super::krate::ui::types::Color {
+                                        r: r6,
+                                        g: g6,
+                                        b: b6,
+                                        a: a6,
+                                    } = e;
+                                    *ptr0
+                                        .add(61 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>() = (_rt::as_i32(r6)) as u8;
+                                    *ptr0
+                                        .add(62 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>() = (_rt::as_i32(g6)) as u8;
+                                    *ptr0
+                                        .add(63 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>() = (_rt::as_i32(b6)) as u8;
+                                    *ptr0
+                                        .add(64 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>() = (_rt::as_i32(a6)) as u8;
+                                }
+                                None => {
+                                    *ptr0
+                                        .add(60 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>() = (0i32) as u8;
+                                }
+                            };
+                            match outline5 {
+                                Some(e) => {
+                                    *ptr0
+                                        .add(65 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>() = (1i32) as u8;
+                                    let super::super::super::krate::ui::types::Color {
+                                        r: r7,
+                                        g: g7,
+                                        b: b7,
+                                        a: a7,
+                                    } = e;
+                                    *ptr0
+                                        .add(66 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>() = (_rt::as_i32(r7)) as u8;
+                                    *ptr0
+                                        .add(67 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>() = (_rt::as_i32(g7)) as u8;
+                                    *ptr0
+                                        .add(68 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>() = (_rt::as_i32(b7)) as u8;
+                                    *ptr0
+                                        .add(69 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>() = (_rt::as_i32(a7)) as u8;
+                                }
+                                None => {
+                                    *ptr0
+                                        .add(65 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>() = (0i32) as u8;
+                                }
+                            };
                             *ptr0
-                                .add(57 + 7 * ::core::mem::size_of::<*const u8>())
-                                .cast::<u8>() = (match e {
+                                .add(72 + 7 * ::core::mem::size_of::<*const u8>())
+                                .cast::<f32>() = _rt::as_f32(outline_width5);
+                            match size5 {
+                                Some(e) => {
+                                    *ptr0
+                                        .add(76 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>() = (1i32) as u8;
+                                    *ptr0
+                                        .add(80 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<f32>() = _rt::as_f32(e);
+                                }
+                                None => {
+                                    *ptr0
+                                        .add(76 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>() = (0i32) as u8;
+                                }
+                            };
+                            *ptr0
+                                .add(84 + 7 * ::core::mem::size_of::<*const u8>())
+                                .cast::<u8>() = (match bold5 {
                                 true => 1,
                                 false => 0,
                             }) as u8;
@@ -16973,110 +17135,111 @@ pub mod krate {
                                 .cast::<u8>() = (0i32) as u8;
                         }
                     };
+                    match checked1 {
+                        Some(e) => {
+                            *ptr0
+                                .add(88 + 7 * ::core::mem::size_of::<*const u8>())
+                                .cast::<u8>() = (1i32) as u8;
+                            *ptr0
+                                .add(89 + 7 * ::core::mem::size_of::<*const u8>())
+                                .cast::<u8>() = (match e {
+                                true => 1,
+                                false => 0,
+                            }) as u8;
+                        }
+                        None => {
+                            *ptr0
+                                .add(88 + 7 * ::core::mem::size_of::<*const u8>())
+                                .cast::<u8>() = (0i32) as u8;
+                        }
+                    };
                     match value1 {
                         Some(e) => {
                             *ptr0
-                                .add(60 + 7 * ::core::mem::size_of::<*const u8>())
+                                .add(92 + 7 * ::core::mem::size_of::<*const u8>())
                                 .cast::<u8>() = (1i32) as u8;
                             *ptr0
-                                .add(64 + 7 * ::core::mem::size_of::<*const u8>())
+                                .add(96 + 7 * ::core::mem::size_of::<*const u8>())
                                 .cast::<f32>() = _rt::as_f32(e);
                         }
                         None => {
                             *ptr0
-                                .add(60 + 7 * ::core::mem::size_of::<*const u8>())
+                                .add(92 + 7 * ::core::mem::size_of::<*const u8>())
                                 .cast::<u8>() = (0i32) as u8;
                         }
                     };
                     match selected1 {
                         Some(e) => {
                             *ptr0
-                                .add(68 + 7 * ::core::mem::size_of::<*const u8>())
+                                .add(100 + 7 * ::core::mem::size_of::<*const u8>())
                                 .cast::<u8>() = (1i32) as u8;
                             *ptr0
-                                .add(72 + 7 * ::core::mem::size_of::<*const u8>())
+                                .add(104 + 7 * ::core::mem::size_of::<*const u8>())
                                 .cast::<i32>() = _rt::as_i32(e);
                         }
                         None => {
                             *ptr0
-                                .add(68 + 7 * ::core::mem::size_of::<*const u8>())
+                                .add(100 + 7 * ::core::mem::size_of::<*const u8>())
                                 .cast::<u8>() = (0i32) as u8;
                         }
                     };
                     match text_cursor1 {
                         Some(e) => {
                             *ptr0
-                                .add(76 + 7 * ::core::mem::size_of::<*const u8>())
+                                .add(108 + 7 * ::core::mem::size_of::<*const u8>())
                                 .cast::<u8>() = (1i32) as u8;
                             let super::super::super::krate::ui::types::TextCursor {
-                                cursor: cursor5,
-                                anchor: anchor5,
+                                cursor: cursor8,
+                                anchor: anchor8,
                             } = e;
                             *ptr0
-                                .add(80 + 7 * ::core::mem::size_of::<*const u8>())
-                                .cast::<i32>() = _rt::as_i32(cursor5);
+                                .add(112 + 7 * ::core::mem::size_of::<*const u8>())
+                                .cast::<i32>() = _rt::as_i32(cursor8);
                             *ptr0
-                                .add(84 + 7 * ::core::mem::size_of::<*const u8>())
-                                .cast::<i32>() = _rt::as_i32(anchor5);
+                                .add(116 + 7 * ::core::mem::size_of::<*const u8>())
+                                .cast::<i32>() = _rt::as_i32(anchor8);
                         }
                         None => {
                             *ptr0
-                                .add(76 + 7 * ::core::mem::size_of::<*const u8>())
+                                .add(108 + 7 * ::core::mem::size_of::<*const u8>())
                                 .cast::<u8>() = (0i32) as u8;
                         }
                     };
-                    let ptr6 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    let ptr9 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
                     #[link(wasm_import_module = "krate:ui/tree@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "set-root"]
-                        fn wit_import7(_: *mut u8, _: *mut u8);
+                        fn wit_import10(_: *mut u8, _: *mut u8);
                     }
 
                     #[cfg(not(target_arch = "wasm32"))]
-                    unsafe extern "C" fn wit_import7(_: *mut u8, _: *mut u8) {
+                    unsafe extern "C" fn wit_import10(_: *mut u8, _: *mut u8) {
                         unreachable!()
                     }
-                    unsafe { wit_import7(ptr0, ptr6) };
-                    let l8 = i32::from(*ptr6.add(0).cast::<u8>());
-                    let result17 = match l8 {
+                    unsafe { wit_import10(ptr0, ptr9) };
+                    let l11 = i32::from(*ptr9.add(0).cast::<u8>());
+                    let result20 = match l11 {
                         0 => {
                             let e = ();
                             Ok(e)
                         }
                         1 => {
                             let e = {
-                                let l9 = i32::from(
-                                    *ptr6.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                let l12 = i32::from(
+                                    *ptr9.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                 );
-                                use super::super::super::krate::ui::types::UiError as V16;
-                                let v16 = match l9 {
-                                    0 => V16::PermissionDenied,
-                                    1 => V16::InvalidWindow,
-                                    2 => V16::InvalidWidget,
+                                use super::super::super::krate::ui::types::UiError as V19;
+                                let v19 = match l12 {
+                                    0 => V19::PermissionDenied,
+                                    1 => V19::InvalidWindow,
+                                    2 => V19::InvalidWidget,
                                     3 => {
-                                        let e16 = {
-                                            let l10 = *ptr6
+                                        let e19 = {
+                                            let l13 = *ptr9
                                                 .add(2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<*mut u8>();
-                                            let l11 = *ptr6
-                                                .add(3 * ::core::mem::size_of::<*const u8>())
-                                                .cast::<usize>();
-                                            let len12 = l11;
-                                            let bytes12 =
-                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
-
-                                            _rt::string_lift(bytes12)
-                                        };
-                                        V16::Unsupported(e16)
-                                    }
-                                    n => {
-                                        debug_assert_eq!(n, 4, "invalid enum discriminant");
-                                        let e16 = {
-                                            let l13 = *ptr6
-                                                .add(2 * ::core::mem::size_of::<*const u8>())
-                                                .cast::<*mut u8>();
-                                            let l14 = *ptr6
+                                            let l14 = *ptr9
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len15 = l14;
@@ -17085,17 +17248,34 @@ pub mod krate {
 
                                             _rt::string_lift(bytes15)
                                         };
-                                        V16::Platform(e16)
+                                        V19::Unsupported(e19)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 4, "invalid enum discriminant");
+                                        let e19 = {
+                                            let l16 = *ptr9
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l17 = *ptr9
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len18 = l17;
+                                            let bytes18 =
+                                                _rt::Vec::from_raw_parts(l16.cast(), len18, len18);
+
+                                            _rt::string_lift(bytes18)
+                                        };
+                                        V19::Platform(e19)
                                     }
                                 };
 
-                                v16
+                                v19
                             };
                             Err(e)
                         }
                         _ => _rt::invalid_enum_discriminant(),
                     };
-                    result17
+                    result20
                 }
             }
             #[allow(unused_unsafe, clippy::all)]
@@ -17105,11 +17285,11 @@ pub mod krate {
                     #[repr(align(8))]
                     struct RetArea(
                         [::core::mem::MaybeUninit<u8>;
-                            96 + 6 * ::core::mem::size_of::<*const u8>()],
+                            128 + 6 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
                         [::core::mem::MaybeUninit::uninit();
-                            96 + 6 * ::core::mem::size_of::<*const u8>()],
+                            128 + 6 * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     *ptr0.add(0).cast::<i64>() = _rt::as_i64(&window);
@@ -17183,6 +17363,7 @@ pub mod krate {
                         height: height4,
                         grow: grow4,
                         padding: padding4,
+                        text: text4,
                     } = style1;
                     match width4 {
                         Some(e) => {
@@ -17220,14 +17401,99 @@ pub mod krate {
                     *ptr0
                         .add(52 + 7 * ::core::mem::size_of::<*const u8>())
                         .cast::<f32>() = _rt::as_f32(padding4);
-                    match checked1 {
+                    match text4 {
                         Some(e) => {
                             *ptr0
                                 .add(56 + 7 * ::core::mem::size_of::<*const u8>())
                                 .cast::<u8>() = (1i32) as u8;
+                            let super::super::super::krate::ui::types::TextStyle {
+                                color: color5,
+                                outline: outline5,
+                                outline_width: outline_width5,
+                                size: size5,
+                                bold: bold5,
+                            } = e;
+                            match color5 {
+                                Some(e) => {
+                                    *ptr0
+                                        .add(60 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>() = (1i32) as u8;
+                                    let super::super::super::krate::ui::types::Color {
+                                        r: r6,
+                                        g: g6,
+                                        b: b6,
+                                        a: a6,
+                                    } = e;
+                                    *ptr0
+                                        .add(61 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>() = (_rt::as_i32(r6)) as u8;
+                                    *ptr0
+                                        .add(62 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>() = (_rt::as_i32(g6)) as u8;
+                                    *ptr0
+                                        .add(63 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>() = (_rt::as_i32(b6)) as u8;
+                                    *ptr0
+                                        .add(64 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>() = (_rt::as_i32(a6)) as u8;
+                                }
+                                None => {
+                                    *ptr0
+                                        .add(60 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>() = (0i32) as u8;
+                                }
+                            };
+                            match outline5 {
+                                Some(e) => {
+                                    *ptr0
+                                        .add(65 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>() = (1i32) as u8;
+                                    let super::super::super::krate::ui::types::Color {
+                                        r: r7,
+                                        g: g7,
+                                        b: b7,
+                                        a: a7,
+                                    } = e;
+                                    *ptr0
+                                        .add(66 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>() = (_rt::as_i32(r7)) as u8;
+                                    *ptr0
+                                        .add(67 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>() = (_rt::as_i32(g7)) as u8;
+                                    *ptr0
+                                        .add(68 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>() = (_rt::as_i32(b7)) as u8;
+                                    *ptr0
+                                        .add(69 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>() = (_rt::as_i32(a7)) as u8;
+                                }
+                                None => {
+                                    *ptr0
+                                        .add(65 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>() = (0i32) as u8;
+                                }
+                            };
                             *ptr0
-                                .add(57 + 7 * ::core::mem::size_of::<*const u8>())
-                                .cast::<u8>() = (match e {
+                                .add(72 + 7 * ::core::mem::size_of::<*const u8>())
+                                .cast::<f32>() = _rt::as_f32(outline_width5);
+                            match size5 {
+                                Some(e) => {
+                                    *ptr0
+                                        .add(76 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>() = (1i32) as u8;
+                                    *ptr0
+                                        .add(80 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<f32>() = _rt::as_f32(e);
+                                }
+                                None => {
+                                    *ptr0
+                                        .add(76 + 7 * ::core::mem::size_of::<*const u8>())
+                                        .cast::<u8>() = (0i32) as u8;
+                                }
+                            };
+                            *ptr0
+                                .add(84 + 7 * ::core::mem::size_of::<*const u8>())
+                                .cast::<u8>() = (match bold5 {
                                 true => 1,
                                 false => 0,
                             }) as u8;
@@ -17238,110 +17504,111 @@ pub mod krate {
                                 .cast::<u8>() = (0i32) as u8;
                         }
                     };
+                    match checked1 {
+                        Some(e) => {
+                            *ptr0
+                                .add(88 + 7 * ::core::mem::size_of::<*const u8>())
+                                .cast::<u8>() = (1i32) as u8;
+                            *ptr0
+                                .add(89 + 7 * ::core::mem::size_of::<*const u8>())
+                                .cast::<u8>() = (match e {
+                                true => 1,
+                                false => 0,
+                            }) as u8;
+                        }
+                        None => {
+                            *ptr0
+                                .add(88 + 7 * ::core::mem::size_of::<*const u8>())
+                                .cast::<u8>() = (0i32) as u8;
+                        }
+                    };
                     match value1 {
                         Some(e) => {
                             *ptr0
-                                .add(60 + 7 * ::core::mem::size_of::<*const u8>())
+                                .add(92 + 7 * ::core::mem::size_of::<*const u8>())
                                 .cast::<u8>() = (1i32) as u8;
                             *ptr0
-                                .add(64 + 7 * ::core::mem::size_of::<*const u8>())
+                                .add(96 + 7 * ::core::mem::size_of::<*const u8>())
                                 .cast::<f32>() = _rt::as_f32(e);
                         }
                         None => {
                             *ptr0
-                                .add(60 + 7 * ::core::mem::size_of::<*const u8>())
+                                .add(92 + 7 * ::core::mem::size_of::<*const u8>())
                                 .cast::<u8>() = (0i32) as u8;
                         }
                     };
                     match selected1 {
                         Some(e) => {
                             *ptr0
-                                .add(68 + 7 * ::core::mem::size_of::<*const u8>())
+                                .add(100 + 7 * ::core::mem::size_of::<*const u8>())
                                 .cast::<u8>() = (1i32) as u8;
                             *ptr0
-                                .add(72 + 7 * ::core::mem::size_of::<*const u8>())
+                                .add(104 + 7 * ::core::mem::size_of::<*const u8>())
                                 .cast::<i32>() = _rt::as_i32(e);
                         }
                         None => {
                             *ptr0
-                                .add(68 + 7 * ::core::mem::size_of::<*const u8>())
+                                .add(100 + 7 * ::core::mem::size_of::<*const u8>())
                                 .cast::<u8>() = (0i32) as u8;
                         }
                     };
                     match text_cursor1 {
                         Some(e) => {
                             *ptr0
-                                .add(76 + 7 * ::core::mem::size_of::<*const u8>())
+                                .add(108 + 7 * ::core::mem::size_of::<*const u8>())
                                 .cast::<u8>() = (1i32) as u8;
                             let super::super::super::krate::ui::types::TextCursor {
-                                cursor: cursor5,
-                                anchor: anchor5,
+                                cursor: cursor8,
+                                anchor: anchor8,
                             } = e;
                             *ptr0
-                                .add(80 + 7 * ::core::mem::size_of::<*const u8>())
-                                .cast::<i32>() = _rt::as_i32(cursor5);
+                                .add(112 + 7 * ::core::mem::size_of::<*const u8>())
+                                .cast::<i32>() = _rt::as_i32(cursor8);
                             *ptr0
-                                .add(84 + 7 * ::core::mem::size_of::<*const u8>())
-                                .cast::<i32>() = _rt::as_i32(anchor5);
+                                .add(116 + 7 * ::core::mem::size_of::<*const u8>())
+                                .cast::<i32>() = _rt::as_i32(anchor8);
                         }
                         None => {
                             *ptr0
-                                .add(76 + 7 * ::core::mem::size_of::<*const u8>())
+                                .add(108 + 7 * ::core::mem::size_of::<*const u8>())
                                 .cast::<u8>() = (0i32) as u8;
                         }
                     };
-                    let ptr6 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    let ptr9 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
                     #[link(wasm_import_module = "krate:ui/tree@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "upsert-node"]
-                        fn wit_import7(_: *mut u8, _: *mut u8);
+                        fn wit_import10(_: *mut u8, _: *mut u8);
                     }
 
                     #[cfg(not(target_arch = "wasm32"))]
-                    unsafe extern "C" fn wit_import7(_: *mut u8, _: *mut u8) {
+                    unsafe extern "C" fn wit_import10(_: *mut u8, _: *mut u8) {
                         unreachable!()
                     }
-                    unsafe { wit_import7(ptr0, ptr6) };
-                    let l8 = i32::from(*ptr6.add(0).cast::<u8>());
-                    let result17 = match l8 {
+                    unsafe { wit_import10(ptr0, ptr9) };
+                    let l11 = i32::from(*ptr9.add(0).cast::<u8>());
+                    let result20 = match l11 {
                         0 => {
                             let e = ();
                             Ok(e)
                         }
                         1 => {
                             let e = {
-                                let l9 = i32::from(
-                                    *ptr6.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                let l12 = i32::from(
+                                    *ptr9.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                 );
-                                use super::super::super::krate::ui::types::UiError as V16;
-                                let v16 = match l9 {
-                                    0 => V16::PermissionDenied,
-                                    1 => V16::InvalidWindow,
-                                    2 => V16::InvalidWidget,
+                                use super::super::super::krate::ui::types::UiError as V19;
+                                let v19 = match l12 {
+                                    0 => V19::PermissionDenied,
+                                    1 => V19::InvalidWindow,
+                                    2 => V19::InvalidWidget,
                                     3 => {
-                                        let e16 = {
-                                            let l10 = *ptr6
+                                        let e19 = {
+                                            let l13 = *ptr9
                                                 .add(2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<*mut u8>();
-                                            let l11 = *ptr6
-                                                .add(3 * ::core::mem::size_of::<*const u8>())
-                                                .cast::<usize>();
-                                            let len12 = l11;
-                                            let bytes12 =
-                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
-
-                                            _rt::string_lift(bytes12)
-                                        };
-                                        V16::Unsupported(e16)
-                                    }
-                                    n => {
-                                        debug_assert_eq!(n, 4, "invalid enum discriminant");
-                                        let e16 = {
-                                            let l13 = *ptr6
-                                                .add(2 * ::core::mem::size_of::<*const u8>())
-                                                .cast::<*mut u8>();
-                                            let l14 = *ptr6
+                                            let l14 = *ptr9
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len15 = l14;
@@ -17350,17 +17617,34 @@ pub mod krate {
 
                                             _rt::string_lift(bytes15)
                                         };
-                                        V16::Platform(e16)
+                                        V19::Unsupported(e19)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 4, "invalid enum discriminant");
+                                        let e19 = {
+                                            let l16 = *ptr9
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l17 = *ptr9
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len18 = l17;
+                                            let bytes18 =
+                                                _rt::Vec::from_raw_parts(l16.cast(), len18, len18);
+
+                                            _rt::string_lift(bytes18)
+                                        };
+                                        V19::Platform(e19)
                                     }
                                 };
 
-                                v16
+                                v19
                             };
                             Err(e)
                         }
                         _ => _rt::invalid_enum_discriminant(),
                     };
-                    result17
+                    result20
                 }
             }
             #[allow(unused_unsafe, clippy::all)]
@@ -20191,8 +20475,8 @@ pub(crate) use __export_gui_impl as export;
 #[unsafe(link_section = "component-type:wit-bindgen:0.41.0:krate:app@0.2.0:gui:encoded world")]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 12896] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xe6c\x01A\x02\x01Aw\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 12996] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xcad\x01A\x02\x01Aw\x01\
 B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x09log-level\x03\
 \0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eof\0\0\x0cinvalid-\
 utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x14krate:io/types@0.1\
@@ -20305,7 +20589,7 @@ e\x01\x0f\x01ps\x01j\x01\x10\x01\x01\x01@\0\0\x11\x04\0\x04keys\x01\x12\x01j\x01
 available\x01s\0\x04\0\x0crandom-error\x03\0\0\x01p}\x01j\x01\x02\x01\x01\x01@\x01\
 \x05county\0\x03\x04\0\x03get\x01\x04\x01j\x01w\x01\x01\x01@\0\0\x05\x04\0\x08ne\
 xt-u64\x01\x06\x01@\x01\x05boundw\0\x05\x04\0\x05below\x01\x07\x03\0\x18krate:ra\
-ndom/bytes@0.1.0\x05\"\x01B)\x01m\x04\x06normal\x09minimized\x09maximized\x0aful\
+ndom/bytes@0.1.0\x05\"\x01B/\x01m\x04\x06normal\x09minimized\x09maximized\x0aful\
 lscreen\x04\0\x0cwindow-state\x03\0\0\x01r\x02\x05widthy\x06heighty\x04\0\x0bwin\
 dow-size\x03\0\x02\x01r\x04\x01xv\x01yv\x05widthv\x06heightv\x04\0\x04rect\x03\0\
 \x04\x01m\x03\x05light\x04dark\x07unknown\x04\0\x05theme\x03\0\x06\x01m\x04\x07p\
@@ -20321,172 +20605,174 @@ ressed\x7f\x09modifiers\x0b\x04\0\x0dpointer-event\x03\0\x0e\x01r\x07\x06windoww
 r\x03\0\x16\x01m\x12\x05stack\x04grid\x06scroll\x04tabs\x06button\x08checkbox\x05\
 radio\x06switch\x06slider\x08progress\x04text\x0atext-field\x09text-area\x09list\
 -view\x09tree-view\x05image\x06canvas\x07overlay\x04\0\x0bwidget-kind\x03\0\x18\x01\
-r\x02\x06cursory\x06anchory\x04\0\x0btext-cursor\x03\0\x1a\x01kv\x01r\x04\x05wid\
-th\x1c\x06height\x1c\x04growv\x07paddingv\x04\0\x05style\x03\0\x1d\x01ks\x01k\x7f\
-\x01ky\x01k\x1b\x01r\x0a\x02idw\x06parent\x0c\x04kind\x19\x05label\x1f\x04role\x1f\
-\x05style\x1e\x07checked\x20\x05value\x1c\x08selected!\x0btext-cursor\"\x04\0\x0b\
-widget-node\x03\0#\x01r\x03\x02idw\x05labels\x07enabled\x7f\x04\0\x09menu-item\x03\
-\0%\x01q\x0b\x0fclose-requested\x01w\0\x07resized\x01\x03\0\x10redraw-requested\x01\
-w\0\x07pointer\x01\x0f\0\x03key\x01\x15\0\x05wheel\x01\x11\0\x0atext-input\x01s\0\
-\x0ctext-changed\x01\x13\0\x06action\x01w\0\x0dfocus-changed\x01\x0c\0\x0dtheme-\
-changed\x01\x07\0\x04\0\x05event\x03\0'\x03\0\x14krate:ui/types@0.1.0\x05#\x02\x03\
-\0\x15\x08ui-error\x02\x03\0\x15\x0bwindow-size\x02\x03\0\x15\x0cwindow-state\x01\
-B\x16\x02\x03\x02\x01$\x04\0\x08ui-error\x03\0\0\x02\x03\x02\x01%\x04\0\x0bwindo\
-w-size\x03\0\x02\x02\x03\x02\x01&\x04\0\x0cwindow-state\x03\0\x04\x01j\x01w\x01\x01\
-\x01@\x02\x05titles\x04size\x03\0\x06\x04\0\x06create\x01\x07\x01j\0\x01\x01\x01\
-@\x01\x06windoww\0\x08\x04\0\x04show\x01\x09\x04\0\x05close\x01\x09\x01@\x02\x06\
-windoww\x05titles\0\x08\x04\0\x09set-title\x01\x0a\x01@\x02\x06windoww\x04size\x03\
-\0\x08\x04\0\x08set-size\x01\x0b\x01@\x02\x06windoww\x05state\x05\0\x08\x04\0\x09\
-set-state\x01\x0c\x04\0\x0erequest-redraw\x01\x09\x01@\x02\x06windoww\x07enabled\
-\x7f\0\x08\x04\0\x0eset-full-bleed\x01\x0d\x03\0\x15krate:ui/window@0.1.0\x05'\x02\
-\x03\0\x15\x0bwidget-node\x01B\x0e\x02\x03\x02\x01$\x04\0\x08ui-error\x03\0\0\x02\
-\x03\x02\x01(\x04\0\x0bwidget-node\x03\0\x02\x01j\0\x01\x01\x01@\x02\x06windoww\x04\
-root\x03\0\x04\x04\0\x08set-root\x01\x05\x01@\x02\x06windoww\x04node\x03\0\x04\x04\
-\0\x0bupsert-node\x01\x06\x01@\x02\x06windoww\x06widgetw\0\x04\x04\0\x0bremove-n\
-ode\x01\x07\x04\0\x0afocus-node\x01\x07\x01@\x03\x06windoww\x06widgetw\x07enable\
-d\x7f\0\x04\x04\0\x0bset-enabled\x01\x08\x03\0\x13krate:ui/tree@0.1.0\x05)\x01B\x0a\
-\x02\x03\x02\x01$\x04\0\x08ui-error\x03\0\0\x01p}\x01r\x03\x05widthy\x06heighty\x04\
-rgba\x02\x04\0\x0cimage-pixels\x03\0\x03\x01j\0\x01\x01\x01@\x03\x06windoww\x06w\
-idgetw\x06pixels\x04\0\x05\x04\0\x0aset-pixels\x01\x06\x01@\x02\x06windoww\x06wi\
-dgetw\0\x05\x04\0\x05clear\x01\x07\x03\0\x14krate:ui/image@0.1.0\x05*\x02\x03\0\x15\
-\x05event\x01B\x10\x02\x03\x02\x01+\x04\0\x05event\x03\0\0\x01k\x01\x01@\0\0\x02\
-\x04\0\x04poll\x01\x03\x01ky\x01@\x01\x0etimeout-millis\x04\0\x02\x04\0\x04wait\x01\
-\x05\x01@\x01\x03keys\0\x7f\x04\0\x08key-held\x01\x06\x01@\0\0\x7f\x04\0\x11game\
-pad-connected\x01\x07\x01@\x01\x06buttons\0\x7f\x04\0\x0cgamepad-held\x01\x08\x01\
-@\x01\x04axiss\0v\x04\0\x0cgamepad-axis\x01\x09\x03\0\x15krate:ui/events@0.1.0\x05\
-,\x01B\x14\x02\x03\x02\x01$\x04\0\x08ui-error\x03\0\0\x01r\x02\x04names\x05token\
-s\x04\0\x0bchosen-file\x03\0\x02\x01r\x02\x04names\x05tokens\x04\0\x0dchosen-fol\
-der\x03\0\x04\x01j\0\x01\x01\x01@\x03\x06windoww\x05titles\x04bodys\0\x06\x04\0\x07\
-message\x01\x07\x01j\x01\x7f\x01\x01\x01@\x03\x06windoww\x05titles\x04bodys\0\x08\
-\x04\0\x07confirm\x01\x09\x01k\x03\x01j\x01\x0a\x01\x01\x01@\x03\x06windoww\x05t\
-itles\x06filters\0\x0b\x04\0\x09open-file\x01\x0c\x01k\x05\x01j\x01\x0d\x01\x01\x01\
-@\x02\x06windoww\x05titles\0\x0e\x04\0\x0bopen-folder\x01\x0f\x03\0\x15krate:ui/\
-dialog@0.1.0\x05-\x01B\x08\x02\x03\x02\x01$\x04\0\x08ui-error\x03\0\0\x01j\x01s\x01\
-\x01\x01@\0\0\x02\x04\0\x09read-text\x01\x03\x01j\0\x01\x01\x01@\x01\x04texts\0\x04\
-\x04\0\x0awrite-text\x01\x05\x03\0\x18krate:ui/clipboard@0.1.0\x05.\x02\x03\0\x15\
-\x09menu-item\x01B\x08\x02\x03\x02\x01/\x04\0\x09menu-item\x03\0\0\x02\x03\x02\x01\
-$\x04\0\x08ui-error\x03\0\x02\x01p\x01\x01j\0\x01\x03\x01@\x02\x06windoww\x05ite\
-ms\x04\0\x05\x04\0\x09set-items\x01\x06\x03\0\x13krate:ui/menu@0.1.0\x050\x01B\x05\
-\x01q\x03\x06denied\0\0\x0binvalid-url\x01s\0\x0bunavailable\x01s\0\x04\0\x0clau\
-nch-error\x03\0\0\x01j\0\x01\x01\x01@\x01\x03urls\0\x02\x04\0\x08open-url\x01\x03\
-\x03\0\x17krate:ui/launcher@0.1.0\x051\x01B\x05\x01q\x03\x06denied\0\0\x0finvali\
-d-content\x01s\0\x0bunavailable\x01s\0\x04\0\x0cnotify-error\x03\0\0\x01j\0\x01\x01\
-\x01@\x02\x05titles\x04bodys\0\x02\x04\0\x04show\x01\x03\x03\0\x15krate:ui/notif\
-y@0.1.0\x052\x01B\x14\x01r\x04\x01rv\x01gv\x01bv\x01av\x04\0\x05color\x03\0\0\x01\
-r\x02\x01xv\x01yv\x04\0\x05point\x03\0\x02\x01r\x02\x05widthv\x06heightv\x04\0\x04\
-size\x03\0\x04\x01r\x04\x05widthv\x06heightv\x06ascentv\x07descentv\x04\0\x0ctex\
-t-metrics\x03\0\x06\x01r\x04\x01xv\x01yv\x05widthv\x06heightv\x04\0\x04rect\x03\0\
-\x08\x01r\x02\x06offsetv\x05color\x01\x04\0\x0dgradient-stop\x03\0\x0a\x01m\x03\x04\
-sans\x05serif\x04mono\x04\0\x0bfont-family\x03\0\x0c\x01r\x04\x06weight{\x06ital\
-ic\x7f\x0eletter-spacingv\x06family\x0d\x04\0\x0atext-style\x03\0\x0e\x01r\x04\x08\
-top-leftv\x09top-rightv\x0cbottom-rightv\x0bbottom-leftv\x04\0\x0ccorner-radii\x03\
-\0\x10\x01q\x04\x11permission-denied\0\0\x0einvalid-target\0\0\x0bunsupported\x01\
-s\0\x08platform\x01s\0\x04\0\x09gfx-error\x03\0\x12\x03\0\x15krate:gfx/types@0.1\
-.0\x053\x02\x03\0\x1f\x05color\x02\x03\0\x1f\x05point\x02\x03\0\x1f\x04rect\x02\x03\
-\0\x1f\x04size\x02\x03\0\x1f\x0ctext-metrics\x02\x03\0\x1f\x09gfx-error\x02\x03\0\
-\x1f\x0dgradient-stop\x02\x03\0\x1f\x0ccorner-radii\x02\x03\0\x1f\x0atext-style\x02\
-\x03\0\x1f\x0bfont-family\x01BK\x02\x03\x02\x014\x04\0\x05color\x03\0\0\x02\x03\x02\
-\x015\x04\0\x05point\x03\0\x02\x02\x03\x02\x016\x04\0\x04rect\x03\0\x04\x02\x03\x02\
-\x017\x04\0\x04size\x03\0\x06\x02\x03\x02\x018\x04\0\x0ctext-metrics\x03\0\x08\x02\
-\x03\x02\x019\x04\0\x09gfx-error\x03\0\x0a\x02\x03\x02\x01:\x04\0\x0dgradient-st\
-op\x03\0\x0c\x02\x03\x02\x01;\x04\0\x0ccorner-radii\x03\0\x0e\x02\x03\x02\x01<\x04\
-\0\x0atext-style\x03\0\x10\x02\x03\x02\x01=\x04\0\x0bfont-family\x03\0\x12\x01j\x01\
-w\x01\x0b\x01@\x02\x06windoww\x06widgetw\0\x14\x04\0\x04bind\x01\x15\x01j\x01\x07\
-\x01\x0b\x01@\x01\x06canvasw\0\x16\x04\0\x0bcanvas-size\x01\x17\x01j\0\x01\x0b\x01\
-@\x02\x06canvasw\x04size\x07\0\x18\x04\0\x0fset-design-size\x01\x19\x01@\x05\x06\
-canvasw\x01xv\x01yv\x01wv\x01hv\0\x18\x04\0\x08set-clip\x01\x1a\x01@\x01\x06canv\
-asw\0\x18\x04\0\x0aclear-clip\x01\x1b\x01@\x02\x06canvasw\x04fill\x01\0\x18\x04\0\
-\x05clear\x01\x1c\x01@\x03\x06canvasw\x04area\x05\x04fill\x01\0\x18\x04\0\x09fil\
-l-rect\x01\x1d\x01@\x04\x06canvasw\x04area\x05\x06stroke\x01\x05widthv\0\x18\x04\
-\0\x0bstroke-rect\x01\x1e\x01@\x04\x06canvasw\x04area\x05\x05radii\x0f\x04fill\x01\
-\0\x18\x04\0\x0ffill-round-rect\x01\x1f\x01@\x05\x06canvasw\x04area\x05\x05radii\
-\x0f\x05widthv\x06stroke\x01\0\x18\x04\0\x11stroke-round-rect\x01\x20\x01@\x05\x06\
-canvasw\x04area\x05\x05radii\x0f\x04blurv\x06shadow\x01\0\x18\x04\0\x16drop-shad\
-ow-round-rect\x01!\x01p\x0d\x01@\x04\x06canvasw\x04area\x05\x0dangle-degreesv\x05\
-stops\"\0\x18\x04\0\x15linear-gradient-stops\x01#\x01@\x06\x06canvasw\x04texts\x06\
-origin\x03\x09font-sizev\x03ink\x01\x05style\x11\0\x18\x04\0\x10draw-text-styled\
-\x01$\x01j\x01\x09\x01\x0b\x01@\x04\x06canvasw\x04texts\x09font-sizev\x05style\x11\
-\0%\x04\0\x13measure-text-styled\x01&\x01@\x07\x06canvasw\x06center\x03\x06radiu\
-sv\x0dstart-degreesv\x0dsweep-degreesv\x05widthv\x06stroke\x01\0\x18\x04\0\x0ast\
-roke-arc\x01'\x01p}\x01@\x06\x06canvasw\x04area\x05\x05radii\x0f\x05widthy\x06he\
-ighty\x04rgba(\0\x18\x04\0\x11draw-pixels-round\x01)\x01@\x04\x06canvasw\x06cent\
-er\x03\x06radiusv\x04fill\x01\0\x18\x04\0\x0bfill-circle\x01*\x01@\x05\x06canvas\
-w\x06center\x03\x06radiusv\x05widthv\x06stroke\x01\0\x18\x04\0\x0dstroke-circle\x01\
-+\x01@\x05\x06canvasw\x06center\x03\x06radiusv\x05inner\x01\x05outer\x01\0\x18\x04\
-\0\x0fradial-gradient\x01,\x01@\x04\x06canvasw\x04area\x05\x03top\x01\x06bottom\x01\
-\0\x18\x04\0\x0flinear-gradient\x01-\x01@\x05\x06canvasw\x04texts\x06origin\x03\x09\
-font-sizev\x03ink\x01\0\x18\x04\0\x09draw-text\x01.\x01@\x03\x06canvasw\x04texts\
-\x09font-sizev\0%\x04\0\x0cmeasure-text\x01/\x01@\x05\x06canvasw\x04area\x05\x05\
-widthy\x06heighty\x04rgba(\0\x18\x04\0\x0bdraw-pixels\x010\x01@\x07\x06canvasw\x06\
-center\x03\x03dst\x07\x05anglev\x05widthy\x06heighty\x04rgba(\0\x18\x04\0\x0bdra\
-w-sprite\x011\x04\0\x07present\x01\x1b\x03\0\x18krate:gfx/canvas2d@0.1.0\x05>\x01\
-B%\x02\x03\x02\x014\x04\0\x05color\x03\0\0\x02\x03\x02\x019\x04\0\x09gfx-error\x03\
-\0\x02\x01pv\x01r\x0a\x07ambientv\x08specularv\x09shininessv\x0bfog-densityv\x09\
-fog-color\x01\x0efill-direction\x04\x0afill-color\x01\x0dshadow-radiusv\x0fshado\
-w-softnessv\x08exposurev\x04\0\x08lighting\x03\0\x05\x01j\x01w\x01\x03\x01@\x02\x06\
-windoww\x06widgetw\0\x07\x04\0\x04bind\x01\x08\x01j\0\x01\x03\x01@\x02\x05scenew\
-\x03sky\x01\0\x09\x04\0\x05clear\x01\x0a\x01@\x04\x05scenew\x03eye\x04\x07look-a\
-t\x04\x0bfov-degreesv\0\x09\x04\0\x06camera\x01\x0b\x01@\x02\x05scenew\x09direct\
-ion\x04\0\x09\x04\0\x05light\x01\x0c\x01@\x03\x05scenew\x08vertices\x04\x04tint\x01\
-\0\x09\x04\0\x09triangles\x01\x0d\x01@\x06\x05scenew\x08vertices\x04\x09translat\
-e\x04\x0erotate-degrees\x04\x05scalev\x04tint\x01\0\x09\x04\0\x05place\x01\x0e\x01\
-p}\x01@\x04\x05scenew\x05widthy\x06heighty\x04rgba\x0f\0\x07\x04\0\x0eupload-tex\
-ture\x01\x10\x01@\x05\x05scenew\x08vertices\x04\x03uvs\x04\x07texturew\x04tint\x01\
-\0\x09\x04\0\x08textured\x01\x11\x01@\x06\x05scenew\x08vertices\x04\x07normals\x04\
-\x03uvs\x04\x07texturew\x04tint\x01\0\x09\x04\0\x06smooth\x01\x12\x01@\x02\x05sc\
-enew\x08lighting\x06\0\x09\x04\0\x0cset-lighting\x01\x13\x01@\x08\x05scenew\x08v\
-ertices\x04\x07normals\x04\x08tangents\x04\x03uvs\x04\x07texturew\x0enormal-text\
-urew\x04tint\x01\0\x09\x04\0\x0dnormal-mapped\x01\x14\x04\0\x05unlit\x01\x11\x01\
-@\x02\x05scenew\x07enabled\x7f\0\x09\x04\0\x0fcull-back-faces\x01\x15\x01@\x01\x05\
-scenew\0\x09\x04\0\x07present\x01\x16\x03\0\x17krate:gfx/scene3d@0.1.0\x05?\x01B\
-\x06\x01m\x02\x07pcm-s16\x07float32\x04\0\x0dsample-format\x03\0\0\x01r\x04\x0bs\
-ample-ratey\x08channels{\x06format\x01\x0dbuffer-framesy\x04\0\x0dstream-config\x03\
-\0\x02\x01q\x05\x11permission-denied\0\0\x0einvalid-stream\0\0\x12device-unavail\
-able\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x0baudio-error\x03\0\x04\
-\x03\0\x17krate:audio/types@0.1.0\x05@\x02\x03\0\"\x0baudio-error\x02\x03\0\"\x0d\
-stream-config\x01B\x15\x02\x03\x02\x01A\x04\0\x0baudio-error\x03\0\0\x02\x03\x02\
-\x01B\x04\0\x0dstream-config\x03\0\x02\x01j\x01w\x01\x01\x01@\x01\x06config\x03\0\
-\x04\x04\0\x04open\x01\x05\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x06\x04\0\x05\
-start\x01\x07\x04\0\x04stop\x01\x07\x01p}\x01j\x01y\x01\x01\x01@\x02\x09stream-i\
-dw\x05bytes\x08\0\x09\x04\0\x05write\x01\x0a\x01@\x02\x09stream-idw\x05bytes\x08\
-\0\x04\x04\0\x0aload-sound\x01\x0b\x01@\x03\x09stream-idw\x05soundw\x04gainv\0\x06\
-\x04\0\x0aplay-sound\x01\x0c\x01@\x02\x09stream-idw\x05soundw\0\x06\x04\0\x0asto\
-p-sound\x01\x0d\x03\0\x1akrate:audio/playback@0.1.0\x05C\x01B\x0f\x02\x03\x02\x01\
-A\x04\0\x0baudio-error\x03\0\0\x02\x03\x02\x01B\x04\0\x0dstream-config\x03\0\x02\
-\x01j\x01w\x01\x01\x01@\x01\x06config\x03\0\x04\x04\0\x04open\x01\x05\x01j\0\x01\
-\x01\x01@\x01\x09stream-idw\0\x06\x04\0\x05start\x01\x07\x04\0\x04stop\x01\x07\x01\
-p}\x01j\x01\x08\x01\x01\x01@\x02\x09stream-idw\x09max-bytesy\0\x09\x04\0\x04read\
-\x01\x0a\x03\0\x19krate:audio/capture@0.1.0\x05D\x01B\x0d\x01m\x01\x05rgba8\x04\0\
-\x0cframe-format\x03\0\0\x01r\x04\x05widthy\x06heighty\x03fpsy\x06format\x01\x04\
-\0\x0dstream-config\x03\0\x02\x01r\x04\x05widthy\x06heighty\x03fpsy\x06format\x01\
-\x04\0\x0aframe-info\x03\0\x04\x01r\x02\x02ids\x05labels\x04\0\x0bdevice-info\x03\
-\0\x06\x01p}\x01r\x04\x05bytes\x08\x05widthy\x06heighty\x0eelapsed-millisw\x04\0\
-\x05frame\x03\0\x09\x01q\x06\x11permission-denied\0\0\x0einvalid-stream\0\0\x12d\
-evice-unavailable\0\0\x0dsystem-denied\0\0\x0bunsupported\x01s\0\x08platform\x01\
-s\0\x04\0\x0ccamera-error\x03\0\x0b\x03\0\x18krate:camera/types@0.1.0\x05E\x02\x03\
-\0%\x0ccamera-error\x02\x03\0%\x0bdevice-info\x02\x03\0%\x05frame\x02\x03\0%\x0a\
-frame-info\x02\x03\0%\x0dstream-config\x01B\x1d\x02\x03\x02\x01F\x04\0\x0ccamera\
--error\x03\0\0\x02\x03\x02\x01G\x04\0\x0bdevice-info\x03\0\x02\x02\x03\x02\x01H\x04\
-\0\x05frame\x03\0\x04\x02\x03\x02\x01I\x04\0\x0aframe-info\x03\0\x06\x02\x03\x02\
-\x01J\x04\0\x0dstream-config\x03\0\x08\x01p\x03\x01j\x01\x0a\x01\x01\x01@\0\0\x0b\
-\x04\0\x07devices\x01\x0c\x01j\x01w\x01\x01\x01@\x02\x06devices\x06config\x09\0\x0d\
-\x04\0\x04open\x01\x0e\x01j\x01\x07\x01\x01\x01@\x01\x09stream-idw\0\x0f\x04\0\x04\
-info\x01\x10\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x11\x04\0\x05start\x01\x12\x04\
-\0\x04stop\x01\x12\x01k\x05\x01j\x01\x13\x01\x01\x01@\x01\x09stream-idw\0\x14\x04\
-\0\x04read\x01\x15\x04\0\x05close\x01\x12\x03\0\x1akrate:camera/capture@0.1.0\x05\
-K\x01B\x12\x01r\x01\x04texts\x04\0\x0atranscript\x03\0\0\x01q\x05\x0finvalid-req\
-uest\x01s\0\x0fmodel-not-found\0\0\x0dmodel-invalid\x01s\0\x0bunsupported\x01s\0\
-\x09inference\x01s\0\x04\0\x0cspeech-error\x03\0\x02\x01m\x05\x0finvalid-request\
-\x0fmodel-not-found\x0dmodel-invalid\x0bunsupported\x09inference\x04\0\x0bmatch-\
-error\x03\0\x04\x01p}\x01ks\x01j\x01\x01\x01\x03\x01@\x04\x0bmodel-assets\x0apcm\
--s16-le\x06\x0bsample-ratey\x08language\x07\0\x08\x04\0\x0atranscribe\x01\x09\x01\
-j\x01}\x01\x05\x01@\x05\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample-ratey\x08lan\
-guage\x07\x08expecteds\0\x0a\x04\0\x0amatch-line\x01\x0b\x01k}\x01j\x01\x0c\x01\x05\
-\x01@\x06\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample-ratey\x08language\x07\x08e\
-xpecteds\x06finish\x7f\0\x0d\x04\0\x11match-line-stream\x01\x0e\x03\0\x20krate:s\
-peech/transcription@0.1.0\x05L\x01@\0\0z\x04\0\x03run\x01M\x04\0\x13krate:app/gu\
-i@0.2.0\x04\0\x0b\x09\x01\0\x03gui\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\
-\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
+r\x02\x06cursory\x06anchory\x04\0\x0btext-cursor\x03\0\x1a\x01r\x04\x01r}\x01g}\x01\
+b}\x01a}\x04\0\x05color\x03\0\x1c\x01k\x1d\x01kv\x01r\x05\x05color\x1e\x07outlin\
+e\x1e\x0doutline-widthv\x04size\x1f\x04bold\x7f\x04\0\x0atext-style\x03\0\x20\x01\
+k!\x01r\x05\x05width\x1f\x06height\x1f\x04growv\x07paddingv\x04text\"\x04\0\x05s\
+tyle\x03\0#\x01ks\x01k\x7f\x01ky\x01k\x1b\x01r\x0a\x02idw\x06parent\x0c\x04kind\x19\
+\x05label%\x04role%\x05style$\x07checked&\x05value\x1f\x08selected'\x0btext-curs\
+or(\x04\0\x0bwidget-node\x03\0)\x01r\x03\x02idw\x05labels\x07enabled\x7f\x04\0\x09\
+menu-item\x03\0+\x01q\x0b\x0fclose-requested\x01w\0\x07resized\x01\x03\0\x10redr\
+aw-requested\x01w\0\x07pointer\x01\x0f\0\x03key\x01\x15\0\x05wheel\x01\x11\0\x0a\
+text-input\x01s\0\x0ctext-changed\x01\x13\0\x06action\x01w\0\x0dfocus-changed\x01\
+\x0c\0\x0dtheme-changed\x01\x07\0\x04\0\x05event\x03\0-\x03\0\x14krate:ui/types@\
+0.1.0\x05#\x02\x03\0\x15\x08ui-error\x02\x03\0\x15\x0bwindow-size\x02\x03\0\x15\x0c\
+window-state\x01B\x16\x02\x03\x02\x01$\x04\0\x08ui-error\x03\0\0\x02\x03\x02\x01\
+%\x04\0\x0bwindow-size\x03\0\x02\x02\x03\x02\x01&\x04\0\x0cwindow-state\x03\0\x04\
+\x01j\x01w\x01\x01\x01@\x02\x05titles\x04size\x03\0\x06\x04\0\x06create\x01\x07\x01\
+j\0\x01\x01\x01@\x01\x06windoww\0\x08\x04\0\x04show\x01\x09\x04\0\x05close\x01\x09\
+\x01@\x02\x06windoww\x05titles\0\x08\x04\0\x09set-title\x01\x0a\x01@\x02\x06wind\
+oww\x04size\x03\0\x08\x04\0\x08set-size\x01\x0b\x01@\x02\x06windoww\x05state\x05\
+\0\x08\x04\0\x09set-state\x01\x0c\x04\0\x0erequest-redraw\x01\x09\x01@\x02\x06wi\
+ndoww\x07enabled\x7f\0\x08\x04\0\x0eset-full-bleed\x01\x0d\x03\0\x15krate:ui/win\
+dow@0.1.0\x05'\x02\x03\0\x15\x0bwidget-node\x01B\x0e\x02\x03\x02\x01$\x04\0\x08u\
+i-error\x03\0\0\x02\x03\x02\x01(\x04\0\x0bwidget-node\x03\0\x02\x01j\0\x01\x01\x01\
+@\x02\x06windoww\x04root\x03\0\x04\x04\0\x08set-root\x01\x05\x01@\x02\x06windoww\
+\x04node\x03\0\x04\x04\0\x0bupsert-node\x01\x06\x01@\x02\x06windoww\x06widgetw\0\
+\x04\x04\0\x0bremove-node\x01\x07\x04\0\x0afocus-node\x01\x07\x01@\x03\x06window\
+w\x06widgetw\x07enabled\x7f\0\x04\x04\0\x0bset-enabled\x01\x08\x03\0\x13krate:ui\
+/tree@0.1.0\x05)\x01B\x0a\x02\x03\x02\x01$\x04\0\x08ui-error\x03\0\0\x01p}\x01r\x03\
+\x05widthy\x06heighty\x04rgba\x02\x04\0\x0cimage-pixels\x03\0\x03\x01j\0\x01\x01\
+\x01@\x03\x06windoww\x06widgetw\x06pixels\x04\0\x05\x04\0\x0aset-pixels\x01\x06\x01\
+@\x02\x06windoww\x06widgetw\0\x05\x04\0\x05clear\x01\x07\x03\0\x14krate:ui/image\
+@0.1.0\x05*\x02\x03\0\x15\x05event\x01B\x10\x02\x03\x02\x01+\x04\0\x05event\x03\0\
+\0\x01k\x01\x01@\0\0\x02\x04\0\x04poll\x01\x03\x01ky\x01@\x01\x0etimeout-millis\x04\
+\0\x02\x04\0\x04wait\x01\x05\x01@\x01\x03keys\0\x7f\x04\0\x08key-held\x01\x06\x01\
+@\0\0\x7f\x04\0\x11gamepad-connected\x01\x07\x01@\x01\x06buttons\0\x7f\x04\0\x0c\
+gamepad-held\x01\x08\x01@\x01\x04axiss\0v\x04\0\x0cgamepad-axis\x01\x09\x03\0\x15\
+krate:ui/events@0.1.0\x05,\x01B\x14\x02\x03\x02\x01$\x04\0\x08ui-error\x03\0\0\x01\
+r\x02\x04names\x05tokens\x04\0\x0bchosen-file\x03\0\x02\x01r\x02\x04names\x05tok\
+ens\x04\0\x0dchosen-folder\x03\0\x04\x01j\0\x01\x01\x01@\x03\x06windoww\x05title\
+s\x04bodys\0\x06\x04\0\x07message\x01\x07\x01j\x01\x7f\x01\x01\x01@\x03\x06windo\
+ww\x05titles\x04bodys\0\x08\x04\0\x07confirm\x01\x09\x01k\x03\x01j\x01\x0a\x01\x01\
+\x01@\x03\x06windoww\x05titles\x06filters\0\x0b\x04\0\x09open-file\x01\x0c\x01k\x05\
+\x01j\x01\x0d\x01\x01\x01@\x02\x06windoww\x05titles\0\x0e\x04\0\x0bopen-folder\x01\
+\x0f\x03\0\x15krate:ui/dialog@0.1.0\x05-\x01B\x08\x02\x03\x02\x01$\x04\0\x08ui-e\
+rror\x03\0\0\x01j\x01s\x01\x01\x01@\0\0\x02\x04\0\x09read-text\x01\x03\x01j\0\x01\
+\x01\x01@\x01\x04texts\0\x04\x04\0\x0awrite-text\x01\x05\x03\0\x18krate:ui/clipb\
+oard@0.1.0\x05.\x02\x03\0\x15\x09menu-item\x01B\x08\x02\x03\x02\x01/\x04\0\x09me\
+nu-item\x03\0\0\x02\x03\x02\x01$\x04\0\x08ui-error\x03\0\x02\x01p\x01\x01j\0\x01\
+\x03\x01@\x02\x06windoww\x05items\x04\0\x05\x04\0\x09set-items\x01\x06\x03\0\x13\
+krate:ui/menu@0.1.0\x050\x01B\x05\x01q\x03\x06denied\0\0\x0binvalid-url\x01s\0\x0b\
+unavailable\x01s\0\x04\0\x0claunch-error\x03\0\0\x01j\0\x01\x01\x01@\x01\x03urls\
+\0\x02\x04\0\x08open-url\x01\x03\x03\0\x17krate:ui/launcher@0.1.0\x051\x01B\x05\x01\
+q\x03\x06denied\0\0\x0finvalid-content\x01s\0\x0bunavailable\x01s\0\x04\0\x0cnot\
+ify-error\x03\0\0\x01j\0\x01\x01\x01@\x02\x05titles\x04bodys\0\x02\x04\0\x04show\
+\x01\x03\x03\0\x15krate:ui/notify@0.1.0\x052\x01B\x14\x01r\x04\x01rv\x01gv\x01bv\
+\x01av\x04\0\x05color\x03\0\0\x01r\x02\x01xv\x01yv\x04\0\x05point\x03\0\x02\x01r\
+\x02\x05widthv\x06heightv\x04\0\x04size\x03\0\x04\x01r\x04\x05widthv\x06heightv\x06\
+ascentv\x07descentv\x04\0\x0ctext-metrics\x03\0\x06\x01r\x04\x01xv\x01yv\x05widt\
+hv\x06heightv\x04\0\x04rect\x03\0\x08\x01r\x02\x06offsetv\x05color\x01\x04\0\x0d\
+gradient-stop\x03\0\x0a\x01m\x03\x04sans\x05serif\x04mono\x04\0\x0bfont-family\x03\
+\0\x0c\x01r\x04\x06weight{\x06italic\x7f\x0eletter-spacingv\x06family\x0d\x04\0\x0a\
+text-style\x03\0\x0e\x01r\x04\x08top-leftv\x09top-rightv\x0cbottom-rightv\x0bbot\
+tom-leftv\x04\0\x0ccorner-radii\x03\0\x10\x01q\x04\x11permission-denied\0\0\x0ei\
+nvalid-target\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x09gfx-error\x03\
+\0\x12\x03\0\x15krate:gfx/types@0.1.0\x053\x02\x03\0\x1f\x05color\x02\x03\0\x1f\x05\
+point\x02\x03\0\x1f\x04rect\x02\x03\0\x1f\x04size\x02\x03\0\x1f\x0ctext-metrics\x02\
+\x03\0\x1f\x09gfx-error\x02\x03\0\x1f\x0dgradient-stop\x02\x03\0\x1f\x0ccorner-r\
+adii\x02\x03\0\x1f\x0atext-style\x02\x03\0\x1f\x0bfont-family\x01BK\x02\x03\x02\x01\
+4\x04\0\x05color\x03\0\0\x02\x03\x02\x015\x04\0\x05point\x03\0\x02\x02\x03\x02\x01\
+6\x04\0\x04rect\x03\0\x04\x02\x03\x02\x017\x04\0\x04size\x03\0\x06\x02\x03\x02\x01\
+8\x04\0\x0ctext-metrics\x03\0\x08\x02\x03\x02\x019\x04\0\x09gfx-error\x03\0\x0a\x02\
+\x03\x02\x01:\x04\0\x0dgradient-stop\x03\0\x0c\x02\x03\x02\x01;\x04\0\x0ccorner-\
+radii\x03\0\x0e\x02\x03\x02\x01<\x04\0\x0atext-style\x03\0\x10\x02\x03\x02\x01=\x04\
+\0\x0bfont-family\x03\0\x12\x01j\x01w\x01\x0b\x01@\x02\x06windoww\x06widgetw\0\x14\
+\x04\0\x04bind\x01\x15\x01j\x01\x07\x01\x0b\x01@\x01\x06canvasw\0\x16\x04\0\x0bc\
+anvas-size\x01\x17\x01j\0\x01\x0b\x01@\x02\x06canvasw\x04size\x07\0\x18\x04\0\x0f\
+set-design-size\x01\x19\x01@\x05\x06canvasw\x01xv\x01yv\x01wv\x01hv\0\x18\x04\0\x08\
+set-clip\x01\x1a\x01@\x01\x06canvasw\0\x18\x04\0\x0aclear-clip\x01\x1b\x01@\x02\x06\
+canvasw\x04fill\x01\0\x18\x04\0\x05clear\x01\x1c\x01@\x03\x06canvasw\x04area\x05\
+\x04fill\x01\0\x18\x04\0\x09fill-rect\x01\x1d\x01@\x04\x06canvasw\x04area\x05\x06\
+stroke\x01\x05widthv\0\x18\x04\0\x0bstroke-rect\x01\x1e\x01@\x04\x06canvasw\x04a\
+rea\x05\x05radii\x0f\x04fill\x01\0\x18\x04\0\x0ffill-round-rect\x01\x1f\x01@\x05\
+\x06canvasw\x04area\x05\x05radii\x0f\x05widthv\x06stroke\x01\0\x18\x04\0\x11stro\
+ke-round-rect\x01\x20\x01@\x05\x06canvasw\x04area\x05\x05radii\x0f\x04blurv\x06s\
+hadow\x01\0\x18\x04\0\x16drop-shadow-round-rect\x01!\x01p\x0d\x01@\x04\x06canvas\
+w\x04area\x05\x0dangle-degreesv\x05stops\"\0\x18\x04\0\x15linear-gradient-stops\x01\
+#\x01@\x06\x06canvasw\x04texts\x06origin\x03\x09font-sizev\x03ink\x01\x05style\x11\
+\0\x18\x04\0\x10draw-text-styled\x01$\x01j\x01\x09\x01\x0b\x01@\x04\x06canvasw\x04\
+texts\x09font-sizev\x05style\x11\0%\x04\0\x13measure-text-styled\x01&\x01@\x07\x06\
+canvasw\x06center\x03\x06radiusv\x0dstart-degreesv\x0dsweep-degreesv\x05widthv\x06\
+stroke\x01\0\x18\x04\0\x0astroke-arc\x01'\x01p}\x01@\x06\x06canvasw\x04area\x05\x05\
+radii\x0f\x05widthy\x06heighty\x04rgba(\0\x18\x04\0\x11draw-pixels-round\x01)\x01\
+@\x04\x06canvasw\x06center\x03\x06radiusv\x04fill\x01\0\x18\x04\0\x0bfill-circle\
+\x01*\x01@\x05\x06canvasw\x06center\x03\x06radiusv\x05widthv\x06stroke\x01\0\x18\
+\x04\0\x0dstroke-circle\x01+\x01@\x05\x06canvasw\x06center\x03\x06radiusv\x05inn\
+er\x01\x05outer\x01\0\x18\x04\0\x0fradial-gradient\x01,\x01@\x04\x06canvasw\x04a\
+rea\x05\x03top\x01\x06bottom\x01\0\x18\x04\0\x0flinear-gradient\x01-\x01@\x05\x06\
+canvasw\x04texts\x06origin\x03\x09font-sizev\x03ink\x01\0\x18\x04\0\x09draw-text\
+\x01.\x01@\x03\x06canvasw\x04texts\x09font-sizev\0%\x04\0\x0cmeasure-text\x01/\x01\
+@\x05\x06canvasw\x04area\x05\x05widthy\x06heighty\x04rgba(\0\x18\x04\0\x0bdraw-p\
+ixels\x010\x01@\x07\x06canvasw\x06center\x03\x03dst\x07\x05anglev\x05widthy\x06h\
+eighty\x04rgba(\0\x18\x04\0\x0bdraw-sprite\x011\x04\0\x07present\x01\x1b\x03\0\x18\
+krate:gfx/canvas2d@0.1.0\x05>\x01B%\x02\x03\x02\x014\x04\0\x05color\x03\0\0\x02\x03\
+\x02\x019\x04\0\x09gfx-error\x03\0\x02\x01pv\x01r\x0a\x07ambientv\x08specularv\x09\
+shininessv\x0bfog-densityv\x09fog-color\x01\x0efill-direction\x04\x0afill-color\x01\
+\x0dshadow-radiusv\x0fshadow-softnessv\x08exposurev\x04\0\x08lighting\x03\0\x05\x01\
+j\x01w\x01\x03\x01@\x02\x06windoww\x06widgetw\0\x07\x04\0\x04bind\x01\x08\x01j\0\
+\x01\x03\x01@\x02\x05scenew\x03sky\x01\0\x09\x04\0\x05clear\x01\x0a\x01@\x04\x05\
+scenew\x03eye\x04\x07look-at\x04\x0bfov-degreesv\0\x09\x04\0\x06camera\x01\x0b\x01\
+@\x02\x05scenew\x09direction\x04\0\x09\x04\0\x05light\x01\x0c\x01@\x03\x05scenew\
+\x08vertices\x04\x04tint\x01\0\x09\x04\0\x09triangles\x01\x0d\x01@\x06\x05scenew\
+\x08vertices\x04\x09translate\x04\x0erotate-degrees\x04\x05scalev\x04tint\x01\0\x09\
+\x04\0\x05place\x01\x0e\x01p}\x01@\x04\x05scenew\x05widthy\x06heighty\x04rgba\x0f\
+\0\x07\x04\0\x0eupload-texture\x01\x10\x01@\x05\x05scenew\x08vertices\x04\x03uvs\
+\x04\x07texturew\x04tint\x01\0\x09\x04\0\x08textured\x01\x11\x01@\x06\x05scenew\x08\
+vertices\x04\x07normals\x04\x03uvs\x04\x07texturew\x04tint\x01\0\x09\x04\0\x06sm\
+ooth\x01\x12\x01@\x02\x05scenew\x08lighting\x06\0\x09\x04\0\x0cset-lighting\x01\x13\
+\x01@\x08\x05scenew\x08vertices\x04\x07normals\x04\x08tangents\x04\x03uvs\x04\x07\
+texturew\x0enormal-texturew\x04tint\x01\0\x09\x04\0\x0dnormal-mapped\x01\x14\x04\
+\0\x05unlit\x01\x11\x01@\x02\x05scenew\x07enabled\x7f\0\x09\x04\0\x0fcull-back-f\
+aces\x01\x15\x01@\x01\x05scenew\0\x09\x04\0\x07present\x01\x16\x03\0\x17krate:gf\
+x/scene3d@0.1.0\x05?\x01B\x06\x01m\x02\x07pcm-s16\x07float32\x04\0\x0dsample-for\
+mat\x03\0\0\x01r\x04\x0bsample-ratey\x08channels{\x06format\x01\x0dbuffer-frames\
+y\x04\0\x0dstream-config\x03\0\x02\x01q\x05\x11permission-denied\0\0\x0einvalid-\
+stream\0\0\x12device-unavailable\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\
+\0\x0baudio-error\x03\0\x04\x03\0\x17krate:audio/types@0.1.0\x05@\x02\x03\0\"\x0b\
+audio-error\x02\x03\0\"\x0dstream-config\x01B\x15\x02\x03\x02\x01A\x04\0\x0baudi\
+o-error\x03\0\0\x02\x03\x02\x01B\x04\0\x0dstream-config\x03\0\x02\x01j\x01w\x01\x01\
+\x01@\x01\x06config\x03\0\x04\x04\0\x04open\x01\x05\x01j\0\x01\x01\x01@\x01\x09s\
+tream-idw\0\x06\x04\0\x05start\x01\x07\x04\0\x04stop\x01\x07\x01p}\x01j\x01y\x01\
+\x01\x01@\x02\x09stream-idw\x05bytes\x08\0\x09\x04\0\x05write\x01\x0a\x01@\x02\x09\
+stream-idw\x05bytes\x08\0\x04\x04\0\x0aload-sound\x01\x0b\x01@\x03\x09stream-idw\
+\x05soundw\x04gainv\0\x06\x04\0\x0aplay-sound\x01\x0c\x01@\x02\x09stream-idw\x05\
+soundw\0\x06\x04\0\x0astop-sound\x01\x0d\x03\0\x1akrate:audio/playback@0.1.0\x05\
+C\x01B\x0f\x02\x03\x02\x01A\x04\0\x0baudio-error\x03\0\0\x02\x03\x02\x01B\x04\0\x0d\
+stream-config\x03\0\x02\x01j\x01w\x01\x01\x01@\x01\x06config\x03\0\x04\x04\0\x04\
+open\x01\x05\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x06\x04\0\x05start\x01\x07\x04\
+\0\x04stop\x01\x07\x01p}\x01j\x01\x08\x01\x01\x01@\x02\x09stream-idw\x09max-byte\
+sy\0\x09\x04\0\x04read\x01\x0a\x03\0\x19krate:audio/capture@0.1.0\x05D\x01B\x0d\x01\
+m\x01\x05rgba8\x04\0\x0cframe-format\x03\0\0\x01r\x04\x05widthy\x06heighty\x03fp\
+sy\x06format\x01\x04\0\x0dstream-config\x03\0\x02\x01r\x04\x05widthy\x06heighty\x03\
+fpsy\x06format\x01\x04\0\x0aframe-info\x03\0\x04\x01r\x02\x02ids\x05labels\x04\0\
+\x0bdevice-info\x03\0\x06\x01p}\x01r\x04\x05bytes\x08\x05widthy\x06heighty\x0eel\
+apsed-millisw\x04\0\x05frame\x03\0\x09\x01q\x06\x11permission-denied\0\0\x0einva\
+lid-stream\0\0\x12device-unavailable\0\0\x0dsystem-denied\0\0\x0bunsupported\x01\
+s\0\x08platform\x01s\0\x04\0\x0ccamera-error\x03\0\x0b\x03\0\x18krate:camera/typ\
+es@0.1.0\x05E\x02\x03\0%\x0ccamera-error\x02\x03\0%\x0bdevice-info\x02\x03\0%\x05\
+frame\x02\x03\0%\x0aframe-info\x02\x03\0%\x0dstream-config\x01B\x1d\x02\x03\x02\x01\
+F\x04\0\x0ccamera-error\x03\0\0\x02\x03\x02\x01G\x04\0\x0bdevice-info\x03\0\x02\x02\
+\x03\x02\x01H\x04\0\x05frame\x03\0\x04\x02\x03\x02\x01I\x04\0\x0aframe-info\x03\0\
+\x06\x02\x03\x02\x01J\x04\0\x0dstream-config\x03\0\x08\x01p\x03\x01j\x01\x0a\x01\
+\x01\x01@\0\0\x0b\x04\0\x07devices\x01\x0c\x01j\x01w\x01\x01\x01@\x02\x06devices\
+\x06config\x09\0\x0d\x04\0\x04open\x01\x0e\x01j\x01\x07\x01\x01\x01@\x01\x09stre\
+am-idw\0\x0f\x04\0\x04info\x01\x10\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x11\x04\
+\0\x05start\x01\x12\x04\0\x04stop\x01\x12\x01k\x05\x01j\x01\x13\x01\x01\x01@\x01\
+\x09stream-idw\0\x14\x04\0\x04read\x01\x15\x04\0\x05close\x01\x12\x03\0\x1akrate\
+:camera/capture@0.1.0\x05K\x01B\x12\x01r\x01\x04texts\x04\0\x0atranscript\x03\0\0\
+\x01q\x05\x0finvalid-request\x01s\0\x0fmodel-not-found\0\0\x0dmodel-invalid\x01s\
+\0\x0bunsupported\x01s\0\x09inference\x01s\0\x04\0\x0cspeech-error\x03\0\x02\x01\
+m\x05\x0finvalid-request\x0fmodel-not-found\x0dmodel-invalid\x0bunsupported\x09i\
+nference\x04\0\x0bmatch-error\x03\0\x04\x01p}\x01ks\x01j\x01\x01\x01\x03\x01@\x04\
+\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample-ratey\x08language\x07\0\x08\x04\0\x0a\
+transcribe\x01\x09\x01j\x01}\x01\x05\x01@\x05\x0bmodel-assets\x0apcm-s16-le\x06\x0b\
+sample-ratey\x08language\x07\x08expecteds\0\x0a\x04\0\x0amatch-line\x01\x0b\x01k\
+}\x01j\x01\x0c\x01\x05\x01@\x06\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample-rate\
+y\x08language\x07\x08expecteds\x06finish\x7f\0\x0d\x04\0\x11match-line-stream\x01\
+\x0e\x03\0\x20krate:speech/transcription@0.1.0\x05L\x01@\0\0z\x04\0\x03run\x01M\x04\
+\0\x13krate:app/gui@0.2.0\x04\0\x0b\x09\x01\0\x03gui\x03\0\0\0G\x09producers\x01\
+\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
 
 #[inline(never)]
 #[doc(hidden)]

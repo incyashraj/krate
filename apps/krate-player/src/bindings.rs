@@ -16527,19 +16527,6 @@ pub mod krate {
                 Image,
                 /// Custom drawing canvas.
                 Canvas,
-                /// A container whose children all fill it and paint in order, back to
-                /// front.
-                ///
-                /// Every other container gives its children a share of the space. This one
-                /// gives each of them ALL of it, so a HUD sits over a game, a pause menu
-                /// over a board, a caption over a photo. Without it a 3D app could not have
-                /// a HUD at all: a canvas holding a scene and a canvas holding an overlay
-                /// were laid out one above the other, each getting half the window.
-                ///
-                /// Appended at the end of this enum on purpose. Every case before it keeps
-                /// the number it had, so an app built before this existed still means what
-                /// it meant.
-                Overlay,
             }
             impl ::core::fmt::Debug for WidgetKind {
                 fn fmt(
@@ -16586,9 +16573,6 @@ pub mod krate {
                         WidgetKind::Canvas => {
                             f.debug_tuple("WidgetKind::Canvas").finish()
                         }
-                        WidgetKind::Overlay => {
-                            f.debug_tuple("WidgetKind::Overlay").finish()
-                        }
                     }
                 }
             }
@@ -16616,7 +16600,6 @@ pub mod krate {
                         14 => WidgetKind::TreeView,
                         15 => WidgetKind::Image,
                         16 => WidgetKind::Canvas,
-                        17 => WidgetKind::Overlay,
                         _ => panic!("invalid enum discriminant"),
                     }
                 }
@@ -21007,8 +20990,8 @@ pub(crate) use __export_gui_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 12896] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xe6c\x01A\x02\x01Aw\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 12888] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xdec\x01A\x02\x01Aw\x01\
 B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x09log-level\x03\
 \0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eof\0\0\x0cinvalid-\
 utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x14krate:io/types@0.1\
@@ -21134,30 +21117,30 @@ ressed\x7f\x09modifiers\x0b\x04\0\x0dpointer-event\x03\0\x0e\x01r\x07\x06windoww
 \x12\x01r\x05\x06windoww\x06widget\x0c\x03keys\x07pressed\x7f\x09modifiers\x0b\x04\
 \0\x09key-event\x03\0\x14\x01q\x05\x11permission-denied\0\0\x0einvalid-window\0\0\
 \x0einvalid-widget\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x08ui-erro\
-r\x03\0\x16\x01m\x12\x05stack\x04grid\x06scroll\x04tabs\x06button\x08checkbox\x05\
+r\x03\0\x16\x01m\x11\x05stack\x04grid\x06scroll\x04tabs\x06button\x08checkbox\x05\
 radio\x06switch\x06slider\x08progress\x04text\x0atext-field\x09text-area\x09list\
--view\x09tree-view\x05image\x06canvas\x07overlay\x04\0\x0bwidget-kind\x03\0\x18\x01\
-r\x02\x06cursory\x06anchory\x04\0\x0btext-cursor\x03\0\x1a\x01kv\x01r\x04\x05wid\
-th\x1c\x06height\x1c\x04growv\x07paddingv\x04\0\x05style\x03\0\x1d\x01ks\x01k\x7f\
-\x01ky\x01k\x1b\x01r\x0a\x02idw\x06parent\x0c\x04kind\x19\x05label\x1f\x04role\x1f\
-\x05style\x1e\x07checked\x20\x05value\x1c\x08selected!\x0btext-cursor\"\x04\0\x0b\
-widget-node\x03\0#\x01r\x03\x02idw\x05labels\x07enabled\x7f\x04\0\x09menu-item\x03\
-\0%\x01q\x0b\x0fclose-requested\x01w\0\x07resized\x01\x03\0\x10redraw-requested\x01\
-w\0\x07pointer\x01\x0f\0\x03key\x01\x15\0\x05wheel\x01\x11\0\x0atext-input\x01s\0\
-\x0ctext-changed\x01\x13\0\x06action\x01w\0\x0dfocus-changed\x01\x0c\0\x0dtheme-\
-changed\x01\x07\0\x04\0\x05event\x03\0'\x03\0\x14krate:ui/types@0.1.0\x05#\x02\x03\
-\0\x15\x08ui-error\x02\x03\0\x15\x0bwindow-size\x02\x03\0\x15\x0cwindow-state\x01\
-B\x16\x02\x03\x02\x01$\x04\0\x08ui-error\x03\0\0\x02\x03\x02\x01%\x04\0\x0bwindo\
-w-size\x03\0\x02\x02\x03\x02\x01&\x04\0\x0cwindow-state\x03\0\x04\x01j\x01w\x01\x01\
-\x01@\x02\x05titles\x04size\x03\0\x06\x04\0\x06create\x01\x07\x01j\0\x01\x01\x01\
-@\x01\x06windoww\0\x08\x04\0\x04show\x01\x09\x04\0\x05close\x01\x09\x01@\x02\x06\
-windoww\x05titles\0\x08\x04\0\x09set-title\x01\x0a\x01@\x02\x06windoww\x04size\x03\
-\0\x08\x04\0\x08set-size\x01\x0b\x01@\x02\x06windoww\x05state\x05\0\x08\x04\0\x09\
-set-state\x01\x0c\x04\0\x0erequest-redraw\x01\x09\x01@\x02\x06windoww\x07enabled\
-\x7f\0\x08\x04\0\x0eset-full-bleed\x01\x0d\x03\0\x15krate:ui/window@0.1.0\x05'\x02\
-\x03\0\x15\x0bwidget-node\x01B\x0e\x02\x03\x02\x01$\x04\0\x08ui-error\x03\0\0\x02\
-\x03\x02\x01(\x04\0\x0bwidget-node\x03\0\x02\x01j\0\x01\x01\x01@\x02\x06windoww\x04\
-root\x03\0\x04\x04\0\x08set-root\x01\x05\x01@\x02\x06windoww\x04node\x03\0\x04\x04\
+-view\x09tree-view\x05image\x06canvas\x04\0\x0bwidget-kind\x03\0\x18\x01r\x02\x06\
+cursory\x06anchory\x04\0\x0btext-cursor\x03\0\x1a\x01kv\x01r\x04\x05width\x1c\x06\
+height\x1c\x04growv\x07paddingv\x04\0\x05style\x03\0\x1d\x01ks\x01k\x7f\x01ky\x01\
+k\x1b\x01r\x0a\x02idw\x06parent\x0c\x04kind\x19\x05label\x1f\x04role\x1f\x05styl\
+e\x1e\x07checked\x20\x05value\x1c\x08selected!\x0btext-cursor\"\x04\0\x0bwidget-\
+node\x03\0#\x01r\x03\x02idw\x05labels\x07enabled\x7f\x04\0\x09menu-item\x03\0%\x01\
+q\x0b\x0fclose-requested\x01w\0\x07resized\x01\x03\0\x10redraw-requested\x01w\0\x07\
+pointer\x01\x0f\0\x03key\x01\x15\0\x05wheel\x01\x11\0\x0atext-input\x01s\0\x0cte\
+xt-changed\x01\x13\0\x06action\x01w\0\x0dfocus-changed\x01\x0c\0\x0dtheme-change\
+d\x01\x07\0\x04\0\x05event\x03\0'\x03\0\x14krate:ui/types@0.1.0\x05#\x02\x03\0\x15\
+\x08ui-error\x02\x03\0\x15\x0bwindow-size\x02\x03\0\x15\x0cwindow-state\x01B\x16\
+\x02\x03\x02\x01$\x04\0\x08ui-error\x03\0\0\x02\x03\x02\x01%\x04\0\x0bwindow-siz\
+e\x03\0\x02\x02\x03\x02\x01&\x04\0\x0cwindow-state\x03\0\x04\x01j\x01w\x01\x01\x01\
+@\x02\x05titles\x04size\x03\0\x06\x04\0\x06create\x01\x07\x01j\0\x01\x01\x01@\x01\
+\x06windoww\0\x08\x04\0\x04show\x01\x09\x04\0\x05close\x01\x09\x01@\x02\x06windo\
+ww\x05titles\0\x08\x04\0\x09set-title\x01\x0a\x01@\x02\x06windoww\x04size\x03\0\x08\
+\x04\0\x08set-size\x01\x0b\x01@\x02\x06windoww\x05state\x05\0\x08\x04\0\x09set-s\
+tate\x01\x0c\x04\0\x0erequest-redraw\x01\x09\x01@\x02\x06windoww\x07enabled\x7f\0\
+\x08\x04\0\x0eset-full-bleed\x01\x0d\x03\0\x15krate:ui/window@0.1.0\x05'\x02\x03\
+\0\x15\x0bwidget-node\x01B\x0e\x02\x03\x02\x01$\x04\0\x08ui-error\x03\0\0\x02\x03\
+\x02\x01(\x04\0\x0bwidget-node\x03\0\x02\x01j\0\x01\x01\x01@\x02\x06windoww\x04r\
+oot\x03\0\x04\x04\0\x08set-root\x01\x05\x01@\x02\x06windoww\x04node\x03\0\x04\x04\
 \0\x0bupsert-node\x01\x06\x01@\x02\x06windoww\x06widgetw\0\x04\x04\0\x0bremove-n\
 ode\x01\x07\x04\0\x0afocus-node\x01\x07\x01@\x03\x06windoww\x06widgetw\x07enable\
 d\x7f\0\x04\x04\0\x0bset-enabled\x01\x08\x03\0\x13krate:ui/tree@0.1.0\x05)\x01B\x0a\

@@ -1,5 +1,13 @@
+# An empty [workspace] table makes this app its own workspace root, so it
+# resolves the same wherever the directory sits -- including inside a git
+# worktree, where the repo's root Cargo.toml exclude list does not apply and
+# cargo otherwise fails with "current package believes it's in a workspace
+# when it's not". A shared app has no parent workspace, so this matches how
+# the app is actually used.
+[workspace]
+
 [package]
-name = "zz-example-check"
+name = "krate-player"
 version = "0.1.0-dev"
 edition = "2021"
 license = "MIT OR Apache-2.0"
@@ -7,14 +15,14 @@ repository = "https://github.com/incyashraj/krate"
 rust-version = "1.91"
 
 [dependencies]
-# The Krate SDK, linked for its no_std runtime lang items (global allocator,
-# panic handler, memory intrinsics) so this canvas app stays krate:*-only.
-krate = { path = "../../crates/bindings-rust", features = ["gui"] }
 wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }
-
-# Standalone: excluded from the repo workspace, builds on its own, so it carries
-# an empty workspace table to stop cargo walking up to the repo root manifest.
-[workspace]
+# The SDK owns the allocator, the panic handler and the mem* intrinsics this
+# `#![no_std]` guest needs. Nothing calls it directly -- it is linked for
+# those, and removing it breaks the build in three places at once.
+krate = { path = "../../crates/bindings-rust" }
+# Pure-math sin/cos for the synthesiser, the spectrum and the artwork. no_std by
+# design, so it costs nothing at the sandbox boundary.
+libm = "0.2"
 
 [lib]
 crate-type = ["cdylib"]
@@ -25,7 +33,7 @@ crate-type = ["cdylib"]
 std_feature = true
 
 [package.metadata.component]
-package = "krate:zzexamplecheck"
+package = "krate:player"
 
 [package.metadata.component.target]
 path = "../../wit/krate/phase4"

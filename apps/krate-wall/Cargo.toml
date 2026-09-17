@@ -34,23 +34,23 @@ std_feature = true
 package = "krate:wall"
 
 [package.metadata.component.target]
-path = "../../wit/krate/phase3"
+path = "../../wit/krate/phase4"
 world = "gui"
 
 [package.metadata.component.target.dependencies]
-"krate:io" = { path = "../../wit/krate/phase3/deps/io" }
-"krate:fs" = { path = "../../wit/krate/phase3/deps/fs" }
-"krate:net" = { path = "../../wit/krate/phase3/deps/net" }
-"krate:time" = { path = "../../wit/krate/phase3/deps/time" }
-"krate:locale" = { path = "../../wit/krate/phase3/deps/locale" }
-"krate:resources" = { path = "../../wit/krate/phase3/deps/resources" }
-"krate:store" = { path = "../../wit/krate/phase3/deps/store" }
-"krate:random" = { path = "../../wit/krate/phase3/deps/random" }
-"krate:ui" = { path = "../../wit/krate/phase3/deps/ui" }
-"krate:gfx" = { path = "../../wit/krate/phase3/deps/gfx" }
-"krate:audio" = { path = "../../wit/krate/phase3/deps/audio" }
-"krate:camera" = { path = "../../wit/krate/phase3/deps/camera" }
-"krate:speech" = { path = "../../wit/krate/phase3/deps/speech" }
+"krate:io" = { path = "../../wit/krate/phase4/deps/io" }
+"krate:fs" = { path = "../../wit/krate/phase4/deps/fs" }
+"krate:net" = { path = "../../wit/krate/phase4/deps/net" }
+"krate:time" = { path = "../../wit/krate/phase4/deps/time" }
+"krate:locale" = { path = "../../wit/krate/phase4/deps/locale" }
+"krate:resources" = { path = "../../wit/krate/phase4/deps/resources" }
+"krate:store" = { path = "../../wit/krate/phase4/deps/store" }
+"krate:random" = { path = "../../wit/krate/phase4/deps/random" }
+"krate:ui" = { path = "../../wit/krate/phase4/deps/ui" }
+"krate:gfx" = { path = "../../wit/krate/phase4/deps/gfx" }
+"krate:audio" = { path = "../../wit/krate/phase4/deps/audio" }
+"krate:camera" = { path = "../../wit/krate/phase4/deps/camera" }
+"krate:speech" = { path = "../../wit/krate/phase4/deps/speech" }
 
 [profile.release]
 panic = "abort"
