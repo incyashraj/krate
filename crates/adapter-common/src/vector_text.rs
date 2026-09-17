@@ -692,14 +692,29 @@ pub fn try_paint_placements(
             height as f32,
         );
 
-        // Image and canvas pixels are blitted into the framebuffer after the
-        // vello pixmap is copied over -- vello_cpu has no image primitive here,
-        // and the shared `draw_image` already scales, blends, and clips exactly
-        // as every other host does. Collected in the same pass so a scene draws
-        // in the same z-order it was placed. Without this, a 3D scene or a 2D
-        // canvas fell into the match's catch-all and drew nothing: the window
-        // came up blank on Windows and Linux while macOS painted it natively.
+        // Image and canvas pixels are composited into the framebuffer with the
+        // shared `draw_image` rather than drawn through vello: vello_cpu has
+        // no image primitive here, and `draw_image` already scales, blends and
+        // clips exactly as every other host does. Without this, a 3D scene or
+        // a 2D canvas fell into the match's catch-all and drew nothing: the
+        // window came up blank on Windows and Linux while macOS painted it
+        // natively.
+        //
+        // Each blit records how many vector ops preceded it, because z-order
+        // against TEXT depends on it (K-401). Every image used to be blitted
+        // after the whole vello pixmap was copied down, so an image always
+        // landed on top of every label however the placements were ordered --
+        // a full-window canvas erased an entire text layer, which is what a
+        // HUD over a 3D scene is. Painting now runs in layers: a vector layer,
+        // the images that follow it, the next vector layer, and so on.
+        //
+        // The common shapes cost exactly one layer, as before: an app with no
+        // images, and an app whose canvas is the first thing placed.
         let mut blits: Vec<ImageBlit<'_>> = Vec::new();
+        // Vector work waiting to be rendered, and the layers already closed.
+        // A layer closes at every image, so that image composites over the
+        // layer below it and the NEXT layer's text composites over the image.
+        let mut layers: Vec<(RenderContext, Vec<ImageBlit<'_>>)> = Vec::new();
 
         for placement in placements {
             let (px, py) = (placement.x * scale, placement.y * scale);
@@ -1000,6 +1015,27 @@ pub fn try_paint_placements(
                             clip: clip_px,
                             image,
                         });
+                        // Close the layer this image sits above, so anything
+                        // drawn after it -- a HUD label, a caption -- lands on
+                        // top of it rather than under it (K-401).
+                        //
+                        // The image is pushed BEFORE the close, so it travels
+                        // with the layer it covers. Closing first leaves it in
+                        // the next layer's list, where it is composited after
+                        // that layer's text and paints over the very labels
+                        // this is meant to keep visible. The backdrop fill
+                        // just above likewise belongs under the image, which
+                        // is why it is drawn before either.
+                        //
+                        // Unconditional. An earlier version only closed when
+                        // something had been drawn into the layer, which was
+                        // always true by the line above and so decided
+                        // nothing -- clippy caught the dead flag. Closing
+                        // every time costs one empty vello pass for an app
+                        // that places two images in a row, and keeps the rule
+                        // to one sentence.
+                        let done = core::mem::replace(&mut ctx, RenderContext::new(w16, h16));
+                        layers.push((done, core::mem::take(&mut blits)));
                     }
                     continue;
                 }
@@ -1020,17 +1056,65 @@ pub fn try_paint_placements(
             }
         }
 
-        ctx.flush();
+        layers.push((ctx, blits));
+
+        // Composite the layers bottom to top: each one's vector content, then
+        // the images that were placed above it.
+        //
+        // The first layer is opaque (it opens with the background fill), so it
+        // is copied straight down. Every later layer is drawn OVER what is
+        // already there, which is why its untouched pixels have to stay
+        // untouched -- vello renders them as transparent black, and copying
+        // those down would erase the layers below. Only pixels the layer
+        // actually painted are taken, blended by their own alpha.
         let mut pixmap = Pixmap::new(w16, h16);
-        ctx.render_to_pixmap(&mut resources, &mut pixmap);
-        for (dst, src) in buffer.iter_mut().zip(pixmap.data().iter()) {
-            *dst = 0xFF00_0000 | ((src.r as u32) << 16) | ((src.g as u32) << 8) | (src.b as u32);
-        }
-        // Composite images over the finished vello frame with the shared
-        // rasterizer, so a scene or canvas lands with the same scaling and
-        // alpha blending on every host.
-        for blit in blits {
-            crate::painter::draw_image(buffer, width, height, blit.rect, blit.image, blit.clip);
+        for (index, (mut layer, layer_blits)) in layers.into_iter().enumerate() {
+            layer.flush();
+            pixmap
+                .data_mut()
+                .fill(vello_cpu::peniko::color::PremulRgba8 {
+                    r: 0,
+                    g: 0,
+                    b: 0,
+                    a: 0,
+                });
+            layer.render_to_pixmap(&mut resources, &mut pixmap);
+            for (dst, src) in buffer.iter_mut().zip(pixmap.data().iter()) {
+                if index == 0 {
+                    *dst = 0xFF00_0000
+                        | ((src.r as u32) << 16)
+                        | ((src.g as u32) << 8)
+                        | (src.b as u32);
+                    continue;
+                }
+                // Source-over with premultiplied source, which is what
+                // `render_to_pixmap` produces. Fully transparent source
+                // leaves the destination exactly as it was.
+                if src.a == 0 {
+                    continue;
+                }
+                if src.a == 255 {
+                    *dst = 0xFF00_0000
+                        | ((src.r as u32) << 16)
+                        | ((src.g as u32) << 8)
+                        | (src.b as u32);
+                    continue;
+                }
+                let inv = 255 - src.a as u32;
+                let dr = (*dst >> 16) & 0xFF;
+                let dg = (*dst >> 8) & 0xFF;
+                let db = *dst & 0xFF;
+                let r = (src.r as u32 + (dr * inv + 127) / 255).min(255);
+                let g = (src.g as u32 + (dg * inv + 127) / 255).min(255);
+                let b = (src.b as u32 + (db * inv + 127) / 255).min(255);
+                *dst = 0xFF00_0000 | (r << 16) | (g << 8) | b;
+            }
+            // Images over the layer they were placed above, with the shared
+            // rasterizer so a scene or canvas lands with the same scaling and
+            // alpha blending on every host.
+            for blit in layer_blits {
+                crate::painter::draw_image(buffer, width, height, blit.rect, blit.image, blit.clip);
+            }
         }
         true
     })
@@ -1040,6 +1124,112 @@ pub fn try_paint_placements(
 mod tests {
     use super::*;
     use crate::ui::WidgetId;
+
+    #[test]
+    fn a_label_over_a_full_window_canvas_survives_the_blit() {
+        // K-401. The vector painter used to render every image AFTER copying
+        // the whole vello pixmap down, so an image landed on top of all text
+        // whatever the placement order. A HUD over a 3D scene -- a canvas that
+        // fills the window with a label above it, which is exactly what the
+        // overlay widget is for -- lost its text entirely.
+        let (w, h) = (200u32, 60u32);
+        // Opaque mid-grey: RGB 0x5A with alpha 0xFF. A uniform `vec![90; n]`
+        // would set the ALPHA to 90 too and the scene would blend to something
+        // else, which is a fixture bug that reads as a painter bug.
+        //
+        // Sized to the window's own aspect ratio on purpose: `draw_image` FITS
+        // rather than fills, so a square scene in a wide window is letterboxed
+        // and the glyphs peek through the bars. That made an earlier version
+        // of this test survive the bug it was written to catch.
+        let mut rgba = Vec::with_capacity((w * h * 4) as usize);
+        for _ in 0..(w * h) {
+            rgba.extend_from_slice(&[0x5A, 0x5A, 0x5A, 0xFF]);
+        }
+        let pixels = std::sync::Arc::new(ImagePixels::new(w, h, rgba).expect("scene pixels"));
+        let scene = WidgetPlacement {
+            widget: WidgetId::new(1).unwrap(),
+            kind: WidgetKind::Canvas,
+            label: None,
+            checked: None,
+            value: None,
+            selection: None,
+            text_cursor: None,
+            clip: None,
+            x: 0.0,
+            y: 0.0,
+            width: w as f32,
+            height: h as f32,
+            clickable: false,
+            role: None,
+            pixels: Some(pixels),
+        };
+        let label = WidgetPlacement {
+            widget: WidgetId::new(2).unwrap(),
+            kind: WidgetKind::Text,
+            label: Some("LAP 1 OF 3".to_string()),
+            pixels: None,
+            ..scene.clone()
+        };
+        let label = WidgetPlacement {
+            x: 4.0,
+            y: 4.0,
+            width: 180.0,
+            height: 20.0,
+            ..label
+        };
+
+        let mut buffer = vec![0u32; (w * h) as usize];
+        if !try_paint_placements(
+            &mut buffer,
+            w,
+            h,
+            1.0,
+            &[scene, label],
+            PaintInteraction::default(),
+        ) {
+            eprintln!("skipping: no usable system fonts on this host");
+            return;
+        }
+
+        // The scene is a flat grey; the label is inked in COLOR_TEXT. Any
+        // pixel of exactly that colour is a glyph that survived the blit.
+        // Prove the fixture is hostile before trusting the assertion: the
+        // scene must actually cover the ground the label sits on, or the test
+        // passes for the wrong reason.
+        let uncovered = (4..24u32)
+            .flat_map(|y| (4..184u32).map(move |x| (x, y)))
+            .filter(|(x, y)| buffer[(y * w + x) as usize] & 0x00FF_FFFF != 0x005A_5A5A)
+            .filter(|(x, y)| buffer[(y * w + x) as usize] & 0x00FF_FFFF != COLOR_TEXT & 0x00FF_FFFF)
+            .count();
+        assert!(
+            uncovered < 400,
+            "the scene must cover the ground the label sits on, or this test \
+             passes for the wrong reason: {uncovered} pixels in the label band \
+             are neither scene nor glyph"
+        );
+        let text_pixels = buffer
+            .iter()
+            .filter(|v| **v & 0x00FF_FFFF == COLOR_TEXT & 0x00FF_FFFF)
+            .count();
+        assert!(
+            text_pixels > 0,
+            "the canvas blitted over the label: no text pixels left"
+        );
+        // And the scene is still there underneath, rather than the label
+        // having been achieved by dropping the image.
+        let scene_pixels = buffer
+            .iter()
+            .filter(|v| **v & 0x00FF_FFFF == 0x005A_5A5A)
+            .count();
+        // `draw_image` fits rather than fills, so a square scene in a wide
+        // window is letterboxed and covers a band, not the whole frame. What
+        // matters is that it is still there in quantity: the label was not
+        // rescued by dropping the image.
+        assert!(
+            scene_pixels > 1000,
+            "the scene should still be painted, found {scene_pixels} of its pixels"
+        );
+    }
 
     #[test]
     fn vector_labels_are_antialiased() {
