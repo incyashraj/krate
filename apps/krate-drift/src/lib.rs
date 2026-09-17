@@ -537,6 +537,53 @@ fn draw(
         calls += 1;
     }
 
+    // Guard rails down both sides, every few nodes.
+    //
+    // This is the cheapest thing in the scene and it does the most for SPEED.
+    // A car at 230 km/h over open grass looks like it is barely moving,
+    // because nothing near it changes fast; a regular row of posts flicking
+    // past is what an eye actually measures velocity against.
+    //
+    // Every third node -- about every eleven metres, matching the rail span,
+    // so the sections meet end to end and read as a continuous barrier.
+    let rail_tint = rgb(0.62, 0.60, 0.58);
+    let bush_tint = rgb(0.22, 0.26, 0.13);
+    for (i, node) in track.nodes.iter().enumerate().step_by(3) {
+        let nx = -node.dir_z;
+        let nz = node.dir_x;
+        // The heading the rail runs along, so a section lies WITH the road
+        // rather than across it.
+        let deg = mathx::atan2_approx(node.dir_x, node.dir_z) * 57.295_78;
+        for side in [-1.0f32, 1.0] {
+            let off = ROAD_HALF + 3.4;
+            let (rx, rz) = (node.x + nx * side * off, node.z + nz * side * off);
+            scene3d::place(
+                scene,
+                &meshes.rail.verts,
+                &[rx, ground_height(rx, rz), rz],
+                &[0.0, deg, 0.0],
+                1.0,
+                rail_tint,
+            )?;
+            calls += 1;
+        }
+        // A bush behind the rail every so often, to break the run-off up.
+        if i % 9 == 0 {
+            let off = ROAD_HALF + 8.0 + hash2(i as i32, 77) * 7.0;
+            let side = if hash2(i as i32, 78) > 0.5 { 1.0 } else { -1.0 };
+            let (bx, bz) = (node.x + nx * side * off, node.z + nz * side * off);
+            scene3d::place(
+                scene,
+                &meshes.bush.verts,
+                &[bx, ground_height(bx, bz), bz],
+                &[0.0, hash2(i as i32, 79) * 360.0, 0.0],
+                0.8 + hash2(i as i32, 80) * 0.7,
+                bush_tint,
+            )?;
+            calls += 1;
+        }
+    }
+
     // Cars. The player is red; the rest are given distinct hues so "the blue
     // one is ahead of me" is a thing you can say.
     for (i, c) in g.cars.iter().enumerate() {
@@ -644,6 +691,10 @@ struct Meshes {
     /// The sky dome and its UVs, drawn unlit before anything else.
     sky: Mesh,
     sky_uv: Vec<f32>,
+    /// One guard-rail section, placed down both sides of the circuit.
+    rail: Mesh,
+    /// A roadside bush.
+    bush: Mesh,
 }
 
 /// Uploaded texture handles.
@@ -1063,7 +1114,10 @@ impl krate::Guest for Component {
         // the camera would be dropped whole rather than clipped.
         let track = track::build(7, 360);
         let props = scenery(&track, 2);
-        let (ground, ground_uv) = ground_mesh(700.0, 56);
+        // 128 cells rather than 56: at 25 units a cell the hills beyond the
+        // circuit were faceted into visible plates. 11 units holds a ridge
+        // line, for 33k triangles against a scene already drawing 59k.
+        let (ground, ground_uv) = ground_mesh(700.0, 128);
         // Inside the ground's 700-unit extent, so the horizon is land meeting
         // sky rather than the dome's bottom edge.
         let (sky_build, sky_uv) = models::sky_dome(640.0, 300.0);
@@ -1131,6 +1185,14 @@ impl krate::Guest for Component {
             },
             sky: sky_mesh,
             sky_uv,
+            rail: Mesh {
+                // Span MUST equal the placement spacing below (every 3rd node
+                // of 360 around 2052m = 17.1m) or the sections leave gaps.
+                verts: models::guard_rail(17.1).verts,
+            },
+            bush: Mesh {
+                verts: models::bush(1.5).verts,
+            },
             buildings,
             buildings_uv,
         };

@@ -376,3 +376,61 @@ pub fn sky_dome(radius: f32, height: f32) -> (Build, Vec<f32>) {
 
     (m, uv)
 }
+
+/// A guard-rail section: a post with a rail across it.
+///
+/// Lining the circuit with these does more for the sense of SPEED than
+/// anything else in the scene. A regular row of objects flicking past is what
+/// an eye measures velocity against -- without one, a car at 230 km/h over
+/// open grass looks like it is barely moving, because nothing near it is
+/// changing fast.
+///
+/// Cheap, because there are hundreds: a post and a rail, 24 triangles.
+pub fn guard_rail(span: f32) -> Build {
+    let mut m = Build::new();
+    let half = span * 0.5;
+    // A post at EACH end, not one in the middle.
+    //
+    // One post under the centre of a span leaves metres of bar hanging in the
+    // air either side of it, which reads as a floating slab rather than as a
+    // barrier -- and the span has to match the placement spacing exactly or
+    // the sections do not meet. Both were wrong first time: an 11.4m rail
+    // placed every 17.1m, held up in the middle.
+    for z in [-half, half] {
+        m.cuboid([-0.10, 0.0, z - 0.09], [0.10, 1.05, z + 0.09]);
+    }
+    // The rail itself, proud of the posts so it reads as bolted on.
+    m.cuboid([-0.15, 0.60, -half], [0.15, 0.94, half]);
+    m
+}
+
+/// A low bush, for breaking up the run-off either side of the kerb.
+///
+/// Three intersecting quads rather than a solid: from a moving car a bush is
+/// a mass of leaves, not a shape, and three crossed cards read as volume from
+/// every angle for six triangles. The oldest trick in real-time foliage and
+/// still the right one at this distance.
+pub fn bush(size: f32) -> Build {
+    let mut m = Build::new();
+    let h = size;
+    let r = size * 0.9;
+    for i in 0..3 {
+        let a = (i as f32 / 3.0) * core::f32::consts::PI;
+        let (dx, dz) = (cos_approx(a) * r, sin_approx(a) * r);
+        m.quad(
+            [-dx, 0.0, -dz],
+            [-dx, h, -dz],
+            [dx, h, dz],
+            [dx, 0.0, dz],
+        );
+        // The back face too, so a card is not invisible from one side under
+        // back-face culling.
+        m.quad(
+            [dx, 0.0, dz],
+            [dx, h, dz],
+            [-dx, h, -dz],
+            [-dx, 0.0, -dz],
+        );
+    }
+    m
+}

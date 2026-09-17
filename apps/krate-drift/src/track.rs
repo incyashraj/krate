@@ -9,7 +9,7 @@
 
 use alloc::vec::Vec;
 
-use crate::mathx::{cos_approx, sin_approx, sqrt_approx};
+use crate::mathx::{abs, cos_approx, sin_approx, sqrt_approx};
 
 /// Half-width of the driveable road, in world units.
 pub const ROAD_HALF: f32 = 11.0;
@@ -55,9 +55,45 @@ pub struct Track {
 /// launches the car at every crest. Two long sine waves give the track
 /// elevation change you can see and feel without any of that.
 pub fn ground_height(x: f32, z: f32) -> f32 {
+    // The base roll the circuit itself sits on. Gentle and smooth on purpose:
+    // a racing line over noise is unreadable and launches the car at every
+    // crest.
     let a = sin_approx(x * 0.004) * 9.0;
     let b = cos_approx(z * 0.0055) * 7.0;
-    a + b
+    let base = a + b;
+
+    // Hills, but only FAR from the circuit.
+    //
+    // The middle distance was the emptiest part of the frame: flat green from
+    // the kerb to the horizon, with nothing for the eye to measure depth
+    // against. Land needs relief to read as land.
+    //
+    // The trick is that relief and drivability want opposite things, and they
+    // do not have to fight: the track is a ring at roughly 300 units from the
+    // origin, so height added in proportion to how far a point is from that
+    // ring leaves the racing surface exactly as smooth as it was while the
+    // country beyond it climbs. Nothing here touches the road, and no test of
+    // the car's handling changes.
+    let r = sqrt_approx(x * x + z * z);
+    let from_ring = abs(r - 300.0);
+    // Nothing for the first 150 units, then ramping in over the next 300.
+    //
+    // Both numbers were far too aggressive first time: 90 units of flat and a
+    // 46-unit ridge amplitude put hillsides right against the kerb, rising
+    // higher than the camera, so the circuit ran through a trench and the
+    // horizon was a green wall. Land beyond a racetrack should be SCENERY --
+    // visible, giving the eye depth to read, and never taller than the thing
+    // you are looking at.
+    let k = ((from_ring - 150.0) / 300.0).clamp(0.0, 1.0);
+    let k = k * k * (3.0 - 2.0 * k);
+
+    // Two octaves, at a tenth of the amplitude tried first. The long one
+    // makes low ridges; the short one puts shoulders on them so a ridge is
+    // not a single smooth swell.
+    let ridge = sin_approx(x * 0.0125 + 1.7) * cos_approx(z * 0.0102 - 0.6) * 15.0;
+    let detail = sin_approx(x * 0.031 - 2.2) * cos_approx(z * 0.028 + 1.1) * 5.0;
+
+    base + (ridge + detail) * k
 }
 
 /// Build the circuit as a closed loop.
