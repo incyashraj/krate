@@ -12,7 +12,7 @@
 use alloc::vec;
 use alloc::vec::Vec;
 
-use crate::mathx::{abs, hash2};
+use crate::mathx::hash2;
 
 /// One RGBA image, ready for `upload_texture`.
 pub struct Texture {
@@ -50,28 +50,48 @@ fn put(t: &mut Texture, x: u32, y: u32, r: impl Into<f64>, g: impl Into<f64>, b:
 /// void with no texture to read motion against; noise at this scale reads as
 /// surface and makes the sense of speed come almost entirely from the ground.
 pub fn asphalt() -> Texture {
-    let mut t = blank(64, 64);
-    for y in 0..64u32 {
-        for x in 0..64u32 {
-            let n = hash2(x as i32, y as i32);
-            let base = 44.0 + n * 26.0;
-            // Two worn tracks where tyres polish the surface lighter.
-            let track = {
-                let d1 = abs(x as f32 - 18.0);
-                let d2 = abs(x as f32 - 46.0);
-                let d = if d1 < d2 { d1 } else { d2 };
-                if d < 7.0 {
-                    (7.0 - d) / 7.0 * 12.0
-                } else {
-                    0.0
-                }
-            };
-            let v = (base + track) as u8;
-            put(&mut t, x, y, v, v, (v as f32 * 1.04) as u8);
+    // 256 rather than 64. The sampler wraps, so a tile covers a kilometre of
+    // road either way -- what the extra resolution buys is that the features
+    // in it (a patch, a crack, a worn track) can be BIGGER than the noise,
+    // which is what stops a road reading as sandpaper.
+    const N: u32 = 256;
+    let mut t = blank(N, N);
+    for y in 0..N {
+        for x in 0..N {
+            // Three scales of noise, coarse to fine. One scale alone is
+            // static; three is a surface.
+            let coarse = hash2(x as i32 / 32, y as i32 / 32);
+            let mid = hash2(x as i32 / 8, y as i32 / 8);
+            let fine = hash2(x as i32, y as i32);
+            // Weighted to the COARSE end. Tarmac at a distance is a tone
+            // with a slight mottle, not a field of gravel -- the fine noise
+            // is what the eye reads as texture up close and must not dominate
+            // the mid-distance, where most of the road on screen is.
+            let v = 46.0 + coarse * 12.0 + mid * 7.0 + fine * 5.0;
+
+            // The wheel tracks are drawn in WORLD space by the road mesh's
+            // own shading, not baked in here.
+            //
+            // Baked in, they repeat with the tile: one tile per road width
+            // means a pair of tracks every fourteen metres, at whatever angle
+            // the road happens to be pointing. Two stripes down a road have to
+            // follow the road, and a tile cannot know where the road goes.
+
+            // NO repair patch and no crack here, though both were tried.
+            //
+            // A distinctive feature in a tile that repeats every road-width
+            // becomes a PATTERN: the same patch every few metres reads as
+            // wallpaper, which is more obviously wrong than a plain surface.
+            // A feature like that has to be painted where it belongs in world
+            // space, not baked into a tile. What is left is what genuinely
+            // does repeat -- aggregate, and the polish of a wheel track.
+
+            put(&mut t, x, y, v, v, v * 1.05);
         }
     }
     t
 }
+
 
 /// A normal map for the asphalt: the chippings, as directions rather than
 /// shading.
@@ -120,19 +140,34 @@ pub fn asphalt_normals() -> Texture {
 
 /// Grass: green noise at two scales, so it does not read as a flat field.
 pub fn grass() -> Texture {
-    let mut t = blank(64, 64);
-    for y in 0..64u32 {
-        for x in 0..64u32 {
-            let fine = hash2(x as i32, y as i32);
-            let coarse = hash2(x as i32 / 8, y as i32 / 8);
-            let g = 92.0 + coarse * 38.0 + fine * 22.0;
-            let r = g * 0.52;
-            let b = g * 0.40;
-            put(&mut t, x, y, r as u8, g as u8, b as u8);
+    // 256, and varied at three scales like the road. A field at speed is
+    // mostly peripheral vision, and peripheral vision reads VARIATION -- a
+    // single-scale noise field flickers as it scrolls, which is worse than
+    // flat.
+    const N: u32 = 256;
+    let mut t = blank(N, N);
+    for y in 0..N {
+        for x in 0..N {
+            let patch = hash2(x as i32 / 48, y as i32 / 48);
+            let clump = hash2(x as i32 / 11, y as i32 / 11);
+            let blade = hash2(x as i32, y as i32);
+            // Base green, shifted per patch so the field has lighter and
+            // darker areas rather than one tone.
+            let g = 74.0 + patch * 46.0 + clump * 26.0 + blade * 16.0;
+            let r = g * (0.46 + patch * 0.10);
+            let b = g * 0.36;
+            // Dry patches: yellower, where the ground is thin.
+            let dry = hash2(x as i32 / 37 + 91, y as i32 / 37 + 13);
+            if dry > 0.80 {
+                put(&mut t, x, y, g * 0.86, g * 0.82, b * 0.72);
+            } else {
+                put(&mut t, x, y, r, g, b);
+            }
         }
     }
     t
 }
+
 
 /// A building face: rows of lit and dark windows in a concrete wall.
 ///
@@ -140,29 +175,93 @@ pub fn grass() -> Texture {
 /// grey boxes at any triangle count; the same box with windows is a building,
 /// and at speed the window rows are what tell you how fast you are passing it.
 pub fn facade(seed: i32) -> Texture {
-    let mut t = blank(64, 64);
-    let wall = 96.0 + hash2(seed, 1) * 54.0;
-    for y in 0..64u32 {
-        for x in 0..64u32 {
-            let grain = hash2(x as i32 + seed, y as i32) * 14.0;
-            let v = wall + grain;
-            put(&mut t, x, y, v as u8, (v * 0.99) as u8, (v * 0.95) as u8);
+    // 256, so a window can have a frame, a sill, a mullion and a reflection
+    // instead of being four flat pixels. A building is mostly windows, and
+    // whether a city reads as a city is decided by whether its windows have
+    // any structure in them at all.
+    const N: u32 = 256;
+    let mut t = blank(N, N);
+
+    // The wall: concrete with a vertical grain and horizontal floor bands.
+    let wall = 88.0 + hash2(seed, 1) * 62.0;
+    let warm = 0.92 + hash2(seed, 5) * 0.16;
+    for y in 0..N {
+        for x in 0..N {
+            let grain = hash2(x as i32 + seed, y as i32) * 11.0;
+            let streak = hash2(x as i32 / 2 + seed, y as i32 / 64) * 7.0;
+            let mut v = wall + grain + streak;
+            // A slab edge every floor, catching light on top and shadow
+            // under. This is what gives a tower storeys from a distance,
+            // when no window is resolvable any more.
+            if y % 32 < 2 {
+                v += 13.0;
+            } else if y % 32 == 2 {
+                v -= 16.0;
+            }
+            put(&mut t, x, y, v * warm, v * 0.99, v * 0.95);
         }
     }
-    // Windows: 6 columns, 8 rows, with a margin so the wall shows between.
-    for row in 0..8u32 {
+
+    // Windows: 6 columns of 7, each with a recess, a frame and glass.
+    let lit_bias = 0.42 + hash2(seed, 9) * 0.30;
+    for row in 0..7u32 {
         for col in 0..6u32 {
-            let lit = hash2(seed + col as i32 * 7, row as i32 * 13) > 0.62;
-            let (r, g, b) = if lit {
-                (236u8, 214u8, 150u8)
-            } else {
-                (38u8, 44u8, 56u8)
-            };
-            let x0 = 4 + col * 10;
-            let y0 = 3 + row * 8;
-            for y in y0..(y0 + 5).min(64) {
-                for x in x0..(x0 + 7).min(64) {
-                    put(&mut t, x, y, r, g, b);
+            let lit = hash2(seed + col as i32 * 7, row as i32 * 13) > lit_bias;
+            let x0 = 12 + col * 40;
+            let y0 = 10 + row * 32;
+            let (w, h) = (26u32, 20u32);
+
+            for yy in y0..(y0 + h).min(N) {
+                for xx in x0..(x0 + w).min(N) {
+                    let ix = xx - x0;
+                    let iy = yy - y0;
+                    // Recess shadow on the top and left inside edge.
+                    if ix < 2 || iy < 2 {
+                        put(&mut t, xx, yy, 34.0, 36.0, 42.0);
+                        continue;
+                    }
+                    // Frame.
+                    if ix >= w - 2 || iy >= h - 2 {
+                        put(&mut t, xx, yy, 168.0, 168.0, 164.0);
+                        continue;
+                    }
+                    // Mullion down the middle: two panes, not one hole.
+                    if ix == w / 2 || ix == w / 2 + 1 {
+                        put(&mut t, xx, yy, 150.0, 150.0, 148.0);
+                        continue;
+                    }
+                    if lit {
+                        // A lit room: warm, brighter near the top where the
+                        // ceiling light is, with some variation per window.
+                        let k = 1.0 - (iy as f32 / h as f32) * 0.35;
+                        let tint = hash2(seed + col as i32, row as i32) * 24.0;
+                        put(
+                            &mut t,
+                            xx,
+                            yy,
+                            (228.0 + tint) * k,
+                            (206.0 + tint * 0.7) * k,
+                            (146.0 + tint * 0.4) * k,
+                        );
+                    } else {
+                        // Dark glass reflecting sky: darker low, bluer high,
+                        // with a diagonal highlight. Flat dark rectangles are
+                        // what made the first version read as holes.
+                        let sky = 1.0 - (iy as f32 / h as f32);
+                        let diag = if (ix as i32 - iy as i32).rem_euclid(14) < 3 {
+                            16.0
+                        } else {
+                            0.0
+                        };
+                        put(
+                            &mut t,
+                            xx,
+                            yy,
+                            30.0 + sky * 26.0 + diag,
+                            38.0 + sky * 34.0 + diag,
+                            52.0 + sky * 48.0 + diag,
+                        );
+                    }
                 }
             }
         }

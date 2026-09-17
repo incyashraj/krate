@@ -37,6 +37,7 @@ mod art;
 mod car;
 mod hud;
 mod mathx;
+mod models;
 mod text_hud;
 mod track;
 
@@ -80,37 +81,6 @@ impl Mesh {
     }
 }
 
-/// A box as twelve triangles, centred in x and z, sitting on y=0.
-fn box_mesh(w: f32, h: f32, d: f32) -> Mesh {
-    let (x0, x1) = (-w * 0.5, w * 0.5);
-    let (y0, y1) = (0.0, h);
-    let (z0, z1) = (-d * 0.5, d * 0.5);
-    let c = [
-        [x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0],
-        [x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1],
-    ];
-    // Wound counter-clockwise seen from OUTSIDE, which is what the host's
-    // back-face test wants. Getting this backwards makes a solid object
-    // render inside-out, which reads as the world being wrong rather than
-    // the mesh.
-    let faces: [[usize; 6]; 6] = [
-        [0, 2, 1, 0, 3, 2],
-        [5, 7, 4, 5, 6, 7],
-        [4, 3, 0, 4, 7, 3],
-        [1, 6, 5, 1, 2, 6],
-        [3, 6, 2, 3, 7, 6],
-        [4, 1, 5, 4, 0, 1],
-    ];
-    let mut verts = Vec::with_capacity(12 * 9);
-    for f in faces {
-        for i in f {
-            verts.push(c[i][0]);
-            verts.push(c[i][1]);
-            verts.push(c[i][2]);
-        }
-    }
-    Mesh { verts }
-}
 
 /// A building, as world-space triangles with UVs, ready for `textured`.
 ///
@@ -166,37 +136,7 @@ fn building_at(x: f32, z: f32, y: f32, w: f32, h: f32, d: f32) -> (Vec<f32>, Vec
     (verts, uvs)
 }
 
-/// The car: a body with a cabin on top, so which way it faces is readable at
-/// a glance from behind.
-fn car_mesh() -> Mesh {
-    let mut m = box_mesh(2.2, 0.9, 4.4);
-    let cabin = box_mesh(1.8, 0.7, 2.0);
-    // Lift the cabin onto the body and shift it back a little.
-    for t in cabin.verts.chunks_exact(3) {
-        m.verts.push(t[0]);
-        m.verts.push(t[1] + 0.9);
-        m.verts.push(t[2] - 0.3);
-    }
-    m
-}
 
-fn tree_mesh() -> Mesh {
-    let mut m = box_mesh(0.7, 2.4, 0.7);
-    let r = 2.0;
-    let base = 2.2;
-    let top = 7.5;
-    let corners = [[-r, base, -r], [r, base, -r], [r, base, r], [-r, base, r]];
-    for i in 0..4 {
-        let a = corners[i];
-        let b = corners[(i + 1) % 4];
-        for p in [a, b, [0.0, top, 0.0]] {
-            m.verts.push(p[0]);
-            m.verts.push(p[1]);
-            m.verts.push(p[2]);
-        }
-    }
-    m
-}
 
 /// The land the circuit sits on, as a grid of quads.
 ///
@@ -270,13 +210,30 @@ fn scenery(track: &Track, per_node: usize) -> Vec<Prop> {
             // Set back from the road. Eight units from the kerb is close
             // enough that a building fills the windscreen as you pass it,
             // which reads as a wall rather than as scenery.
-            let out_dist = ROAD_HALF + 20.0 + hash2(seed, 2) * 64.0;
+            // Buildings CLUSTER, trees scatter.
+            //
+            // Each was independently thrown somewhere in a 64-unit band, so
+            // every tower stood alone on open grass -- which is what made them
+            // read as slabs rather than as a city. Quantising the distance
+            // into a few rows puts them shoulder to shoulder in blocks, with
+            // the gaps between rows reading as streets.
+            let is_building = hash2(seed, 4) > 0.72;
+            let out_dist = if is_building {
+                // Set well back. At 30 units the first row filled the
+                // windscreen and the circuit read as a trench; a city is
+                // something you race PAST, so the near row starts beyond the
+                // trees and the rows recede from there.
+                let row = (hash2(seed, 2) * 4.0) as i32;
+                ROAD_HALF + 85.0 + row as f32 * 34.0 + hash2(seed, 12) * 8.0
+            } else {
+                ROAD_HALF + 14.0 + hash2(seed, 2) * 62.0
+            };
             let nx = -node.dir_z;
             let nz = node.dir_x;
             let jitter = (hash2(seed, 3) - 0.5) * 9.0;
             let x = node.x + nx * side * out_dist + node.dir_x * jitter;
             let z = node.z + nz * side * out_dist + node.dir_z * jitter;
-            let building = hash2(seed, 4) > 0.72;
+            let building = is_building;
             let g = 0.30 + hash2(seed, 6) * 0.22;
             out.push(Prop {
                 x,
@@ -551,15 +508,52 @@ fn draw(
     // one is ahead of me" is a thing you can say.
     for (i, c) in g.cars.iter().enumerate() {
         let tint = car_colour(i, c.hit);
+        let heading = c.body_angle();
+        let deg = heading * 57.295_78;
         scene3d::place(
             scene,
             &meshes.car.verts,
             &[c.x, c.y, c.z],
-            &[0.0, c.body_angle() * 57.295_78, 0.0],
+            &[0.0, deg, 0.0],
             1.0,
             tint,
         )?;
         calls += 1;
+
+        // Four wheels, placed in world space at the corners of the body.
+        //
+        // Each is rotated into the car's heading by hand rather than being
+        // part of the body mesh, because a wheel that turns with the steering
+        // and a body that does not is most of what makes a car look driven
+        // rather than slid. `place` takes a position and an angle, so the
+        // corner offset has to be rotated here.
+        let (sh, ch) = (sin_approx(heading), cos_approx(heading));
+        const CORNERS: [[f32; 3]; 4] = [
+            [-0.98, 0.36, 1.42],
+            [0.98, 0.36, 1.42],
+            [-0.98, 0.36, -1.38],
+            [0.98, 0.36, -1.38],
+        ];
+        let tyre = rgb(0.07, 0.07, 0.08);
+        for (n, off) in CORNERS.iter().enumerate() {
+            // Rotate the local offset into world space.
+            let wx = c.x + off[0] * ch + off[2] * sh;
+            let wz = c.z - off[0] * sh + off[2] * ch;
+            // The front pair steers; the rear pair does not.
+            // The front pair turns with the slip angle -- the car has no
+            // separate steering state, and slip is what the driver is doing
+            // about the corner, which is close enough to read right.
+            let steer = if n < 2 { -c.slip * 34.0 } else { 0.0 };
+            scene3d::place(
+                scene,
+                &meshes.wheel.verts,
+                &[wx, c.y + off[1], wz],
+                &[0.0, deg + steer, 0.0],
+                1.0,
+                tyre,
+            )?;
+            calls += 1;
+        }
     }
 
     if !hud.is_empty() {
@@ -612,6 +606,8 @@ struct Meshes {
     /// `textured` has no `place`, so they cannot be instanced.
     buildings: Vec<f32>,
     buildings_uv: Vec<f32>,
+    /// One wheel, placed four times per car.
+    wheel: Mesh,
 }
 
 /// Uploaded texture handles.
@@ -1024,9 +1020,32 @@ impl krate::Guest for Component {
             // units put a tower every few metres and turned a country circuit
             // into a canyon -- squaring the random pulls most of them down
             // while leaving the occasional one to break the skyline.
+            // Lower, and only occasionally tall. The squared random already
+            // pulled most down; with the city pushed back it can afford a
+            // wider spread without becoming a canyon.
             let r = hash2(seed, 23);
-            let h = 7.0 + r * r * 30.0;
-            let (v, uv) = building_at(p.x, p.z, p.y, w, h, d);
+            let h = 6.0 + r * r * 26.0;
+            // Sink the base below the terrain under its own footprint.
+            //
+            // A building is an axis-aligned box and the land is not flat, so
+            // setting its base to the height at its CENTRE leaves the downhill
+            // corners hanging in the air -- which reads as a tower leaning,
+            // not as a gap. Taking the lowest of the four corners and going a
+            // little below that buries the base instead. Nobody sees the part
+            // underground, and every building stands up.
+            // Apply the prop's own scale. It was being computed and thrown
+            // away: every building came out the same 7-16 units across
+            // whatever `scale` said, which is a second reason they all read
+            // alike.
+            let (w, d) = (w * p.scale * 0.55, d * p.scale * 0.55);
+            let h = h * (0.7 + p.scale * 0.35);
+            let (hw, hd) = (w * 0.5, d * 0.5);
+            let base = ground_height(p.x - hw, p.z - hd)
+                .min(ground_height(p.x + hw, p.z - hd))
+                .min(ground_height(p.x - hw, p.z + hd))
+                .min(ground_height(p.x + hw, p.z + hd))
+                - 1.5;
+            let (v, uv) = building_at(p.x, p.z, base, w, h + (p.y - base), d);
             buildings.extend_from_slice(&v);
             buildings_uv.extend_from_slice(&uv);
         }
@@ -1034,8 +1053,15 @@ impl krate::Guest for Component {
         let meshes = Meshes {
             ground,
             ground_uv,
-            car: car_mesh(),
-            tree: tree_mesh(),
+            car: Mesh {
+                verts: models::car().verts,
+            },
+            wheel: Mesh {
+                verts: models::wheel(0.36, 0.26).verts,
+            },
+            tree: Mesh {
+                verts: models::conifer(7).verts,
+            },
             buildings,
             buildings_uv,
         };

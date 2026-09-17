@@ -148,7 +148,20 @@ fn surface(nodes: &[Node]) -> Surfaces {
     // covered seven metres of road and the repeat read as a chequerboard at
     // speed -- the eye finds the period long before it finds the grain. At
     // 0.5 the tile is under two metres and reads as surface.
-    let v_per_metre = 0.5_f32;
+    // A tile every four metres, and `u` repeats to match (see the quad call
+    // below), so a texel is SQUARE and about 1.5cm of road.
+    //
+    // Two numbers have to agree here and getting either alone wrong is
+    // visible. `v_per_metre` was 0.5 -- a tile every two metres -- while `u`
+    // spanned one tile across twenty-two metres of road: an eleven-to-one
+    // stretch, which does not read as a stretched texture but as a BRICK
+    // GRID, because the repeat is dense one way and sparse the other. Making
+    // them agree at one tile per road-width fixed the grid and left texels
+    // nine centimetres across, which at close range is a mosaic of fat
+    // squares. Four metres is the scale at which 256 pixels of aggregate
+    // actually looks like aggregate.
+    const TILE_METRES: f32 = 4.0;
+    let v_per_metre = 1.0 / TILE_METRES;
 
     for i in 0..n {
         let c = nodes[i];
@@ -189,10 +202,10 @@ fn surface(nodes: &[Node]) -> Surfaces {
             }
         };
 
-        // `u` spans four tiles across the road rather than one, so the
-        // chippings stay square instead of being smeared sideways.
+        // `u` repeats at the SAME metres-per-tile as `v`, so a texel is square.
         let before = road.len();
-        quad(ROAD_HALF, -ROAD_HALF, 0.0, 4.0, &mut road, &mut road_uv);
+        let u_span = (ROAD_HALF * 2.0) / TILE_METRES;
+        quad(ROAD_HALF, -ROAD_HALF, 0.0, u_span, &mut road, &mut road_uv);
         // One normal and one tangent per vertex the quad just pushed. The
         // normal is straight up: the road banks only slightly and treating it
         // as flat costs nothing a driver can see. The tangent is the LEFT
