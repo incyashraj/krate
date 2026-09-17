@@ -155,9 +155,29 @@ fn building_at(x: f32, z: f32, y: f32, w: f32, h: f32, d: f32) -> (Vec<f32>, Vec
 /// clockwise from above and back-face culling removes it, which empties the
 /// ground from under the car while distant hills survive at their grazing
 /// angle.
-fn ground_mesh(extent: f32, cells: usize) -> (Mesh, Vec<f32>) {
+fn ground_mesh(extent: f32, cells: usize) -> (Mesh, Vec<f32>, Vec<f32>) {
     let mut verts = Vec::with_capacity(cells * cells * 18);
     let mut uvs = Vec::with_capacity(cells * cells * 12);
+    // A normal per VERTEX, taken from the height field rather than from the
+    // triangle.
+    //
+    // Flat shading gives every triangle one normal, so a hillside made of
+    // 128x128 quads reads as 32,768 visible plates -- the facets were the
+    // most obviously synthetic thing left in the frame. Sampling the slope of
+    // `ground_height` at each corner gives neighbouring triangles normals
+    // that AGREE along their shared edge, which is what makes a surface look
+    // continuous.
+    let mut normals = Vec::with_capacity(cells * cells * 18);
+    let slope_at = |x: f32, z: f32| -> [f32; 3] {
+        // Central differences. A forward difference biases the normal half a
+        // cell downhill, which tilts the lighting consistently one way.
+        let e = step_of(extent, cells) * 0.5;
+        let dx = ground_height(x + e, z) - ground_height(x - e, z);
+        let dz = ground_height(x, z + e) - ground_height(x, z - e);
+        let (nx, ny, nz) = (-dx, 2.0 * e, -dz);
+        let len = mathx::sqrt_approx(nx * nx + ny * ny + nz * nz).max(0.0001);
+        [nx / len, ny / len, nz / len]
+    };
     let step = extent * 2.0 / cells as f32;
     // Tile every few cells rather than once across the whole field: one UV
     // span over 1400 units stretches a 64-pixel tile into visible mush.
@@ -186,10 +206,19 @@ fn ground_mesh(extent: f32, cells: usize) -> (Mesh, Vec<f32>) {
                 verts.push(p[2]);
                 uvs.push(uv[0] * uv_scale * 0.1);
                 uvs.push(uv[1] * uv_scale * 0.1);
+                let n = slope_at(p[0], p[2]);
+                normals.push(n[0]);
+                normals.push(n[1]);
+                normals.push(n[2]);
             }
         }
     }
-    (Mesh { verts }, uvs)
+    (Mesh { verts }, uvs, normals)
+}
+
+/// One grid cell's width, so the normal sampler can match the mesh.
+fn step_of(extent: f32, cells: usize) -> f32 {
+    extent * 2.0 / cells as f32
 }
 
 // ------------------------------------------------------------------ scenery
@@ -573,7 +602,16 @@ fn draw(
         }
         scene3d::unlit(scene, &dome, &meshes.sky_uv, art.sky, white)?;
     }
-    scene3d::textured(scene, &meshes.ground.verts, &meshes.ground_uv, art.grass, white)?;
+    // `smooth` rather than `textured`: per-vertex normals are what stop a
+    // 128x128 hillside reading as 32,768 flat plates.
+    scene3d::smooth(
+        scene,
+        &meshes.ground.verts,
+        &meshes.ground_normals,
+        &meshes.ground_uv,
+        art.grass,
+        white,
+    )?;
     // The road wears a normal map when the renderer has one, so the chippings
     // are bumps the light reacts to rather than speckle painted on a flat
     // sheet. Falls back to the plain textured path otherwise.
@@ -851,6 +889,8 @@ fn car_colour(i: usize, hit: f32) -> gfx::Color {
 struct Meshes {
     ground: Mesh,
     ground_uv: Vec<f32>,
+    /// A normal per ground vertex, so the hills shade smoothly.
+    ground_normals: Vec<f32>,
     car: Mesh,
     tree: Mesh,
     /// Every building in the world, pre-transformed into one textured mesh.
@@ -1406,7 +1446,7 @@ impl krate::Guest for Component {
         // 128 cells rather than 56: at 25 units a cell the hills beyond the
         // circuit were faceted into visible plates. 11 units holds a ridge
         // line, for 33k triangles against a scene already drawing 59k.
-        let (ground, ground_uv) = ground_mesh(700.0, 128);
+        let (ground, ground_uv, ground_normals) = ground_mesh(700.0, 128);
         // Inside the ground's 700-unit extent, so the horizon is land meeting
         // sky rather than the dome's bottom edge.
         let (sky_build, sky_uv) = models::sky_dome(640.0, 300.0);
@@ -1466,6 +1506,7 @@ impl krate::Guest for Component {
         let meshes = Meshes {
             ground,
             ground_uv,
+            ground_normals,
             car: Mesh {
                 verts: models::car().verts,
             },
