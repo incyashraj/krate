@@ -12,7 +12,7 @@
 use alloc::vec;
 use alloc::vec::Vec;
 
-use crate::mathx::hash2;
+use crate::mathx::{hash2, sin_approx};
 
 /// One RGBA image, ready for `upload_texture`.
 pub struct Texture {
@@ -153,13 +153,21 @@ pub fn grass() -> Texture {
             let blade = hash2(x as i32, y as i32);
             // Base green, shifted per patch so the field has lighter and
             // darker areas rather than one tone.
-            let g = 74.0 + patch * 46.0 + clump * 26.0 + blade * 16.0;
-            let r = g * (0.46 + patch * 0.10);
-            let b = g * 0.36;
+            // Graded to the sunset, not left at midday green.
+            //
+            // The single most out-of-place thing in the frame was vivid green
+            // grass under a violet sky. Real grass at this hour is olive and
+            // desaturated -- the sun is low and red, so the green it reflects
+            // is dulled and warmed. A colour that ignores the light it is
+            // under is what makes a scene look assembled rather than lit,
+            // whatever else is right.
+            let g = 58.0 + patch * 30.0 + clump * 18.0 + blade * 11.0;
+            let r = g * (0.72 + patch * 0.14);
+            let b = g * 0.42;
             // Dry patches: yellower, where the ground is thin.
             let dry = hash2(x as i32 / 37 + 91, y as i32 / 37 + 13);
             if dry > 0.80 {
-                put(&mut t, x, y, g * 0.86, g * 0.82, b * 0.72);
+                put(&mut t, x, y, g * 1.16, g * 0.94, b * 0.86);
             } else {
                 put(&mut t, x, y, r, g, b);
             }
@@ -291,6 +299,105 @@ pub fn kerb() -> Texture {
                 (g as f32 * edge) as u8,
                 (b as f32 * edge) as u8,
             );
+        }
+    }
+    t
+}
+
+/// The sky, as a vertical gradient with a sun glow in it.
+///
+/// This is the texture that decides what the whole scene looks like, because
+/// the sky is the light source everything else is graded against. A flat blue
+/// fill made every other colour in the frame arbitrary -- pure green grass,
+/// grey road, primary-coloured cars, none of them belonging to the same
+/// place.
+///
+/// A sunset was chosen over midday for a plain reason: at midday everything is
+/// lit from directly above and the world is flat and shadowless, which is the
+/// hardest possible look to make convincing. A low sun gives long shadows,
+/// warm light on one side of everything and cool shade on the other, and a
+/// horizon with colour in it. It is the cheapest way to make a scene look
+/// deliberately lit rather than merely visible.
+///
+/// `v` runs 0 at the horizon to 1 overhead. `u` runs around the compass, so
+/// the sun can sit at one bearing rather than glowing all the way round.
+pub fn sky(sun_u: f32) -> Texture {
+    const W: u32 = 256;
+    const H: u32 = 128;
+    let mut t = blank(W, H);
+
+    // The gradient stops, horizon to zenith. Warm at the bottom through
+    // orange and pink into a deep blue overhead -- the ordinary progression
+    // of a clear evening, which is what makes it read as real rather than as
+    // a colour effect.
+    const STOPS: [[f32; 4]; 6] = [
+        // v,    r,     g,     b
+        [0.00, 252.0, 186.0, 120.0],
+        [0.10, 246.0, 146.0, 104.0],
+        [0.24, 226.0, 108.0, 116.0],
+        [0.45, 158.0, 92.0, 148.0],
+        [0.70, 86.0, 78.0, 152.0],
+        [1.00, 38.0, 46.0, 104.0],
+    ];
+
+    for y in 0..H {
+        let v = y as f32 / (H - 1) as f32;
+        // Find the pair of stops this row sits between and mix them.
+        let mut c = [STOPS[0][1], STOPS[0][2], STOPS[0][3]];
+        for w in STOPS.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            if v >= a[0] && v <= b[0] {
+                let k = if b[0] > a[0] {
+                    (v - a[0]) / (b[0] - a[0])
+                } else {
+                    0.0
+                };
+                // Smoothstep rather than linear: a linear ramp shows its
+                // stops as visible bands where the slope changes.
+                let k = k * k * (3.0 - 2.0 * k);
+                c = [
+                    a[1] + (b[1] - a[1]) * k,
+                    a[2] + (b[2] - a[2]) * k,
+                    a[3] + (b[3] - a[3]) * k,
+                ];
+                break;
+            }
+        }
+        if v > STOPS[STOPS.len() - 1][0] {
+            let last = STOPS[STOPS.len() - 1];
+            c = [last[1], last[2], last[3]];
+        }
+
+        for x in 0..W {
+            let u = x as f32 / (W - 1) as f32;
+            // The sun's glow: brightest at its bearing and near the horizon,
+            // falling away in both directions. Wrapped, so a sun at u=0.98
+            // still glows across the seam at u=0.02.
+            let mut du = u - sun_u;
+            if du > 0.5 {
+                du -= 1.0;
+            } else if du < -0.5 {
+                du += 1.0;
+            }
+            let across = 1.0 - (du.abs() / 0.30).min(1.0);
+            let up = 1.0 - (v / 0.34).min(1.0);
+            let glow = across * across * up * up;
+
+            // Thin banded cloud near the horizon, lit from beneath by the
+            // sun. Bands rather than noise: an evening sky stratifies, and
+            // horizontal streaks are what says "sky" rather than "static".
+            let band = sin_approx(v * 46.0 + u * 3.0) * 0.5 + 0.5;
+            let cloud = if v < 0.42 {
+                let k = (1.0 - v / 0.42) * band * band;
+                k * (0.20 + glow * 0.55)
+            } else {
+                0.0
+            };
+
+            let r = c[0] + glow * 96.0 + cloud * 70.0;
+            let g = c[1] + glow * 74.0 + cloud * 44.0;
+            let b = c[2] + glow * 28.0 + cloud * 30.0;
+            put(&mut t, x, y, r, g, b);
         }
     }
     t

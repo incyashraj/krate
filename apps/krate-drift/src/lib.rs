@@ -69,6 +69,14 @@ const FIELD: usize = 6;
 /// Seconds of countdown before the lights go out.
 const COUNTDOWN: f32 = 3.5;
 
+/// Where the sun sits, as a fraction around the compass.
+///
+/// 0.12 rather than 0.62: at 0.62 the sun sat behind the camera, so the sky
+/// showed only its cool half and none of the glow the texture spends most of
+/// its range on. A sunset the player cannot see is a colour grade, not a
+/// sunset.
+const SUN_BEARING: f32 = 0.12;
+
 // ------------------------------------------------------------------ meshes
 
 struct Mesh {
@@ -450,13 +458,25 @@ fn draw(
     hud: &mut Hud,
     visible_props: usize,
 ) -> Result<usize, gfx::GfxError> {
-    let sky = match g.phase {
-        Phase::Attract => rgb(0.36, 0.47, 0.66),
-        _ => rgb(0.52, 0.70, 0.92),
-    };
-    scene3d::clear(scene, sky)?;
+    // The clear colour is the sky's horizon tone, not a blue.
+    //
+    // It is only seen where the dome does not reach, so it must be the colour
+    // the dome's edge is or the seam shows as a band. Everything else in the
+    // frame is graded against this.
+    scene3d::clear(scene, rgb(0.92, 0.62, 0.44))?;
     scene3d::camera(scene, &g.cam, &g.cam_look, 62.0)?;
-    scene3d::light(scene, &[-0.42, -0.84, -0.34])?;
+
+    // The sun comes FROM its bearing in the sky, low down.
+    //
+    // A light direction points the way the light TRAVELS, so this is the
+    // negation of the direction toward the sun. Low -- 0.28 down against 1.0
+    // across -- because a low sun is what gives long shadows and a lit side
+    // and a shaded side, and that is most of what makes a scene look lit
+    // rather than merely visible.
+    let sun_a = SUN_BEARING * core::f32::consts::TAU;
+    let (sun_x, sun_z) = (cos_approx(sun_a), sin_approx(sun_a));
+    scene3d::light(scene, &[-sun_x, -0.28, -sun_z])?;
+
 
     let mut calls = 0;
 
@@ -464,6 +484,19 @@ fn draw(
     // version read as 1997: the rasterizer was never the limit, the app just
     // never used `upload_texture`.
     let white = rgb(1.0, 1.0, 1.0);
+
+    // The sky dome first, unlit and centred on the camera so it never moves
+    // relative to the driver -- a sky that parallaxes is a sky with a size,
+    // and the sky has no size.
+    if art.sky != 0 {
+        let mut dome = Vec::with_capacity(meshes.sky.verts.len());
+        for p in meshes.sky.verts.chunks_exact(3) {
+            dome.push(p[0] + g.cam[0]);
+            dome.push(p[1]);
+            dome.push(p[2] + g.cam[2]);
+        }
+        scene3d::unlit(scene, &dome, &meshes.sky_uv, art.sky, white)?;
+    }
     scene3d::textured(scene, &meshes.ground.verts, &meshes.ground_uv, art.grass, white)?;
     // The road wears a normal map when the renderer has one, so the chippings
     // are bumps the light reacts to rather than speckle painted on a flat
@@ -608,6 +641,9 @@ struct Meshes {
     buildings_uv: Vec<f32>,
     /// One wheel, placed four times per car.
     wheel: Mesh,
+    /// The sky dome and its UVs, drawn unlit before anything else.
+    sky: Mesh,
+    sky_uv: Vec<f32>,
 }
 
 /// Uploaded texture handles.
@@ -622,6 +658,8 @@ struct Art {
     grass: u64,
     facade: u64,
     kerb: u64,
+    /// The sunset gradient the sky dome is painted with.
+    sky: u64,
 }
 
 /// Build the HUD for this frame.
@@ -965,7 +1003,9 @@ impl krate::Guest for Component {
                 // Lower than the 0.35 default because the fill light now does
                 // that work, and a lower floor is what lets a shadow read as
                 // shade rather than as a slightly darker grey.
-                ambient: 0.18,
+                // Low, because the fill light does this work now and a low
+                // floor is what lets a shadow read as shade.
+                ambient: 0.14,
                 // Cars are painted metal and the road is wet-looking asphalt;
                 // both want a highlight, and it is most of what stops a car
                 // reading as a coloured box.
@@ -974,11 +1014,30 @@ impl krate::Guest for Component {
                 // The circuit is two kilometres round and the camera sees
                 // maybe four hundred units of it. This puts air between the
                 // near kerb and the far treeline.
+                // Heavier fog, in the sky's own horizon colour.
+                //
+                // Fog is what joins the world to the sky. When it was a pale
+                // blue and the sky was a different pale blue, distant geometry
+                // faded toward a colour the sky did not have and the horizon
+                // showed as a seam. Matching it to the sunset's horizon tone
+                // makes the far treeline dissolve INTO the sky, which is the
+                // single cheapest depth cue there is.
+                // Back to 0.0030 was too much: with the sun's glow added to
+                // it, ground only a few metres to the left washed out to near
+                // white. Fog that reaches the foreground is not depth, it is
+                // a veil over the whole picture.
                 fog_density: 0.0016,
-                fog_color: rgb(0.72, 0.80, 0.92),
-                // A cool fill from the sky's side, opposite the sun.
-                fill_direction: alloc::vec![0.42, 0.55, 0.72],
-                fill_color: rgb(0.30, 0.38, 0.52),
+                fog_color: rgb(0.96, 0.64, 0.44),
+                // A cool fill from the opposite side of the sky.
+                //
+                // Warm key, cool fill is the oldest lighting arrangement there
+                // is and the reason a sunset scene reads as three-dimensional:
+                // the lit side goes orange, the shaded side goes blue, and the
+                // difference between them describes the form. A single white
+                // light leaves the shaded side simply darker, which describes
+                // nothing.
+                fill_direction: alloc::vec![0.38, 0.62, 0.68],
+                fill_color: rgb(0.24, 0.30, 0.56),
                 // Around the car rather than the whole circuit: at 120 units
                 // the map's texels are about 12 cm, which holds an edge at the
                 // distance a chase camera sees.
@@ -986,7 +1045,9 @@ impl krate::Guest for Component {
                 shadow_softness: 1.2,
                 // Tone mapping rather than a hard clamp, so the sunlit side of
                 // a car keeps its shape instead of becoming a white patch.
-                exposure: 1.1,
+                // A touch over 1: the sun is low and the lit faces should
+                // bloom slightly past white rather than clip flat.
+                exposure: 1.25,
             },
         )
         .is_ok();
@@ -1003,6 +1064,12 @@ impl krate::Guest for Component {
         let track = track::build(7, 360);
         let props = scenery(&track, 2);
         let (ground, ground_uv) = ground_mesh(700.0, 56);
+        // Inside the ground's 700-unit extent, so the horizon is land meeting
+        // sky rather than the dome's bottom edge.
+        let (sky_build, sky_uv) = models::sky_dome(640.0, 300.0);
+        let sky_mesh = Mesh {
+            verts: sky_build.verts,
+        };
 
         // Every building, pre-transformed into one mesh. Varied footprints and
         // heights rather than one box repeated: a skyline of identical blocks
@@ -1062,6 +1129,8 @@ impl krate::Guest for Component {
             tree: Mesh {
                 verts: models::conifer(7).verts,
             },
+            sky: sky_mesh,
+            sky_uv,
             buildings,
             buildings_uv,
         };
@@ -1087,6 +1156,7 @@ impl krate::Guest for Component {
             grass: upload(art::grass()),
             facade: upload(art::facade(3)),
             kerb: upload(art::kerb()),
+            sky: upload(art::sky(SUN_BEARING)),
         };
 
         say("drift: a racing game");

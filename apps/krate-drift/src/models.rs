@@ -298,3 +298,81 @@ pub fn conifer(seed: i32) -> Build {
     }
     m
 }
+
+/// A sky dome: a band of sky around the horizon, drawn unlit.
+///
+/// The sky was `clear()` -- one flat colour over the whole window. A flat
+/// fill is the single loudest thing saying "this is not a real place",
+/// because a real sky is never one colour: it is lighter and warmer at the
+/// horizon and deeper overhead, and that gradient is what an eye reads as
+/// distance and time of day.
+///
+/// Built as a cylinder rather than a hemisphere on purpose. A chase camera
+/// looks at the horizon and never at the zenith, so the top half of a dome is
+/// triangles nobody sees. This is a tall band with a lid, which is all of the
+/// sky a driver ever looks at.
+///
+/// Returned with a colour per vertex is not possible -- `unlit` takes one
+/// tint -- so the gradient is baked into a texture and this just carries the
+/// UVs for it. `v` runs 0 at the horizon to 1 at the top.
+pub fn sky_dome(radius: f32, height: f32) -> (Build, Vec<f32>) {
+    let mut m = Build::new();
+    let mut uv: Vec<f32> = Vec::new();
+    const SEG: usize = 32;
+
+    // The band. Wound so the INSIDE faces the camera: the camera is inside
+    // this cylinder, so the winding is the opposite of a solid object's.
+    for i in 0..SEG {
+        let a0 = (i as f32 / SEG as f32) * core::f32::consts::TAU;
+        let a1 = ((i + 1) as f32 / SEG as f32) * core::f32::consts::TAU;
+        let (x0, z0) = (cos_approx(a0) * radius, sin_approx(a0) * radius);
+        let (x1, z1) = (cos_approx(a1) * radius, sin_approx(a1) * radius);
+        // Drop the bottom edge well below the horizon so the seam is never
+        // visible over a rise in the land.
+        let y0 = -radius * 0.35;
+        let y1 = height;
+
+        // Wound so the INSIDE faces the camera.
+        //
+        // The camera is inside this cylinder, so the winding is the reverse of
+        // a solid object's. Getting it the other way round culls every face
+        // and the dome renders nothing at all -- which looks exactly like the
+        // texture having failed to upload, and cost a debugging pass to tell
+        // apart.
+        m.quad(
+            [x1, y0, z1],
+            [x1, y1, z1],
+            [x0, y1, z0],
+            [x0, y0, z0],
+        );
+        let (u0, u1) = (i as f32 / SEG as f32, (i + 1) as f32 / SEG as f32);
+        // Two triangles, six vertices, matching `quad`'s a-b-c / a-c-d order.
+        for t in [
+            [u1, 0.0],
+            [u1, 1.0],
+            [u0, 1.0],
+            [u1, 0.0],
+            [u0, 1.0],
+            [u0, 0.0],
+        ] {
+            uv.push(t[0]);
+            uv.push(t[1]);
+        }
+    }
+
+    // A lid, so looking up over a crest does not show the clear colour
+    // through the top of the cylinder.
+    for i in 0..SEG {
+        let a0 = (i as f32 / SEG as f32) * core::f32::consts::TAU;
+        let a1 = ((i + 1) as f32 / SEG as f32) * core::f32::consts::TAU;
+        let (x0, z0) = (cos_approx(a0) * radius, sin_approx(a0) * radius);
+        let (x1, z1) = (cos_approx(a1) * radius, sin_approx(a1) * radius);
+        m.tri([x1, height, z1], [0.0, height, 0.0], [x0, height, z0]);
+        for t in [[0.5, 1.0], [0.5, 1.0], [0.5, 1.0]] {
+            uv.push(t[0]);
+            uv.push(t[1]);
+        }
+    }
+
+    (m, uv)
+}
