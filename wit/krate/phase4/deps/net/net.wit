@@ -1,0 +1,212 @@
+package krate:net@0.1.0;
+
+/// Shared network request, response, and error types.
+interface types {
+  /// HTTP method for Phase 2 client requests.
+  enum http-method {
+    /// HTTP GET.
+    get,
+    /// HTTP POST.
+    post,
+    /// HTTP PUT.
+    put,
+    /// HTTP DELETE.
+    delete,
+    /// HTTP PATCH.
+    patch,
+    /// HTTP HEAD.
+    head,
+    /// HTTP OPTIONS.
+    options,
+  }
+
+  /// One HTTP header field.
+  record header {
+    /// Header name.
+    name: string,
+    /// Header value.
+    value: string,
+  }
+
+  /// Buffered HTTP request shape.
+  record request {
+    /// Request method.
+    method: http-method,
+    /// Absolute request URL.
+    url: string,
+    /// App-provided headers. Host-controlled transport headers are rejected.
+    headers: list<header>,
+    /// Buffered request body.
+    body: list<u8>,
+    /// Optional timeout in milliseconds for this request.
+    timeout-millis: option<u32>,
+  }
+
+  /// Buffered HTTP response shape.
+  record response {
+    /// Numeric HTTP status code.
+    status: u16,
+    /// Response headers accepted by the host adapter.
+    headers: list<header>,
+    /// Buffered response body.
+    body: list<u8>,
+  }
+
+  /// What became of a request started with `http-client.begin`.
+  ///
+  /// One shape rather than a result, because "not finished yet" is a normal
+  /// answer here and not an error. `pending` is the only non-terminal
+  /// variant: the other three retire the handle.
+  variant fetch-status {
+    /// Still working. Draw a frame and ask again.
+    pending,
+    /// Finished, with the response.
+    ready(response),
+    /// Finished, badly. The same errors `fetch` can return.
+    failed(net-error),
+    /// This handle was never issued, or has already been answered or
+    /// cancelled. Distinct from `failed` so a double-poll is not mistaken
+    /// for a network problem.
+    unknown-handle,
+  }
+
+  /// Network error shape returned by HTTP client calls.
+  variant net-error {
+    /// URL syntax or unsupported Phase 2 URL shape.
+    invalid-url,
+    /// Hostname resolution failed.
+    dns-failure(string),
+    /// Socket connection failed.
+    connect-failure(string),
+    /// TLS setup failed. HTTPS is not yet implemented in the first Phase 2 adapter slice.
+    tls-failure(string),
+    /// Request timed out.
+    timeout,
+    /// Response exceeded the configured body-size limit.
+    body-too-large,
+    /// Capability policy denied the request before socket access.
+    permission-denied,
+    /// Response framing or protocol parsing failed.
+    protocol(string),
+    /// Host-specific network error text.
+    other(string),
+  }
+}
+
+/// HTTP client calls for CLI components.
+/// Buffered HTTP requests to hosts the person allowed.
+///
+/// **Redirects are not followed.** A 3xx comes back with its `location` header
+/// for the app to act on, and following it means making another request -- one
+/// that is checked against `net.connect` for the new host.
+///
+/// That is deliberate rather than unfinished. `net.connect` is granted per
+/// host, so a client that followed redirects itself would let a granted
+/// `api.example.com` send the app's request anywhere it liked, with the
+/// person's permission prompt saying only "api.example.com". Leaving the
+/// decision to the app keeps every host the request reaches one the person
+/// actually approved.
+interface http-client {
+  use types.{request, response, net-error, fetch-status};
+
+  /// Perform a simple GET request and return only the response body.
+  get: func(url: string) -> result<list<u8>, net-error>;
+  /// Perform a buffered HTTP request and return status, headers, and body.
+  ///
+  /// **This blocks until the response is complete.** A guest is single
+  /// threaded, so nothing else in the app runs meanwhile: no frame is drawn,
+  /// no click is answered. That is fine for a small request made while the
+  /// person is waiting anyway, and wrong for anything a person watches --
+  /// use `begin` / `poll` below when the app should stay alive.
+  fetch: func(req: request) -> result<response, net-error>;
+
+  /// Start a request and return immediately with a handle.
+  ///
+  /// The work happens on a host thread while the guest keeps its own loop
+  /// turning, so the app can draw a spinner, animate, answer a click, or
+  /// offer a cancel button while the network is slow. This is the whole
+  /// point: a blocking `fetch` against a server that stalls three seconds
+  /// froze a real app for the full three seconds (K-101).
+  ///
+  /// The capability check happens here, at `begin`, exactly as it does for
+  /// `fetch` -- a handle is only ever issued for a host the person granted.
+  /// Failing that check fails this call, not the later `poll`.
+  ///
+  /// The handle is valid until `poll` returns a terminal answer or `cancel`
+  /// is called. Handles do not survive the run.
+  begin: func(req: request) -> result<u64, net-error>;
+
+  /// Ask what happened to a request started with `begin`.
+  ///
+  /// Returns immediately, always. `pending` means keep going -- draw a
+  /// frame and ask again later. Anything else is terminal and retires the
+  /// handle, so polling a finished request answers `unknown-handle`.
+  poll: func(handle: u64) -> fetch-status;
+
+  /// Abandon a request. The handle is retired whether or not the work had
+  /// finished, and any response already in flight is dropped.
+  ///
+  /// This is what a cancel button calls. It is safe on a handle that has
+  /// already been retired.
+  cancel: func(handle: u64);
+}
+/// Live two-way connections: WebSocket, ws:// and wss://.
+///
+/// The permission story is the same one HTTP has: opening a connection is a
+/// `net.connect` to that host and port, checked at `open` on the calling
+/// thread, before anything dials. There is no separate capability to declare
+/// -- an app granted `net.connect:example.com:443` may fetch from it and may
+/// hold a socket to it, which is the same promise to the person either way.
+///
+/// Everything here returns immediately. The connection lives on a host
+/// thread; the guest polls for events from its own loop exactly as it polls
+/// `http-client` fetches, so a stalled server can never freeze a frame.
+interface ws {
+  use types.{net-error};
+
+  /// One message, either direction.
+  variant ws-message {
+    /// UTF-8 text.
+    text(string),
+    /// Raw bytes.
+    binary(list<u8>),
+  }
+
+  /// What `poll` found.
+  variant ws-event {
+    /// Nothing new. The normal answer; keep drawing and ask later.
+    pending,
+    /// The handshake finished; the connection is live. Reported once.
+    opened,
+    /// The server sent a message.
+    message(ws-message),
+    /// The connection closed cleanly. Terminal; the handle is retired.
+    closed,
+    /// The connection failed, with the reason. Terminal; the handle is
+    /// retired.
+    failed(string),
+    /// Never opened, or already closed, cancelled, or retired.
+    unknown-handle,
+  }
+
+  /// Open a connection to a `ws://` or `wss://` URL and return a handle.
+  ///
+  /// The capability check happens here: the URL's host and port must be
+  /// covered by a `net.connect` grant, exactly as for a fetch. `wss://`
+  /// verifies certificates, always; there is no way to ask it not to.
+  open: func(url: string) -> result<u64, net-error>;
+
+  /// Queue one message to send. Returns immediately; the host thread
+  /// delivers it in order. Sending on a connection that has not finished
+  /// opening queues the message for when it has.
+  send: func(handle: u64, message: ws-message) -> result<_, net-error>;
+
+  /// Ask for the next event. Returns immediately, always; `pending` is the
+  /// normal answer. Messages arrive in order. A terminal event retires the
+  /// handle.
+  poll: func(handle: u64) -> ws-event;
+
+  /// Close the connection politely. Safe on a handle already retired; the
+  /// final `closed` event still arrives through `poll`.
+  close: func(handle: u64);
+}

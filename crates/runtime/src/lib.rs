@@ -58,6 +58,8 @@ pub mod phase2_host;
 pub mod phase3_gui_bindings;
 #[cfg(feature = "phase2-bindings")]
 pub mod phase3_gui_host;
+pub mod phase4_gui_bindings;
+pub mod phase4_gui_host;
 pub mod random_host;
 pub mod scene3d;
 pub mod secret_host;
@@ -237,6 +239,14 @@ pub enum SelectedWorld {
     Cli,
     /// `krate:app/gui`: the CLI surface plus `krate:ui` and friends.
     Gui,
+    /// The same world with `overlay` added to `widget-kind`.
+    ///
+    /// A separate world because an enum is a structural type: a component
+    /// built against the 17-case `widget-kind` and one built against the
+    /// 18-case version cannot use the same linker, and wasmtime refuses the
+    /// mismatch outright (K-403). Both are offered so neither generation of
+    /// app is left behind.
+    Gui4,
 }
 
 impl SelectedWorld {
@@ -244,7 +254,10 @@ impl SelectedWorld {
         match self {
             Self::Legacy => "krate:phase1/app@0.0.1",
             Self::Cli => krate_manifest::PHASE2_CLI_WORLD,
-            Self::Gui => krate_manifest::PHASE3_GUI_WORLD,
+            // Both GUI worlds answer to the same manifest world string: an
+            // app declares `krate:app/gui` and the runtime picks the shape
+            // that matches the component's own types.
+            Self::Gui | Self::Gui4 => krate_manifest::PHASE3_GUI_WORLD,
         }
     }
 }
@@ -288,17 +301,6 @@ fn run_export_shape(engine: &Engine, component: &Component) -> Result<RunShape> 
             "`run` returns {other:?}; a Krate app's `run` returns an s32 exit code"
         ))),
     }
-}
-
-/// wasmtime's link errors carry a multi-line context chain; the first line
-/// names the import, which is the part a person needs.
-fn first_line(err: &wasmtime::Error) -> String {
-    let text = err.to_string();
-    text.lines()
-        .next()
-        .unwrap_or("could not link")
-        .trim()
-        .to_string()
 }
 
 /// An instantiation failure with its causes kept, one line each (IC-231).
@@ -736,10 +738,13 @@ impl Runtime {
             SelectedWorld::Cli => self.run_phase2_component(component, config, output),
             #[cfg(feature = "phase2-bindings")]
             SelectedWorld::Gui => self.run_phase3_gui_component(component, config, output),
+            SelectedWorld::Gui4 => self.run_phase4_gui_component(component, config, output),
             #[cfg(not(feature = "phase2-bindings"))]
-            SelectedWorld::Cli | SelectedWorld::Gui => Err(RuntimeError::Instantiate(
-                "the runtime was built without current Krate world bindings".to_string(),
-            )),
+            SelectedWorld::Cli | SelectedWorld::Gui | SelectedWorld::Gui4 => {
+                Err(RuntimeError::Instantiate(
+                    "the runtime was built without current Krate world bindings".to_string(),
+                ))
+            }
         }
     }
 
@@ -764,7 +769,7 @@ impl Runtime {
         match run {
             RunShape::Unit => match self.phase1_linker()?.instantiate_pre(&component.component) {
                 Ok(_) => return Ok(SelectedWorld::Legacy),
-                Err(err) => reasons.push(format!("legacy world: {err}")),
+                Err(err) => reasons.push(format!("legacy world: {}", instantiate_error(&err))),
             },
             RunShape::ExitCode => {
                 reasons.push("legacy world: `run` returns a value there".to_string())
@@ -775,14 +780,37 @@ impl Runtime {
         if run == RunShape::ExitCode {
             match self.phase2_linker()?.instantiate_pre(&component.component) {
                 Ok(_) => return Ok(SelectedWorld::Cli),
-                Err(err) => reasons.push(format!("cli world: {}", first_line(&err))),
+                Err(err) => reasons.push(format!("cli world: {}", instantiate_error(&err))),
             }
-            match self
+            // Phase 3 is TRIED first but REPORTED second.
+            //
+            // Trying it first costs nothing -- an app that fits both gets the
+            // same host either way, because the worlds differ only in
+            // `krate:ui/types` and `krate:ui/tree` -- and it means the phase
+            // with the overlay is the one whose complaint leads the list.
+            // `reasons` is reversed before joining, so the widest world's
+            // complaint comes first only if it was pushed last.
+            let phase3 = match self
                 .phase3_gui_linker()?
                 .instantiate_pre(&component.component)
             {
-                Ok(_) => return Ok(SelectedWorld::Gui),
-                Err(err) => reasons.push(format!("gui world: {}", first_line(&err))),
+                Ok(_) => Some(SelectedWorld::Gui),
+                Err(err) => {
+                    reasons.push(format!("gui world (phase 3): {}", instantiate_error(&err)));
+                    None
+                }
+            };
+            match self
+                .phase4_gui_linker()?
+                .instantiate_pre(&component.component)
+            {
+                Ok(_) => return Ok(SelectedWorld::Gui4),
+                Err(err) => reasons.push(format!("gui world: {}", instantiate_error(&err))),
+            }
+            // An app built against the frozen phase: it fits phase 3 and not
+            // phase 4, which is exactly the case phase 4 exists to preserve.
+            if let Some(world) = phase3 {
+                return Ok(world);
             }
         }
 
@@ -977,6 +1005,47 @@ impl Runtime {
         self.finish_phase3_gui_run(&mut store, outcome)
     }
 
+    /// Run a Phase 4 GUI component.
+    ///
+    /// The same host, the same store, the same teardown -- only the linker
+    /// and the generated world type differ, because only `krate:ui/types` and
+    /// `krate:ui/tree` differ between the phases.
+    #[cfg(feature = "phase2-bindings")]
+    fn run_phase4_gui_component(
+        &self,
+        component: &LoadedComponent,
+        config: &Config,
+        output: OutputMode,
+    ) -> Result<RunOutcome> {
+        let mut store = self.new_store(config, output)?;
+        let gui_host = phase3_gui_host::Phase3GuiHost::new(
+            UapiGuard::new(config.session_policy.clone()),
+            config.phase3_ui_mode,
+        )
+        .map_err(|err| RuntimeError::Instantiate(err.to_string()))?
+        .with_asset_root(config.bundle_assets_root.clone())
+        .with_screenshot(
+            config
+                .screenshot_path
+                .clone()
+                .map(|path| (path, config.screenshot_scale)),
+        )
+        .with_usability(config.usability_plan.clone())
+        .with_layout_check(config.check_layout)
+        .with_chosen_files(store.data().chosen.clone())
+        .with_app_name(config.app_name.clone());
+        store.data_mut().phase3_gui = Some(gui_host);
+
+        let linker = self.phase4_gui_linker()?;
+
+        let bindings =
+            phase4_gui_bindings::Gui::instantiate(&mut store, &component.component, &linker)
+                .map_err(|err| RuntimeError::Instantiate(instantiate_error(&err)))?;
+
+        let outcome = bindings.call_run(&mut store);
+        self.finish_phase3_gui_run(&mut store, outcome)
+    }
+
     /// The GUI world's linker: the whole Phase 2 surface plus the Phase 3
     /// interfaces. Built without a store, so world selection can ask it
     /// whether a component links before anything is instantiated.
@@ -1034,6 +1103,90 @@ impl Runtime {
         link_gui!(ui::types);
         link_gui!(ui::window);
         link_gui!(ui::tree);
+        link_gui!(ui::image);
+        link_gui!(ui::events);
+        link_gui!(ui::dialog);
+        link_gui!(ui::clipboard);
+        link_gui!(ui::menu);
+        link_gui!(ui::launcher);
+        link_gui!(ui::notify);
+        link_gui!(gfx::types);
+        link_gui!(gfx::canvas2d);
+        link_gui!(gfx::scene3d);
+        link_gui!(audio::types);
+        link_gui!(audio::playback);
+        link_gui!(audio::capture);
+        link_gui!(camera::types);
+        link_gui!(camera::capture);
+        link_gui!(speech::transcription);
+
+        Ok(linker)
+    }
+
+    /// The Phase 4 GUI linker: Phase 3 plus the `overlay` widget kind.
+    ///
+    /// Identical to `phase3_gui_linker` but for two lines. `krate:ui/types`
+    /// and `krate:ui/tree` come from the Phase 4 bindings, because those are
+    /// the only two interfaces whose types changed; everything else is
+    /// literally the same generated module, linked into a second registry.
+    ///
+    /// A second registry is what makes this work at all: each linker is its
+    /// own `Linker`, so both can register `krate:ui/types@0.1.0` with a
+    /// different number of enum cases without colliding. An app built against
+    /// either shape finds a linker that matches it (K-403).
+    #[cfg(feature = "phase2-bindings")]
+    fn phase4_gui_linker(&self) -> Result<wasmtime::component::Linker<HostState>> {
+        use phase2_bindings::krate::{fs, io, locale, net, random, resources, store, time};
+        use phase3_gui_bindings::krate::{audio, camera, gfx, speech, ui};
+        use phase4_gui_bindings::krate::ui as ui4;
+
+        let mut linker = wasmtime::component::Linker::new(&self.engine);
+
+        macro_rules! link_phase2 {
+            ($module:path) => {{
+                use $module as interface;
+                interface::add_to_linker::<_, HasSelf<_>>(&mut linker, |state: &mut HostState| {
+                    state.phase2()
+                })
+                .map_err(|err| RuntimeError::Instantiate(err.to_string()))?;
+            }};
+        }
+        macro_rules! link_gui {
+            ($module:path) => {{
+                use $module as interface;
+                interface::add_to_linker::<_, HasSelf<_>>(&mut linker, |state: &mut HostState| {
+                    state.phase3_gui()
+                })
+                .map_err(|err| RuntimeError::Instantiate(err.to_string()))?;
+            }};
+        }
+
+        link_phase2!(io::types);
+        link_phase2!(io::streams);
+        link_phase2!(io::stdio);
+        link_phase2!(io::args);
+        link_phase2!(io::log);
+        link_phase2!(fs::types);
+        link_phase2!(fs::files);
+        link_phase2!(net::types);
+        link_phase2!(net::http_client);
+        link_phase2!(net::ws);
+        link_phase2!(time::clock);
+        link_phase2!(time::sleep);
+        link_phase2!(locale::info);
+        link_phase2!(locale::format);
+        link_phase2!(resources::assets);
+        link_phase2!(store::kv);
+        link_phase2!(store::sql);
+        link_phase2!(store::secret);
+        link_phase2!(store::shared);
+        link_phase2!(random::bytes);
+
+        // The two that differ.
+        link_gui!(ui4::types);
+        link_gui!(ui4::tree);
+
+        link_gui!(ui::window);
         link_gui!(ui::image);
         link_gui!(ui::events);
         link_gui!(ui::dialog);
@@ -3161,10 +3314,16 @@ mod tests {
                 select(&component(&[CLOCK, ARGS], "s32", false)).expect("cli"),
                 SelectedWorld::Cli
             );
-            assert_eq!(
+            // A GUI component that never touches the widget tree fits BOTH
+            // GUI worlds, and phase 4 is tried first, so it lands there. That
+            // is not arbitrary: the two worlds differ only in `krate:ui/types`
+            // and `krate:ui/tree`, so an app importing neither gets exactly
+            // the same host either way. What matters is that it is a GUI
+            // world and not the CLI one.
+            assert!(matches!(
                 select(&component(&[CLOCK, EVENTS], "s32", false)).expect("gui"),
-                SelectedWorld::Gui
-            );
+                SelectedWorld::Gui | SelectedWorld::Gui4
+            ));
             // A component that fits more than one world gets the narrowest:
             // no imports at all fits CLI, so it is not called a GUI app.
             assert_eq!(

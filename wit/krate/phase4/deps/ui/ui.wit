@@ -206,6 +206,19 @@ interface types {
     image,
     /// Custom drawing canvas.
     canvas,
+    /// A container whose children all fill it and paint in order, back to
+    /// front.
+    ///
+    /// Every other container gives its children a share of the space. This one
+    /// gives each of them ALL of it, so a HUD sits over a game, a pause menu
+    /// over a board, a caption over a photo. Without it a 3D app could not have
+    /// a HUD at all: a canvas holding a scene and a canvas holding an overlay
+    /// were laid out one above the other, each getting half the window.
+    ///
+    /// Appended at the end of this enum on purpose. Every case before it keeps
+    /// the number it had, so an app built before this existed still means what
+    /// it meant.
+    overlay,
   }
 
   /// Caret and selection inside a text widget, as byte offsets into its label.
@@ -223,6 +236,55 @@ interface types {
     anchor: u32,
   }
 
+  /// A colour, as 8-bit channels.
+  ///
+  /// Bytes rather than floats because a widget colour is picked, not
+  /// computed: an app writes 255 or 0x11 and means it. `krate:gfx` uses
+  /// floats because a shader multiplies them.
+  record color {
+    /// Red channel, 0-255.
+    r: u8,
+    /// Green channel, 0-255.
+    g: u8,
+    /// Blue channel, 0-255.
+    b: u8,
+    /// Alpha channel, 0-255. 0 is invisible, 255 is opaque.
+    a: u8,
+  }
+
+  /// How a label is inked, for text that has to be read over something the
+  /// app does not control.
+  ///
+  /// Every label used to be painted in one near-black at one size, which is
+  /// right for a form on a pale panel and wrong the moment the background is
+  /// a photograph or a 3D scene. Over a racing game the same fixed colour sat
+  /// at 3.98:1 against the sky and 1.27:1 against asphalt -- the second of
+  /// those is unreadable, and no single colour fixes both, because the
+  /// background changes as the camera turns (K-402).
+  ///
+  /// The `outline` is what makes that solvable rather than a compromise. A
+  /// light glyph with a dark outline reads at roughly 19:1 against its own
+  /// outline whatever is behind it, which is why every game HUD and every
+  /// subtitle is drawn this way. Where the outline itself disappears -- on
+  /// asphalt, in shadow -- the glyph is already high-contrast against that
+  /// dark background on its own, so the pair covers both ends.
+  record text-style {
+    /// Ink colour. Omitted means the host's ordinary label colour, which is
+    /// what every existing app gets.
+    color: option<color>,
+    /// Outline colour, drawn around the glyphs. Omitted means no outline.
+    outline: option<color>,
+    /// Outline thickness in logical pixels. Clamped by the host to something
+    /// it can draw; 1 to 2 is the useful range, and 0 means no outline
+    /// however `outline` is set.
+    outline-width: f32,
+    /// Font size in logical pixels. Omitted means the host's default, which
+    /// is 13 -- right for a form and small for a HUD read at speed.
+    size: option<f32>,
+    /// Draw the label bold.
+    bold: bool,
+  }
+
   /// Minimal style block for the first widget protocol draft.
   record style {
     /// Optional width in logical pixels.
@@ -233,6 +295,9 @@ interface types {
     grow: f32,
     /// Padding in logical pixels.
     padding: f32,
+    /// How this widget's label is inked. Omitted everywhere means every
+    /// existing app looks exactly as it did.
+    text: option<text-style>,
   }
 
   /// One node in the portable widget tree.

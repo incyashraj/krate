@@ -1,0 +1,531 @@
+package krate:gfx@0.1.0;
+
+/// Shared graphics records and errors for Phase 3 drawing calls.
+interface types {
+  /// RGBA color in linear float form.
+  record color {
+    /// Red channel.
+    r: f32,
+    /// Green channel.
+    g: f32,
+    /// Blue channel.
+    b: f32,
+    /// Alpha channel.
+    a: f32,
+  }
+
+  /// Point in logical pixels.
+  record point {
+    /// X coordinate.
+    x: f32,
+    /// Y coordinate.
+    y: f32,
+  }
+
+  /// Size in logical pixels.
+  record size {
+    /// Width.
+    width: f32,
+    /// Height.
+    height: f32,
+  }
+
+  /// What a text run will actually occupy once drawn.
+  ///
+  /// Returned by `canvas2d::measure-text`, computed by the same font layout
+  /// that `draw-text` draws with, so the numbers describe the pixels that
+  /// will appear rather than an estimate of them.
+  ///
+  /// `draw-text` takes a baseline as its origin, which is why `ascent` is
+  /// here: to put a run's top edge at `y`, draw it at `y + ascent`. To centre
+  /// a run in a box of height `h`, draw at `y + (h - height) * 0.5 + ascent`.
+  record text-metrics {
+    /// Advance width of the run: how far the pen moves, and the width to use
+    /// for centring, right-aligning, or placing a caret after the text.
+    width: f32,
+    /// Full line height, ascent + descent (plus the face's leading).
+    height: f32,
+    /// Distance from the top of the line box down to the baseline.
+    ascent: f32,
+    /// Distance from the baseline down to the bottom of the line box.
+    descent: f32,
+  }
+
+  /// Rectangle in logical pixels.
+  record rect {
+    /// Left edge.
+    x: f32,
+    /// Top edge.
+    y: f32,
+    /// Width.
+    width: f32,
+    /// Height.
+    height: f32,
+  }
+
+  /// One color stop along a gradient, for `linear-gradient-stops`.
+  record gradient-stop {
+    /// Position along the gradient, 0.0 at the start to 1.0 at the end.
+    offset: f32,
+    /// The color at that position.
+    color: color,
+  }
+
+  /// A generic font family, resolved against the system's fonts by the
+  /// host. `sans` is the default everything else on the canvas uses;
+  /// `serif` reads editorial; `mono` is for numbers that must line up and
+  /// anything code-like. Exact metrics differ per platform the way web
+  /// font stacks do, so measure with `measure-text-styled` rather than
+  /// assuming widths.
+  enum font-family {
+    /// The system sans-serif (SF on macOS, Segoe on Windows, DejaVu Sans
+    /// or similar on Linux).
+    sans,
+    /// The system serif.
+    serif,
+    /// The system monospace.
+    mono,
+  }
+
+  /// How text is drawn, beyond size and color.
+  record text-style {
+    /// Weight 100-900 in hundreds like CSS: 400 regular, 500 medium,
+    /// 600 semibold, 700 bold. Big display numbers read best at 600-700;
+    /// captions at 400.
+    weight: u16,
+    /// True for italic.
+    italic: bool,
+    /// Extra space between letters, in pixels; negative tightens. Modern
+    /// display headings sit around -0.5 to -1.0 at large sizes; all-caps
+    /// labels open up at +1.0 or more.
+    letter-spacing: f32,
+    /// The family to resolve against system fonts.
+    family: font-family,
+  }
+
+  /// Radii for the four corners of a rounded rectangle, clockwise from
+  /// top-left. Use one value in all four for a uniform card; zero a corner
+  /// to square it off.
+  record corner-radii {
+    /// Radius of the top-left corner, in pixels.
+    top-left: f32,
+    /// Radius of the top-right corner, in pixels.
+    top-right: f32,
+    /// Radius of the bottom-right corner, in pixels.
+    bottom-right: f32,
+    /// Radius of the bottom-left corner, in pixels.
+    bottom-left: f32,
+  }
+
+
+  /// Error shape returned by graphics calls.
+  variant gfx-error {
+    /// Capability policy or sandbox rules denied the operation.
+    permission-denied,
+    /// The target window, widget, canvas, or surface is unknown.
+    invalid-target,
+    /// The host cannot support this graphics feature yet.
+    unsupported(string),
+    /// Host-specific graphics error text.
+    platform(string),
+  }
+
+
+
+
+}
+
+/// 2D drawing calls for widget-backed canvases.
+///
+/// One call per drawing operation, deliberately. The first shape of this
+/// interface batched commands as `submit(list<draw-command>)`, and a list of
+/// variants is the one construct current guest toolchains cannot lower
+/// without dragging std's panic machinery -- and with it the whole `wasi:*`
+/// import surface -- into an otherwise pure component. One `submit` call took
+/// a clean guest from zero wasi imports to thirty-three. The events interface
+/// learned this first and is single-event for the same reason.
+///
+/// Nothing appears until `present`: draw calls mutate a host-side raster, and
+/// `present` publishes it to the widget. That keeps a hundred fills from
+/// re-rendering the window a hundred times.
+interface canvas2d {
+  use types.{color, point, rect, size, text-metrics, gfx-error, gradient-stop, corner-radii, text-style, font-family};
+
+  /// Create or bind a 2D canvas for a window widget.
+  bind: func(window: u64, widget: u64) -> result<u64, gfx-error>;
+  /// The canvas's current size in logical pixels.
+  ///
+  /// A canvas is laid out to fill its widget, and a widget with siblings or a
+  /// resizable window is not the size the app guessed at startup. Ask, then
+  /// draw to the answer: an app that hardcodes 240x200 and shares its window
+  /// with a title bar draws a picture that is clipped or half empty. Returns
+  /// the size that `clear` fills and `present` publishes.
+  canvas-size: func(canvas: u64) -> result<size, gfx-error>;
+
+  /// Fix the coordinate system an app draws in, and let the host fit it to
+  /// whatever window the person has.
+  ///
+  /// Some apps -- games especially -- have a geometry that only makes sense
+  /// at one size: a paddle 48 wide, bricks laid out to span exactly 320.
+  /// Asking such an app to recompute every constant from `canvas-size` is a
+  /// rewrite, and the usual result is what a real person reported on a real
+  /// window: the text drew fine and the character and ground were off the
+  /// screen.
+  ///
+  /// Declare the size the app was designed for and keep drawing in those
+  /// coordinates forever. The host scales them UNIFORMLY to fill the window
+  /// and centres what is left over, so nothing is ever stretched out of
+  /// proportion -- the same letterboxing a console does on a widescreen TV.
+  /// Pointer coordinates arrive in design space too, so hit-testing keeps
+  /// working without a single change.
+  ///
+  /// An app that wants to use the extra room rather than letterbox it
+  /// should ignore this and lay out from `canvas-size` instead. Both are
+  /// honest; this one is for apps whose proportions are the design.
+  set-design-size: func(canvas: u64, size: size) -> result<_, gfx-error>;
+  /// Restrict drawing to a rectangle, in logical pixels. Every later draw on
+  /// this canvas is trimmed to it until `clear-clip`.
+  ///
+  /// This is what makes a scrolling list possible. Without it a row scrolled
+  /// past the top paints over the header, and an app has to skip rows by hand
+  /// -- which works until rows have different heights, and then it cannot be
+  /// done at all.
+  ///
+  ///   set-clip(canvas, list-x, list-y, list-w, list-h);
+  ///   // draw every row, including partly-visible ones
+  ///   clear-clip(canvas);
+  set-clip: func(canvas: u64, x: f32, y: f32, w: f32, h: f32) -> result<_, gfx-error>;
+
+  /// Draw to the whole canvas again.
+  clear-clip: func(canvas: u64) -> result<_, gfx-error>;
+
+  /// Fill the whole canvas with one color. Respects the clip, so this is also
+  /// how a region is cleared before its rows are redrawn.
+  clear: func(canvas: u64, fill: color) -> result<_, gfx-error>;
+  /// Fill a rectangle.
+  fill-rect: func(canvas: u64, area: rect, fill: color) -> result<_, gfx-error>;
+  /// Stroke a rectangle's edges.
+  stroke-rect: func(canvas: u64, area: rect, stroke: color, width: f32) -> result<_, gfx-error>;
+
+  /// Fill a rectangle with rounded corners, anti-aliased.
+  ///
+  /// This is the modern-card primitive: panels, buttons, chips, list rows.
+  /// Reach for it whenever a design shows a container with soft corners --
+  /// drawing `fill-rect` and four `fill-circle`s by hand never looks right.
+  /// A radius of 10-16 reads as a card, height/2 as a pill.
+  fill-round-rect: func(canvas: u64, area: rect, radii: corner-radii, fill: color) -> result<_, gfx-error>;
+
+  /// Stroke a rounded rectangle's edge, anti-aliased, `width` pixels thick.
+  /// The outline counterpart to `fill-round-rect`, for bordered cards and
+  /// pill buttons drawn hollow.
+  stroke-round-rect: func(canvas: u64, area: rect, radii: corner-radii, width: f32, stroke: color) -> result<_, gfx-error>;
+
+  /// A soft shadow under a rounded rectangle: the card's silhouette, blurred
+  /// by `blur` pixels and filled with `shadow` (usually black at low alpha,
+  /// e.g. a=0.35). Draw it FIRST, offset a few pixels down from the card,
+  /// then draw the card over it -- shadow behind, never on top. This is what
+  /// lifts a card off the background; without it panels look flat and dated.
+  drop-shadow-round-rect: func(canvas: u64, area: rect, radii: corner-radii, blur: f32, shadow: color) -> result<_, gfx-error>;
+
+  /// Fill a rectangle with a gradient through any number of color stops,
+  /// running at `angle-degrees` (0 is left-to-right, 90 is top-to-bottom).
+  /// Stops must be sorted by offset, 0.0 to 1.0. Two stops make an ordinary
+  /// fade; three or more make the rich backgrounds modern designs use --
+  /// e.g. deep blue at 0.0, bright blue at 0.55, near-white at 1.0.
+  linear-gradient-stops: func(canvas: u64, area: rect, angle-degrees: f32, stops: list<gradient-stop>) -> result<_, gfx-error>;
+
+  /// Draw text with full styling: weight, italic, letter spacing, and a
+  /// generic family. `draw-text` stays as the plain-regular shorthand; this
+  /// is what headings, big numbers, and captions want. The same weight
+  /// range every design tool uses: a screen usually needs only 400 for
+  /// body, 600-700 for emphasis.
+  draw-text-styled: func(canvas: u64, text: string, origin: point, font-size: f32, ink: color, style: text-style) -> result<_, gfx-error>;
+
+  /// Measure a styled run with the same layout `draw-text-styled` uses, so
+  /// right-aligned numbers and centred labels land exactly.
+  measure-text-styled: func(canvas: u64, text: string, font-size: f32, style: text-style) -> result<text-metrics, gfx-error>;
+
+  /// Stroke part of a circle: the progress-ring primitive. `start-degrees`
+  /// is where the arc begins (0 is 3 o'clock, 90 is 6 o'clock -- angles run
+  /// clockwise on screen), `sweep-degrees` how far it runs clockwise. A
+  /// progress ring is two calls: the full track at low alpha, then the arc
+  /// from -90 (12 o'clock) sweeping `progress * 360`.
+  stroke-arc: func(canvas: u64, center: point, radius: f32, start-degrees: f32, sweep-degrees: f32, width: f32, stroke: color) -> result<_, gfx-error>;
+
+  /// Blit RGBA pixels clipped to a rounded rectangle: the photo-card
+  /// primitive. Same pixel format as `draw-pixels`; the corners outside the
+  /// radii stay untouched, so an image sits inside a card without a mask in
+  /// the app.
+  draw-pixels-round: func(canvas: u64, area: rect, radii: corner-radii, width: u32, height: u32, rgba: list<u8>) -> result<_, gfx-error>;
+  /// Fill an anti-aliased circle centred at `center` with radius `radius`.
+  /// The edge is smooth and the fill blends over the canvas by its color's
+  /// alpha, so a translucent fill reads as soft light rather than a hard disc.
+  fill-circle: func(canvas: u64, center: point, radius: f32, fill: color) -> result<_, gfx-error>;
+  /// Stroke a circle's edge: a ring `width` pixels thick, centred on `radius`.
+  ///
+  /// The outline counterpart to `fill-circle`, and the thing to reach for when
+  /// you want a rim, a ring, a dial, or an unfilled dot. Without it the
+  /// nearest available call is `stroke-rect`, which puts a square box around a
+  /// round shape -- a real screensaver shipped exactly that.
+  stroke-circle: func(canvas: u64, center: point, radius: f32, width: f32, stroke: color) -> result<_, gfx-error>;
+  /// A radial gradient disc: `inner` color at the centre easing to `outer` at
+  /// `radius`. With `outer` transparent this is a soft glow -- the primitive a
+  /// modern look is built from (bloom, light, soft particles).
+  radial-gradient: func(canvas: u64, center: point, radius: f32, inner: color, outer: color) -> result<_, gfx-error>;
+  /// A vertical linear gradient filling `area`: `top` color at the top edge
+  /// easing to `bottom` at the bottom. For skies, panels, and backdrops.
+  linear-gradient: func(canvas: u64, area: rect, top: color, bottom: color) -> result<_, gfx-error>;
+  /// Draw one text run with the host's built-in face; `origin` is the baseline.
+  draw-text: func(canvas: u64, text: string, origin: point, font-size: f32, ink: color) -> result<_, gfx-error>;
+  /// How big will that text be once drawn?
+  ///
+  /// The face is proportional: `i` and `W` differ by roughly four times in
+  /// real width, so character-count times a constant is not an approximation,
+  /// it is wrong -- it is why captions overflow their cards, labels are not
+  /// really centred, and carets sit beside the text instead of after it. Ask
+  /// instead. The host measures with the same font layout `draw-text` draws
+  /// with, so the answer describes the pixels that will appear.
+  ///
+  /// Use it before drawing, not after: centre a label with
+  /// `x + (box_w - m.width) * 0.5`, place a caret at `text_x + m.width`,
+  /// stack paragraph lines by `m.height`, and turn a run into a box by
+  /// drawing at `top + m.ascent`.
+  ///
+  /// The measurement is unwrapped and single-line -- it reports what
+  /// `draw-text` will do with the same string and size, and `draw-text` does
+  /// not wrap. An app laying out a paragraph measures word by word and breaks
+  /// the lines itself.
+  measure-text: func(canvas: u64, text: string, font-size: f32) -> result<text-metrics, gfx-error>;
+  /// Draw decoded RGBA pixels into a rectangle, scaled to fit and centred.
+  ///
+  /// The same straight-RGBA bytes an image widget takes, so a sprite sheet is
+  /// decoded once in the sandbox and drawn many times. Transparent pixels blend
+  /// over what is already on the canvas, which is what makes a sprite a sprite
+  /// rather than a rectangle with a picture in it.
+  draw-pixels: func(canvas: u64, area: rect, width: u32, height: u32, rgba: list<u8>) -> result<_, gfx-error>;
+  /// Draw a decoded RGBA sprite centred at `center`, scaled to `dst` pixels,
+  /// rotated by `angle` radians (clockwise), alpha-blended over the canvas.
+  /// `width`/`height` are the source image size; `rgba` is `width*height*4`
+  /// straight-alpha bytes. This is what a ship that points where it flies, a
+  /// spinning asteroid, or any rotated sprite needs -- the piece that lets a
+  /// canvas game reach a real textured-sprite look instead of flat shapes.
+  draw-sprite: func(canvas: u64, center: point, dst: size, angle: f32, width: u32, height: u32, rgba: list<u8>) -> result<_, gfx-error>;
+  /// Publish the raster to the widget. Until this, nothing is shown.
+  present: func(canvas: u64) -> result<_, gfx-error>;
+}
+
+/// Software 3D: triangles with depth, lit and drawn on the CPU.
+///
+/// Deliberately not a GPU abstraction. A real one means wgpu, shaders, and
+/// three drivers agreeing about the same scene, which is weeks of work and a
+/// dependency on every machine having a working GPU stack. The CPU rasterizer
+/// already sustains roughly 400 million pixels a second on a laptop, which is
+/// 640x480 at sixty frames with room to spare -- so this ships 3D on all three
+/// systems now, and the GPU path can arrive later behind the same calls.
+///
+/// One call per operation, and vertices as flat lists of floats rather than
+/// records. Both are the lesson canvas2d taught: a `list<variant>` cannot be
+/// lowered by current guest toolchains without dragging std's panic machinery,
+/// and with it the entire `wasi:*` import surface, into an otherwise pure
+/// component.
+///
+/// Nothing appears until `present`. Draw calls mutate a host-side depth buffer
+/// and colour buffer; presenting publishes them to the widget the way a canvas
+/// does.
+interface scene3d {
+  use types.{color, gfx-error};
+
+  /// Create a 3D scene that draws into a window widget.
+  bind: func(window: u64, widget: u64) -> result<u64, gfx-error>;
+
+  /// Clear colour and depth. Call this at the start of every frame.
+  clear: func(scene: u64, sky: color) -> result<_, gfx-error>;
+
+  /// Place the camera: eye, the point it looks at, and vertical field of view
+  /// in degrees. Up is +Y.
+  camera: func(scene: u64, eye: list<f32>, look-at: list<f32>, fov-degrees: f32) -> result<_, gfx-error>;
+
+  /// Direction light travels, as a vector. Surfaces facing into it are lit.
+  light: func(scene: u64, direction: list<f32>) -> result<_, gfx-error>;
+
+  /// Draw triangles. `vertices` is x,y,z per corner -- nine floats per
+  /// triangle -- in world space. Every triangle in one call shares a colour,
+  /// which keeps the common case (a mesh in one material) to a single crossing
+  /// of the sandbox boundary.
+  ///
+  /// Facing away from the camera is drawn too: an app that wants back-face
+  /// culling is describing a closed mesh, and the host cannot know that.
+  triangles: func(scene: u64, vertices: list<f32>, tint: color) -> result<_, gfx-error>;
+
+  /// Draw triangles positioned by a transform, without moving the vertices.
+  ///
+  /// `translate` is x,y,z. `rotate-degrees` is around x, y and z in that
+  /// order. `scale` is uniform. The mesh itself is sent unchanged, so an app
+  /// can keep one cube and place a hundred of them.
+  ///
+  /// This exists because the alternative is a matrix multiply per vertex on
+  /// the guest side, every frame, with the result crossing the sandbox
+  /// boundary -- the most expensive place to put it. A tree of a thousand
+  /// leaves is one mesh and a thousand cheap calls rather than a thousand
+  /// rebuilt vertex lists.
+  place: func(scene: u64, vertices: list<f32>, translate: list<f32>, rotate-degrees: list<f32>, scale: f32, tint: color) -> result<_, gfx-error>;
+
+  /// Upload an image once and get a handle to draw with.
+  ///
+  /// The same straight-RGBA bytes an image widget takes, so an app decodes a
+  /// texture atlas once with `zune-png` inside its own sandbox and keeps the
+  /// handle. Sending pixels on every draw would move a megabyte across the
+  /// sandbox boundary sixty times a second to show the same wall.
+  ///
+  /// A texture belongs to its scene and goes away when the scene does.
+  upload-texture: func(scene: u64, width: u32, height: u32, rgba: list<u8>) -> result<u64, gfx-error>;
+
+  /// Draw triangles wearing a texture.
+  ///
+  /// `vertices` is x,y,z per corner as before. `uvs` is u,v per corner -- six
+  /// floats per triangle -- where 0,0 is the top-left of the image and 1,1 the
+  /// bottom-right. Coordinates outside that range wrap, so a floor can tile a
+  /// small image across a large surface.
+  ///
+  /// `tint` multiplies the sampled colour, so one grey texture can become a
+  /// red wall and a blue one without uploading it twice.
+  textured: func(scene: u64, vertices: list<f32>, uvs: list<f32>, texture: u64, tint: color) -> result<_, gfx-error>;
+
+  /// Draw textured triangles with a normal per corner, so curved surfaces
+  /// shade smoothly instead of faceting.
+  ///
+  /// `normals` is x,y,z per corner -- nine floats per triangle -- and need not
+  /// be unit length; the host normalises. The lighting term is interpolated
+  /// across the triangle from the three corner normals, which is what turns a
+  /// sphere of a few hundred facets into a smooth ball.
+  ///
+  /// Without this, shading comes from the FACE normal and every triangle is
+  /// flat. The only way to look smooth is to subdivide until the facets are
+  /// finer than the shading steps between them, which costs triangles for
+  /// something a normal per corner gives away.
+  ///
+  /// Corner normals also make the lighting one-sided, which face normals
+  /// cannot be: a face-normal renderer has to take the absolute value of the
+  /// light term, because a closed mesh's winding decides which way its normals
+  /// point and half of them come out inward. That absolute value lights the
+  /// dark side of everything exactly as brightly as the lit side, which is why
+  /// a face-shaded scene looks flat however many lights it has.
+  smooth: func(scene: u64, vertices: list<f32>, normals: list<f32>, uvs: list<f32>, texture: u64, tint: color) -> result<_, gfx-error>;
+
+  /// How a scene is lit, beyond the one directional light.
+  ///
+  /// Everything here is OFF by default and an app that never calls this looks
+  /// exactly as it did before, on both backends. That is deliberate: the
+  /// software rasterizer and the GPU one are checked against each other pixel
+  /// by pixel, and a feature that changed the default picture would break that
+  /// check for every app that never asked for it.
+  ///
+  /// `ambient` replaces the shading floor -- the brightness a surface facing
+  /// away from the light still has. The default floor is 0.35 for a mesh drawn
+  /// through `triangles` or `textured` and 0.22 for one drawn through
+  /// `smooth`; setting this uses one number for both.
+  ///
+  /// `specular` is how sharp a highlight the surface takes, 0 for chalk and 1
+  /// for polished. `shininess` is how tight it is: 8 is a wide sheen, 128 a
+  /// small hot spot. Without these every surface in a scene is matte, which is
+  /// most of why a rendered object can look like paper.
+  ///
+  /// `fog-density` fades distant geometry into `fog-color`. Zero is off. Air
+  /// is what tells an eye how far away something is, and a scene without it
+  /// reads flat however well it is lit.
+  ///
+  /// `fill-light` is a second directional light, usually dimmer and from the
+  /// opposite side, standing in for light bounced off everything else. A key
+  /// light alone leaves shadows black; a key and a fill is most of what reads
+  /// as a lit room rather than a lamp in a void.
+  /// `shadow-radius` turns on cast shadows and says how far around the camera
+  /// they reach, in world units. Zero is off.
+  ///
+  /// A radius rather than a world box because a shadow map is a fixed grid of
+  /// texels spread over whatever area it covers: cover a whole two-kilometre
+  /// circuit and each texel is metres wide, which is a shadow with visible
+  /// stairs on it. Following the camera keeps the detail where somebody is
+  /// looking. Pick roughly the distance at which a shadow stops mattering --
+  /// 40 units for a plaza, 120 for a landscape.
+  ///
+  /// `shadow-softness` blurs the shadow edge, in texels. Zero is a hard edge,
+  /// which reads as cut paper; 1 to 2 looks like a real penumbra. It costs
+  /// samples, so it is the app's choice rather than always on.
+  record lighting {
+    ambient: f32,
+    specular: f32,
+    shininess: f32,
+    fog-density: f32,
+    fog-color: color,
+    fill-direction: list<f32>,
+    fill-color: color,
+    shadow-radius: f32,
+    shadow-softness: f32,
+    /// How hard to roll bright values back toward white instead of clipping
+    /// them. Zero keeps the old hard clamp.
+    ///
+    /// Without this a surface that comes out brighter than white -- a
+    /// highlight, a sunlit wall, anything an app tinted up -- turns into a
+    /// flat white patch with no shape in it. Tone mapping bends the top of the
+    /// range instead of cutting it, so a bright thing stays bright AND keeps
+    /// its detail. It is the difference between a photograph and a
+    /// photocopy.
+    ///
+    /// 1.0 is a normal exposure. Above that brightens the whole image before
+    /// the roll-off, below darkens it.
+    exposure: f32,
+  }
+
+  /// Set how the scene is lit. Refused by a backend that cannot do it, so an
+  /// app can ask once at startup and fall back rather than discovering per
+  /// frame that nothing changed.
+  set-lighting: func(scene: u64, lighting: lighting) -> result<_, gfx-error>;
+
+  /// Draw triangles with a NORMAL MAP: a texture whose pixels are directions
+  /// rather than colours, so a flat surface can have bumps.
+  ///
+  /// `normal-texture` is an image where red, green and blue encode a direction
+  /// in the surface's own frame -- the usual convention, where flat is
+  /// (0.5, 0.5, 1.0) and shows as pale blue. Brick mortar, panel seams, the
+  /// grain in a wooden floor: things that would take thousands of triangles
+  /// each become one texture the light reacts to.
+  ///
+  /// This is most of what "detail" means in a modern renderer. A wall with a
+  /// normal map has visible depth from any angle and costs two triangles; the
+  /// same wall modelled has the same look and costs ten thousand.
+  ///
+  /// `tangents` is x,y,z per corner -- nine floats per triangle -- giving the
+  /// direction the texture's +u runs in world space. Without it the host
+  /// cannot know which way "along the texture" points, and the bumps light
+  /// from the wrong side.
+  normal-mapped: func(scene: u64, vertices: list<f32>, normals: list<f32>, tangents: list<f32>, uvs: list<f32>, texture: u64, normal-texture: u64, tint: color) -> result<_, gfx-error>;
+
+  /// Draw triangles at exactly the colour asked for: no shading, no fog, no
+  /// tone mapping.
+  ///
+  /// For anything that is an OVERLAY rather than part of the world -- a HUD, a
+  /// marker, a highlight on a selected object. Such a thing is not lit by the
+  /// scene's sun, is not behind the scene's air, and is not part of the image
+  /// a tone curve is grading; putting it through any of those makes it come
+  /// out a colour the app did not choose.
+  ///
+  /// Still depth-tested, so an overlay meant to sit behind geometry does. An
+  /// app wanting one in front of everything draws it close to the camera.
+  unlit: func(scene: u64, vertices: list<f32>, uvs: list<f32>, texture: u64, tint: color) -> result<_, gfx-error>;
+
+  /// Skip triangles facing away from the camera.
+  ///
+  /// Off by default, and that is deliberate: it is only correct for a closed
+  /// mesh, where the far side is hidden by the near side anyway. Turn it on
+  /// for a cube or a character and roughly half the triangles stop being
+  /// filled. Leave it off for a flat floor or a billboard, which have one
+  /// visible side and would vanish when viewed from underneath.
+  ///
+  /// Corners must run counter-clockwise when seen from outside for this to
+  /// keep the right half. An app that turns it on and sees its model inside
+  /// out has its winding the other way.
+  cull-back-faces: func(scene: u64, enabled: bool) -> result<_, gfx-error>;
+
+  /// Publish the frame to the widget. Until this, nothing is shown.
+  present: func(scene: u64) -> result<_, gfx-error>;
+}

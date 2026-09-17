@@ -1852,6 +1852,10 @@ impl Phase3GuiHost {
                 // Shared, not copied: this runs once per widget per frame, and
                 // a photograph is a quarter-gigabyte of pixels.
                 pixels: self.images.borrow().get(&(window, *id)).cloned(),
+                // Sanitized here rather than at the painters, so every host
+                // gets the same bounded numbers and a guest cannot hand one
+                // of them a NaN or a thousand-pixel outline.
+                text: node.style.text.map(|style| style.sanitized()),
             });
         }
         drop(offsets);
@@ -2743,7 +2747,7 @@ fn widget_id(raw: u64) -> Result<WidgetId, ui::types::UiError> {
     WidgetId::new(raw).map_err(|_| ui::types::UiError::InvalidWidget)
 }
 
-fn widget_kind_from_wit(kind: ui::types::WidgetKind) -> WidgetKind {
+pub(crate) fn widget_kind_from_wit(kind: ui::types::WidgetKind) -> WidgetKind {
     match kind {
         ui::types::WidgetKind::Stack => WidgetKind::Stack,
         ui::types::WidgetKind::Grid => WidgetKind::Grid,
@@ -2762,19 +2766,68 @@ fn widget_kind_from_wit(kind: ui::types::WidgetKind) -> WidgetKind {
         ui::types::WidgetKind::TreeView => WidgetKind::TreeView,
         ui::types::WidgetKind::Image => WidgetKind::Image,
         ui::types::WidgetKind::Canvas => WidgetKind::Canvas,
-        ui::types::WidgetKind::Overlay => WidgetKind::Overlay,
     }
 }
 
 fn widget_node_from_wit(node: ui::types::WidgetNode) -> Result<WidgetNode, ui::types::UiError> {
-    let id = widget_id(node.id)?;
-    let parent = node.parent.map(widget_id).transpose()?;
-    let style = WidgetStyle {
-        width: node.style.width,
-        height: node.style.height,
-        grow: node.style.grow,
-        padding: node.style.padding,
+    let kind = widget_kind_from_wit(node.kind);
+    widget_node_from_parts(
+        node.id,
+        node.parent,
+        kind,
+        node.label,
+        node.role,
+        WidgetStyle {
+            width: node.style.width,
+            height: node.style.height,
+            grow: node.style.grow,
+            padding: node.style.padding,
+            // Phase 3's `style` has no text block. An app on the frozen phase
+            // gets the host's ordinary label style, exactly as it always did.
+            text: None,
+        },
+        node.checked,
+        node.value,
+        node.selected,
+        node.text_cursor.map(|tc| (tc.cursor, tc.anchor)),
+    )
+}
+
+/// Build and validate a widget node from parts already in the host's own
+/// types.
+///
+/// Both phases land here. Phase 4's `widget-kind` has a case Phase 3's does
+/// not, so the two cannot share a WIT record -- but they share every RULE,
+/// which is what this function holds. Splitting it this way is what keeps the
+/// frozen phase and the current one from drifting on validation (K-403).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn widget_node_from_parts(
+    raw_id: u64,
+    raw_parent: Option<u64>,
+    kind: WidgetKind,
+    label: Option<String>,
+    role: Option<String>,
+    style: WidgetStyle,
+    checked: Option<bool>,
+    value: Option<f32>,
+    selected: Option<u32>,
+    text_cursor: Option<(u32, u32)>,
+) -> Result<WidgetNode, ui::types::UiError> {
+    let node = NodeParts {
+        raw_id,
+        raw_parent,
+        kind,
+        label,
+        role,
+        style,
+        checked,
+        value,
+        selected,
+        text_cursor,
     };
+    let id = widget_id(node.raw_id)?;
+    let parent = node.raw_parent.map(widget_id).transpose()?;
+    let style = node.style;
     if let Some(value) = node.value {
         if !value.is_finite() || !(0.0..=1.0).contains(&value) {
             return Err(ui::types::UiError::Unsupported(
@@ -2782,7 +2835,7 @@ fn widget_node_from_wit(node: ui::types::WidgetNode) -> Result<WidgetNode, ui::t
             ));
         }
     }
-    let kind = widget_kind_from_wit(node.kind);
+    let kind = node.kind;
     if node.selected.is_some() && !kind_is_selectable(kind) {
         return Err(ui::types::UiError::Unsupported(format!(
             "widget kind {kind:?} cannot carry a selected index"
@@ -2806,12 +2859,26 @@ fn widget_node_from_wit(node: ui::types::WidgetNode) -> Result<WidgetNode, ui::t
         checked: node.checked,
         value: node.value,
         selected: node.selected,
-        text_cursor: node.text_cursor.map(|tc| (tc.cursor, tc.anchor)),
+        text_cursor: node.text_cursor,
         // A picture arrives through `krate:ui/image`, keyed by widget id, not
         // as a field here. The node the app sends must stay the exact record
         // it was compiled against.
         pixels: None,
     })
+}
+
+/// The parts of a widget node, so one validation path serves both phases.
+struct NodeParts {
+    raw_id: u64,
+    raw_parent: Option<u64>,
+    kind: WidgetKind,
+    label: Option<String>,
+    role: Option<String>,
+    style: WidgetStyle,
+    checked: Option<bool>,
+    value: Option<f32>,
+    selected: Option<u32>,
+    text_cursor: Option<(u32, u32)>,
 }
 
 fn modifiers_to_wit(modifiers: Modifiers) -> ui::types::Modifiers {
@@ -3038,26 +3105,55 @@ impl ui::window::Host for Phase3GuiHost {
     }
 }
 
+impl Phase3GuiHost {
+    /// Set a window's root from an already-converted node.
+    ///
+    /// Split out so Phase 4 can reach it. Phase 4's widget-kind has a case
+    /// Phase 3's does not, so a Phase 4 node cannot be routed through Phase
+    /// 3's `widget-node` without losing it -- but both phases converge on the
+    /// host's own `WidgetNode`, which has the case. Everything after the
+    /// conversion is therefore shared, and only the conversion is written
+    /// twice (K-403).
+    pub(crate) fn set_root_widget(
+        &mut self,
+        window: u64,
+        root: WidgetNode,
+    ) -> Result<(), ui::types::UiError> {
+        let id = self.window_id(window)?;
+        if let Err(err) = self.dispatcher().set_root(id, root) {
+            return Err(dispatch_error_to_ui_error(err));
+        }
+        self.sync_native_widgets(id)
+            .map_err(dispatch_error_to_ui_error)
+    }
+
+    /// Insert or update a node from an already-converted node. See
+    /// [`Self::set_root_widget`] for why this is split out.
+    pub(crate) fn upsert_widget(
+        &mut self,
+        window: u64,
+        node: WidgetNode,
+    ) -> Result<(), ui::types::UiError> {
+        let id = self.window_id(window)?;
+        if let Err(err) = self.dispatcher().upsert_node(id, node) {
+            return Err(dispatch_error_to_ui_error(err));
+        }
+        self.sync_native_widgets(id)
+            .map_err(dispatch_error_to_ui_error)
+    }
+}
+
 impl ui::tree::Host for Phase3GuiHost {
     fn set_root(
         &mut self,
         window: u64,
         root: ui::types::WidgetNode,
     ) -> wasmtime::Result<Result<(), ui::types::UiError>> {
-        let id = match self.window_id(window) {
-            Ok(id) => id,
-            Err(err) => return Ok(Err(err)),
-        };
         let root = match widget_node_from_wit(root) {
             Ok(root) => root,
             Err(err) => return Ok(Err(err)),
         };
-        if let Err(err) = self.dispatcher().set_root(id, root) {
-            return Ok(Err(dispatch_error_to_ui_error(err)));
-        }
-        Ok(self
-            .sync_native_widgets(id)
-            .map_err(dispatch_error_to_ui_error))
+        Ok(self.set_root_widget(window, root))
     }
 
     fn upsert_node(
@@ -3065,20 +3161,11 @@ impl ui::tree::Host for Phase3GuiHost {
         window: u64,
         node: ui::types::WidgetNode,
     ) -> wasmtime::Result<Result<(), ui::types::UiError>> {
-        let id = match self.window_id(window) {
-            Ok(id) => id,
-            Err(err) => return Ok(Err(err)),
-        };
         let node = match widget_node_from_wit(node) {
             Ok(node) => node,
             Err(err) => return Ok(Err(err)),
         };
-        if let Err(err) = self.dispatcher().upsert_node(id, node) {
-            return Ok(Err(dispatch_error_to_ui_error(err)));
-        }
-        Ok(self
-            .sync_native_widgets(id)
-            .map_err(dispatch_error_to_ui_error))
+        Ok(self.upsert_widget(window, node))
     }
 
     fn remove_node(

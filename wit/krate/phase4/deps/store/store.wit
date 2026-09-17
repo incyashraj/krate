@@ -1,0 +1,225 @@
+package krate:store@0.1.0;
+
+/// Durable key-value storage scoped to one application.
+///
+/// Every app that remembers anything -- a window size, a signed-in name, a
+/// list of items, the last folder you opened -- needs this, and today the only
+/// way to have it is `fs.read` and `fs.write` plus hand-written parsing. That
+/// costs an app real code to get right, and it makes the permission prompt say
+/// "read files in checklist" when the honest answer is "remember your settings".
+///
+/// The store is the app's own. It is not a path on the user's computer: the app
+/// never learns where the data lives and cannot name a location outside it, so
+/// granting storage cannot become a way to read the user's documents. That is
+/// why this is a separate capability from the filesystem rather than a
+/// convenience built on top of one.
+interface kv {
+  /// Error returned by a store operation.
+  variant store-error {
+    /// The app did not receive the `store.kv` capability.
+    denied,
+    /// The key was empty, too long, or used unsupported syntax.
+    invalid-key,
+    /// The value is larger than the runtime's bounded write limit.
+    too-large,
+    /// The store could not be read or written.
+    io(string),
+  }
+
+  /// Read one value. A key that was never set reads as `none` rather than an
+  /// error, because "nothing saved yet" is the normal first run.
+  get: func(key: string) -> result<option<list<u8>>, store-error>;
+
+  /// Write one value, replacing whatever was there.
+  set: func(key: string, value: list<u8>) -> result<_, store-error>;
+
+  /// Remove one key. Removing a key that is not present succeeds: the caller
+  /// wanted it gone, and it is gone.
+  delete: func(key: string) -> result<_, store-error>;
+
+  /// Every key currently set, in sorted order so a listing is stable across
+  /// runs and across operating systems.
+  keys: func() -> result<list<string>, store-error>;
+
+  /// Remove everything. Separate from `delete` because "forget all of it" is a
+  /// deliberate action an app should have to name.
+  clear: func() -> result<_, store-error>;
+}
+
+/// A real database, scoped to one application.
+///
+/// The key-value store above holds settings and small collections. An app with
+/// a growing list, a search box, or anything it needs to query rather than read
+/// whole needs a database, and rewriting one on top of files is where a port
+/// stops being worth doing.
+///
+/// The app gets SQL, not a file. It never learns a path, never opens a
+/// connection to somewhere else, and cannot attach another database, so this
+/// stays a capability the runtime fully mediates rather than a hole in the
+/// filesystem boundary.
+interface sql {
+  /// One value in a row or a query parameter.
+  ///
+  /// A closed set rather than an open one: every value crossing the boundary
+  /// has a known shape, so the host never has to interpret app-supplied text as
+  /// a type declaration.
+  variant value {
+    /// SQL NULL.
+    null,
+    /// A 64-bit signed integer.
+    integer(s64),
+    /// A double-precision float.
+    real(f64),
+    /// Text.
+    text(string),
+    /// Arbitrary bytes.
+    blob(list<u8>),
+  }
+
+  /// Error returned by a database operation.
+  variant sql-error {
+    /// The app did not receive the `store.sql` capability.
+    denied,
+    /// The statement could not be parsed or refers to something missing.
+    invalid-statement(string),
+    /// The statement is one this interface does not permit, such as attaching
+    /// another database or reading a file from the host.
+    forbidden(string),
+    /// The result, or the database as a whole, exceeded its bound.
+    too-large,
+    /// The database could not be read or written.
+    io(string),
+  }
+
+  /// One returned row, in the column order of the query.
+  record row {
+    /// The row's values, in the column order of the query.
+    values: list<value>,
+  }
+
+  /// The result of a query.
+  record query-result {
+    /// Column names in the order the values appear, so a caller can address
+    /// results by name without a second round trip.
+    columns: list<string>,
+    /// The rows the query matched, in the order the database returned them.
+    rows: list<row>,
+  }
+
+  /// Run a statement that returns rows.
+  ///
+  /// Parameters are bound, never substituted into the text, so an app cannot
+  /// build an injection out of its own user's input by accident.
+  query: func(statement: string, params: list<value>) -> result<query-result, sql-error>;
+
+  /// Run a statement that changes data, returning the number of rows affected.
+  execute: func(statement: string, params: list<value>) -> result<u64, sql-error>;
+
+  /// Run several statements as one unit, so a half-applied change cannot
+  /// survive a crash. Any failure rolls the whole batch back.
+  transaction: func(statements: list<string>) -> result<_, sql-error>;
+}
+
+/// Secrets an app keeps for itself, such as a sign-in token.
+///
+/// Without this an app that signs in has to write its token to a plain file
+/// behind an `fs.write` grant, which puts the token beside the user's documents
+/// in the permission prompt and in the clear on disk.
+///
+/// Secrets are encrypted at rest with a key the runtime derives per machine and
+/// per app, so a backup or a copied file does not carry usable secrets to
+/// another computer, and one app cannot read another's. This is not the
+/// operating system's keychain: Linux's requires a running daemon that servers
+/// and minimal desktops do not have, and an app that works on one computer and
+/// fails on another is the failure Krate exists to remove. It protects secrets
+/// at rest, not from code already running as the same user.
+interface secret {
+  /// Error returned by a secret operation.
+  variant secret-error {
+    /// The app did not receive the `store.secret` capability.
+    denied,
+    /// The name was empty, too long, or used unsupported syntax.
+    invalid-name,
+    /// The secret is larger than the runtime's bounded limit.
+    too-large,
+    /// The secret store could not be read or written.
+    io(string),
+  }
+
+  /// Read one secret. A name that was never set reads as `none`.
+  get: func(name: string) -> result<option<list<u8>>, secret-error>;
+
+  /// Store one secret, replacing whatever was there.
+  set: func(name: string, secret: list<u8>) -> result<_, secret-error>;
+
+  /// Remove one secret. Removing one that is absent succeeds.
+  delete: func(name: string) -> result<_, secret-error>;
+
+  /// The names of stored secrets, never their values, so a listing cannot
+  /// become a way to read everything at once.
+  names: func() -> result<list<string>, secret-error>;
+}
+
+/// A key-value bucket shared between the machines that hold its invite code.
+///
+/// This is how an app becomes a household app -- a shopping list two people
+/// see, a meal plan a family edits -- without the app author running a
+/// backend and without anyone creating an account. The person who creates a
+/// share gets a ten-character code; anyone they give it to sees the same
+/// data. Possession of the code IS the membership, exactly like a shared
+/// album link, and the consent dialog says so in those words.
+///
+/// The store is local-first: reads and writes always work against the copy
+/// on this machine, `sync` exchanges changes with krate.tech when the
+/// network allows, and the newest write of a key wins. Bounded like a list,
+/// not a database: hundreds of keys, kilobytes per value.
+interface shared {
+  /// Error returned by a shared-store operation.
+  variant shared-error {
+    /// The app did not receive the `store.shared` capability.
+    denied,
+    /// No share has been created or joined yet.
+    not-joined,
+    /// The invite code was not a share that exists.
+    no-such-share,
+    /// The key was empty, too long, or used unsupported syntax.
+    invalid-name,
+    /// The value is larger than the runtime's bounded limit.
+    too-large,
+    /// The store could not be read or written.
+    io(string),
+  }
+
+  /// The invite code of this app's share, or `none` before create or join.
+  code: func() -> result<option<string>, shared-error>;
+
+  /// Create a fresh share and return its invite code. Requires the network;
+  /// the code is minted by krate.tech so it is unique.
+  create: func() -> result<string, shared-error>;
+
+  /// Join an existing share by its invite code. Local keys are kept and
+  /// merged: the newest write of each key wins.
+  join: func(code: string) -> result<_, shared-error>;
+
+  /// Leave the share: keeps the local copy, stops syncing, forgets the code.
+  leave: func() -> result<_, shared-error>;
+
+  /// Read one key from the local copy. Never touches the network.
+  get: func(key: string) -> result<option<list<u8>>, shared-error>;
+
+  /// Write one key locally and queue it for sync.
+  set: func(key: string, value: list<u8>) -> result<_, shared-error>;
+
+  /// Delete one key locally and queue the removal for sync.
+  delete: func(key: string) -> result<_, shared-error>;
+
+  /// The keys present in the local copy.
+  keys: func() -> result<list<string>, shared-error>;
+
+  /// Exchange changes with krate.tech now: push queued writes, pull what
+  /// other machines wrote. Returns `true` when the local copy changed, so
+  /// the app knows to redraw. Offline is not an error -- it returns `false`
+  /// and the queue keeps waiting. Call it on launch, after writes, and on a
+  /// timer of ten seconds or more; the host rate-limits anything faster.
+  sync: func() -> result<bool, shared-error>;
+}
