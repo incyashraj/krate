@@ -467,3 +467,70 @@ pub fn markings() -> Texture {
     }
     t
 }
+
+/// The lit windows of a building, alone, on a transparent field.
+///
+/// Drawn as a second pass over the same facade geometry through `unlit`, so
+/// the windows hold their brightness while the wall around them takes the
+/// sunset's shading. That is what a city at dusk actually looks like: the
+/// concrete goes blue and the windows do not.
+///
+/// The seed must match the `facade` call for the same building, or the lit
+/// squares land where that building's dark windows are.
+pub fn facade_lights(seed: i32) -> Texture {
+    const N: u32 = 256;
+    let mut t = blank(N, N);
+    // Everything starts transparent; only lit windows get written.
+    for i in (0..t.rgba.len()).step_by(4) {
+        t.rgba[i + 3] = 0;
+    }
+
+    // Far fewer lit than the facade's own dark-window pass uses.
+    //
+    // The facade texture lights about 25 of its 42 windows, which is right
+    // for a wall you are looking AT: it needs variety. Drawn as EMISSIVE over
+    // a whole skyline, 25 in 42 is a building with its lights blazing, and a
+    // row of those washes the city pale -- which is what happened. A tower at
+    // dusk has a scattering of windows on, not most of them.
+    //
+    // 0.80 leaves roughly one window in five.
+    // About a third lit. 0.80 left roughly one window in five, which against
+    // a dark wall is too sparse to read as a city; 0.42 (the facade's own
+    // figure) is a building blazing. A third is a tower at dusk.
+    let lit_bias = 0.66;
+    for row in 0..7u32 {
+        for col in 0..6u32 {
+            if hash2(seed + col as i32 * 7 + 41, row as i32 * 13 + 17) <= lit_bias {
+                continue;
+            }
+            let x0 = 12 + col * 40;
+            let y0 = 10 + row * 32;
+            let (w, h) = (26u32, 20u32);
+            for yy in (y0 + 2)..(y0 + h - 2).min(N) {
+                for xx in (x0 + 2)..(x0 + w - 2).min(N) {
+                    let ix = xx - x0;
+                    // Leave the mullion dark: a lit window is two panes.
+                    if ix == w / 2 || ix == w / 2 + 1 {
+                        continue;
+                    }
+                    let iy = yy - y0;
+                    // Brighter near the top, where the ceiling light is.
+                    // Dimmer than the facade's painted version. This one is
+                    // ADDED to a wall that already has a lit window under it,
+                    // so full brightness here doubles up.
+                    let k = 1.0 - (iy as f32 / h as f32) * 0.30;
+                    let tint = hash2(seed + col as i32, row as i32) * 20.0;
+                    put(
+                        &mut t,
+                        xx,
+                        yy,
+                        (242.0 + tint) * k,
+                        (206.0 + tint * 0.7) * k,
+                        (132.0 + tint * 0.4) * k,
+                    );
+                }
+            }
+        }
+    }
+    t
+}

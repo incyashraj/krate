@@ -255,6 +255,10 @@ fn scenery(track: &Track, per_node: usize) -> Vec<Prop> {
                 },
                 kind: u8::from(building),
                 tint: if building {
+                    // NOT USED for buildings: they are drawn as one
+                    // pre-transformed mesh with a single tint at the draw
+                    // call, so this value goes nowhere. Kept because `Prop`
+                    // is shared with the trees, which do use it.
                     let s = 0.34 + hash2(seed, 10) * 0.2;
                     rgb(s, s * 0.97, s * 0.93)
                 } else {
@@ -525,7 +529,42 @@ fn draw(
         calls += 1;
     }
     scene3d::textured(scene, &track.kerb, &track.kerb_uv, art.kerb, white)?;
-    scene3d::textured(scene, &meshes.buildings, &meshes.buildings_uv, art.facade, white)?;
+    // Tinted DOWN, not drawn white.
+    //
+    // The buildings are one pre-transformed mesh, so they take one tint here
+    // -- the per-prop tint computed in `scenery` is never used for them, which
+    // is worth knowing because editing it changes nothing at all. (That cost a
+    // pass: the facades were darkened there and came out identical.)
+    //
+    // Dark, because a concrete wall at dusk is in shade: the sun is at the
+    // horizon and only faces turned to it catch any. Near-white towers left
+    // the lit windows drawn over them with nothing to stand out against --
+    // the emissive pass measured +1.9 per channel, which is invisible. A
+    // window only reads as lit if the wall around it is dark.
+    scene3d::textured(
+        scene,
+        &meshes.buildings,
+        &meshes.buildings_uv,
+        art.facade,
+        rgb(0.30, 0.29, 0.34),
+    )?;
+    // A second pass over the SAME geometry, drawing only the lit windows and
+    // drawing them UNLIT.
+    //
+    // This is what a city at dusk actually looks like: the concrete takes the
+    // sunset's shading and goes blue, and the windows do not -- they are their
+    // own light source and hold their brightness. Without it a skyline at this
+    // hour is a row of grey slabs, however good the wall texture is.
+    if art.facade_lights != 0 {
+        scene3d::unlit(
+            scene,
+            &meshes.buildings,
+            &meshes.buildings_uv,
+            art.facade_lights,
+            white,
+        )?;
+        calls += 1;
+    }
     calls += 4;
 
     // Trees stay untextured and instanced: a cone of leaves reads fine as a
@@ -769,6 +808,8 @@ struct Art {
     sky: u64,
     /// Painted road markings: dashed centre, solid lane edges.
     markings: u64,
+    /// The lit windows alone, drawn unlit over the facades.
+    facade_lights: u64,
 }
 
 /// Build the HUD for this frame.
@@ -1297,6 +1338,9 @@ impl krate::Guest for Component {
             },
             grass: upload(art::grass()),
             facade: upload(art::facade(3)),
+            // Same seed as the facade above, or the lit squares land where
+            // that texture's DARK windows are.
+            facade_lights: upload(art::facade_lights(3)),
             kerb: upload(art::kerb()),
             markings: upload(art::markings()),
             sky: upload(art::sky(SUN_BEARING)),
