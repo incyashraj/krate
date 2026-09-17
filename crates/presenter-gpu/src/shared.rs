@@ -193,6 +193,28 @@ pub mod scene_frames {
         FRAMES.lock().ok()?.as_mut()?.remove(&widget)
     }
 
+    /// Whether anything is able to CONSUME a published frame.
+    ///
+    /// A publisher has no way to know whether a presenter on the shared device
+    /// exists -- the scene runs long before any window does. Without this the
+    /// failure mode is silent: the texture is published, nobody takes it, and
+    /// the canvas renders black while every 2D overlay above it looks
+    /// perfect.
+    ///
+    /// Set by a presenter when it adopts the shared device. False today,
+    /// because the presenter cannot: the shared instance is built without a
+    /// display handle and cannot own a window surface (K-407).
+    pub fn consumers_exist() -> bool {
+        CONSUMERS.load(core::sync::atomic::Ordering::SeqCst) > 0
+    }
+
+    /// Record that a presenter on the shared device is able to take frames.
+    pub fn add_consumer() {
+        CONSUMERS.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
+    }
+
+    static CONSUMERS: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
+
     /// Whether a frame is waiting for this widget.
     ///
     /// Asked before taking, because the caller has to decide whether the

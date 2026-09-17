@@ -77,6 +77,9 @@ const COUNTDOWN: f32 = 3.5;
 /// sunset.
 const SUN_BEARING: f32 = 0.12;
 
+/// Rows on the front menu: RACE, LAPS, RIVALS, QUIT.
+const MENU_ROWS: usize = 4;
+
 // ------------------------------------------------------------------ meshes
 
 struct Mesh {
@@ -374,8 +377,55 @@ enum Phase {
     Finished,
 }
 
+/// What the menu can change, carried into the race.
+///
+/// A struct rather than loose fields because these travel together: a race is
+/// started FROM a settings block, and the header reads the same block back.
+/// Two of them drifting apart is how a game ends up saying "LAP 1 / 3" in a
+/// five-lap race.
+#[derive(Clone, Copy)]
+struct Settings {
+    laps: u32,
+    /// Cars on the grid INCLUDING the player, so 1 rival is a field of 2.
+    field: usize,
+}
+
+impl Settings {
+    const LAP_CHOICES: [u32; 3] = [3, 5, 10];
+    const MIN_FIELD: usize = 2;
+    const MAX_FIELD: usize = 6;
+
+    fn default() -> Self {
+        Self {
+            laps: MAX_LAPS,
+            field: FIELD,
+        }
+    }
+
+    fn cycle_laps(&mut self) {
+        let next = Self::LAP_CHOICES
+            .iter()
+            .position(|&l| l == self.laps)
+            .map(|i| (i + 1) % Self::LAP_CHOICES.len())
+            .unwrap_or(0);
+        self.laps = Self::LAP_CHOICES[next];
+    }
+
+    fn cycle_field(&mut self) {
+        self.field = if self.field >= Self::MAX_FIELD {
+            Self::MIN_FIELD
+        } else {
+            self.field + 1
+        };
+    }
+}
+
 struct Game {
     phase: Phase,
+    /// The race's settings, fixed when it starts.
+    settings: Settings,
+    /// Which menu row the keyboard is on.
+    menu_row: usize,
     /// Seconds since the phase began.
     phase_t: f32,
     /// Seconds since the lights went out.
@@ -407,6 +457,8 @@ impl Game {
         }
         Self {
             phase: Phase::Attract,
+            settings: Settings::default(),
+            menu_row: 0,
             phase_t: 0.0,
             race_t: 0.0,
             cars,
@@ -423,8 +475,21 @@ impl Game {
     }
 
     fn reset(&mut self, track: &Track) {
+        // The grid is sized by the settings, and every car is told how long
+        // the race is. `cars` keeps its full capacity and the extras are
+        // simply not part of this race -- rebuilding the vector would mean
+        // reallocating six cars every restart for nothing.
+        let field = self
+            .settings
+            .field
+            .clamp(Settings::MIN_FIELD, Settings::MAX_FIELD);
+        self.cars.truncate(field);
+        while self.cars.len() < field {
+            self.cars.push(Car::new(track, self.cars.len(), field));
+        }
         for (i, c) in self.cars.iter_mut().enumerate() {
-            *c = Car::new(track, i, FIELD);
+            *c = Car::new(track, i, field);
+            c.race_laps = self.settings.laps;
         }
         self.order.clear();
         self.race_t = 0.0;
@@ -930,12 +995,37 @@ fn build_text(g: &Game, win: u64, ui: &mut Ui) {
         Phase::Attract => {
             ui.header(win, ["", "", ""]);
             a.push_str("DRIFT");
-            b.push_str("Three laps. Five rivals.");
-            ui.centre(win, &[(&a, false), (&b, false)]);
-            // Blink on the same pulse the polygon bar uses, so the word and
-            // the shape under it agree.
+            // The menu. Four rows, the selected one marked.
+            //
+            // Marked with a leading caret rather than by colour alone: the
+            // rows sit over a moving 3D scene, so a colour difference can land
+            // on a background that erases it, and a shape cannot.
+            let mut rows: Vec<String> = Vec::with_capacity(4);
+            for row in 0..MENU_ROWS {
+                let mut line = String::new();
+                line.push_str(if row == g.menu_row { "> " } else { "  " });
+                match row {
+                    0 => line.push_str("RACE"),
+                    1 => {
+                        line.push_str("LAPS        ");
+                        text_hud::push_u32(g.settings.laps, &mut line);
+                    }
+                    2 => {
+                        line.push_str("RIVALS      ");
+                        text_hud::push_u32(g.settings.field as u32 - 1, &mut line);
+                    }
+                    _ => line.push_str("QUIT"),
+                }
+                rows.push(line);
+            }
+            let mut lines: Vec<(&str, bool)> = Vec::with_capacity(rows.len() + 1);
+            lines.push((&a, false));
+            for (i, row) in rows.iter().enumerate() {
+                lines.push((row.as_str(), i == g.menu_row));
+            }
+            ui.centre(win, &lines);
             if sin_approx(g.phase_t * 3.0) > -0.1 {
-                foot.push_str("Press ENTER to race");
+                foot.push_str("UP/DOWN choose   ENTER select");
             }
             ui.foot(win, &foot);
         }
@@ -959,7 +1049,7 @@ fn build_text(g: &Game, win: u64, ui: &mut Ui) {
             ui.header(win, [&lap, &pos, &clock]);
             // The last lap is the one piece of race state a driver acts on,
             // and the seven-segment counter cannot emphasise anything.
-            if g.cars[0].lap + 1 >= MAX_LAPS {
+            if g.cars[0].lap + 1 >= g.settings.laps {
                 a.push_str("FINAL LAP");
                 ui.centre(win, &[(&a, true)]);
             } else {
@@ -1033,14 +1123,14 @@ fn build_text(g: &Game, win: u64, ui: &mut Ui) {
 /// position or the seconds. Two words cost nothing and remove the question.
 fn header(g: &Game, lap: &mut String, pos: &mut String, clock: &mut String) {
     lap.push_str("LAP ");
-    text_hud::push_u32((g.cars[0].lap + 1).min(MAX_LAPS), lap);
+    text_hud::push_u32((g.cars[0].lap + 1).min(g.settings.laps), lap);
     lap.push_str(" / ");
-    text_hud::push_u32(MAX_LAPS, lap);
+    text_hud::push_u32(g.settings.laps, lap);
 
     pos.push_str("POS ");
     text_hud::push_u32(g.player_position(), pos);
     pos.push_str(" / ");
-    text_hud::push_u32(FIELD as u32, pos);
+    text_hud::push_u32(g.cars.len() as u32, pos);
 
     clock.push_str("TIME ");
     text_hud::push_time(g.race_t.max(0.0), clock);
@@ -1148,6 +1238,15 @@ impl krate::Guest for Component {
         // the clock run would show the difference, and nothing else in the
         // game can: a screenshot of a paused race looks identical either way.
         let pausecheck = has(b"pausecheck");
+        // `menucheck` drives the menu headlessly: step to LAPS, cycle it to 5,
+        // go back to RACE, start, and report what the header says.
+        //
+        // The check from the plan is "start a 5-lap race from the menu and see
+        // LAP 1 OF 5". A screenshot proves the rows are DRAWN and proves
+        // nothing about whether choosing one reaches the race, which is the
+        // only part that can silently not work.
+        let menucheck = has(b"menucheck");
+        let mut menu_step = 0u32;
         let auto = auto || hold;
 
         let win = match window::create(
@@ -1468,6 +1567,9 @@ impl krate::Guest for Component {
         // Last frame's state for the edge-triggered keys.
         let mut paused_at = 0.0_f32;
         let mut pause_frames = 0u32;
+        let mut up_was = false;
+        let mut down_was = false;
+        let mut start_was = false;
         let mut esc_was = false;
         let mut restart_was = false;
         let mut quit_was = false;
@@ -1533,6 +1635,22 @@ impl krate::Guest for Component {
             let quit_now = key("q");
             let quit_pressed = quit_now && !quit_was;
             quit_was = quit_now;
+            // The menu's keys are edges too, and they SHARE the steering keys.
+            //
+            // Up and down are the same physical keys as accelerate and brake.
+            // On a menu they must step one row per press; in a race they must
+            // be held. That is why these exist alongside `accel` and `brake`
+            // rather than replacing them -- the same key means two things
+            // depending on the phase, which is ordinary for a game and needs
+            // both readings to be available at once.
+            let up_now = key("ArrowUp") || key("w");
+            let up_pressed = up_now && !up_was;
+            up_was = up_now;
+            let down_now = key("ArrowDown") || key("s");
+            let down_pressed = down_now && !down_was;
+            down_was = down_now;
+            let start_pressed = start && !start_was;
+            start_was = start;
 
             let mut steer = 0.0;
             if left {
@@ -1562,7 +1680,60 @@ impl krate::Guest for Component {
                     // exercises the race rather than the menu. (A ten-minute
                     // soak spent all ten in the attract screen and reported
                     // lap 0, speed 0, which looked like the game not working.)
-                    if start || auto || quick {
+                    // The scripted walk: one action every ten frames, so each
+                    // lands on its own frame the way a press would.
+                    if menucheck {
+                        menu_step += 1;
+                        match menu_step {
+                            10 => g.menu_row = 1,
+                            // ONE cycle: 3 -> 5. Cycling twice lands on 10,
+                            // which is what the first version of this did
+                            // while asserting 5 -- a working menu reporting
+                            // FAIL because the script miscounted.
+                            20 => g.settings.cycle_laps(),
+                            40 => {
+                                let mut m = String::new();
+                                m.push_str("drift: menucheck laps now ");
+                                text_hud::push_u32(g.settings.laps, &mut m);
+                                say(&m);
+                                g.menu_row = 0;
+                            }
+                            50 => {
+                                g.reset(&track);
+                                g.demo = false;
+                            }
+                            _ => {}
+                        }
+                    }
+                    if up_pressed {
+                        g.menu_row = (g.menu_row + MENU_ROWS - 1) % MENU_ROWS;
+                        g.phase_t = 0.0;
+                    }
+                    if down_pressed {
+                        g.menu_row = (g.menu_row + 1) % MENU_ROWS;
+                        g.phase_t = 0.0;
+                    }
+                    if start_pressed {
+                        match g.menu_row {
+                            0 => {
+                                g.reset(&track);
+                                g.demo = false;
+                            }
+                            1 => {
+                                g.settings.cycle_laps();
+                                g.phase_t = 0.0;
+                            }
+                            2 => {
+                                g.settings.cycle_field();
+                                g.phase_t = 0.0;
+                            }
+                            _ => {
+                                say("drift: quit from the menu");
+                                let _ = window::close(win);
+                                break;
+                            }
+                        }
+                    } else if auto || quick {
                         g.reset(&track);
                         g.demo = false;
                     } else if g.phase_t > 8.0 {
@@ -1587,6 +1758,24 @@ impl krate::Guest for Component {
                     }
                 }
                 Phase::Racing => {
+                    if menucheck && g.race_t > 0.5 {
+                        let mut lap = String::new();
+                        let mut pos = String::new();
+                        let mut clock = String::new();
+                        header(&g, &mut lap, &mut pos, &mut clock);
+                        let mut m = String::new();
+                        m.push_str("drift: menucheck header says  ");
+                        m.push_str(&lap);
+                        m.push_str("   ");
+                        m.push_str(&pos);
+                        say(&m);
+                        say(if g.settings.laps == 5 {
+                            "drift: menucheck PASS -- the menu's choice reached the race"
+                        } else {
+                            "drift: menucheck FAIL -- the race ignored the menu"
+                        });
+                        break;
+                    }
                     if pausecheck && g.race_t > 4.0 {
                         say("drift: pausecheck pausing");
                         let mut m = String::new();

@@ -5096,10 +5096,25 @@ impl gfx::scene3d::Host for Phase3GuiHost {
             // that the scene and the window presenter share one device, a host
             // that can blit the texture never needs the pixels.
             //
-            // `direct` is false while a screenshot is pending: `--shoot` paints
-            // through the shared CPU painter, which has no texture path, so a
-            // direct frame would photograph an empty canvas.
-            let direct = self.screenshot.is_none() || self.screenshot_taken.get();
+            // ALWAYS false for now: the direct path is disabled (K-407).
+            //
+            // The presenter had to go back to its own wgpu device, because the
+            // shared one is created without a display handle and cannot own a
+            // window surface -- pairing them crashed wgpu outright. With no
+            // presenter on the shared device, nothing consumes a published
+            // texture, so publishing one and returning no pixels leaves the
+            // canvas with nothing at all.
+            //
+            // That is exactly what shipped for one commit: a windowed run drew
+            // a BLACK SCENE with the 2D overlay perfectly readable on top of
+            // it. Headless `--shoot` was unaffected, because a pending
+            // screenshot already forced this to false -- so every screenshot
+            // taken to verify the work looked right while the thing a person
+            // actually opens was broken.
+            //
+            // Re-enable this with the presenter, not on its own: it is only
+            // correct when something on the shared device is there to blit.
+            let direct = false;
             let image = match surface.render_and_publish(widget.get(), direct) {
                 Ok(image) => image,
                 Err(error) => return Ok(Err(gfx::types::GfxError::Platform(error.to_string()))),

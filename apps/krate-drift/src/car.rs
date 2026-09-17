@@ -10,6 +10,13 @@ use crate::mathx::{abs, angle_delta, atan2_approx, cos_approx, sin_approx, sqrt_
 use crate::track::{Track, ROAD_HALF, VERGE_HALF};
 
 /// Laps in a race.
+/// The default race length, and the ceiling `Car` uses when nobody says
+/// otherwise.
+///
+/// The race length is a SETTING now -- the menu changes it -- so the value
+/// that matters is carried on the car rather than read from here. This stays
+/// as the default a fresh car gets, and as the number the physics falls back
+/// to if a car is built outside a race.
 pub const MAX_LAPS: u32 = 3;
 
 /// Half-length of the car's body. Collision is a circle around the centre
@@ -48,6 +55,10 @@ pub struct Car {
     pub lap_armed: bool,
     pub finished: bool,
     pub finish_time: f32,
+    /// How many laps THIS race is. Carried per car rather than read from a
+    /// constant, so the menu can change the race length without the physics
+    /// needing to know a menu exists.
+    pub race_laps: u32,
 
     pub surface: Surface,
     /// Set for one frame when the car hits something, so the caller can play a
@@ -125,6 +136,7 @@ impl Car {
             lap_armed: false,
             finished: false,
             finish_time: 0.0,
+            race_laps: MAX_LAPS,
             surface: Surface::Road,
             hit: 0.0,
             on_barrier: false,
@@ -268,7 +280,7 @@ impl Car {
         if self.lap_armed && where_.along < quarter * 0.5 && self.speed > 0.0 {
             self.lap_armed = false;
             self.lap += 1;
-            if self.lap >= MAX_LAPS && !self.finished {
+            if self.lap >= self.race_laps && !self.finished {
                 self.finished = true;
                 self.finish_time = now;
             }

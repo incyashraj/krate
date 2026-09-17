@@ -1047,6 +1047,27 @@ impl SceneBackend {
         match self {
             SceneBackend::Gpu(gpu) => {
                 gpu.render_to_texture()?;
+                // A frame must reach SOMETHING.
+                //
+                // `direct` says "the texture will be picked up by a presenter
+                // on the shared device". If no such presenter exists, the
+                // texture goes nowhere and returning `None` leaves the canvas
+                // with no pixels -- which renders as a BLACK scene with the 2D
+                // overlay still perfectly readable on top, because the overlay
+                // never went through the scene at all.
+                //
+                // That shipped for one commit (K-407). A headless `--shoot`
+                // could not see it: a pending screenshot forces `direct` off,
+                // so every verification screenshot was taken down the working
+                // path while the windowed one was broken. Checking here means
+                // the runtime refuses rather than silently drawing nothing.
+                if direct && !krate_scene3d_gpu::scene_frames::consumers_exist() {
+                    return Err(UiAdapterError::Unsupported(
+                        "a 3D frame was published for direct presentation and \
+                         nothing can present it; the scene would draw black"
+                            .to_string(),
+                    ));
+                }
                 if direct {
                     krate_scene3d_gpu::scene_frames::publish(widget, gpu.colour_texture().clone());
                     // No readback at all on this path. Returning None says so
