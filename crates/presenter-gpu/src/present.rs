@@ -562,18 +562,34 @@ impl PixelPresenter {
         if info.device_type == wgpu::DeviceType::Cpu {
             return Err(format!("{} is a software adapter", info.name));
         }
-        // Take the process-wide shared device when this surface can live on
-        // it, so a 3D scene's texture can be blitted straight to the window
-        // instead of going down to the CPU and back up (K-405).
+        // The presenter uses its OWN device, always.
         //
-        // Only when the shared device's adapter is THIS adapter. A surface
-        // belongs to the adapter that can present it, and a machine with two
-        // GPUs can hand out a different one here than the scene took. Falling
-        // back to a private device costs the readback and is correct;
-        // presenting from the wrong device is a validation failure, and with
-        // panic=abort that ends the app rather than returning an error.
-        let shared = crate::shared::shared_gpu()
-            .filter(|shared| shared.adapter.get_info().device == info.device);
+        // Sharing the scene's device was the point of K-405 -- a texture
+        // cannot cross devices, so sharing one is what lets a 3D frame be
+        // blitted straight to the window instead of going down to the CPU and
+        // back. It does not work, and the reason is structural rather than a
+        // bug to tune:
+        //
+        // `shared_gpu` creates its instance WITHOUT a display handle, because
+        // the 3D scene asks for a device long before any window exists. Such
+        // an instance can hand out a device that renders offscreen, which is
+        // all the scene needs -- so the scene worked and every headless
+        // screenshot passed. But a window SURFACE belongs to the adapter that
+        // can present it, and pairing this surface with that device crashes
+        // wgpu: "Device[Id(0,1)] does not exist", the moment a real window
+        // appears. The guard that compared `adapter.get_info().device` did not
+        // catch it because both adapters report the same physical GPU.
+        //
+        // So the direct path is off until the ordering is inverted: the
+        // presenter would have to create the shared device, with its display
+        // handle, and the scene adopt it -- which means a scene can only go
+        // direct if it is bound after a window exists. That is a real change
+        // to when a scene may be created, not a patch here.
+        //
+        // The cost of being wrong is the readback, which is correct and slower
+        // (K-405). The cost of being wrong the other way is the app dying
+        // under panic=abort, which is why this is the safe direction.
+        let shared: Option<crate::shared::SharedGpu> = None;
         let (device, queue, on_shared_device) = match shared {
             Some(shared) => (shared.device.clone(), shared.queue.clone(), true),
             None => {

@@ -364,6 +364,13 @@ enum Phase {
     Attract,
     Countdown,
     Racing,
+    /// The race, stopped. The scene still renders; nothing advances.
+    ///
+    /// A separate phase rather than a flag on Racing, because every place
+    /// that asks "are we racing" would otherwise have to remember to ask "and
+    /// not paused" -- and the one that forgot would be the race clock, which
+    /// is exactly the thing a pause has to stop.
+    Paused,
     Finished,
 }
 
@@ -862,7 +869,7 @@ fn build_hud(g: &Game, hud: &mut Hud) {
                 }
             }
         }
-        Phase::Racing | Phase::Finished => {
+        Phase::Racing | Phase::Paused | Phase::Finished => {
             // Speed, bottom left, big.
             let kph = (abs(g.cars[0].speed) * 3.6) as u32;
             hud.number(kph, left + 1.45, -1.30, 0.26, 0.42, 1);
@@ -963,6 +970,21 @@ fn build_text(g: &Game, win: u64, ui: &mut Ui) {
                 text_hud::push_time(g.best_lap, &mut foot);
             }
             ui.foot(win, &foot);
+        }
+        Phase::Paused => {
+            // The header keeps showing where the race stood, so a pause is
+            // somewhere to look rather than a screen that hides the state you
+            // paused to think about.
+            header(g, &mut lap, &mut pos, &mut clock);
+            ui.header(win, [&lap, &pos, &clock]);
+            a.push_str("PAUSED");
+            b.push_str("ESC  resume");
+            let mut c = String::new();
+            c.push_str("R  restart");
+            let mut d = String::new();
+            d.push_str("Q  quit to title");
+            ui.centre(win, &[(&a, true), (&b, false), (&c, false), (&d, false)]);
+            ui.foot(win, "");
         }
         Phase::Finished => {
             header(g, &mut lap, &mut pos, &mut clock);
@@ -1119,6 +1141,13 @@ impl krate::Guest for Component {
         // parks on the results screen rather than restarting -- the only way
         // to photograph the end of a race without sitting through one.
         let hold = has(b"hold");
+        // `pausecheck` proves the pause actually stops the clock, headlessly.
+        //
+        // It pauses at four seconds of race time, holds for two hundred
+        // frames, then reports the clock before and after. A pause that let
+        // the clock run would show the difference, and nothing else in the
+        // game can: a screenshot of a paused race looks identical either way.
+        let pausecheck = has(b"pausecheck");
         let auto = auto || hold;
 
         let win = match window::create(
@@ -1436,6 +1465,12 @@ impl krate::Guest for Component {
         let mut frames: u64 = 0;
         let mut engine_next = 0.0_f32;
         let mut skid_next = 0.0_f32;
+        // Last frame's state for the edge-triggered keys.
+        let mut paused_at = 0.0_f32;
+        let mut pause_frames = 0u32;
+        let mut esc_was = false;
+        let mut restart_was = false;
+        let mut quit_was = false;
         let mut guest_samples: Vec<u32> = Vec::with_capacity(4096);
         let mut wall_samples: Vec<u32> = Vec::with_capacity(4096);
         let mut now_s = 0.0_f32;
@@ -1481,6 +1516,23 @@ impl krate::Guest for Component {
             let left = key("ArrowLeft") || key("a");
             let right = key("ArrowRight") || key("d");
             let start = key("Enter") || key(" ") || events::gamepad_held("start");
+
+            // Pause keys are read as EDGES, not as held state.
+            //
+            // `key_held` is level-triggered: it stays true for as long as the
+            // key is down, which at sixty frames a second would toggle the
+            // pause sixty times a press and land wherever the release
+            // happened. Remembering last frame's state and acting on the
+            // change is what makes one press one action.
+            let esc_now = key("Escape") || key("p") || events::gamepad_held("start-alt");
+            let esc_pressed = esc_now && !esc_was;
+            esc_was = esc_now;
+            let restart_now = key("r");
+            let restart_pressed = restart_now && !restart_was;
+            restart_was = restart_now;
+            let quit_now = key("q");
+            let quit_pressed = quit_now && !quit_was;
+            quit_was = quit_now;
 
             let mut steer = 0.0;
             if left {
@@ -1535,13 +1587,87 @@ impl krate::Guest for Component {
                     }
                 }
                 Phase::Racing => {
-                    g.race_t += dt * sim_steps as f32;
+                    if pausecheck && g.race_t > 4.0 {
+                        say("drift: pausecheck pausing");
+                        let mut m = String::new();
+                        m.push_str("  race_t before ");
+                        text_hud::push_time(g.race_t, &mut m);
+                        say(&m);
+                        paused_at = g.race_t;
+                        g.phase = Phase::Paused;
+                        g.phase_t = 0.0;
+                        pause_frames = 0;
+                    }
+                    if matches!(g.phase, Phase::Paused) {
+                        // Already paused this frame by the check above; fall
+                        // through without touching the clock, exactly as a
+                        // real pause does.
+                        continue;
+                    }
+                    // Pause BEFORE advancing the clock, not after.
+                    //
+                    // The other way round the clock takes one more step on the
+                    // frame the pause is pressed -- measured at 16,438us, which
+                    // is exactly one frame at 60Hz. Invisible on a display
+                    // showing tenths, and wrong: a pause should stop time at
+                    // the moment it is pressed, not a frame later.
+                    if esc_pressed {
+                        g.phase = Phase::Paused;
+                        g.phase_t = 0.0;
+                    } else {
+                        // The clock advances only if this frame did not just
+                        // pause. `continue` was tried here and is wrong: it
+                        // skips the rest of the frame including the draw, so
+                        // the pause would land on a frame that never rendered.
+                        g.race_t += dt * sim_steps as f32;
+                    }
                     // Any press during the demo takes the wheel: start the
                     // race properly rather than leaving the person watching
                     // their own car being driven for them.
                     if g.demo && (start || accel || brake || left || right) {
                         g.reset(&track);
                         g.demo = false;
+                    }
+                }
+                Phase::Paused => {
+                    // Nothing advances. `race_t` is not touched here, which is
+                    // the whole point: a pause that lets the clock run is a
+                    // pause in name only.
+                    if pausecheck {
+                        pause_frames += 1;
+                        if pause_frames >= 200 {
+                            let mut m = String::new();
+                            m.push_str("  race_t after 200 paused frames ");
+                            text_hud::push_time(g.race_t, &mut m);
+                            m.push_str("  drift micros ");
+                            text_hud::push_u32(
+                                (abs(g.race_t - paused_at) * 1_000_000.0) as u32,
+                                &mut m,
+                            );
+                            say(&m);
+                            // The game's own abs, not f32::abs -- a no_std guest has no
+                            // f32::abs, and the whole reason this game has a
+                            // mathx module is that the missing float methods
+                            // are a trap that has now cost three checkpoints.
+                            say(if abs(g.race_t - paused_at) < 0.0005 {
+                                "drift: pausecheck PASS -- the clock did not move"
+                            } else {
+                                "drift: pausecheck FAIL -- the clock advanced"
+                            });
+                            break;
+                        }
+                    }
+                    if esc_pressed {
+                        g.phase = Phase::Racing;
+                        g.phase_t = 0.0;
+                    } else if restart_pressed {
+                        g.reset(&track);
+                        g.demo = false;
+                    } else if quit_pressed {
+                        g.phase = Phase::Attract;
+                        g.phase_t = 0.0;
+                        g.demo = false;
+                        g.snap_camera = true;
                     }
                 }
                 Phase::Finished => {
