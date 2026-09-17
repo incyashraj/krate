@@ -52,7 +52,7 @@ use krate::ui::{events, tree, types, window};
 use car::{drive_ai, Car, MAX_LAPS};
 use hud::Hud;
 use mathx::{abs, cos_approx, hash2, sin_approx};
-use text_hud::TextHud;
+use text_hud::Ui;
 use track::{ground_height, Track, ROAD_HALF};
 
 const ROOT_ID: u64 = 1;
@@ -671,7 +671,7 @@ fn draw(
         if art.hud_white != 0 {
             let head_uv = hud_uvs(meshes.head.verts.len());
             let tail_uv = hud_uvs(meshes.tail.verts.len());
-            let mut place_unlit = |verts: &[f32], uvs: &[f32], tint: gfx::Color| {
+            let place_unlit = |verts: &[f32], uvs: &[f32], tint: gfx::Color| {
                 let (sh, ch) = (sin_approx(heading), cos_approx(heading));
                 let mut world = Vec::with_capacity(verts.len());
                 for p in verts.chunks_exact(3) {
@@ -817,9 +817,8 @@ fn build_hud(g: &Game, hud: &mut Hud) {
     hud.clear();
     // Camera-space units at the HUD plane. The visible half-width at 62 deg
     // fov and DIST = 3 is about 1.8 vertically; x is that times the aspect.
-    let top = 1.55;
+
     let left = -2.7;
-    let right = 2.7;
 
     match g.phase {
         Phase::Attract => {
@@ -871,39 +870,18 @@ fn build_hud(g: &Game, hud: &mut Hud) {
             let frac = (abs(g.cars[0].speed) / 92.0).min(1.0);
             hud.rect(left + 0.12, -1.44, 1.35 * frac, 0.06);
 
-            // Lap counter, top left: current / total.
-            // The separator is a SLASH, not an upright bar.
+            // The lap, position and clock are TEXT now, in the header bar.
             //
-            // A tall thin rectangle between the two numbers is the same shape
-            // as the digit 1, so "lap 2 of 3" read as "21 3" -- the two
-            // numbers were correctly spaced and the divider was being counted
-            // as a digit. Leaning it fixes what the shape says.
-            let lap = (g.cars[0].lap + 1).min(MAX_LAPS);
-            hud.number(lap, left + 0.50, top - 0.30, 0.18, 0.30, 1);
-            for step in 0..6 {
-                let t = step as f32 / 5.0;
-                hud.rect(
-                    left + 0.60 + t * 0.10,
-                    top - 0.30 + t * 0.22,
-                    0.045,
-                    0.06,
-                );
-            }
-            hud.number(MAX_LAPS, left + 1.04, top - 0.30, 0.18, 0.30, 1);
-
-            // Position, top right.
-            hud.number(g.player_position(), right - 0.12, top - 0.34, 0.24, 0.38, 1);
-
-            // Race clock, top centre: m:ss.
-            let t = g.race_t.max(0.0);
-            let mins = (t / 60.0) as u32;
-            let secs = (t as u32) % 60;
-            // Same right-alignment care as the lap counter: the minutes digit
-            // ends at -0.30, the colon sits just past it, and the two seconds
-            // digits (0.15 wide with a 0.045 gap) end at 0.06.
-            hud.number(mins, -0.30, top - 0.26, 0.15, 0.25, 1);
-            hud.colon(-0.25, top - 0.26, 0.045, 0.25);
-            hud.number(secs, 0.24, top - 0.26, 0.15, 0.25, 2);
+            // They were seven-segment digits here, welded out of triangles,
+            // because there was no way to put text over a 3D scene at all.
+            // The overlay widget removed that limit, and a readout that can
+            // say "LAP 1 / 3" beats one that says "1 3" with a leaning slash
+            // between -- that slash was read as the digit 1 until it was
+            // tilted, which is the kind of problem shapes have and words do
+            // not.
+            //
+            // What stays below is what shapes still do better: the speed bar,
+            // which moves with the frame, and the results plate.
 
             if g.phase == Phase::Finished {
                 // A results plate: a bar per car, longest for the winner, with
@@ -925,76 +903,125 @@ fn build_hud(g: &Game, hud: &mut Hud) {
     }
 }
 
-/// What the text layer says this frame.
+/// What the 2D interface says this frame.
 ///
-/// Everything here is a WORD, and everything the polygon HUD already shows
-/// well -- speed, the clock, the rev bar -- is left to it. Text earns its
-/// place where a shape was standing in for language: the title, the state of
-/// the race, and the results table that used to be a row of bars whose only
-/// meaning was that longer came first.
-fn build_text(g: &Game, win: u64, words: &mut TextHud) {
+/// The header carries the readouts a driver glances at -- lap, position,
+/// clock -- in fixed places. The centre carries the one thing that matters
+/// right now, big. The foot carries a prompt when there is one.
+///
+/// Everything here is a WORD or a NUMBER WITH A LABEL. The polygon HUD keeps
+/// what shapes do better: the speed bar, the countdown lights.
+fn build_text(g: &Game, win: u64, ui: &mut Ui) {
+    let mut lap = String::new();
+    let mut pos = String::new();
+    let mut clock = String::new();
     let mut a = String::new();
     let mut b = String::new();
-    let mut c = String::new();
+    let mut foot = String::new();
 
     match g.phase {
         Phase::Attract => {
+            ui.header(win, ["", "", ""]);
             a.push_str("DRIFT");
             b.push_str("Three laps. Five rivals.");
-            // Blink the prompt on the same pulse the polygon bar uses, so the
-            // word and the shape under it agree.
+            ui.centre(win, &[(&a, false), (&b, false)]);
+            // Blink on the same pulse the polygon bar uses, so the word and
+            // the shape under it agree.
             if sin_approx(g.phase_t * 3.0) > -0.1 {
-                c.push_str("Press ENTER to race");
+                foot.push_str("Press ENTER to race");
             }
-            words.show(win, &[&a, &b, &c]);
+            ui.foot(win, &foot);
         }
         Phase::Countdown => {
-            a.push_str("GET READY");
-            text_hud::lap_line(1, &mut b);
-            words.show(win, &[&a, &b]);
+            header(g, &mut lap, &mut pos, &mut clock);
+            ui.header(win, [&lap, &pos, &clock]);
+            // One number at a time, big. A countdown is the most tense moment
+            // in a race and it deserves the centre of the screen.
+            let left = (COUNTDOWN - g.phase_t).max(0.0);
+            let n = mathx::ceil_f32(left) as i32;
+            if n >= 1 {
+                text_hud::push_u32(n.min(3) as u32, &mut a);
+            } else {
+                a.push_str("GO");
+            }
+            ui.centre(win, &[(&a, n < 1)]);
+            ui.foot(win, "");
         }
         Phase::Racing => {
-            text_hud::lap_line(g.cars[0].lap + 1, &mut a);
-            b.push_str("POSITION ");
-            text_hud::ordinal(g.player_position(), &mut b);
-            b.push_str(" of ");
-            text_hud::push_u32(FIELD as u32, &mut b);
-            // The last lap is worth saying out loud; it is the one piece of
-            // race state a driver acts on and the seven-segment counter
-            // cannot emphasise.
+            header(g, &mut lap, &mut pos, &mut clock);
+            ui.header(win, [&lap, &pos, &clock]);
+            // The last lap is the one piece of race state a driver acts on,
+            // and the seven-segment counter cannot emphasise anything.
             if g.cars[0].lap + 1 >= MAX_LAPS {
-                c.push_str("FINAL LAP");
+                a.push_str("FINAL LAP");
+                ui.centre(win, &[(&a, true)]);
+            } else {
+                ui.centre(win, &[]);
             }
-            words.show(win, &[&a, &b, &c]);
+            if g.best_lap > 0.0 {
+                foot.push_str("BEST ");
+                text_hud::push_time(g.best_lap, &mut foot);
+            }
+            ui.foot(win, &foot);
         }
         Phase::Finished => {
-            a.push_str("FINISHED -- ");
+            header(g, &mut lap, &mut pos, &mut clock);
+            ui.header(win, [&lap, &pos, &clock]);
+            a.push_str("FINISHED ");
             text_hud::ordinal(g.player_position(), &mut a);
-            // The results table, as a table. The bars behind it stay: they
-            // show the gaps at a glance, and now each one has a name beside
-            // it saying which car it is.
+            // The results table, as a table: position, who, and the gap to
+            // the winner. The painted bars behind it show the spread at a
+            // glance; these say what the spread IS.
+            let winner_t = g
+                .order
+                .first()
+                .map(|&ci| g.cars[ci].finish_time)
+                .unwrap_or(0.0);
             let mut rows: Vec<String> = Vec::with_capacity(g.order.len());
             for (rank, &ci) in g.order.iter().enumerate() {
                 let mut row = String::new();
                 text_hud::ordinal(rank as u32 + 1, &mut row);
-                row.push_str(if ci == 0 { "  YOU" } else { "  RIVAL " });
-                if ci != 0 {
-                    text_hud::push_u32(ci as u32, &mut row);
+                row.push_str(if ci == 0 { "  YOU    " } else { "  RIVAL  " });
+                let gap = g.cars[ci].finish_time - winner_t;
+                if rank == 0 {
+                    text_hud::push_time(g.cars[ci].finish_time, &mut row);
+                } else if gap > 0.0 {
+                    row.push('+');
+                    text_hud::push_time(gap, &mut row);
                 }
                 rows.push(row);
             }
-            let mut lines: Vec<&str> = Vec::with_capacity(rows.len() + 2);
-            lines.push(&a);
-            for row in &rows {
-                lines.push(row);
+            let mut lines: Vec<(&str, bool)> = Vec::with_capacity(rows.len() + 1);
+            lines.push((&a, true));
+            for (i, row) in rows.iter().enumerate() {
+                lines.push((row.as_str(), i == 0));
             }
+            ui.centre(win, &lines);
             if sin_approx(g.phase_t * 3.0) > -0.1 {
-                b.push_str("Press ENTER to race again");
-                lines.push(&b);
+                foot.push_str("Press ENTER to race again");
             }
-            words.show(win, &lines);
+            ui.foot(win, &foot);
         }
     }
+}
+
+/// The three header readouts, each labelled.
+///
+/// Labelled because a bare number is a puzzle: "2" could be the lap, the
+/// position or the seconds. Two words cost nothing and remove the question.
+fn header(g: &Game, lap: &mut String, pos: &mut String, clock: &mut String) {
+    lap.push_str("LAP ");
+    text_hud::push_u32((g.cars[0].lap + 1).min(MAX_LAPS), lap);
+    lap.push_str(" / ");
+    text_hud::push_u32(MAX_LAPS, lap);
+
+    pos.push_str("POS ");
+    text_hud::push_u32(g.player_position(), pos);
+    pos.push_str(" / ");
+    text_hud::push_u32(FIELD as u32, pos);
+
+    clock.push_str("TIME ");
+    text_hud::push_time(g.race_t.max(0.0), clock);
 }
 
 // --------------------------------------------------------------------- misc
@@ -1135,7 +1162,7 @@ impl krate::Guest for Component {
         // The text layer, over the scene. Optional on purpose: if the host
         // refuses the nodes the race still runs with the polygon HUD, which is
         // how this game looked before there was an overlay to put text in.
-        let mut words = TextHud::new(win, ROOT_ID);
+        let mut words = Ui::new(win, ROOT_ID);
         if words.is_some() {
             say("drift: real text over the scene (overlay widget)");
         } else {

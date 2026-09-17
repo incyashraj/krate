@@ -133,12 +133,6 @@ impl Hud {
         }
     }
 
-    /// A colon, for a clock.
-    pub fn colon(&mut self, x: f32, y: f32, w: f32, h: f32) {
-        let t = w * 0.9;
-        self.rect(x, y + h * 0.25, t, t);
-        self.rect(x, y + h * 0.62, t, t);
-    }
 
     /// Turn the accumulated camera-space quads into world triangles.
     ///

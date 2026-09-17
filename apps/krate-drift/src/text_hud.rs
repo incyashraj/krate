@@ -1,103 +1,196 @@
-//! The text half of the HUD, sitting over the 3D scene in an Overlay.
+//! The 2D interface: a header bar, a centre message, and a panel.
 //!
-//! Until the `overlay` widget existed this file could not have been written.
-//! The only containers were flow containers: a canvas holding the scene and a
-//! canvas holding text were laid out one above the other and each got half the
-//! window, so a 3D app could have a scene or a HUD and not both. Every number
-//! this game showed was seven-segment digits welded out of triangles in
-//! `hud.rs`, and anything that needed a WORD -- "LAP", "FINISHED", the name of
-//! the car that won -- could not be said at all. `build_hud` stood a chequered
-//! band in for a title and a row of bars in for a results table.
+//! Until the `overlay` widget existed none of this could be written. The only
+//! containers were flow containers, so a canvas holding a scene and a canvas
+//! holding text were laid out one above the other and each got half the
+//! window. Every number this game showed was seven-segment digits welded out
+//! of triangles in `hud.rs`, and anything needing a WORD could not be said.
 //!
-//! An Overlay gives every child the whole container, so these labels sit on
-//! top of the running race at their own positions.
+//! The layout is three regions inside one Overlay, each sized so it hugs its
+//! own content rather than claiming the window:
 //!
-//! The polygon HUD stays. The speedometer, the speed bar and the big digits
-//! are drawn in the scene where they belong -- they move with the frame, they
-//! need no font, and they work identically on a machine with no GPU. Text is
-//! for what shapes cannot say.
+//!   HEADER   a Grid across the top -- lap, position, clock, in fixed places
+//!   CENTRE   big text in the middle, for the countdown and for results
+//!   FOOT     a line at the bottom, for prompts
+//!
+//! A Grid is a row that WRAPS, which is the only horizontal container in the
+//! widget set; Stack and its relatives are all columns. That is why the header
+//! is a Grid and not a Stack.
+//!
+//! The polygon HUD in `hud.rs` stays for what shapes do better than text: the
+//! speed bar, the countdown lights, the rev arc. They move with the frame,
+//! need no font, and work identically on a machine with no GPU.
 
 use alloc::string::String;
 use alloc::vec::Vec;
 
 use krate::ui::{tree, types};
 
-use crate::car::MAX_LAPS;
+/// Ids for the 2D layer. Well clear of the scene's 1 and 2.
+const HEADER_ID: u64 = 101;
+const CENTRE_ID: u64 = 102;
+const FOOT_ID: u64 = 103;
+/// Header cells, left to right.
+const HEADER_BASE: u64 = 110;
+const HEADER_CELLS: usize = 3;
+/// Centre lines, top to bottom.
+const CENTRE_BASE: u64 = 120;
+const CENTRE_LINES: usize = 8;
+const FOOT_LINE: u64 = 140;
 
-/// Ids for the text layer. Well clear of the scene's 1 and 2.
-pub const PANEL_ID: u64 = 100;
-const LINE_BASE: u64 = 101;
+/// How a piece of the interface is inked.
+///
+/// The outline is what makes any of this readable. This text sits over a 3D
+/// scene, so its background is whatever the camera is pointing at -- sky one
+/// moment, dark asphalt the next. The host's ordinary label colour measured
+/// 3.98:1 against the sky and 1.27:1 against the road, and the second is not
+/// readable. White in a dark outline is about 19:1 against its own outline
+/// wherever it is, and on the dark road where the outline washes out the white
+/// glyph is already high-contrast by itself (K-402).
+fn ink(size: f32, bold: bool) -> types::TextStyle {
+    types::TextStyle {
+        color: Some(types::Color {
+            r: 255,
+            g: 255,
+            b: 255,
+            a: 255,
+        }),
+        outline: Some(types::Color {
+            r: 8,
+            g: 10,
+            b: 16,
+            a: 240,
+        }),
+        outline_width: 2.0,
+        size: Some(size),
+        bold,
+    }
+}
 
-/// How many lines the panel can hold. Six: title, subtitle, and four result
-/// rows at most.
-const LINES: usize = 8;
+/// Ink for something that should read as a highlight rather than as a
+/// readout: the final lap warning, a winner's name.
+fn ink_warm(size: f32, bold: bool) -> types::TextStyle {
+    types::TextStyle {
+        color: Some(types::Color {
+            r: 255,
+            g: 214,
+            b: 108,
+            a: 255,
+        }),
+        ..ink(size, bold)
+    }
+}
 
-/// The text layer, which knows what it last said so it only talks to the host
+/// The 2D layer, which knows what it last said so it only talks to the host
 /// when something changed.
 ///
 /// A HUD updates sixty times a second and almost nothing on it changes between
-/// two frames. Sending eight unchanged labels every frame would put a tree
-/// round trip per line into the frame budget for no visible difference.
-pub struct TextHud {
+/// two frames. Sending every label every frame would put a tree round trip per
+/// label into the frame budget for no visible difference.
+pub struct Ui {
     shown: Vec<String>,
 }
 
-impl TextHud {
-    /// Build the panel and its lines, all initially empty.
-    ///
-    /// Every line is created up front rather than as needed: a node that
-    /// appears mid-race would relayout the panel, and an empty label occupies
-    /// no visible space anyway.
+/// Every text slot, in one flat list, so `shown` can be indexed by it.
+const SLOTS: usize = HEADER_CELLS + CENTRE_LINES + 1;
+
+impl Ui {
+    /// Build the whole tree once. Returns `None` if the host refuses any of
+    /// it, which leaves the game running on the polygon HUD alone.
     pub fn new(win: u64, parent: u64) -> Option<Self> {
-        tree::upsert_node(win, &panel_node(parent)).ok()?;
-        let mut shown = Vec::with_capacity(LINES);
-        for i in 0..LINES {
-            tree::upsert_node(win, &line_node(i, "")).ok()?;
+        tree::upsert_node(win, &region(HEADER_ID, parent, Region::Header)).ok()?;
+        tree::upsert_node(win, &region(CENTRE_ID, parent, Region::Centre)).ok()?;
+        tree::upsert_node(win, &region(FOOT_ID, parent, Region::Foot)).ok()?;
+
+        for i in 0..HEADER_CELLS {
+            tree::upsert_node(win, &header_cell(i, "")).ok()?;
+        }
+        for i in 0..CENTRE_LINES {
+            tree::upsert_node(win, &centre_line(i, "", false)).ok()?;
+        }
+        tree::upsert_node(win, &foot_line("")).ok()?;
+
+        let mut shown = Vec::with_capacity(SLOTS);
+        for _ in 0..SLOTS {
             shown.push(String::new());
         }
         Some(Self { shown })
     }
 
-    /// Set one line, skipping the host call when it already says this.
-    fn set(&mut self, win: u64, i: usize, text: &str) {
-        if i >= LINES || self.shown[i] == text {
+    fn set(&mut self, win: u64, slot: usize, text: &str, node: types::WidgetNode) {
+        if slot >= SLOTS || self.shown[slot] == text {
             return;
         }
-        if tree::upsert_node(win, &line_node(i, text)).is_ok() {
-            self.shown[i].clear();
-            self.shown[i].push_str(text);
+        if tree::upsert_node(win, &node).is_ok() {
+            self.shown[slot].clear();
+            self.shown[slot].push_str(text);
         }
     }
 
-    /// Write the whole panel for this frame.
-    ///
-    /// `lines` is what the panel should say, top to bottom. Anything past the
-    /// end is blanked, so a results screen does not leave the countdown's
-    /// words behind it.
-    pub fn show(&mut self, win: u64, lines: &[&str]) {
-        for i in 0..LINES {
-            self.set(win, i, lines.get(i).copied().unwrap_or(""));
+    /// The header bar: three cells across the top.
+    pub fn header(&mut self, win: u64, cells: [&str; HEADER_CELLS]) {
+        for (i, text) in cells.iter().enumerate() {
+            self.set(win, i, text, header_cell(i, text));
         }
+    }
+
+    /// The centre block. `warm` picks the highlight ink for that line.
+    pub fn centre(&mut self, win: u64, lines: &[(&str, bool)]) {
+        for i in 0..CENTRE_LINES {
+            let (text, warm) = lines.get(i).copied().unwrap_or(("", false));
+            self.set(win, HEADER_CELLS + i, text, centre_line(i, text, warm));
+        }
+    }
+
+    /// The prompt at the bottom.
+    pub fn foot(&mut self, win: u64, text: &str) {
+        self.set(win, HEADER_CELLS + CENTRE_LINES, text, foot_line(text));
     }
 }
 
-fn panel_node(parent: u64) -> types::WidgetNode {
+enum Region {
+    Header,
+    Centre,
+    Foot,
+}
+
+fn region(id: u64, parent: u64, which: Region) -> types::WidgetNode {
+    // Every region hugs its content: `grow: 0.0` and no height. A child of an
+    // Overlay is stretched to fill it otherwise, which would put the header's
+    // text in the middle of the road.
+    let (kind, padding) = match which {
+        // A Grid is the only horizontal container in the widget set -- Stack,
+        // Scroll, ListView, TreeView and Tabs are all columns.
+        Region::Header => (types::WidgetKind::Grid, 20.0),
+        Region::Centre => (types::WidgetKind::Stack, 150.0),
+        // The foot sits UNDER the centre block, not at the bottom of the
+        // window, and that is a runtime limit rather than a choice.
+        //
+        // Every child of an Overlay is pinned to the same cell, and the widget
+        // set has no alignment -- a region hugs its content or fills, and
+        // nothing says "put this at the bottom". Padding looked like the
+        // lever and is not: 790 pixels of it GREW the overlay, which stretched
+        // the scene canvas to 1604 pixels in a 900-pixel window. The scene
+        // rendered offset with a white band above it, and the placement dump
+        // is the only thing that said so -- on screen it looked like the
+        // canvas had failed.
+        //
+        // Filed as the alignment gap; until then the prompt lives below the
+        // centre text, which reads fine because that is where a prompt goes
+        // anyway.
+        Region::Foot => (types::WidgetKind::Stack, 320.0),
+    };
     types::WidgetNode {
-        id: PANEL_ID,
+        id,
         parent: Some(parent),
-        kind: types::WidgetKind::Stack,
+        kind,
         label: None,
         role: None,
-        // `grow: 0.0` and no height, so the panel hugs its lines instead of
-        // claiming the window. It is a child of an Overlay, which would
-        // otherwise stretch it over the whole scene and put the text in the
-        // middle of the road.
         style: types::Style {
             width: None,
             height: None,
             grow: 0.0,
-            padding: 18.0,
-            // The panel paints nothing itself; each line carries its own ink.
+            padding,
             text: None,
         },
         checked: None,
@@ -107,44 +200,12 @@ fn panel_node(parent: u64) -> types::WidgetNode {
     }
 }
 
-/// How a HUD line is inked: white, in a near-black outline, large.
-///
-/// The outline is doing the real work. This text sits over a 3D scene, so its
-/// background is whatever the camera is pointing at -- sky one moment, dark
-/// asphalt the next. The host's ordinary label colour measured 3.98:1 against
-/// the sky and 1.27:1 against the road, and the second of those is not
-/// readable. White in a dark outline reads at about 19:1 against its own
-/// outline wherever it is, and on the dark road where the outline itself
-/// disappears the white glyph is already high-contrast by itself.
-fn hud_text_style(size: f32, bold: bool) -> types::TextStyle {
-    types::TextStyle {
-        color: Some(types::Color {
-            r: 255,
-            g: 255,
-            b: 255,
-            a: 255,
-        }),
-        outline: Some(types::Color {
-            r: 10,
-            g: 12,
-            b: 18,
-            a: 235,
-        }),
-        outline_width: 2.0,
-        size: Some(size),
-        bold,
-    }
-}
-
-fn line_node(index: usize, text: &str) -> types::WidgetNode {
+fn text_node(id: u64, parent: u64, text: &str, style: types::TextStyle) -> types::WidgetNode {
     let mut label = String::new();
     label.push_str(text);
-    // The first line is the headline -- the lap, the title, the result -- and
-    // is read at a glance at speed; the rest are read when there is a moment.
-    let (size, bold) = if index == 0 { (30.0, true) } else { (20.0, false) };
     types::WidgetNode {
-        id: LINE_BASE + index as u64,
-        parent: Some(PANEL_ID),
+        id,
+        parent: Some(parent),
         kind: types::WidgetKind::Text,
         label: Some(label),
         role: Some(pure("text")),
@@ -153,13 +214,71 @@ fn line_node(index: usize, text: &str) -> types::WidgetNode {
             height: None,
             grow: 0.0,
             padding: 0.0,
-            text: Some(hud_text_style(size, bold)),
+            text: Some(style),
         },
         checked: None,
         value: None,
         selected: None,
         text_cursor: None,
     }
+}
+
+fn header_cell(index: usize, text: &str) -> types::WidgetNode {
+    types::WidgetNode {
+        style: types::Style {
+            // Fixed width per cell, so LAP / POSITION / TIME stay in the same
+            // places as their values change. Without it the cells shuffle
+            // sideways every time a digit is added, which is the single most
+            // distracting thing a readout can do.
+            width: Some(300.0),
+            ..header_style()
+        },
+        ..text_node(
+            HEADER_BASE + index as u64,
+            HEADER_ID,
+            text,
+            ink(26.0, true),
+        )
+    }
+}
+
+fn header_style() -> types::Style {
+    types::Style {
+        width: None,
+        // A height as well as a width.
+        //
+        // Without one the Grid stretched every cell to 860 pixels -- the whole
+        // window less its padding -- because a flex row makes its children
+        // fill the cross axis by default. The text still drew at the top of
+        // that box, so it LOOKED right while every cell was quietly claiming
+        // the screen and swallowing anything behind it.
+        height: Some(34.0),
+        grow: 0.0,
+        padding: 0.0,
+        text: Some(ink(26.0, true)),
+    }
+}
+
+fn centre_line(index: usize, text: &str, warm: bool) -> types::WidgetNode {
+    // The first centre line is the headline -- the countdown number, the
+    // result -- and is read at a glance; the rest are read when there is a
+    // moment.
+    let style = if index == 0 {
+        if warm {
+            ink_warm(64.0, true)
+        } else {
+            ink(64.0, true)
+        }
+    } else if warm {
+        ink_warm(26.0, false)
+    } else {
+        ink(26.0, false)
+    };
+    text_node(CENTRE_BASE + index as u64, CENTRE_ID, text, style)
+}
+
+fn foot_line(text: &str) -> types::WidgetNode {
+    text_node(FOOT_LINE, FOOT_ID, text, ink(24.0, false))
 }
 
 fn pure(s: &str) -> String {
@@ -170,39 +289,16 @@ fn pure(s: &str) -> String {
 
 /// The ordinal a finishing position is announced with: 1st, 2nd, 3rd, 4th.
 ///
-/// Small and hand-written because a `#![no_std]` guest has no `format!` for
-/// this shape and the field is six cars, so the exceptional teens never come
-/// up.
+/// Hand-written because a `#![no_std]` guest has no `format!` for this shape,
+/// and the field is six cars so the exceptional teens never come up.
 pub fn ordinal(pos: u32, out: &mut String) {
-    let mut digits = [0u8; 3];
-    let mut n = pos.max(1);
-    let mut len = 0;
-    while n > 0 && len < 3 {
-        digits[len] = b'0' + (n % 10) as u8;
-        n /= 10;
-        len += 1;
-    }
-    for i in (0..len).rev() {
-        out.push(digits[i] as char);
-    }
+    push_u32(pos.max(1), out);
     out.push_str(match pos {
         1 => "st",
         2 => "nd",
         3 => "rd",
         _ => "th",
     });
-}
-
-/// "LAP 2 OF 3", spelled out.
-///
-/// The polygon HUD shows this as two numbers with a leaning slash between
-/// them, which it has to: it has no letters. That slash was read as the digit
-/// 1 until it was tilted. Words do not have that problem.
-pub fn lap_line(lap: u32, out: &mut String) {
-    out.push_str("LAP ");
-    push_u32(lap.min(MAX_LAPS), out);
-    out.push_str(" OF ");
-    push_u32(MAX_LAPS, out);
 }
 
 pub fn push_u32(mut v: u32, out: &mut String) {
@@ -219,4 +315,28 @@ pub fn push_u32(mut v: u32, out: &mut String) {
     for i in (0..len).rev() {
         out.push(digits[i] as char);
     }
+}
+
+/// `m:ss.t` -- the way a lap time is read.
+///
+/// Tenths, not hundredths: a driver reads a lap time at a glance and the
+/// hundredths column changes too fast to be read at all while racing. The
+/// results screen is where hundredths belong.
+pub fn push_time(seconds: f32, out: &mut String) {
+    let t = if seconds.is_finite() && seconds > 0.0 {
+        seconds
+    } else {
+        0.0
+    };
+    let mins = (t / 60.0) as u32;
+    let secs = (t as u32) % 60;
+    let tenths = ((t * 10.0) as u32) % 10;
+    push_u32(mins, out);
+    out.push(':');
+    if secs < 10 {
+        out.push('0');
+    }
+    push_u32(secs, out);
+    out.push('.');
+    push_u32(tenths, out);
 }
