@@ -1087,7 +1087,19 @@ impl krate::Guest for Component {
                 // difference between them describes the form. A single white
                 // light leaves the shaded side simply darker, which describes
                 // nothing.
-                fill_direction: alloc::vec![0.38, 0.62, 0.68],
+                // Derived from the sun, not hardcoded.
+                //
+                // This was a fixed vector chosen when the sun was at bearing
+                // 0.62. Moving the sun to 0.12 left the fill pointing roughly
+                // AT it, so instead of opposing the key light it doubled up
+                // on the same side -- which is what blew the left of the frame
+                // out to a white smear. A fill light has one job, to come from
+                // the other side, so it has to be computed from wherever the
+                // key is.
+                fill_direction: {
+                    let a = SUN_BEARING * core::f32::consts::TAU;
+                    alloc::vec![cos_approx(a), 0.62, sin_approx(a)]
+                },
                 fill_color: rgb(0.24, 0.30, 0.56),
                 // Around the car rather than the whole circuit: at 120 units
                 // the map's texels are about 12 cm, which holds an edge at the
@@ -1098,7 +1110,9 @@ impl krate::Guest for Component {
                 // a car keeps its shape instead of becoming a white patch.
                 // A touch over 1: the sun is low and the lit faces should
                 // bloom slightly past white rather than clip flat.
-                exposure: 1.25,
+                // Back to 1.1. At 1.25 the sunlit ground near the glow rolled
+                // straight past white and took the detail with it.
+                exposure: 1.1,
             },
         )
         .is_ok();

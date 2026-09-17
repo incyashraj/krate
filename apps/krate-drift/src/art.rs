@@ -379,7 +379,10 @@ pub fn sky(sun_u: f32) -> Texture {
             } else if du < -0.5 {
                 du += 1.0;
             }
-            let across = 1.0 - (du.abs() / 0.30).min(1.0);
+            // Tighter than 0.30. A glow spread a third of the way round the
+            // compass is not a sun, it is a wash over half the sky, and it
+            // took the horizon's colour with it.
+            let across = 1.0 - (du.abs() / 0.17).min(1.0);
             let up = 1.0 - (v / 0.34).min(1.0);
             let glow = across * across * up * up;
 
