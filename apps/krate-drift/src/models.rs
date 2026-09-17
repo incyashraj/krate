@@ -513,3 +513,59 @@ pub fn car_lights() -> (Build, Build) {
     }
     (front, rear)
 }
+
+/// A boulder: a lumpy eight-sided lozenge.
+///
+/// Scattered across the open field, which was the emptiest part of the frame
+/// -- a flat green plane with the texture's own square tiles showing through
+/// it. What fixes that is not a better grass texture but OBJECTS: a field
+/// reads as ground when things are sitting on it, and as a painted surface
+/// when nothing is.
+///
+/// Deliberately irregular. A symmetrical rock is a gem; the lumps come from
+/// pushing each ring vertex out by a hash of its own index, which costs
+/// nothing and is the whole difference between a rock and a die.
+pub fn boulder(seed: i32) -> Build {
+    let mut m = Build::new();
+    const SEG: usize = 8;
+    const RINGS: usize = 3;
+    let jitter = |i: usize, r: usize| -> f32 {
+        let h = crate::mathx::hash2(seed + i as i32 * 13, r as i32 * 7);
+        0.72 + h * 0.56
+    };
+
+    // Rings from the base up, narrowing, with a cap.
+    let mut prev: Option<[[f32; 3]; SEG]> = None;
+    for r in 0..RINGS {
+        let t = r as f32 / (RINGS - 1) as f32;
+        let y = t * 0.9;
+        let radius = (1.0 - t * t * 0.7) * 0.85;
+        let mut ring = [[0.0f32; 3]; SEG];
+        for (i, slot) in ring.iter_mut().enumerate() {
+            let a = (i as f32 / SEG as f32) * core::f32::consts::TAU;
+            let rr = radius * jitter(i, r);
+            *slot = [cos_approx(a) * rr, y, sin_approx(a) * rr];
+        }
+        if let Some(below) = prev {
+            for i in 0..SEG {
+                let j = (i + 1) % SEG;
+                // Wound the same way round as the conifer's cone, which is
+                // the one in this file known to render. The obvious order --
+                // below[i], ring[i], ring[j], below[j] -- is BACKWARDS, so
+                // every face was culled and 1,477 boulders drew nothing at
+                // all. Tinting them magenta and counting the pixels is what
+                // proved it: zero, not "a few too small to see", which is what
+                // it looked like.
+                m.quad(below[j], ring[j], ring[i], below[i]);
+            }
+        }
+        prev = Some(ring);
+    }
+    if let Some(top) = prev {
+        for i in 0..SEG {
+            let j = (i + 1) % SEG;
+            m.tri(top[j], [0.0, 1.05, 0.0], top[i]);
+        }
+    }
+    m
+}

@@ -704,6 +704,69 @@ fn draw(
         calls += 1;
     }
 
+    // Boulders and tufts scattered across the open field.
+    //
+    // The field was the emptiest part of the frame: a flat green plane with
+    // the grass texture's own square tiles showing through. What fixes that is
+    // not a better texture but OBJECTS -- ground reads as ground when things
+    // sit on it, and as a painted surface when nothing does.
+    //
+    // Placed on a coarse lattice with a per-cell hash, not per node: the track
+    // is a ring, so node-relative placement leaves the middle of the map bare.
+    // A lattice covers the whole field, and hashing the cell decides whether
+    // anything is there at all, which is what keeps it scattered rather than
+    // gridded.
+    // A 24-unit lattice, not 62.
+    //
+    // The first version skipped 45% of a 62-unit grid, which put a boulder
+    // every hundred metres or so -- two were visible in the whole frame and
+    // the near field was as empty as before. Detail has to be DENSE enough to
+    // be seen at the distance it is meant to fill, and the near field is most
+    // of the screen.
+    let rock_tint = rgb(0.34, 0.32, 0.30);
+    // 55 * 55, written as a plain constant.
+    //
+    // `0..(55 * 55)usize` does not parse -- the compiler reads it as a struct
+    // literal and the whole loop is a syntax error. The edit that introduced
+    // it silently failed to apply for several passes, so every "successful"
+    // build was building the OLD code, and every screenshot showed a field
+    // with no boulders because there was no loop. That is why tuning the size
+    // and the density changed nothing.
+    const ROCK_CELLS: usize = 55 * 55;
+    for cell in 0..ROCK_CELLS {
+        let cx = (cell % 55) as i32 - 27;
+        let cz = (cell / 55) as i32 - 27;
+        let h = hash2(cx * 37, cz * 53);
+        if h < 0.38 {
+            continue;
+        }
+        let x = cx as f32 * 24.0 + (hash2(cx, cz + 11) - 0.5) * 18.0;
+        let z = cz as f32 * 24.0 + (hash2(cx + 7, cz) - 0.5) * 18.0;
+        // Never on the racing line: the track is a ring at about 300 units,
+        // so anything within 26 of that radius is skipped -- wide enough to
+        // clear the road, the kerb and the run-off.
+        let r = mathx::sqrt_approx(x * x + z * z);
+        // 55 units, not 26. The clearance has to cover the road, both kerbs,
+        // the guard rails AND the biggest boulder's own radius -- at 26 one
+        // was sitting in the middle of the racing line.
+        if mathx::abs(r - 300.0) < 55.0 {
+            continue;
+        }
+        // Rock-sized, not house-sized. At 1.6-5.0 they were boulders the
+        // size of the cars, which reads as a landslide rather than as ground
+        // detail. Detail should furnish a field, not compete with the race.
+        let scale = 0.5 + hash2(cx + 3, cz + 5) * 1.1;
+        scene3d::place(
+            scene,
+            &meshes.rock.verts,
+            &[x, ground_height(x, z) - 0.2, z],
+            &[0.0, hash2(cx, cz + 1) * 360.0, 0.0],
+            scale,
+            rock_tint,
+        )?;
+        calls += 1;
+    }
+
     // Guard rails down both sides, every few nodes.
     //
     // This is the cheapest thing in the scene and it does the most for SPEED.
@@ -911,6 +974,8 @@ struct Meshes {
     /// Headlights and tail lights, drawn unlit so they glow.
     head: Mesh,
     tail: Mesh,
+    /// A boulder, scattered across the open field.
+    rock: Mesh,
 }
 
 /// Uploaded texture handles.
@@ -1542,6 +1607,9 @@ impl krate::Guest for Component {
             },
             glass: Mesh {
                 verts: models::car_glass().verts,
+            },
+            rock: Mesh {
+                verts: models::boulder(5).verts,
             },
             head: Mesh { verts: head_verts },
             tail: Mesh { verts: tail_verts },
