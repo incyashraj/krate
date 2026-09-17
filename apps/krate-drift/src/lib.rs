@@ -37,6 +37,7 @@ mod art;
 mod car;
 mod hud;
 mod mathx;
+mod text_hud;
 mod track;
 
 use alloc::string::String;
@@ -50,6 +51,7 @@ use krate::ui::{events, tree, types, window};
 use car::{drive_ai, Car, MAX_LAPS};
 use hud::Hud;
 use mathx::{abs, cos_approx, hash2, sin_approx};
+use text_hud::TextHud;
 use track::{ground_height, Track, ROAD_HALF};
 
 const ROOT_ID: u64 = 1;
@@ -739,6 +741,78 @@ fn build_hud(g: &Game, hud: &mut Hud) {
     }
 }
 
+/// What the text layer says this frame.
+///
+/// Everything here is a WORD, and everything the polygon HUD already shows
+/// well -- speed, the clock, the rev bar -- is left to it. Text earns its
+/// place where a shape was standing in for language: the title, the state of
+/// the race, and the results table that used to be a row of bars whose only
+/// meaning was that longer came first.
+fn build_text(g: &Game, win: u64, words: &mut TextHud) {
+    let mut a = String::new();
+    let mut b = String::new();
+    let mut c = String::new();
+
+    match g.phase {
+        Phase::Attract => {
+            a.push_str("DRIFT");
+            b.push_str("Three laps. Five rivals.");
+            // Blink the prompt on the same pulse the polygon bar uses, so the
+            // word and the shape under it agree.
+            if sin_approx(g.phase_t * 3.0) > -0.1 {
+                c.push_str("Press ENTER to race");
+            }
+            words.show(win, &[&a, &b, &c]);
+        }
+        Phase::Countdown => {
+            a.push_str("GET READY");
+            text_hud::lap_line(1, &mut b);
+            words.show(win, &[&a, &b]);
+        }
+        Phase::Racing => {
+            text_hud::lap_line(g.cars[0].lap + 1, &mut a);
+            b.push_str("POSITION ");
+            text_hud::ordinal(g.player_position(), &mut b);
+            b.push_str(" of ");
+            text_hud::push_u32(FIELD as u32, &mut b);
+            // The last lap is worth saying out loud; it is the one piece of
+            // race state a driver acts on and the seven-segment counter
+            // cannot emphasise.
+            if g.cars[0].lap + 1 >= MAX_LAPS {
+                c.push_str("FINAL LAP");
+            }
+            words.show(win, &[&a, &b, &c]);
+        }
+        Phase::Finished => {
+            a.push_str("FINISHED -- ");
+            text_hud::ordinal(g.player_position(), &mut a);
+            // The results table, as a table. The bars behind it stay: they
+            // show the gaps at a glance, and now each one has a name beside
+            // it saying which car it is.
+            let mut rows: Vec<String> = Vec::with_capacity(g.order.len());
+            for (rank, &ci) in g.order.iter().enumerate() {
+                let mut row = String::new();
+                text_hud::ordinal(rank as u32 + 1, &mut row);
+                row.push_str(if ci == 0 { "  YOU" } else { "  RIVAL " });
+                if ci != 0 {
+                    text_hud::push_u32(ci as u32, &mut row);
+                }
+                rows.push(row);
+            }
+            let mut lines: Vec<&str> = Vec::with_capacity(rows.len() + 2);
+            lines.push(&a);
+            for row in &rows {
+                lines.push(row);
+            }
+            if sin_approx(g.phase_t * 3.0) > -0.1 {
+                b.push_str("Press ENTER to race again");
+                lines.push(&b);
+            }
+            words.show(win, &lines);
+        }
+    }
+}
+
 // --------------------------------------------------------------------- misc
 
 fn u64_str(v: u64) -> String {
@@ -849,7 +923,15 @@ impl krate::Guest for Component {
         }
         // The root MUST go through set_root; upsert_node on the root fails
         // silently and the app exits with nothing on stdout (K-392).
-        if tree::set_root(win, &node(ROOT_ID, None, types::WidgetKind::Stack)).is_err() {
+        // The root is an OVERLAY, not a Stack.
+        //
+        // A Stack gives each child a share of the window, so the scene canvas
+        // and the text panel each got half of it -- the race squashed into the
+        // top and the words floating over empty space below. An Overlay gives
+        // every child the whole window, which is what puts the text ON the
+        // race. That widget is why this file can show a word at all; before it
+        // every number here was digits welded out of triangles.
+        if tree::set_root(win, &node(ROOT_ID, None, types::WidgetKind::Overlay)).is_err() {
             return fail(b"set_root");
         }
         if tree::upsert_node(
@@ -864,6 +946,15 @@ impl krate::Guest for Component {
             Ok(s) => s,
             Err(_) => return fail(b"scene3d::bind"),
         };
+        // The text layer, over the scene. Optional on purpose: if the host
+        // refuses the nodes the race still runs with the polygon HUD, which is
+        // how this game looked before there was an overlay to put text in.
+        let mut words = TextHud::new(win, ROOT_ID);
+        if words.is_some() {
+            say("drift: real text over the scene (overlay widget)");
+        } else {
+            say("drift: no text layer; the polygon HUD is on its own");
+        }
         let _ = scene3d::cull_back_faces(scene, true);
 
         // Ask for everything beyond one flat light. Refused on a machine with
@@ -1316,6 +1407,9 @@ impl krate::Guest for Component {
 
             // ---- draw
             build_hud(&g, &mut hud);
+            if let Some(w) = words.as_mut() {
+                build_text(&g, win, w);
+            }
             let p0 = clock::monotonic_nanos();
             let visible = props.len();
             if draw(scene, &g, &track, &meshes, &art, &props, &mut hud, visible).is_err() {
