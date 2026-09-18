@@ -41,6 +41,18 @@
 //! Everything is generated in-process from a seed, so the numbers are about
 //! computation and never about the disk.
 //!
+//! The same probe found the MEMORY ceiling by holding three equal strings and
+//! growing them, under the default 256 MB limit:
+//!
+//!     3 x 30 MB =  90 MB live -> OK
+//!     3 x 40 MB = 120 MB live -> TRAP
+//!
+//! So an app gets 90-120 MB of live data out of a nominal 256, because a
+//! doubling `String` holds the old buffer and the new one at once. And the
+//! overrun TRAPS rather than returning an error, because a no_std guest
+//! allocates infallibly -- `handle_alloc_error` aborts and there is no
+//! unwinding (K-416).
+//!
 //! `#![no_std]`: fixed-size state where it matters, hand-rolled formatting, no
 //! `format!` and no panicking index.
 
@@ -219,6 +231,38 @@ fn hash(bytes: &[u8]) -> u32 {
         h = h.wrapping_mul(0x0100_0193);
     }
     h
+}
+
+/// Ask for far more than the budget, and SURVIVE it.
+///
+/// This is the half of the memory story the trap hides. Growing a `String`
+/// past the budget calls `handle_alloc_error` and aborts; asking first returns
+/// `None` and the app keeps running. Reported rather than drawn, because the
+/// point is that the next line of output happens at all.
+fn memory_probe() {
+    // Far past any plausible budget, so this is the refusal path every time.
+    //
+    // 2 GB, not 8: `usize` is 32 bits on wasm32, so 8 GB does not even fit in
+    // the type -- the address space is the first ceiling, before any budget.
+    const HUGE: usize = 2 * 1024 * 1024 * 1024;
+    let mut line = String::new();
+    line.push_str("workload: asked for 2 GB -> ");
+    if krate::mem::have_room_for(HUGE) {
+        line.push_str("granted (this machine gave the guest a very large budget)");
+    } else {
+        line.push_str("refused, and the app is still running");
+    }
+    say(&line);
+
+    // And a size that does fit, so the check is not merely always-false.
+    let mut ok = String::new();
+    ok.push_str("workload: asked for 1 MB -> ");
+    if krate::mem::have_room_for(1024 * 1024) {
+        ok.push_str("granted");
+    } else {
+        ok.push_str("refused");
+    }
+    say(&ok);
 }
 
 fn measure() -> ([Band; 5], u32) {
@@ -446,6 +490,7 @@ impl krate::Guest for Component {
             // any of the measured work as dead.
             say("workload: impossible guard");
         }
+        memory_probe();
         report(&bands);
         draw(canvas, &bands);
 

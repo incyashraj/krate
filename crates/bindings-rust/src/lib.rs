@@ -320,11 +320,80 @@ pub mod motion {
     }
 }
 
+/// Allocating a lot without dying when there is not room.
+///
+/// An app gets a fixed memory budget -- 256 MB by default -- and running past
+/// it is fatal in a way most Rust is not used to. `Vec::with_capacity`,
+/// `String::push_str` and friends allocate INFALLIBLY: when the host refuses
+/// the growth they call `handle_alloc_error`, which aborts. A `#![no_std]`
+/// guest has no unwinding, so there is nothing to catch. The window simply
+/// goes away, and the app never gets to say "that file is too big for the
+/// memory I was given", offer to work at a smaller size, or save what the
+/// person had already done.
+///
+/// Measured: three live strings under the default limit reach 90 MB and trap
+/// at 120 MB -- about a third of the nominal 256, because a doubling buffer
+/// holds the old copy and the new one at the same moment (K-416).
+///
+/// So for anything big, ask first. These return `None` instead of dying.
+pub mod mem {
+    use alloc::string::String;
+    use alloc::vec::Vec;
+
+    /// A `Vec` with room for `capacity` items, or `None` when the budget
+    /// cannot cover it.
+    ///
+    /// Use this wherever the size comes from OUTSIDE the app -- a file's
+    /// length, a pixel count, a row count -- because that is exactly where a
+    /// number too large for the budget comes from.
+    pub fn try_vec<T>(capacity: usize) -> Option<Vec<T>> {
+        let mut v = Vec::new();
+        v.try_reserve_exact(capacity).ok()?;
+        Some(v)
+    }
+
+    /// A `String` with room for `capacity` bytes, or `None`.
+    pub fn try_string(capacity: usize) -> Option<String> {
+        let mut s = String::new();
+        s.try_reserve_exact(capacity).ok()?;
+        Some(s)
+    }
+
+    /// Grow `v` by `additional` items, answering whether there was room.
+    ///
+    /// `false` means nothing was allocated and the vector is untouched, so an
+    /// app can stop cleanly, keep what it already has, and tell the person.
+    #[must_use]
+    pub fn try_grow<T>(v: &mut Vec<T>, additional: usize) -> bool {
+        v.try_reserve(additional).is_ok()
+    }
+
+    /// Grow `s` by `additional` bytes, answering whether there was room.
+    #[must_use]
+    pub fn try_grow_string(s: &mut String, additional: usize) -> bool {
+        s.try_reserve(additional).is_ok()
+    }
+
+    /// Whether a buffer of `bytes` can be allocated right now.
+    ///
+    /// Allocates and frees, so the answer is the real one rather than a guess
+    /// from a remembered budget. Use it to decide BEFORE starting work a
+    /// failure would have to unwind -- opening a photo, loading a document --
+    /// rather than discovering it halfway through.
+    ///
+    /// Racy in principle and not in practice: a guest is single threaded, so
+    /// nothing else allocates between the question and the answer.
+    pub fn have_room_for(bytes: usize) -> bool {
+        try_vec::<u8>(bytes).is_some()
+    }
+}
+
 pub mod prelude {
     pub use crate::export;
     pub use crate::fs::{self, FileExt, OpenMode};
     pub use crate::io::{self, streams::OutputStreamExt, Guest};
     pub use crate::locale;
+    pub use crate::mem;
     pub use crate::motion::{ease_in_out, ease_out, smoothstep, Spring};
     pub use crate::net;
     pub use crate::time;
@@ -1194,6 +1263,44 @@ mod tests {
         );
 
         assert_eq!(io::args::first_raw("one\nthree\n"), Some("one"));
+    }
+}
+
+#[cfg(test)]
+mod mem_tests {
+    use super::mem;
+
+    #[test]
+    fn asking_for_more_than_exists_answers_rather_than_dying() {
+        // The whole point: an allocation too large must come back as `None`,
+        // not take the process with it. On the host this is a normal
+        // allocation failure; in a guest it is the memory budget refusing
+        // (K-416). Either way the caller must still be running to read the
+        // answer.
+        //
+        // usize::MAX / 2 is past any real machine and still a valid usize, so
+        // this exercises the refusal without relying on a particular budget.
+        let huge = usize::MAX / 2;
+        assert!(mem::try_vec::<u8>(huge).is_none());
+        assert!(mem::try_string(huge).is_none());
+        assert!(!mem::have_room_for(huge));
+
+        let mut v: alloc::vec::Vec<u8> = alloc::vec::Vec::new();
+        assert!(!mem::try_grow(&mut v, huge));
+        assert!(v.is_empty(), "a refused growth must not disturb the vector");
+    }
+
+    #[test]
+    fn an_ordinary_request_still_succeeds() {
+        // The other half: a check that always says no is useless, and would
+        // pass the test above on its own.
+        let v = mem::try_vec::<u8>(1024).expect("1 KB must be available");
+        assert!(v.capacity() >= 1024);
+        assert!(mem::have_room_for(1024 * 1024));
+
+        let mut grown: alloc::vec::Vec<u32> = alloc::vec::Vec::new();
+        assert!(mem::try_grow(&mut grown, 256));
+        assert!(grown.capacity() >= 256);
     }
 }
 
