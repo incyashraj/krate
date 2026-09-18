@@ -218,6 +218,52 @@ impl Texture {
     }
 }
 
+/// One corner of a clipped triangle, and where it came from.
+///
+/// A clipped corner is a blend of two ORIGINAL corners, so a caller carrying
+/// per-vertex data (a UV, a normal) can reproduce the same blend rather than
+/// guessing. An original corner is the degenerate case with weight 1.
+#[derive(Clone, Copy)]
+struct ClipVertex {
+    point: Vec3,
+    /// Index of the first source corner, 0..3.
+    from: usize,
+    /// Index of the second source corner; equal to `from` for an original.
+    to: usize,
+    /// How far along `from`..`to` this corner sits.
+    t: f32,
+}
+
+impl ClipVertex {
+    fn original(point: Vec3, at: usize) -> Self {
+        Self {
+            point,
+            from: at,
+            to: at,
+            t: 0.0,
+        }
+    }
+
+    fn lerp(point: Vec3, from: usize, to: usize, t: f32) -> Self {
+        Self { point, from, to, t }
+    }
+
+    /// Blend one scalar the same way this corner was blended.
+    fn blend(&self, values: [f32; 3]) -> f32 {
+        values[self.from] + (values[self.to] - values[self.from]) * self.t
+    }
+}
+
+/// What clipping a triangle against the near plane produced.
+enum ClipResult {
+    /// Wholly in front: draw it unchanged.
+    Whole,
+    /// Wholly behind: draw nothing.
+    Gone,
+    One([ClipVertex; 3]),
+    Two([ClipVertex; 3], [ClipVertex; 3]),
+}
+
 impl Scene {
     pub fn new(width: u32, height: u32) -> Result<Self, UiAdapterError> {
         if width == 0 || height == 0 || width > MAX_EDGE || height > MAX_EDGE {
@@ -336,6 +382,123 @@ impl Scene {
     ///
     /// Barycentric coverage over the triangle's bounding box: simple, exact at
     /// edges, and fast enough that the bound is pixels rather than cleverness.
+    /// How far in front of the eye a point must be to project.
+    ///
+    /// Matched to `project`'s own test, because the clipper's job is to
+    /// produce triangles that projection will accept. A clip plane at a
+    /// different depth from the projection's rejection leaves a sliver that
+    /// is clipped IN and then dropped anyway, which looks like the clipper
+    /// not working.
+    /// Slightly IN FRONT of `project`'s own rejection, not equal to it.
+    ///
+    /// `project` drops a point at `camera_z <= 0.01`. Clipping to exactly
+    /// that depth puts the new corners precisely on the boundary, where
+    /// floating point lands either side of it -- so the clipper produced
+    /// correct triangles and projection then rejected them, and the frame was
+    /// as empty as before. The symptom is identical to not clipping at all,
+    /// which is what made it look like the clipper was not running.
+    ///
+    /// A hair further out leaves the new corners safely projectable.
+    const NEAR: f32 = 0.05;
+
+    /// Signed distance in front of the near plane: positive is visible.
+    fn near_depth(&self, p: Vec3) -> f32 {
+        let forward = self.look_at.sub(self.eye).normalized();
+        p.sub(self.eye).dot(forward) - Self::NEAR
+    }
+
+    /// Clip a triangle against the near plane, in WORLD space.
+    ///
+    /// A triangle with any corner behind the eye used to be dropped whole, so
+    /// a large ground quad straddling the camera vanished entirely -- which
+    /// reads as a winding or orientation bug, not as clipping (K-397). It is
+    /// workable for a finely tessellated mesh, which loses only the few faces
+    /// crossing the eye, and wrong for the one big ground plane that is
+    /// exactly what a first 3D app reaches for.
+    ///
+    /// Sutherland-Hodgman against a single plane: a triangle with one corner
+    /// in front becomes one triangle, two corners in front becomes a quad,
+    /// emitted as two. Clipping in world space rather than after projection
+    /// means every drawing path gets it by calling this once, and means the
+    /// interpolants (a UV, a normal) travel with the same weights.
+    ///
+    /// Returns up to two triangles and the barycentric weights of each new
+    /// corner, so a caller carrying per-vertex data can interpolate it the
+    /// same way.
+    fn clip_near(&self, a: Vec3, b: Vec3, c: Vec3) -> ClipResult {
+        let (da, db, dc) = (self.near_depth(a), self.near_depth(b), self.near_depth(c));
+        let inside = |d: f32| d > 0.0;
+        let count = inside(da) as u8 + inside(db) as u8 + inside(dc) as u8;
+
+        // Wholly in front, or wholly behind: no work and no allocation.
+        if count == 3 {
+            return ClipResult::Whole;
+        }
+        if count == 0 {
+            return ClipResult::Gone;
+        }
+
+        // Order the corners so the odd one out is first. `w` carries which
+        // original corner each is, so a caller can rebuild its own
+        // per-vertex data.
+        let (p0, p1, p2, d0, d1, d2, w0, w1, w2) = if count == 1 {
+            if inside(da) {
+                (a, b, c, da, db, dc, 0, 1, 2)
+            } else if inside(db) {
+                (b, c, a, db, dc, da, 1, 2, 0)
+            } else {
+                (c, a, b, dc, da, db, 2, 0, 1)
+            }
+        } else if !inside(da) {
+            (a, b, c, da, db, dc, 0, 1, 2)
+        } else if !inside(db) {
+            (b, c, a, db, dc, da, 1, 2, 0)
+        } else {
+            (c, a, b, dc, da, db, 2, 0, 1)
+        };
+
+        // Where the edge from `from` to `to` crosses the plane.
+        let cut = |from: Vec3, to: Vec3, d_from: f32, d_to: f32| -> (Vec3, f32) {
+            let t = d_from / (d_from - d_to);
+            (
+                Vec3::new(
+                    from.x + (to.x - from.x) * t,
+                    from.y + (to.y - from.y) * t,
+                    from.z + (to.z - from.z) * t,
+                ),
+                t,
+            )
+        };
+
+        if count == 1 {
+            // p0 is in front; both edges leaving it are cut.
+            let (q1, t1) = cut(p0, p1, d0, d1);
+            let (q2, t2) = cut(p0, p2, d0, d2);
+            ClipResult::One([
+                ClipVertex::original(p0, w0),
+                ClipVertex::lerp(q1, w0, w1, t1),
+                ClipVertex::lerp(q2, w0, w2, t2),
+            ])
+        } else {
+            // p0 is BEHIND; p1 and p2 are in front. The visible part is a
+            // quad, emitted as two triangles sharing the p1-p2 edge.
+            let (q1, t1) = cut(p0, p1, d0, d1);
+            let (q2, t2) = cut(p0, p2, d0, d2);
+            ClipResult::Two(
+                [
+                    ClipVertex::lerp(q1, w0, w1, t1),
+                    ClipVertex::original(p1, w1),
+                    ClipVertex::original(p2, w2),
+                ],
+                [
+                    ClipVertex::lerp(q1, w0, w1, t1),
+                    ClipVertex::original(p2, w2),
+                    ClipVertex::lerp(q2, w0, w2, t2),
+                ],
+            )
+        }
+    }
+
     fn triangle(&mut self, a: Vec3, b: Vec3, c: Vec3, tint: (f32, f32, f32, f32)) {
         // Lambertian shading from the face normal, with ambient so a surface
         // facing away is dim rather than black -- a solid black facet reads as
@@ -351,6 +514,31 @@ impl Scene {
         let facing = normal.dot(self.light).abs();
         let shade = 0.35 + 0.65 * facing;
 
+        // Clip against the near plane rather than dropping the face.
+        //
+        // A triangle with any corner behind the eye used to vanish whole, so
+        // one big ground quad straddling the camera drew nothing at all
+        // (K-397). `shade` is computed above from the ORIGINAL corners, which
+        // is right: clipping changes what is visible, not which way the
+        // surface faces.
+        match self.clip_near(a, b, c) {
+            ClipResult::Gone => return,
+            ClipResult::Whole => {}
+            ClipResult::One(t) => {
+                self.flat_piece(t[0].point, t[1].point, t[2].point, shade, tint);
+                return;
+            }
+            ClipResult::Two(t0, t1) => {
+                self.flat_piece(t0[0].point, t0[1].point, t0[2].point, shade, tint);
+                self.flat_piece(t1[0].point, t1[1].point, t1[2].point, shade, tint);
+                return;
+            }
+        }
+        self.flat_piece(a, b, c, shade, tint);
+    }
+
+    /// Queue one already-clipped flat triangle.
+    fn flat_piece(&mut self, a: Vec3, b: Vec3, c: Vec3, shade: f32, tint: (f32, f32, f32, f32)) {
         let (Some(pa), Some(pb), Some(pc)) = (self.project(a), self.project(b), self.project(c))
         else {
             return;
@@ -460,6 +648,41 @@ impl Scene {
         let facing = normal.dot(self.light).abs();
         let shade = 0.35 + 0.65 * facing;
 
+        // Clip against the near plane, carrying the UVs (K-397).
+        //
+        // `ClipVertex::blend` reproduces the same weights the position was cut
+        // with, so a new corner's texture coordinate lands where the texture
+        // actually is. Interpolating the position and guessing the UV is how a
+        // clipped face comes out correctly shaped and wrongly textured.
+        match self.clip_near(a, b, c) {
+            ClipResult::Gone => return,
+            ClipResult::Whole => {}
+            ClipResult::One(t) => {
+                self.textured_piece(&t, uv, texture, shade, tint);
+                return;
+            }
+            ClipResult::Two(t0, t1) => {
+                self.textured_piece(&t0, uv, texture, shade, tint);
+                self.textured_piece(&t1, uv, texture, shade, tint);
+                return;
+            }
+        }
+
+        self.textured_projected(a, b, c, uv, texture, shade, tint);
+    }
+
+    /// Project and queue one textured triangle that is already clipped.
+    #[allow(clippy::too_many_arguments)]
+    fn textured_projected(
+        &mut self,
+        a: Vec3,
+        b: Vec3,
+        c: Vec3,
+        uv: [[f32; 2]; 3],
+        texture: usize,
+        shade: f32,
+        tint: (f32, f32, f32, f32),
+    ) {
         let (Some(pa), Some(pb), Some(pc)) = (self.project(a), self.project(b), self.project(c))
         else {
             return;
@@ -507,7 +730,94 @@ impl Scene {
 
     /// Queue one triangle whose shading is given per corner.
     #[allow(clippy::too_many_arguments)]
+    /// Queue one clipped textured triangle, blending its UVs the same way its
+    /// corners were cut.
+    fn textured_piece(
+        &mut self,
+        t: &[ClipVertex; 3],
+        uv: [[f32; 2]; 3],
+        texture: usize,
+        shade: f32,
+        tint: (f32, f32, f32, f32),
+    ) {
+        let us = [uv[0][0], uv[1][0], uv[2][0]];
+        let vs = [uv[0][1], uv[1][1], uv[2][1]];
+        let cut_uv = [
+            [t[0].blend(us), t[0].blend(vs)],
+            [t[1].blend(us), t[1].blend(vs)],
+            [t[2].blend(us), t[2].blend(vs)],
+        ];
+        self.textured_projected(
+            t[0].point, t[1].point, t[2].point, cut_uv, texture, shade, tint,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn smooth_triangle(
+        &mut self,
+        a: Vec3,
+        b: Vec3,
+        c: Vec3,
+        uv: [[f32; 2]; 3],
+        corner_shade: [f32; 3],
+        texture: usize,
+        tint: (f32, f32, f32, f32),
+    ) {
+        // Clip against the near plane, carrying BOTH the UVs and the
+        // per-corner shade (K-397).
+        //
+        // A smooth triangle interpolates its lighting across the face, so a
+        // clipped corner needs the shade blended with the same weights as its
+        // position -- otherwise the visible part is lit as though its new edge
+        // were the old one, and a clipped hillside changes brightness at the
+        // seam.
+        match self.clip_near(a, b, c) {
+            ClipResult::Gone => return,
+            ClipResult::Whole => {}
+            ClipResult::One(t) => {
+                self.smooth_piece(&t, uv, corner_shade, texture, tint);
+                return;
+            }
+            ClipResult::Two(t0, t1) => {
+                self.smooth_piece(&t0, uv, corner_shade, texture, tint);
+                self.smooth_piece(&t1, uv, corner_shade, texture, tint);
+                return;
+            }
+        }
+        self.smooth_projected(a, b, c, uv, corner_shade, texture, tint);
+    }
+
+    /// Queue one clipped smooth triangle, blending its UVs and its per-corner
+    /// shade the same way its corners were cut.
+    #[allow(clippy::too_many_arguments)]
+    fn smooth_piece(
+        &mut self,
+        t: &[ClipVertex; 3],
+        uv: [[f32; 2]; 3],
+        corner_shade: [f32; 3],
+        texture: usize,
+        tint: (f32, f32, f32, f32),
+    ) {
+        let us = [uv[0][0], uv[1][0], uv[2][0]];
+        let vs = [uv[0][1], uv[1][1], uv[2][1]];
+        let cut_uv = [
+            [t[0].blend(us), t[0].blend(vs)],
+            [t[1].blend(us), t[1].blend(vs)],
+            [t[2].blend(us), t[2].blend(vs)],
+        ];
+        let cut_shade = [
+            t[0].blend(corner_shade),
+            t[1].blend(corner_shade),
+            t[2].blend(corner_shade),
+        ];
+        self.smooth_projected(
+            t[0].point, t[1].point, t[2].point, cut_uv, cut_shade, texture, tint,
+        );
+    }
+
+    /// Project and queue one smooth triangle that is already clipped.
+    #[allow(clippy::too_many_arguments)]
+    fn smooth_projected(
         &mut self,
         a: Vec3,
         b: Vec3,
@@ -1806,6 +2116,120 @@ mod tests {
         let mut scene = Scene::new(32, 32).expect("scene");
         assert!(scene.upload_texture(4, 4, &[0; 8]).is_err());
         assert!(scene.upload_texture(0, 4, &[]).is_err());
+    }
+
+    #[test]
+    fn a_ground_quad_straddling_the_eye_is_clipped_not_dropped() {
+        // K-397, reproduced exactly as the board records it: a quad spanning
+        // z -200..200 under a camera at z = -26 drew ZERO pixels, because any
+        // triangle with a corner behind the eye was dropped whole.
+        //
+        // That failure reads as an orientation or winding bug rather than as
+        // clipping, which is what made it expensive to find. This asserts the
+        // pixels, because the count is the only thing that distinguishes
+        // "clipped correctly" from "dropped" from "wound backwards".
+        let mut scene = Scene::new(320, 240).expect("scene");
+        scene.clear(0xFF00_0000);
+        scene.set_camera([0.0, 6.0, -26.0], [0.0, 0.0, 40.0], 62.0);
+        scene.set_light([0.0, -1.0, 0.0]);
+
+        // One big ground plane, the shortcut a first 3D app reaches for.
+        let quad = [
+            -200.0, 0.0, -200.0, 200.0, 0.0, -200.0, 200.0, 0.0, 200.0, //
+            -200.0, 0.0, -200.0, 200.0, 0.0, 200.0, -200.0, 0.0, 200.0,
+        ];
+        scene.triangles(&quad, (0.8, 0.8, 0.8, 1.0));
+        let image = scene.render_image().expect("render");
+
+        let lit = image
+            .rgba
+            .chunks_exact(4)
+            .filter(|px| px[0] > 40 || px[1] > 40 || px[2] > 40)
+            .count();
+        assert!(
+            lit > 2_000,
+            "a ground plane under the camera must fill much of the frame; \
+             drew {lit} lit pixels of {}",
+            image.rgba.len() / 4
+        );
+    }
+
+    #[test]
+    fn a_textured_quad_straddling_the_eye_keeps_its_texture() {
+        // The textured path clips too, and its UVs must be blended with the
+        // same weights as its corners. Interpolating the position and
+        // guessing the UV gives a correctly SHAPED face with the wrong part
+        // of the texture on it -- which looks like a texture bug, not a
+        // clipping one.
+        //
+        // The texture is two flat colours split down the middle, so where the
+        // seam lands says whether the UVs were blended or invented.
+        let mut scene = Scene::new(320, 240).expect("scene");
+        scene.clear(0xFF00_0000);
+        scene.set_camera([0.0, 6.0, -26.0], [0.0, 0.0, 40.0], 62.0);
+        scene.set_light([0.0, -1.0, 0.0]);
+
+        let mut rgba = Vec::with_capacity(16 * 16 * 4);
+        for y in 0..16 {
+            for x in 0..16 {
+                let _ = y;
+                if x < 8 {
+                    rgba.extend_from_slice(&[255, 0, 0, 255]);
+                } else {
+                    rgba.extend_from_slice(&[0, 0, 255, 255]);
+                }
+            }
+        }
+        let tex = scene.upload_texture(16, 16, &rgba).expect("upload");
+
+        let quad = [
+            -200.0, 0.0, -200.0, 200.0, 0.0, -200.0, 200.0, 0.0, 200.0, //
+            -200.0, 0.0, -200.0, 200.0, 0.0, 200.0, -200.0, 0.0, 200.0,
+        ];
+        let uvs = [
+            0.0, 0.0, 1.0, 0.0, 1.0, 1.0, //
+            0.0, 0.0, 1.0, 1.0, 0.0, 1.0,
+        ];
+        scene.textured(&quad, &uvs, tex, (1.0, 1.0, 1.0, 1.0));
+        let image = scene.render_image().expect("render");
+
+        // WHERE the seam lands, not merely that both colours appear.
+        //
+        // Counting red and blue passes even with the UVs unblended -- both
+        // halves still show, just in the wrong places. The texture splits at
+        // u = 0.5, which is the quad's centre line, so on a camera looking
+        // straight down +z the seam must sit near the middle of the image.
+        // Unblended UVs move it.
+        let w = image.width as usize;
+        let row = (image.height as usize) * 3 / 4;
+        let mut first_blue: Option<usize> = None;
+        let mut reds = 0usize;
+        let mut blues = 0usize;
+        for x in 0..w {
+            let px = &image.rgba[((row * w) + x) * 4..][..4];
+            if px[0] > 80 && px[2] < 60 {
+                reds += 1;
+            } else if px[2] > 80 && px[0] < 60 {
+                blues += 1;
+                if first_blue.is_none() {
+                    first_blue = Some(x);
+                }
+            }
+        }
+        assert!(
+            reds > 20 && blues > 20,
+            "a clipped textured plane must show both halves on this row; \
+             red {reds} blue {blues}"
+        );
+        let seam = first_blue.expect("blue counted above");
+        let middle = w / 2;
+        let off = seam.abs_diff(middle);
+        assert!(
+            off < w / 8,
+            "the texture's seam must land near the quad's centre line: found \
+             it at x={seam} of {w}, {off} px from the middle -- a clipped \
+             corner whose UV was not blended moves it"
+        );
     }
 
     #[test]
