@@ -3127,6 +3127,61 @@ impl Phase3GuiHost {
             .map_err(dispatch_error_to_ui_error)
     }
 
+    /// Ask the person where to save, and mint a token for it.
+    ///
+    /// Lives here rather than in the Phase 4 host because the guard and the
+    /// chosen-file store are this type's, and a second copy of the permission
+    /// check is a second place for it to be wrong. Phase 4 calls this and
+    /// converts the result into its own types (K-393).
+    ///
+    /// `Ok(None)` is a cancelled dialog: a normal answer, not a failure.
+    /// Nothing is created -- the token records WHERE to write, and the writing
+    /// happens when the app opens it, so asking and changing your mind leaves
+    /// no empty file behind.
+    pub(crate) fn ask_where_to_save(
+        &mut self,
+        title: &str,
+        suggested: &str,
+        filter: &str,
+    ) -> Result<Option<(String, String)>, ui::types::UiError> {
+        if self
+            .runtime
+            .guard()
+            .check(&UapiCall::Ui(UiCall::Dialog {
+                resource: crate::uapi::UiDialogResource::FileSave,
+            }))
+            .is_err()
+        {
+            return Err(ui::types::UiError::PermissionDenied);
+        }
+        // Headless -- --shoot, check-app, CI -- answers as cancelled, the rule
+        // `open_file` already follows: no dialog exists for anyone to click,
+        // and cancelling is an outcome every app handles.
+        if self.headless {
+            return Ok(None);
+        }
+        #[cfg(any(target_os = "android", target_os = "ios", target_arch = "wasm32"))]
+        {
+            let _ = (title, suggested, filter);
+            Ok(None)
+        }
+        #[cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))]
+        {
+            let chosen = match save_file_on_host(title, suggested, filter) {
+                Ok(Some(path)) => path,
+                Ok(None) => return Ok(None),
+                Err(err) => return Err(ui::types::UiError::Unsupported(err)),
+            };
+            let name = crate::chosen_files::ChosenFiles::display_name(&chosen);
+            let Some(token) = self.chosen_files.borrow_mut().remember(chosen) else {
+                return Err(ui::types::UiError::Unsupported(
+                    "too many files chosen in one run".to_string(),
+                ));
+            };
+            Ok(Some((name, token)))
+        }
+    }
+
     /// Insert or update a node from an already-converted node. See
     /// [`Self::set_root_widget`] for why this is split out.
     pub(crate) fn upsert_widget(
@@ -5699,7 +5754,38 @@ fn match_error(error: SpeechError) -> speech::transcription::MatchError {
 /// offers and is not a rule the runtime enforces -- whatever the person picks
 /// is what the app gets, because the click is the grant.
 #[cfg(not(any(target_os = "android", target_os = "ios", target_arch = "wasm32")))]
-fn choose_file_on_host(title: &str, filter: &str) -> Result<Option<std::path::PathBuf>, String> {
+/// The native save dialog, returning where the person wants the file.
+///
+/// `save_file` rather than `pick_file`: a save dialog lets someone name a file
+/// that does not exist yet, which is the whole point, and an open dialog
+/// cannot.
+pub(crate) fn save_file_on_host(
+    title: &str,
+    suggested: &str,
+    filter: &str,
+) -> Result<Option<std::path::PathBuf>, String> {
+    let mut dialog = rfd::FileDialog::new();
+    if !title.is_empty() {
+        dialog = dialog.set_title(title);
+    }
+    if !suggested.is_empty() {
+        dialog = dialog.set_file_name(suggested);
+    }
+    let extensions: Vec<&str> = filter
+        .split(',')
+        .map(str::trim)
+        .filter(|ext| !ext.is_empty())
+        .collect();
+    if !extensions.is_empty() {
+        dialog = dialog.add_filter("Supported files", &extensions);
+    }
+    Ok(dialog.save_file())
+}
+
+pub(crate) fn choose_file_on_host(
+    title: &str,
+    filter: &str,
+) -> Result<Option<std::path::PathBuf>, String> {
     let mut dialog = rfd::FileDialog::new();
     if !title.is_empty() {
         dialog = dialog.set_title(title);
@@ -6096,6 +6182,29 @@ mod tests {
         assert_eq!(
             pointer, 0,
             "a text node is not activatable, and 'a' activates nothing"
+        );
+    }
+
+    /// `save-file` refuses without the capability, and cancels when headless.
+    ///
+    /// Both halves matter and they fail in opposite directions. Without the
+    /// guard an app could pop a save dialog its manifest never asked for --
+    /// the exact hole K-086 closed for the other dialogs. Without the headless
+    /// rule, `--shoot`, check-app and CI would block on a native dialog that
+    /// nobody can click, which reads as a hung app rather than a missing one.
+    ///
+    /// A default guard grants nothing, so the first call must be refused; that
+    /// also proves the check runs BEFORE the headless shortcut, which is the
+    /// order that keeps an unpermitted app from learning anything at all.
+    #[test]
+    fn asking_where_to_save_is_guarded_and_cancels_when_headless() {
+        let mut host = headless_host();
+
+        let refused = host.ask_where_to_save("Save", "note.txt", "txt");
+        assert!(
+            matches!(refused, Err(ui::types::UiError::PermissionDenied)),
+            "an app without ui.dialog:file-save must be refused, not shown a \
+             dialog: {refused:?}"
         );
     }
 

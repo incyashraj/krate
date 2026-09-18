@@ -1185,11 +1185,11 @@ impl Runtime {
         // The two that differ.
         link_gui!(ui4::types);
         link_gui!(ui4::tree);
+        link_gui!(ui4::dialog);
 
         link_gui!(ui::window);
         link_gui!(ui::image);
         link_gui!(ui::events);
-        link_gui!(ui::dialog);
         link_gui!(ui::clipboard);
         link_gui!(ui::menu);
         link_gui!(ui::launcher);

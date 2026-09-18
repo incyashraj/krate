@@ -76,6 +76,80 @@ impl ui4::tree::Host for Phase3GuiHost {
     }
 }
 
+/// The dialogs. Three delegate to Phase 3; one is new.
+///
+/// `krate:ui/dialog` had to generate fresh for Phase 4 because it gained
+/// `save-file`, which Phase 3 does not have. The other three are the same
+/// functions with the same behaviour, so they hand straight over rather than
+/// being written twice.
+impl ui4::dialog::Host for Phase3GuiHost {
+    fn message(
+        &mut self,
+        window: u64,
+        title: String,
+        body: String,
+    ) -> wasmtime::Result<Result<(), ui4::types::UiError>> {
+        let r = ui3::dialog::Host::message(self, window, title, body)?;
+        Ok(r.map_err(error_to_phase4))
+    }
+
+    fn confirm(
+        &mut self,
+        window: u64,
+        title: String,
+        body: String,
+    ) -> wasmtime::Result<Result<bool, ui4::types::UiError>> {
+        let r = ui3::dialog::Host::confirm(self, window, title, body)?;
+        Ok(r.map_err(error_to_phase4))
+    }
+
+    fn open_file(
+        &mut self,
+        window: u64,
+        title: String,
+        filter: String,
+    ) -> wasmtime::Result<Result<Option<ui4::dialog::ChosenFile>, ui4::types::UiError>> {
+        let r = ui3::dialog::Host::open_file(self, window, title, filter)?;
+        Ok(r.map(|c| c.map(chosen_to_phase4)).map_err(error_to_phase4))
+    }
+
+    fn open_folder(
+        &mut self,
+        window: u64,
+        title: String,
+    ) -> wasmtime::Result<Result<Option<ui4::dialog::ChosenFolder>, ui4::types::UiError>> {
+        let r = ui3::dialog::Host::open_folder(self, window, title)?;
+        Ok(r.map(|f| {
+            f.map(|f| ui4::dialog::ChosenFolder {
+                name: f.name,
+                token: f.token,
+            })
+        })
+        .map_err(error_to_phase4))
+    }
+
+    fn save_file(
+        &mut self,
+        _window: u64,
+        title: String,
+        suggested: String,
+        filter: String,
+    ) -> wasmtime::Result<Result<Option<ui4::dialog::ChosenFile>, ui4::types::UiError>> {
+        match self.ask_where_to_save(&title, &suggested, &filter) {
+            Ok(Some((name, token))) => Ok(Ok(Some(ui4::dialog::ChosenFile { name, token }))),
+            Ok(None) => Ok(Ok(None)),
+            Err(err) => Ok(Err(error_to_phase4(err))),
+        }
+    }
+}
+
+fn chosen_to_phase4(c: ui3::dialog::ChosenFile) -> ui4::dialog::ChosenFile {
+    ui4::dialog::ChosenFile {
+        name: c.name,
+        token: c.token,
+    }
+}
+
 /// Translate a Phase 4 node and run it through the shared validator.
 fn node_from_phase4(
     node: ui4::types::WidgetNode,

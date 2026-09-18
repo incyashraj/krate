@@ -50,6 +50,37 @@ pub mod ui {
             crate::bindings::krate::ui::dialog::open_file(window, title, filter)
         }
 
+        /// Show the system's save-file dialog, and return where to write.
+        ///
+        /// The counterpart to `open-file`, and the reason it exists: an editor that
+        /// can open a document and not save one is not an editor. `ui.dialog:file-save`
+        /// was declarable and consent-worded with nothing behind it -- an app was
+        /// told it had the capability and had no function to call (K-393).
+        ///
+        /// Same grant model as `open-file`, and for the same reason: the person's
+        /// click IS the permission. It returns a name and a token, never a path, so
+        /// the app can write what it was handed and cannot learn where the file
+        /// lives, cannot walk to its folder, and cannot come back for it on a later
+        /// run.
+        ///
+        /// Pass the token to `fs.files.open-chosen` with a writing mode. The token
+        /// names a file the person nominated; it does not itself create or truncate
+        /// anything, so an app that asks and then does not write leaves nothing
+        /// behind.
+        ///
+        /// `suggested` is the name to show in the dialog -- what the app would call
+        /// the file if nobody said otherwise. Empty leaves it to the system.
+        ///
+        /// `none` means they cancelled, which is a normal outcome and not an error.
+        pub fn save_file(
+            window: u64,
+            title: &str,
+            suggested: &str,
+            filter: &str,
+        ) -> Result<Option<ChosenFile>, UiError> {
+            crate::bindings::krate::ui::dialog::save_file(window, title, suggested, filter)
+        }
+
         /// Ask the person to choose a folder, and return what they chose.
         ///
         /// This is how an app reaches a real folder of theirs: not by naming a

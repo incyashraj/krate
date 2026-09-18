@@ -53,7 +53,6 @@ wasmtime::component::bindgen!({
         "krate:ui/window@0.1.0": crate::phase3_gui_bindings::krate::ui::window,
         "krate:ui/image@0.1.0": crate::phase3_gui_bindings::krate::ui::image,
         "krate:ui/events@0.1.0": crate::phase3_gui_bindings::krate::ui::events,
-        "krate:ui/dialog@0.1.0": crate::phase3_gui_bindings::krate::ui::dialog,
         "krate:ui/clipboard@0.1.0": crate::phase3_gui_bindings::krate::ui::clipboard,
         "krate:ui/menu@0.1.0": crate::phase3_gui_bindings::krate::ui::menu,
         "krate:ui/launcher@0.1.0": crate::phase3_gui_bindings::krate::ui::launcher,
@@ -74,6 +73,7 @@ wasmtime::component::bindgen!({
         // NOT mapped, and this is the whole point of the file:
         //   krate:ui/types  -- defines widget-kind, which now has 18 cases
         //   krate:ui/tree   -- passes a widget-node, so it mentions it
+        //   krate:ui/dialog -- gained `save-file`, which Phase 3 does not have
         // Those two generate fresh, and the host implements them twice.
     },
 });

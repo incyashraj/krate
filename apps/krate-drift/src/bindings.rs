@@ -20202,6 +20202,201 @@ pub mod krate {
                 }
             }
             #[allow(unused_unsafe, clippy::all)]
+            /// Show the system's save-file dialog, and return where to write.
+            ///
+            /// The counterpart to `open-file`, and the reason it exists: an editor that
+            /// can open a document and not save one is not an editor. `ui.dialog:file-save`
+            /// was declarable and consent-worded with nothing behind it -- an app was
+            /// told it had the capability and had no function to call (K-393).
+            ///
+            /// Same grant model as `open-file`, and for the same reason: the person's
+            /// click IS the permission. It returns a name and a token, never a path, so
+            /// the app can write what it was handed and cannot learn where the file
+            /// lives, cannot walk to its folder, and cannot come back for it on a later
+            /// run.
+            ///
+            /// Pass the token to `fs.files.open-chosen` with a writing mode. The token
+            /// names a file the person nominated; it does not itself create or truncate
+            /// anything, so an app that asks and then does not write leaves nothing
+            /// behind.
+            ///
+            /// `suggested` is the name to show in the dialog -- what the app would call
+            /// the file if nobody said otherwise. Empty leaves it to the system.
+            ///
+            /// `none` means they cancelled, which is a normal outcome and not an error.
+            pub fn save_file(
+                window: u64,
+                title: &str,
+                suggested: &str,
+                filter: &str,
+            ) -> Result<Option<ChosenFile>, UiError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 6 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 6
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = title;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let vec1 = suggested;
+                    let ptr1 = vec1.as_ptr().cast::<u8>();
+                    let len1 = vec1.len();
+                    let vec2 = filter;
+                    let ptr2 = vec2.as_ptr().cast::<u8>();
+                    let len2 = vec2.len();
+                    let ptr3 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:ui/dialog@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "save-file"]
+                        fn wit_import4(
+                            _: i64,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                        );
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import4(
+                        _: i64,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import4(
+                            _rt::as_i64(&window),
+                            ptr0.cast_mut(),
+                            len0,
+                            ptr1.cast_mut(),
+                            len1,
+                            ptr2.cast_mut(),
+                            len2,
+                            ptr3,
+                        )
+                    };
+                    let l5 = i32::from(*ptr3.add(0).cast::<u8>());
+                    let result21 = match l5 {
+                        0 => {
+                            let e = {
+                                let l6 = i32::from(
+                                    *ptr3.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                match l6 {
+                                    0 => None,
+                                    1 => {
+                                        let e = {
+                                            let l7 = *ptr3
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l8 = *ptr3
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len9 = l8;
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
+                                            let l10 = *ptr3
+                                                .add(4 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l11 = *ptr3
+                                                .add(5 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len12 = l11;
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
+                                            ChosenFile {
+                                                name: _rt::string_lift(bytes9),
+                                                token: _rt::string_lift(bytes12),
+                                            }
+                                        };
+                                        Some(e)
+                                    }
+                                    _ => _rt::invalid_enum_discriminant(),
+                                }
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l13 = i32::from(
+                                    *ptr3.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                use super::super::super::krate::ui::types::UiError as V20;
+                                let v20 = match l13 {
+                                    0 => V20::PermissionDenied,
+                                    1 => V20::InvalidWindow,
+                                    2 => V20::InvalidWidget,
+                                    3 => {
+                                        let e20 = {
+                                            let l14 = *ptr3
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l15 = *ptr3
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len16 = l15;
+                                            let bytes16 = _rt::Vec::from_raw_parts(
+                                                l14.cast(),
+                                                len16,
+                                                len16,
+                                            );
+                                            _rt::string_lift(bytes16)
+                                        };
+                                        V20::Unsupported(e20)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 4, "invalid enum discriminant");
+                                        let e20 = {
+                                            let l17 = *ptr3
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l18 = *ptr3
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len19 = l18;
+                                            let bytes19 = _rt::Vec::from_raw_parts(
+                                                l17.cast(),
+                                                len19,
+                                                len19,
+                                            );
+                                            _rt::string_lift(bytes19)
+                                        };
+                                        V20::Platform(e20)
+                                    }
+                                };
+                                v20
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result21
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
             /// Ask the person to choose a folder, and return what they chose.
             ///
             /// This is how an app reaches a real folder of theirs: not by naming a
@@ -21297,8 +21492,8 @@ pub(crate) use __export_gui_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 12996] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xcad\x01A\x02\x01Aw\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 13049] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xffd\x01A\x02\x01Aw\x01\
 B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x09log-level\x03\
 \0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eof\0\0\x0cinvalid-\
 utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x14krate:io/types@0.1\
@@ -21462,18 +21657,19 @@ w\x06widgetw\x07enabled\x7f\0\x04\x04\0\x0bset-enabled\x01\x08\x03\0\x13krate:ui
 \0\x02\x04\0\x04wait\x01\x05\x01@\x01\x03keys\0\x7f\x04\0\x08key-held\x01\x06\x01\
 @\0\0\x7f\x04\0\x11gamepad-connected\x01\x07\x01@\x01\x06buttons\0\x7f\x04\0\x0c\
 gamepad-held\x01\x08\x01@\x01\x04axiss\0v\x04\0\x0cgamepad-axis\x01\x09\x03\0\x15\
-krate:ui/events@0.1.0\x05,\x01B\x14\x02\x03\x02\x01$\x04\0\x08ui-error\x03\0\0\x01\
+krate:ui/events@0.1.0\x05,\x01B\x16\x02\x03\x02\x01$\x04\0\x08ui-error\x03\0\0\x01\
 r\x02\x04names\x05tokens\x04\0\x0bchosen-file\x03\0\x02\x01r\x02\x04names\x05tok\
 ens\x04\0\x0dchosen-folder\x03\0\x04\x01j\0\x01\x01\x01@\x03\x06windoww\x05title\
 s\x04bodys\0\x06\x04\0\x07message\x01\x07\x01j\x01\x7f\x01\x01\x01@\x03\x06windo\
 ww\x05titles\x04bodys\0\x08\x04\0\x07confirm\x01\x09\x01k\x03\x01j\x01\x0a\x01\x01\
-\x01@\x03\x06windoww\x05titles\x06filters\0\x0b\x04\0\x09open-file\x01\x0c\x01k\x05\
-\x01j\x01\x0d\x01\x01\x01@\x02\x06windoww\x05titles\0\x0e\x04\0\x0bopen-folder\x01\
-\x0f\x03\0\x15krate:ui/dialog@0.1.0\x05-\x01B\x08\x02\x03\x02\x01$\x04\0\x08ui-e\
-rror\x03\0\0\x01j\x01s\x01\x01\x01@\0\0\x02\x04\0\x09read-text\x01\x03\x01j\0\x01\
-\x01\x01@\x01\x04texts\0\x04\x04\0\x0awrite-text\x01\x05\x03\0\x18krate:ui/clipb\
-oard@0.1.0\x05.\x02\x03\0\x15\x09menu-item\x01B\x08\x02\x03\x02\x01/\x04\0\x09me\
-nu-item\x03\0\0\x02\x03\x02\x01$\x04\0\x08ui-error\x03\0\x02\x01p\x01\x01j\0\x01\
+\x01@\x03\x06windoww\x05titles\x06filters\0\x0b\x04\0\x09open-file\x01\x0c\x01@\x04\
+\x06windoww\x05titles\x09suggesteds\x06filters\0\x0b\x04\0\x09save-file\x01\x0d\x01\
+k\x05\x01j\x01\x0e\x01\x01\x01@\x02\x06windoww\x05titles\0\x0f\x04\0\x0bopen-fol\
+der\x01\x10\x03\0\x15krate:ui/dialog@0.1.0\x05-\x01B\x08\x02\x03\x02\x01$\x04\0\x08\
+ui-error\x03\0\0\x01j\x01s\x01\x01\x01@\0\0\x02\x04\0\x09read-text\x01\x03\x01j\0\
+\x01\x01\x01@\x01\x04texts\0\x04\x04\0\x0awrite-text\x01\x05\x03\0\x18krate:ui/c\
+lipboard@0.1.0\x05.\x02\x03\0\x15\x09menu-item\x01B\x08\x02\x03\x02\x01/\x04\0\x09\
+menu-item\x03\0\0\x02\x03\x02\x01$\x04\0\x08ui-error\x03\0\x02\x01p\x01\x01j\0\x01\
 \x03\x01@\x02\x06windoww\x05items\x04\0\x05\x04\0\x09set-items\x01\x06\x03\0\x13\
 krate:ui/menu@0.1.0\x050\x01B\x05\x01q\x03\x06denied\0\0\x0binvalid-url\x01s\0\x0b\
 unavailable\x01s\0\x04\0\x0claunch-error\x03\0\0\x01j\0\x01\x01\x01@\x01\x03urls\
