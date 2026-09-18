@@ -298,6 +298,35 @@ interface types {
     /// How this widget's label is inked. Omitted everywhere means every
     /// existing app looks exactly as it did.
     text: option<text-style>,
+    /// Where this widget sits inside its parent. Omitted means the corner it
+    /// has always started from.
+    place: option<placement>,
+  }
+
+  /// Where a widget sits inside the space its parent gives it.
+  ///
+  /// Without this, every child of an `overlay` is pinned to the same cell and
+  /// starts at its top-left, so the only way to move anything is padding --
+  /// and padding changes the PARENT'S SIZE, which in an overlay resizes
+  /// everything else sharing that cell. Pushing a prompt to the bottom with
+  /// 790 pixels of padding grew the overlay and stretched the scene canvas
+  /// past the window (K-410).
+  ///
+  /// So this is not a styling nicety. It decides whether a countdown digit
+  /// can sit in the middle of the screen and a prompt at the foot of it,
+  /// which is most of what a HUD is.
+  enum placement {
+    /// The default: wherever the container would have put it.
+    %default,
+    top-left,
+    top-centre,
+    top-right,
+    centre-left,
+    %centre,
+    centre-right,
+    bottom-left,
+    bottom-centre,
+    bottom-right,
   }
 
   /// One node in the portable widget tree.

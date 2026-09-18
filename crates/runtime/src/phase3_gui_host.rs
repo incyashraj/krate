@@ -2782,9 +2782,11 @@ fn widget_node_from_wit(node: ui::types::WidgetNode) -> Result<WidgetNode, ui::t
             height: node.style.height,
             grow: node.style.grow,
             padding: node.style.padding,
-            // Phase 3's `style` has no text block. An app on the frozen phase
-            // gets the host's ordinary label style, exactly as it always did.
+            // Phase 3's `style` has neither a text block nor a placement. An
+            // app on the frozen phase gets the host's ordinary label style and
+            // the corner it has always started from, exactly as it did.
             text: None,
+            place: krate_adapter_common::ui::Placement::Default,
         },
         node.checked,
         node.value,

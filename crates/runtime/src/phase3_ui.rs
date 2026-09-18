@@ -10,9 +10,29 @@ use krate_adapter_common::ui::{
     WidgetTree, WindowId, WindowOptions, WindowRecord, WindowSize,
 };
 use krate_layout::{
-    compute_layout, hit_test, LayoutPoint, LayoutSnapshot, LayoutViewport, PreparedLayoutTree,
+    compute_layout_measured, hit_test, LayoutPoint, LayoutSnapshot, LayoutViewport,
+    PreparedLayoutTree,
 };
 use thiserror::Error;
+
+/// Measure a label the way the painter will draw it.
+///
+/// The layout crate owns geometry and deliberately knows nothing about fonts,
+/// so it asks for this. Without it every Text widget is zero wide, and a
+/// centred label is placed with its left edge exactly on the centre line and
+/// drawn off to the right of it (K-412).
+///
+/// `measure_canvas_text` returns `None` when this host has no usable fonts and
+/// the painter will fall back to the 5x7 bitmap face; the fallback here is
+/// that face's own metrics, so the number layout is told always matches the
+/// pixels that get drawn.
+fn measure_label(text: &str, size: f32) -> Option<(f32, f32)> {
+    if let Some(m) = krate_adapter_common::vector_text::measure_canvas_text(text, size) {
+        return Some((m.width, m.height));
+    }
+    let scale = (size / 7.0).max(1.0);
+    Some((text.chars().count() as f32 * 6.0 * scale, 8.0 * scale))
+}
 
 use crate::uapi::{UapiCall, UapiError, UapiGuard, UiCall};
 
@@ -357,7 +377,8 @@ impl<'a> Phase3UiDispatcher<'a> {
                 window: window.get(),
             })?;
 
-        compute_layout(&tree, viewport).map_err(|err| UiDispatchError::Layout(err.to_string()))
+        compute_layout_measured(&tree, viewport, &measure_label)
+            .map_err(|err| UiDispatchError::Layout(err.to_string()))
     }
 
     pub fn prepare_layout(&self, window: WindowId) -> UiDispatchResult<PreparedLayoutTree> {
@@ -385,7 +406,7 @@ impl<'a> Phase3UiDispatcher<'a> {
                 .ok_or(UiAdapterError::MissingWidgetTree {
                     window: request.window.get(),
                 })?;
-        let layout = compute_layout(&tree, request.viewport)
+        let layout = compute_layout_measured(&tree, request.viewport, &measure_label)
             .map_err(|err| UiDispatchError::Layout(err.to_string()))?;
         let widget = hit_test(&tree, &layout, point).map(|hit| hit.widget);
         if std::env::var_os("KRATE_EVENT_TRACE").is_some() {
@@ -428,7 +449,7 @@ impl<'a> Phase3UiDispatcher<'a> {
                 .ok_or(UiAdapterError::MissingWidgetTree {
                     window: request.window.get(),
                 })?;
-        let layout = compute_layout(&tree, request.viewport)
+        let layout = compute_layout_measured(&tree, request.viewport, &measure_label)
             .map_err(|err| UiDispatchError::Layout(err.to_string()))?;
         let widget = hit_test(&tree, &layout, point).map(|hit| hit.widget);
 

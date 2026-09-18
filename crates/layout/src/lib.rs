@@ -166,8 +166,21 @@ pub fn compute_layout(
     tree: &WidgetTree,
     viewport: LayoutViewport,
 ) -> Result<LayoutSnapshot, LayoutError> {
+    compute_layout_measured(tree, viewport, &no_text_measurement)
+}
+
+/// [`compute_layout`] with a real text measurer.
+///
+/// A host with a font stack passes one so labels get their true width; without
+/// it every label is zero wide and nothing that hugs or centres text works
+/// (K-412).
+pub fn compute_layout_measured(
+    tree: &WidgetTree,
+    viewport: LayoutViewport,
+    measure: TextMeasurer<'_>,
+) -> Result<LayoutSnapshot, LayoutError> {
     let mut prepared = PreparedLayoutTree::new(tree)?;
-    prepared.compute(viewport)
+    prepared.compute_measured(viewport, measure)
 }
 
 /// Prepared Taffy tree for repeated layout passes of the same widget tree.
@@ -177,7 +190,7 @@ pub struct PreparedLayoutTree {
     root_kind: WidgetKind,
     root_style: WidgetStyle,
     root_full_bleed: bool,
-    taffy: TaffyTree<()>,
+    taffy: TaffyTree<TextRun>,
     node_map: BTreeMap<WidgetId, NodeId>,
 }
 
@@ -194,7 +207,7 @@ impl PreparedLayoutTree {
             width: 1.0,
             height: 1.0,
         };
-        let mut taffy = TaffyTree::<()>::new();
+        let mut taffy = TaffyTree::<TextRun>::new();
         let mut node_map = BTreeMap::new();
         let child_index = child_index(tree);
         let root_full_bleed = is_full_bleed_parent(tree, &child_index, root_widget);
@@ -220,6 +233,15 @@ impl PreparedLayoutTree {
 
     /// Compute layout using the prepared tree.
     pub fn compute(&mut self, viewport: LayoutViewport) -> Result<LayoutSnapshot, LayoutError> {
+        self.compute_measured(viewport, &no_text_measurement)
+    }
+
+    /// [`Self::compute`] with a real text measurer.
+    pub fn compute_measured(
+        &mut self,
+        viewport: LayoutViewport,
+        measure: TextMeasurer<'_>,
+    ) -> Result<LayoutSnapshot, LayoutError> {
         let root_style = taffy_style_from_parts(
             self.root_kind,
             self.root_style,
@@ -231,11 +253,14 @@ impl PreparedLayoutTree {
             .set_style(self.root_node, root_style)
             .map_err(map_taffy)?;
         self.taffy
-            .compute_layout(
+            .compute_layout_with_measure(
                 self.root_node,
                 Size {
                     width: AvailableSpace::Definite(viewport.width),
                     height: AvailableSpace::Definite(viewport.height),
+                },
+                |known, available, _node, run, _style| {
+                    measure_text_leaf(known, available, run, measure)
                 },
             )
             .map_err(map_taffy)?;
@@ -269,7 +294,16 @@ pub fn compute_layout_cold(
     tree: &WidgetTree,
     viewport: LayoutViewport,
 ) -> Result<LayoutSnapshot, LayoutError> {
-    let mut taffy = TaffyTree::<()>::new();
+    compute_layout_cold_measured(tree, viewport, &no_text_measurement)
+}
+
+/// [`compute_layout_cold`] with a real text measurer.
+pub fn compute_layout_cold_measured(
+    tree: &WidgetTree,
+    viewport: LayoutViewport,
+    measure: TextMeasurer<'_>,
+) -> Result<LayoutSnapshot, LayoutError> {
+    let mut taffy = TaffyTree::<TextRun>::new();
     let root = tree.root();
     let mut node_map = BTreeMap::new();
     let child_index = child_index(tree);
@@ -283,11 +317,14 @@ pub fn compute_layout_cold(
     )?;
 
     taffy
-        .compute_layout(
+        .compute_layout_with_measure(
             root_node,
             Size {
                 width: AvailableSpace::Definite(viewport.width),
                 height: AvailableSpace::Definite(viewport.height),
+            },
+            |known, available, _node, run, _style| {
+                measure_text_leaf(known, available, run, measure)
             },
         )
         .map_err(map_taffy)?;
@@ -364,12 +401,83 @@ fn child_index(tree: &WidgetTree) -> BTreeMap<WidgetId, Vec<WidgetId>> {
     children
 }
 
+/// What a leaf needs to measure itself: its text and the size it is drawn at.
+///
+/// Carried as taffy node context so the measure function can see it. `None`
+/// for every node that is not a text leaf.
+type TextRun = Option<(String, f32)>;
+
+/// The font size assumed for a label whose style does not name one.
+///
+/// Matches the default the painters use, so an unstyled label measures as it
+/// draws.
+pub const DEFAULT_TEXT_SIZE: f32 = 14.0;
+
+/// Measures a run of text the way the host will actually draw it.
+///
+/// Layout owns geometry and knows nothing about fonts; the painter owns fonts
+/// and knows nothing about layout. This is the seam between them. A host that
+/// can measure text passes one in; anything else gets [`no_text_measurement`]
+/// and the old zero-width behaviour, which is wrong but is what it had before.
+pub type TextMeasurer<'a> = &'a dyn Fn(&str, f32) -> Option<(f32, f32)>;
+
+/// A measurer for callers with no font stack: every run measures as nothing.
+///
+/// This is the pre-K-412 behaviour and it is preserved deliberately for tests
+/// and for hosts with no text engine. It is not a good default for a real
+/// window: a centred label measured at zero width is placed with its left edge
+/// on the centre line and draws off to the right of it.
+pub fn no_text_measurement(_text: &str, _size: f32) -> Option<(f32, f32)> {
+    None
+}
+
+/// Measure a text leaf with whatever the caller supplied.
+///
+/// Without this every Text node measured zero wide, so a centred line was
+/// placed with its left edge exactly on the centre line and the glyphs ran off
+/// to the right of it -- centring that was arithmetically perfect and visibly
+/// wrong (K-412). Anything that hugs a label had the same zero width.
+fn measure_text_leaf(
+    known: Size<Option<f32>>,
+    available: Size<AvailableSpace>,
+    run: Option<&mut TextRun>,
+    measure: TextMeasurer<'_>,
+) -> Size<f32> {
+    // An explicit width and height always win; nothing needs measuring.
+    if let (Some(width), Some(height)) = (known.width, known.height) {
+        return Size { width, height };
+    }
+    let Some(Some((text, font_size))) = run else {
+        return Size {
+            width: known.width.unwrap_or(0.0),
+            height: known.height.unwrap_or(0.0),
+        };
+    };
+    let Some((mut width, height)) = measure(text, *font_size) else {
+        return Size {
+            width: known.width.unwrap_or(0.0),
+            height: known.height.unwrap_or(0.0),
+        };
+    };
+    // Never claim more width than the caller has room for: a long label in a
+    // narrow column should wrap or clip, not push its parent wider.
+    if known.width.is_none() {
+        if let AvailableSpace::Definite(space) = available.width {
+            width = width.min(space.max(0.0));
+        }
+    }
+    Size {
+        width: known.width.unwrap_or(width),
+        height: known.height.unwrap_or(height),
+    }
+}
+
 fn build_taffy_node(
     tree: &WidgetTree,
     widget: WidgetId,
     viewport: LayoutViewport,
     child_index: &BTreeMap<WidgetId, Vec<WidgetId>>,
-    taffy: &mut TaffyTree<()>,
+    taffy: &mut TaffyTree<TextRun>,
     node_map: &mut BTreeMap<WidgetId, NodeId>,
 ) -> Result<NodeId, LayoutError> {
     let node = tree
@@ -406,8 +514,55 @@ fn build_taffy_node(
             end: taffy::style::GridPlacement::Auto,
         };
     }
+
+    // Where the widget sits inside the space its parent gave it.
+    //
+    // Without it every overlay child starts at the top-left and padding is the
+    // only lever -- and padding changes the PARENT'S size, which in an overlay
+    // resizes everything sharing the cell: 790 pixels of it stretched a scene
+    // canvas past the window (K-410).
+    //
+    // Which taffy property carries a direction depends on the PARENT'S layout
+    // model, and the two disagree:
+    //
+    //   grid  -- `align_self` is the row (vertical), `justify_self` the
+    //            column (horizontal). An Overlay is a grid, so its children
+    //            take this path.
+    //   flex  -- `justify_self` means nothing at all. A column's cross axis is
+    //            horizontal and `align_self` is the only lever; its main axis
+    //            is controlled by the PARENT's `justify_content`, not by the
+    //            child.
+    //
+    // Mapping every parent as a grid is what made `TopCentre` on a Stack's
+    // children do exactly nothing: `justify_self` was set and ignored, so the
+    // menu rows stayed left-aligned and the block hung off to one side, with
+    // only the widest line near the middle (measured at +66, +91 and +371
+    // pixels off centre in a 3200-wide frame).
+    if let Some((row, col)) = node.style.place.axes() {
+        if parent_is_grid(tree, node) {
+            style.align_self = Some(align_of(row));
+            style.justify_self = Some(align_of(col));
+        } else {
+            // A flex COLUMN, which every non-Grid container in the widget set
+            // is: the cross axis is horizontal, so the column direction is the
+            // one `align_self` can express.
+            style.align_self = Some(align_of(col));
+        }
+    }
     let taffy_node = if children.is_empty() {
-        taffy.new_leaf(style).map_err(map_taffy)?
+        // A text leaf carries its run so the measure function can size it.
+        let run: TextRun = match (node.kind, node.label.as_deref()) {
+            (WidgetKind::Text, Some(label)) if !label.is_empty() => {
+                let size = node
+                    .style
+                    .text
+                    .and_then(|t| t.sanitized().size)
+                    .unwrap_or(DEFAULT_TEXT_SIZE);
+                Some((String::from(label), size))
+            }
+            _ => None,
+        };
+        taffy.new_leaf_with_context(style, run).map_err(map_taffy)?
     } else {
         taffy
             .new_with_children(style, &children)
@@ -420,6 +575,17 @@ fn build_taffy_node(
 
 /// Whether this node's parent is an Overlay, so it must be pinned to the one
 /// cell rather than auto-placed into a row of its own.
+/// Whether this node's parent lays out as a grid, so `justify_self` means
+/// something on it.
+///
+/// Overlay and Grid are the grid-shaped containers; every other container in
+/// the widget set is a flex column, where `justify_self` is inert.
+fn parent_is_grid(tree: &WidgetTree, node: &WidgetNode) -> bool {
+    node.parent
+        .and_then(|parent| tree.node(parent))
+        .is_some_and(|parent| matches!(parent.kind, WidgetKind::Overlay | WidgetKind::Grid))
+}
+
 fn is_overlay_child(tree: &WidgetTree, node: &WidgetNode) -> bool {
     node.parent
         .and_then(|parent| tree.node(parent))
@@ -637,6 +803,16 @@ fn taffy_style_from_parts(
     }
 }
 
+/// One placement axis, as taffy's own alignment.
+fn align_of(a: krate_adapter_common::ui::Align) -> taffy::style::AlignItems {
+    use krate_adapter_common::ui::Align;
+    match a {
+        Align::Start => taffy::style::AlignItems::Start,
+        Align::Centre => taffy::style::AlignItems::Center,
+        Align::End => taffy::style::AlignItems::End,
+    }
+}
+
 fn flex_direction_for(kind: WidgetKind) -> FlexDirection {
     if is_region_container(kind) {
         // A region the guest paints into stacks its children like any other
@@ -786,6 +962,194 @@ mod tests {
         assert_eq!(second.x, DEFAULT_ROOT_INSET);
         assert_eq!(second.y, DEFAULT_ROOT_INSET + 40.0 + DEFAULT_CONTAINER_GAP);
         assert_eq!((second.width, second.height), (100.0, 60.0));
+    }
+
+    #[test]
+    fn a_measured_label_straddles_the_centre_instead_of_starting_at_it() {
+        // K-412. Layout has no fonts, so a Text node used to measure zero
+        // wide. A zero-width box centred in the window lands EXACTLY on the
+        // centre line and the painter then draws the glyphs rightward from
+        // there -- so every "centred" line began at the middle rather than
+        // straddling it, and the placement looked broken while being right.
+        use krate_adapter_common::ui::Placement;
+
+        let build = || {
+            let root = WidgetNode::new(WidgetId::new(1).expect("root"), WidgetKind::Overlay);
+            let mut tree = WidgetTree::new(root).expect("tree");
+            tree.upsert(
+                WidgetNode::new(WidgetId::new(2).expect("id"), WidgetKind::Text)
+                    .with_parent(WidgetId::new(1).expect("root"))
+                    .with_label(String::from("RIVALS"))
+                    .expect("label")
+                    .with_style(WidgetStyle {
+                        place: Placement::Centre,
+                        ..WidgetStyle::default()
+                    })
+                    .expect("style"),
+            )
+            .expect("line");
+            tree
+        };
+        let tree = build();
+        let viewport = LayoutViewport::new(1000.0, 600.0).expect("viewport");
+
+        // Ten pixels per character, so "RIVALS" is 60 wide and the answer is
+        // arithmetic rather than a font's opinion.
+        let measure = |text: &str, size: f32| Some((text.chars().count() as f32 * 10.0, size));
+        let measured = compute_layout_measured(&tree, viewport, &measure).expect("layout");
+        let r = measured.rect(WidgetId::new(2).expect("id")).expect("rect");
+        assert!(
+            (r.width - 60.0).abs() < 0.5,
+            "the label must take its measured width, got {r:?}"
+        );
+        assert!(
+            (r.x - 470.0).abs() < 0.5,
+            "a 60-wide label centred in 1000 starts at 470, not on the centre \
+             line: {r:?}"
+        );
+
+        // And the old behaviour is still exactly what it was, so a host with
+        // no font stack is not silently changed.
+        let unmeasured = compute_layout(&tree, viewport).expect("layout");
+        let u = unmeasured
+            .rect(WidgetId::new(2).expect("id"))
+            .expect("rect");
+        assert_eq!(u.width, 0.0, "no measurer means no width: {u:?}");
+    }
+
+    #[test]
+    fn a_line_inside_a_placed_stack_is_centred_too() {
+        // K-410, the second half. Placing the REGION centres the block; a
+        // Stack still left-aligns its children, so lines of different widths
+        // all start at the same x and only the widest looks centred. Drift's
+        // menu showed this as rows hanging off to one side.
+        use krate_adapter_common::ui::Placement;
+
+        let root = WidgetNode::new(WidgetId::new(1).expect("root"), WidgetKind::Overlay);
+        let mut tree = WidgetTree::new(root).expect("tree");
+        // The region: a Stack, centred in the overlay, hugging its content.
+        tree.upsert(
+            WidgetNode::new(WidgetId::new(2).expect("id"), WidgetKind::Stack)
+                .with_parent(WidgetId::new(1).expect("root"))
+                .with_style(WidgetStyle {
+                    place: Placement::Centre,
+                    ..WidgetStyle::default()
+                })
+                .expect("style"),
+        )
+        .expect("region");
+        // Two lines of DIFFERENT widths, both asking to be centred.
+        for (id, width) in [(3u64, 400.0_f32), (4, 100.0)] {
+            tree.upsert(
+                WidgetNode::new(WidgetId::new(id).expect("id"), WidgetKind::Text)
+                    .with_parent(WidgetId::new(2).expect("region"))
+                    .with_label(String::from("x"))
+                    .expect("label")
+                    .with_style(WidgetStyle {
+                        width: Some(width),
+                        height: Some(40.0),
+                        place: Placement::TopCentre,
+                        ..WidgetStyle::default()
+                    })
+                    .expect("style"),
+            )
+            .expect("line");
+        }
+
+        let (w, h) = (1000.0_f32, 600.0_f32);
+        let layout =
+            compute_layout(&tree, LayoutViewport::new(w, h).expect("viewport")).expect("layout");
+        // ABSOLUTE rects. `rect()` is relative to the parent, so a line that
+        // fills its centred region reads as x = 0 there and looks wrong while
+        // being right -- which is exactly how this test first read.
+        let at =
+            |id: u64| absolute_rect(&tree, &layout, WidgetId::new(id).expect("id")).expect("rect");
+
+        // Both lines must share a centre, and it must be the window's.
+        for id in [3u64, 4] {
+            let r = at(id);
+            let centre = r.x + r.width / 2.0;
+            assert!(
+                (centre - w / 2.0).abs() < 1.0,
+                "line {id} must be centred: centre of {r:?} is {centre}, want {}",
+                w / 2.0
+            );
+        }
+    }
+
+    #[test]
+    fn placement_puts_an_overlay_child_where_it_asks() {
+        // K-410. Every child of an Overlay shares one cell, so without
+        // placement each starts at the cell's top-left and the only lever is
+        // padding -- which changes the PARENT'S size and so moves everything
+        // else in the cell with it.
+        //
+        // The two that matter for a HUD are the middle and the foot: a
+        // countdown digit belongs in the centre of the screen and a prompt at
+        // the bottom of it.
+        use krate_adapter_common::ui::Placement;
+
+        let root = WidgetNode::new(WidgetId::new(1).expect("root"), WidgetKind::Overlay);
+        let mut tree = WidgetTree::new(root).expect("tree");
+        let put = |tree: &mut WidgetTree, id: u64, place: Placement| {
+            tree.upsert(
+                WidgetNode::new(WidgetId::new(id).expect("id"), WidgetKind::Text)
+                    .with_parent(WidgetId::new(1).expect("root"))
+                    .with_label(String::from("x"))
+                    .expect("label")
+                    .with_style(WidgetStyle {
+                        width: Some(200.0),
+                        height: Some(40.0),
+                        place,
+                        ..WidgetStyle::default()
+                    })
+                    .expect("style"),
+            )
+            .expect("child");
+        };
+        put(&mut tree, 2, Placement::Default);
+        put(&mut tree, 3, Placement::Centre);
+        put(&mut tree, 4, Placement::BottomCentre);
+
+        let (w, h) = (1000.0_f32, 600.0_f32);
+        let layout =
+            compute_layout(&tree, LayoutViewport::new(w, h).expect("viewport")).expect("layout");
+        let at = |id: u64| layout.rect(WidgetId::new(id).expect("id")).expect("rect");
+
+        let corner = at(2);
+        let middle = at(3);
+        let foot = at(4);
+
+        // The default still starts at the corner, which is what every app
+        // written before this relies on.
+        assert!(
+            corner.x < 1.0 && corner.y < 1.0,
+            "an unplaced child must stay where it has always been: {corner:?}"
+        );
+
+        // Centre: both axes near the middle, within a pixel of exact.
+        let cx = middle.x + middle.width / 2.0;
+        let cy = middle.y + middle.height / 2.0;
+        assert!(
+            (cx - w / 2.0).abs() < 1.0 && (cy - h / 2.0).abs() < 1.0,
+            "Centre must land in the middle of the container: centre of \
+             {middle:?} is ({cx}, {cy}), want ({}, {})",
+            w / 2.0,
+            h / 2.0
+        );
+
+        // Bottom-centre: centred across, and its BOTTOM edge at the bottom.
+        let fx = foot.x + foot.width / 2.0;
+        assert!(
+            (fx - w / 2.0).abs() < 1.0,
+            "BottomCentre must be centred across: {foot:?}"
+        );
+        assert!(
+            ((foot.y + foot.height) - h).abs() < 1.0,
+            "BottomCentre must sit ON the bottom edge, not merely below the \
+             middle: {foot:?} ends at {}, want {h}",
+            foot.y + foot.height
+        );
     }
 
     #[test]

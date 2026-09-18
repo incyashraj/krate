@@ -164,11 +164,31 @@ fn region(id: u64, parent: u64, which: Region) -> types::WidgetNode {
     // Every region hugs its content: `grow: 0.0` and no height. A child of an
     // Overlay is stretched to fill it otherwise, which would put the header's
     // text in the middle of the road.
-    let (kind, padding) = match which {
+    let (kind, padding, place) = match which {
         // A Grid is the only horizontal container in the widget set -- Stack,
         // Scroll, ListView, TreeView and Tabs are all columns.
-        Region::Header => (types::WidgetKind::Grid, 20.0),
-        Region::Centre => (types::WidgetKind::Stack, 150.0),
+        Region::Header => (
+            types::WidgetKind::Grid,
+            20.0,
+            types::Placement::TopLeft,
+        ),
+        // Padded in from the left so the centre block sits nearer the middle
+        // of the window than the corner.
+        //
+        // It cannot actually be CENTRED: every child of an Overlay is pinned
+        // to the same cell and the widget set has no alignment, so padding is
+        // the only lever there is. That is a runtime gap rather than a choice
+        // -- the same one that stops the prompt sitting at the bottom -- and
+        // the number here is tuned to a 1600-wide window rather than derived
+        // from anything.
+        // Actually centred now, rather than nudged with padding.
+        //
+        // This was 260 logical pixels of left padding, tuned by eye to a
+        // 1600-wide window and wrong at any other size -- and padding changes
+        // the PARENT'S size, so in an overlay it moved everything else in the
+        // cell too. `Placement::Centre` asks for the middle and gets it at any
+        // window size (K-410).
+        Region::Centre => (types::WidgetKind::Stack, 0.0, types::Placement::Centre),
         // The foot sits UNDER the centre block, not at the bottom of the
         // window, and that is a runtime limit rather than a choice.
         //
@@ -184,7 +204,14 @@ fn region(id: u64, parent: u64, which: Region) -> types::WidgetNode {
         // Filed as the alignment gap; until then the prompt lives below the
         // centre text, which reads fine because that is where a prompt goes
         // anyway.
-        Region::Foot => (types::WidgetKind::Stack, 320.0),
+        // At the bottom, which padding could never do: pushing it down with
+        // 790 pixels GREW the overlay and stretched the scene canvas to 1604
+        // pixels in a 900-pixel window (K-410).
+        Region::Foot => (
+            types::WidgetKind::Stack,
+            40.0,
+            types::Placement::BottomCentre,
+        ),
     };
     types::WidgetNode {
         id,
@@ -198,6 +225,7 @@ fn region(id: u64, parent: u64, which: Region) -> types::WidgetNode {
             grow: 0.0,
             padding,
             text: None,
+            place: Some(place),
         },
         checked: None,
         value: None,
@@ -217,10 +245,29 @@ fn text_node(id: u64, parent: u64, text: &str, style: types::TextStyle) -> types
         role: Some(pure("text")),
         style: types::Style {
             width: None,
-            height: None,
+            // An UNUSED line takes no room.
+            //
+            // Every slot exists for the whole run so its text can be swapped
+            // without rebuilding the tree, and an empty one still carried its
+            // font size -- so the centre region was twelve line-boxes tall
+            // whatever was in it, and centring the REGION left the one line
+            // anybody could see sitting at the top of it. Height 0 on an empty
+            // line makes the region as tall as its content, which is what
+            // Placement::Centre needs to be worth anything.
+            height: if text.is_empty() { Some(0.0) } else { None },
             grow: 0.0,
             padding: 0.0,
             text: Some(style),
+            // Centre each LINE within its region as well as the region within
+            // the window.
+            //
+            // Placing only the region centres the block, and a Stack still
+            // left-aligns its children -- so the menu rows all began at the
+            // same x and the block hung off to one side, with only the widest
+            // line landing anywhere near the middle. Measured on the results
+            // screen: two bands at x=1599 in a 3200-wide frame (dead centre)
+            // and three at +66, +91 and +371.
+            place: Some(types::Placement::TopCentre),
         },
         checked: None,
         value: None,
@@ -261,6 +308,7 @@ fn header_style() -> types::Style {
         height: Some(34.0),
         grow: 0.0,
         padding: 0.0,
+        place: None,
         text: Some(ink(26.0, true)),
     }
 }
@@ -270,10 +318,14 @@ fn centre_line(index: usize, text: &str, warm: bool) -> types::WidgetNode {
     // result -- and is read at a glance; the rest are read when there is a
     // moment.
     let style = if index == 0 {
+        // The headline carries the countdown digit and the result, and both
+        // are read at a glance from across a room. 64px looked large in the
+        // source and small on screen: the window is 1600 logical pixels wide,
+        // so a 64px glyph is 4% of it. 120 is a headline.
         if warm {
-            ink_warm(64.0, true)
+            ink_warm(120.0, true)
         } else {
-            ink(64.0, true)
+            ink(120.0, true)
         }
     } else if warm {
         ink_warm(26.0, false)

@@ -14,7 +14,7 @@
 //! dispatcher Phase 3 uses. The behavioural difference between the phases is
 //! one match arm.
 
-use krate_adapter_common::ui::{Color, TextStyle, WidgetKind, WidgetStyle};
+use krate_adapter_common::ui::{Color, Placement, TextStyle, WidgetKind, WidgetStyle};
 
 use crate::phase3_gui_bindings::krate::ui as ui3;
 use crate::phase3_gui_host::{widget_node_from_parts, Phase3GuiHost};
@@ -166,6 +166,7 @@ fn node_from_phase4(
             grow: node.style.grow,
             padding: node.style.padding,
             text: node.style.text.map(text_style_from_phase4),
+            place: placement_from_phase4(node.style.place),
         },
         node.checked,
         node.value,
@@ -214,6 +215,25 @@ fn text_style_from_phase4(style: ui4::types::TextStyle) -> TextStyle {
         outline_width: style.outline_width,
         size: style.size,
         bold: style.bold,
+    }
+}
+
+/// Where a Phase 4 widget asked to sit.
+///
+/// `None` is the default, which is the corner every widget started from
+/// before placement existed -- so an app that says nothing is unchanged.
+fn placement_from_phase4(place: Option<ui4::types::Placement>) -> Placement {
+    match place {
+        None | Some(ui4::types::Placement::Default) => Placement::Default,
+        Some(ui4::types::Placement::TopLeft) => Placement::TopLeft,
+        Some(ui4::types::Placement::TopCentre) => Placement::TopCentre,
+        Some(ui4::types::Placement::TopRight) => Placement::TopRight,
+        Some(ui4::types::Placement::CentreLeft) => Placement::CentreLeft,
+        Some(ui4::types::Placement::Centre) => Placement::Centre,
+        Some(ui4::types::Placement::CentreRight) => Placement::CentreRight,
+        Some(ui4::types::Placement::BottomLeft) => Placement::BottomLeft,
+        Some(ui4::types::Placement::BottomCentre) => Placement::BottomCentre,
+        Some(ui4::types::Placement::BottomRight) => Placement::BottomRight,
     }
 }
 

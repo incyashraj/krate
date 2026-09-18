@@ -999,6 +999,27 @@ struct Art {
 }
 
 /// Build the HUD for this frame.
+/// How many of the three start lights are lit with `left_s` seconds to go.
+///
+/// Separated from the drawing so `lightcheck` can walk the whole countdown and
+/// read the sequence out, which a `--shoot` cannot do: a shoot renders ONE
+/// frame and exits, so `phase_t` never leaves the first step and every
+/// screenshot of the countdown is the same screenshot (K-411).
+fn lights_lit(left_s: f32) -> i32 {
+    // GO: every light out.
+    //
+    // Without this, `ceil(0.0)` is 0 and `4 - 0` clamps to 3, so the moment
+    // the countdown reached zero all three lights came ON and stayed on into
+    // the race -- the exact opposite of a start gantry, where the lights going
+    // OUT is the signal to go. Found by `lightcheck`, not by a screenshot:
+    // a shoot never reaches this moment.
+    if left_s <= 0.0 {
+        return 0;
+    }
+    let step = mathx::ceil_f32(left_s) as i32;
+    (4 - step).clamp(0, 3)
+}
+
 fn build_hud(g: &Game, hud: &mut Hud) {
     hud.clear();
     // Camera-space units at the HUD plane. The visible half-width at 62 deg
@@ -1008,43 +1029,44 @@ fn build_hud(g: &Game, hud: &mut Hud) {
 
     match g.phase {
         Phase::Attract => {
-            // A chequered band instead of blank title bars.
+            // Nothing. The title screen is TEXT now.
             //
-            // Three solid rectangles were standing in for a title, and they
-            // read as exactly what they were: three white boxes sitting over
-            // the circuit. There is no text available here (K-398), so the
-            // title screen says what it is with a racing motif rather than
-            // pretending to be lettering.
-            let cell = 0.13;
-            for row in 0..2 {
-                for col in 0..14 {
-                    if (row + col) % 2 == 0 {
-                        hud.rect(
-                            -0.91 + col as f32 * cell,
-                            0.42 - row as f32 * cell,
-                            cell,
-                            cell,
-                        );
-                    }
-                }
-            }
-            // A car-sized bar under it, and a prompt that pulses.
-            hud.rect(-0.30, 0.03, 0.60, 0.10);
-            let pulse = sin_approx(g.phase_t * 3.0) * 0.5 + 0.5;
-            if pulse > 0.45 {
-                hud.rect(-0.55, -0.80, 1.10, 0.09);
-            }
+            // Three white rectangles stood in for a title, then a chequered
+            // band replaced them, both because "there is no text available
+            // here (K-398)". Text arrived with K-398/K-401/K-402 and the
+            // stand-ins stayed, so the flag sat hard-coded to the left of the
+            // real "DRIFT" and two loose white bars floated beside the menu
+            // rows and under them -- measured at 66, 91 and 371 pixels off
+            // centre in a 3200-wide frame while the text itself landed within
+            // one pixel of the middle.
+            //
+            // A placeholder outlives the gap it filled unless something goes
+            // back for it.
         }
         Phase::Countdown => {
             let left_s = (COUNTDOWN - g.phase_t).max(0.0);
-            let lights = (mathx::ceil_f32(left_s) as i32).clamp(0, 3);
+            // Lights come ON one at a time as the clock runs DOWN, the way a
+            // start gantry does -- one lit at three seconds, two at two,
+            // three at one, and all of them out at GO.
+            //
+            // This used to be `lights = ceil(left_s)`, which lit all three on
+            // the first frame and held them there until GO. Every step looked
+            // the same, so the lights carried none of the count: they were
+            // three white discs that went out once (K-411).
+            let lit = lights_lit(left_s);
             for i in 0..3 {
-                let on = i < lights;
+                let on = i < lit;
                 let cx = -0.85 + i as f32 * 0.85;
+                // Above the digit, not behind it.
+                //
+                // At y = 0.55 the middle disc sat exactly where the centred
+                // countdown number lands and the number was painted on top of
+                // it (K-411). The lights belong over the road anyway, which is
+                // where a gantry hangs.
                 if on {
-                    hud::disc(cx, 0.55, 0.26, 18, hud);
+                    hud::disc(cx, 1.02, 0.26, 18, hud);
                 } else {
-                    hud::disc(cx, 0.55, 0.10, 12, hud);
+                    hud::disc(cx, 1.02, 0.10, 12, hud);
                 }
             }
         }
@@ -1314,6 +1336,8 @@ fn node(id: u64, parent: Option<u64>, kind: types::WidgetKind) -> types::WidgetN
             padding: 0.0,
             // The scene canvas and the overlay root carry no label, so no ink.
             text: None,
+            // The canvas fills the cell; it has nowhere else to go.
+            place: None,
         },
         checked: None,
         value: None,
@@ -1387,6 +1411,78 @@ impl krate::Guest for Component {
         // nothing about whether choosing one reaches the race, which is the
         // only part that can silently not work.
         let menucheck = has(b"menucheck");
+        // `lightcheck` reads the start-light sequence out, headlessly.
+        //
+        // A `--shoot` cannot check this: it renders one frame and exits, so
+        // `phase_t` never advances and every screenshot of the countdown shows
+        // the same step. Three shots at 120ms, 500ms and 1400ms came back
+        // byte-identical, which read as "the lights work" and proved nothing
+        // (K-411).
+        if has(b"lightcheck") {
+            let mut m = String::new();
+            m.push_str("drift: lightcheck");
+            say(&m);
+            let mut ok = true;
+            // Both sides of each boundary, so the rounding is exercised
+            // rather than avoided.
+            //
+            // `ceil` puts the boundary AT the whole second, not just after
+            // it: with 2.01 seconds left you are still inside the third
+            // second, so one light. Two of these rows were written the other
+            // way round at first and this check is what said so.
+            for &(left, want) in &[
+                (3.00f32, 1i32),
+                (2.99, 1),
+                (2.01, 1),
+                (2.00, 2),
+                (1.99, 2),
+                (1.00, 3),
+                (0.99, 3),
+                (0.01, 3),
+                // The lights going out IS the start signal.
+                (0.00, 0),
+            ] {
+                let got = lights_lit(left);
+                let mut line = String::new();
+                line.push_str("  left ");
+                text_hud::push_time(left, &mut line);
+                line.push_str(" lit ");
+                text_hud::push_u32(got.max(0) as u32, &mut line);
+                line.push_str(" want ");
+                text_hud::push_u32(want.max(0) as u32, &mut line);
+                if got != want {
+                    ok = false;
+                    line.push_str("  <-- WRONG");
+                }
+                say(&line);
+            }
+            // A countdown whose lights never change tells the driver nothing,
+            // which is the bug this check exists for -- so require that the
+            // sequence actually MOVES, not merely that each value matches.
+            let distinct = {
+                let mut seen = [false; 4];
+                for i in 0..=30 {
+                    let l = lights_lit(i as f32 * 0.1);
+                    if (0..=3).contains(&l) {
+                        seen[l as usize] = true;
+                    }
+                }
+                seen.iter().filter(|s| **s).count()
+            };
+            let mut line = String::new();
+            line.push_str("  distinct light counts across the countdown ");
+            text_hud::push_u32(distinct as u32, &mut line);
+            say(&line);
+            if distinct < 3 {
+                ok = false;
+            }
+            say(if ok {
+                "drift: lightcheck PASS -- the lights come on one at a time"
+            } else {
+                "drift: lightcheck FAIL"
+            });
+            return 0;
+        }
         let mut menu_step = 0u32;
         let auto = auto || hold;
 

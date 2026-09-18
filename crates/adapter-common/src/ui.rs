@@ -384,6 +384,64 @@ pub struct WidgetStyle {
     /// How this widget's label is inked, when the app asked for something
     /// other than the host's ordinary label style.
     pub text: Option<TextStyle>,
+    /// Where this widget sits inside its parent.
+    pub place: Placement,
+}
+
+/// Where a widget sits inside the space its parent gives it.
+///
+/// Every child of an `overlay` shares one grid cell, so without this each
+/// starts at its top-left and padding is the only lever -- and padding
+/// changes the PARENT'S size, which in an overlay resizes everything else in
+/// that cell (K-410).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Placement {
+    /// Wherever the container would have put it.
+    #[default]
+    Default,
+    TopLeft,
+    TopCentre,
+    TopRight,
+    CentreLeft,
+    Centre,
+    CentreRight,
+    BottomLeft,
+    BottomCentre,
+    BottomRight,
+}
+
+impl Placement {
+    /// How this sits down the cross axis and across the main one, as a pair
+    /// of (row, column) alignments.
+    ///
+    /// Returned as plain directions rather than as a layout engine's type:
+    /// this crate is host-neutral and depends on no layout engine. The layout
+    /// crate maps these onto taffy, which already places a grid child in its
+    /// cell with `align_self` and `justify_self` -- so an overlay, being a
+    /// grid already, needs no new concept (K-410).
+    pub fn axes(self) -> Option<(Align, Align)> {
+        let pair = match self {
+            Self::Default => return None,
+            Self::TopLeft => (Align::Start, Align::Start),
+            Self::TopCentre => (Align::Start, Align::Centre),
+            Self::TopRight => (Align::Start, Align::End),
+            Self::CentreLeft => (Align::Centre, Align::Start),
+            Self::Centre => (Align::Centre, Align::Centre),
+            Self::CentreRight => (Align::Centre, Align::End),
+            Self::BottomLeft => (Align::End, Align::Start),
+            Self::BottomCentre => (Align::End, Align::Centre),
+            Self::BottomRight => (Align::End, Align::End),
+        };
+        Some(pair)
+    }
+}
+
+/// One axis of a placement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Align {
+    Start,
+    Centre,
+    End,
 }
 
 /// An 8-bit colour, as a widget names one.
@@ -476,6 +534,7 @@ impl Default for WidgetStyle {
             width: None,
             height: None,
             text: None,
+            place: Placement::Default,
             grow: 0.0,
             padding: 0.0,
         }
