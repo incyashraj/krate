@@ -100,7 +100,7 @@ struct Band {
 /// Every loop body uses its result, so nothing here can be optimised away as
 /// dead: a host call has a side effect the compiler cannot see through, but
 /// the arithmetic around it could otherwise vanish.
-fn measure(canvas: u64) -> [Band; 4] {
+fn measure(canvas: u64) -> [Band; 5] {
     // 1. canvas-size: reads two numbers, draws nothing.
     let t0 = clock::monotonic_nanos();
     let mut sink = 0f32;
@@ -151,15 +151,38 @@ fn measure(canvas: u64) -> [Band; 4] {
         let _ = out.write(b"unreachable\n");
     }
 
+    // 5. draw-text with a DIFFERENT string each time: the cache-miss path.
+    //
+    // Band 4 draws one repeated string, so every call after the first is a
+    // blend of cached coverage. A real table draws a different string in every
+    // cell. The gap between the two is what rasterising actually costs, and it
+    // is the number that decides whether batching the CALLS would help.
+    let t0 = clock::monotonic_nanos();
+    let mut buf = String::new();
+    for i in 0..REPS {
+        buf.clear();
+        buf.push_str("row ");
+        push_u32(i, &mut buf);
+        let _ = canvas2d::draw_text(
+            canvas,
+            &buf,
+            gfx::Point { x: 4.0, y: HEIGHT - 2.0 },
+            12.0,
+            BG,
+        );
+    }
+    let fresh_ns = per_call_ns(clock::monotonic_nanos().saturating_sub(t0));
+
     [
         Band { name: "canvas-size  (no drawing at all)", ns: size_ns },
         Band { name: "fill-rect    (4x4 pixels)", ns: fill_ns },
         Band { name: "measure-text (\"sample\", no raster)", ns: measure_ns },
-        Band { name: "draw-text    (\"sample\", 12px)", ns: text_ns },
+        Band { name: "draw-text    (same string, cached)", ns: text_ns },
+        Band { name: "draw-text    (a NEW string each call)", ns: fresh_ns },
     ]
 }
 
-fn draw(canvas: u64, bands: &[Band; 4]) {
+fn draw(canvas: u64, bands: &[Band; 5]) {
     let _ = canvas2d::clear(canvas, BG);
     text(canvas, "What does one host call cost?", 40.0, 56.0, 22.0, INK);
 
@@ -207,7 +230,7 @@ fn draw(canvas: u64, bands: &[Band; 4]) {
     let mut budget = String::new();
     budget.push_str("a 60fps frame is 16,666 us, so it affords about ");
     // Use the text call, the one every text-heavy app is made of.
-    let per = bands[3].ns.max(1);
+    let per = bands[4].ns.max(1);
     push_u32(16_666_000 / per, &mut budget);
     budget.push_str(" draw-text calls");
     text(canvas, &budget, 40.0, y + 16.0, 14.0, WARN);
@@ -228,7 +251,7 @@ fn say(line: &str) {
     let _ = out.flush();
 }
 
-fn report(bands: &[Band; 4]) {
+fn report(bands: &[Band; 5]) {
     for band in bands {
         let mut line = String::new();
         line.push_str("callcost: ");
@@ -242,7 +265,7 @@ fn report(bands: &[Band; 4]) {
     line.push_str("callcost: floor ");
     push_tenths(bands[0].ns / 100, &mut line);
     line.push_str(" us; draw-text calls per 60fps frame ");
-    push_u32(16_666_000 / bands[3].ns.max(1), &mut line);
+    push_u32(16_666_000 / bands[4].ns.max(1), &mut line);
     say(&line);
 }
 

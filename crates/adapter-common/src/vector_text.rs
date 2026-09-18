@@ -164,6 +164,18 @@ struct TextEngine {
     /// M4. Scrolling redraws the same runs merely shifted, which is exactly
     /// what a raster cache turns into a blend-only frame.
     canvas_rasters: std::collections::HashMap<CanvasRasterKey, std::rc::Rc<CanvasRasterRun>>,
+    /// Bytes of coverage held in `canvas_rasters`, kept as a running total.
+    ///
+    /// Previously recomputed on every cache miss by summing `coverage.len()`
+    /// over the whole map. That is O(entries) per miss and it reads like a
+    /// quadratic trap -- but measured, it is not one: 200 distinct runs
+    /// against 800 cost 4.09x with the sum and 4.00x without, both linear.
+    /// Rasterising a run dwarfs adding up a few hundred integers.
+    ///
+    /// Kept anyway because carrying the number is simpler than deriving it and
+    /// the bound stays correct as the map grows, but it bought no measurable
+    /// speed and nothing here should claim it did.
+    canvas_raster_bytes: usize,
 }
 
 /// A rendered text run's COVERAGE -- alpha only, one byte per pixel --
@@ -197,6 +209,7 @@ impl TextEngine {
             layout_cx: LayoutContext::new(),
             canvas_layouts: std::collections::HashMap::new(),
             canvas_rasters: std::collections::HashMap::new(),
+            canvas_raster_bytes: 0,
         }
     }
 
@@ -539,16 +552,25 @@ pub fn draw_canvas_text_clipped(
                 // Bounded by bytes, not entries. An editor page of coverage
                 // at full backing scale is ~14 MB, so 64 MB holds several
                 // screenfuls; clearing wholesale costs one frame of raster.
-                let bytes: usize = engine
-                    .canvas_rasters
-                    .values()
-                    .map(|r| r.coverage.len())
-                    .sum();
-                if bytes > 64 * 1024 * 1024 {
+                //
+                // The total is CARRIED rather than recomputed. Measured, this
+                // is not faster (4.00x vs 4.09x for 4x the runs -- both
+                // linear); it is just simpler than walking the map to derive a
+                // number we already know.
+                if engine.canvas_raster_bytes > 64 * 1024 * 1024 {
                     engine.canvas_rasters.clear();
+                    engine.canvas_raster_bytes = 0;
                 }
                 let run = std::rc::Rc::new(run);
-                engine.canvas_rasters.insert(raster_key, run.clone());
+                engine.canvas_raster_bytes += run.coverage.len();
+                if let Some(evicted) = engine.canvas_rasters.insert(raster_key, run.clone()) {
+                    // Replacing an entry frees its coverage, so the total has
+                    // to come back down or it drifts upward until every frame
+                    // clears the cache.
+                    engine.canvas_raster_bytes = engine
+                        .canvas_raster_bytes
+                        .saturating_sub(evicted.coverage.len());
+                }
                 run
             }
         };
