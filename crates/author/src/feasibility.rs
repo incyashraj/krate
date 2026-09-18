@@ -319,6 +319,78 @@ fn names_a_host(lower: &str) -> bool {
 
 /// Screen a request. See the module docs for the rule this follows: certainty
 /// to refuse, honesty to caveat, and build when unsure.
+/// Phrases that mean ORDINARY PERSISTENCE, not a background service.
+///
+/// "keep everything when the app is closed and reopened" is how a person
+/// naturally asks for saved data, and `store.kv` has done it since the first
+/// GUI app. It was refused because it contains the substring "when the app is
+/// closed", a trigger meant to catch "keep running when the app is closed"
+/// (K-230).
+///
+/// The difference is what the sentence asks to happen while the app is shut:
+/// KEEPING something needs nothing to run, and DOING something needs a daemon.
+/// These are the verbs of keeping.
+///
+/// A phrase here is not enough on its own -- see `ACTIVE_WHILE_SHUT`. "save my
+/// notes and sync them in the background while I sleep" says both, and it is
+/// the daemon half that decides.
+const PERSISTENCE: &[&str] = &[
+    "keep everything when",
+    "keep it when",
+    "keep them when",
+    "keep my",
+    "keeps everything when",
+    "still there when",
+    "still there next time",
+    "save when",
+    "saves when",
+    "saved when",
+    "saves my",
+    "save my",
+    "remember my",
+    "remembers my",
+    "remember what",
+    "restore when",
+    "restores when",
+    "and reopened",
+    "and reopen",
+    "when i reopen",
+    "next time i open",
+    "between runs",
+    "across runs",
+    "persist",
+];
+
+/// Phrases that ask the app to DO something while it is not open.
+///
+/// These beat any persistence phrase in the same sentence: a request can say
+/// both ("save my notes AND sync them while I sleep"), and the daemon half is
+/// the one Krate cannot build.
+const ACTIVE_WHILE_SHUT: &[&str] = &[
+    "in the background",
+    "runs in the background",
+    "running in the background",
+    "while i sleep",
+    "while i am asleep",
+    "every morning",
+    "every night",
+    "every hour",
+    "every day at",
+    "wake me",
+    "pops up",
+    "pop up",
+    "notify me when i am not",
+    "keep running",
+    "keeps running",
+    "still running",
+    "keep my timer running",
+    "sync",
+    "check for",
+    "poll",
+    "scheduled",
+    "on a schedule",
+];
+
 pub fn screen(request: &str) -> Verdict {
     let lower = request.to_lowercase();
 
@@ -331,6 +403,22 @@ pub fn screen(request: &str) -> Verdict {
 
     for rule in RULES {
         if rule.triggers.iter().any(|t| lower.contains(t)) {
+            // Saving data is not a background service.
+            //
+            // The Background triggers match on phrases about the app being
+            // closed, and the commonest ordinary request -- "keep everything
+            // when the app is closed and reopened" -- contains one. It needs
+            // `store.kv` and nothing else. Refusing it fires BEFORE any code
+            // is written, so the person never sees an app and is told their
+            // perfectly buildable idea is outside the product (K-230).
+            if rule.limit == Limit::Background
+                && PERSISTENCE.iter().any(|phrase| lower.contains(phrase))
+                && !ACTIVE_WHILE_SHUT
+                    .iter()
+                    .any(|phrase| lower.contains(phrase))
+            {
+                continue;
+            }
             return Verdict::Refuse(Refusal {
                 limit: rule.limit,
                 reason: rule.reason.to_string(),
@@ -427,6 +515,51 @@ mod tests {
     fn refuses_background_execution() {
         let r = refusal("a reminder that pops up even when the app is closed");
         assert_eq!(r.limit, Limit::Background);
+    }
+
+    #[test]
+    fn saving_data_across_runs_is_not_a_background_service() {
+        // K-230. "keep everything when the app is closed and reopened" is how
+        // a person naturally asks for saved data, and `store.kv` has done it
+        // since the first GUI app. It was refused because it contains "when
+        // the app is closed" -- a trigger meant for daemons.
+        //
+        // The refusal fired BEFORE any code was written, so the person never
+        // saw an app and was told an ordinary idea was outside the product.
+        for request in [
+            "a personal expense tracker: keep everything when the app is closed and reopened",
+            "a notes app that saves my notes when the app is closed",
+            "remember my settings even when closed",
+            "keep my list when the app is closed and reopened; make it look good",
+            "a habit tracker whose streaks are still there next time I open it",
+        ] {
+            assert_buildable(request);
+        }
+    }
+
+    #[test]
+    fn a_real_background_service_is_still_refused() {
+        // The other half: the rescue must not open a door for the thing the
+        // rule exists to catch. Each of these asks the app to DO something
+        // while it is shut, which needs a daemon Krate does not have -- and
+        // two of them mention saving as well, so the rescue phrase alone
+        // cannot be what decides it.
+        for request in [
+            "a reminder that pops up even when the app is closed",
+            "back up my files every morning at 6am",
+            "notify me when I am not at my computer",
+            "save my notes and sync them in the background while I sleep",
+            "keep my timer running even when it is closed",
+        ] {
+            match screen(request) {
+                Verdict::Refuse(r) => assert_eq!(
+                    r.limit,
+                    Limit::Background,
+                    "{request:?} should be refused as background work"
+                ),
+                other => panic!("{request:?} must still be refused, got {other:?}"),
+            }
+        }
     }
 
     #[test]
