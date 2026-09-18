@@ -226,6 +226,7 @@ fn region(id: u64, parent: u64, which: Region) -> types::WidgetNode {
             padding,
             text: None,
             place: Some(place),
+            box_: None,
         },
         checked: None,
         value: None,
@@ -268,6 +269,7 @@ fn text_node(id: u64, parent: u64, text: &str, style: types::TextStyle) -> types
             // screen: two bands at x=1599 in a 3200-wide frame (dead centre)
             // and three at +66, +91 and +371.
             place: Some(types::Placement::TopCentre),
+            box_: None,
         },
         checked: None,
         value: None,
@@ -309,6 +311,7 @@ fn header_style() -> types::Style {
         grow: 0.0,
         padding: 0.0,
         place: None,
+        box_: None,
         text: Some(ink(26.0, true)),
     }
 }

@@ -21,6 +21,7 @@ fn main() {
         width: 180.0,
         height: 32.0,
         text: None,
+        r#box: None,
     };
     let placements = vec![button];
     let interaction = PaintInteraction {

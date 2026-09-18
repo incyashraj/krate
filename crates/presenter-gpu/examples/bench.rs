@@ -62,6 +62,7 @@ fn main() {
                 width: 32.0,
                 height: 32.0,
                 text: None,
+                r#box: None,
             };
             p.x = p.x.round();
             p.y = p.y.round();
@@ -84,6 +85,7 @@ fn main() {
             width: 200.0,
             height: 20.0,
             text: None,
+            r#box: None,
         };
         placements.push(score.clone());
         score.widget = WidgetId::new(2).unwrap();

@@ -1773,7 +1773,18 @@ impl Phase3GuiHost {
         for (id, node) in tree.nodes() {
             // One shared list decides what the drawn painters support, so
             // placement filtering and painting can never drift apart.
-            if !drawn_kind(node.kind) {
+            //
+            // A CONTAINER passes too when the app gave it a box. `stack`,
+            // `grid` and `scroll` draw nothing of their own and are rightly
+            // absent from `drawn_kind` -- but a stack with a background and a
+            // corner radius is a card, and dropping it here would mean the
+            // painter never sees it.
+            let has_box = node
+                .style
+                .r#box
+                .map(|style| style.sanitized().paints_anything())
+                .unwrap_or(false);
+            if !drawn_kind(node.kind) && !has_box {
                 continue;
             }
             // A widget inside an unselected tab panel is not on screen. The
@@ -1856,6 +1867,7 @@ impl Phase3GuiHost {
                 // gets the same bounded numbers and a guest cannot hand one
                 // of them a NaN or a thousand-pixel outline.
                 text: node.style.text.map(|style| style.sanitized()),
+                r#box: node.style.r#box.map(|style| style.sanitized()),
             });
         }
         drop(offsets);
@@ -2787,6 +2799,8 @@ fn widget_node_from_wit(node: ui::types::WidgetNode) -> Result<WidgetNode, ui::t
             // the corner it has always started from, exactly as it did.
             text: None,
             place: krate_adapter_common::ui::Placement::Default,
+            // Nor a box: a Phase 3 app gets the host's own look, unchanged.
+            r#box: None,
         },
         node.checked,
         node.value,

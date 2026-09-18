@@ -132,6 +132,7 @@ pub fn lay_out(tree: &WidgetTree, width: f32, height: f32) -> Vec<WidgetPlacemen
             role: node.role.clone(),
             pixels: None,
             text: None,
+            r#box: None,
         });
     }
     placements
@@ -342,6 +343,7 @@ mod tests {
             role: None,
             pixels: None,
             text: None,
+            r#box: None,
         }
     }
 

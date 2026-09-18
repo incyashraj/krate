@@ -877,6 +877,16 @@ fn hugs_content(kind: WidgetKind) -> bool {
             | WidgetKind::Switch
             | WidgetKind::Progress
             | WidgetKind::Slider
+            // A button is as tall as its label, like every other control.
+            //
+            // Left out, it laid out ZERO pixels high whenever the app did not
+            // name a height -- and nobody noticed, because the painter drew
+            // the host's blue into an empty rect while the LABEL still
+            // appeared: a glyph run draws from its baseline and does not care
+            // about the rect it was given. The button looked like a button and
+            // had no box. Giving one a background made the gap visible, and
+            // this is the gap, not the styling (K-415).
+            | WidgetKind::Button
     )
 }
 
@@ -962,6 +972,37 @@ mod tests {
         assert_eq!(second.x, DEFAULT_ROOT_INSET);
         assert_eq!(second.y, DEFAULT_ROOT_INSET + 40.0 + DEFAULT_CONTAINER_GAP);
         assert_eq!((second.width, second.height), (100.0, 60.0));
+    }
+
+    #[test]
+    fn a_button_has_height_without_being_told_one() {
+        // K-415. Button was missing from `hugs_content`, so with the ordinary
+        // `grow: 0` and no explicit height it laid out ZERO pixels tall. The
+        // label still drew -- a glyph run paints from its baseline and ignores
+        // the rect it was given -- so a button looked right and had no box to
+        // paint a background or a border into.
+        let root = WidgetNode::new(WidgetId::new(1).expect("root"), WidgetKind::Stack);
+        let mut tree = WidgetTree::new(root).expect("tree");
+        tree.upsert(
+            WidgetNode::new(WidgetId::new(2).expect("id"), WidgetKind::Button)
+                .with_parent(WidgetId::new(1).expect("root"))
+                .with_label(String::from("Open"))
+                .expect("label"),
+        )
+        .expect("button");
+
+        let layout = compute_layout(&tree, LayoutViewport::new(400.0, 300.0).expect("viewport"))
+            .expect("layout");
+        let r = layout.rect(WidgetId::new(2).expect("id")).expect("rect");
+        assert!(
+            r.height > 0.0,
+            "a button with no explicit height must still have one: {r:?}"
+        );
+        // And it must be tall enough to be a target, not a hairline.
+        assert!(
+            r.height >= DEFAULT_CONTENT_ROW_HEIGHT,
+            "a button should be at least a content row tall: {r:?}"
+        );
     }
 
     #[test]

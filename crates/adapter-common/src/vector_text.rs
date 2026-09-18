@@ -19,9 +19,9 @@ use vello_cpu::kurbo::{Circle, Rect, RoundedRect, Shape};
 use vello_cpu::{Glyph, Pixmap, RenderContext, Resources};
 
 use crate::painter::{
-    button_fill_color, intersect_rects, PaintInteraction, COLOR_BACKGROUND, COLOR_BUTTON,
-    COLOR_BUTTON_LABEL, COLOR_FIELD_BORDER, COLOR_FIELD_FILL, COLOR_FIELD_TEXT, COLOR_KNOB,
-    COLOR_SELECTION, COLOR_TEXT, COLOR_TRACK,
+    button_fill_color, button_interaction_wash, intersect_rects, PaintInteraction,
+    COLOR_BACKGROUND, COLOR_BUTTON, COLOR_BUTTON_LABEL, COLOR_FIELD_BORDER, COLOR_FIELD_FILL,
+    COLOR_FIELD_TEXT, COLOR_KNOB, COLOR_SELECTION, COLOR_TEXT, COLOR_TRACK,
 };
 use crate::ui::{kind_is_selectable, ImagePixels, WidgetKind, WidgetPlacement};
 
@@ -764,6 +764,41 @@ fn fill_rounded(ctx: &mut RenderContext, color: u32, x: f32, y: f32, w: f32, h: 
     ctx.fill_path(&rrect.to_path(0.25));
 }
 
+/// Stroke a rounded rectangle's OUTLINE, centred on its edge.
+///
+/// A border cannot be a second fill: filling the whole box in the border
+/// colour and insetting the background over it only works when there IS a
+/// background. A border-only box has none, so that trick paints a solid
+/// rectangle in the border colour -- which is exactly what a bordered foot
+/// strip turned into before this existed.
+///
+/// Inset by half the width so the stroke lands INSIDE the widget's rect.
+/// Centred on the edge, half of it would fall outside and overlap whatever is
+/// next to it.
+fn stroke_rounded(
+    ctx: &mut RenderContext,
+    color: u32,
+    rect: (f32, f32, f32, f32),
+    radius: f32,
+    width: f32,
+) {
+    let (x, y, w, h) = rect;
+    if width <= 0.0 || w <= 0.0 || h <= 0.0 {
+        return;
+    }
+    let half = width / 2.0;
+    let rrect = RoundedRect::new(
+        (x + half) as f64,
+        (y + half) as f64,
+        (x + w - half) as f64,
+        (y + h - half) as f64,
+        (radius - half).max(0.0) as f64,
+    );
+    ctx.set_paint(argb(color));
+    ctx.set_stroke(vello_cpu::kurbo::Stroke::new(width as f64));
+    ctx.stroke_path(&rrect.to_path(0.25));
+}
+
 /// Draw one laid-out label with its top-left corner at `(x, y)`.
 /// Draw a label with an outline around it, then the label itself.
 ///
@@ -971,12 +1006,69 @@ pub fn try_paint_placements(
                 }
                 continue;
             }
+            // The app's own box, under everything the kind draws.
+            //
+            // Painted here rather than inside the kind arms so it works for a
+            // container too: a `stack` draws nothing of its own, and a stack
+            // the app gave a background and a radius is a card that has to be
+            // filled before its children land on top of it.
+            //
+            // A border is a rounded rect in the border colour with the
+            // background inset inside it -- the same two-fill trick the text
+            // field already uses for its chrome, rather than a stroke, so the
+            // corners stay consistent with everything else here.
+            if let Some(style) = placement.r#box {
+                if style.paints_anything() {
+                    let radius = style.corner_radius * scale;
+                    let bw = style.border_width * scale;
+                    // Background first, then the border STROKED on top of its
+                    // edge. The background is the full rect: the stroke sits
+                    // inside the same bounds and covers the outermost pixels
+                    // of it, so there is no seam between the two.
+                    if let Some(background) = style.background {
+                        fill_rounded(&mut ctx, background.argb(), px, py, pw, ph, radius);
+                    }
+                    if let Some(border) = style.border {
+                        stroke_rounded(&mut ctx, border.argb(), (px, py, pw, ph), radius, bw);
+                    }
+                }
+            }
+
             let label = placement.label.as_deref().unwrap_or("");
             let (text_color, inset) = match placement.kind {
                 WidgetKind::Button => {
-                    let color = button_fill_color(placement.widget, interaction);
-                    fill_rounded(&mut ctx, color, px, py, pw, ph, 6.0 * scale);
-                    (COLOR_BUTTON_LABEL, None)
+                    // An app that named a background has already had it
+                    // painted above; painting the host's blue over it would
+                    // make `box` do nothing on the one widget people most
+                    // want to restyle.
+                    //
+                    // Hover and press still show, as a wash over whatever the
+                    // fill turned out to be, so a restyled button still
+                    // answers the pointer.
+                    let own_background =
+                        placement.r#box.and_then(|style| style.background).is_some();
+                    if !own_background {
+                        let color = button_fill_color(placement.widget, interaction);
+                        fill_rounded(&mut ctx, color, px, py, pw, ph, 6.0 * scale);
+                    } else if let Some(wash) =
+                        button_interaction_wash(placement.widget, interaction)
+                    {
+                        let radius = placement
+                            .r#box
+                            .map(|style| style.corner_radius * scale)
+                            .unwrap_or(6.0 * scale);
+                        fill_rounded(&mut ctx, wash, px, py, pw, ph, radius);
+                    }
+                    // The host's white label is right on the host's blue and
+                    // wrong on an arbitrary background, so an app that picks
+                    // its own fill picks its own ink too (via `text`), and
+                    // gets the ordinary label colour if it does not.
+                    let ink = if own_background {
+                        COLOR_TEXT
+                    } else {
+                        COLOR_BUTTON_LABEL
+                    };
+                    (ink, None)
                 }
                 WidgetKind::TextField => {
                     fill_rounded(&mut ctx, COLOR_FIELD_BORDER, px, py, pw, ph, 4.0 * scale);
@@ -1453,6 +1545,7 @@ mod tests {
                 ImagePixels::new(w, h, rgba).expect("white background"),
             )),
             text: None,
+            r#box: None,
         };
 
         let label = |style: Option<TextStyle>| WidgetPlacement {
@@ -1590,6 +1683,7 @@ mod tests {
             role: None,
             pixels: Some(pixels),
             text: None,
+            r#box: None,
         };
         let label = WidgetPlacement {
             widget: WidgetId::new(2).unwrap(),
@@ -1680,6 +1774,7 @@ mod tests {
             role: None,
             pixels: None,
             text: None,
+            r#box: None,
         }];
         if !try_paint_placements(
             &mut buffer,
@@ -1741,6 +1836,7 @@ mod tests {
             role: None,
             pixels: Some(std::sync::Arc::new(red)),
             text: None,
+            r#box: None,
         }];
         assert!(try_paint_placements(
             &mut buffer,
@@ -1793,6 +1889,7 @@ mod tests {
             role: None,
             pixels: None,
             text: None,
+            r#box: None,
         };
         let placements = [button];
         let mut plain = vec![0u32; (w * h) as usize];
@@ -1857,6 +1954,7 @@ mod text_area_tests {
             role: None,
             pixels: None,
             text: None,
+            r#box: None,
         }
     }
 

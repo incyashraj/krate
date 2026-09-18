@@ -285,6 +285,36 @@ interface types {
     bold: bool,
   }
 
+  /// How a widget's BOX is painted: its background, border and corners.
+  ///
+  /// Every field is optional or zero-defaulted, so a widget that names none of
+  /// this looks exactly as it did -- the host's own colours, which is what
+  /// every app written before this gets.
+  ///
+  /// This exists because a container was not painted at all. `stack`, `grid`
+  /// and `scroll` drew nothing, and the painted kinds took hard-coded colours
+  /// (COLOR_BUTTON, COLOR_FIELD_FILL, COLOR_TRACK), so an app could not give a
+  /// card a background or a panel a border. The only way to draw one was to
+  /// abandon the widget set for a canvas and hand-draw the whole interface --
+  /// which meant giving up real controls, native text editing, host scrolling
+  /// and accessibility to get a rounded corner.
+  record box-style {
+    /// Fill behind the widget's content. Omitted means the host's own
+    /// background for that kind, so a button stays the host's button colour.
+    background: option<color>,
+    /// Border colour. Omitted means no border however `border-width` is set.
+    border: option<color>,
+    /// Border thickness in logical pixels. Clamped by the host; 0 means no
+    /// border however `border` is set.
+    border-width: f32,
+    /// Corner radius in logical pixels, the same on all four corners.
+    ///
+    /// One radius rather than four: every use we have seen wants one, and a
+    /// host that cannot do per-corner radii would have to refuse or lie about
+    /// the other three.
+    corner-radius: f32,
+  }
+
   /// Minimal style block for the first widget protocol draft.
   record style {
     /// Optional width in logical pixels.
@@ -301,6 +331,9 @@ interface types {
     /// Where this widget sits inside its parent. Omitted means the corner it
     /// has always started from.
     place: option<placement>,
+    /// How this widget's box is painted. Omitted everywhere means every
+    /// existing app looks exactly as it did.
+    box: option<box-style>,
   }
 
   /// Where a widget sits inside the space its parent gives it.

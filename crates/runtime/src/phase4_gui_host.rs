@@ -14,7 +14,7 @@
 //! dispatcher Phase 3 uses. The behavioural difference between the phases is
 //! one match arm.
 
-use krate_adapter_common::ui::{Color, Placement, TextStyle, WidgetKind, WidgetStyle};
+use krate_adapter_common::ui::{BoxStyle, Color, Placement, TextStyle, WidgetKind, WidgetStyle};
 
 use crate::phase3_gui_bindings::krate::ui as ui3;
 use crate::phase3_gui_host::{widget_node_from_parts, Phase3GuiHost};
@@ -167,6 +167,7 @@ fn node_from_phase4(
             padding: node.style.padding,
             text: node.style.text.map(text_style_from_phase4),
             place: placement_from_phase4(node.style.place),
+            r#box: node.style.box_.map(box_style_from_phase4),
         },
         node.checked,
         node.value,
@@ -215,6 +216,19 @@ fn text_style_from_phase4(style: ui4::types::TextStyle) -> TextStyle {
         outline_width: style.outline_width,
         size: style.size,
         bold: style.bold,
+    }
+}
+
+/// How a Phase 4 app asked for its box to be painted.
+///
+/// Not sanitized here, for the same reason `text_style_from_phase4` is not:
+/// the placement builder bounds it once for every host.
+fn box_style_from_phase4(style: ui4::types::BoxStyle) -> BoxStyle {
+    BoxStyle {
+        background: style.background.map(color_from_phase4),
+        border: style.border.map(color_from_phase4),
+        border_width: style.border_width,
+        corner_radius: style.corner_radius,
     }
 }
 

@@ -41,6 +41,26 @@ pub struct PaintInteraction {
     pub pressed: Option<WidgetId>,
 }
 
+/// Whether this placement needs painting at all.
+///
+/// A widget is painted when its KIND draws something -- a button, a field, a
+/// label -- or when the app gave it a BOX to draw. Containers draw nothing by
+/// themselves, which is why `stack`, `grid` and `scroll` are absent from
+/// `drawn_kind`; but a stack the app gave a background and a corner radius is
+/// a card, and it has to be filled before its children are drawn over it.
+///
+/// Separate from `drawn_kind` rather than folded into it, because
+/// `drawn_kind` answers a question about the KIND and is read that way by the
+/// widget-parity checker and by three winit hosts. This one is about a
+/// specific placement.
+pub fn paints_placement(placement: &crate::ui::WidgetPlacement) -> bool {
+    drawn_kind(placement.kind)
+        || placement
+            .r#box
+            .map(|b| b.paints_anything())
+            .unwrap_or(false)
+}
+
 /// Whether the drawn-fallback painters can render this widget kind.
 /// The winit hosts use this to filter placements, so painting support
 /// and placement filtering can never drift apart again.
@@ -245,6 +265,25 @@ pub fn button_fill_color(widget: WidgetId, interaction: PaintInteraction) -> u32
         COLOR_BUTTON_HOVER
     } else {
         COLOR_BUTTON
+    }
+}
+
+/// A translucent wash showing hover or press on a button the APP coloured.
+///
+/// The host's own button swaps its whole fill between three blues, which
+/// cannot work when the fill is the app's: the feedback would replace the
+/// colour the app asked for. A wash over whatever is there keeps the app's
+/// colour and still answers the pointer.
+///
+/// White to lighten on hover, black to darken on press, both at low alpha, so
+/// it reads the same way on a light fill and a dark one.
+pub fn button_interaction_wash(widget: WidgetId, interaction: PaintInteraction) -> Option<u32> {
+    if interaction.pressed == Some(widget) {
+        Some(0x30000000)
+    } else if interaction.hovered == Some(widget) {
+        Some(0x20FFFFFF)
+    } else {
+        None
     }
 }
 
@@ -875,6 +914,7 @@ mod tests {
             role: None,
             pixels: None,
             text: None,
+            r#box: None,
         }
     }
 

@@ -24,6 +24,7 @@ fn place(kind: WidgetKind, id: u64, x: f32, y: f32, w: f32, h: f32) -> WidgetPla
         width: w,
         height: h,
         text: None,
+        r#box: None,
     }
 }
 

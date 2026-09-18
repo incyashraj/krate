@@ -1338,6 +1338,7 @@ fn node(id: u64, parent: Option<u64>, kind: types::WidgetKind) -> types::WidgetN
             text: None,
             // The canvas fills the cell; it has nowhere else to go.
             place: None,
+            box_: None,
         },
         checked: None,
         value: None,

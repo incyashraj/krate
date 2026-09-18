@@ -386,6 +386,8 @@ pub struct WidgetStyle {
     pub text: Option<TextStyle>,
     /// Where this widget sits inside its parent.
     pub place: Placement,
+    /// How this widget's box is painted. `None` means the host's own look.
+    pub r#box: Option<BoxStyle>,
 }
 
 /// Where a widget sits inside the space its parent gives it.
@@ -528,6 +530,80 @@ impl TextStyle {
     }
 }
 
+/// How a widget's box is painted: background, border and corner radius.
+///
+/// Containers were not painted at all and painted kinds took hard-coded
+/// colours, so an app could not give a card a background or a panel a border.
+/// The only way to draw one was to abandon the widget set for a canvas and
+/// hand-draw the interface -- giving up real controls, native text editing,
+/// host scrolling and accessibility to get a rounded corner.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct BoxStyle {
+    /// Fill behind the content. `None` means the host's own colour for that
+    /// kind, so a button stays the host's button colour.
+    pub background: Option<Color>,
+    /// Border colour. `None` means no border however `border_width` is set.
+    pub border: Option<Color>,
+    /// Border thickness in logical pixels.
+    pub border_width: f32,
+    /// Corner radius in logical pixels, the same on all four corners.
+    pub corner_radius: f32,
+}
+
+impl BoxStyle {
+    /// The widest border a host will draw.
+    ///
+    /// A guest names this and the painter insets the fill by it on every side,
+    /// so an unbounded width is an unbounded inset -- past half the widget it
+    /// would swallow the content entirely. Sixteen logical pixels is already
+    /// heavier than any real border.
+    pub const MAX_BORDER_WIDTH: f32 = 16.0;
+
+    /// The largest corner radius a host will honour.
+    ///
+    /// Bounded for the same reason, and because a radius past half the
+    /// shorter side is not a rounder rectangle, it is a lozenge -- the
+    /// painter clamps to that anyway, so naming a ceiling here keeps the
+    /// number an app is told it gets close to the pixels it gets.
+    pub const MAX_CORNER_RADIUS: f32 = 64.0;
+
+    /// Clamp everything a guest can name into what a host will draw.
+    ///
+    /// Non-finite values fall back to zero rather than being clamped, the same
+    /// way `TextStyle::sanitized` treats them: a NaN radius is not a big
+    /// radius, it is an app bug, and passing it into the painter would put a
+    /// NaN into a path.
+    pub fn sanitized(self) -> Self {
+        let border_width = if self.border_width.is_finite() {
+            self.border_width.clamp(0.0, Self::MAX_BORDER_WIDTH)
+        } else {
+            0.0
+        };
+        let corner_radius = if self.corner_radius.is_finite() {
+            self.corner_radius.clamp(0.0, Self::MAX_CORNER_RADIUS)
+        } else {
+            0.0
+        };
+        Self {
+            background: self.background,
+            // A border of zero width is no border, however it is coloured --
+            // the same rule an outline of zero width follows.
+            border: (border_width > 0.0).then_some(self.border).flatten(),
+            border_width,
+            corner_radius,
+        }
+    }
+
+    /// Whether this style asks for anything at all.
+    ///
+    /// A style naming no background and no border paints nothing, so the
+    /// painter can skip it rather than filling a transparent rectangle over
+    /// whatever is behind.
+    pub fn paints_anything(self) -> bool {
+        self.background.is_some() || (self.border.is_some() && self.border_width > 0.0)
+    }
+}
+
 impl Default for WidgetStyle {
     fn default() -> Self {
         Self {
@@ -537,6 +613,7 @@ impl Default for WidgetStyle {
             place: Placement::Default,
             grow: 0.0,
             padding: 0.0,
+            r#box: None,
         }
     }
 }
@@ -1341,6 +1418,9 @@ pub struct WidgetPlacement {
     /// How this placement's label is inked, when the app asked for something
     /// other than the host's ordinary label style. Already sanitized.
     pub text: Option<TextStyle>,
+    /// How this placement's box is painted, when the app asked for one.
+    /// Already sanitized.
+    pub r#box: Option<BoxStyle>,
 }
 
 impl Default for WidgetPlacement {
@@ -1367,6 +1447,7 @@ impl Default for WidgetPlacement {
             role: None,
             pixels: None,
             text: None,
+            r#box: None,
         }
     }
 }

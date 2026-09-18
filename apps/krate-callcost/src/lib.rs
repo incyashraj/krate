@@ -271,6 +271,7 @@ impl krate::Guest for Component {
                 padding: 0.0,
                 text: None,
                 place: None,
+                box_: None,
             },
             checked: None,
             value: None,
