@@ -1069,22 +1069,14 @@ fn build_hud(g: &Game, hud: &mut Hud) {
             // What stays below is what shapes still do better: the speed bar,
             // which moves with the frame, and the results plate.
 
-            if g.phase == Phase::Finished {
-                // A results plate: a bar per car, longest for the winner, with
-                // the player's row marked by a notch.
-                for (rank, &ci) in g.order.iter().enumerate() {
-                    let y = 0.75 - rank as f32 * 0.24;
-                    let w = 1.5 - rank as f32 * 0.12;
-                    hud.rect(-w * 0.5, y, w, 0.15);
-                    if ci == 0 {
-                        hud.rect(-w * 0.5 - 0.22, y, 0.14, 0.15);
-                    }
-                }
-                let pulse = sin_approx(g.phase_t * 3.0) * 0.5 + 0.5;
-                if pulse > 0.45 {
-                    hud.rect(-0.75, -0.95, 1.5, 0.10);
-                }
-            }
+            // The results are a TABLE now, in the 2D layer.
+            //
+            // This drew a bar per car, longest for the winner, with a notch
+            // marking the player's row -- and the only thing a bar could say
+            // was "longer came first". It cannot say by how much, or what
+            // anyone's time was, which is most of what a person wants from a
+            // results screen. The text table says all of it, so the bars
+            // behind it were the same redundancy the header had.
         }
     }
 }
@@ -1217,10 +1209,26 @@ fn build_text(g: &Game, win: u64, ui: &mut Ui) {
                 }
                 rows.push(row);
             }
-            let mut lines: Vec<(&str, bool)> = Vec::with_capacity(rows.len() + 1);
+            // Best lap, called out on its own line.
+            //
+            // It is the one number a driver takes away from a race they did
+            // not win, and the table cannot carry it -- a table of finishing
+            // times says who was quickest overall, not who was quickest once.
+            let mut best = String::new();
+            if g.best_lap > 0.0 {
+                best.push_str("BEST LAP  ");
+                text_hud::push_time(g.best_lap, &mut best);
+            }
+
+            let mut lines: Vec<(&str, bool)> = Vec::with_capacity(rows.len() + 3);
             lines.push((&a, true));
+            lines.push(("", false));
             for (i, row) in rows.iter().enumerate() {
                 lines.push((row.as_str(), i == 0));
+            }
+            if !best.is_empty() {
+                lines.push(("", false));
+                lines.push((&best, true));
             }
             ui.centre(win, &lines);
             if sin_approx(g.phase_t * 3.0) > -0.1 {
@@ -1247,7 +1255,18 @@ fn header(g: &Game, lap: &mut String, pos: &mut String, clock: &mut String) {
     text_hud::push_u32(g.cars.len() as u32, pos);
 
     clock.push_str("TIME ");
-    text_hud::push_time(g.race_t.max(0.0), clock);
+    // The PLAYER's time once they have finished, not the race clock.
+    //
+    // The clock keeps running until the last car is home, so a finished
+    // player saw the header say 1:42.5 beside a results table saying they
+    // finished in 1:24.0. Two numbers for the same thing, disagreeing, is
+    // worse than one.
+    let shown = if g.cars[0].finished {
+        g.cars[0].finish_time
+    } else {
+        g.race_t
+    };
+    text_hud::push_time(shown.max(0.0), clock);
 }
 
 // --------------------------------------------------------------------- misc
@@ -1345,6 +1364,14 @@ impl krate::Guest for Component {
         // parks on the results screen rather than restarting -- the only way
         // to photograph the end of a race without sitting through one.
         let hold = has(b"hold");
+        // `finish` jumps straight to the results screen with a plausible
+        // finishing order, so the screen can be photographed and read.
+        //
+        // Reaching it by racing takes minutes of wall time at the pace the
+        // camera actually runs, and `--shoot` fires once at a fixed moment --
+        // so every attempt to photograph the results landed mid-race instead.
+        // A screen nobody can look at is a screen nobody checks.
+        let finish_now = has(b"finish");
         // `pausecheck` proves the pause actually stops the clock, headlessly.
         //
         // It pauses at four seconds of race time, holds for two hundred
@@ -1884,6 +1911,22 @@ impl krate::Guest for Component {
                         g.reset(&track);
                         g.demo = true;
                     }
+                }
+                Phase::Countdown if finish_now => {
+                    // Straight to the end, with times spread the way a real
+                    // finish spreads them: the winner sets a time and each
+                    // car behind adds a gap.
+                    for (i, c) in g.cars.iter_mut().enumerate() {
+                        c.lap = g.settings.laps;
+                        c.finished = true;
+                        c.finish_time = 84.0 + i as f32 * 3.7;
+                        c.progress = g.settings.laps as f32 * 2052.0;
+                    }
+                    g.race_t = 84.0 + (g.cars.len() - 1) as f32 * 3.7;
+                    g.best_lap = 27.4;
+                    g.order = (0..g.cars.len()).collect();
+                    g.phase = Phase::Finished;
+                    g.phase_t = 0.0;
                 }
                 Phase::Countdown => {
                     let left_s = COUNTDOWN - g.phase_t;

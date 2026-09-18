@@ -35,7 +35,13 @@ const HEADER_BASE: u64 = 110;
 const HEADER_CELLS: usize = 3;
 /// Centre lines, top to bottom.
 const CENTRE_BASE: u64 = 120;
-const CENTRE_LINES: usize = 8;
+/// Enough for the longest screen there is.
+///
+/// A six-car results table needs ten: a headline, a blank, six rows, a blank
+/// and the best lap. At eight the last two were simply dropped, silently --
+/// `show` writes as many lines as it has slots and says nothing about the
+/// rest, so BEST LAP was missing from the screen with nothing to explain it.
+const CENTRE_LINES: usize = 12;
 const FOOT_LINE: u64 = 140;
 
 /// How a piece of the interface is inked.
