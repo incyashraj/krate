@@ -1424,14 +1424,22 @@ impl ResourceLimiter for Phase1Limits {
         desired: usize,
         _maximum: Option<usize>,
     ) -> wasmtime::Result<bool> {
-        if desired > self.memory_bytes {
-            wasmtime::Result::Err(wasmtime::Error::msg(format!(
-                "memory limit exceeded: requested {desired} bytes, limit is {} bytes",
-                self.memory_bytes
-            )))
-        } else {
-            Ok(true)
-        }
+        // REFUSE the growth; do not error.
+        //
+        // `Err` here becomes a trap, which kills the guest where it stands --
+        // inside dlmalloc, with no way back. An app could not say "that photo
+        // is too large", could not offer a smaller size, and could not save
+        // what the person had already done; the window simply went away
+        // (K-395).
+        //
+        // `Ok(false)` refuses the growth instead. wasmtime returns -1 from
+        // `memory.grow`, which is the documented "could not grow" answer every
+        // allocator already handles: dlmalloc reports the failure, Rust's
+        // `try_reserve` returns `Err`, and the app gets control back.
+        //
+        // The limit is enforced exactly as before -- the guest never gets the
+        // memory. What changes is that it survives being told no.
+        Ok(desired <= self.memory_bytes)
     }
 
     fn table_growing(
@@ -3149,6 +3157,58 @@ fn classify_limit_error(err: &wasmtime::Error) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    /// The memory limiter REFUSES growth; it does not trap.
+    ///
+    /// The difference decides whether an app that asks for too much can
+    /// recover. `Err` becomes a trap that kills the guest inside its
+    /// allocator, so a photo editor handed a file too large for its budget
+    /// simply vanished -- it could not say so, offer a smaller size, or save
+    /// what the person had already done (K-395). `Ok(false)` is the
+    /// documented "could not grow" answer: wasmtime returns -1 from
+    /// `memory.grow`, dlmalloc reports the failure, and `try_reserve` returns
+    /// an error the app can act on.
+    ///
+    /// Both halves are asserted here, because a limiter that refuses politely
+    /// and hands over the memory anyway would satisfy the first and break the
+    /// sandbox.
+    #[test]
+    fn the_memory_limiter_refuses_rather_than_trapping() {
+        use wasmtime::ResourceLimiter;
+
+        let mut limits = super::Phase1Limits {
+            memory_bytes: 256 * 1024 * 1024,
+        };
+
+        // Under the ceiling: allowed.
+        let ok = limits
+            .memory_growing(0, 128 * 1024 * 1024, None)
+            .expect("a growth under the limit must not be an error");
+        assert!(ok, "a growth under the limit must be allowed");
+
+        // Over the ceiling: refused, and NOT an error.
+        //
+        // `is_err()` here is the whole regression: the old code returned
+        // `Err` and that is what trapped.
+        let over = limits.memory_growing(0, 512 * 1024 * 1024, None);
+        assert!(
+            over.is_ok(),
+            "a growth over the limit must be refused, not raised as an error -- \
+             an error here becomes a trap the guest cannot survive"
+        );
+        assert!(
+            !over.expect("checked ok above"),
+            "a growth over the limit must be REFUSED; allowing it would break \
+             the sandbox while still passing the recovery test"
+        );
+
+        // Exactly at the ceiling is allowed: the limit is a ceiling, not a
+        // strict bound, and an off-by-one here would cost an app its last
+        // page for no reason.
+        let exact = limits
+            .memory_growing(0, 256 * 1024 * 1024, None)
+            .expect("a growth to exactly the limit must not be an error");
+        assert!(exact, "a growth to exactly the limit must be allowed");
+    }
 
     /// The HTTPS path was shipped verified only by hand. These pin the four
     /// decisions in it, because each one is a hole in the permission wall if it
