@@ -2981,6 +2981,16 @@ impl ui::window::Host for Phase3GuiHost {
             Err(err) => return Ok(Err(ui::types::UiError::Platform(err.to_string()))),
         };
 
+        // Build the font stack before the app can draw anything.
+        //
+        // Font discovery plus the first shaping pass costs about 58ms, and it
+        // lands on whichever text call happens first -- so the FIRST FRAME of
+        // any app that draws text overran a 16.6ms budget by 3.5x, and an app
+        // whose first frame is its only frame (a --shoot, a splash, a
+        // quick-run check) paid all of it inside the thing being measured.
+        // Doing it here moves it off the frame path entirely (K-414).
+        krate_adapter_common::vector_text::warm_text_engine();
+
         let title_note = options.title.clone();
         match self.dispatcher().create_window(options) {
             Ok(id) => {

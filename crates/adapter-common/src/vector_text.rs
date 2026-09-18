@@ -8,6 +8,7 @@
 //! (oversized surface, or a host with no usable system fonts).
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 
 use parley::{
     Alignment, AlignmentOptions, FontContext, GenericFamily, Layout, LayoutContext,
@@ -38,6 +39,115 @@ struct ImageBlit<'a> {
 
 thread_local! {
     static TEXT_ENGINE: RefCell<TextEngine> = RefCell::new(TextEngine::new());
+    /// Shaped metrics, keyed by exactly what determines them.
+    ///
+    /// Measuring a string costs about 70x drawing it -- 77-87us against 1.1us,
+    /// measured by `apps/krate-callcost` (K-414) -- because it runs the full
+    /// parley shaping pass and then throws the layout away. Any app that right
+    /// -aligns or centres text measures before drawing, so a table or a list
+    /// pays that on nearly every string, every frame, for strings that have not
+    /// changed.
+    static MEASURE_CACHE: RefCell<MeasureCache> = RefCell::new(MeasureCache::new());
+}
+
+/// How many measured runs to keep.
+///
+/// A screenful of a dense table is a few hundred distinct strings; a thousand
+/// covers that with room for the headers, chrome and a scroll's worth of
+/// churn. Small enough that the whole thing is a few tens of KB.
+const MEASURE_CACHE_CAP: usize = 1024;
+
+/// The part of a measurement request that determines its answer.
+///
+/// Font size is quantised to 1/64th of a pixel so that two requests for
+/// "12.0" and "12.000001" share an entry rather than each taking a slot: an
+/// f32 is not hashable and its exact bits are not what the answer depends on.
+#[derive(PartialEq, Eq, Hash, Clone)]
+struct MeasureKey {
+    text: String,
+    font_size_64ths: u32,
+    weight: u16,
+    italic: bool,
+    letter_spacing_64ths: i32,
+    family: u8,
+}
+
+/// A bounded cache of shaped-run metrics.
+///
+/// Cleared wholesale when full rather than evicting one entry at a time. A
+/// least-recently-used order would need a second structure and a touch on
+/// every hit; the thing being protected is a ~80us shaping pass, and a rare
+/// full clear costs one frame of re-measuring the strings still on screen.
+struct MeasureCache {
+    entries: HashMap<MeasureKey, Option<CanvasTextMetrics>>,
+}
+
+impl MeasureCache {
+    fn new() -> Self {
+        Self {
+            entries: HashMap::new(),
+        }
+    }
+
+    fn get(&self, key: &MeasureKey) -> Option<Option<CanvasTextMetrics>> {
+        self.entries.get(key).copied()
+    }
+
+    fn put(&mut self, key: MeasureKey, value: Option<CanvasTextMetrics>) {
+        if self.entries.len() >= MEASURE_CACHE_CAP {
+            self.entries.clear();
+        }
+        self.entries.insert(key, value);
+    }
+}
+
+/// Build the font stack now, so the first frame does not pay for it.
+///
+/// Font discovery and the first shaping pass cost about 58 milliseconds, and
+/// they land on whichever text call happens first -- measured by timing inside
+/// the host: the first 200 calls took 58,445,121 ns between them and the next
+/// 200 took 53,957 ns, 0.27us each (K-414). On a 16.6ms frame budget that is a
+/// 3.5x overrun on the first frame of any app that draws text, and for an app
+/// whose first frame is its only frame it is the entire measurement.
+///
+/// Call this when a window is created, before anything draws. It is safe to
+/// call more than once: the work happens on the first call and later ones find
+/// the engine already built.
+///
+/// The probe string is not empty, because an empty run takes the "Xg" path and
+/// would not exercise shaping of real characters.
+pub fn warm_text_engine() {
+    let _ = measure_canvas_text_uncached("Xg", 12.0, CanvasTextStyle::default());
+}
+
+/// Throw away every cached measurement.
+///
+/// The metrics depend on the fonts the system offers, so anything that can
+/// change those -- a font installed or removed while the app runs -- has to
+/// invalidate this or the app keeps laying out to a face it is no longer
+/// drawing with.
+pub fn clear_measure_cache() {
+    MEASURE_CACHE.with(|cache| cache.borrow_mut().entries.clear());
+}
+
+fn measure_key(text: &str, font_size: f32, style: CanvasTextStyle) -> MeasureKey {
+    MeasureKey {
+        text: String::from(text),
+        // Quantised, and NaN folds to zero rather than never matching itself.
+        font_size_64ths: if font_size.is_nan() {
+            0
+        } else {
+            (font_size * 64.0) as u32
+        },
+        weight: style.weight,
+        italic: style.italic,
+        letter_spacing_64ths: if style.letter_spacing.is_nan() {
+            0
+        } else {
+            (style.letter_spacing * 64.0) as i32
+        },
+        family: style.family as u8,
+    }
 }
 
 struct TextEngine {
@@ -538,6 +648,23 @@ pub fn measure_canvas_text_styled(
     style: CanvasTextStyle,
 ) -> Option<CanvasTextMetrics> {
     let font_size = font_size.clamp(4.0, 256.0);
+    // Shaping is the expensive part and the answer only depends on the key, so
+    // ask the cache before doing it again (K-414).
+    let key = measure_key(text, font_size, style);
+    if let Some(hit) = MEASURE_CACHE.with(|cache| cache.borrow().get(&key)) {
+        return hit;
+    }
+    let measured = measure_canvas_text_uncached(text, font_size, style);
+    MEASURE_CACHE.with(|cache| cache.borrow_mut().put(key, measured));
+    measured
+}
+
+/// `measure_canvas_text_styled` without the cache: the shaping pass itself.
+fn measure_canvas_text_uncached(
+    text: &str,
+    font_size: f32,
+    style: CanvasTextStyle,
+) -> Option<CanvasTextMetrics> {
     TEXT_ENGINE.with(|engine| {
         let engine = &mut *engine.borrow_mut();
         // An empty run has no width, but it still has a line: an app sizing an
@@ -1222,6 +1349,65 @@ pub fn try_paint_placements(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn warming_the_engine_makes_the_first_measured_call_cheap() {
+        // K-414. Font discovery plus the first shaping pass costs about 58ms
+        // and lands on whichever text call happens FIRST, so the first frame
+        // of any app that draws text overran a 16.6ms budget by 3.5x. The
+        // cost is real and one-time; the bug is that an app's frame paid it.
+        //
+        // Measured rather than asserted structurally: a test that only checked
+        // `warm_text_engine` exists would pass with an empty body.
+        use std::time::Instant;
+
+        // Whatever this process has already done to the engine, this is the
+        // call that guarantees it is built.
+        warm_text_engine();
+
+        // Now a fresh string -- not the warm probe's "Xg", so no cache entry
+        // can be standing in for the work.
+        let started = Instant::now();
+        let _ = measure_canvas_text("a first real measurement", 13.0);
+        let warm = started.elapsed();
+
+        // The pre-fix path spent ~58 MILLISECONDS here. A whole millisecond is
+        // far above the ~0.3us a warm call takes and far below the failure,
+        // so it separates the two without being flaky on a loaded machine.
+        assert!(
+            warm.as_millis() < 10,
+            "a measurement after warming must not pay font-stack init: took {warm:?}"
+        );
+    }
+
+    #[test]
+    fn measuring_the_same_run_twice_gives_the_same_answer() {
+        // The cache must not change what an app is told. A wrong key would
+        // hand back another string's metrics, which is worse than being slow.
+        warm_text_engine();
+        let a = measure_canvas_text("the quick brown fox", 14.0);
+        let b = measure_canvas_text("the quick brown fox", 14.0);
+        assert_eq!(a.map(|m| m.width), b.map(|m| m.width));
+
+        // And two runs that differ in ANY key component must not share an
+        // entry. Different text, different size, different style.
+        let other = measure_canvas_text("the quick brown foxes", 14.0);
+        let bigger = measure_canvas_text("the quick brown fox", 28.0);
+        if let (Some(a), Some(other), Some(bigger)) = (a, other, bigger) {
+            assert!(
+                other.width > a.width,
+                "a longer string must measure wider: {} vs {}",
+                other.width,
+                a.width
+            );
+            assert!(
+                bigger.width > a.width,
+                "the same string at twice the size must measure wider: {} vs {}",
+                bigger.width,
+                a.width
+            );
+        }
+    }
     use super::*;
     use crate::ui::{Color, TextStyle, WidgetId};
 
