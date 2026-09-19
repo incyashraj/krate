@@ -618,17 +618,40 @@ async function takeShot(bundle, shotPath) {
     const proc = spawn(KRATE, ["run", bundle, "--shoot", shotPath, "--auto-grant"], {
       env: { ...process.env, KRATE_SHOOT_AFTER_MS: "1200" },
     });
-    const give = setTimeout(() => { try { proc.kill("SIGKILL"); } catch (e) {} }, 45000);
-    proc.on("close", async () => {
+    // Why a picture failed, kept for the log.
+    //
+    // This function resolves null for every failure -- a crash, a timeout,
+    // a missing audio device, an app that drew nothing -- and said nothing
+    // about which. So "no preview for this one" was not diagnosable from
+    // the outside at all: the only way to learn why was to reproduce the
+    // build by hand. The engine's own output is the answer, and it was
+    // being thrown away.
+    let tail = "";
+    const keep = (b) => { tail = (tail + b.toString()).slice(-800); };
+    proc.stdout?.on("data", keep);
+    proc.stderr?.on("data", keep);
+    let killed = false;
+    const give = setTimeout(() => {
+      killed = true;
+      try { proc.kill("SIGKILL"); } catch (e) {}
+    }, 45000);
+    const giveUp = (why) => {
+      console.warn(`[shot] no picture: ${why}${tail ? `\n[shot] engine said: ${tail.trim()}` : ""}`);
+      resolve(null);
+    };
+    proc.on("close", async (code) => {
       clearTimeout(give);
       try {
         const png = await readFile(shotPath);
         resolve(`data:image/png;base64,${png.toString("base64")}`);
       } catch (e) {
-        resolve(null);
+        giveUp(killed ? "the app was still running after 45s" : `exit ${code}, and no file was written`);
       }
     });
-    proc.on("error", () => { clearTimeout(give); resolve(null); });
+    proc.on("error", (err) => {
+      clearTimeout(give);
+      giveUp(`could not run the engine: ${err.message}`);
+    });
   });
 }
 

@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  No per-app installer, no per-OS port, no signing dance. A Krate app is tens of<br>
-  kilobytes, and it reaches nothing it did not declare.<br>
+  No per-app installer, no per-OS port, no signing dance. A Krate app is a<br>
+  few hundred kilobytes, carries its own source, and reaches nothing it did not declare.<br>
   The <strong>player</strong> is open source and installs once (~11 MB on macOS).
 </p>
 
@@ -65,7 +65,20 @@ things with the same engine underneath.
 Sent a `.krate` and just want to open it?
 [krate.tech/open](https://krate.tech/open/).
 
-## 285 MB became 37 KB
+## Nothing installed? Start in the browser
+
+[krate.tech/app](https://krate.tech/app/) is Krate Studio in a tab. Describe
+the app you want and **Krate AI** writes it, builds it on our machines and
+hands back a `.krate` you can download and run. No install, no toolchain, no
+API key of your own.
+
+Your first app is on us, and so is your first change to it. After that,
+Krate Studio on your own machine is free and unlimited when you point it at
+an AI you already have (Claude, Codex, Gemini, or an API key you hold). The
+session follows your account, so anything you start in the browser opens on
+the desktop ready to edit.
+
+## 285 MB became a file you can email
 
 The same 50,000-line notes workload, same Apple M4 Mac, head to head against
 MarkText 0.17.1 (Electron). Both builds ARM64. Every number below comes from
@@ -74,7 +87,7 @@ committed beside it and covered by a seal.
 
 | | MarkText | Krate |
 |---|---:|---:|
-| The file itself | 284.6 MiB installed | **36.6 KiB** |
+| The app payload | 284.6 MiB installed | **36.6 KiB** |
 | Memory, 50,000 lines | 2,299.4 MiB across four processes | **178.5 MiB, one process** |
 | Opens in, 50,000 lines | 611.5 ms median of 10 | **237.1 ms median of 10** |
 | CPU, document open | 7.38% of a core | **1.97% of a core** |
@@ -83,6 +96,12 @@ Krate does not put another browser inside every app. The 36.6 KiB is the
 per-app payload: the shared player is installed once at 88.6 MiB, so the
 first app you ship costs 3.21x less disk than the Electron build, and every
 app after that costs almost nothing.
+
+The `.krate` file you actually send is bigger than its payload, because it
+carries the app's own source and the SDK interfaces beside the code: about
+105 KB to 360 KB for the apps in this repository, and more for one that
+embeds large assets. That is the honest number to compare against an
+installer, and it is still roughly a thousandth of the Electron build.
 
 Method, raw samples and seal: the
 [reproducible benchmark kit](evidence/benchmarks/marktext-vs-krate/README.md)
@@ -102,8 +121,10 @@ control.
 4. The app gets only what they allow, and nothing else.
 
 A Krate app is a WebAssembly component compiled from ordinary Rust. It
-carries no browser and no per-app runtime: a playable game is **13 KB** and
-the notes editor in the benchmark is **37 KB**.
+carries no browser and no per-app runtime: the compiled code for a playable
+game is **13 KB** and for the notes editor in the benchmark **37 KB**. The
+file you send wraps that in its own source and the SDK interfaces, so a
+`.krate` is typically **105 KB to 360 KB**.
 
 ## Krate Studio
 
@@ -112,20 +133,35 @@ the notes editor in the benchmark is **37 KB**.
 </p>
 
 Studio runs the same engine the CLI does: build, import-check, run and
-pack, with the engine's real output on screen -- not a summary of it. It
-uses the coding AI you already have installed and pay for, and stays out of
-the way if you would rather write the code yourself. Every `.krate` carries
-its own source, so a build you shipped a year ago opens as a project you
-can edit. Download from
-[krate.tech/studio](https://krate.tech/studio/) -- signed `.dmg` on macOS,
-installer on Windows (unsigned for now, so SmartScreen asks once), AppImage
-on Linux.
+pack, with the engine's real output on screen, not a summary of it. It uses
+the coding AI you already have installed and pay for, and stays out of the
+way if you would rather write the code yourself. Every `.krate` carries its
+own source, so a build you shipped a year ago opens as a project you can
+edit.
+
+It runs in two places, and they are the same interface rather than two
+lookalikes:
+
+- **In a browser**, at [krate.tech/app](https://krate.tech/app/). Krate AI
+  does the writing and the build happens on our machines. Nothing to
+  install, and your first app and first change are free.
+- **On your machine**, from [krate.tech/studio](https://krate.tech/studio/).
+  Signed `.dmg` on macOS, installer on Windows (unsigned for now, so
+  SmartScreen asks once), AppImage on Linux. Free and unlimited with your
+  own AI.
+
+Sessions live on your account, so an app you start in the browser opens on
+the desktop with its conversation intact and editable.
 
 ## What it costs
 
 Nothing, right now. The player is MIT and Apache licensed and always will
-be; everything else is free while we build it, with no cap and no meter.
-We will charge one day and we will say so long before we do.
+be. The CLI and Krate Studio on your own machine are free and uncapped,
+and we will say so long before that changes.
+
+The one thing with a limit is the inference we pay for. Krate AI in the
+browser writes your first app and your first change to it on us; after
+that, making is unlimited on your own machine with an AI you already have.
 
 If you point Krate at your own coding AI, that stays your subscription and
 Krate never holds its keys.
@@ -146,7 +182,14 @@ krate run app.krate --dump-caps
   things needs no access to your folders at all;
 - no network call works unless network access was declared and granted, and
   a redirect to a host you did not allow is not followed;
-- an app downloaded from a URL gets no extra access for having come from one.
+- an app downloaded from a URL gets no extra access for having come from one;
+- the camera, the microphone, speech and sound sit behind the same wall, so
+  an app that wants to see or hear you has to say so first;
+- a file you pick or drag onto a window is handed over as a name and a
+  token, never a path, so the app opens that one file and cannot walk to its
+  folder or come back for it on a later run;
+- `store.shared` and `net.ws` are the multiplayer pair: a bucket two
+  machines share through an invite code, and a live two-way connection.
 
 The strong version of the claim is mechanical, not a promise: these apps
 import **zero** `wasi:*` interfaces. There is no ambient access to leak
@@ -181,7 +224,7 @@ pick, every path ends at the same `.krate` file:
   `grok`); `krate ai` says which are ready, and `--author-cmd` is the seam
   for anything else.
 
-Ask for something a sandboxed app cannot be -- "download my email" -- and
+Ask for something a sandboxed app cannot be, like "download my email", and
 `krate create` refuses in about a second with the reason and a suggestion,
 instead of spending five minutes building something convincing that could
 never work.
@@ -233,7 +276,7 @@ cd krate
 cargo build --workspace && cargo test --workspace
 ```
 
-The workspace has 1,266 Rust tests. You need the Rust toolchain named in
+The workspace has over 1,600 Rust tests. You need the Rust toolchain named in
 `rust-toolchain.toml` and `cargo-component`; check your machine with
 `krate doctor`. Platform packages, the two Windows traps, and the
 one-package Linux receiver note live in [docs/build.md](docs/build.md).
@@ -294,7 +337,7 @@ Open core, split by what each piece is for:
 
 | Piece | License |
 | --- | --- |
-| Player, `.krate` format, CLI, runtime -- everything a receiver trusts | [MIT](LICENSE-MIT) OR [Apache 2.0](LICENSE-APACHE) |
+| Player, `.krate` format, CLI, runtime: everything a receiver trusts | [MIT](LICENSE-MIT) OR [Apache 2.0](LICENSE-APACHE) |
 | Krate Studio (`studio/`) and the hub worker (`cloud/worker/`) | [Business Source License 1.1](studio/LICENSE), converts to Apache 2.0 in 2030 |
 
 The BSL lets you read, build, and use Studio; it stops a competing hosted
