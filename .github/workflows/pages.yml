@@ -140,6 +140,14 @@ jobs:
           # the account. The rewrite matches exact strings, so this fails
           # the deploy if the UI copy changes and the table goes stale.
           node docs/landing/studio/wording-test.mjs
+          # And that every command Studio's UI can reach has a browser
+          # answer. An unbridged command does not fail to build and does
+          # not go red anywhere -- the button just returns a rejection,
+          # and the person is told whatever the nearest catch block says.
+          # That has shipped twice: a working gallery that claimed it
+          # needed the desktop app, and "it won't open" answered with
+          # "the build failed, press Details" on a sheet with no Details.
+          node docs/landing/studio/coverage-test.mjs
 
           mkdir -p _site/app
           cp -R studio/ui/. _site/app/

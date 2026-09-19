@@ -154,8 +154,30 @@ function saveLocalSessions(list) {
 /* A refusal Studio's UI already knows how to show. The words matter more
  * than the mechanism: they must say what to do next, and never blame the
  * person for standing in a browser. */
+/* "85 KB" back into bytes.
+ *
+ * The build service prettifies the size before sending it, and the Details
+ * sheet divides what it is given by 1024. Handing it the string produced
+ * "NaN KB". Only KB and MB exist (cloud/builder/src/server.js prettySize),
+ * and anything unrecognised answers 0 rather than a guess. */
+function bytesOfPretty(size) {
+  if (typeof size === "number") return size;
+  const m = /^([\d.]+)\s*(KB|MB)$/i.exec(String(size || "").trim());
+  if (!m) return 0;
+  const n = parseFloat(m[1]);
+  if (!isFinite(n)) return 0;
+  return Math.round(n * (m[2].toUpperCase() === "MB" ? 1024 * 1024 : 1024));
+}
+
 function refuse(message) {
-  return Promise.reject(new Error(message));
+  const err = new Error(message);
+  // Flagged so Studio's error wording knows this is a refusal and not a
+  // failed build. `plainWords` classifies on provider vocabulary, and a
+  // refusal matches none of it, so an unflagged one came out as "The build
+  // failed. Press Details for the engine output" -- on sheets that have no
+  // Details, about builds that never started.
+  err.refusal = true;
+  return Promise.reject(err);
 }
 
 /* Hand the finished app to the browser as a download.
@@ -939,6 +961,85 @@ const COMMANDS = {
     if (!url) return refuse("That app has no link yet.");
     window.open(url, "_blank", "noopener");
   },
+
+  /* The Details sheet on a finished app.
+   *
+   * A desktop reads this out of the .krate on disk. A browser has no disk,
+   * but it does not need one: the build service already reported what the
+   * app asks for and how big it is, and that is everything this sheet
+   * shows. Without an answer the sheet's headline trust line read
+   * `Error: That part of Studio needs the app on your computer.`
+   *
+   * Two shape conversions, because the build service and this sheet do not
+   * speak the same dialect:
+   *   - `asks` arrives as capability strings and the sheet wants
+   *     {cap, words} rows.
+   *   - `size` arrives ALREADY pretty ("85 KB") and the sheet divides it by
+   *     1024, which on a string is NaN. So it is parsed back to bytes.
+   */
+  async app_info() {
+    const r = bridge.jobResult;
+    if (!r) return refuse("There is no app to read yet.");
+    const words = (cap) =>
+      typeof window.friendlyAsk === "function" ? window.friendlyAsk(cap) || cap : cap;
+    return {
+      size: bytesOfPretty(r.size),
+      asks: (r.asks || []).map((cap) => ({ cap, words: words(cap) })),
+      capabilities: r.asks || [],
+    };
+  },
+
+  /* The failed request, sent to us so the tool improves.
+   *
+   * A plain hub POST with nothing desktop about it, and the field names
+   * already match, so this passes straight through. Unbridged, the
+   * "Send the request" button on the failure card wrote
+   * `Error: That part of Studio needs the app on your computer.` into the
+   * sheet -- on the one screen somebody reaches only after a build has
+   * already let them down.
+   */
+  async make_for_me({ email, request, answers, agent, why } = {}) {
+    return hub("/makeit", {
+      method: "POST",
+      body: JSON.stringify({
+        email: email || "",
+        request: request || "",
+        answers: answers || "",
+        agent: agent || "",
+        why: why || "",
+      }),
+    });
+  },
+
+  /* ---- support: the same desk, from a tab -------------------------------
+   *
+   * Three hub endpoints that need nothing from a desktop, and had no
+   * browser answer -- so "Contact support" in a tab wrote
+   * `Error: That part of Studio needs the app on your computer.` into the
+   * sheet, which is the worst possible reply to somebody who came to that
+   * sheet because something was already wrong.
+   *
+   * The desktop renames one field on its way out (`message` -> `text`);
+   * that rename lives here too, because the hub's contract is the hub's.
+   */
+  async support_new({ subject, message, email } = {}) {
+    return hub("/support/new", {
+      method: "POST",
+      body: JSON.stringify({ subject: subject || "", text: message || "", email: email || "" }),
+    });
+  },
+  async support_list({ keys } = {}) {
+    return hub("/support/list", {
+      method: "POST",
+      body: JSON.stringify({ keys: keys || [] }),
+    });
+  },
+  async support_reply({ id, key, message } = {}) {
+    return hub("/support/reply", {
+      method: "POST",
+      body: JSON.stringify({ id, key: key || "", text: message || "" }),
+    });
+  },
 };
 
 /* The door itself. Anything not named above is a command the browser has
@@ -1207,6 +1308,11 @@ function trimDesktopOnly() {
   // nothing here ever shows it.
   const term = document.getElementById("setTerminalGroup");
   if (term) term.remove();
+  // Refreshing the AI list asks which coding tools are installed on this
+  // machine. In a tab the answer is always the same one AI, so the button
+  // is a control that cannot change anything.
+  const aiRefresh = document.getElementById("aiRefresh");
+  if (aiRefresh) aiRefresh.closest(".ai-actions")?.remove();
   // A settings group whose every row has gone should go too, or the sheet
   // grows headings standing over nothing.
   document.querySelectorAll(".set-group, .set-panel").forEach((group) => {
@@ -1235,6 +1341,19 @@ const WEB_WORDING = [
   ["all together, on this computer", "all together"],
   ["Your apps stay on this computer", "Your apps stay in your account"],
   ["How Krate looks on this computer.", "How Krate looks for you."],
+  // The AI panel, which on a desktop lists the coding tools the person has
+  // installed and how to fix each one. In a tab there is one AI, ours, and
+  // nothing to install, pick, refresh or sign into -- so every sentence in
+  // this panel was false at once: "Installed tools" over a list of one,
+  // "the AI you already have" when it is ours, a Refresh button for a list
+  // that cannot change, and a pointer to a Terminal fold a browser has no
+  // way to open.
+  ["Installed tools", "The AI that builds your app"],
+  // The two long sentences in this panel wrap across lines in the HTML, so
+  // their text nodes carry the source's newlines and indentation. This
+  // table matches whole text nodes exactly, which a wrapped sentence
+  // cannot survive -- they are rewritten in `speakWebAi` instead, on
+  // collapsed whitespace.
 ];
 
 /* The composer's hints are written for a keyboard and a wide screen. On a
@@ -1281,6 +1400,72 @@ function speakTouchWording() {
   if (box) {
     for (const [wide, touch] of TOUCH_PLACEHOLDERS) {
       if (box.placeholder === wide) { box.placeholder = touch; break; }
+    }
+  }
+}
+
+/* The Details sheet's source row, which no static rewrite can reach.
+ *
+ * `session_source_dir` answers "source" -- a sentinel `reveal` matches on
+ * to hand over the Cargo project as a download. Studio prints whatever it
+ * is given as a file path, so the sheet showed the bare word "source"
+ * where a path belongs, over buttons reading "Open the folder" and "Copy
+ * the path". Both work -- they download the project -- but neither says
+ * so, and the path they name does not exist.
+ *
+ * Written after the sheet is filled rather than rewritten from the table
+ * above, because `showInfo` sets these nodes itself when the sheet opens:
+ * a boot-time pass would be overwritten by the next click.
+ */
+function speakWebSource() {
+  const line = document.getElementById("infoSourcePath");
+  if (line && line.textContent.trim() === "source") {
+    line.textContent = "The app's Rust project, ready to download.";
+  }
+  const open = document.getElementById("infoOpenSource");
+  if (open && open.textContent.trim() === "Open the folder") {
+    open.textContent = "Download the project";
+  }
+  // There is no path to put on a clipboard in a tab.
+  const copy = document.getElementById("infoCopySource");
+  if (copy) copy.remove();
+  // The terminal line names the AI that made the app, and on the web that
+  // is ours -- but `--agent krate` is not a thing the CLI accepts, so
+  // copying the line gave somebody a command that cannot run. On their own
+  // machine the AI is theirs, and the placeholder says so.
+  const cmd = document.getElementById("infoCmd");
+  if (cmd && cmd.textContent.includes("--agent krate")) {
+    cmd.textContent = cmd.textContent.replace("--agent krate", "--agent <your-ai>");
+  }
+}
+
+/* The AI panel's two wrapped sentences.
+ *
+ * On a desktop this panel lists the coding tools the person has installed
+ * and the one-line fix for each. In a tab there is one AI, ours, and
+ * nothing to install, pick or sign into -- so both sentences were false,
+ * and one of them pointed at a Terminal fold a browser cannot open.
+ *
+ * Matched on collapsed whitespace rather than through WEB_WORDING, because
+ * both wrap across several lines in the HTML: their text nodes carry the
+ * source's newlines and indentation, and the table compares whole nodes.
+ */
+const WEB_AI_WORDING = [
+  [
+    /^Krate works with the AI you already have\. Pick one\s+that is ready, or follow its one-line fix -- its sign-in stays with\s+that tool, and Krate never holds its keys\.$/,
+    "Krate's own AI builds your app here. Nothing to install, and no key of yours is ever held.",
+  ],
+  [
+    /^Signed in somewhere else just now\? Press Refresh\.\s+Prefer a terminal\? Each fix's exact command is under its Terminal fold\.$/,
+    "On your own machine, Krate Studio drives the AI you already have instead.",
+  ],
+];
+
+function speakWebAi() {
+  for (const el of document.querySelectorAll(".set-sub, .ai-note")) {
+    const text = el.textContent.trim();
+    for (const [desktop, web] of WEB_AI_WORDING) {
+      if (desktop.test(text)) { el.textContent = web; break; }
     }
   }
 }
@@ -1359,6 +1544,8 @@ function speakWeb() {
   document.addEventListener("click", () => setTimeout(() => {
     trimDesktopOnly();
     speakWebWording();
+    speakWebSource();
+    speakWebAi();
   }, 50), true);
   // Drawn when the AI settings open, because that is where the key lives
   // and the two questions -- whose key, and what has it cost -- are one

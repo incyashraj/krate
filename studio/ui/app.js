@@ -2378,7 +2378,17 @@ async function buildNow(request, files, revising, planSession, starterShape) {
   // the app to look at it and fix what it sees -- windows appear for a
   // second and sounds play. Unexplained, that reads as the machine
   // misbehaving; the founder watched exactly that (K-132).
-  say("KRATE", "While I work, I'll open your app a few times to look at it -- so a window may flash and you might hear its sounds. That's me testing it, not something breaking.");
+  // The flashing window is a DESKTOP symptom: the engine runs on this
+  // machine, so its test windows appear on this screen. On the web the
+  // build happens on the build service, nothing opens on the person's
+  // screen, and warning them about a flash that cannot happen invents a
+  // worry -- the opposite of what this line is for.
+  say(
+    "KRATE",
+    tauri
+      ? "While I work, I'll open your app a few times to look at it -- so a window may flash and you might hear its sounds. That's me testing it, not something breaking."
+      : "While I work, I'll open your app a few times to look at it and fix what I see. That's me testing it, not something breaking.",
+  );
   // The build itself is one chip on the timeline, born live and settled
   // into a receipt when it ends -- narration never piles up in the rail.
   state.buildChip = appendLiveChip(version);
@@ -2405,7 +2415,13 @@ async function buildNow(request, files, revising, planSession, starterShape) {
         ? "changes are quicker - the AI reads your app first"
         : localStorage.getItem("krateMadeOnce")
           ? "a minute or two, sometimes more"
-          : "first time on this computer - a few minutes",
+          // "on this computer" is the desktop's first-build cost: it is
+          // warming a Rust toolchain on this machine. On the web the build
+          // service is already warm and nothing is installed here, so the
+          // sentence names a wait that is not being paid.
+          : tauri
+            ? "first time on this computer - a few minutes"
+            : "a few minutes",
     );
   } catch (err) {
     console.warn("beginBuild failed, building anyway:", err);
@@ -2447,7 +2463,45 @@ async function buildNow(request, files, revising, planSession, starterShape) {
     // keystrokes to other programs, by design). "Try again" would be a
     // lie; say what is true and invite a different idea.
     const refusal = text.match(/Krate cannot build that: ([^]*?)(?:\n\n|$)/);
-    if (refusal) {
+    // The allowance wall is an ANSWER too, and the most damaging one to get
+    // wrong. Nothing failed: the person used the app Krate funded, and the
+    // next one is theirs to make in Studio with their own AI. Falling
+    // through to the failure card told them "That one didn't come
+    // together. The build failed. Press Details for the engine output" and
+    // offered "Try again" -- a button that can never work, on a build that
+    // never ran, about a limit the card never mentions.
+    if (err && err.wall) {
+      // Settle the build's own furniture first. The chip was born live when
+      // the build started and would otherwise sit at "building" forever
+      // beside a message saying the build is not happening, with the
+      // composer still locked to "Wait - v1 is becoming a…". `failBuild`
+      // does this for real failures; nothing did it here.
+      clearInterval(state.watchdog);
+      clearInterval(state.timer);
+      clearProgress(false);
+      if (state.buildChip) {
+        state.buildChip.remove();
+        state.buildChip = null;
+      }
+      state.buildSettled = true;
+      unlockComposer("Describe an app, or paste code to port…");
+      say(
+        "KRATE",
+        `${String(err.message || "Your first app was on us.")}\n\nYour work is saved here, and Studio on your own machine opens this session ready to edit.`,
+        null,
+        {
+          variant: "ask",
+          actions: err.download
+            ? [{
+                label: "Get Krate Studio",
+                primary: true,
+                run: () => invoke("open_external", { url: "https://krate.tech/open" }).catch(() => {}),
+              }]
+            : [],
+        },
+      );
+      show("idle");
+    } else if (refusal) {
       say("KRATE", `This one can't work as a real app: ${refusal[1].trim()}\n\nTell me a different version of the idea and I'll build that.`, null, { variant: "ask" });
       show("idle");
     } else {
@@ -2528,6 +2582,13 @@ function providerWords(text) {
 function plainWords(err) {
   const raw = String(err && err.message ? err.message : err);
   if (raw === "stopped") return "stopped";
+  // A refusal is not a failure. The browser shell answers "that part needs
+  // the app on your computer" for the commands only a desktop can run, and
+  // that sentence is already the whole truth -- it matched none of the
+  // patterns below, so it fell through to "the build failed, press Details"
+  // on a screen with no Details and a build that never ran. Somebody asking
+  // why their app would not open was told their app had failed to build.
+  if (err && err.refusal) return raw;
   // Classify on what the PROVIDER said, never on what Krate said about it.
   const text = providerWords(raw);
   // A broken install must say so. Falling through to the generic build

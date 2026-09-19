@@ -65,6 +65,17 @@ const hub = createServer((req, res) => {
     req.on("end", () => {
       const body = JSON.parse(raw || "{}");
       caseCalls.push({ path: req.url, who, body });
+      // The hub's edit wall, switched on by the test when it wants to walk
+      // it. The real hub answers 402 here when the free change is used;
+      // the builder must stop rather than build anyway.
+      if (req.url === "/case/open" && body.edit && wallEdits) {
+        res.statusCode = 402;
+        res.setHeader("content-type", "application/json");
+        return res.end(JSON.stringify({
+          wall: true, n: 1, limit: 1, edit: true,
+          message: "The free change is used.",
+        }));
+      }
       res.setHeader("content-type", "application/json");
       res.end(JSON.stringify(req.url === "/case/open"
         ? { id: "case-" + caseCalls.length, n: 0 }
@@ -78,6 +89,9 @@ const hub = createServer((req, res) => {
 
 // Every ledger call the builder makes, in order, for the assertions below.
 const caseCalls = [];
+// When true the fake hub refuses an edit case with 402, as the real hub
+// does once the one free change is used.
+let wallEdits = false;
 // What each account has stored, and every spend the builder reported.
 const heldKeys = {};
 const keyCalls = [];
@@ -377,10 +391,60 @@ const revisedStatus = JSON.parse((await get(`/build/${revisedId}`, asAlice)).bod
 assert.strictEqual(revisedStatus.parent, jobId, "the status carries the parent");
 const revisedFile = await get(`/build/${revisedId}/file`, asAlice);
 assert.strictEqual(revisedFile.body, "not-a-real-bundle-revised", "the change was made to the app that was made");
+// A change opens its OWN case, flagged as an edit.
+//
+// It used to inherit the app's case, which read as the tidier design --
+// one case per app, changes free inside it -- and was right while the rule
+// was three apps a month. The rule is now one app and ONE change, and the
+// hub decides an edit's allowance at `/case/open`. A change that never
+// reached that door could never be refused, so the free change was
+// unlimited in practice however the hub was configured.
 const firstCase = caseCalls.find((c) => c.path === "/case/attempt").body.id;
 const revisedAttempt = caseCalls.filter((c) => c.path === "/case/attempt").pop().body;
-assert.strictEqual(revisedAttempt.id, firstCase, `the change stays inside the case the app was made in: ${JSON.stringify(revisedAttempt)}`);
-assert.strictEqual(caseCalls.filter((c) => c.path === "/case/open").length, 2, "a change opens no new case (only the two apps did)");
+assert.notStrictEqual(revisedAttempt.id, firstCase, "a change is counted in its own case, not the app's");
+const caseOpens = caseCalls.filter((c) => c.path === "/case/open");
+assert.strictEqual(caseOpens.length, 3, "two apps and one change each opened a case");
+const editOpens = caseOpens.filter((c) => c.body.edit === true);
+assert.strictEqual(editOpens.length, 1, "exactly one case was opened as an edit");
+assert.strictEqual(editOpens[0].body.request, "make the button blue",
+  "the edit's case records the change asked for, not the original request");
+// The fake hub names each case `case-<n>` by call order, so the edit's
+// case is the one opened by the last /case/open -- and that is the case
+// the change's attempt must be recorded against.
+// findIndex is 0-based and the fake numbers from 1, hence the +1 inside
+// the parentheses -- outside them it would concatenate a digit onto the
+// string instead of adding to the index.
+const editCaseId = "case-" + (caseCalls.findIndex(
+  (c) => c.path === "/case/open" && c.body.edit === true,
+) + 1);
+assert.strictEqual(revisedAttempt.id, editCaseId,
+  `the change's attempt lands in the case opened for it: ${JSON.stringify(revisedAttempt)}`);
+
+/* ---- the second change is refused -------------------------------------- */
+//
+// One app free and ONE change to it. The wall is the hub's to decide, and
+// the builder's to honour: this route had no allowance check at all, so a
+// person could change their app for ever whatever the hub said.
+//
+// Refused BEFORE any work: no new job, and the answer carries the `wall`
+// and `download` flags Studio reads to offer the desktop rather than a
+// bare failure.
+{
+  const jobsBefore = caseCalls.filter((c) => c.path === "/case/open").length;
+  wallEdits = true;
+  const walled = await post(`/build/${jobId}/revise`, { change: "and again" }, asAlice);
+  wallEdits = false;
+  assert.strictEqual(walled.status, 402, `a second change is refused: ${walled.body}`);
+  const answer = JSON.parse(walled.body);
+  assert.strictEqual(answer.wall, true, "the refusal is a wall, not an error");
+  assert.strictEqual(answer.download, true, "and it points at Studio on their own machine");
+  assert.match(answer.message, /free change/i, "in words written for the person");
+  // The wall is read at /case/open, so exactly one more was opened -- and
+  // no build was started behind it.
+  const opened = caseCalls.filter((c) => c.path === "/case/open");
+  assert.strictEqual(opened.length, jobsBefore + 1, "the refused change asked the hub once");
+  assert.strictEqual(opened[opened.length - 1].body.edit, true, "and asked as an edit");
+}
 
 /* ---- what it cost, and whose money ------------------------------------- */
 // The engine's own price for the run reaches the ledger, against the right

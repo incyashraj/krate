@@ -288,7 +288,7 @@ async function allowedToBuild(token, device) {
   if (process.env.KRATE_BUILDER_DEV === "1") {
     return { ok: true, account: "dev" };
   }
-  if (!token) return { ok: false, message: "Sign in first -- it is how we know which three are free." };
+  if (!token) return { ok: false, message: "Sign in first -- it is how we know the first one is on us." };
   try {
     const res = await fetch(`${HUB}/me`, { headers: { authorization: `Bearer ${token}` } });
     if (!res.ok) return { ok: false, message: "That sign-in has expired. Sign in once more." };
@@ -390,6 +390,16 @@ async function startBuild({ request, token, account, device, revise = null, shap
   // The build lives inside a funded case on the hub's ledger. Opening it
   // consumes nothing; the outcome recorded when this build ends is what
   // decides whether it cost an allowance (only "made" does).
+  //
+  // A change opens its OWN case, flagged as an edit. It used to inherit the
+  // parent's caseId, which meant a change never reached `/case/open` at all
+  // -- so the hub's edit allowance, which is decided there, could never
+  // fire, and the one free change was in truth unlimited. Inheriting also
+  // made every retry of a change look like another attempt at the original
+  // app, which is not what the ledger is counting.
+  // A change arrives with its case already opened by `allowedToRevise`,
+  // which had to ask the hub anyway to learn whether the change was
+  // allowed at all. Opening a second one here would count it twice.
   job.caseId = revise ? revise.caseId : await caseOpen(token, device, request);
   await persistJob(job);
   await audit({ action: revise ? "revise" : "start", account, job: id, parent: job.parent });
@@ -633,12 +643,12 @@ async function takeShot(bundle, shotPath) {
  * into a failed build, and the ledger self-heals -- planCount mirrors and
  * migration mints -- when the hub is back.
  */
-async function caseOpen(token, device, request) {
+async function caseOpen(token, device, request, edit = false) {
   try {
     const res = await fetch(`${HUB}/case/open`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-      body: JSON.stringify({ device: device || "", request }),
+      body: JSON.stringify({ device: device || "", request, edit }),
     });
     if (!res.ok) return null;
     const body = await res.json();
@@ -646,6 +656,52 @@ async function caseOpen(token, device, request) {
   } catch (e) {
     return null;
   }
+}
+
+/* May this person change their app?
+ *
+ * Asked BEFORE a change starts, because `caseOpen` cannot answer it: a
+ * refused case returns null there, and a null caseId means "no ledger",
+ * which starts the build anyway. So the wall is read here, where a 402
+ * can still stop the work and be shown.
+ *
+ * Shaped like `allowedToBuild`'s answer so the route handles both the same
+ * way. The hub owns the decision; a browser-side count is a count anyone
+ * can edit, and this one costs us money to be wrong about.
+ */
+async function allowedToRevise(token, device, change) {
+  if (process.env.KRATE_BUILDER_DEV === "1") return { ok: true, caseId: null };
+  let res;
+  try {
+    res = await fetch(`${HUB}/case/open`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ device: device || "", request: change || "", edit: true }),
+    });
+  } catch (e) {
+    // The hub is unreachable. A change is cheap next to telling somebody
+    // their work is blocked because our ledger had a bad minute, so this
+    // fails open -- exactly as an unreachable `caseOpen` always has.
+    return { ok: true, caseId: null };
+  }
+  if (res.ok) {
+    const body = await res.json().catch(() => ({}));
+    return { ok: true, caseId: (body && body.id) || null };
+  }
+  // 402 is the wall, 409 is "there is no app to change yet". Both are
+  // answers with a sentence written for the person, and both must stop the
+  // build -- which is why this is asked here and not inside `caseOpen`,
+  // where a refusal is indistinguishable from "no ledger, carry on".
+  if (res.status === 402 || res.status === 409) {
+    const body = await res.json().catch(() => ({}));
+    return {
+      ok: false,
+      wall: true,
+      download: res.status === 402,
+      message: body.message || "That was your free change.",
+    };
+  }
+  return { ok: true, caseId: null };
 }
 
 async function caseAttempt(token, device, caseId, outcome, note) {
@@ -827,6 +883,21 @@ const server = createServer(async (req, res) => {
       if (activeByAccount.has(account)) {
         return send(res, 429, "One app is already being made. It will be a few minutes.");
       }
+      // One free change, like one free app. Asked before any work starts,
+      // and before the source is copied, so a refusal costs nothing.
+      //
+      // This route had no allowance check at all: a change inherited the
+      // parent's case, so `/case/open` -- the only place the hub decides an
+      // edit -- was never reached, and the free change was unlimited in
+      // practice however the hub was configured.
+      const mayRevise = await allowedToRevise(token, device, change);
+      if (!mayRevise.ok) {
+        return json(res, 402, {
+          wall: true,
+          download: Boolean(mayRevise.download),
+          message: mayRevise.message,
+        });
+      }
       // The source the change starts from is the file that was made -- the
       // one the person could have downloaded -- copied into the new job's
       // own directory so nothing edits a finished result in place.
@@ -835,7 +906,7 @@ const server = createServer(async (req, res) => {
       await writeFile(source, bytes);
       const next = await startBuild({
         request: job.request, token, account, device,
-        revise: { parentId: id, source, change, caseId: job.caseId, name: job.result.name },
+        revise: { parentId: id, source, change, caseId: mayRevise.caseId, name: job.result.name },
       });
       return json(res, 200, { id: next.id, parent: id });
     }
