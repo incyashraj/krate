@@ -2111,6 +2111,44 @@ impl FsAdapter for LocalPhase2Adapter {
         self.insert_resource(LocalResource::File(file))
     }
 
+    /// Open a file the person picked or dropped, wherever it lives.
+    ///
+    /// Everything `open` does EXCEPT resolving the path inside the sandbox --
+    /// the same symlink guard, the same modes, the same resource table. The
+    /// sandbox step is the one thing that must not happen: a chosen file is by
+    /// definition outside the app's directory, so applying it meant a picker
+    /// could only reach files that happened to sit under the app (K-418).
+    ///
+    /// No parent directories are created here, whatever the mode. `open` does
+    /// that so a fresh bundle can write its own tree; this one is handed an
+    /// existing file the person nominated, and a save dialog that named a
+    /// folder which no longer exists should fail rather than quietly recreate
+    /// it somewhere the person is not looking.
+    fn open_chosen(
+        &self,
+        path: &std::path::Path,
+        mode: OpenMode,
+    ) -> std::result::Result<FileHandle, AdapterError> {
+        let mut opts = std::fs::OpenOptions::new();
+        apply_no_follow_final_symlink_on_host(&mut opts);
+        match mode {
+            OpenMode::Read => {
+                opts.read(true);
+            }
+            OpenMode::Write => {
+                opts.write(true).create(true).truncate(true);
+            }
+            OpenMode::ReadWrite => {
+                opts.read(true).write(true).create(true);
+            }
+            OpenMode::Append => {
+                opts.append(true).create(true);
+            }
+        }
+        let file = open_path_on_host(path, &mut opts).map_err(map_io_error)?;
+        self.insert_resource(LocalResource::File(file))
+    }
+
     fn read(&self, handle: &FileHandle, n: u32) -> std::result::Result<Vec<u8>, AdapterError> {
         let len = bounded_read_len(n)?;
         let mut state = self.state.borrow_mut();

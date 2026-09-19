@@ -265,6 +265,33 @@ pub trait IoAdapter {
 
 pub trait FsAdapter {
     fn open(&self, path: &str, mode: OpenMode) -> std::result::Result<FileHandle, AdapterError>;
+
+    /// Open a file the PERSON handed over, at an absolute host path.
+    ///
+    /// Separate from `open` because `open` sandboxes: it resolves every path
+    /// inside the app's own directory and refuses anything outside it. A
+    /// chosen file is BY DEFINITION outside it -- the person went to a dialog
+    /// or dragged something in precisely because it was somewhere else -- so
+    /// routing a chosen file through `open` meant a picker could only reach
+    /// files that happened to sit under the app (K-418).
+    ///
+    /// The containment is upstream and is stronger than a path check: a path
+    /// only reaches here by coming out of this run's own token store, and a
+    /// token is only minted when the person picked or dropped that exact
+    /// file. An app cannot name a path here, so it cannot ask for a file it
+    /// was never offered.
+    ///
+    /// Defaults to refusing. An adapter that has not thought about what
+    /// opening an arbitrary host path means on its platform should not
+    /// silently acquire the ability by inheriting someone else's answer.
+    fn open_chosen(
+        &self,
+        path: &std::path::Path,
+        mode: OpenMode,
+    ) -> std::result::Result<FileHandle, AdapterError> {
+        let _ = (path, mode);
+        Err(AdapterError::Unsupported)
+    }
     fn read(&self, handle: &FileHandle, n: u32) -> std::result::Result<Vec<u8>, AdapterError>;
     fn write(&self, handle: &FileHandle, bytes: &[u8]) -> std::result::Result<u32, AdapterError>;
     fn seek_set(&self, handle: &FileHandle, pos: u64) -> std::result::Result<u64, AdapterError>;
@@ -392,11 +419,11 @@ impl<'a> UapiDispatcher<'a> {
         path: &Path,
         mode: OpenMode,
     ) -> std::result::Result<FileHandle, FsDispatchError> {
-        let path = path.to_string_lossy().into_owned();
+        let shown = path.to_string_lossy().into_owned();
         self.adapter
             .fs()
-            .open(&path, mode)
-            .map(|handle| handle.with_opened_file(&path, mode).person_granted())
+            .open_chosen(path, mode)
+            .map(|handle| handle.with_opened_file(&shown, mode).person_granted())
             .map_err(Into::into)
     }
 
@@ -815,6 +842,7 @@ mod tests {
         fs_list: usize,
         fs_mkdir: usize,
         fs_open: usize,
+        fs_open_chosen: usize,
         fs_read: usize,
         fs_remove_dir: usize,
         fs_remove_file: usize,
@@ -947,6 +975,15 @@ mod tests {
         ) -> std::result::Result<FileHandle, AdapterError> {
             self.calls.borrow_mut().fs_open += 1;
             Ok(FileHandle::resource(4))
+        }
+
+        fn open_chosen(
+            &self,
+            _path: &std::path::Path,
+            _mode: OpenMode,
+        ) -> std::result::Result<FileHandle, AdapterError> {
+            self.calls.borrow_mut().fs_open_chosen += 1;
+            Ok(FileHandle::resource(5))
         }
 
         fn read(
@@ -1347,6 +1384,39 @@ mod tests {
 
         assert!(matches!(err, FsDispatchError::PermissionDenied));
         assert_eq!(adapter.calls.borrow().fs_read, 0);
+    }
+
+    #[test]
+    fn a_chosen_file_does_not_go_through_the_sandboxing_open() {
+        // K-418, the second half. `fs_open_chosen` used to reach the file
+        // through `FsAdapter::open`, which resolves every path inside the
+        // app's own directory and refuses anything outside it. A chosen file
+        // is BY DEFINITION outside it -- the person went to a dialog or
+        // dragged something in precisely because it was somewhere else -- so
+        // a picker could only reach files that happened to sit under the app.
+        //
+        // Measured before the fix, dropping /private/tmp/outside.txt on an
+        // app: "could not open it". After: "75 bytes" and the file's lines.
+        let adapter = RecordingAdapter::default();
+        let guard = UapiGuard::new(SessionPolicy::default());
+        let dispatcher = UapiDispatcher::new(&guard, &adapter);
+
+        dispatcher
+            .fs_open_chosen(
+                std::path::Path::new("/somewhere/else/photo.png"),
+                OpenMode::Read,
+            )
+            .expect("a chosen file must open wherever it lives");
+
+        // The sandboxing `open` must not have been touched: routing through it
+        // is the bug, and a test that only checked the call succeeded would
+        // pass with the bug restored on a permissive adapter.
+        assert_eq!(adapter.calls.borrow().fs_open_chosen, 1);
+        assert_eq!(
+            adapter.calls.borrow().fs_open,
+            0,
+            "a chosen file must not go through the path-sandboxing open"
+        );
     }
 
     #[test]
