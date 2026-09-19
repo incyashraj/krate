@@ -129,3 +129,64 @@ assert.match(wallBlock, /state\.buildChip\.remove\(\)/, "the wall removes the li
 assert.match(wallBlock, /unlockComposer\(/, "the wall unlocks the composer");
 
 console.log("ok  the allowance wall reads as an answer, not a failed build");
+
+/* ---- the three waits a person actually feels ---------------------------- */
+
+// 1. Back must not wait on the network.
+//
+// The handler awaited `persist()`, which on the web is a hub POST, before
+// it navigated -- so Back took as long as the round trip (measured: 1,512ms
+// against a hub lagging 1.5s, against 5ms once the await was dropped). The
+// save still happens; `session_save` writes local storage synchronously
+// before the request goes out, so nothing can be lost by leaving.
+const backHandler = app.slice(app.indexOf('$("backBtn").addEventListener'), app.indexOf('$("backBtn").addEventListener') + 700);
+assert.ok(backHandler.length > 100, "the back button handler was found");
+assert.doesNotMatch(backHandler, /await\s+persist\(\)/,
+  "Back must not await the hub save; it makes the button take a round trip");
+assert.match(backHandler, /persist\(\);/, "but it must still save");
+assert.match(
+  bridge.slice(bridge.indexOf("async session_save(")),
+  /saveLocalSessions\(list\);[\s\S]{0,200}?await hub\("\/sessions"/,
+  "session_save writes locally BEFORE the hub, which is what makes not awaiting safe",
+);
+
+// 2. Home must paint before the session list arrives.
+assert.match(bridge, /async sessions_local\(\)/, "the browser has an instant session read");
+assert.match(app, /invoke\("sessions_local"\)/, "and Home uses it before the networked one");
+
+// 3. The sign-in screen must not be shown to somebody already signed in.
+//
+// `viewGate` is the only view without `hidden` in the HTML, and the scripts
+// are at the END of the body, so the browser paints the sign-in page and
+// keeps it up until a 290 KB app.js has loaded and booted. Measured with
+// app.js arriving 1.8s late: visible for 1,801ms before this, 21ms after.
+//
+// The lift must NOT hang off window.load, which fires before app.js has
+// booted and was the first wrong answer here.
+const gateBlock = bridge.slice(bridge.indexOf("const GATE_CSS"), bridge.indexOf("const GATE_CSS") + 2600);
+assert.match(gateBlock, /#viewGate \{ visibility: hidden; \}/, "the gate is hidden while boot decides");
+assert.match(gateBlock, /if \(bridge\.token\)/, "and only for somebody already signed in");
+assert.match(gateBlock, /MutationObserver/, "the rule lifts when Studio marks the gate hidden");
+assert.doesNotMatch(gateBlock, /addEventListener\("load"/,
+  "window.load fires before app.js boots, so it cannot be the signal");
+assert.match(gateBlock, /setTimeout\(lift, \d+\)/,
+  "and a fallback lifts it anyway, or a failed boot leaves a blank page");
+
+// No dashes as punctuation in anything a person reads.
+//
+// " -- " renders as a long dash in the browser and the founder does not
+// want it in the product's own voice. Comments and CLI flags are exempt:
+// this checks quoted strings only, outside comment lines.
+for (const [name, src] of [["app.js", app], ["bridge.js", bridge]]) {
+  const offenders = [];
+  src.split("\n").forEach((line, i) => {
+    if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;
+    for (const m of line.match(/"[^"]* -- [^"]*"/g) || []) offenders.push(`${name}:${i + 1} ${m}`);
+  });
+  assert.deepEqual(offenders, [], `dashes left in user-facing text:\n${offenders.join("\n")}`);
+}
+
+console.log("ok  Back does not wait on the network");
+console.log("ok  Home paints before the hub answers");
+console.log("ok  the sign-in screen is never shown to somebody signed in");
+console.log("ok  no dashes in user-facing text");

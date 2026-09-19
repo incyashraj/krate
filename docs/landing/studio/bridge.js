@@ -83,10 +83,97 @@ body.macos .titlebar > * { top: 0; }
   }
 }
 `;
+/* The sign-in screen, hidden before it can ever be painted.
+ *
+ * `viewGate` is the one view in Studio's HTML that does not ship with
+ * `hidden` on it, because on a desktop it IS the first screen. So the
+ * browser painted it on every load, and Studio only swapped it for Home
+ * once its script had booted and asked who was signed in -- which is the
+ * two to three seconds of sign-in page a signed-in person saw on every
+ * refresh, and the first thing somebody saw right after signing in.
+ *
+ * The token is in local storage and readable synchronously, right here,
+ * before the document has been painted once. When it is there, the gate
+ * is never shown rather than shown and taken away. Studio's own boot
+ * still decides which view to reveal; this only stops the wrong one being
+ * visible in the meantime.
+ *
+ * `visibility` rather than `display`: the rule is dropped again as soon as
+ * Studio has chosen a view, and a hidden-then-shown flex column re-runs
+ * its layout, which is a flash of its own.
+ *
+ * WHEN the rule is dropped is the whole trick, and the obvious answers are
+ * both wrong. `window.load` fires when the page's own resources are in,
+ * which is BEFORE app.js has booted and decided anything -- measured with
+ * app.js arriving 1.8s late, the gate was visible for 1,801ms of it. A
+ * timer is a guess that is too short on a slow connection and wasted time
+ * on a fast one.
+ *
+ * So this watches for the thing it is actually waiting for: Studio marks
+ * the gate `hidden` the moment it knows the person is signed in. The
+ * observer lifts the rule then, and a fallback lifts it anyway after a few
+ * seconds so a boot that never happens cannot leave a blank screen.
+ */
+/* While the gate is held back there is nothing else to look at yet, so the
+ * page is a dark rectangle until app.js lands. That is already better than
+ * a sign-in screen somebody has to watch disappear, but it reads as a
+ * page that has stopped. The mark, quietly breathing, says it is coming.
+ *
+ * Drawn in CSS on a pseudo-element of the gate itself, so it costs no
+ * markup and vanishes with the same rule. */
+const GATE_CSS = `
+  #viewGate { visibility: hidden; }
+  #viewGate::after {
+    visibility: visible;
+    content: "";
+    position: fixed;
+    left: 50%; top: 50%;
+    width: 44px; height: 44px;
+    margin: -22px 0 0 -22px;
+    border-radius: 12px;
+    background: url("krate-logo.png") center / contain no-repeat;
+    opacity: 0.55;
+    animation: krate-wait 1.4s ease-in-out infinite;
+  }
+  @keyframes krate-wait {
+    0%, 100% { opacity: 0.22; transform: scale(0.96); }
+    50%      { opacity: 0.62; transform: scale(1); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #viewGate::after { animation: none; opacity: 0.45; }
+  }
+`;
 try {
   const sheet = document.createElement("style");
   sheet.textContent = WEB_CSS;
   document.head.appendChild(sheet);
+  if (bridge.token) {
+    // Its own sheet, so lifting it later cannot disturb WEB_CSS.
+    const gate = document.createElement("style");
+    gate.textContent = GATE_CSS;
+    document.head.appendChild(gate);
+    const lift = () => { try { gate.remove(); } catch (e) {} };
+    const watchGate = () => {
+      const el = document.getElementById("viewGate");
+      if (!el) return false;
+      // Already decided (a fast boot beat this code to it).
+      if (el.classList.contains("hidden")) { lift(); return true; }
+      if (!window.MutationObserver) return false;
+      const obs = new MutationObserver(() => {
+        if (el.classList.contains("hidden")) { obs.disconnect(); lift(); }
+      });
+      obs.observe(el, { attributes: true, attributeFilter: ["class"] });
+      return true;
+    };
+    if (!watchGate()) {
+      document.addEventListener("DOMContentLoaded", watchGate, { once: true });
+    }
+    // The gate is the SIGNED-OUT screen and this rule hides it. If Studio
+    // never boots -- a script that failed to load, an error on the way up
+    // -- lifting it is the difference between a sign-in page and nothing
+    // at all. Long enough that a slow connection is not cut short.
+    setTimeout(lift, 8000);
+  }
 } catch (e) {}
 
 /* A tab has no onboarding. Every question it asks is already answered here:
@@ -546,7 +633,7 @@ const COMMANDS = {
       label: k.label,
       set: Boolean(k.set),
       // Studio shows this where the desktop shows "macOS keychain".
-      where_kept: k.set ? `saved to your account${k.tail ? ` -- ends ${k.tail}` : ""}` : "",
+      where_kept: k.set ? `saved to your account${k.tail ? `, ends ${k.tail}` : ""}` : "",
       from_env: false,
     }));
   },
@@ -773,6 +860,18 @@ const COMMANDS = {
    * on read by `updated` so a session made before signing in is not lost the
    * moment an account appears.
    */
+  /* The list this tab already holds, with no network at all.
+   *
+   * Studio paints the sidebar from `sessions_list`, and on a desktop that
+   * reads local disk in milliseconds. In a tab it was a hub round trip
+   * that the paint waited on, so pressing Back sat on the old screen for
+   * seconds before Home appeared -- with the answer already in local
+   * storage the whole time. Home now paints from this and refreshes from
+   * the hub behind it. */
+  async sessions_local() {
+    return localSessions();
+  },
+
   async sessions_list() {
     const local = localSessions();
     if (!bridge.token) return local;
@@ -847,9 +946,9 @@ const COMMANDS = {
    * and then says where the app really runs. */
   async open_app({ path } = {}) {
     const app = currentWebApp(path);
-    if (!app) return refuse("A browser cannot open the app itself. Download the file -- it opens on your Mac, Windows or Linux.");
+    if (!app) return refuse("A browser cannot open the app itself. Download the file. It opens on your Mac, Windows or Linux.");
     await downloadApp(app.url, app.name);
-    return refuse("Downloaded. Double-click the file on your Mac, Windows or Linux -- that is where the app really runs.");
+    return refuse("Downloaded. Double-click the file on your Mac, Windows or Linux. That is where the app really runs.");
   },
   async open_krate({ path } = {}) {
     return COMMANDS.open_app({ path });
@@ -876,7 +975,7 @@ const COMMANDS = {
     return refuse("The gift for a friend without Krate is made in Studio on your computer.");
   },
   make_card() {
-    return refuse("The card is made in Studio on your computer -- download the file and open it there. Send a link works from here.");
+    return refuse("The card is made in Studio on your computer. Download the file and open it there. Send a link works from here.");
   },
   share_file() {
     return refuse("Download the file; sharing it from this page is not built yet.");
@@ -900,12 +999,12 @@ const COMMANDS = {
     if (path === "source") {
       const name = (bridge.jobResult && bridge.jobResult.name) || "app";
       const n = await downloadSource(null, name);
-      return refuse(`Downloaded the project -- ${n} file${n === 1 ? "" : "s"}. Open the folder with cargo, or in Studio on your computer.`);
+      return refuse(`Downloaded the project: ${n} file${n === 1 ? "" : "s"}. Open the folder with cargo, or in Studio on your computer.`);
     }
     const app = currentWebApp(path);
     if (!app) return refuse("Check your downloads folder.");
     await downloadApp(app.url, app.name);
-    return refuse("Downloaded -- check your downloads folder.");
+    return refuse("Downloaded. Check your downloads folder.");
   },
 
   /* ---- the quiet ones ---------------------------------------------------
@@ -1163,7 +1262,7 @@ async function paintSpend() {
     const model = (r.model || "").replace(/[<>]/g, "");
     return `<div class="web-spend-row">
       <span class="app">${app}</span>
-      <span class="who">${who}${model ? ` -- ${model}` : ""}${r.rounds ? ` -- ${r.rounds} rounds` : ""}</span>
+      <span class="who">${who}${model ? `, ${model}` : ""}${r.rounds ? `, ${r.rounds} rounds` : ""}</span>
       <span class="who">${when}</span>
       <span class="usd">${money(r.usd)}</span>
     </div>`;
@@ -1246,7 +1345,7 @@ function paintMode() {
   const box = document.getElementById("homePrompt");
   if (box) {
     box.placeholder = mode === "plan"
-      ? "Describe an app -- you will get a plan, not a build…"
+      ? "Describe an app. You will get a plan, not a build…"
       : "Describe an app, or paste code to port…";
   }
   const send = document.getElementById("homeSend");
@@ -1265,7 +1364,7 @@ function mountMode() {
   wrap.setAttribute("aria-label", "Plan or build");
   wrap.innerHTML = `
     <button type="button" data-mode="build" title="Answer a question or two, then build the app">Build</button>
-    <button type="button" data-mode="plan" title="Get a plan only -- nothing is built">Plan</button>`;
+    <button type="button" data-mode="plan" title="Get a plan only, nothing is built">Plan</button>`;
   wrap.querySelectorAll("button").forEach((b) => {
     b.addEventListener("click", () => setWebMode(b.dataset.mode));
   });
@@ -1452,7 +1551,7 @@ function speakWebSource() {
  */
 const WEB_AI_WORDING = [
   [
-    /^Krate works with the AI you already have\. Pick one\s+that is ready, or follow its one-line fix -- its sign-in stays with\s+that tool, and Krate never holds its keys\.$/,
+    /^Krate works with the AI you already have\. Pick one\s+that is ready, or follow its one-line fix\. Its sign-in stays with\s+that tool, and Krate never holds its keys\.$/,
     "Krate's own AI builds your app here. Nothing to install, and no key of yours is ever held.",
   ],
   [

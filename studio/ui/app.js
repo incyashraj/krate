@@ -598,7 +598,32 @@ async function enterHome() {
   // chip says "checking…" until the probe lands and updates it. A request
   // submitted before then is safe: runPlan awaits ensureUsableAgent, which
   // finishes the same probe before any agent is asked to work.
-  renderSessions(await invoke("sessions_list"));
+  // The same rule as the agent probe above, applied to the session list.
+  //
+  // On a desktop `sessions_list` reads local disk and returns in
+  // milliseconds, so awaiting it cost nothing. In a browser it is a hub
+  // round trip, and Home waited on it before painting anything -- which is
+  // why pressing Back sat on the previous screen for several seconds while
+  // the answer was already in local storage. Paint from the copy this
+  // machine already has, then let the network correct it.
+  //
+  // `sessions_local` is the browser's instant read; a desktop has no such
+  // command and falls through to the one call it always had.
+  let painted = false;
+  try {
+    const quick = await invoke("sessions_local");
+    if (quick) {
+      renderSessions(quick);
+      painted = true;
+    }
+  } catch (e) { /* desktop: no such command, and none needed */ }
+  if (painted) {
+    invoke("sessions_list")
+      .then((full) => renderSessions(full))
+      .catch(() => {});
+  } else {
+    renderSessions(await invoke("sessions_list"));
+  }
   renderShelf();
   renderBuilding();
   refreshAgents();
@@ -919,7 +944,7 @@ function openSession(s) {
     // Waiting on the person, honestly resumable: the question or plan
     // (with its Build button) is back in the rail, and the right pane
     // says so -- generic words, because the replayed ask can be either.
-    showPlanning("Waiting on you", "it's on the left - answer, or just hit Build it", "paused");
+    showPlanning("Waiting on you", "it's on the left: answer, or just hit Build it", "paused");
     $("prompt").placeholder = "Answer here… or hit Build it";
   } else if (s.failedRequest || msgs.some((m) => m.who === "YOU")) {
     // Unfinished and not live: the build stopped, failed, or was cut off
@@ -934,11 +959,11 @@ function openSession(s) {
       ? "This build was interrupted."
       : "This one never got going.";
     $("failWhy").textContent =
-      "Nothing was lost -- your words are kept, ready to send again.";
+      "Nothing was lost, your words are kept, ready to send again.";
     $("retryBtn").textContent = "Resume build";
     setFailRaw("");
     show("failed");
-    unlockComposer("Hit Resume build - or say what to do differently…");
+    unlockComposer("Hit Resume build, or say what to do differently…");
   } else {
     show("idle");
     unlockComposer("Describe the app you want…");
@@ -1159,7 +1184,7 @@ function startBuildWatchdog() {
       clearInterval(state.watchdog);
       invoke("stop_build").catch(() => {});
       failBuild(
-        "The build never got started -- Krate's engine went quiet before it " +
+        "The build never got started. Krate's engine went quiet before it " +
           "said anything. Trying again usually works.",
         state.lastRequest || "",
       );
@@ -1289,7 +1314,7 @@ function beginBuild(title, expect) {
   const box = $("prompt");
   if (box) {
     box.disabled = true;
-    box.placeholder = "Wait - v1 is becoming a file…";
+    box.placeholder = "Wait, v1 is becoming a file…";
   }
   // Rescue the peek box before wiping the stage list.
   //
@@ -1544,10 +1569,10 @@ function onEngineLineInner(line) {
     state.firstTimeSetupSaid = true;
     sayTo(state.buildingSession || state.session, "KRATE",
       "First-time setup: getting the build tools ready. About five " +
-      "minutes, and only this once -- every app you make after this " +
+      "minutes, and only this once. Every app you make after this " +
       "starts fast.");
     const expect = $("buildExpect");
-    if (expect) expect.textContent = "first-time setup -- about five minutes, only once";
+    if (expect) expect.textContent = "first-time setup, about five minutes, only once";
     if (state.buildChip) {
       const phase = state.buildChip.querySelector("[data-phase]");
       if (phase) phase.textContent = "first-time setup (once)";
@@ -1583,20 +1608,20 @@ function onEngineLineInner(line) {
  * the person is looking at. */
 const THINKING = {
   read: [
-    "reading Krate's API reference - this part is quiet",
-    "still reading - this is the longest part of a build",
+    "reading Krate's API reference, this part is quiet",
+    "still reading, this is the longest part of a build",
     "working through the examples",
     "the writing starts once it has read enough",
   ],
   write: [
-    "writing your app's code - this part is quiet",
-    "still writing - a whole app is a lot of code",
+    "writing your app's code, this part is quiet",
+    "still writing, a whole app is a lot of code",
     "working through the details",
-    "nothing is stuck - long silences are normal here",
+    "nothing is stuck, long silences are normal here",
   ],
   test: [
     "building and testing your app",
-    "still testing - it fixes what it finds",
+    "still testing, it fixes what it finds",
     "compiling takes a minute on its own",
   ],
   done: [
@@ -1802,10 +1827,10 @@ function failBuild(why, request) {
    * meet a compiler error, an exit code, or a crate name. */
   if (why === "stopped") {
     $("failTitle").textContent = "Stopped.";
-    $("failWhy").textContent = "Nothing was lost -- your words are kept, ready to send again.";
+    $("failWhy").textContent = "Nothing was lost, your words are kept, ready to send again.";
     $("retryBtn").textContent = "Resume build";
     setFailRaw("");
-    unlockComposer("Changed your mind? Say it - or hit Resume build");
+    unlockComposer("Changed your mind? Say it, or hit Resume build");
   } else {
     $("retryBtn").textContent = "Try again";
     unlockComposer("Say it another way, or hit Try again");
@@ -2143,7 +2168,7 @@ async function sendReport() {
       note: $("repNote").value.trim(),
     });
     $("reportSheet").classList.add("hidden");
-    say("KRATE", `Sent to Krate support (${said}). Thank you -- this is how the next person avoids it.`, null, { variant: "ask" });
+    say("KRATE", `Sent to Krate support (${said}). Thank you. This is how the next person avoids it.`, null, { variant: "ask" });
   } catch (err) {
     $("repResult").textContent = plainWords(err);
     $("repSend").disabled = false;
@@ -2161,7 +2186,7 @@ async function diagnoseCurrent() {
     if (verdict === "ok") {
       say("KRATE", "It starts and draws its first screen when I run it here, so the app itself is healthy. Try updating Krate (the Update chip at the top if one is showing), then open it again. If it still won't open on a double-click, tell me what you see and I'll dig further.", null, { variant: "ask" });
     } else {
-      say("KRATE", `Found it -- when I run the app, this happens:\n\n${verdict}\n\nTell me to fix it and I'll make that change.`, null, {
+      say("KRATE", `Found it. When I run the app, this happens:\n\n${verdict}\n\nTell me to fix it and I'll make that change.`, null, {
         variant: "ask",
         actions: [{ label: "Fix it", primary: true, run: () => make(`The app fails to start. When run, it reports:\n${verdict}\nFix that.`) }],
       });
@@ -2188,7 +2213,7 @@ async function startPlanning(request, files) {
   // Speak IMMEDIATELY. The plan call can take ten seconds, and ten silent
   // seconds after a person's very first message reads as broken.
   say("KRATE", "Looking at your request…");
-  showPlanning("Reading your request", "checking what it needs - a few seconds…");
+  showPlanning("Reading your request", "checking what it needs, a few seconds…");
   await runPlan();
 }
 
@@ -2267,7 +2292,7 @@ async function runPlan() {
       // sibling trap, seen live as a calculator session).
       const rec = state.session.messages[state.session.messages.length - 1];
       if (rec) rec.kind = "ask";
-      showPlanning("One question first", "answer on the left - or just hit Build it", "waiting on you");
+      showPlanning("One question first", "answer on the left, or just hit Build it", "waiting on you");
       $("prompt").placeholder = "Answer here… or hit Build it";
     } else if (answer.plan) {
       state.planning.plan = answer.plan;
@@ -2286,7 +2311,7 @@ async function runPlan() {
         if (rec) rec.kind = "ask";
       }
       $("prompt").placeholder = "Anything to change? Your next message starts the build";
-      showPlanning("The plan is ready", "read it on the left - Build it starts the work", "waiting on you");
+      showPlanning("The plan is ready", "read it on the left, Build it starts the work", "waiting on you");
     } else {
       return finishPlanningAndBuild();
     }
@@ -2315,7 +2340,7 @@ async function runPlan() {
     // of spending fifteen minutes building a reply to it.
     const asked = state.planning && state.planning.request;
     if (looksLikeAQuestion(asked)) {
-      say("KRATE", "Yes -- tell me what the app should do and I'll build it. "
+      say("KRATE", "Yes. Tell me what the app should do and I'll build it. "
         + "A window, saved data, drawing, sound, the network: all fair game. "
         + "One sentence is enough to start.");
       $("prompt").placeholder = "Describe the app you want\u2026";
@@ -2359,7 +2384,7 @@ async function buildNow(request, files, revising, planSession, starterShape) {
   if (state.buildingSession) { invoke("dbg_log", { line: "buildNow() BAILED: buildingSession set" }).catch(()=>{}); return; }
   // The composer stays live during a build so a thought can be queued
   // rather than lost.
-  $("prompt").placeholder = "Add a change - it runs when this finishes…";
+  $("prompt").placeholder = "Add a change. It runs when this finishes…";
 
   state.buildingSession = state.session;
   state.lastRequest = request;
@@ -2386,7 +2411,7 @@ async function buildNow(request, files, revising, planSession, starterShape) {
   say(
     "KRATE",
     tauri
-      ? "While I work, I'll open your app a few times to look at it -- so a window may flash and you might hear its sounds. That's me testing it, not something breaking."
+      ? "While I work, I'll open your app a few times to look at it, so a window may flash and you might hear its sounds. That's me testing it, not something breaking."
       : "While I work, I'll open your app a few times to look at it and fix what I see. That's me testing it, not something breaking.",
   );
   // The build itself is one chip on the timeline, born live and settled
@@ -2412,7 +2437,7 @@ async function buildNow(request, files, revising, planSession, starterShape) {
       // ~/.krate/studio/builds), a fresh app is 5-15 minutes and the
       // median is ~13. "A few minutes" read as a promise and then as a lie.
       revising
-        ? "changes are quicker - the AI reads your app first"
+        ? "changes are quicker, the AI reads your app first"
         : localStorage.getItem("krateMadeOnce")
           ? "a minute or two, sometimes more"
           // "on this computer" is the desktop's first-build cost: it is
@@ -2420,7 +2445,7 @@ async function buildNow(request, files, revising, planSession, starterShape) {
           // service is already warm and nothing is installed here, so the
           // sentence names a wait that is not being paid.
           : tauri
-            ? "first time on this computer - a few minutes"
+            ? "first time on this computer, a few minutes"
             : "a few minutes",
     );
   } catch (err) {
@@ -3868,11 +3893,11 @@ async function sendCard() {
     try {
       await invoke("share_file", { path: cardPath });
       $("sendCardNote").textContent = name +
-        " -- pick where it goes. Send it as a file, not as a photo.";
+        ", pick where it goes. Send it as a file, not as a photo.";
     } catch (e) {
       $("sendCardNote").textContent = name +
         " is in the folder that just opened. Drag it into mail, AirDrop, or a " +
-        "chat's paperclip -- send it as a file, not as a photo.";
+        "chat's paperclip. Send it as a file, not as a photo.";
       try { await invoke("reveal", { path: cardPath }); } catch (e2) {}
     }
   } catch (err) {
@@ -4036,7 +4061,7 @@ async function publishFromSheet() {
     });
     state.session.result.share_url = url;
     $("publishSheet").classList.add("hidden");
-    $("shareHead").textContent = "Here's your link -- send it to anyone";
+    $("shareHead").textContent = "Here's your link. Send it to anyone";
     $("shareLink").textContent = url;
     $("shareResult").classList.remove("hidden", "error");
     resetShareCopy();
@@ -4258,11 +4283,11 @@ function submitInSession() {
       state.queued = text;
       $("prompt").value = "";
       say("YOU", text);
-      say("KRATE", "Noted - I'll do that as soon as this one is finished.");
+      say("KRATE", "Noted. I'll do that as soon as this one is finished.");
       $("composerHint").textContent = "queued · runs when this build finishes";
     } else {
       // A different session is building. Silence here would eat the words.
-      say("KRATE", `"${state.buildingSession.title}" is still being made -- one app at a time. This will be ready to send once it finishes.`);
+      say("KRATE", `"${state.buildingSession.title}" is still being made, one app at a time. This will be ready to send once it finishes.`);
     }
     return;
   }
@@ -4388,9 +4413,18 @@ $("homeSend").addEventListener("click", startFromHome);
       };
 
       rec.onerror = (event) => {
+        // The two refusals mean different things in a tab than on a
+        // desktop, and the desktop wording sends a browser user to the
+        // wrong place entirely: a tab's microphone permission is granted
+        // in the address bar, and System Settings has nothing to do with
+        // it. Everything else reads the same on both.
         const why = {
-          "not-allowed": "Krate needs microphone permission. Allow it in System Settings, Privacy and Security.",
-          "service-not-allowed": "macOS blocked speech recognition for this app.",
+          "not-allowed": tauri
+            ? "Krate needs microphone permission. Allow it in System Settings, Privacy and Security."
+            : "Your browser blocked the microphone. Allow it from the address bar, then press the microphone again.",
+          "service-not-allowed": tauri
+            ? "macOS blocked speech recognition for this app."
+            : "Your browser blocked speech recognition on this page.",
           "no-speech": "Did not catch that. Press the microphone and try again.",
           "audio-capture": "No microphone was found.",
           "network": "Speech recognition needs a connection.",
@@ -4453,8 +4487,17 @@ $("send").addEventListener("click", submitInSession);
 $("prompt").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); submitInSession(); }
 });
-$("backBtn").addEventListener("click", async () => {
-  await persist();
+$("backBtn").addEventListener("click", () => {
+  // Save, but do not make the person watch it.
+  //
+  // `session_save` writes to local storage and then to the hub. On a
+  // desktop that is a local file and returns at once; in a browser it is a
+  // network round trip, and awaiting it here is what made Back take three
+  // to five seconds. The save still happens, and it cannot be lost by
+  // navigating: the record is written before the request goes out, and
+  // `persistSession` already swallows its own failures because history is
+  // a convenience that must never block making.
+  persist();
   enterHome();
 });
 
@@ -4506,7 +4549,7 @@ $("detailRun").addEventListener("click", async () => {
   btn.textContent = "Opening…";
   try {
     await invoke("cloud_run", { url: app.url });
-    $("detailNote").textContent = "Opening -- it asks your permission before it can do anything.";
+    $("detailNote").textContent = "Opening. It asks your permission before it can do anything.";
   } catch (err) {
     $("detailNote").textContent = String(err);
   }
@@ -4615,11 +4658,11 @@ document.querySelectorAll("#sendWrapOs [data-wrap]").forEach((b) => {
       // Telling someone to send a file when they must send a folder is how
       // a friend receives an opener with nothing to open.
       $("sendNote").textContent = os === "mac"
-        ? name + " just opened in Finder. Send the WHOLE folder -- zip it, or "
+        ? name + " just opened in Finder. Send the WHOLE folder: zip it, or "
           + "drop it in a shared drive. Their first double-click installs Krate "
           + "once, then opens this app."
         : name + " is in the folder that just opened. It installs Krate once on "
-          + "their " + machine + ", then opens this app -- the player is "
+          + "their " + machine + ", then opens this app. The player is "
           + "downloaded, never bundled.";
       try { await invoke("reveal", { path: wrapPath }); } catch (e) {}
     } catch (err) {
@@ -4720,7 +4763,7 @@ function dressPlanSheet() {
     (onFounding ? founding : studio).innerHTML = '<span class="plan-tag">active</span>';
     (onFounding ? studio : founding).innerHTML = "";
     $("planSub").textContent =
-      "Your plan is active -- no cap. Every app you make is a file that is yours forever.";
+      "Your plan is active. No cap. Every app you make is a file that is yours forever.";
     return;
   }
   $("planRowFree").classList.add("current");
@@ -4734,7 +4777,7 @@ function dressPlanSheet() {
     $("planBuyYearly").addEventListener("click", () => startCheckout("yearly", "planNote"));
     if (b.founding) {
       founding.innerHTML =
-        '<button class="btn btn-primary" id="planBuyFounding">Join -- $79/year</button>';
+        '<button class="btn btn-primary" id="planBuyFounding">Join for $79/year</button>';
       $("planBuyFounding").addEventListener("click", () => startCheckout("founding", "planNote"));
     } else {
       $("planRowFounding").classList.add("hidden");
@@ -4818,7 +4861,7 @@ async function startCheckout(plan, noteId) {
   try {
     const url = await invoke("billing_checkout", { plan });
     await invoke("open_external", { url });
-    note.textContent = "Finish in the browser - this unlocks by itself.";
+    note.textContent = "Finish in the browser. This unlocks by itself.";
     let rounds = 0;
     clearInterval(state.billPoll);
     state.billPoll = setInterval(async () => {
@@ -4829,7 +4872,7 @@ async function startCheckout(plan, noteId) {
         $("limitSheet").classList.add("hidden");
         $("planSheet").classList.add("hidden");
         celebrate();
-        say("KRATE", "Welcome to the studio. The cap is gone, your tickets go to the front of the support queue, and our promise stands: every app you make is a file that is yours forever -- a plan can lapse, the file cannot.", null, { variant: "ask" });
+        say("KRATE", "Welcome to the studio. The cap is gone, your tickets go to the front of the support queue, and our promise stands: every app you make is a file that is yours forever. A plan can lapse, the file cannot.", null, { variant: "ask" });
         renderFreeCount();
         const p = state.pendingMake;
         state.pendingMake = null;
@@ -4838,7 +4881,7 @@ async function startCheckout(plan, noteId) {
       if (rounds > 90) {
         clearInterval(state.billPoll);
         note.textContent =
-          "Still not seeing the payment. If you finished in the browser, just hit Make again -- it re-checks. If not, reopen this sheet to retry.";
+          "Still not seeing the payment. If you finished in the browser, just hit Make again. It re-checks. If not, reopen this sheet to retry.";
       }
     }, 5000);
   } catch (err) {
@@ -4915,15 +4958,15 @@ function openLimitSheet() {
   if (CHARGING && live) {
     $("limitTitle").textContent = "That's your three for this month";
     $("limitSub").textContent =
-      "The free plan is three apps a month -- changes to an app and failed builds never count. Unlimited making is the Studio plan.";
+      "The free plan is three apps a month. Changes to an app and failed builds never count. Unlimited making is the Studio plan.";
     $("limitSub2").classList.remove("hidden");
     $("limitSub2").textContent = state.billing.founding
       ? "The founding 200 lock it at $79 a year instead of $96."
       : "";
     $("limitActions").innerHTML =
-      '<button class="btn btn-primary" id="buyMonthly">Upgrade - $12/month</button>' +
+      '<button class="btn btn-primary" id="buyMonthly">Upgrade for $12/month</button>' +
       '<button class="btn" id="buyYearly">$96/year</button>' +
-      (state.billing.founding ? '<button class="btn" id="buyFounding">Founding - $79/year</button>' : "");
+      (state.billing.founding ? '<button class="btn" id="buyFounding">Founding at $79/year</button>' : "");
     $("buyMonthly").addEventListener("click", () => startCheckout("monthly"));
     $("buyYearly").addEventListener("click", () => startCheckout("yearly"));
     $("buyFounding")?.addEventListener("click", () => startCheckout("founding"));
@@ -4949,7 +4992,7 @@ async function openSupportSheet() {
   $("supPriorityTag")?.classList.toggle("hidden", !paid);
   if (paid) {
     $("supIntro").textContent =
-      "A real person answers, in this same thread -- and your tickets go to the front of the queue.";
+      "A real person answers, in this same thread, and your tickets go to the front of the queue.";
   }
   $("supportSheet").classList.remove("hidden");
   renderSupportTickets();
@@ -5003,7 +5046,7 @@ $("supSend")?.addEventListener("click", async () => {
     const out = await invoke("support_new", { subject, message: body, email });
     if (out && out.id) rememberSupKey({ id: out.id, key: out.key });
     $("supSubject").value = ""; $("supBody").value = "";
-    $("supNote").textContent = "Sent - the reply lands right here.";
+    $("supNote").textContent = "Sent. The reply lands right here.";
     renderSupportTickets();
   } catch (err) { $("supNote").textContent = String(err); }
   $("supSend").disabled = false;
@@ -5080,7 +5123,7 @@ $("makeitSend")?.addEventListener("click", async () => {
     // behind it -- one person reads these (IC-425). Say what is true:
     // it arrived, somebody will read it, and nothing is promised back.
     $("makeitNote").textContent =
-      "Sent. One person reads these, so there is no promised reply -- but " +
+      "Sent. One person reads these, so there is no promised reply, but " +
       "seeing what failed is how Krate gets better.";
   } catch (err) {
     $("makeitSend").disabled = false;
@@ -6325,14 +6368,14 @@ function showCloudSkeleton() {
  * developer reading it concludes this is a toy for non-programmers and
  * closes the window. */
 const EXAMPLES = [
-  { label: "A JSON payload inspector for my team", sugg: "a JSON inspector -- paste a payload, get a collapsible tree, search keys and values, and copy any subtree as JSON. It cannot use the network" },
-  { label: "A regex tester my team can keep", sugg: "a regex tester -- a pattern box, a test string, live highlighted matches, and a list of capture groups per match. It cannot use the network" },
-  { label: "A log viewer for a support engineer", sugg: "a log viewer -- open a log file, filter by level and by text, and click a line to see the full entry. It cannot use the network" },
-  { label: "A JWT decoder that stays on the machine", sugg: "a JWT decoder -- paste a token, see header and payload decoded, and show whether it has expired. It cannot use the network" },
-  { label: "An API playground for a client", sugg: "an API playground -- set a URL, method, headers and body, send the request, and show the status, timing and pretty-printed response" },
-  { label: "A diff viewer for a code review", sugg: "a diff viewer -- paste two blocks of text and show a side by side line diff with additions and deletions marked. It cannot use the network" },
-  { label: "A cron expression explainer", sugg: "a cron expression explainer -- type a cron line, get it in plain English plus the next five run times. It cannot use the network" },
-  { label: "A UUID and hash generator for a QA team", sugg: "a small toolbox -- generate UUIDs, and hash any text with sha256 and md5, each with a copy button. It cannot use the network" },
+  { label: "A JSON payload inspector for my team", sugg: "a JSON inspector: paste a payload, get a collapsible tree, search keys and values, and copy any subtree as JSON. It cannot use the network" },
+  { label: "A regex tester my team can keep", sugg: "a regex tester: a pattern box, a test string, live highlighted matches, and a list of capture groups per match. It cannot use the network" },
+  { label: "A log viewer for a support engineer", sugg: "a log viewer: open a log file, filter by level and by text, and click a line to see the full entry. It cannot use the network" },
+  { label: "A JWT decoder that stays on the machine", sugg: "a JWT decoder: paste a token, see header and payload decoded, and show whether it has expired. It cannot use the network" },
+  { label: "An API playground for a client", sugg: "an API playground: set a URL, method, headers and body, send the request, and show the status, timing and pretty-printed response" },
+  { label: "A diff viewer for a code review", sugg: "a diff viewer: paste two blocks of text and show a side by side line diff with additions and deletions marked. It cannot use the network" },
+  { label: "A cron expression explainer", sugg: "a cron expression explainer: type a cron line, get it in plain English plus the next five run times. It cannot use the network" },
+  { label: "A UUID and hash generator for a QA team", sugg: "a small toolbox: generate UUIDs, and hash any text with sha256 and md5, each with a copy button. It cannot use the network" },
 ];
 
 function pickExamples(n) {
@@ -6552,7 +6595,7 @@ async function obLoadAgents() {
       // Honest, and actionable: name the tool and how to get it.
       const help = (agents || [])[0];
       box.innerHTML += `<p class="ob-none">No AI tool found yet. ${
-        help && help.detail ? help.detail : "Install one, then come back -- Krate will notice it."
+        help && help.detail ? help.detail : "Install one, then come back. Krate will notice it."
       }</p>`;
       if (next) next.disabled = false;
     }
@@ -6655,11 +6698,11 @@ async function paintTerminalSetting() {
   const hint = $("setTermHint");
   const btn = $("setTermBtn");
   if (info.linked) {
-    hint.textContent = "Ready -- run `krate --version` in a terminal";
+    hint.textContent = "Ready. Run `krate --version` in a terminal";
     btn.textContent = "Done";
     btn.disabled = true;
   } else {
-    hint.textContent = "Not set up yet -- needs your password once";
+    hint.textContent = "Not set up yet, it needs your password once";
     btn.textContent = "Set up";
     btn.disabled = false;
   }
@@ -6699,7 +6742,7 @@ $("aiRefresh")?.addEventListener("click", async () => {
     const ready = (state.agents || []).filter((a) => a.state === "working").length;
     note.textContent = ready
       ? `${ready} ready`
-      : "Still none ready -- follow a fix above, then press Refresh again.";
+      : "Still none ready. Follow a fix above, then press Refresh again.";
   } catch (err) {
     note.textContent = String(err && err.message ? err.message : err);
   }
@@ -6779,7 +6822,7 @@ $("aiRefresh")?.addEventListener("click", async () => {
       name.className = "sess-name";
       name.textContent = clean(session.title) || "Untitled";
       const built = !!(session.result && (session.result.path || session.result.name));
-      name.title = (built ? "Built - " : "Draft - ") + name.textContent;
+      name.title = (built ? "Built: " : "Draft: ") + name.textContent;
 
       const rename = document.createElement("button");
       rename.className = "sess-kebab";
