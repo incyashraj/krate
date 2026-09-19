@@ -874,12 +874,27 @@ impl CanvasSurface {
     }
 
     /// Four thin fills; a stroke is its edges.
+    /// The four sides of a rectangle, each drawn as a filled bar.
+    ///
+    /// The sides are handed to `fill_rect` in the app's OWN coordinates,
+    /// because `fill_rect` maps and scales them itself. This function used
+    /// to map and scale them first and pass the result on, so every value
+    /// went through the transform twice: at 1x that is identity and nothing
+    /// showed, and at 2x every border landed at double its position and
+    /// double its size. A frame around a plot came out starting at the
+    /// canvas edge with its bottom and right sides off-screen, and it took
+    /// a screenshot at 2x (K-425) to make a two-year-old bug visible.
+    ///
+    /// The minimum one-pixel stroke is the one thing that must be computed
+    /// in device pixels, so it is converted back into app coordinates.
     pub fn stroke_rect(&mut self, x: f32, y: f32, w: f32, h: f32, stroke: f32, color: u32) {
-        let (x, y) = self.map_point(x, y);
-        let (w, h, stroke) = (self.map_len(w), self.map_len(h), self.map_len(stroke));
-        let k = self.scale;
-        let (x, y, w, h, stroke) = (x * k, y * k, w * k, h * k, stroke * k);
-        let stroke = stroke.max(1.0);
+        // A hairline must still cover a whole device pixel. `map_len` and
+        // the backing scale are what a length is multiplied by on its way
+        // down, so dividing by them turns "one device pixel" back into the
+        // app-space length that produces one.
+        let per_unit = self.map_len(1.0) * self.scale;
+        let min = if per_unit > 0.0 { 1.0 / per_unit } else { 1.0 };
+        let stroke = stroke.max(min);
         self.fill_rect(x, y, w, stroke, color);
         self.fill_rect(x, y + h - stroke, w, stroke, color);
         self.fill_rect(x, y, stroke, h, color);
@@ -1253,6 +1268,43 @@ impl CanvasSurface {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A stroked rectangle is closed, and stays inside the canvas at 2x.
+    ///
+    /// `stroke_rect` used to map and scale its own coordinates and then
+    /// hand them to `fill_rect`, which maps and scales them again. At 1x
+    /// the transform is identity and the double application showed
+    /// nothing, so this survived every test and every screenshot until a
+    /// 2x shot was taken (K-425). At 2x a frame around a plot was drawn at
+    /// double its position and size: it began at the canvas edge and its
+    /// bottom and right sides fell off the surface entirely.
+    ///
+    /// Asserted on all four sides, because the failure left TWO of them
+    /// looking perfectly correct.
+    #[test]
+    fn a_stroked_rect_is_closed_and_in_bounds_at_two_x() {
+        let mut s = CanvasSurface::new_scaled(100, 50, 2.0).expect("surface");
+        // A frame inset ten logical pixels from every edge.
+        s.stroke_rect(10.0, 10.0, 80.0, 30.0, 1.0, 0xFF00_0000);
+        let image = s.to_image().expect("image");
+        assert_eq!((image.width, image.height), (200, 100));
+        let px = |x: usize, y: usize| image.rgba[(y * 200 + x) * 4];
+
+        // Every side is on the physical pixel its logical position names.
+        assert_eq!(px(100, 20), 0, "the top side is drawn");
+        assert_eq!(px(100, 79), 0, "the bottom side is drawn");
+        assert_eq!(px(20, 50), 0, "the left side is drawn");
+        assert_eq!(px(179, 50), 0, "the right side is drawn");
+
+        // And the middle is empty: a stroke is not a fill.
+        assert_eq!(px(100, 50), 255, "the inside is not filled");
+
+        // Nothing is drawn outside the frame it asked for. The doubled
+        // transform put the right side at x=360 on a 200px buffer, so it
+        // vanished; this is the assertion that would have caught it.
+        assert_eq!(px(5, 50), 255, "nothing left of the frame");
+        assert_eq!(px(195, 50), 255, "nothing right of the frame");
+    }
 
     /// K-088's lock: a scaled surface reports logical size, rasters
     /// physical pixels, and puts a logical-coordinate fill exactly where

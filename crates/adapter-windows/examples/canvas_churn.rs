@@ -88,6 +88,8 @@ impl ApplicationHandler for App {
                     value: None,
                     selection: None,
                     text_cursor: None,
+                    text: None,
+                    r#box: None,
                     clip: None,
                     role: None,
                     pixels: None,

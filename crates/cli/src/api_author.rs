@@ -113,11 +113,11 @@ fn prices(model: &str) -> ((f64, f64, f64, f64), bool) {
 ///
 /// Emitted on every exit that spent anything, success or not -- a build
 /// that failed on the fourth round still cost four rounds.
-/// The token counts ride along behind the number.
 ///
-/// The dollars alone cannot say WHY a build cost what it did. Caching is
-/// the largest lever on that cost and it fails silently: if a breakpoint
-/// stops matching, nothing breaks and nothing is logged, the bill simply
+/// The token counts ride along behind the number, because the dollars
+/// alone cannot say WHY a build cost what it did. Caching is the largest
+/// lever on that cost and it fails silently: if a breakpoint stops
+/// matching, nothing breaks and nothing is logged, the bill simply
 /// doubles. `cache_read` near zero on a multi-round build is that failure,
 /// visible at a glance.
 ///
@@ -1095,12 +1095,6 @@ mod tests {
         );
     }
 
-    /// A write lands whole or not at all, leaves no staging litter, and the
-    /// reply records the digest of what was written -- so the transcript says
-    /// what went into the file, not just how big it was (IC-768, test 1628's
-    /// shape: interruption can leave the old file or the complete new one,
-    /// never a torn half, because the bytes travel via a renamed sibling).
-    #[test]
     /// The transcript is cached, not just the pack.
     ///
     /// The system prompt carried the only `cache_control` in the codebase,
@@ -1165,6 +1159,11 @@ mod tests {
         );
     }
 
+    /// A write lands whole or not at all, leaves no staging litter, and the
+    /// reply records the digest of what was written -- so the transcript says
+    /// what went into the file, not just how big it was (IC-768, test 1628's
+    /// shape: interruption can leave the old file or the complete new one,
+    /// never a torn half, because the bytes travel via a renamed sibling).
     #[test]
     fn a_write_is_atomic_recorded_and_leaves_no_litter() {
         let app = tempfile::tempdir().expect("app");

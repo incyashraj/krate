@@ -3016,6 +3016,12 @@ pub(crate) enum DropNotice {
     Hovering(bool),
 }
 
+/// The arguments ARE the widget's fields, one per WIT record member, and
+/// phase 4 added two more (`text` and `box`). Grouping them into a struct
+/// would mean a second shape beside the WIT record that has to be kept in
+/// step with it by hand, which is the drift K-403 exists to prevent. The
+/// sibling validator above carries the same allow for the same reason.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn widget_node_from_parts(
     raw_id: u64,
     raw_parent: Option<u64>,

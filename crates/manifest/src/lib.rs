@@ -429,6 +429,14 @@ impl CapabilitySpec {
     /// Declared here so the gap is a fact the code carries rather than a
     /// line in a bug report, and so `krate check` can refuse it instead of
     /// letting the promise reach a consent sheet.
+    ///
+    /// Nothing calls it today, and that is the point: every capability in
+    /// the catalog is implemented. `ui.dropzone` was the last one that was
+    /// not, and making it real (K-175) emptied this. Kept, because the next
+    /// capability to be specified before it is built needs exactly this,
+    /// and rediscovering the mechanism is how a hollow promise reaches a
+    /// consent sheet again.
+    #[allow(dead_code)]
     const fn not_implemented(self) -> Self {
         Self {
             implemented: false,
