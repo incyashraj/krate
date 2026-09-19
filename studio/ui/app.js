@@ -677,6 +677,10 @@ async function enterHome() {
  * idle, the next request was refused with "one app is already being made",
  * and there was no way to reach the build to stop it. */
 function renderBuilding() {
+  // The composer's button is Send or Stop depending on whether a build is
+  // running here, and every change to that fact passes through this
+  // function -- so this is the one place that keeps the two in step.
+  if (typeof syncSendMode === "function") syncSendMode();
   const bar = $("buildingNow");
   if (!bar) return;
   // Keyed on the building session alone, never on which view is showing:
@@ -1327,13 +1331,18 @@ function restoreBuild(sessionId) {
 function beginBuild(title, expect) {
   $("buildTitle").textContent = title;
   $("buildExpect").textContent = expect;
-  // The composer waits until v1 is a file. Typing mid-build either got
-  // ignored or read as a new request; a locked box with honest words is
-  // kinder than either.
+  // The composer stays OPEN during the build.
+  //
+  // It used to lock, because typing mid-build either got ignored or was
+  // read as a new request, and a locked box with honest words beat both.
+  // That is no longer the choice: words typed now ask whether to replace
+  // the build or run after it. Locking the box made the button beside it
+  // say "type to send instead" over a field nobody could type into --
+  // which is worse than either of the things the lock was avoiding.
   const box = $("prompt");
   if (box) {
-    box.disabled = true;
-    box.placeholder = "Wait, v1 is becoming a file…";
+    box.disabled = false;
+    box.placeholder = "Changed your mind? Say it here…";
   }
   // Rescue the peek box before wiping the stage list.
   //
@@ -1830,18 +1839,32 @@ function failBuild(why, request) {
   settleChipBad(state.buildChip, state.buildVersion || 1, () => make(request), why === "stopped");
   state.buildChip = null;
   clearInterval(state.timer);
-  state.lastFailed = request;
   const built = state.buildingSession || state.session;
-  if (built) built.failedRequest = request;
-  sayTo(built, "KRATE", why === "stopped" ? "stopped" : "that build didn't come together");
-  // The failure is a recorded FACT on the message too, so replay can see
-  // it even in a session file saved before failedRequest survived disk.
-  {
+  // A replaced build must not be remembered as the thing to resume. It was
+  // abandoned on purpose, and leaving it here made the composer's "Resume
+  // build" path rebuild the request the person had just replaced.
+  if (!(why === "stopped" && state.replacing)) {
+    state.lastFailed = request;
+    if (built) built.failedRequest = request;
+  }
+  // A stop that exists only to start a different build is a redirect, not an
+  // ending. It has already said so in plainer words, so a second "stopped"
+  // line reads as two events -- and marking that line kind:"fail" would
+  // brand the sentence about the NEW build as the failure.
+  const redirecting = why === "stopped" && state.replacing;
+  if (!redirecting) {
+    sayTo(built, "KRATE", why === "stopped" ? "stopped" : "that build didn't come together");
+    // The failure is a recorded FACT on the message too, so replay can see
+    // it even in a session file saved before failedRequest survived disk.
     const last = built && built.messages[built.messages.length - 1];
     if (last) last.kind = "fail";
   }
   persistSession(built);
   if (!(state.session && built && state.session.id === built.id)) return;
+  // Do not paint the Stopped card over a build that is about to be replaced.
+  // It flashed for one second and offered "Resume build" for work the person
+  // had just told us to throw away.
+  if (redirecting) return;
   /* The one hard rule of this card: plain words. A person here must never
    * meet a compiler error, an exit code, or a crate name. */
   if (why === "stopped") {
@@ -4356,19 +4379,69 @@ function startFromHome() {
   make(text);
 }
 
+/* Something was typed while a build was running. Two honest answers, and
+ * the person picks. The words stay in the box until they do, so backing out
+ * of the sheet loses nothing. */
+function askMidBuild(text) {
+  const sheet = $("midSheet");
+  if (!sheet) {
+    // No sheet in this shell: fall back to the old behaviour rather than
+    // dropping what was typed.
+    return queueMidBuild(text);
+  }
+  const short = text.length > 90 ? text.slice(0, 90) + "…" : text;
+  $("midSub").textContent = `"${short}"`;
+  sheet.classList.remove("hidden");
+  state.midText = text;
+}
+
+function queueMidBuild(text) {
+  state.queued = text;
+  $("prompt").value = "";
+  autoGrow($("prompt"));
+  syncSendReady();
+  say("YOU", text);
+  say("KRATE", "Noted. I'll do that as soon as this one is finished.");
+  $("composerHint").textContent = "queued · runs when this build finishes";
+}
+
+/* Stop what is running and start again from the new words. The old build's
+ * partial work is gone either way, so say that in the sheet rather than
+ * discovering it afterwards. */
+async function replaceWithMidBuild(text) {
+  $("prompt").value = "";
+  autoGrow($("prompt"));
+  // Clear the queue first: stopBuild settles the build, and a queued thought
+  // left behind would run after the replacement and build twice.
+  state.queued = null;
+  // This stop is a redirect, not an abandonment. Without the flag the
+  // transcript picked up a bare "stopped" line and the stage showed the
+  // "Stopped. / Resume build" card for a build nobody wanted resumed --
+  // one second before the replacement started and covered it.
+  state.replacing = true;
+  say("KRATE", "Stopping that one. Building this instead.");
+  try {
+    await stopBuild();
+  } finally {
+    state.replacing = false;
+  }
+  syncSendReady();
+  // silent: the YOU line is said by make itself, and saying it here too put
+  // the request in the transcript twice.
+  make(text);
+}
+
 function submitInSession() {
   const text = $("prompt").value.trim();
   if (!text) return;
   if (state.buildingSession) {
     if (state.session && state.buildingSession.id === state.session.id) {
-      // Do not drop it. A thought that arrives mid-build is exactly the
-      // thought worth keeping -- queue it, say so, and run it when this
-      // build finishes.
-      state.queued = text;
-      $("prompt").value = "";
-      say("YOU", text);
-      say("KRATE", "Noted. I'll do that as soon as this one is finished.");
-      $("composerHint").textContent = "queued · runs when this build finishes";
+      // Words typed mid-build mean one of two things and we cannot tell
+      // which: "stop, do this instead" or "when you're done, also do this".
+      // Guessing was wrong half the time -- it always queued, so anyone who
+      // had changed their mind watched a build they no longer wanted run to
+      // the end. Ask, in two words each.
+      askMidBuild(text);
     } else {
       // A different session is building. Silence here would eat the words.
       say("KRATE", `"${state.buildingSession.title}" is still being made, one app at a time. This will be ready to send once it finishes.`);
@@ -4557,6 +4630,77 @@ function syncSendReady() {
     if (!field || !button) continue;
     button.classList.toggle("ready", field.value.trim().length > 0);
   }
+  syncSendMode();
+}
+
+/* Is a BUILD running in the session on screen right now? Only a build: the
+ * planning round trip is a few seconds with no process to kill, and typing
+ * during it is an answer to a question rather than an interruption. A build
+ * in a DIFFERENT session does not count either -- the button below THIS box
+ * cannot stop that one. */
+function busyHere() {
+  const b = state.buildingSession;
+  return !!(b && state.session && b.id === state.session.id);
+}
+
+/* The button below the box is Send or Stop depending on what is going on.
+ *
+ * People reach for that exact spot to stop a running thing, because every
+ * chat tool now puts stop there. So while the app is working and the box is
+ * empty, it is a stop button. The moment a character is typed it is a send
+ * button again, because now there is something to send and pressing it
+ * should not throw the work away silently. */
+function syncSendMode() {
+  const btn = $("send");
+  const box = $("prompt");
+  if (!btn || !box) return;
+  // Untrimmed on purpose. `trim()` is the right test for "is there something
+  // worth sending", and the wrong one here: a box holding four spaces LOOKS
+  // typed-into, so a person who hits the button is aiming at Send. Trimming
+  // kept the square there and their press killed the build.
+  const typed = box.value.length > 0;
+  const stopMode = busyHere() && !typed;
+  const was = btn.classList.contains("stopping");
+  btn.classList.toggle("stopping", stopMode);
+  // `ready` and `stopping` must never both be on. They set the same property
+  // at the same specificity, and `.send.ready` comes later in the sheet, so a
+  // stale `ready` painted the stop square blue with a send button's glow.
+  if (stopMode) btn.classList.remove("ready");
+  btn.title = stopMode ? "Stop this build" : "Make it (Enter)";
+  btn.setAttribute("aria-label", stopMode ? "Stop this build" : "Send");
+  // The button must be pressable in stop mode even while the build has the
+  // send path disabled. Without this the square rendered and did nothing.
+  if (stopMode) btn.disabled = false;
+  // The mid-build question has an expiry: the build it asks about. If it
+  // finished while the sheet sat open, the sheet is asking about something
+  // that no longer exists, so put the words back and let them send normally.
+  const sheet = $("midSheet");
+  if (sheet && !sheet.classList.contains("hidden") && !busyHere()) {
+    sheet.classList.add("hidden");
+    if (state.midText) {
+      box.value = state.midText;
+      state.midText = null;
+      autoGrow(box);
+      btn.classList.add("ready");
+    }
+  }
+  // Say what the button now does, so the square is not a guess. Only on the
+  // edges: the hint also carries the queued note and "thinking it through",
+  // and rewriting it every keystroke would wipe those.
+  const hint = $("composerHint");
+  if (!hint || stopMode === was) return;
+  if (stopMode) {
+    hint.textContent = "that button stops this build · type to send instead";
+  } else if (busyHere()) {
+    hint.textContent = "↩ to send · it is still building, so you will be asked what to do";
+  } else {
+    // The build ended. Leave a live note (queued, thinking) alone and only
+    // clear the two lines this function wrote, or a stop would erase the
+    // "queued - runs when this build finishes" note that is still true.
+    if (/stops this build|still building, so you will be asked/.test(hint.textContent)) {
+      hint.textContent = "↩ to make it · shift-↩ for a new line";
+    }
+  }
 }
 ["prompt", "homePrompt"].forEach((id) => {
   $(id)?.addEventListener("input", syncSendReady);
@@ -4567,9 +4711,34 @@ syncSendReady();
   if (el) el.addEventListener("input", () => autoGrow(el));
 });
 
-$("send").addEventListener("click", submitInSession);
+/* One button, routed by what it currently is. Reading the class rather than
+ * recomputing keeps the press and the picture in agreement: whatever the
+ * person is looking at is what happens. */
+function sendOrStop() {
+  if ($("send").classList.contains("stopping")) return stopBuild();
+  submitInSession();
+}
+$("send").addEventListener("click", sendOrStop);
+$("midStopBtn")?.addEventListener("click", () => {
+  const text = state.midText;
+  state.midText = null;
+  $("midSheet").classList.add("hidden");
+  if (text) replaceWithMidBuild(text);
+});
+$("midWaitBtn")?.addEventListener("click", () => {
+  const text = state.midText;
+  state.midText = null;
+  $("midSheet").classList.add("hidden");
+  if (text) queueMidBuild(text);
+});
 $("prompt").addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); submitInSession(); }
+  if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
+  e.preventDefault();
+  // Enter never stops a build, even though the button beside it does in stop
+  // mode. Pressing that square is aimed at it; Enter on an empty box is a
+  // habit, and killing a running build by reflex is not a thing to build in.
+  if ($("send").classList.contains("stopping")) return;
+  submitInSession();
 });
 $("backBtn").addEventListener("click", () => {
   // Save, but do not make the person watch it.

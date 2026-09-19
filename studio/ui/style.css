@@ -661,6 +661,27 @@ body.windows.light .titlebar .side-toggle:hover { color: #000; }
 }
 .send:hover { background: var(--blue-soft); }
 .send:disabled { opacity: 0.32; cursor: default; }
+/* One button, two jobs. People reach for the spot below-right of the box to
+   stop a running thing, because that is where every chat tool puts it now.
+   So while a build runs and the box is empty, the arrow becomes a square and
+   the button stops the build. Type a character and it is a send button again.
+   Both icons ship in the markup and the class picks which one shows -- a
+   swap of innerHTML would lose the icon on any re-render. */
+.send .send-square { display: none; }
+.send.stopping .send-arrow { display: none; }
+.send.stopping .send-square { display: block; }
+/* Written to beat `.send.ready`, which sets the same property at the same
+   specificity and appears later in this sheet. A stale `ready` alongside
+   `stopping` painted the stop square blue with a send button's glow, and
+   the JS that clears one when the other lands is the first line of
+   defence, not the only one. */
+.send.stopping,
+.send.ready.stopping,
+.bigbar-row .send.ready.stopping {
+  background: var(--text); color: var(--bg); box-shadow: none;
+}
+.send.stopping:hover,
+.send.ready.stopping:hover { background: var(--muted); filter: none; }
 .composer-hint { margin-top: 9px; font-size: 11px; color: var(--ghost); text-align: right; line-height: 1.5; }
 
 /* ---- stage ------------------------------------------------------------ */

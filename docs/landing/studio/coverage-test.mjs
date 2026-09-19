@@ -22,6 +22,11 @@ import assert from "node:assert/strict";
 
 const app = readFileSync("studio/ui/app.js", "utf8");
 const bridge = readFileSync("docs/landing/studio/bridge.js", "utf8");
+// The markup and the stylesheet, for the claims that live in them: a button
+// whose two icons both ship in the HTML, and the class that picks between
+// them. Asserting those in app.js alone would pass over a missing icon.
+const html = readFileSync("studio/ui/index.html", "utf8");
+const css = readFileSync("studio/ui/style.css", "utf8");
 
 // What the UI asks for: every invoke("name") in Studio's own JavaScript.
 const asked = new Set(
@@ -215,7 +220,6 @@ console.log("ok  no dashes in user-facing text");
 // separate later rule does not work: this sheet opens with
 // `* { margin: 0 }`, and a universal reset beats a compound selector, so
 // an override silently did nothing.
-const css = readFileSync("studio/ui/style.css", "utf8");
 const shotImg = css.slice(css.indexOf(".shot-stage img {"));
 const rule = shotImg.slice(0, shotImg.indexOf("}"));
 assert.match(rule, /margin-bottom:\s*\d+px/,
@@ -317,3 +321,86 @@ assert.match(retry.slice(0, 1200), /buildNow\(again/,
 
 console.log("ok  a stop is not recorded as a failure");
 console.log("ok  Try again rebuilds instead of re-planning");
+
+// The button below the box is Send or Stop, whichever the moment calls for.
+//
+// People reach for that exact spot to stop a running thing now, because
+// every chat tool puts stop there. Krate's Stop was a small word inside
+// the build card, which is not where anyone looks. So while a build runs
+// and the box is empty the arrow becomes a square and the button stops
+// the build; type one character and it is a send button again.
+assert.match(app, /function syncSendMode\(\)/,
+  "one button, two jobs, decided in one place");
+const mode = app.slice(app.indexOf("function syncSendMode()"),
+  app.indexOf("function syncSendMode()") + 2200);
+assert.match(mode, /const stopMode = busyHere\(\) && !typed;/,
+  "it is a stop button only while a build runs here and nothing is typed");
+// Untrimmed on purpose, and this is the assertion that keeps it that way.
+// With trim() a box holding four spaces still showed the square, so
+// somebody who typed spaces and aimed at Send killed their own build.
+assert.match(mode, /const typed = box\.value\.length > 0;/,
+  "and a box holding only spaces counts as typed-into, not as empty");
+assert.ok(!/const typed = box\.value\.trim\(\)/.test(mode),
+  "never trimmed: trimming makes a visibly-typed box look empty");
+// The icons both live in the markup. Swapping innerHTML instead would
+// lose whichever icon a later re-render did not put back.
+assert.match(html, /class="send-arrow"/, "the arrow ships in the button");
+assert.match(html, /class="send-square"/, "and so does the square");
+assert.match(css, /\.send\.stopping \.send-square \{ display: block; \}/,
+  "the class picks which icon shows");
+
+// Enter is not the same press as the button.
+//
+// The square is aimed at. Enter on an empty box is a habit, and wiping
+// out a running build by reflex is not a thing to build in.
+const enter = app.slice(app.indexOf('$("prompt").addEventListener("keydown"'));
+assert.match(enter.slice(0, 700), /classList\.contains\("stopping"\)\) return;/,
+  "Enter on an empty box during a build does nothing");
+
+// Words typed mid-build: ask, do not guess.
+//
+// It always queued them, so anyone who had changed their mind watched a
+// build they no longer wanted run to the end. Two honest options.
+assert.match(html, /id="midSheet"/, "the question has somewhere to appear");
+assert.match(html, /id="midStopBtn"/, "stop it and use this instead");
+assert.match(html, /id="midWaitBtn"/, "or wait, then do this");
+assert.match(app, /function askMidBuild\(text\)/, "and something asks it");
+assert.match(app, /askMidBuild\(text\);/,
+  "the mid-build path asks instead of queueing silently");
+
+// A replaced build is a redirect, not an ending. Without this the
+// transcript picked up a bare "stopped" line under the clearer sentence,
+// the Stopped card flashed for a second offering "Resume build" for work
+// the person had just told us to throw away, and failedRequest kept
+// pointing at the replaced request.
+assert.match(app, /state\.replacing = true;/, "a replacement says so");
+const fail = app.slice(app.indexOf("function failBuild(why, request)"));
+assert.match(fail.slice(0, 2600), /const redirecting = why === "stopped" && state\.replacing;/,
+  "and failBuild knows a redirect from an ending");
+assert.match(fail.slice(0, 2600), /if \(redirecting\) return;/,
+  "so no Stopped card paints over the build that is replacing it");
+
+// The question expires with the build it asks about. If the build
+// finished while the sheet sat open, the sheet was asking about
+// something that no longer existed.
+assert.match(mode, /!sheet\.classList\.contains\("hidden"\) && !busyHere\(\)/,
+  "an open mid-build question closes itself when the build ends");
+
+console.log("ok  the send button doubles as stop, and says which it is");
+console.log("ok  typing mid-build asks rather than guessing");
+
+// And the box it invites typing into is actually typable.
+//
+// This is the assertion that matters most in this group. The button said
+// "type to send instead" over a composer `beginBuild` had set disabled,
+// so a real person could not type a character during a v1 build -- only
+// a script setting .value could, which is exactly what the browser tests
+// were doing, and why it looked like it worked. The whole mid-build
+// question was unreachable for the case it was built for.
+const begin = app.slice(app.indexOf("function beginBuild(title, expect)"));
+assert.match(begin.slice(0, 1100), /box\.disabled = false;/,
+  "the composer stays open during a build");
+assert.ok(!/box\.disabled = true;/.test(begin.slice(0, 1100)),
+  "beginBuild never locks the box it tells people to type in");
+
+console.log("ok  the composer is open while a build runs");

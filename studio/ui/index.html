@@ -352,7 +352,7 @@
               <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M13 7.5l-4.9 4.9a3.2 3.2 0 01-4.5-4.5l5.3-5.3a2.1 2.1 0 013 3l-5.3 5.3a1 1 0 01-1.5-1.5L9.8 4.7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
             </button>
             <textarea id="prompt" rows="1" placeholder="Describe the app you want…" autocomplete="off" spellcheck="false"></textarea>
-            <button id="send" class="send" title="Make it (Enter)"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 13V3.5M8 3.5L3.8 7.7M8 3.5l4.2 4.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button id="send" class="send" title="Make it (Enter)"><svg class="send-arrow" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 13V3.5M8 3.5L3.8 7.7M8 3.5l4.2 4.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg><svg class="send-square" width="14" height="14" viewBox="0 0 16 16"><rect x="4.4" y="4.4" width="7.2" height="7.2" rx="1.4" fill="currentColor"/></svg></button>
           </div>
           <p class="composer-hint" id="composerHint">↩ to make it · shift-↩ for a new line</p>
         </footer>
@@ -966,6 +966,30 @@
         <button class="btn btn-ghost sheet-close" data-close="sendSheet">Close</button>
       </div>
       <p class="detail-note" id="sendNote"></p>
+    </div>
+  </div>
+
+  <!-- Typing while a build runs is normal. The question is whether the new
+       words replace the build or wait for it, and only the person knows. -->
+  <div class="sheet-wrap hidden" id="midSheet">
+    <div class="sheet sheet-send">
+      <h2>It is still building</h2>
+      <p class="sheet-sub" id="midSub">What should happen with what you just typed?</p>
+      <div class="send-opts">
+        <button class="send-opt" id="midStopBtn" type="button">
+          <b>Stop it and use this instead</b>
+          <span>The build ends now and starts again with your new words. What
+          it had made so far is thrown away.</span>
+        </button>
+        <button class="send-opt" id="midWaitBtn" type="button">
+          <b>Wait, then do this</b>
+          <span>This build finishes first. Your words run straight after, as a
+          change to the app it makes.</span>
+        </button>
+      </div>
+      <div class="detail-actions">
+        <button class="btn btn-ghost sheet-close" data-close="midSheet">Never mind</button>
+      </div>
     </div>
   </div>
 
