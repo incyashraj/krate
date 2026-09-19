@@ -46,13 +46,13 @@ def chrome():
     nav = """<header class="subnav">
   <div class="wrap subnav-inner">
     <a class="brand" href="/"><img src="/krate-logo.png" alt="" width="22" height="22" /> KRATE</a>
-    <nav>
+    <nav aria-label="Primary">
       <a href="/docs/quickstart.html">Start</a>
       <a href="/docs/">Docs</a>
       <a href="/cloud/">Apps</a>
       <a href="https://github.com/incyashraj/krate">GitHub</a>
     </nav>
-    <a class="pill pill-primary" href="/#install">Install</a>
+    <a class="pill pill-primary" href="/docs/quickstart.html#get-krate">Install</a>
   </div>
 </header>"""
 
@@ -82,6 +82,68 @@ def chrome():
 # line somebody pastes wrong -- so the block scrolls inside its own box
 # instead, and `max-width: 100%` stops it widening its parents.
 ANSWER_CSS = """  <style>
+    /* The article shell owns its layout. The homepage supplies fonts and
+       colors, not styles for these differently named elements. */
+    .subnav {
+      position: sticky; top: 0; z-index: 40;
+      background: rgba(0,0,0,.94); border-bottom: 1px solid #27272a;
+      -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+    }
+    .subnav-inner, .subfoot-inner {
+      width: min(1120px, calc(100% - 48px)); margin: 0 auto;
+      display: flex; align-items: center; flex-wrap: wrap; gap: 12px 24px;
+    }
+    .subnav-inner { padding: 12px 0; }
+    .subnav .brand {
+      display: inline-flex; align-items: center; gap: 8px;
+      min-height: 44px; font-size: 16px; font-weight: 500; letter-spacing: .02em;
+    }
+    .subnav .brand img { flex: none; }
+    .subnav nav { display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }
+    .subnav nav a, .subfoot a {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-height: 44px; padding: 10px 12px; color: #a1a1aa;
+      font-size: 14px; line-height: 1.5; border-radius: 8px;
+    }
+    .subnav nav a:hover, .subfoot a:hover { color: #fff; background: #18181b; }
+    .page-wrap {
+      width: min(760px, calc(100% - 48px)); margin: 0 auto;
+      padding: 64px 0 88px; color: #d4d4d8; line-height: 1.75;
+    }
+    .page-wrap h1, .page-wrap h2, .page-wrap h3 {
+      font-family: var(--disp); color: #fafafa; font-weight: 700;
+      letter-spacing: -.025em;
+    }
+    .page-wrap h1 { font-size: clamp(30px, 4.5vw, 46px); line-height: 1.14; margin-bottom: 20px; }
+    .page-wrap h2 { font-size: clamp(22px, 3vw, 28px); line-height: 1.25; margin-bottom: 18px; }
+    .page-wrap h3 { font-size: 20px; line-height: 1.35; margin: 24px 0 12px; }
+    .page-wrap p { margin: 0 0 18px; }
+    .page-wrap .page-lede { font-size: 18px; line-height: 1.7; color: #a1a1aa; margin-bottom: 24px; }
+    .page-wrap > section { margin-top: 40px; padding-top: 32px; border-top: 1px solid #27272a; }
+    .page-wrap ul, .page-wrap ol { padding-left: 24px; margin: 0 0 20px; }
+    .page-wrap li { padding-left: 4px; margin-bottom: 10px; }
+    .page-wrap strong { color: #fafafa; font-weight: 500; }
+    .page-wrap :is(p, li) a {
+      color: #c4b5fd; text-decoration: underline; text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
+    }
+    .page-wrap :is(p, li) a:hover { color: #ede9fe; }
+    .page-wrap :is(p, li) code { color: #e4e4e7; font-size: .9em; }
+    :is(.subnav, .page-wrap) .pill {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-height: 44px; padding: 10px 18px; border-radius: 999px;
+      border: 1px solid #3f3f46; background: #09090b; color: #e4e4e7;
+      font-size: 14px; font-weight: 500; line-height: 1.4; text-align: center;
+    }
+    :is(.subnav, .page-wrap) .pill:hover { background: #18181b; border-color: #71717a; }
+    :is(.subnav, .page-wrap) .pill-primary { background: #fafafa; border-color: #fafafa; color: #09090b; }
+    :is(.subnav, .page-wrap) .pill-primary:hover { background: #d4d4d8; border-color: #d4d4d8; }
+    :is(.subnav, .page-wrap, .subfoot) :is(a, pre, [tabindex]):focus-visible {
+      outline: 2px solid #c4b5fd; outline-offset: 4px;
+    }
+    .subfoot { border-top: 1px solid #27272a; color: #a1a1aa; }
+    .subfoot-inner { padding: 24px 0; justify-content: space-between; font-size: 13px; }
+    .subfoot-inner > span:last-child { display: flex; flex-wrap: wrap; gap: 4px; }
     /* Command blocks: scroll inside the box, never widen the page. */
     .answer-cmd {
       margin: 0 0 18px;
@@ -100,8 +162,11 @@ ANSWER_CSS = """  <style>
     }
     /* Nothing inside the page shell may widen it either: a long URL or an
        inline <code> token is the other way a page starts scrolling. */
-    .page-wrap { overflow-x: clip; }
+    .page-wrap { min-width: 0; }
     .page-wrap :is(p, li, h1, h2, h3, td) { overflow-wrap: anywhere; }
+    .page-wrap section[id] { scroll-margin-top: 88px; }
+    .answer-entry { margin-bottom: 28px; }
+    .answer-entry > p { margin-top: 18px; font-size: 14px; color: #a1a1aa; }
     /* The two pills at the foot of the page. They wrap rather than squeeze,
        and they are a real tap target rather than a line of text: measured
        at 26px before this, against the 44px the same pill gets in the nav. */
@@ -116,10 +181,12 @@ ANSWER_CSS = """  <style>
       align-items: center;
       justify-content: center;
       min-height: 44px;
-      padding: 0 20px;
+      padding: 10px 20px;
     }
     .answer-table-wrap { max-width: 100%; overflow-x: auto; margin: 20px 0; }
-    .answer-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .answer-table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 14px; }
+    .answer-table caption { text-align: left; color: #a1a1aa; font-size: 13px; margin-bottom: 12px; }
+    .answer-table thead th { color: #fafafa; background: #18181b; }
     .answer-table th, .answer-table td {
       padding: 12px; text-align: left; vertical-align: top;
       border-bottom: 1px solid rgba(255,255,255,.14);
@@ -130,6 +197,18 @@ ANSWER_CSS = """  <style>
          at this width leaves each too narrow to read comfortably. */
       .answer-actions { flex-direction: column; align-items: stretch; }
       .answer-actions .pill { width: 100%; }
+    }
+    @media (max-width: 640px) {
+      .subnav-inner, .subfoot-inner { width: calc(100% - 32px); gap: 6px 12px; }
+      .subnav nav { order: 2; flex-basis: 100%; margin: 0; justify-content: space-between; }
+      .subnav-inner > .pill { margin-left: auto; }
+      .page-wrap { width: calc(100% - 40px); padding: 40px 0 56px; }
+      .page-wrap h1 { font-size: clamp(28px, 7.5vw, 36px); }
+      .page-wrap .page-lede { font-size: 16px; }
+      .page-wrap > section { margin-top: 32px; padding-top: 28px; }
+      .page-wrap section[id] { scroll-margin-top: 144px; }
+      .subfoot-inner { align-items: flex-start; gap: 12px; }
+      .subfoot-inner > span:last-child { flex-basis: 100%; }
     }
   </style>
 """
@@ -223,18 +302,33 @@ def page_head(head, page):
     return "\n".join(line.rstrip() for line in rendered.splitlines())
 
 
+def section_id(title):
+    return re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+
+
 def render(page):
     head, nav, foot = chrome()
 
     head = page_head(head, page)
 
+    section_ids = [section_id(title) for title, _ in page["sections"]]
+    if len(section_ids) != len(set(section_ids)) or not all(section_ids):
+        raise ValueError(f"Section anchors must be unique: {page['slug']}")
+    actions = "\n".join(
+        f'<a class="pill{(" pill-primary" if index == 0 else "")}" '
+        f'href="{html.escape(url, quote=True)}">{html.escape(label)}</a>'
+        for index, (label, url) in enumerate(page["entry_actions"])
+    )
+    entry_note = f'<p>{page["entry_note"]}</p>' if page.get("entry_note") else ""
     sections = "\n".join(
-        f'''    <section>
+        f'''    <section id="{section_id(t)}">
       <h2>{html.escape(t)}</h2>
 {b}
     </section>'''
         for t, b in page["sections"]
     )
+    sections = sections.replace('<pre class="answer-cmd">',
+                                '<pre class="answer-cmd" tabindex="0" aria-label="Command example">')
 
     return f"""{head}
 <body>
@@ -242,6 +336,12 @@ def render(page):
     <main id="main" class="page-wrap">
     <h1>{html.escape(page["h1"])}</h1>
     <p class="page-lede">{page["lead"]}</p>
+    <div class="answer-entry">
+      <nav class="answer-actions" aria-label="Choose your next step">
+{actions}
+      </nav>
+{entry_note}
+    </div>
 
 {sections}
 
@@ -256,6 +356,7 @@ def render(page):
       <div class="answer-actions">
         <a class="pill pill-primary" href="/docs/quickstart.html">Developer quickstart</a>
         <a class="pill" href="/docs/porting.html">Evaluate your app</a>
+        <a class="pill" href="/studio/">Make an app in Studio</a>
       </div>
     </section>
     </main>
@@ -272,6 +373,8 @@ PAGES = [
         "description": "How the .krate format separates your application from native runtimes: bundle contents, recipient requirements, portability checks and current limits.",
         "h1": "One desktop app file, three operating systems",
         "lead": "Build against Krate's interfaces and distribute one .krate artifact. Each recipient runs it through a compatible native Krate runtime on macOS, Windows or Linux.",
+        "entry_actions": [("Try the same-file workflow", "/docs/quickstart.html"),
+                          ("Check your project's fit", "/docs/porting.html")],
         "sections": [
             ("What is portable, and what is installed?", """<p>The <strong>application file</strong> stays the same. The <strong>runtime</strong> is installed for each machine's operating system and CPU. It executes the WebAssembly component and handles permitted host operations. Your users do not need your development toolchain to open a packed app.</p>
 <p>This is not a converter for arbitrary Windows executables, native libraries or existing Electron/Tauri packages. The application must use Krate's supported interfaces and a compatible format/API version. See the <a href="/desktop-app-distribution.html">distribution-model comparison</a>.</p>"""),
@@ -297,18 +400,21 @@ krate run app.krate --prompt</pre>
         "description": "Create a Krate app with AI, inspect its permissions and share the .krate file. What the author needs, what the recipient installs and what to test first.",
         "h1": "Share the app, not your development setup",
         "lead": "If an AI-built application uses Krate's interfaces, you can package it as one .krate file and send it to someone on macOS, Windows or Linux. They need a compatible Krate runtime.",
+        "entry_actions": [("Share a .krate file", "#send-the-file-directly"),
+                          ("Make one in Studio", "/studio/")],
+        "entry_note": "Already have a <code>.krate</code> file? Jump to the handoff steps. If your AI generated a website, Python script or another kind of app, start with the <a href=\"/docs/porting.html\">porting guide</a>; renaming the file does not convert it.",
         "sections": [
             ("Choose the authoring path", """<p><a href="/studio/">Krate Studio</a> provides a graphical way to make and revise apps with AI. Developers can also use the CLI or write the code themselves. AI is an authoring option, not a runtime requirement.</p>
 <p>The local CLI example below requires Rust/component build tools and an installed, authenticated Claude Code CLI. Your provider's subscription or API charges are separate. Check the <a href="/docs/quickstart.html">quickstart</a> for installation and platform requirements.</p>
 <pre class="answer-cmd">krate doctor
 krate ai
 krate create "a regex tester with a pattern box and live matches" --agent claude --output regex.krate</pre>
-<p>Use <code>krate create --help</code> for your installed version's options. An arbitrary generated website, Python script or native executable is not already a Krate app; existing code may need a <a href="/docs/porting.html">port</a>.</p>"""),
+<p>Use <code>krate create --help</code> for your installed version's options.</p>"""),
             ("Test before you send it", """<pre class="answer-cmd">krate run regex.krate --dump-caps
 krate run regex.krate --prompt</pre>
 <p>The first command inspects capabilities without executing the component. The second runs it after permission review. Try valid and invalid inputs, resizing, save/reopen behavior and permission denial. Build and first-frame checks cannot establish that every feature works.</p>
 <p>The normal authoring path includes editable source. Review the bundle for secrets, private sample data and third-party licensing obligations before sharing. Do not assume that generated code is correct or appropriately licensed just because it compiles.</p>"""),
-            ("Send the file directly", """<p>Email the <code>.krate</code> file, put it in a shared folder or send it through a chat that accepts files. Include the runtime version you tested, a short description and the task the recipient can try. Optional hosted publishing is not required.</p>
+            ("Send the file directly", """<p>Once you have <a href="#test-before-you-send-it">tested the app</a>, email the <code>.krate</code> file, put it in a shared folder or send it through a chat that accepts files. Include the runtime version you tested, a short description and the task the recipient can try. Optional hosted publishing is not required.</p>
 <p>The recipient follows <a href="/open/">the open-a-file instructions</a>, installs the runtime for their own system, then inspects and opens the file. They do not need your AI account, source checkout or Rust toolchain. GUI file association depends on the installed runtime/opener; the CLI provides an explicit path:</p>
 <pre class="answer-cmd">krate run regex.krate --dump-caps
 krate run regex.krate --prompt</pre>
@@ -326,6 +432,8 @@ krate publish regex.krate</pre>
         "description": "How Krate's capability model limits host access, how to inspect an app before running it, and what permissions cannot prove about AI-generated software.",
         "h1": "Inspect what an AI-built app can access",
         "lead": "Krate applications start without file or network access. They use Krate interfaces and receive approved capabilities. That narrows host access; it does not prove the code is correct or harmless.",
+        "entry_actions": [("Inspect an app's permissions", "#read-the-permission-request-before-execution"),
+                          ("Install the runtime", "/docs/quickstart.html#get-krate")],
         "sections": [
             ("Read the permission request before execution", """<p>For a local bundle from a source you trust, inspect its capability information without executing the component:</p>
 <pre class="answer-cmd">krate run app.krate --dump-caps</pre>
@@ -350,6 +458,8 @@ krate publish regex.krate</pre>
         "description": "Compare shared codebases with a shared application artifact: what Electron, Tauri and Krate distribute, runtime requirements, migration work and measurement boundaries.",
         "h1": "One codebase is not the same as one app file",
         "lead": "Electron, Tauri and Krate separate application code from platform details differently. The useful question is what you build, what your users install and which capabilities your app needs.",
+        "entry_actions": [("Check your project's fit", "/docs/porting.html"),
+                          ("Try Krate", "/docs/quickstart.html")],
         "sections": [
             ("Compare the distribution boundary", """<div class="answer-table-wrap" role="region" aria-label="Distribution comparison" tabindex="0"><table class="answer-table">
 <caption>Desktop distribution models, reviewed 19 September 2026</caption>
@@ -419,6 +529,63 @@ class MetadataTests(unittest.TestCase):
     def test_unique_page_intents(self):
         for key in ("slug", "title", "description", "h1"):
             self.assertEqual(len({p[key] for p in PAGES}), len(PAGES), key)
+
+    def test_entry_actions_precede_article_and_keep_maintained_paths(self):
+        for page in PAGES:
+            with self.subTest(slug=page["slug"]):
+                result = render(page)
+                entry = result.index('<nav class="answer-actions" aria-label="Choose your next step">')
+                self.assertLess(entry, result.index('<section id="'))
+                self.assertEqual(len(page["entry_actions"]), 2)
+                for label, href in page["entry_actions"]:
+                    self.assertIn(html.escape(label), result)
+                    self.assertIn(f'href="{html.escape(href, quote=True)}"', result)
+                for href in ("/docs/quickstart.html", "/docs/porting.html", "/docs/limits.html", "/studio/"):
+                    self.assertIn(f'href="{href}"', result)
+                self.assertIn('href="/docs/quickstart.html#get-krate">Install</a>', result)
+                self.assertNotIn('href="/#install"', result)
+
+    def test_all_same_page_actions_have_unique_targets(self):
+        for page in PAGES:
+            result = render(page)
+            ids = re.findall(r'\bid="([^"]+)"', result)
+            self.assertEqual(len(ids), len(set(ids)), page["slug"])
+            for fragment in re.findall(r'href="#([^"]+)"', result):
+                self.assertIn(fragment, ids, f"{page['slug']}#{fragment}")
+
+    def test_sharing_routes_existing_apps_before_authoring_setup(self):
+        page = next(p for p in PAGES if p["slug"] == "share-an-app-made-with-ai.html")
+        result = render(page)
+        self.assertLess(result.index("Already have a"), result.index("Choose the authoring path"))
+        self.assertIn('href="#send-the-file-directly"', result)
+        self.assertIn('href="#test-before-you-send-it"', result)
+        self.assertIn('href="/open/"', result)
+        self.assertIn("renaming the file does not convert it", result)
+        self.assertIn("compatible Krate runtime", result)
+
+    def test_duplicate_section_anchors_fail_before_generation(self):
+        page = dict(PAGES[0], sections=[("Same title", "<p>One</p>"), ("Same title!", "<p>Two</p>")])
+        with self.assertRaisesRegex(ValueError, "Section anchors must be unique"):
+            render(page)
+
+    def test_article_shell_defines_its_own_layout_and_accessible_controls(self):
+        # These class names do not exist in the homepage stylesheet. A
+        # generated article must not depend on unrelated homepage selectors.
+        for selector in (".subnav", ".subnav-inner", ".page-wrap",
+                         ".page-wrap h1", ".page-wrap h2", ".subfoot", ".subfoot-inner"):
+            self.assertIn(selector, ANSWER_CSS)
+        self.assertIn("width: min(760px, calc(100% - 48px))", ANSWER_CSS)
+        self.assertIn("width: calc(100% - 40px)", ANSWER_CSS)
+        self.assertIn("min-height: 44px", ANSWER_CSS)
+        self.assertIn(":focus-visible", ANSWER_CSS)
+        self.assertIn("scroll-margin-top: 144px", ANSWER_CSS)
+        for page in PAGES:
+            result = render(page)
+            self.assertIn(ANSWER_CSS.strip(), result)
+            self.assertIn('<nav aria-label="Primary">', result)
+            for opening in re.findall(r'<pre\b[^>]*>', result):
+                self.assertIn('tabindex="0"', opening)
+                self.assertIn('aria-label="Command example"', opening)
 
     def test_metadata_is_escaped(self):
         page = dict(PAGES[0], title='A "quoted" <title> & more', description='Keep </script> as text')

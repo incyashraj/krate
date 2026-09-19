@@ -446,6 +446,11 @@ picture source { display: none; }
 }
 .tag:first-child { border-radius: 999px 2px 2px 999px; }
 .tag:last-child { border-radius: 2px 999px 999px 2px; }
+@media (max-width: 760px) {
+  /* Keep every label readable when the three-chip row exceeds a phone's
+     content width. Larger screens keep the existing single row. */
+  .tagRow { flex-wrap: wrap; row-gap: 6px; }
+}
 .works.in .tag { opacity: 1; filter: blur(0); transform: none;
   transition: opacity 0.7s ease, filter 0.7s ease, transform 0.7s cubic-bezier(0.2,0.8,0.2,1.2); }
 .works.in .tag:nth-child(1) { transition-delay: 0.22s; }
@@ -1013,7 +1018,10 @@ picture source { display: none; }
      measure of roughly 34 characters is what a phone paragraph wants. */
   .heroSubPhone {
     display: block;
-    max-width: 34ch;
+    /* Geist's zero is 0.672em wide: keep the same final 34-character
+       measure without sizing the box from the temporary fallback font.
+       Using ch here changed three lines to two when Geist loaded. */
+    max-width: 22.848em;
     margin-left: auto; margin-right: auto;
     padding: 0 18px;
   }
