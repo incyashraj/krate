@@ -284,3 +284,36 @@ assert.match(
 
 console.log("ok  a long paste is refused before it is sent");
 console.log("ok  two tabs stay in step");
+
+// A build somebody STOPPED is not a build that failed.
+//
+// Stopping showed the failure card's reporting offers -- "Report an
+// issue" and "we read what failed, and it makes Krate better" -- which
+// asks a person to report their own decision as a defect. The timeline
+// chip also wrote "v1 failed", and the timeline is where that record
+// persists: scrolling back later should not find your own Stop recorded
+// as a failure.
+assert.match(app, /function showFailReporting\(on\)/,
+  "the failure card can hide its reporting offers");
+assert.match(
+  app,
+  /unlockComposer\("Changed your mind\?[^"]*"\);\s*(\/\/[^\n]*\n\s*)*showFailReporting\(false\)/,
+  "a deliberate stop hides them",
+);
+assert.match(app, /const what = stopped \? "stopped" : "failed";/,
+  "and the timeline chip says which it was");
+
+// Try again on a failed build goes straight back to the build.
+//
+// It called `make`, which runs the conversation gate, so a retry showed
+// the same plan again and asked the person to press "Build it" a second
+// time for a request they had already approved. Measured after the fix:
+// 0 plan calls, 1 build call.
+const retry = app.slice(app.indexOf('$("retryBtn").addEventListener'));
+assert.match(retry.slice(0, 1200), /\(The agreed plan:/,
+  "a retry recognises a request whose plan was already agreed");
+assert.match(retry.slice(0, 1200), /buildNow\(again/,
+  "and rebuilds it rather than re-planning it");
+
+console.log("ok  a stop is not recorded as a failure");
+console.log("ok  Try again rebuilds instead of re-planning");

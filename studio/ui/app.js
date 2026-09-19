@@ -1081,10 +1081,14 @@ function settleChipOk(el, version, sizeLabel, minsLabel, app) {
   chip.appendChild(share);
 }
 
-function settleChipBad(el, version, retry) {
+function settleChipBad(el, version, retry, stopped) {
   if (!el) return;
   el.className = "msg krate vbad";
-  el.innerHTML = `<span class="who">KRATE</span><span class="vchip vbadc"><b>v${version}</b> failed <span class="vm">app untouched</span></span>`;
+  // "failed" is wrong for a build somebody stopped on purpose, and the
+  // timeline is the one place that record persists: a person scrolling
+  // back should not find their own decision written down as a failure.
+  const what = stopped ? "stopped" : "failed";
+  el.innerHTML = `<span class="who">KRATE</span><span class="vchip vbadc"><b>v${version}</b> ${what} <span class="vm">app untouched</span></span>`;
   if (retry) {
     const fix = document.createElement("button");
     fix.className = "vact";
@@ -1823,7 +1827,7 @@ function failBuild(why, request) {
   state.buildSettled = true;
   clearInterval(state.watchdog);
   clearProgress(false);
-  settleChipBad(state.buildChip, state.buildVersion || 1, () => make(request));
+  settleChipBad(state.buildChip, state.buildVersion || 1, () => make(request), why === "stopped");
   state.buildChip = null;
   clearInterval(state.timer);
   state.lastFailed = request;
@@ -1846,9 +1850,14 @@ function failBuild(why, request) {
     $("retryBtn").textContent = "Resume build";
     setFailRaw("");
     unlockComposer("Changed your mind? Say it, or hit Resume build");
+    // Nothing failed: they pressed Stop. Offering "Report an issue" and
+    // "we read what failed" after a deliberate stop asks somebody to
+    // report their own decision as a defect.
+    showFailReporting(false);
   } else {
     $("retryBtn").textContent = "Try again";
     unlockComposer("Say it another way, or hit Try again");
+    showFailReporting(true);
     $("failTitle").textContent = "That one didn't come together.";
     $("failWhy").textContent = why;
     // The raw engine tail rides under the plain-words line, folded. Two
@@ -1858,6 +1867,20 @@ function failBuild(why, request) {
     setFailRaw(String(state.lastError || "").slice(-400));
   }
   show("failed");
+}
+
+/// Show or hide the failure card's reporting offers.
+///
+/// They belong to a build that went wrong on OUR side, not to one the
+/// person stopped on purpose. Hidden rather than reworded: after a stop
+/// there is nothing to report and nothing to send.
+function showFailReporting(on) {
+  for (const id of ["reportBtn", "makeitBtn"]) {
+    const el = $(id);
+    if (el) el.classList.toggle("hidden", !on);
+  }
+  const offer = document.querySelector(".fail-offer");
+  if (offer) offer.classList.toggle("hidden", !on);
 }
 
 /* The card's one-line trust sentence: the abilities in plain words, ending
@@ -5153,7 +5176,28 @@ $("repReveal")?.addEventListener("click", async () => {
 $("retryBtn").addEventListener("click", () => {
   const again = state.lastFailed;
   show("idle");
-  if (again) make(again);
+  if (!again) return;
+  // Straight back to the build, not back through the plan.
+  //
+  // `make` runs the conversation gate, which exists so a request nobody
+  // could build becomes a question rather than an app. On a RETRY that
+  // conversation has already happened: this exact request was planned,
+  // the plan was agreed, and the build failed for its own reasons. Going
+  // through the gate again showed the same plan and asked the person to
+  // press "Build it" a second time for a request they had already
+  // approved, at the moment they are least patient with the product.
+  //
+  // `state.lastFailed` is the ENRICHED request `finishPlanningAndBuild`
+  // built: the words, the answers given to the AI's questions, and the
+  // agreed plan folded in. Handing that straight to `buildNow` retries
+  // exactly what was attempted. A request that never reached a plan (a
+  // change to an existing app, say) has no such text, and goes back
+  // through `make` as before.
+  if (/\(The agreed plan:/.test(again)) {
+    buildNow(again, [], false, "", "");
+  } else {
+    make(again);
+  }
 });
 // The failure card's second door: a different brain, one click away. The
 // sheet it opens is the same AI picker as everywhere else.
