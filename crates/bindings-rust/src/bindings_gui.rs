@@ -7145,14 +7145,43 @@ pub mod krate {
             /// samples, so it is the app's choice rather than always on.
             #[derive(Clone)]
             pub struct Lighting {
+                /// The shading floor: how bright a surface facing away from the light
+                /// still is. The default floor is 0.35 for a mesh drawn through
+                /// `triangles` or `textured` and 0.22 for one drawn through `smooth`;
+                /// setting this uses one number for both.
                 pub ambient: f32,
+                /// How sharp a highlight the surface takes: 0 for chalk, 1 for polished.
+                /// Without it every surface in a scene is matte, which is most of why a
+                /// rendered object can look like paper.
                 pub specular: f32,
+                /// How tight that highlight is: 8 is a wide sheen, 128 a small hot spot.
                 pub shininess: f32,
+                /// Fades distant geometry into `fog-color`. Zero is off. Air is what
+                /// tells an eye how far away something is, and a scene without it reads
+                /// flat however well it is lit.
                 pub fog_density: f32,
+                /// What distant geometry fades INTO. Usually the sky near the horizon.
                 pub fog_color: Color,
+                /// Which way the fill light points: a second directional light, usually
+                /// dimmer and from the opposite side, standing in for light bounced off
+                /// everything else. A key light alone leaves shadows black; a key and a
+                /// fill is most of what reads as a lit room rather than a lamp in a void.
                 pub fill_direction: _rt::Vec<f32>,
+                /// The fill light's colour and strength.
                 pub fill_color: Color,
+                /// Turns on cast shadows and says how far around the camera they reach,
+                /// in world units. Zero is off.
+                ///
+                /// A radius rather than a world box because a shadow map is a fixed grid
+                /// of texels spread over whatever area it covers: cover a whole
+                /// two-kilometre circuit and each texel is metres wide, which is a shadow
+                /// with visible stairs on it. Following the camera keeps the detail where
+                /// somebody is looking. Pick roughly the distance at which a shadow stops
+                /// mattering: 40 units for a plaza, 120 for a landscape.
                 pub shadow_radius: f32,
+                /// Blurs the shadow edge, in texels. Zero is a hard edge, which reads as
+                /// cut paper; 1 to 2 looks like a real penumbra. It costs samples, so it
+                /// is the app's choice rather than always on.
                 pub shadow_softness: f32,
                 /// How hard to roll bright values back toward white instead of clipping
                 /// them. Zero keeps the old hard clamp.
