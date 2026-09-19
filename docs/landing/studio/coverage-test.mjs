@@ -599,3 +599,33 @@ assert.match(html, /id="sendWrapOs"/,
   "the desktop still has its operating-system buttons");
 
 console.log("ok  the gift option is honest in a browser");
+
+// Details reads an app that is on screen, even after a reload.
+//
+// `jobResult` is this TAB's memory of the build it ran, so a refresh
+// empties it. Details then said "There is no app to read yet" about a
+// finished app that was still showing, with its permissions printed on the
+// done card right behind the sheet. That is the screen where somebody
+// decides whether to trust an app, so an error there is the worst possible
+// answer to "what is this allowed to do".
+//
+// The sessions carry the same `asks` and `size`, saved when the build
+// finished. This is the K-366 cure applied to the one path that had not
+// learned it: an app that is showing is never refused as "not made here".
+{
+  const info = bridge.slice(bridge.indexOf("async app_info("));
+  const end = info.indexOf("\n  /* The failed request");
+  const body = info.slice(0, end > 0 ? end : 3000);
+  assert.match(body, /localSessions\(\)/,
+    "Details falls back to the saved sessions, not just this tab's memory");
+  // Matched on the path, so somebody reading an app they made last week is
+  // not shown this morning's permissions.
+  assert.match(body, /String\(s\.result\.path \|\| ""\) === wanted/,
+    "and matches the app it was asked about");
+  assert.ok(
+    body.indexOf("localSessions()") < body.indexOf('refuse("There is no app to read yet.")'),
+    "the refusal is the last resort, after the sessions have been looked at",
+  );
+}
+
+console.log("ok  Details survives a reload");

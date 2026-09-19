@@ -1354,8 +1354,29 @@ const COMMANDS = {
     }
 
     const r = bridge.jobResult;
-    if (!r) return refuse("There is no app to read yet.");
-    return shape(r.asks || [], bytesOfPretty(r.size));
+    if (r) return shape(r.asks || [], bytesOfPretty(r.size));
+
+    // `jobResult` is this TAB's memory of the build it ran, so a reload
+    // empties it -- and Details then said "There is no app to read yet" on
+    // a finished app that was still on screen, with its permissions listed
+    // right there on the done card. The sessions carry the same `asks` and
+    // `size`, saved when the build finished, so an app that is showing is
+    // never refused as "not made here" (the K-366 cure, applied to the one
+    // path that still had not learned it).
+    const withAsks = localSessions().filter(
+      (s) => s && s.result && Array.isArray(s.result.asks),
+    );
+    // Matched on the path the caller passed, not on whichever session is
+    // newest: somebody reading the details of an app they made last week
+    // must not be shown this morning's permissions. Newest is the fallback
+    // for the caller that passes nothing, which is the done card asking
+    // about the app it is already showing.
+    const wanted = String(path || "");
+    const saved =
+      (wanted && withAsks.find((s) => String(s.result.path || "") === wanted)) ||
+      (!wanted && withAsks.sort((a, b) => (b.updated || 0) - (a.updated || 0))[0]);
+    if (saved) return shape(saved.result.asks, bytesOfPretty(saved.result.size));
+    return refuse("There is no app to read yet.");
   },
 
   /* The failed request, sent to us so the tool improves.
