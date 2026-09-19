@@ -104,11 +104,19 @@ fn node(
         kind,
         label,
         role,
+        // `text`, `place` and `box_` are optional fields Style gained after
+        // this template was written. None on all three is the host's own
+        // look, which is what this template already had -- but a struct
+        // literal must still name them, which is why leaving them out broke
+        // the build rather than changing the appearance (K-718).
         style: types::Style {
             width: Some(width),
             height: Some(height),
             grow,
             padding,
+            text: None,
+            place: None,
+            box_: None,
         },
         checked: None,
         value: None,

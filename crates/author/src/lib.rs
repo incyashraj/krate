@@ -1674,4 +1674,100 @@ mod krate_dependency_tests {
             );
         }
     }
+
+    /// Every template names every field of `style`, whichever the WIT has.
+    ///
+    /// This is the third time a template has been caught missing one. The
+    /// record gained `text` (K-402), then `place` (K-410), then `box`, all
+    /// three optional -- so an app already built keeps its exact look, and
+    /// `None` is what these templates already meant. But a struct literal
+    /// must still NAME every field, so each addition broke the build of
+    /// every template nobody had touched:
+    ///
+    ///   error[E0063]: missing fields `box_`, `place` and `text` in
+    ///   initializer of `Style`
+    ///
+    /// It kept reaching main because the tests here assert on the template's
+    /// TEXT and nothing compiles it. The only lane that catches it needs
+    /// cargo-component and a real build, so it runs long after the push --
+    /// K-714 and K-718 were both found that way, in CI, hours later.
+    ///
+    /// So this reads the WIT, which is where a field is added, and fails the
+    /// moment a template stops naming them all. It is not a substitute for
+    /// compiling one; it is the check that runs in a second (K-718).
+    #[test]
+    fn every_template_names_every_style_field() {
+        let wit = include_str!("../../../wit/krate/phase4/deps/ui/ui.wit");
+        let at = wit.find("record style {").expect("style is in the WIT");
+        let body = &wit[at..at + wit[at..].find('}').expect("record ends")];
+        // Field names only: skip doc comments, and take what is before the
+        // colon on each line.
+        let fields: Vec<String> = body
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.starts_with("///") && !l.starts_with("//") && l.contains(':'))
+            .filter_map(|l| l.split(':').next())
+            .map(|n| n.trim())
+            .filter(|n| !n.is_empty() && *n != "record style {")
+            .map(|n| {
+                // `box` is a Rust keyword, so bindgen emits `box_`.
+                if n == "box" {
+                    "box_".to_string()
+                } else {
+                    n.to_string()
+                }
+            })
+            .collect();
+        assert!(fields.len() >= 7, "the WIT scan broke -- found {fields:?}",);
+
+        let sources = [
+            ("gui skeleton", gui_skeleton_source()),
+            ("cli skeleton", cli_skeleton_source()),
+            (
+                "voice prompter",
+                voice_prompter_source(&AppRequest::voice_prompter("my-app")),
+            ),
+        ];
+        for (label, source) in sources {
+            // EVERY literal, not the template as a whole. Checking the whole
+            // string passed while one of two Styles was missing all three
+            // fields, because the other one still mentioned them -- the
+            // sabotage run found that, which is the whole reason for one.
+            let mut from = 0;
+            let mut seen = 0;
+            while let Some(at) = source[from..].find("types::Style {") {
+                let start = from + at;
+                let end = start
+                    + source[start..]
+                        .find('}')
+                        .expect("a Style literal that never closes");
+                let literal = &source[start..end];
+                for field in &fields {
+                    // `name: value` or Rust's shorthand `name,`. The
+                    // voice prompter uses the shorthand for `grow` and
+                    // `padding`, which compiles fine, so a check that only
+                    // knew about the colon called a working template broken.
+                    let named = literal.contains(&format!("{field}:"))
+                        || literal.contains(&format!("{field},"));
+                    assert!(
+                        named,
+                        "the {label} template builds a types::Style without \
+                         naming `{field}`, so it will not compile. Every \
+                         field of the record has to be named even when it \
+                         is None.\n\n{literal}",
+                    );
+                }
+                seen += 1;
+                from = end;
+            }
+            // A template with no Style at all is fine -- the CLI one draws
+            // nothing -- but say how many were checked, so a scan that
+            // silently matched none cannot read as a pass.
+            assert!(
+                seen > 0 || !source.contains("types::Style"),
+                "the {label} template mentions types::Style but no literal \
+                 was scanned -- the scan broke",
+            );
+        }
+    }
 }
