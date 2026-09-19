@@ -86,6 +86,15 @@ FIXTURES = [
      "the host's font set; a headless runner has none"),
     ("GPU adapter", "optional",
      "a GPU the offscreen presenter can open; a headless runner has none"),
+    # The shared-device test (K-405) words the same absence differently:
+    # "no usable GPU on this machine" rather than "no GPU adapter". Matching
+    # only the latter made a headless Linux runner's ordinary skip an
+    # ownerless SETUP FAILURE, and --strict failed the whole Full test lane
+    # on it while macOS -- which has a real GPU and never prints the line --
+    # stayed green. A skip that matches nothing here is reported as
+    # "classify me", which is exactly what happened (K-744).
+    ("no usable GPU", "optional",
+     "a GPU the shared presenter device can open; a headless runner has none"),
 ]
 
 # Reasons that are not a fixture at all: a platform the test does not cover,

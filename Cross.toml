@@ -41,7 +41,17 @@ pre-build = [
   # dies later with "a libclang function was called that is not supported".
   # Checking the file exists turns that into a one-line failure naming the
   # cause.
-  "test -e /usr/lib/llvm-9/lib/libclang.so.1 || (echo 'FATAL: clang 9 did not install; apt.llvm.org unreachable or its key was rejected. Ubuntu 16.04 ships libclang 3.8, which bindgen cannot use.' >&2; exit 1)",
+  #
+  # `if`, not `test ... || (...)`, and that is the whole point. cross joins
+  # these lines into ONE eval with no `set -e`, so an `exit 1` inside a
+  # subshell exits only the subshell. The guard printed FATAL, the next
+  # pre-build line ran anyway, the layer reported DONE, and the lane died
+  # three minutes later pointing at libclang 3.8 -- the downstream symptom,
+  # not the cause. Which is exactly how K-717's first failure was read as a
+  # network flake and retried twice into the same wall. The guard written to
+  # prevent that did not stop anything (K-745). This form exits the shell the
+  # eval runs in, so the build stops on the line that knows why.
+  "if [ ! -e /usr/lib/llvm-9/lib/libclang.so.1 ]; then echo 'FATAL: clang 9 did not install; apt.llvm.org unreachable or its key was rejected. Ubuntu 16.04 ships libclang 3.8, which bindgen cannot use.' >&2; exit 1; fi",
   # libudev is for gamepads (gilrs -> libudev-sys), and it is Linux-only:
   # udev is how Linux enumerates input devices, so there is no feature that
   # avoids it. Like the others it is a target-architecture package, found
