@@ -81,7 +81,7 @@ class LandingAssets(unittest.TestCase):
         for retired in ("12 stars", "No installer", "tens of kilobytes", "cannot touch anything"):
             self.assertNotIn(retired, source)
         self.assertNotIn("<script", source)
-        for decoration in ("gradient(", "box-shadow", "class=\"file\""):
+        for decoration in ("box-shadow", "class=\"file\""):
             self.assertNotIn(decoration, source)
 
     def test_lossless_derivatives_keep_dimensions_and_reduce_bytes(self):

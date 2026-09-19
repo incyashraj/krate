@@ -11,7 +11,8 @@
     * { box-sizing: border-box; }
     html, body { width: 1200px; height: 630px; margin: 0; overflow: hidden; }
     body { font-family: Geist, sans-serif; color: #fafafa; background: #090909; }
-    main { width: 100%; height: 100%; padding: 94px 80px; position: relative; }
+    main { width: 100%; height: 100%; padding: 94px 80px; position: relative; isolation: isolate; }
+    main::before { content: ''; position: absolute; z-index: -1; right: -120px; bottom: -140px; width: 660px; height: 500px; background: radial-gradient(ellipse at 65% 65%, #304cbe38 0%, #683db02b 33%, transparent 70%); }
     header { display: flex; align-items: center; gap: 23px; font-size: 60px; font-weight: 500; letter-spacing: -.045em; }
     header img { width: 90px; height: 90px; object-fit: contain; }
     h1 { font-size: 66px; font-weight: 400; line-height: 1.17; letter-spacing: -.045em; margin: 66px 0 0; }
