@@ -2619,6 +2619,35 @@ function providerWords(text) {
   return out;
 }
 
+/* Why a PUBLISH failed, in publishing's own words.
+ *
+ * `plainWords` classifies BUILD failures: compilers, agents, quotas,
+ * toolchains. Publishing shares none of that vocabulary, so every publish
+ * error fell through to its last resort -- "The build failed. Press
+ * Details for the engine output" -- shown on a sheet with no Details
+ * button, about a build that was not running. The app had already been
+ * made; only the upload failed.
+ *
+ * A refusal passes through in its own words, as everywhere else.
+ */
+function publishWords(err) {
+  if (err && err.refusal) return String(err.message || err);
+  const text = String(err && err.message ? err.message : err);
+  if (/\b401\b|\b403\b|unauthorized|sign.?in|not signed/i.test(text))
+    return "Your sign-in expired. Sign in once more and try again.";
+  if (/\b413\b|too (big|large)|payload/i.test(text))
+    return "This app is too big to publish.";
+  if (/\b429\b|rate.?limit|too many/i.test(text))
+    return "Too many publishes just now. Try again in a minute.";
+  if (/network|offline|dns|connect|fetch/i.test(text))
+    return "The connection dropped while sending it. Try again.";
+  if (/\b5\d\d\b|server|unavailable/i.test(text))
+    return "Publishing is having a problem on our side. Try again shortly.";
+  // Everything else says what actually happened, rather than inventing a
+  // stage. The app is made and on this machine either way.
+  return "It could not be published just now. Your app is still here, so nothing was lost.";
+}
+
 function plainWords(err) {
   const raw = String(err && err.message ? err.message : err);
   if (raw === "stopped") return "stopped";
@@ -3983,7 +4012,7 @@ async function pickPublishImage(kind) {
   try {
     path = await invoke("pick_image", { title });
   } catch (err) {
-    $("pubNote").textContent = plainWords(err);
+    $("pubNote").textContent = publishWords(err);
     return;
   }
   if (!path) return;
@@ -4002,7 +4031,7 @@ async function pickPublishImage(kind) {
     }
     $("pubNote").textContent = "";
   } catch (err) {
-    $("pubNote").textContent = plainWords(err);
+    $("pubNote").textContent = publishWords(err);
   }
 }
 
@@ -4109,7 +4138,7 @@ async function publishFromSheet() {
       showPubSignin("Your sign-in expired. Sign in once more and the publish finishes by itself.");
       return;
     }
-    $("pubNote").textContent = plainWords(err);
+    $("pubNote").textContent = publishWords(err);
     $("pubGo").disabled = false;
     $("pubGo").textContent = "Publish";
   }

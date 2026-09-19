@@ -214,3 +214,26 @@ assert.ok(reserved >= 63,
   `the strip wraps to two lines and measures 63px; ${reserved}px still covers the app`);
 
 console.log("ok  the done card's caption does not cover the app");
+
+// Publishing has its own words for what went wrong.
+//
+// `plainWords` classifies BUILD failures on provider vocabulary --
+// compilers, agents, quotas, toolchains. Publishing shares none of it, so
+// every publish error fell through to that function's last resort: "The
+// build failed. Press Details for the engine output", shown on a sheet
+// with no Details button, about a build that was not running. The app was
+// already made; only the upload failed.
+assert.match(app, /function publishWords\(err\)/,
+  "publishing classifies its own failures");
+assert.doesNotMatch(
+  app,
+  /\$\("pubNote"\)\.textContent = plainWords\(/,
+  "no publish path words its failure as a failed build",
+);
+assert.match(
+  app,
+  /function publishWords[\s\S]{0,900}?if \(err && err\.refusal\) return/,
+  "and a refusal still passes through in its own words",
+);
+
+console.log("ok  a failed publish does not claim the build failed");
