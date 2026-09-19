@@ -3306,7 +3306,27 @@ fn classify_limit_error(err: &wasmtime::Error) -> Option<String> {
     if message.contains("all fuel consumed") {
         return Some("fuel exhausted".to_string());
     }
-    if message.contains("memory limit exceeded") {
+    // Memory, in every wording wasmtime has used for it.
+    //
+    // The engine has more than one way to say a memory limit bit, and only
+    // one of them was matched. A limit that stops a component being
+    // instantiated at all -- which is what `--mem-limit 0` does, and what a
+    // genuinely tiny ceiling does to a real app -- arrives as
+    //
+    //   failed to instantiate component: memory minimum size of 17 pages
+    //   exceeds memory limits
+    //
+    // and matched nothing, so the run exited 1 (something went wrong)
+    // instead of 4 (a limit was reached). The limit was working perfectly;
+    // the exit code said otherwise, which is the same bug the fuel comment
+    // above describes and the same cost: a caller cannot tell "your ceiling
+    // is too low" from "this app is broken".
+    //
+    // Matching the CONDITION rather than one sentence: any message that
+    // mentions memory and a limit being passed is a memory limit.
+    let memory_limit = message.contains("memory limit exceeded")
+        || (message.contains("memory") && message.contains("exceeds memory limits"));
+    if memory_limit {
         Some(message)
     } else {
         None

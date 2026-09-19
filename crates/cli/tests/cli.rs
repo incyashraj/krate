@@ -2902,9 +2902,28 @@ fn memory_limit_exits_with_limit_code() {
         .output()
         .expect("run krate hello component with low memory");
 
-    assert_eq!(output.status.code(), Some(4));
+    assert_eq!(
+        output.status.code(),
+        Some(4),
+        "a memory ceiling that bites is a LIMIT (exit 4), not a generic \
+         failure (exit 1): {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("limit exceeded: memory limit exceeded"));
+    // The prefix is ours and the rest is wasmtime's, so this asserts what we
+    // control and what the sentence has to MEAN, not the engine's exact
+    // words. It used to demand "limit exceeded: memory limit exceeded" --
+    // a phrasing wasmtime no longer uses, so the test pinned a message
+    // nothing produced while the real one ("memory minimum size of 17 pages
+    // exceeds memory limits") went unclassified and exited 1.
+    assert!(
+        stderr.contains("limit exceeded:"),
+        "the run must say a limit was reached: {stderr}"
+    );
+    assert!(
+        stderr.contains("memory"),
+        "and which limit it was: {stderr}"
+    );
 }
 
 #[test]
