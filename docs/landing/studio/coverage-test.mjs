@@ -773,3 +773,29 @@ console.log("ok  a version chip opens its own version");
 }
 
 console.log("ok  a status message is not offered as a link to send");
+
+// The shelf's controls are thumb-sized on a phone.
+//
+// The coarse-pointer block already raised icon buttons, the send button and
+// everything in the drawer. It missed the shelf's own row -- the tabs that
+// switch between your apps and the examples, the link to all of them, and
+// the grip that opens it. Measured on an emulated phone at 375 wide: 28, 28,
+// 28 and 26 pixels, on the first screen somebody sees, and the only way to
+// reach an app they made earlier.
+//
+// `height`, not `min-height`. The base rules set a FIXED height on all
+// three, which a minimum cannot beat -- the first attempt at this changed
+// nothing and measured exactly 28px afterwards.
+{
+  const at = css.indexOf("@media (pointer: coarse)");
+  assert.ok(at > 0, "there is a coarse-pointer block");
+  const block = css.slice(at, css.indexOf("\n}\n", at));
+  assert.match(block, /\.shelf-tab, \.shelf-all \{ height: 44px; \}/,
+    "the shelf tabs are 44px tall on a touch device");
+  assert.match(block, /\.shelf-grip \{ width: 44px; height: 44px;/,
+    "and so is the grip, on both axes because it is square");
+  assert.ok(!/\.shelf-tab[^}]*min-height/.test(block),
+    "min-height would lose to the fixed height these already have");
+}
+
+console.log("ok  the shelf is tappable on a phone");

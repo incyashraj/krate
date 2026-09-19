@@ -4237,6 +4237,23 @@ body.side-resizing .shelf { transition: none; }
      a rounded rectangle with its glyph adrift in the middle. */
   .side-avatar, .side-bell { display: grid; place-items: center; }
 
+  /* The shelf's own controls: the tabs that switch between your apps and
+     the examples, the link to all of them, and the grip that opens it.
+     Measured on an emulated phone at 375 wide, these came out 28 and 26
+     pixels tall while everything around them had already been raised --
+     they sit on the first screen a person sees, and they are how anybody
+     reaches an app they made earlier.
+
+     Height only for the tabs: they are wide enough already, and a minimum
+     width would stretch "My apps" and "Examples" out of their row. The
+     grip is square, so it needs both.
+
+     `height`, not `min-height`: the base rules set a fixed height on all
+     three, and a minimum cannot beat a fixed value -- the first attempt at
+     this changed nothing at all and measured exactly 28px afterwards. */
+  .shelf-tab, .shelf-all { height: 44px; }
+  .shelf-grip { width: 44px; height: 44px; display: grid; place-items: center; }
+
   .side-foot .side-card { padding: 12px 14px; }
   /* The Build/Plan toggle is sized in bridge.js, not here: that CSS is
      injected into the head at runtime and wins on source order, so a rule
