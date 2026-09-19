@@ -679,9 +679,11 @@ impl Runtime {
         // One number cannot be optimised. This prints the two the runtime
         // owns, so the next person starts from a measurement.
         let timed = std::env::var_os("KRATE_STAGE_TIMES").is_some();
+        let engine_started = std::time::Instant::now();
         let compile_started = std::time::Instant::now();
         let component = self.load_component(bytes)?;
         let compile_ms = compile_started.elapsed().as_secs_f64() * 1000.0;
+        let _ = engine_started;
         let run_started = std::time::Instant::now();
         let outcome = self.run_component_with_output(&component, config, output, world);
         if timed {
@@ -801,6 +803,8 @@ impl Runtime {
 
         #[cfg(feature = "phase2-bindings")]
         if run == RunShape::ExitCode {
+            let probe_started = std::time::Instant::now();
+            let timed = std::env::var_os("KRATE_STAGE_TIMES").is_some();
             match self.phase2_linker()?.instantiate_pre(&component.component) {
                 Ok(_) => return Ok(SelectedWorld::Cli),
                 Err(err) => reasons.push(format!("cli world: {}", instantiate_error(&err))),
@@ -813,6 +817,13 @@ impl Runtime {
             // with the overlay is the one whose complaint leads the list.
             // `reasons` is reversed before joining, so the widest world's
             // complaint comes first only if it was pushed last.
+            if timed {
+                eprintln!(
+                    "krate-stage:   phase2 linker+probe {:.1}ms",
+                    probe_started.elapsed().as_secs_f64() * 1000.0
+                );
+            }
+            let p3_started = std::time::Instant::now();
             let phase3 = match self
                 .phase3_gui_linker()?
                 .instantiate_pre(&component.component)
@@ -823,11 +834,31 @@ impl Runtime {
                     None
                 }
             };
-            match self
-                .phase4_gui_linker()?
-                .instantiate_pre(&component.component)
-            {
-                Ok(_) => return Ok(SelectedWorld::Gui4),
+            if timed {
+                eprintln!(
+                    "krate-stage:   phase3 linker+probe {:.1}ms",
+                    p3_started.elapsed().as_secs_f64() * 1000.0
+                );
+            }
+            let p4_started = std::time::Instant::now();
+            let p4 = self.phase4_gui_linker()?;
+            if timed {
+                eprintln!(
+                    "krate-stage:   phase4 linker BUILD {:.1}ms",
+                    p4_started.elapsed().as_secs_f64() * 1000.0
+                );
+            }
+            let p4_probe = std::time::Instant::now();
+            match p4.instantiate_pre(&component.component) {
+                Ok(_) => {
+                    if timed {
+                        eprintln!(
+                            "krate-stage:   phase4 probe {:.1}ms",
+                            p4_probe.elapsed().as_secs_f64() * 1000.0
+                        );
+                    }
+                    return Ok(SelectedWorld::Gui4);
+                }
                 Err(err) => reasons.push(format!("gui world: {}", instantiate_error(&err))),
             }
             // An app built against the frozen phase: it fits phase 3 and not
@@ -1040,6 +1071,8 @@ impl Runtime {
         config: &Config,
         output: OutputMode,
     ) -> Result<RunOutcome> {
+        let setup_started = std::time::Instant::now();
+        let timed = std::env::var_os("KRATE_STAGE_TIMES").is_some();
         let mut store = self.new_store(config, output)?;
         let gui_host = phase3_gui_host::Phase3GuiHost::new(
             UapiGuard::new(config.session_policy.clone()),
@@ -1065,7 +1098,20 @@ impl Runtime {
             phase4_gui_bindings::Gui::instantiate(&mut store, &component.component, &linker)
                 .map_err(|err| RuntimeError::Instantiate(instantiate_error(&err)))?;
 
+        if timed {
+            eprintln!(
+                "krate-stage:   store+host+instantiate {:.1}ms",
+                setup_started.elapsed().as_secs_f64() * 1000.0
+            );
+        }
+        let guest_started = std::time::Instant::now();
         let outcome = bindings.call_run(&mut store);
+        if timed {
+            eprintln!(
+                "krate-stage:   the guest's own run {:.1}ms",
+                guest_started.elapsed().as_secs_f64() * 1000.0
+            );
+        }
         self.finish_phase3_gui_run(&mut store, outcome)
     }
 
