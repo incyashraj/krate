@@ -95,8 +95,19 @@ assert.match(
 assert.match(bridge, /function bytesOfPretty/, "the pretty size is parsed back to bytes");
 assert.match(
   bridge.slice(bridge.indexOf("async app_info(")),
-  /size: bytesOfPretty\(/,
+  /shape\(r\.asks \|\| \[\], bytesOfPretty\(r\.size\)\)/,
   "app_info reports bytes, not the pretty string",
+);
+
+// And it can read an app somebody ELSE published. The gallery's detail
+// page is where a stranger decides whether to download something, and
+// what it asks for is the whole basis of that decision. Reading only
+// `bridge.jobResult` -- the app THIS tab built -- left that page saying
+// "Could not read this app right now" under "WHAT IT IS ALLOWED TO DO".
+assert.match(
+  bridge.slice(bridge.indexOf("async app_info(")),
+  /hub\(`\/meta\/\$\{id\[1\]\}`\)/,
+  "a published app's permissions come from the hub",
 );
 
 console.log(`ok  all ${asked.size} UI commands are answered or explained`);

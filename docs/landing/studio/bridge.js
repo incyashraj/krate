@@ -1199,16 +1199,45 @@ const COMMANDS = {
    *   - `size` arrives ALREADY pretty ("85 KB") and the sheet divides it by
    *     1024, which on a string is NaN. So it is parsed back to bytes.
    */
-  async app_info() {
-    const r = bridge.jobResult;
-    if (!r) return refuse("There is no app to read yet.");
+  async app_info({ path } = {}) {
     const words = (cap) =>
       typeof window.friendlyAsk === "function" ? window.friendlyAsk(cap) || cap : cap;
-    return {
-      size: bytesOfPretty(r.size),
-      asks: (r.asks || []).map((cap) => ({ cap, words: words(cap) })),
-      capabilities: r.asks || [],
-    };
+    const shape = (caps, size) => ({
+      size,
+      asks: (caps || []).map((cap) => ({ cap, words: words(cap) })),
+      capabilities: caps || [],
+    });
+
+    // An app somebody else published, opened from the gallery. It was
+    // never built in this tab, so there is nothing in `jobResult` to read
+    // -- and the permission list is the whole point of that page, because
+    // it is what a stranger decides on before downloading anything. The
+    // hub records it at publish time and serves it from /meta/<id>.
+    //
+    // Without this the detail page said "Could not read this app right
+    // now" under the heading "WHAT IT IS ALLOWED TO DO", which is the
+    // least reassuring possible answer to "should I trust this".
+    const id = String(path || "").match(/\/a\/([A-Za-z0-9_-]+)/);
+    if (id) {
+      try {
+        const out = await hub(`/meta/${id[1]}`);
+        const m = (out && out.meta) || {};
+        // A null list means "published before we recorded them", which is
+        // not the same as "asks for nothing". Refusing here lets the page
+        // say so rather than claim an empty list.
+        if (!Array.isArray(m.capabilities)) {
+          return refuse("This app was published before Krate recorded what apps ask for.");
+        }
+        return shape(m.capabilities, Number(m.size) || 0);
+      } catch (err) {
+        if (err && err.refusal) throw err;
+        return refuse("Could not read what this app asks for just now.");
+      }
+    }
+
+    const r = bridge.jobResult;
+    if (!r) return refuse("There is no app to read yet.");
+    return shape(r.asks || [], bytesOfPretty(r.size));
   },
 
   /* The failed request, sent to us so the tool improves.
