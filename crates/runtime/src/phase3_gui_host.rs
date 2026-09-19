@@ -2322,6 +2322,22 @@ impl Phase3GuiHost {
             // point at which a path could reach a guest (K-175).
             match &event {
                 UiEvent::FileDropped { path, .. } => {
+                    // The capability is checked HERE, where the drop arrives.
+                    //
+                    // There is no call for an app to make -- the event simply
+                    // comes -- so an app that never declared `ui.dropzone`
+                    // would otherwise be handed a file and a working token
+                    // with nothing asked of it. That is the CP2 promise
+                    // inverted: the capability went from declared-and-
+                    // unimplemented to implemented-and-unenforced (K-420).
+                    //
+                    // Refused silently: the app learns nothing, not even that
+                    // something was offered. An error it could count would
+                    // tell it a file was dragged over a window it has no
+                    // right to receive files on.
+                    if !self.allows_dropzone(path) {
+                        continue;
+                    }
                     let name = crate::chosen_files::ChosenFiles::display_name(path);
                     if let Some(token) = self.chosen_files.borrow_mut().remember(path.clone()) {
                         self.pending_drops
@@ -2335,9 +2351,20 @@ impl Phase3GuiHost {
                     continue;
                 }
                 UiEvent::FileHovering { over, .. } => {
-                    self.pending_drops
-                        .borrow_mut()
-                        .push_back(DropNotice::Hovering(*over));
+                    // A hover is refused for the same reason. It carries
+                    // nothing about the file, but "something is being dragged
+                    // over you" is still a fact an app without the capability
+                    // has no business learning.
+                    // A hover does not name a file, so this asks whether the
+                    // app accepts ANYTHING. An app scoped to `image/*` still
+                    // lights its target for a drag it may then refuse, which
+                    // is the honest behaviour: the system does not tell us
+                    // what is being dragged until it lands.
+                    if self.allows_dropzone(std::path::Path::new("")) {
+                        self.pending_drops
+                            .borrow_mut()
+                            .push_back(DropNotice::Hovering(*over));
+                    }
                     continue;
                 }
                 _ => {}
@@ -2867,6 +2894,20 @@ impl Phase3GuiHost {
     /// Phase 4's events implementation calls this before delegating, so a drop
     /// is delivered ahead of the ordinary queue rather than behind a backlog
     /// of pointer moves.
+    /// Whether this app declared `ui.dropzone` and was granted it.
+    ///
+    /// Asked once per drop rather than cached: a grant can be revoked during
+    /// a run, and a capability that was checked at startup would keep letting
+    /// files in afterwards.
+    fn allows_dropzone(&self, path: &std::path::Path) -> bool {
+        self.runtime
+            .guard()
+            .check(&UapiCall::Ui(UiCall::Dropzone {
+                mime: mime_for_dropped_path(path),
+            }))
+            .is_ok()
+    }
+
     pub(crate) fn take_drop_notice(&self) -> Option<DropNotice> {
         self.inject_test_drop();
         self.pending_drops.borrow_mut().pop_front()
@@ -2892,6 +2933,15 @@ impl Phase3GuiHost {
         };
         self.test_drop_done.set(true);
         let path = std::path::PathBuf::from(raw);
+        // Through the SAME gate a real drop passes.
+        //
+        // The first version of this wrote straight into the queue, which made
+        // the hook a hole in the capability check it was meant to help test:
+        // an app with no `ui.dropzone` received the injected file. A test hook
+        // that skips the thing under test is worse than no hook.
+        if !self.allows_dropzone(&path) {
+            return;
+        }
         let name = crate::chosen_files::ChosenFiles::display_name(&path);
         let mut queue = self.pending_drops.borrow_mut();
         queue.push_back(DropNotice::Hovering(true));
@@ -2900,6 +2950,46 @@ impl Phase3GuiHost {
         }
         queue.push_back(DropNotice::Hovering(false));
     }
+}
+
+/// The mime type a dropped path is treated as, for the capability check.
+///
+/// Deliberately small and by extension only. The alternative is sniffing the
+/// file's contents, which means READING a file before deciding whether the
+/// app may have it -- the wrong order. An extension is what the system itself
+/// uses to pick an icon, and an app that wants everything declares `*`.
+///
+/// Anything unrecognised is `application/octet-stream`, the standard name for
+/// "bytes we will not characterise". An app scoped to `image/*` does not get
+/// it; an app scoped to `*` does.
+fn mime_for_dropped_path(path: &std::path::Path) -> String {
+    let ext = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let mime = match ext.as_str() {
+        "txt" | "log" | "md" | "csv" => "text/plain",
+        "html" | "htm" => "text/html",
+        "json" => "application/json",
+        "xml" => "application/xml",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "bmp" => "image/bmp",
+        "wav" => "audio/wav",
+        "mp3" => "audio/mpeg",
+        "ogg" => "audio/ogg",
+        "flac" => "audio/flac",
+        "mp4" => "video/mp4",
+        "webm" => "video/webm",
+        "pdf" => "application/pdf",
+        "zip" => "application/zip",
+        _ => "application/octet-stream",
+    };
+    mime.to_string()
 }
 
 /// A drop or a hover, in the form a guest may see it.

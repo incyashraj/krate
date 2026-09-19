@@ -584,10 +584,13 @@ fn capability_allows(grant: &Capability, required: &Capability) -> bool {
     match (grant.resource(), required.resource()) {
         (None, None) => true,
         (Some(grant_resource), Some(required_resource)) => {
-            let Some(grant_resource) = normalize_resource(grant.module(), grant_resource) else {
+            let Some(grant_resource) =
+                normalize_resource(grant.module(), grant.action(), grant_resource)
+            else {
                 return false;
             };
-            let Some(required_resource) = normalize_resource(required.module(), required_resource)
+            let Some(required_resource) =
+                normalize_resource(required.module(), required.action(), required_resource)
             else {
                 return false;
             };
@@ -614,7 +617,37 @@ fn capability_allows(grant: &Capability, required: &Capability) -> bool {
     }
 }
 
-fn normalize_resource(module: &str, resource: &str) -> Option<String> {
+/// Whether this capability's resource is a MIME type rather than a path, a
+/// host or a name. Only `ui.dropzone` is today; the list is here so the next
+/// one is a line rather than a rediscovery.
+fn is_mime_scoped(module: &str, action: &str) -> bool {
+    matches!((module, action), ("ui", "dropzone"))
+}
+
+fn normalize_resource(module: &str, action: &str, resource: &str) -> Option<String> {
+    // A mime wildcard has two spellings and they must mean the same thing.
+    //
+    // `validate_mime_resource` accepts both `*` and `*/*` -- they are the two
+    // ways people write "any type" -- but the glob matcher does not know a
+    // mime from a path, so `*` failed to cover `text/plain` while `*/*`
+    // covered it. An app declaring `ui.dropzone:*` was silently granted
+    // nothing (K-420).
+    // A MIME wildcard has two spellings and they must mean the same thing.
+    //
+    // `validate_mime_resource` accepts `*` and `*/*` as the two ways people
+    // write "any type", but the glob matcher does not know a mime from
+    // anything else, so `*` failed to cover `text/plain` while `*/*` covered
+    // it -- an app declaring `ui.dropzone:*` was silently granted nothing
+    // (K-420).
+    //
+    // Scoped to the mime-typed capability rather than all of `ui`: doing it
+    // for the module turned `ui.dialog:*` into `ui.dialog:*/*`, which then
+    // matched none of `message`, `confirm` or `file-open`. A wildcard that
+    // stops covering what it used to is a worse bug than the one being
+    // fixed.
+    if is_mime_scoped(module, action) && (resource == "*" || resource == "*/*") {
+        return Some("*/*".to_string());
+    }
     if module == "fs" {
         return LogicalPath::parse(resource)
             .ok()

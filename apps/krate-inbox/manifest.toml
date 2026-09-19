@@ -16,8 +16,8 @@ required = true
 # worded on the consent screen ("accept files you drag onto it") and
 # RECOMMENDED by the port analyzer -- with no way to receive a drop (K-175).
 [[capabilities]]
-cap = "ui.dropzone"
-rationale = "Accept a file you drag onto the window"
+cap = "ui.dropzone:*"
+rationale = "Accept any file you drag onto the window"
 required = true
 
 [[capabilities]]

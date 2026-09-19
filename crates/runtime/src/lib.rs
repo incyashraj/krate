@@ -4245,6 +4245,63 @@ mod tests {
 
     #[cfg(all(feature = "phase2-bindings", unix))]
     #[test]
+    fn a_chosen_file_that_is_a_symlink_opens_nothing() {
+        use std::os::unix::fs::symlink;
+
+        // CP2's exit test says "the picker opens the actual picked file and
+        // nothing else". `open_chosen` skips the sandbox on purpose -- a
+        // chosen file is outside it by definition (K-418) -- so the symlink
+        // guard is the only thing standing between a handed-over decoy and
+        // whatever it points at.
+        //
+        // The shape that matters: somebody drops `decoy.txt`, the person sees
+        // that name on the consent-free drop path, and it is a link to a file
+        // they never offered. Opening it would hand the app the target's
+        // contents under the decoy's name.
+        let unique = std::time::SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should move forward")
+            .as_nanos();
+        let temp = std::env::temp_dir().join(format!(
+            "krate-chosen-symlink-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&temp).expect("create fixture dir");
+        let secret = temp.join("secret.txt");
+        std::fs::write(&secret, b"SECRET").expect("write secret");
+        let decoy = temp.join("decoy.txt");
+        symlink(&secret, &decoy).expect("create the decoy link");
+        let plain = temp.join("plain.txt");
+        std::fs::write(&plain, b"plain").expect("write plain");
+
+        let adapter = LocalPhase2Adapter::new(
+            Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
+            None,
+            None,
+            Vec::new(),
+            1024,
+            temp.join("sandbox-that-does-not-contain-any-of-this"),
+            Default::default(),
+        );
+
+        let err = adapter
+            .open_chosen(&decoy, OpenMode::Read)
+            .expect_err("a chosen file that is a symlink must not be followed");
+        assert_eq!(err, AdapterError::PermissionDenied);
+
+        // And the check is not simply refusing everything: an ordinary file
+        // outside the sandbox is exactly what this path exists to open.
+        adapter
+            .open_chosen(&plain, OpenMode::Read)
+            .expect("an ordinary chosen file must still open");
+
+        drop(adapter);
+        std::fs::remove_dir_all(temp).expect("remove fixture directory");
+    }
+
+    #[cfg(all(feature = "phase2-bindings", unix))]
+    #[test]
     fn local_fs_adapter_rejects_relative_symlink_escape_from_sandbox_root() {
         use std::os::unix::fs::symlink;
 

@@ -117,19 +117,22 @@ const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
     // Desktop notifications, for the same reason.
     CapabilitySpec::resource_free(CapabilityPhase::Phase3, "ui", "notify", false),
     // K-175: declarable since Phase 3, and the runtime has never had a host
-    // function for it. The wordings, the mime scoping and the validation are
-    // all correct; what is missing is winit's DroppedFile/HoveredFile reaching
-    // an event an app can poll. Kept in the specs -- the design is wanted --
-    // and marked so nothing can put the promise in front of a person until
-    // the runtime can keep it.
+    // function for it. The wordings, the mime scoping and the validation were
+    // all correct; what was missing was winit's DroppedFile/HoveredFile
+    // reaching an event an app can poll.
+    //
+    // That landed: `file-dropped` and `file-hovering` on the Phase 4 event
+    // variant, the adapters wired, and the drop checked at the moment it
+    // arrives so an app that did not declare this is handed nothing (K-175,
+    // K-420). The promise can be put in front of a person now, because the
+    // runtime keeps it.
     CapabilitySpec::resource_scoped(
         CapabilityPhase::Phase3,
         "ui",
         "dropzone",
         "<mime-type>",
         false,
-    )
-    .not_implemented(),
+    ),
     // Message and confirm boxes show text and take a click -- no data
     // moves -- so they are granted to every app. The WILDCARD is not: a
     // default-granted `ui.dialog:*` silently covered file-open, file-save
@@ -1623,42 +1626,52 @@ mod tests {
 
     #[test]
     fn a_capability_the_runtime_cannot_honour_is_not_declarable() {
-        let err = "ui.dropzone:image/png"
-            .parse::<Capability>()
-            .expect_err("an unimplemented capability must not parse");
-        let ManifestError::InvalidCapability { cap, reason } = err else {
-            panic!("expected InvalidCapability, got {err:?}");
-        };
-        assert_eq!(cap, "ui.dropzone");
-        assert!(
-            reason.contains("runtime cannot"),
-            "the reason must say the runtime cannot do it: {reason}"
-        );
-        assert!(
-            reason.contains("ui.dialog:file-open"),
-            "and name the capability that does work today: {reason}"
-        );
-
-        // The spec is still there -- the design is wanted, and deleting it
-        // would lose the wordings, the mime scoping and this decision.
-        let spec = supported_capability_specs()
-            .iter()
-            .find(|s| s.module() == "ui" && s.action() == "dropzone")
-            .expect("dropzone stays in the specs");
-        assert!(!spec.implemented(), "and it is marked as not implemented");
-
-        // Every other capability in the specs IS implemented. Without this,
-        // marking something unimplemented by mistake would silently make it
-        // undeclarable and no test would notice.
+        // The RULE, not an example of it.
+        //
+        // This test used to name `ui.dropzone`, which was the one hollow
+        // capability: declarable, consent-worded, and with no host function
+        // behind it (K-175). That is implemented now (the drop arrives, is
+        // capability-checked, and hands over a token), so the example is
+        // gone -- but the rule it protected is the point and outlives it.
+        //
+        // Every spec marked not-implemented must refuse to parse, and the
+        // reason must say so. If somebody marks a future capability that way,
+        // this proves the refusal still happens without anybody rewriting the
+        // test around a new name.
         let hollow: Vec<_> = supported_capability_specs()
             .iter()
             .filter(|s| !s.implemented())
+            .collect();
+
+        for spec in &hollow {
+            let declared = match spec.resource() {
+                Some(_) => format!("{}.{}:{}", spec.module(), spec.action(), "example"),
+                None => format!("{}.{}", spec.module(), spec.action()),
+            };
+            let err = declared
+                .parse::<Capability>()
+                .expect_err("an unimplemented capability must not parse");
+            let ManifestError::InvalidCapability { cap, reason } = err else {
+                panic!("expected InvalidCapability for {declared}, got {err:?}");
+            };
+            assert_eq!(cap, format!("{}.{}", spec.module(), spec.action()));
+            assert!(
+                reason.contains("runtime cannot"),
+                "the reason must say the runtime cannot do it: {reason}"
+            );
+        }
+
+        // And the list is deliberate. A capability marked unimplemented by
+        // mistake would silently become undeclarable, and an app that used it
+        // would fail with a message about a runtime gap that is not real.
+        let names: Vec<String> = hollow
+            .iter()
             .map(|s| format!("{}.{}", s.module(), s.action()))
             .collect();
-        assert_eq!(
-            hollow,
-            vec!["ui.dropzone"],
-            "exactly one capability is known-unimplemented; adding another needs a bug filed"
+        assert!(
+            names.is_empty(),
+            "every capability in the specs is implemented; these are not, and \
+             each needs a bug filed saying why: {names:?}"
         );
     }
 

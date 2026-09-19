@@ -237,6 +237,22 @@ pub enum UiCall {
     OpenUrl,
     /// Showing a desktop notification.
     Notify,
+    /// Receiving a file the person dragged onto the window.
+    ///
+    /// Checked when the drop ARRIVES, not when the app asks for it: there is
+    /// no call to make, the event simply comes. An app that never declared
+    /// `ui.dropzone` must not be handed a file, and must not learn that one
+    /// was offered -- so a refused drop is dropped silently rather than
+    /// reported as an error the app could count (K-420).
+    ///
+    /// Carries the dropped file's mime type, because the capability is
+    /// mime-scoped: an app declares `ui.dropzone:image/*` and the consent
+    /// sheet can say what it accepts rather than "any file". A drop of
+    /// something the app did not ask for is refused like any other
+    /// undeclared call.
+    Dropzone {
+        mime: String,
+    },
 }
 
 impl UiCall {
@@ -247,6 +263,7 @@ impl UiCall {
             Self::ClipboardWrite => "ui.clipboard:write".to_string(),
             Self::OpenUrl => "ui.open-url".to_string(),
             Self::Notify => "ui.notify".to_string(),
+            Self::Dropzone { mime } => format!("ui.dropzone:{mime}"),
             Self::Dialog { resource } => format!("ui.dialog:{resource}"),
         }
     }
@@ -336,6 +353,65 @@ pub type Result<T> = std::result::Result<T, UapiError>;
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
+
+    #[test]
+    fn a_drop_needs_ui_dropzone_like_every_other_capability() {
+        use krate_policy::SessionPolicy;
+
+        // K-420. `ui.dropzone` was declarable and consent-worded for a year
+        // with nothing behind it (K-175). Implementing it without a gate
+        // swapped one hollow promise for the opposite: an app that never
+        // declared it still received `file-dropped`, with a working token
+        // for a file the person dragged over.
+        //
+        // CP2's whole sentence is "what the recipient approved is what the
+        // app can do", so a drop is checked like any other capability.
+        let call = UapiCall::Ui(UiCall::Dropzone {
+            mime: "text/plain".to_string(),
+        });
+        assert_eq!(call.to_capability_string(), "ui.dropzone:text/plain");
+
+        let nothing = UapiGuard::new(SessionPolicy::default());
+        assert!(
+            nothing.check(&call).is_err(),
+            "an app that declared nothing must not receive drops"
+        );
+
+        // A neighbouring UI grant is not this one. Without this the test
+        // would pass on a policy that allowed everything under `ui.`.
+        let other = UapiGuard::new(SessionPolicy::from_grants(vec!["ui.window:create"
+            .parse()
+            .expect("cap")]));
+        assert!(
+            other.check(&call).is_err(),
+            "ui.window:create must not carry ui.dropzone with it"
+        );
+
+        // Mime-scoped by design: an app says what it accepts, so the consent
+        // sheet can say "accepts images you drag on" rather than "any file".
+        // Both spellings of the mime wildcard, because the manifest accepts
+        // both and the matcher honoured only one: `*/*` covered text/plain
+        // and a bare `*` did not, so an app declaring `ui.dropzone:*` was
+        // silently granted nothing.
+        for spelling in ["ui.dropzone:*", "ui.dropzone:*/*"] {
+            let granted = UapiGuard::new(SessionPolicy::from_grants(vec![spelling
+                .parse()
+                .expect("cap")]));
+            assert!(
+                granted.check(&call).is_ok(),
+                "an app that declared {spelling} must receive drops"
+            );
+        }
+
+        // And a narrower scope still refuses what it did not ask for.
+        let images = UapiGuard::new(SessionPolicy::from_grants(vec!["ui.dropzone:image/*"
+            .parse()
+            .expect("cap")]));
+        assert!(
+            images.check(&call).is_err(),
+            "ui.dropzone:image/* must not carry a text/plain drop"
+        );
+    }
 
     /// The two gates must never disagree about the same call.
     ///
