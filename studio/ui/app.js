@@ -94,6 +94,11 @@ const invoke = (cmd, args) =>
  * this machine's installer. No auto-download, no nagging; the person
  * clicks when they want it. */
 (async function () {
+  // Desktop only. In a browser there is nothing to update: the tab is always
+  // current, and the chip offered a .dmg or .exe to somebody who had not
+  // installed anything -- then did nothing when clicked, because opening it
+  // needs the desktop bridge.
+  if (!tauri) return;
   try {
     const mine = await invoke("studio_version");
     const r = await fetch("https://api.github.com/repos/incyashraj/krate/releases/latest");
@@ -303,6 +308,63 @@ function showView(name) {
   revealIn(view);
   syncDock(name);
   syncRail(name);
+  maybeWelcome(name);
+}
+
+/* The one-time "your first app is free" note.
+ *
+ * Shown on the maker, once ever, to somebody who has not made an app. A
+ * person lands on a page that will write them software and nothing on it
+ * says what that costs -- so the commonest first thought is "what is this
+ * going to charge me", and the commonest first action is to leave.
+ *
+ * Conditions, all of them:
+ *   - the HOME page, which is where making starts. Not the session view,
+ *     where they are already making and a modal is in the way.
+ *   - never shown before on this browser.
+ *   - they have made nothing. Somebody returning to a made app does not
+ *     need to be told their first one is free.
+ *
+ * localStorage rather than the account, deliberately: this is a nicety, and
+ * a person who clears their browser seeing it twice costs nothing, while an
+ * account round-trip would either delay it or show it late.
+ */
+const WELCOME_SEEN = "krate.welcome.seen.v1";
+
+function maybeWelcome(name) {
+  if (name !== "home") return;
+  let seen = false;
+  try {
+    seen = localStorage.getItem(WELCOME_SEEN) === "1";
+  } catch (e) {
+    // Private windows and blocked site data throw here. Treat that as
+    // "seen": a popup that cannot remember being dismissed would come back
+    // on every navigation, which is worse than never showing it.
+    seen = true;
+  }
+  if (seen) return;
+  if (madeAnythingAlready()) return;
+  const sheet = $("welcomeSheet");
+  if (!sheet) return;
+  sheet.classList.remove("hidden");
+  try {
+    localStorage.setItem(WELCOME_SEEN, "1");
+  } catch (e) {
+    // Nothing to do: it showed once this session, which is the intent.
+  }
+}
+
+/* Whether this person has already made something.
+ *
+ * Read from whatever the page already knows rather than asking the hub: this
+ * decides a greeting, and a greeting must not wait on the network.
+ */
+function madeAnythingAlready() {
+  try {
+    const shelf = document.querySelectorAll("#viewHome .card, #viewHome [data-app]");
+    if (shelf && shelf.length) return true;
+  } catch (e) {}
+  return false;
 }
 
 /* Mark the rail row for the page actually showing.
@@ -4557,6 +4619,17 @@ $("infoCopyCmd")?.addEventListener("click", async () => {
 });
 
 $("infoBtn").addEventListener("click", showInfo);
+// The welcome note closes and puts the cursor where the work starts.
+$("welcomeGo")?.addEventListener("click", () => {
+  $("welcomeSheet").classList.add("hidden");
+  // Straight into the box they came to type in. A modal that closes onto a
+  // page with no obvious next step has only cost them a click.
+  const box = document.querySelector("#viewHome textarea, #viewHome input[type=text]");
+  if (box) {
+    try { box.focus(); } catch (e) {}
+  }
+});
+
 $("limitGo").addEventListener("click", () => {
   try { localStorage.setItem("krateLimitAck", monthKey()); } catch (e) {}
   $("limitSheet").classList.add("hidden");
@@ -6277,11 +6350,27 @@ function paintGreeting() {
 /* ---- onboarding -------------------------------------------------------- */
 const ONBOARD_KEY = "krate-onboarded";
 
+/// The step showing, so a skipped step can be stepped over in the direction
+/// the person was already going rather than bouncing them forwards.
+let obLastStep = 0;
+
 function needsOnboarding() {
   return !localStorage.getItem(ONBOARD_KEY);
 }
 
 function obGo(step) {
+  // The browser has no locally installed agents, so step 2 asks a question
+  // it cannot answer.
+  //
+  // "Which agent writes the code?" lists Claude, Codex and Gemini as READY
+  // or NOT INSTALLED -- a probe of the person's own machine, which is the
+  // right question in Studio on a desktop and meaningless in a tab. In the
+  // browser the AI is ours and there is nothing to choose, so the step is
+  // skipped in whichever direction they were travelling.
+  if (step === 2 && !tauri) {
+    step = obLastStep >= 2 ? 1 : 3;
+  }
+  obLastStep = step;
   document.querySelectorAll(".ob-scene").forEach((scene) => {
     const on = Number(scene.dataset.step) === step;
     scene.classList.toggle("on", on);

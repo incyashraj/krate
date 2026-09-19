@@ -2924,7 +2924,22 @@ async function billingWebhook(request, env) {
 // trade from the counters, and the right one, because a lost count was
 // silent and this is visible in the person's own ledger.
 
-const CASE_LIMIT_FREE = 3; // three EVER, per the 2026-09-01 ruling
+// The free allowance, per the 2026-09-19 ruling: ONE app, ever.
+//
+// Counted in cases that PRODUCED A FILE, so somebody whose attempts all
+// failed for our reasons has spent nothing and can try again. That is the
+// whole reason the ledger counts cases rather than button presses.
+const CASE_LIMIT_FREE = 1;
+
+// And one free EDIT of that app, afterwards.
+//
+// Making an app and then being unable to change it is not a trial of
+// anything -- the first version is never the one somebody wants. So a person
+// who has used their app gets one more funded case to change it, and that is
+// where the free tier ends. Separate from the make allowance rather than
+// "two makes", because the two are different promises: the second is only
+// for an app that already exists.
+const EDIT_LIMIT_FREE = 1;
 
 function caseKeys(user, device) {
   const keys = [];
@@ -2967,6 +2982,22 @@ function madeCount(byId) {
 /// tally -- every consumption writes them -- and the cases carry the history.
 /// The higher of the two wins: a listing that has caught up cannot be argued
 /// down by a counter, and a counter that is ahead is believed at once.
+/// How many funded EDIT cases produced a file.
+///
+/// Counted off the same ledger as makes, filtered on the flag the case was
+/// opened with. A legacy case has no flag and is a make, which is right:
+/// every case before this ruling was.
+function editCount(byId) {
+  // `byId` is a Map, like madeCount's. Object.values on a Map returns an
+  // empty array, so the first version of this counted zero edits forever and
+  // the allowance never bit -- caught by the test asserting the SECOND edit
+  // is refused, which is why that assertion exists rather than only one that
+  // the first is allowed.
+  let n = 0;
+  for (const record of byId.values()) if (record.edit && record.made) n += 1;
+  return n;
+}
+
 async function consumedCount(env, user, device, byId) {
   const keys = [];
   if (user) keys.push(`mkacct:${user.id}`);
@@ -3048,15 +3079,39 @@ async function caseOpen(request, env) {
 
   const byId = await migrateCounters(env, user, device, prefixes, await loadCases(env, prefixes));
 
+  // Is this a change to an app they already have, or a new one?
+  //
+  // The two have separate allowances because they are separate promises:
+  // one app free, and one change to it. A person who could make an app and
+  // never alter it has not really tried the product -- the first version is
+  // never the one they want.
+  const isEdit = Boolean(body.edit);
+
   // The wall. A paid plan lifts it; the free allowance is counted in cases
-  // that produced a file, so a person whose three attempts all failed for
-  // our reasons has spent nothing.
+  // that produced a file, so a person whose attempts all failed for our
+  // reasons has spent nothing.
   const made = await consumedCount(env, user, device, byId);
-  if (made >= CASE_LIMIT_FREE) {
+  const edits = editCount(byId);
+  const spent = isEdit ? edits : made;
+  const limit = isEdit ? EDIT_LIMIT_FREE : CASE_LIMIT_FREE;
+  if (spent >= limit) {
     const ent = user ? JSON.parse((await env.APPS.get(`ent:${user.id}`)) || "null") : null;
     if (!entitlementActive(ent)) {
-      return json({ wall: true, n: made, message: "The free apps are used. Studio is $12 a month, unlimited." }, 402);
+      const message = isEdit
+        ? "The free change is used. Studio is $12 a month, unlimited -- and Krate Studio on your own machine is free and unlimited with your own AI."
+        : "The free app is used. Studio is $12 a month, unlimited -- and Krate Studio on your own machine is free and unlimited with your own AI.";
+      return json({ wall: true, n: spent, limit, edit: isEdit, message }, 402);
     }
+  }
+
+  // An EDIT with no app to edit is a make, whatever the caller said. A
+  // client that sent `edit: true` first would otherwise get a free app out
+  // of the edit allowance and keep its make allowance untouched.
+  if (isEdit && made < 1) {
+    return json(
+      { wall: true, n: 0, limit: EDIT_LIMIT_FREE, edit: true, message: "There is no app to change yet. Make one first." },
+      409,
+    );
   }
 
   const record = {
@@ -3064,6 +3119,7 @@ async function caseOpen(request, env) {
     opened: new Date().toISOString(),
     state: "open",
     made: false,
+    edit: isEdit,
     request: String(body.request || "").slice(0, 200),
     attempts: [],
   };

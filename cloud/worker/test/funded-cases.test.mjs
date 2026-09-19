@@ -104,29 +104,65 @@ await call("/case/close", { device: DEV_A, id: doomed.body.id, verdict: "abandon
 list = (await call("/case/list", { device: DEV_A }, "krs_alice")).body;
 assert.strictEqual(list.n, 1, "an abandoned case that never made a file never cost anything");
 
+/* ---- the wall: ONE free app ---------------------------------------------- */
+// One made case is the whole free allowance (2026-09-19). Alice has one.
+const second = await call("/case/open", { device: DEV_A, request: "one more" }, "krs_alice");
+assert.strictEqual(second.status, 402, "the second free app is refused");
+assert.strictEqual(second.body.wall, true);
+assert.strictEqual(second.body.limit, 1);
+assert.ok(
+  second.body.message.includes("own machine"),
+  "the wall names the free unlimited path, not only the paid one: " + second.body.message,
+);
+
+/* ---- and ONE free edit of it --------------------------------------------- */
+// Making an app and never being able to change it is not a trial of
+// anything. The edit allowance is separate from the make allowance, so a
+// person at the make wall can still change what they made -- once.
+const edit = await call("/case/open", { device: DEV_A, request: "make it darker", edit: true }, "krs_alice");
+assert.strictEqual(edit.status, 200, "the first change to an existing app is free");
+await call("/case/attempt", { device: DEV_A, id: edit.body.id, outcome: "made" }, "krs_alice");
+
+const edit2 = await call("/case/open", { device: DEV_A, request: "again", edit: true }, "krs_alice");
+assert.strictEqual(edit2.status, 402, "the second change is refused");
+assert.strictEqual(edit2.body.edit, true, "and the refusal says it was an edit");
+
+/* ---- an edit with nothing to edit is not a free app ----------------------- */
+// Otherwise `edit: true` on a fresh account is a way to get an app out of
+// the edit allowance while keeping the make allowance untouched.
+const sneaky = await call("/case/open", { device: DEV_B, request: "an app", edit: true }, "krs_bob");
+assert.strictEqual(sneaky.status, 409, "an edit needs an app to edit");
+assert.ok(
+  sneaky.body.message.includes("Make one first"),
+  "and says so plainly: " + sneaky.body.message,
+);
+
 /* ---- multi-device race --------------------------------------------------- */
 // Two devices, one account, opening and making at the same time. The old
 // counters lost one of these to read-modify-write; the ledger keeps both.
+//
+// Run on a SUBSCRIBED account, so this tests the concurrent write and not
+// the free wall -- which is one case now and would refuse the second open
+// before the race could happen.
+await env.APPS.put(
+  "ent:carol",
+  JSON.stringify({ status: "active", until: new Date(Date.now() + 864e5).toISOString() }),
+);
 const [raceA, raceB] = await Promise.all([
-  call("/case/open", { device: DEV_A, request: "app one" }, "krs_alice"),
-  call("/case/open", { device: DEV_B, request: "app two" }, "krs_alice"),
+  call("/case/open", { device: DEV_A, request: "app one" }, "krs_carol"),
+  call("/case/open", { device: DEV_B, request: "app two" }, "krs_carol"),
 ]);
 await Promise.all([
-  call("/case/attempt", { device: DEV_A, id: raceA.body.id, outcome: "made" }, "krs_alice"),
-  call("/case/attempt", { device: DEV_B, id: raceB.body.id, outcome: "made" }, "krs_alice"),
+  call("/case/attempt", { device: DEV_A, id: raceA.body.id, outcome: "made" }, "krs_carol"),
+  call("/case/attempt", { device: DEV_B, id: raceB.body.id, outcome: "made" }, "krs_carol"),
 ]);
-list = (await call("/case/list", { device: DEV_A }, "krs_alice")).body;
-assert.strictEqual(list.n, 3, "simultaneous makes are BOTH recorded -- no lost update");
-
-/* ---- the wall ------------------------------------------------------------ */
-const fourth = await call("/case/open", { device: DEV_A, request: "one more" }, "krs_alice");
-assert.strictEqual(fourth.status, 402, "the fourth free app is refused");
-assert.strictEqual(fourth.body.wall, true);
+list = (await call("/case/list", { device: DEV_A }, "krs_carol")).body;
+assert.strictEqual(list.n, 2, "simultaneous makes are BOTH recorded -- no lost update");
 
 /* ---- the legacy route is the same ledger --------------------------------- */
 // Studio and the builder still speak /plan/count; it must count cases now.
 const legacyN = (await call("/plan/get", { device: DEV_A }, "krs_alice")).body.n;
-assert.strictEqual(legacyN, 3, "/plan/get reads the ledger");
+assert.strictEqual(legacyN, 2, "/plan/get reads the ledger: alice's one app and one edit");
 
 /* ---- migration ----------------------------------------------------------- */
 // Bob made two apps before the ledger existed: his counter says 2, his
@@ -253,22 +289,23 @@ async function lagCall(path, body, token) {
 }
 
 const lagDev = "9".repeat(64);
-// Three apps made back to back, faster than the listing catches up.
-for (let i = 0; i < 3; i++) {
-  const opened = await lagCall("/case/open", { device: lagDev, request: `app ${i}` }, null);
-  assert.strictEqual(opened.status, 200, `open ${i} while the listing lags: ${opened.text}`);
-  const made = await lagCall(
-    "/case/attempt", { device: lagDev, id: opened.body.id, outcome: "made" }, null,
-  );
-  assert.strictEqual(made.body.made, true, `attempt ${i} recorded`);
-}
+// The one free app, made while the listing has not caught up.
+const lagOpened = await lagCall("/case/open", { device: lagDev, request: "the app" }, null);
+assert.strictEqual(lagOpened.status, 200, `open while the listing lags: ${lagOpened.text}`);
+const lagMade = await lagCall(
+  "/case/attempt", { device: lagDev, id: lagOpened.body.id, outcome: "made" }, null,
+);
+assert.strictEqual(lagMade.body.made, true, "the attempt is recorded");
 
-// The fourth must be refused even though NONE of the three are listable yet.
-const fourthWhileLagging = await lagCall("/case/open", { device: lagDev, request: "one too many" }, null);
+// The second must be refused even though the first is not listable yet.
+// This is the whole point: the counter answers immediately and the listing
+// does not, so a wall that waited for the listing would let somebody quick
+// have a second free app.
+const secondWhileLagging = await lagCall("/case/open", { device: lagDev, request: "one too many" }, null);
 assert.strictEqual(
-  fourthWhileLagging.status, 402,
+  secondWhileLagging.status, 402,
   "the wall must hold while KV's listing is still catching up -- otherwise "
-  + "being quick buys a fourth free app",
+  + "being quick buys a second free app",
 );
 
 /* ---- no identity, no ledger ---------------------------------------------- */
