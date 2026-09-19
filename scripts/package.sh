@@ -90,6 +90,32 @@ if [[ -f "$tooling_binary" ]]; then
   echo "packaged cargo-component alongside krate"
 fi
 
+# macOS only: the notarized gift opener, beside the binary.
+#
+# `krate gift` on a sender's Mac has no certificate, so it cannot make an
+# opener macOS will let a friend double-click -- `xcrun stapler` refuses shell
+# scripts outright, so the old .command wrap could never carry a ticket. The
+# one opener notarized in the release job is copied into every gift instead,
+# and shipped_gift_opener() in crates/cli/src/main.rs looks for it FIRST at
+# "Krate Opener.app" beside the krate binary. That is this path. Without it in
+# the archive, an installed Krate finds no opener and every Mac gift it makes
+# meets Gatekeeper with nothing to show.
+#
+# Optional and quiet: the release job builds the opener AFTER the first
+# package run and repacks the tarball, and a source build has no opener at
+# all. Neither should fail packaging -- the release job is where a missing
+# opener is reported, because that is the only place one is expected.
+if [[ "$target" == *apple-darwin* ]]; then
+  gift_opener="${dist_root}/Krate Opener.app"
+  if [[ -d "$gift_opener" ]]; then
+    # -R, not -a: the copy has to keep the bundle's executable bit and its
+    # signature, and cp -a on a Mac also drags ACLs that tar then flattens
+    # into a stray ._ file inside the archive.
+    cp -R "$gift_opener" "$package_dir/"
+    echo "packaged Krate Opener.app (the notarized gift opener)"
+  fi
+fi
+
 case "$ext" in
   tar.gz)
     tar -C "$dist_root" -czf "${dist_root}/${name}.tar.gz" "$name"

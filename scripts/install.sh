@@ -249,6 +249,33 @@ if [ -n "$tooling_path" ]; then
   fi
 fi
 
+# macOS releases carry "Krate Opener.app" beside the runtime: the one gift
+# opener that was notarized in CI. Place it beside the binary, because
+# `shipped_gift_opener()` looks there first and nowhere else on a plain
+# install. Nobody can rebuild it locally -- a gift is made on a sender's Mac
+# where no Apple certificate exists, and a .command wrap can never stand in
+# because `xcrun stapler` refuses shell scripts. So if this copy does not
+# happen, every Mac gift made by this install falls back to an opener signed
+# by nobody and the receiver meets a Gatekeeper warning.
+#
+# Quiet and optional, like cargo-component above: Linux and Windows archives
+# have no opener, and neither do releases older than this one. Nothing to
+# place is not a problem worth a warning.
+opener_path="$(find "$tmp" -maxdepth 3 -type d -name 'Krate Opener.app' | head -1)"
+if [ -n "$opener_path" ]; then
+  # cp -R, and nothing else: a code signature survives a copy and a rename but
+  # not a single added or edited file inside the bundle, so the whole bundle
+  # moves as it is. -R also keeps the executable bit on Contents/MacOS/open,
+  # which is the file shipped_gift_opener() tests for.
+  if [ -w "$dir" ]; then
+    rm -rf "${dir}/Krate Opener.app" 2>/dev/null || true
+    cp -R "$opener_path" "${dir}/Krate Opener.app" 2>/dev/null || true
+  else
+    sudo rm -rf "${dir}/Krate Opener.app" 2>/dev/null || true
+    sudo cp -R "$opener_path" "${dir}/Krate Opener.app" 2>/dev/null || true
+  fi
+fi
+
 # ---- tell them if it is not on PATH ----------------------------------------
 
 case ":${PATH}:" in

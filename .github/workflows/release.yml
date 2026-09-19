@@ -875,6 +875,18 @@ jobs:
             echo "a friend without Krate will still see a Gatekeeper warning."
           fi
 
+          # Repack the CLI tarball a second time, now that the opener exists.
+          #
+          # The repack above ran before this opener was built, so the archive
+          # it produced carries no "Krate Opener.app" -- and an installed Krate
+          # looks for exactly that, beside its own binary. Without this line
+          # every Mac gift made by an installed Krate falls back to an opener
+          # signed by nobody, which is the Gatekeeper warning the notarization
+          # above exists to remove. Same shape as the K-068 repack: signing (or
+          # here, notarizing) something the archive was built before is signing
+          # a file nothing reads again.
+          bash scripts/package.sh "${{ matrix.target }}" tar.gz
+
           # Krate Studio: notarize the signed bundle, then package the .dmg
           # around it. This order matters -- a .dmg built before notarization
           # carries an un-stapled app, and the person who downloads it is
@@ -927,6 +939,59 @@ jobs:
             fi
           fi
 
+      # The gift opener leaves this job as its own asset, from the arm64
+      # runner only.
+      #
+      # It has to be downloadable on its own because the browser Studio has
+      # nobody's laptop to take it from: a first-time person's gift is made in
+      # a tab, so the opener must be fetchable from the release. Every Krate
+      # release before this one built it, notarized it, stapled it, zipped it
+      # -- and then dropped it on the floor, because the upload paths below
+      # never named it and `gh release view v0.5.0` shows no opener asset.
+      #
+      # arm64 only, and NOT because of the architecture: the opener is a shell
+      # script in a bundle, so both darwin jobs make the same file under the
+      # same name. Uploading from both would put two assets called
+      # krate-opener-<version>.zip into one release and give SHA256SUMS two
+      # lines with one basename, which is the collision the checksum step
+      # below says cannot happen. One runner publishes it; both still carry it
+      # inside their own tarball.
+      - name: Upload the gift opener
+        if: matrix.target == 'aarch64-apple-darwin'
+        shell: bash
+        env:
+          KRATE_VERSION: ${{ inputs.tag || github.ref_name }}
+        run: |
+          version="${KRATE_VERSION#v}"
+          if [ ! -f "dist/krate-opener-${version}.zip" ]; then
+            # A warning, not an error, for the same reason notarization warns
+            # rather than failing: a fork with no Apple secrets skips the
+            # signing step entirely and never builds an opener, and the
+            # runtime release must not die for that. But say it loudly and say
+            # what breaks -- a release with no opener asset means the browser
+            # Studio has nothing to hand a first-time person, and this went
+            # unnoticed through every release so far precisely because nothing
+            # said a word.
+            echo "::warning::No dist/krate-opener-${version}.zip, so this"
+            echo "release will have no gift opener asset. A Mac gift made in"
+            echo "the browser Studio then has no notarized opener to copy."
+            echo "Expected from the sign-and-notarize step above; check"
+            echo "whether the Apple signing secrets are set."
+            exit 0
+          fi
+          mkdir -p dist/opener
+          cp "dist/krate-opener-${version}.zip" dist/opener/
+
+      - name: Upload the gift opener artifact
+        if: matrix.target == 'aarch64-apple-darwin'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: krate-opener
+          path: dist/opener/krate-opener-*.zip
+          # Warn, do not fail: the step above already explains a missing
+          # opener, and a fork without signing secrets has none to upload.
+          if-no-files-found: warn
+
       - name: Upload packaged artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -972,6 +1037,34 @@ jobs:
             | xargs -0 sha256sum \
             | sed -E 's#(^[0-9a-f]+  ).*/#\1#' > SHA256SUMS
           cat SHA256SUMS
+
+      # Say out loud whether the gift opener made it this far.
+      #
+      # The opener is built in one job (the macOS signing step) and published
+      # from another, and the `files:` globs below match by shape rather than
+      # by name -- so an opener that was never built, or was built and never
+      # uploaded, produces a release that is missing it with nothing in the
+      # log saying so. That is exactly how every release up to v0.5.0 shipped
+      # without one. This step cannot fix a missing opener, but it makes the
+      # absence visible instead of silent.
+      #
+      # A warning, not a failure: the opener only exists when the Apple
+      # signing secrets are set, and a fork's release must still publish.
+      - name: Check the gift opener is here to publish
+        shell: bash
+        run: |
+          found="$(find dist -type f -name 'krate-opener-*.zip' | head -1)"
+          if [ -n "$found" ]; then
+            echo "gift opener present: $found"
+          else
+            echo "::warning::No krate-opener-*.zip among the artifacts, so"
+            echo "this release publishes without a gift opener. A Mac gift"
+            echo "made in the browser Studio has no notarized opener to copy,"
+            echo "and a .command wrap cannot substitute -- stapler refuses"
+            echo "shell scripts, so it would always meet Gatekeeper with no"
+            echo "ticket. Check the sign-and-notarize step on the"
+            echo "aarch64-apple-darwin job."
+          fi
 
       - name: Upload release assets
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
