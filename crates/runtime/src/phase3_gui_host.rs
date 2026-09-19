@@ -2488,7 +2488,7 @@ impl Phase3GuiHost {
             (*window, *widget)
         };
         let rect = self.canvas_widget_rect(window, widget)?;
-        let scale = self.dispatcher().window_scale(window);
+        let scale = self.canvas_backing_scale(window);
         let mut canvases = self.canvases.borrow_mut();
         let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
             return Err(gfx::types::GfxError::InvalidTarget);
@@ -2497,6 +2497,19 @@ impl Phase3GuiHost {
             .resize_scaled(rect.0.max(1.0) as u32, rect.1.max(1.0) as u32, scale)
             .map_err(|error| gfx::types::GfxError::Unsupported(error.to_string()))?;
         Ok(())
+    }
+
+    /// Density needed by both the display and an optional screenshot consumer.
+    fn canvas_backing_scale(&self, window: WindowId) -> f32 {
+        // A headless adapter has no display and reports 1x. Raster at the
+        // requested capture density as well, otherwise --shoot-scale 2 only
+        // enlarges a 1x canvas image. Native runs without a shot are unchanged.
+        self.dispatcher().window_scale(window).max(
+            self.screenshot
+                .as_ref()
+                .map(|(_, scale)| *scale)
+                .unwrap_or(1.0),
+        )
     }
 
     /// Push a canvas's pixels through the image path and re-lower.
@@ -4106,7 +4119,7 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         };
         // Raster at the display's density, keep the app in logical units
         // (K-088): the placement blit is then 1:1 instead of an upscale.
-        let scale = self.dispatcher().window_scale(window_id);
+        let scale = self.canvas_backing_scale(window_id);
         let surface = match CanvasSurface::new_scaled(
             rect.0.max(1.0) as u32,
             rect.1.max(1.0) as u32,
@@ -6892,6 +6905,17 @@ mod tests {
         let canvas = gfx::canvas2d::Host::bind(&mut host, window, widget)
             .expect("bind call")
             .expect("a canvas widget binds");
+        assert_eq!(
+            host.canvases.borrow().get(&canvas).unwrap().2.scale(),
+            2.0,
+            "K-425: the backing raster, not just the output PNG, must be 2x"
+        );
+        host.refit_canvas(canvas).expect("refit");
+        assert_eq!(
+            host.canvases.borrow().get(&canvas).unwrap().2.scale(),
+            2.0,
+            "K-425: refit must retain capture density on a headless adapter"
+        );
         gfx::canvas2d::Host::clear(
             &mut host,
             canvas,
@@ -6909,6 +6933,21 @@ mod tests {
             .expect("present succeeds");
 
         assert!(host.screenshot_taken.get(), "the screenshot was taken");
+        let image_size = {
+            let images = host.images.borrow();
+            let image = images
+                .get(&(
+                    host.window_id(window).unwrap(),
+                    WidgetId::new(widget).unwrap(),
+                ))
+                .unwrap();
+            (image.width, image.height)
+        };
+        assert_eq!(
+            image_size,
+            (400, 400),
+            "no 200px canvas stretched into a 400px shot"
+        );
         // And what painted it is written beside it (IC-743, test 1547):
         // the renderer, the scale, the pixel and logical sizes, and the
         // colour space, so a comparison can refuse a mismatched pair.

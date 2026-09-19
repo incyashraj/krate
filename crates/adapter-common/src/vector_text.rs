@@ -329,11 +329,16 @@ impl TextEngine {
         let mut builder = self
             .layout_cx
             .ranged_builder(&mut self.font_cx, text, 1.0, true);
-        builder.push_default(match style.family {
-            CanvasFontFamily::Sans => GenericFamily::SansSerif,
-            CanvasFontFamily::Serif => GenericFamily::Serif,
-            CanvasFontFamily::Mono => GenericFamily::Monospace,
-        });
+        match style.family {
+            CanvasFontFamily::Sans => builder.push_default(GenericFamily::SansSerif),
+            CanvasFontFamily::Serif => builder.push_default(GenericFamily::Serif),
+            // Prefer the platform's screen-oriented coding faces. The generic
+            // mapping can select a typewriter face such as Courier on macOS.
+            // Keep a generic fallback for installations without these fonts.
+            CanvasFontFamily::Mono => builder.push_default(parley::FontFamily::from(
+                "Menlo, Consolas, 'DejaVu Sans Mono', monospace",
+            )),
+        };
         builder.push_default(StyleProperty::FontSize(font_size));
         builder.push_default(StyleProperty::FontWeight(parley::FontWeight::new(
             // CSS-style hundreds, clamped to the range every font maps.
@@ -1463,6 +1468,28 @@ pub fn try_paint_placements(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn canvas_mono_has_equal_advances_at_retina_and_logical_sizes() {
+        let style = CanvasTextStyle {
+            family: CanvasFontFamily::Mono,
+            ..Default::default()
+        };
+        for size in [16.0, 32.0] {
+            let widths: Vec<f32> = ["00000000", "iiiiiiii", "WWWWWWWW", "        "]
+                .iter()
+                .map(|s| {
+                    measure_canvas_text_styled(s, size, style)
+                        .expect("system monospace font must shape")
+                        .width
+                })
+                .collect();
+            assert!(widths[0] > 0.);
+            for w in &widths[1..] {
+                assert!((w - widths[0]).abs() < 0.1, "mono widths {widths:?}");
+            }
+        }
+    }
 
     #[test]
     fn warming_the_engine_makes_the_first_measured_call_cheap() {
