@@ -708,8 +708,26 @@ impl Runtime {
             RuntimeWorld::Auto => self.run_component_auto(component, config, output),
             #[cfg(feature = "phase2-bindings")]
             RuntimeWorld::Cli => self.run_phase2_component(component, config, output),
+            // A manifest naming the GUI world says which FAMILY the app
+            // belongs to, not which phase of it. Phase 3 and phase 4 are the
+            // same world at two versions -- `widget-kind` gained `overlay`,
+            // and an enum is structural, so the two need different linkers
+            // (K-403). There is one world name for both because a manifest
+            // written before phase 4 existed must keep meaning what it meant.
+            //
+            // So the phase is still chosen by inspection, exactly as it is
+            // for a loose component. Hardcoding phase 3 here handed every
+            // manifest-carrying app the frozen linker: `krate create` with no
+            // agent built an app against phase 4, packed it, and then refused
+            // to run it -- "expected enum of 17 names, found 18 names" -- on
+            // the command the website tells people to run (K-422, K-714).
             #[cfg(feature = "phase2-bindings")]
-            RuntimeWorld::Gui => self.run_phase3_gui_component(component, config, output),
+            RuntimeWorld::Gui => match self.select_world(component)? {
+                SelectedWorld::Gui4 => self.run_phase4_gui_component(component, config, output),
+                // Anything else declared as GUI runs on the frozen linker,
+                // which is what it was before and what an older app needs.
+                _ => self.run_phase3_gui_component(component, config, output),
+            },
             #[cfg(not(feature = "phase2-bindings"))]
             RuntimeWorld::Cli | RuntimeWorld::Gui => Err(RuntimeError::Instantiate(
                 "the runtime was built without current Krate world bindings".to_string(),
@@ -3529,6 +3547,65 @@ mod tests {
             // No `run` at all is the K-268 answer, not "no world".
             let none = wat::parse_str("(component)").expect("parses");
             assert!(matches!(select(&none), Err(RuntimeError::MissingRunExport)));
+        }
+
+        /// A manifest naming the GUI world must not pin the PHASE of it.
+        ///
+        /// `krate:app/gui@0.2.0` is the one world name both GUI phases wear,
+        /// because a manifest written before phase 4 existed has to keep
+        /// meaning what it meant. Phase 4 differs only in `widget-kind`
+        /// gaining `overlay`, and an enum is structural, so the two need
+        /// different linkers (K-403).
+        ///
+        /// This arm used to call the phase 3 linker directly. Every app that
+        /// carried a manifest therefore got the frozen one whatever it had
+        /// been built against, and `krate create` with no agent -- the
+        /// command krate.tech tells people to run -- built an app against
+        /// phase 4, packed it, and then refused to run it:
+        ///
+        ///   type mismatch for field kind: expected enum of 17 names,
+        ///   found 18 names
+        ///
+        /// (K-422, K-714.) The phase is chosen by inspection, exactly as it
+        /// is for a loose component. Asserted on the source because minting
+        /// an 18-case enum needs a real cargo-component build, which belongs
+        /// in the CLI suite (`create_without_an_agent_builds_a_real_app_from_
+        /// a_template`) and not in a unit test.
+        #[test]
+        #[cfg(feature = "phase2-bindings")]
+        fn a_declared_gui_world_still_picks_its_phase_by_inspection() {
+            // Scoped to run_component_with_output, not the whole file. The
+            // needle below appears in this test too, so a search over the
+            // file would find the test's own copy if the real arm were ever
+            // deleted, and report the deletion as a pass.
+            let source = include_str!("lib.rs");
+            let fn_at = source
+                .find("fn run_component_with_output(")
+                .expect("the function exists");
+            // The match this arm belongs to ends where the next function
+            // starts, so the window can never reach this test's own copy of
+            // the needle however the function grows.
+            let fn_end = fn_at
+                + source[fn_at..]
+                    .find("\n    /// A loose component, no manifest")
+                    .expect("the next item marks the end of this one");
+            let region = &source[fn_at..fn_end];
+            let at = region
+                .find("RuntimeWorld::Gui => ")
+                .expect("the declared-GUI arm exists");
+            // To the end of that match arm, so a later unrelated call to
+            // select_world cannot satisfy this on its behalf.
+            let arm = &region[at..];
+            let body = arm.find("},").map(|end| &arm[..end]).unwrap_or(arm);
+            assert!(
+                body.contains("self.select_world(component)"),
+                "the declared-GUI arm must ask which phase the component \
+                 fits, not assume one:\n{body}"
+            );
+            assert!(
+                body.contains("run_phase4_gui_component"),
+                "and a phase 4 component must reach the phase 4 host:\n{body}"
+            );
         }
 
         /// The whole point of choosing by inspection: a start that traps is

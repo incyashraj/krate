@@ -441,7 +441,19 @@ fn root() -> types::WidgetNode {
         kind: types::WidgetKind::Stack,
         label: None,
         role: None,
-        style: types::Style { width: Some(480.0), height: Some(320.0), grow: 0.0, padding: 16.0 },
+        // `text`, `place` and `box_` are the three optional fields Style
+        // gained after this skeleton was written. None everywhere means it
+        // looks exactly as it did; naming them is what keeps the skeleton
+        // compiling as the record grows.
+        style: types::Style {
+            width: Some(480.0),
+            height: Some(320.0),
+            grow: 0.0,
+            padding: 16.0,
+            text: None,
+            place: None,
+            box_: None,
+        },
         checked: None,
         value: None,
         selected: None,
@@ -456,7 +468,15 @@ fn label(text: &str) -> types::WidgetNode {
         kind: types::WidgetKind::Text,
         label: Some(pure_string(text)),
         role: Some(pure_string("text")),
-        style: types::Style { width: Some(440.0), height: Some(28.0), grow: 0.0, padding: 0.0 },
+        style: types::Style {
+            width: Some(440.0),
+            height: Some(28.0),
+            grow: 0.0,
+            padding: 0.0,
+            text: None,
+            place: None,
+            box_: None,
+        },
         checked: None,
         value: None,
         selected: None,
