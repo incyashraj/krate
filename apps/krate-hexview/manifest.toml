@@ -1,0 +1,39 @@
+[app]
+id = "dev.krate.hexview"
+name = "Hexview"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_hexview.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Show the native binary inspector"
+required = false
+[[capabilities]]
+cap = "ui.dialog:file-open"
+rationale = "Read only a file you choose"
+required = false
+[[capabilities]]
+cap = "ui.clipboard:write"
+rationale = "Copy the selected byte value"
+required = false
+[[capabilities]]
+cap = "fs.read:input/**"
+rationale = "Read explicitly granted command-line test files in input/"
+required = false
+[[capabilities]]
+cap = "io.args"
+rationale = "Choose GUI or terminal mode and read explicit options"
+required = true
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Print terminal hex output"
+required = true
+[[capabilities]]
+cap = "io.stderr"
+rationale = "Report errors without mixing them into hex output"
+required = true
+[[capabilities]]
+cap = "io.stdin"
+rationale = "Read piped bytes in terminal mode"
+required = false

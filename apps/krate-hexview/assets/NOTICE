@@ -1,0 +1,11 @@
+Krate Hexview is an experimental adaptation, not an official hexyl release.
+Upstream: https://github.com/sharkdp/hexyl
+Revision: 6ecc29b9c8c84d08a7e860f7f69c22b113b480ea
+Upstream version: 0.17.0
+Author: David Peter and hexyl contributors.
+Upstream rendering code in src/hexyl.rs and gradient calculations in src/colors.rs
+are used under the MIT license included in LICENSE-MIT.
+
+Adaptations by Yashraj Pardeshi: no_std/Krate I/O, command parser, native viewer,
+error propagation, fixed default palette. CP437/CP1047 tables are not included.
+No upstream logo, endorsement, or full CLI compatibility is claimed.
