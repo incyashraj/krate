@@ -662,3 +662,43 @@ console.log("ok  Details survives a reload");
 }
 
 console.log(`ok  every top-level listener has an element to bind to`);
+
+// A dropped connection says so, in every wording a browser uses for one.
+//
+// plainWords matched `network|offline|dns|connect` -- what a desktop engine
+// says, and none of what a BROWSER says. Chrome throws "Failed to fetch",
+// Firefox "NetworkError when attempting to fetch resource", Safari "Load
+// failed". None of those match, so losing wifi mid-build fell through to
+// the generic line: "The build failed. Press Details for the engine output"
+// -- about a build that was fine, on a screen with no engine output, told
+// to somebody whose connection dropped.
+{
+  const words = app.slice(app.indexOf("function plainWords(err)"));
+  // To the function's own closing brace at column 0. Cutting at the next
+  // "\nfunction " ended the window early, because plainWords is followed by
+  // a comment block before the next top-level function -- and the generic
+  // line this test compares against sits past that cut, so the ordering
+  // check compared against -1 and failed on correct code.
+  const body = words.slice(0, words.indexOf("\n}\n") + 3);
+  for (const phrase of ["failed to fetch", "networkerror", "load failed"]) {
+    assert.ok(
+      body.toLowerCase().includes(phrase),
+      `plainWords does not recognise "${phrase}", which is how a browser `
+        + `reports a dropped connection`,
+    );
+  }
+  // And it must be recognised before the fall-through, or the branch never
+  // runs. Compared against the final RETURN, not the first mention of that
+  // sentence: an earlier comment quotes the same words, so matching the
+  // text found the comment and failed on correct code.
+  const netAt = body.indexOf("failed to fetch");
+  const fallThrough = body.lastIndexOf('return "The build failed.');
+  assert.ok(netAt > 0, "the connection check is in plainWords");
+  assert.ok(fallThrough > 0, "plainWords still has a last-resort line");
+  assert.ok(
+    netAt < fallThrough,
+    "a dropped connection is recognised before the fall-through",
+  );
+}
+
+console.log("ok  a dropped connection is not blamed on the app");

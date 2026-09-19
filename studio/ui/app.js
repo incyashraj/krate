@@ -2779,6 +2779,17 @@ function plainWords(err) {
   // every user to go sign in (K-124: it did exactly that).
   if (/\b401\b|\b403\b|unauthorized|sign ?in|\bauth(?!or)|logged/i.test(text))
     return "Your AI is not signed in, or its sign-in expired. Click its name at the top for the fix.";
+  // A dropped connection, in every wording a browser uses for one.
+  //
+  // `network|offline|dns|connect` catches what a desktop engine says and
+  // none of what a BROWSER says: Chrome throws "Failed to fetch", Firefox
+  // "NetworkError when attempting to fetch resource", Safari "Load failed".
+  // So pulling the network mid-build in a tab fell through to the generic
+  // line -- "The build failed. Press Details for the engine output" -- about
+  // a build that was fine, on a screen with no engine output to show,
+  // telling somebody whose wifi dropped that their app was broken.
+  if (/failed to fetch|networkerror|load failed|err_internet|err_network/i.test(text))
+    return "The connection dropped. Your request is kept, so Try again picks it up.";
   if (/network|offline|dns|connect/i.test(text)) return "The internet connection dropped mid-build.";
   // Named failures, in the engine's own vocabulary. "Trying again usually
   // works" tells a developer nothing: they want the stage that failed so
