@@ -969,6 +969,33 @@
     </div>
   </div>
 
+  <!-- The first time somebody presses Run it in a browser.
+       A tab cannot open a native app, and it cannot tell whether this
+       computer has Krate. So it asks once, plainly, instead of downloading
+       a file and telling a person with no Krate to double-click it. -->
+  <div class="sheet-wrap hidden" id="firstRunSheet">
+    <div class="sheet sheet-send">
+      <h2>Your app is ready to run</h2>
+      <p class="sheet-sub">It runs on your computer, not in this tab. Which
+      is true for you?</p>
+      <div class="send-opts">
+        <button class="send-opt" id="frHaveBtn" type="button">
+          <b>I already have Krate</b>
+          <span>Download the app and it opens when you double-click it.</span>
+        </button>
+        <button class="send-opt" id="frNeedBtn" type="button">
+          <b>I do not have Krate yet</b>
+          <span id="frNeedSub">Get it once, the way you got a video player.
+          After that every Krate app just opens.</span>
+        </button>
+      </div>
+      <div class="detail-actions">
+        <button class="btn btn-ghost sheet-close" data-close="firstRunSheet">Not now</button>
+      </div>
+      <p class="detail-note" id="frNote"></p>
+    </div>
+  </div>
+
   <!-- Typing while a build runs is normal. The question is whether the new
        words replace the build or wait for it, and only the person knows. -->
   <div class="sheet-wrap hidden" id="midSheet">

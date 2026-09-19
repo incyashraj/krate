@@ -429,3 +429,64 @@ assert.match(back.slice(0, 3000), /NO_ENTRY = new Set\(\["gate", "onboard"\]\)/,
   "the gate and onboarding are not places back can return into");
 
 console.log("ok  browser back goes up one screen");
+
+// "Run it", in a tab, for somebody who has never installed Krate.
+//
+// It used to download the .krate and say "Double-click the file on your
+// Mac, Windows or Linux". For a person with no Krate, double-clicking does
+// NOTHING -- no handler, no window, no error saying why. That is the first
+// thing somebody does after waiting minutes for their app, and it
+// dead-ended in silence.
+//
+// A tab cannot find out whether this computer has Krate, so it does not
+// guess: it asks once and remembers.
+assert.match(html, /id="firstRunSheet"/, "the question has somewhere to appear");
+assert.match(html, /id="frHaveBtn"/, "I already have Krate");
+assert.match(html, /id="frNeedBtn"/, "I do not have Krate yet");
+const open = bridge.slice(bridge.indexOf("async open_app("));
+assert.match(open.slice(0, 900), /if \(!hasKrateAlready\(\)\) \{\s*askFirstRun\(app\);/,
+  "Run it asks before handing over a file that may not open");
+// Asked ONCE. A dialog on every press would be worse than the dead end.
+assert.match(bridge, /const HAS_KRATE_KEY = "krate\.has\.player\.v1";/,
+  "the answer is remembered");
+// Per browser, not per account: it is a fact about the COMPUTER, and the
+// same account on a work laptop and a home desktop needs two answers.
+assert.match(
+  bridge.slice(bridge.indexOf("function hasKrateAlready()")),
+  /localStorage\.getItem\(HAS_KRATE_KEY\)/,
+  "remembered on this computer, not on the account",
+);
+// Storage can throw or come back empty. Asking again is survivable;
+// assuming they have Krate sends them back to the silent double-click.
+//
+// Scoped to the catch block itself and stripped of comments. A window that
+// merely CONTAINS "return false" passed while the catch said `return true`
+// -- the sabotage run caught that, which is the whole reason for one.
+{
+  const fn = bridge.slice(
+    bridge.indexOf("function hasKrateAlready()"),
+    bridge.indexOf("function rememberHasKrate"),
+  );
+  const catchAt = fn.indexOf("catch (e) {");
+  assert.ok(catchAt > 0, "hasKrateAlready handles blocked storage");
+  const block = fn
+    .slice(catchAt, fn.indexOf("}", catchAt))
+    .replace(/\/\/[^\n]*/g, "");
+  assert.match(block, /return false;/,
+    "blocked storage asks again rather than assuming");
+  assert.ok(!/return true;/.test(block),
+    "and never assumes Krate is there");
+}
+
+// The person who does not have it gets their app AND the player, in that
+// order, so the file is already waiting when the install finishes.
+const wire = bridge.slice(bridge.indexOf("function wireFirstRun()"));
+assert.match(wire.slice(0, 2000), /krate\.tech\/open\//,
+  "and is sent to the page that already picks the right build for their OS");
+// A phone gets no download at all: nothing there can open it, and a file
+// that cannot open is worse than a sentence saying so.
+assert.match(wire.slice(0, 2000), /thisSystem\(\) !== "phone"/,
+  "a phone is told, not handed a file it can never open");
+assert.match(bridge, /function thisSystem\(\)/, "which computer this is");
+
+console.log("ok  a first-time person is asked, not dead-ended");

@@ -411,6 +411,73 @@ async function downloadApp(url, fileName) {
 
 /* The current app's URL and name, from the session Studio is showing or
  * the last build this page watched. */
+/* Does this computer already have Krate?
+ *
+ * A tab cannot find out. There is no way to ask the operating system what
+ * opens a .krate, and probing for it would be both unreliable and rude. So
+ * the person is asked once and the answer is kept, per browser.
+ *
+ * Kept in localStorage rather than the account on purpose: this is a fact
+ * about the COMPUTER, not about the person. The same account on a work
+ * laptop and a home desktop needs two different answers, and an account
+ * round-trip would make Run it wait on the network for something the tab
+ * can settle instantly.
+ */
+const HAS_KRATE_KEY = "krate.has.player.v1";
+function hasKrateAlready() {
+  try {
+    return localStorage.getItem(HAS_KRATE_KEY) === "1";
+  } catch (e) {
+    // Storage blocked. Asking every time is annoying but honest; assuming
+    // they have it would send them back to the silent double-click.
+    return false;
+  }
+}
+function rememberHasKrate() {
+  try { localStorage.setItem(HAS_KRATE_KEY, "1"); } catch (e) {}
+}
+
+/* Which computer this is, for the one sentence that differs per system.
+ * Same test as krate.tech/open, which is where both branches send people. */
+function thisSystem() {
+  const ua = navigator.userAgent || "";
+  if (/Android|iPhone|iPad|iPod/.test(ua)) return "phone";
+  if (/Windows/.test(ua)) return "windows";
+  if (/Linux|X11/.test(ua) && !/Mac/.test(ua)) return "linux";
+  if (/Mac/.test(ua)) return "mac";
+  return "";
+}
+
+/* Ask, once, before handing over a file that may not open.
+ *
+ * The sheet lives in Studio's own markup so it looks like every other
+ * sheet; the bridge only fills it in and wires the two answers, because
+ * whether a tab can open an app is a browser fact and not Studio's.
+ */
+function askFirstRun(app) {
+  const sheet = document.getElementById("firstRunSheet");
+  if (!sheet) {
+    // No sheet in this shell. Fall back to the old behaviour rather than
+    // swallowing the press.
+    downloadApp(app.url, app.name).catch(() => {});
+    return;
+  }
+  const system = thisSystem();
+  const sub = document.getElementById("frNeedSub");
+  if (sub) {
+    sub.textContent = system === "phone"
+      ? "Krate runs on computers, not phones. Open this page on your Mac, "
+        + "Windows or Linux and your app will open there."
+      : "Get it once, the way you got a video player. After that every "
+        + "Krate app just opens.";
+  }
+  const note = document.getElementById("frNote");
+  if (note) note.textContent = "";
+  sheet.dataset.appUrl = app.url;
+  sheet.dataset.appName = app.name || "app.krate";
+  sheet.classList.remove("hidden");
+}
+
 function currentWebApp(path) {
   let url = String(path || (bridge.jobResult && `${BUILDER}${bridge.jobResult.download}`) || "");
   let name = (bridge.jobResult && bridge.jobResult.name) ? `${bridge.jobResult.name}.krate` : "";
@@ -1078,11 +1145,26 @@ const COMMANDS = {
    */
 
   /* Opening, on the web, is downloading: the file is the product, and it
-   * opens on the person's own computer. The button does the useful thing
-   * and then says where the app really runs. */
+   * opens on the person's own computer.
+   *
+   * It used to download and then say "Double-click the file". For somebody
+   * who has never installed Krate, double-clicking does NOTHING -- no
+   * handler, no window, no error saying why. That is the first thing a
+   * person does after waiting minutes for their app, and it dead-ended in
+   * silence.
+   *
+   * A tab cannot tell whether this computer has Krate, so it does not
+   * guess. It asks once, remembers the answer, and after that Run it goes
+   * straight to the download. */
   async open_app({ path } = {}) {
     const app = currentWebApp(path);
     if (!app) return refuse("A browser cannot open the app itself. Download the file. It opens on your Mac, Windows or Linux.");
+    if (!hasKrateAlready()) {
+      askFirstRun(app);
+      // Not a refusal: the sheet is now asking, and a red line under the
+      // share row while a dialog is open reads as two things going wrong.
+      return "asking";
+    }
     await downloadApp(app.url, app.name);
     return refuse("Downloaded. Double-click the file on your Mac, Windows or Linux. That is where the app really runs.");
   },
@@ -2007,4 +2089,53 @@ console.info("krate: studio bridge ready (hub + builder)");
       history.replaceState({ krateView: showing }, "");
     }
   } catch (e) {}
+})();
+
+/* The two answers to "do you have Krate?".
+ *
+ * Wired here rather than in app.js because the question only exists in a
+ * browser: the desktop Studio opens the app itself and never asks.
+ */
+(function wireFirstRun() {
+  const sheet = document.getElementById("firstRunSheet");
+  if (!sheet) return;
+  const note = document.getElementById("frNote");
+  const app = () => ({
+    url: sheet.dataset.appUrl || "",
+    name: sheet.dataset.appName || "app.krate",
+  });
+
+  document.getElementById("frHaveBtn")?.addEventListener("click", async () => {
+    // Taking them at their word is the whole point of asking. If they were
+    // wrong, the download still sits in their downloads folder and the
+    // Ship it sheet still offers the gift, so nothing is lost.
+    rememberHasKrate();
+    sheet.classList.add("hidden");
+    const { url, name } = app();
+    try {
+      await downloadApp(url, name);
+    } catch (err) {
+      if (note) note.textContent = String((err && err.message) || err);
+      sheet.classList.remove("hidden");
+    }
+  });
+
+  document.getElementById("frNeedBtn")?.addEventListener("click", async () => {
+    const { url, name } = app();
+    // Their app first, then the player. In this order the file is already
+    // waiting when the install finishes, so the last thing they do is open
+    // their own app rather than hunt for it.
+    //
+    // A phone gets no download at all: nothing there can open it, and a
+    // file that cannot open is worse than a sentence saying so.
+    if (thisSystem() !== "phone") {
+      try {
+        await downloadApp(url, name);
+      } catch (e) {
+        // The player page is still worth reaching even if this failed.
+      }
+    }
+    sheet.classList.add("hidden");
+    window.open("https://krate.tech/open/", "_blank", "noopener");
+  });
 })();
