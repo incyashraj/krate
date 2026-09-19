@@ -742,3 +742,34 @@ assert.match(bridge, /\$\{stem\} v\$\{version\}\.krate/,
   "an older version downloads under a name that names it");
 
 console.log("ok  a version chip opens its own version");
+
+// A status message does not wear the share row's heading.
+//
+// showActionError writes into the share row, whose heading says "Here's
+// your link. Send it to anyone" and whose Copy button is right beside it.
+// So pressing Open put "Downloaded. Double-click the file on your Mac,
+// Windows or Linux" under "Here's your link", with Copy offering to copy
+// that sentence to somebody. Measured: shareHead read "Here's your link",
+// shareLink held the download sentence, and Copy was live.
+{
+  const fn = app.slice(app.indexOf("function showActionError(err)"));
+  const body = fn.slice(0, fn.indexOf("\n}\n"));
+  assert.match(body, /head\.textContent = "";/,
+    "a status message clears the share heading");
+  assert.match(body, /copy\.classList\.add\("hidden"\)/,
+    "and hides Copy, because a status is not something to send");
+}
+// And the paths that put a REAL link there put Copy back, or the fix above
+// would silently cost the feature it protects.
+{
+  const publish = app.indexOf('$("shareHead").textContent = "Here\'s your link. Send it to anyone";');
+  assert.ok(publish > 0, "the publish path sets the share heading");
+  assert.match(app.slice(publish, publish + 400), /shareCopyBtn"\)\?\.classList\.remove\("hidden"\)/,
+    "the publish path restores Copy");
+  const shared = app.indexOf('$("shareHead").textContent = "Anyone with this link can open it";');
+  assert.ok(shared > 0, "the share path sets its own heading");
+  assert.match(app.slice(shared, shared + 400), /shareCopyBtn"\)\?\.classList\.remove\("hidden"\)/,
+    "the share path restores Copy");
+}
+
+console.log("ok  a status message is not offered as a link to send");

@@ -1744,6 +1744,9 @@ function fillDone(result, opts) {
   if (result.share_url) {
     $("shareHead").textContent = "Anyone with this link can open it";
     $("shareLink").textContent = result.share_url;
+    // showActionError hides Copy, because a status message is not something
+    // to copy and send. A real link puts it back.
+    $("shareCopyBtn")?.classList.remove("hidden");
     resetShareCopy();
   }
   const card = $("doneCard");
@@ -4011,7 +4014,20 @@ function showActionError(err) {
   $("shareLink").textContent = text;
   $("shareResult").classList.remove("hidden");
   $("shareResult").classList.add("error");
+  // This row is the share row, and its heading says "Here's your link. Send
+  // it to anyone." A message that is not a link inherited that heading and
+  // the Copy button beside it -- so pressing Open put "Downloaded.
+  // Double-click the file on your Mac, Windows or Linux" under "Here's your
+  // link", with Copy offering to copy that sentence to send to somebody.
+  //
+  // So the heading follows the content, and Copy is only offered for
+  // something worth copying.
+  const head = $("shareHead");
+  if (head) head.textContent = "";
+  const copy = $("shareCopyBtn");
+  if (copy) copy.classList.add("hidden");
 }
+
 
 /* One button owns copying the link; every path that fills the link row
  * resets it back to "Copy". */
@@ -4252,6 +4268,7 @@ async function publishFromSheet() {
     $("shareHead").textContent = "Here's your link. Send it to anyone";
     $("shareLink").textContent = url;
     $("shareResult").classList.remove("hidden", "error");
+    $("shareCopyBtn")?.classList.remove("hidden");
     resetShareCopy();
     try { await navigator.clipboard.writeText(url); markShareCopied(); } catch (e) {}
     persist();
