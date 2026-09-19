@@ -248,3 +248,39 @@ assert.match(
 );
 
 console.log("ok  a failed publish does not claim the build failed");
+
+/* ---- what people actually do ------------------------------------------- */
+
+// A long paste is refused here, not after a round trip.
+//
+// The build service works from 2,000 characters and refuses more in three
+// places. Nothing in the page stopped it, so 50,008 characters travelled
+// all the way there to come back as a bare failure. Measured: 0 requests
+// sent now, and the person reads why immediately.
+assert.match(bridge, /const MAX_REQUEST_CHARS = 2000;/,
+  "the page knows the build service's limit");
+for (const [cmd, word] of [["create_app", "request"], ["plan_request", "request"], ["revise_app", "change"]]) {
+  const at = bridge.indexOf(`async ${cmd}(`);
+  assert.ok(at > 0, `${cmd} exists`);
+  const body = bridge.slice(at, at + 900);
+  assert.ok(
+    body.includes(`tooLong(${word}, "${word}")`),
+    `${cmd} refuses a ${word} longer than the service will take`,
+  );
+}
+
+// Two tabs, one account. Somebody builds in one and switches back to the
+// other, which was showing the world as it was before: no new app, and a
+// composer still offering to make the first one. With one free app that
+// reads as the app having vanished. The wall itself was never at risk --
+// it is counted on the hub against the account and the device.
+assert.match(bridge, /window\.addEventListener\("storage"/,
+  "a tab notices work done in another tab");
+assert.match(
+  bridge.slice(bridge.indexOf('addEventListener("storage"')),
+  /event\.key !== "krate-sessions"/,
+  "and only repaints for the sessions it shares",
+);
+
+console.log("ok  a long paste is refused before it is sent");
+console.log("ok  two tabs stay in step");

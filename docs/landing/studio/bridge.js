@@ -228,6 +228,26 @@ const attached = new Map();
 /// gets slow to send and the model cannot read it usefully anyway.
 const MAX_ATTACH_BYTES = 10 * 1024 * 1024;
 
+/// The longest request the build service will work from.
+///
+/// It refuses anything past this with "That is longer than we can work
+/// from", and it does so in three places (build, plan, revise). Nothing
+/// in the page stopped a long paste before now, so 50,000 characters
+/// travelled all the way there to come back as a bare failure. Said here
+/// instead, instantly, before anything is sent.
+const MAX_REQUEST_CHARS = 2000;
+
+/// Refuse a request that is too long, in words that say what to do.
+function tooLong(text, what) {
+  const n = String(text || "").length;
+  if (n <= MAX_REQUEST_CHARS) return null;
+  return refuse(
+    `That ${what} is ${n.toLocaleString()} characters, and we can work from ` +
+    `${MAX_REQUEST_CHARS.toLocaleString()}. Say the shape of what you want ` +
+    `in a sentence or two; the AI asks for the rest.`,
+  );
+}
+
 /* Open the browser's own file picker and read what was chosen.
  *
  * Returns the names, which is what Studio's UI renders. A file too big is
@@ -831,6 +851,8 @@ const COMMANDS = {
     if (webMode() === "plan") {
       return refuse("You are in Plan mode, so nothing is built. Switch to Build in the box below to make this app.");
     }
+    const overCreate = tooLong(request, "request");
+    if (overCreate) return overCreate;
     // Nobody makes an app without an account: it is how the funded first
     // app is counted, and how the work belongs to someone. But the
     // sentence they just typed must survive the round trip -- being asked
@@ -901,6 +923,8 @@ const COMMANDS = {
    * build it came from; the service checks that build is theirs. */
   async revise_app({ path, change, attachments } = {}) {
     if (!bridge.token) return refuse("Sign in to change your app.");
+    const overChange = tooLong(change, "change");
+    if (overChange) return overChange;
     const id = jobIdOf(path);
     if (!id) return refuse("This app was not made here, so it cannot be changed here. Open it in Studio on your computer.");
     let started;
@@ -931,6 +955,8 @@ const COMMANDS = {
    * sentence. */
   async plan_request({ request, attachments } = {}) {
     if (!bridge.token) return refuse("Sign in first.");
+    const overPlan = tooLong(request, "request");
+    if (overPlan) return overPlan;
     const answer = await builder("/plan", {
       method: "POST",
       body: JSON.stringify({
@@ -1846,5 +1872,39 @@ function requireSignIn() {
   location.replace("/login/?next=studio");
 }
 requireSignIn();
+
+/* Two tabs, one account.
+ *
+ * People leave tabs open. Somebody builds in one and switches back to
+ * the other, and that tab was showing the world as it was before: no new
+ * app in the list, and a composer still offering to make the first one.
+ * With one free app that reads as the app having vanished.
+ *
+ * The money was never at risk -- the wall is counted on the hub against
+ * the account and the device, so a second tab cannot get a second free
+ * app. This is only the display, and `storage` fires in every OTHER tab
+ * whenever one of them writes, so the fix is to repaint on it.
+ *
+ * Guarded against a repaint storm: a burst of writes during one build
+ * settles into a single repaint.
+ */
+(function keepTabsInStep() {
+  if (!window.addEventListener) return;
+  let due = null;
+  window.addEventListener("storage", (event) => {
+    if (event.key !== "krate-sessions") return;
+    clearTimeout(due);
+    due = setTimeout(() => {
+      // Studio owns its own painting; ask it to redraw rather than
+      // reaching into its DOM from here.
+      if (typeof window.renderSessions === "function") {
+        try { window.renderSessions(localSessions()); } catch (e) {}
+      }
+      if (typeof window.renderShelf === "function") {
+        try { window.renderShelf(); } catch (e) {}
+      }
+    }, 250);
+  });
+})();
 
 console.info("krate: studio bridge ready (hub + builder)");
