@@ -133,7 +133,15 @@ assert.match(
   /wall\.wall = true;[\s\S]{0,200}?wall\.download = Boolean\(parsed\.download\)/,
   "the bridge flags a wall so Studio can tell it from a failure",
 );
-const caught = app.slice(app.indexOf("  } catch (err) {", app.indexOf("finishBuild(result);")));
+// Anchored inside buildNow, not on the first finishBuild in the file.
+// resumeRunningBuild (the refresh-reattach path) also finishes and fails
+// through the ordinary cards, so a search from the top of the file found
+// ITS catch block and read the order as wrong on correct code.
+const buildNowAt = app.indexOf("async function buildNow(");
+assert.ok(buildNowAt > 0, "buildNow exists");
+const caught = app.slice(
+  app.indexOf("  } catch (err) {", app.indexOf("finishBuild(result);", buildNowAt)),
+);
 const wallAt = caught.indexOf("err && err.wall");
 const failAt = caught.indexOf("failBuild(plainWords(err)");
 assert.ok(wallAt > 0, "Studio branches on the wall flag");
@@ -551,8 +559,14 @@ assert.ok(
 // The refusal must be handled BEFORE the generic failure, or the order
 // makes the branch unreachable.
 {
-  const refusalAt = app.indexOf("} else if (err && err.refusal) {");
-  const failAt = app.indexOf("failBuild(plainWords(err), request);");
+  // Both indexes taken from inside buildNow. resumeRunningBuild also calls
+  // failBuild(plainWords(err), request) -- it is the refresh-reattach path
+  // and ends on the same ordinary cards -- and it sits ABOVE buildNow, so a
+  // whole-file search found its call and read the order as wrong.
+  const from = app.indexOf("async function buildNow(");
+  assert.ok(from > 0, "buildNow exists");
+  const refusalAt = app.indexOf("} else if (err && err.refusal) {", from);
+  const failAt = app.indexOf("failBuild(plainWords(err), request);", from);
   assert.ok(refusalAt > 0 && failAt > 0 && refusalAt < failAt,
     "the refusal branch comes before the build-failure card");
 }
@@ -833,3 +847,60 @@ assert.match(app, /function isJustAGreeting\(text\)/, "a greeting is recognised"
 }
 
 console.log("ok  a greeting does not spend an app");
+
+// A refresh does not lose a build that is still running.
+//
+// `bridge.job` is memory. A reload lost it, and with it the only handle on
+// a build the service was still making. The person came back to Home with
+// an empty thread, no "making now" bar, and no way to reach the app they
+// had waited minutes for -- while it went on being built and went on
+// counting against their allowance. Measured: after a mid-build reload,
+// view=viewHome, thread=[], and the session sat in storage with no result
+// and nothing pointing at it.
+assert.match(bridge, /const RUNNING_KEY = "krate\.web\.running\.v1";/,
+  "the running build is written down");
+{
+  const watch = bridge.slice(bridge.indexOf("function watchJob("));
+  assert.match(watch.slice(0, 400), /rememberRunningJob\(jobId, sessionId, request\)/,
+    "a build records itself when it starts");
+}
+// Cleared the moment it settles, on every exit: done, failed, stopped, and
+// a poll that could not reach the service. A record left behind would make
+// the next visit chase a build that is over.
+{
+  // Counted by pairing each clear with a forget within the few lines after
+  // it, rather than demanding they be adjacent: stop_build has a comment
+  // between the two, and an adjacency regex called that correct code a
+  // missing clear. The count is what matters, not the spacing.
+  const clears = [...bridge.matchAll(/clearInterval\(bridge\.poll\);/g)];
+  assert.ok(clears.length >= 4, `expected at least 4 poll clears, found ${clears.length}`);
+  const unpaired = clears.filter((m) => {
+    const after = bridge.slice(m.index, m.index + 320);
+    return !after.includes("forgetRunningJob();");
+  });
+  assert.equal(
+    unpaired.length,
+    0,
+    `every exit from the poll must forget the running job; ${unpaired.length} `
+      + `clear the interval and leave the record behind, so the next visit `
+      + `chases a build that is over`,
+  );
+}
+// And a tab that comes back picks it up, through Studio's own build card
+// rather than a second lifecycle bolted on beside it.
+assert.match(bridge, /function pickTheBuildBackUp\(\)/, "a returning tab looks for one");
+assert.match(bridge, /window\.resumeRunningBuild\(rec\.request, again\)/,
+  "and hands it to Studio, which owns the build card");
+assert.match(app, /async function resumeRunningBuild\(request, reattach\)/,
+  "Studio can resume a build it did not start");
+{
+  const fn = app.slice(app.indexOf("async function resumeRunningBuild("));
+  const body = fn.slice(0, fn.indexOf("\n}\n"));
+  assert.match(body, /if \(state\.buildingSession\) return;/,
+    "it does not stack a second watcher on a build already being watched");
+  assert.match(body, /finishBuild\(result\)/, "it ends on the ordinary done card");
+  assert.match(body, /failBuild\(plainWords\(err\), request\)/,
+    "and on the ordinary failure card");
+}
+
+console.log("ok  a refresh does not lose a running build");

@@ -728,9 +728,51 @@ function jobIdOf(path) {
  * "engine-line" event), so feeding it those lines makes the same card
  * move the same way; the shot goes through the door the desktop's
  * "build-shot" event uses. */
+/* The build this tab is watching, written down.
+ *
+ * `bridge.job` is memory, so a refresh lost it -- and with it the only
+ * handle on a build that was still running on the service. The person came
+ * back to Home with an empty thread, no "making now" bar, and no way to
+ * reach the app they had waited for. It was still being built and still
+ * counted against their allowance; they simply could not see it.
+ *
+ * Stored per session so reopening the right one picks it back up, and
+ * cleared the moment the job settles.
+ */
+const RUNNING_KEY = "krate.web.running.v1";
+function rememberRunningJob(jobId, sessionId, request) {
+  try {
+    localStorage.setItem(RUNNING_KEY, JSON.stringify({
+      job: jobId, session: sessionId || "", request: request || "", at: Date.now(),
+    }));
+  } catch (e) {}
+}
+function forgetRunningJob() {
+  try { localStorage.removeItem(RUNNING_KEY); } catch (e) {}
+}
+function runningJob() {
+  try {
+    const raw = localStorage.getItem(RUNNING_KEY);
+    if (!raw) return null;
+    const rec = JSON.parse(raw);
+    if (!rec || !rec.job) return null;
+    // A build that cannot still be running is not worth reattaching to. The
+    // service drops a job long before this; the point is only to stop an
+    // ancient record making the page chase something that is gone.
+    if (Date.now() - Number(rec.at || 0) > 60 * 60 * 1000) {
+      forgetRunningJob();
+      return null;
+    }
+    return rec;
+  } catch (e) {
+    return null;
+  }
+}
+
 function watchJob(jobId, request, sessionId) {
   bridge.job = jobId;
   bridge.jobResult = null;
+  rememberRunningJob(jobId, sessionId, request);
   let lastLine = "";
   let lastShot = "";
   return new Promise((resolve, reject) => {
@@ -740,6 +782,7 @@ function watchJob(jobId, request, sessionId) {
         job = await builder(`/build/${jobId}`);
       } catch (err) {
         clearInterval(bridge.poll);
+        forgetRunningJob();
         return reject(err);
       }
       if (job.line && job.line !== lastLine && typeof window.onEngineLine === "function") {
@@ -752,6 +795,7 @@ function watchJob(jobId, request, sessionId) {
       }
       if (job.state === "done") {
         clearInterval(bridge.poll);
+        forgetRunningJob();
         bridge.jobResult = job.result;
         const result = {
           path: `${BUILDER}${job.result.download}`,
@@ -793,6 +837,7 @@ function watchJob(jobId, request, sessionId) {
       }
       if (job.state === "failed" || job.state === "stopped") {
         clearInterval(bridge.poll);
+        forgetRunningJob();
         return reject(new Error(job.error || "that build stopped"));
       }
     };
@@ -1071,6 +1116,10 @@ const COMMANDS = {
   async stop_build() {
     if (!bridge.job) return;
     clearInterval(bridge.poll);
+    // Somebody who stopped a build must not be offered it again on their
+    // next visit. Every other exit from the poll forgets it; this one was
+    // missed, and the test that counts them is what found it.
+    forgetRunningJob();
     await builder(`/build/${bridge.job}/stop`, { method: "POST" }).catch(() => {});
     bridge.job = null;
   },
@@ -2223,4 +2272,54 @@ console.info("krate: studio bridge ready (hub + builder)");
   btn.style.opacity = "0.72";
   const os = document.getElementById("sendWrapOs");
   if (os) os.remove();
+})();
+
+/* Pick a build back up after a refresh.
+ *
+ * The job id is now written down when a build starts, so a tab that comes
+ * back can reattach to a build still running on the service. Without this
+ * the person landed on Home with an empty thread and no way to reach the
+ * app they had waited minutes for -- while it went on being built, and went
+ * on counting against their allowance.
+ *
+ * Only reattaches when the job is genuinely still going. A job that
+ * finished while the tab was away is left alone: its result was already
+ * written into the session when it settled, so the session shows the app
+ * the ordinary way.
+ */
+(function pickTheBuildBackUp() {
+  const rec = runningJob();
+  if (!rec) return;
+  let tries = 0;
+  const wait = setInterval(async () => {
+    if (++tries > 100) { clearInterval(wait); return; }
+    if (typeof window.openSession !== "function") return;
+    clearInterval(wait);
+    let job;
+    try {
+      job = await builder(`/build/${rec.job}`);
+    } catch (e) {
+      // The service does not know it any more. Nothing to reattach to.
+      forgetRunningJob();
+      return;
+    }
+    if (!job || job.state === "done" || job.state === "error") {
+      forgetRunningJob();
+      return;
+    }
+    const session = localSessions().find((s) => s && s.id === rec.session);
+    if (session && typeof window.openSession === "function") {
+      try { window.openSession(session); } catch (e) {}
+    }
+    // Re-enter the same polling loop the build started with, so the card
+    // moves again from wherever the build has got to, and hand the promise
+    // to Studio so it puts the build card back rather than sitting on
+    // whatever stage the restored session happened to show.
+    const again = watchJob(rec.job, rec.request, rec.session);
+    if (typeof window.resumeRunningBuild === "function") {
+      window.resumeRunningBuild(rec.request, again);
+    } else {
+      again.catch(() => {});
+    }
+  }, 100);
 })();

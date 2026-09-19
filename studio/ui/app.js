@@ -2455,6 +2455,39 @@ function finishPlanningAndBuild() {
   return buildNow(enriched, p.files, false, p.agentSession || "", p.shape || "");
 }
 
+/* Put the build card back for a build that is already running.
+ *
+ * A refresh loses everything this tab knew about a build -- but not the
+ * build, which goes on being made by the service and goes on counting
+ * against the person's allowance. The browser shell writes the job down and
+ * calls this when it finds one still going.
+ *
+ * It borrows the ordinary furniture rather than a second lifecycle: the
+ * same chip, the same stage pane, the same finish. `reattach` is the
+ * promise the shell hands back, resolving with the same result shape a
+ * fresh build resolves with.
+ */
+async function resumeRunningBuild(request, reattach) {
+  if (state.buildingSession) return;   // already watching one
+  state.buildingSession = state.session;
+  state.buildSettled = false;
+  state.lastRequest = request;
+  state.startedAt = Date.now();
+  state.buildVersion = (state.session && state.session.builds ? state.session.builds : 0) + 1;
+  state.buildChip = appendLiveChip(state.buildVersion);
+  beginBuild(state.session ? state.session.title : "your app", "picking this back up\u2026");
+  say("KRATE", "Picking your build back up where it was.");
+  try {
+    const result = await reattach;
+    finishBuild(result);
+  } catch (err) {
+    failBuild(plainWords(err), request);
+  } finally {
+    state.buildingSession = null;
+    renderBuilding();
+  }
+}
+
 async function buildNow(request, files, revising, planSession, starterShape) {
   if (state.buildingSession) { invoke("dbg_log", { line: "buildNow() BAILED: buildingSession set" }).catch(()=>{}); return; }
   // The composer stays live during a build so a thought can be queued
