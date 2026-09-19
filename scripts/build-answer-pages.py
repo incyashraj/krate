@@ -191,6 +191,19 @@ ANSWER_CSS = """  <style>
       padding: 12px; text-align: left; vertical-align: top;
       border-bottom: 1px solid rgba(255,255,255,.14);
     }
+    .shipping-flow { margin: 24px 0; }
+    .shipping-flow figcaption { margin-bottom: 16px; color: #a1a1aa; font-size: 14px; }
+    .shipping-lane { padding: 20px; border: 1px solid #3f3f46; border-radius: 12px; margin-top: 12px; }
+    .shipping-lane h3 { margin: 0 0 14px; font-family: var(--sans); font-size: 16px; letter-spacing: 0; }
+    .shipping-lane ol { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: 1fr 1fr 1.35fr; gap: 12px; }
+    .shipping-lane li { padding: 12px; margin: 0; min-width: 0; background: #18181b; border-radius: 8px; font-size: 14px; }
+    .shipping-lane li span { display: block; color: #a1a1aa; font-size: 12px; margin-bottom: 6px; }
+    .shipping-lane-krate { border-color: #8b5cf6; background: rgba(139,92,246,.06); }
+    .shipping-lane-krate li { background: rgba(139,92,246,.12); }
+    @media (max-width: 540px) {
+      .shipping-lane { padding: 16px; }
+      .shipping-lane ol { grid-template-columns: 1fr; }
+    }
     @media (max-width: 760px) {
       .answer-cmd { font-size: 12.5px; padding: 12px 14px; }
       /* One per line on a phone, each full width: two pills side by side
@@ -290,12 +303,12 @@ def page_head(head, page):
   <meta property="og:title" content="{title}">
   <meta property="og:description" content="{description}">
   <meta property="og:url" content="{url}">
-  <meta property="og:image" content="https://krate.tech/og-v3.png">
+  <meta property="og:image" content="https://krate.tech/og-v4.png">
   <meta property="og:image:alt" content="Krate desktop application runtime">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="{title}">
   <meta name="twitter:description" content="{description}">
-  <meta name="twitter:image" content="https://krate.tech/og-v3.png">
+  <meta name="twitter:image" content="https://krate.tech/og-v4.png">
   <script type="application/ld+json">{schema}</script>
 {ANSWER_CSS}'''
     rendered = re.sub(r"</head\s*>", lambda _: metadata + "</head>", "".join(parser.parts), count=1, flags=re.I)
@@ -357,6 +370,7 @@ def render(page):
         <a class="pill pill-primary" href="/docs/quickstart.html">Developer quickstart</a>
         <a class="pill" href="/docs/porting.html">Evaluate your app</a>
         <a class="pill" href="/studio/">Make an app in Studio</a>
+        <a class="pill" href="https://github.com/incyashraj/krate">Explore Krate on GitHub</a>
       </div>
     </section>
     </main>
@@ -462,15 +476,31 @@ krate publish regex.krate</pre>
     },
     {
         "slug": "desktop-app-distribution.html",
-        "title": "Krate, Electron and Tauri: desktop distribution models",
-        "description": "Compare shared codebases with a shared application artifact: what Electron, Tauri and Krate distribute, runtime requirements, migration work and measurement boundaries.",
-        "h1": "One codebase is not the same as one app file",
-        "lead": "Electron, Tauri and Krate separate application code from platform details differently. The useful question is what you build, what your users install and which capabilities your app needs.",
-        "entry_actions": [("Check your project's fit", "/docs/porting.html"),
-                          ("Try Krate", "/docs/quickstart.html")],
+        "title": "Krate vs Electron vs Tauri: desktop app distribution",
+        "description": "Electron and Tauri share code across platforms. Krate shares the app file. Compare desktop packaging, runtime requirements and a tested Mac, Windows and Linux example.",
+        "h1": "Krate vs Electron vs Tauri: what do you ship?",
+        "lead": "Electron and Tauri let you share a codebase and ship platform-specific applications. Krate lets you ship one .krate file that runs on Mac, Windows and Linux through native Krate runtimes. The difference is the file you hand to your users.",
+        "entry_actions": [("Try the same-file example", "/docs/quickstart.html#try-the-chart-sample"),
+                          ("Check your project's fit", "/docs/porting.html")],
         "sections": [
+            ("One app, two shipping workflows", """<p>When you release an update, what needs to reach each user? In the usual packaged Electron or Tauri workflow, you distribute the build for their platform. With Krate, you distribute the same application artifact to all three.</p>
+<figure class="shipping-flow">
+<figcaption>Typical desktop packaging, compared with Krate's shared-runtime model. Read each row from build to delivery.</figcaption>
+<div class="shipping-lane"><h3>Electron / Tauri</h3><ol>
+<li><span>1. Develop</span>Shared application code</li>
+<li><span>2. Package</span>Platform-specific applications</li>
+<li><span>3. Deliver</span>macOS package<br>Windows package<br>Linux package</li>
+</ol></div>
+<div class="shipping-lane shipping-lane-krate"><h3>Krate</h3><ol>
+<li><span>1. Develop</span>App using Krate's interfaces</li>
+<li><span>2. Package</span>One <code>app.krate</code> file</li>
+<li><span>3. Deliver</span>The same file to Mac, Windows and Linux users</li>
+</ol></div>
+</figure>
+<p>Krate users install the native runtime for their system once, then use it to open compatible .krate apps. The runtime handles the platform-specific implementation. The application file stays the same.</p>
+<p>See Electron's <a href="https://www.electronjs.org/docs/latest/tutorial/application-distribution">application packaging</a> and Tauri's <a href="https://tauri.app/distribute/">distribution formats</a>. Electron's <code>app.asar</code> can package application source, but it is delivered inside a platform-specific Electron distribution; it is not a standalone cross-OS executable.</p>"""),
             ("Compare the distribution boundary", """<div class="answer-table-wrap" role="region" aria-label="Distribution comparison" tabindex="0"><table class="answer-table">
-<caption>Desktop distribution models, reviewed 19 September 2026</caption>
+<caption>Desktop distribution models, reviewed 20 September 2026</caption>
 <thead><tr><th scope="col">Question</th><th scope="col">Electron</th><th scope="col">Tauri</th><th scope="col">Krate</th></tr></thead>
 <tbody>
 <tr><th scope="row">Application artifact</th><td>Platform-specific packaged application.</td><td>Platform-specific application bundle or installer.</td><td>One .krate application bundle for compatible runtimes.</td></tr>
@@ -479,14 +509,15 @@ krate publish regex.krate</pre>
 <tr><th scope="row">Existing app migration</th><td>Fits browser/Node-based applications.</td><td>Fits web UI with Rust/native integration.</td><td>Port logic and adapt UI/host dependencies to supported Krate APIs.</td></tr>
 </tbody></table></div>
 <p>Electron's <a href="https://www.electronjs.org/docs/latest/tutorial/distribution-overview">distribution guide</a> covers packaging, signing, publishing and updates; its <a href="https://www.electronjs.org/docs/latest/tutorial/process-model">process model</a> explains Chromium and Node. Tauri documents <a href="https://tauri.app/distribute/">platform-specific distribution</a> and its <a href="https://tauri.app/concept/architecture/">WebView/Rust architecture</a>. Tauri does not bundle Chromium like Electron.</p>"""),
-            ("What Krate changes", """<p>With Krate, the developer builds a component against Krate's interfaces and packages the application once. The recipient's native runtime supplies the platform-specific implementation. The same application bytes can be copied between supported desktop systems; the runtime binary itself differs.</p>
-<p>This trades per-application platform packaging for dependence on a shared runtime and its API coverage. Runtime delivery, updates, OS trust checks and compatibility still need maintenance. A shared artifact also does not eliminate cross-platform behavior testing.</p>"""),
+            ("Can I send exactly the same file to all three systems?", """<p>Yes, with Krate: build for Krate's interfaces and send the same .krate file to users with compatible Mac, Windows or Linux runtimes. There is no separate application build per OS. You still test the app's behavior on the systems you support.</p>
+<p>Try <a href="/docs/quickstart.html#try-the-chart-sample">the downloadable Chart example</a>. Its <a href="/portable-desktop-app-format.html#try-one-file-tested-on-all-three-systems">source, full-file checksum and three-OS test evidence</a> let you check the claim yourself. No Rust toolchain or AI account is needed to run the file.</p>"""),
             ("How to decide for your project", """<p>If your application depends on a browser DOM or Node ecosystem, account for that investment before moving away from Electron. If you want a web UI plus custom Rust/native integrations, examine Tauri's APIs and deployment requirements. Neither choice means rewriting the entire application independently for every OS.</p>
 <p>Evaluate Krate when distributing the same application file matters and your required features map to its interfaces. Start with <code>krate port ./my-project</code>, then validate the findings against the <a href="/docs/limits.html">current capability limits</a>. A scan is evidence for planning, not proof the port will preserve every feature.</p>
 <p>For a specific app, compare a representative end-to-end task first. If an essential OS integration is missing, stay with a suitable platform or contribute that capability before migrating. See the <a href="/docs/porting.html">porting checklist</a>.</p>"""),
-            ("Compare costs at the same boundary", """<p>Do not compare a compressed component with another product's whole installed application and call the ratio a universal win. Record the full download, installed footprint, runtime requirements and additional cost of the next app separately.</p>
+            ("Compare costs at the same boundary", """<p>With Krate, the runtime is installed once and shared by compatible apps. Measure the first installation as runtime plus app; measure each additional app separately. For every option, record the complete download, installed footprint and app data.</p>
 <p>For performance, hold the task and inputs constant, record versions and hardware, distinguish cold/warm startup and count all relevant processes. Native dependencies, renderer work and application design can dominate. The <a href="/reports/">Krate reports</a> describe particular workloads; they are not benchmarks of all Electron or Tauri applications.</p>"""),
-            ("Try the model before choosing it", """<p>Use the <a href="/docs/quickstart.html">quickstart</a> to open an app, then follow the <a href="/portable-desktop-app-format.html">same-artifact verification procedure</a> across your target systems. Build a representative feature with real data, not just an empty window. Record missing APIs, behavioral differences and deployment friction alongside the benefits.</p>"""),
+            ("What happens when the app changes?", """<p>Build the next .krate file and distribute it to your users. They can open that file with a compatible runtime; using the format does not require a hosted app store. Updates to the native runtime are separate from updates to your app.</p>
+<p>Compatibility, user-data migration and testing remain part of releasing software. Krate changes the artifact you distribute, not those responsibilities. Start with a representative feature and real data, then use the <a href="/docs/porting.html">porting checklist</a> to work through the rest of your application.</p>"""),
         ],
     },
 ]
@@ -592,6 +623,26 @@ class MetadataTests(unittest.TestCase):
         page = dict(PAGES[0], sections=[("Same title", "<p>One</p>"), ("Same title!", "<p>Two</p>")])
         with self.assertRaisesRegex(ValueError, "Section anchors must be unique"):
             render(page)
+
+    def test_distribution_comparison_proves_the_shipping_difference(self):
+        page = next(p for p in PAGES if p["slug"] == "desktop-app-distribution.html")
+        result = render(page)
+        self.assertIn("Krate vs Electron vs Tauri", page["title"])
+        self.assertEqual(result.count('class="shipping-lane'), 2)
+        self.assertIn("typical desktop packaging", result.lower())
+        self.assertIn("app.asar", result)
+        self.assertIn("not a standalone cross-OS executable", result)
+        self.assertIn('href="https://www.electronjs.org/docs/latest/tutorial/application-distribution"', result)
+        self.assertIn('href="https://tauri.app/distribute/"', result)
+        self.assertIn('href="/portable-desktop-app-format.html#try-one-file-tested-on-all-three-systems"', result)
+        self.assertIn("runtime is installed once", result)
+        self.assertIn("runtime plus app", result)
+        self.assertIn("You still test the app", result)
+
+    def test_github_discovery_action_remains_visible_without_script(self):
+        for page in PAGES:
+            result = render(page)
+            self.assertIn('href="https://github.com/incyashraj/krate">Explore Krate on GitHub</a>', result)
 
     def test_article_shell_defines_its_own_layout_and_accessible_controls(self):
         # These class names do not exist in the homepage stylesheet. A

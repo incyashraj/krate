@@ -40,8 +40,8 @@ The example builds a checklist app that saves its items to a local file.
 
 ## Create the app
 
-One command authors the app, builds it, checks it, packages it, and proves its
-permission wall before writing the file:
+One command authors the app, builds it, checks it, packages it, and tests
+permission allow/deny cases before writing the file:
 
 ```bash
 krate create "Make a checklist app that saves locally" \
@@ -97,7 +97,8 @@ Krate hands the request to the agent, which writes the app; then Krate builds
 it, checks that it imports only Krate's capabilities, packages it, and runs the
 same allow/deny verification. If the agent reaches for anything outside those
 capabilities, `krate create` stops before packaging and tells you what it tried
-to import -- a broken app is caught, not shipped.
+to import. These checks do not test every app interaction; use the finished
+app and verify its behavior before sharing it.
 
 #### Wiring a different agent
 
@@ -123,8 +124,9 @@ path.
 ## Share it
 
 `checklist.krate` is a single file. Send it however you send any file -- a
-message, an email attachment, a shared drive. The person receiving it does not
-need to trust you or read any code.
+message, an email attachment, a shared drive. The recipient can inspect its
+requested permissions before running it. Share apps from sources you trust;
+permission review does not establish that an app is harmless.
 
 ## Open it (on the other side)
 
@@ -146,8 +148,8 @@ Then, step by step:
 
 1. **Double-click `checklist.krate`.** Before anything runs, Krate shows a
    window listing exactly what the app is asking for -- a window, and read/write
-   access to its own `checklist` folder. Nothing else on the machine is
-   reachable.
+   access to its own `checklist` folder. Review those requests before granting
+   them; approved access can still be misused within its scope.
 2. **Review and allow.** The requested access is right there to read. Allow it,
    and the checklist window opens.
 3. **Use it.** Type a new item into the field and click **Add item** (or press
@@ -178,6 +180,7 @@ grant -- is also checked headlessly by `scripts/checklist-roundtrip.sh`.
 - It was written, built, checked, and packaged into one `.krate` -- and its
   permission wall was verified before the file existed.
 - You sent that one file to someone.
-- They opened it, saw exactly what it could touch, allowed it, and used it.
+- They opened it, reviewed its requested access, allowed it, and used it.
 
-The same file behaves identically on macOS, Linux, and Windows.
+The same application file opens through compatible native Krate runtimes on
+macOS, Linux and Windows. Test the app on each system you intend to support.
