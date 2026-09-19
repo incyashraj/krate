@@ -1073,15 +1073,26 @@ function settleChipOk(el, version, sizeLabel, minsLabel, app) {
   el.className = "msg krate vok";
   el.innerHTML = `<span class="who">KRATE</span><span class="vchip"><b>v${version}</b> built <span class="vm">${sizeLabel}${minsLabel}</span></span>`;
   const chip = el.querySelector(".vchip");
+  // THIS version's file, captured as the chip settles.
+  //
+  // Both buttons used to call openApp and openSendSheet with no argument,
+  // which read `state.session.result` -- the LATEST build. Every version's
+  // Open handed over the newest app, so pressing Open on v1 after three
+  // changes gave v3, under the same filename, and nothing said otherwise.
+  // The session keeps one result and overwrites it, so the version is only
+  // knowable here, at the moment it is still the current one.
+  const mine = app && app.result && app.result.path
+    ? { path: app.result.path, name: app.result.name, size: app.result.size }
+    : null;
   const open = document.createElement("button");
   open.className = "vact";
   open.textContent = "Open";
-  open.addEventListener("click", openApp);
+  open.addEventListener("click", () => openApp(mine, version));
   chip.appendChild(open);
   const share = document.createElement("button");
   share.className = "vact vg";
   share.textContent = "Share";
-  share.addEventListener("click", openSendSheet);
+  share.addEventListener("click", () => openSendSheet(mine, version));
   chip.appendChild(share);
 }
 
@@ -3977,11 +3988,16 @@ function currentApp() {
   return r && r.path ? r : null;
 }
 
-async function openApp() {
-  const app = currentApp();
+/* Open a specific version, or the current one when nothing is named.
+ *
+ * `which` is only trusted when it carries a path. These functions are also
+ * bound directly as click handlers, where the first argument is a MouseEvent
+ * -- taking that as an app would open nothing and say nothing. */
+async function openApp(which, version) {
+  const app = (which && which.path) ? which : currentApp();
   if (!app) return;
   try {
-    await invoke("open_app", { path: app.path });
+    await invoke("open_app", { path: app.path, version });
   } catch (err) {
     showActionError(err);
   }
@@ -4023,17 +4039,31 @@ $("shareCopyBtn").addEventListener("click", async () => {
    path. */
 const pubState = { shotPath: null, iconPath: null };
 
-function openSendSheet() {
-  const app = currentApp();
+function openSendSheet(which, version) {
+  // The version this sheet is about, so every button inside it acts on the
+  // same one. Without this the sheet opened from v1's chip and then shared
+  // whatever the newest build was, because each button re-read the session.
+  state.sharing = (which && which.path) ? which : null;
+  const app = state.sharing || currentApp();
   if (!app) return;
   $("sendCardDone").classList.add("hidden");
   $("sendNote").textContent = "";
   $("sendCardBtn").disabled = false;
+  // Say which version this is when it is not the newest, so nobody sends an
+  // old build believing it is the one on screen.
+  const note = $("sendNote");
+  const newest = state.session && state.session.builds;
+  if (note && version && newest && version < newest) {
+    note.textContent = `Sharing v${version}. The newest is v${newest}.`;
+  }
   $("sendSheet").classList.remove("hidden");
 }
 
 async function sendCard() {
-  const app = currentApp();
+  // The version the sheet was opened for, when it was opened from a
+  // version chip. Re-reading currentApp() here sent the NEWEST build from
+  // a sheet whose chip said v1.
+  const app = state.sharing || currentApp();
   if (!app) return;
   $("sendCardBtn").disabled = true;
   $("sendNote").textContent = "Photographing your app\u2026 a few seconds.";
@@ -4956,8 +4986,13 @@ async function stopBuild() {
 }
 
 $("stopBtn").addEventListener("click", stopBuild);
-$("openBtn").addEventListener("click", openApp);
-$("shareBtn").addEventListener("click", openSendSheet);
+$("openBtn").addEventListener("click", () => openApp());
+// Called with nothing on purpose: Ship it on the done card shares the app
+// that card is showing, which is the newest. Binding openSendSheet directly
+// would pass the MouseEvent as the version to share -- harmless in browsers
+// where an event has no `path`, and not something to depend on, since older
+// Chrome gave events exactly that property.
+$("shareBtn").addEventListener("click", () => openSendSheet());
 $("sendCardBtn").addEventListener("click", sendCard);
 $("sendLinkBtn").addEventListener("click", () => {
   $("sendSheet").classList.add("hidden");
@@ -4996,7 +5031,7 @@ document.querySelectorAll("#sendWrapOs [data-wrap]").forEach((b) => {
   });
 });
 $("sendRawBtn").addEventListener("click", async () => {
-  const app = currentApp();
+  const app = state.sharing || currentApp();
   if (!app) return;
   try { await invoke("reveal", { path: app.path }); } catch (e) {}
 });

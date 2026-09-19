@@ -702,3 +702,43 @@ console.log(`ok  every top-level listener has an element to bind to`);
 }
 
 console.log("ok  a dropped connection is not blamed on the app");
+
+// Open on a version chip gives THAT version, under a name that says which.
+//
+// Every chip's Open and Share called openApp/openSendSheet with no
+// argument, so both read `state.session.result` -- the LATEST build. After
+// three changes, pressing Open on v1 downloaded v3, under the same filename
+// as v1 and v2, which the browser silently renames to (1) and (2). A person
+// with three copies in their downloads folder had no way to tell which was
+// which, and the one they double-clicked was a coin toss.
+//
+// The session keeps one result and overwrites it each build, so the version
+// is only knowable at the moment the chip settles. It captures it there.
+{
+  const settle = app.slice(app.indexOf("function settleChipOk("));
+  const body = settle.slice(0, settle.indexOf("\nfunction settleChipBad"));
+  assert.match(body, /const mine = app && app\.result && app\.result\.path/,
+    "the chip captures its own version's file as it settles");
+  assert.match(body, /openApp\(mine, version\)/, "Open acts on that version");
+  assert.match(body, /openSendSheet\(mine, version\)/, "and so does Share");
+  // The `app` argument was passed in and never read before this. If it goes
+  // unused again the capture is gone and both buttons silently follow the
+  // newest build, which is exactly how this shipped.
+  assert.ok(body.includes("app.result.path"),
+    "the session passed to the chip is actually read");
+}
+// Every button inside the share sheet acts on the version the sheet was
+// opened for, not on whatever is newest when the button is pressed.
+assert.match(app, /state\.sharing = \(which && which\.path\) \? which : null;/,
+  "the share sheet pins the version it was opened for");
+for (const fn of ["async function sendCard()", '$("sendRawBtn").addEventListener']) {
+  const at = app.indexOf(fn);
+  assert.ok(at > 0, `${fn} exists`);
+  assert.match(app.slice(at, at + 400), /state\.sharing \|\| currentApp\(\)/,
+    `${fn} shares the pinned version, not the newest`);
+}
+// And the file says which version it is.
+assert.match(bridge, /\$\{stem\} v\$\{version\}\.krate/,
+  "an older version downloads under a name that names it");
+
+console.log("ok  a version chip opens its own version");

@@ -478,7 +478,7 @@ function askFirstRun(app) {
   sheet.classList.remove("hidden");
 }
 
-function currentWebApp(path) {
+function currentWebApp(path, version) {
   let url = String(path || (bridge.jobResult && `${BUILDER}${bridge.jobResult.download}`) || "");
   let name = (bridge.jobResult && bridge.jobResult.name) ? `${bridge.jobResult.name}.krate` : "";
   if (!/^https?:/.test(url)) {
@@ -492,7 +492,23 @@ function currentWebApp(path) {
     url = String(saved.result.path);
     name = name || String(saved.result.name || "");
   }
-  return { url, name: name || "app.krate" };
+  // An older version gets the version in its filename.
+  //
+  // Downloading v1, v2 and v3 gave three files called "Shopping list.krate",
+  // which the browser silently renamed to (1) and (2) -- so a person with
+  // three copies in their downloads folder had no way to tell which was
+  // which, and the one they double-clicked was a coin toss.
+  //
+  // Only when a version is named AND it is not the one the page is showing:
+  // the common case is one app with one name, and putting "v3" on that
+  // would be noise.
+  const base = name || "app.krate";
+  if (version && version > 1) {
+    const dot = base.lastIndexOf(".krate");
+    const stem = dot > 0 ? base.slice(0, dot) : base;
+    return { url, name: `${stem} v${version}.krate` };
+  }
+  return { url, name: base };
 }
 
 /* Publish an app the build service holds: the same door `krate publish`
@@ -1166,8 +1182,8 @@ const COMMANDS = {
    * A tab cannot tell whether this computer has Krate, so it does not
    * guess. It asks once, remembers the answer, and after that Run it goes
    * straight to the download. */
-  async open_app({ path } = {}) {
-    const app = currentWebApp(path);
+  async open_app({ path, version } = {}) {
+    const app = currentWebApp(path, version);
     if (!app) return refuse("A browser cannot open the app itself. Download the file. It opens on your Mac, Windows or Linux.");
     if (!hasKrateAlready()) {
       askFirstRun(app);
