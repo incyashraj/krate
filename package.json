@@ -2,5 +2,10 @@
   "devDependencies": {
     "@bytecodealliance/jco": "^1.19.0",
     "typescript": "^6.0.3"
-  }
+  },
+  "comment": "jco is a dev-only tool: scripts/build-phase2-language-variant-fixtures.sh uses it to componentize the TypeScript language-variant fixtures. Nothing shipped imports it.",
+  "overrides": {
+    "@bytecodealliance/weval": "^0.5.0"
+  },
+  "overridesComment": "weval 0.4.1 pulls npm decompress 4.2.1, which carries GHSA-mp2f-45pm-3cg9 (critical), GHSA-h39j-r5qq-r9mm and GHSA-jwp9-9v96-94mx -- all three are archive-extraction escapes (zip slip, arbitrary hardlink, write outside target). decompress is unmaintained and has no patched release, so the fix is to stop depending on it: weval 0.5.0 replaced decompress with tar + fflate + @napi-rs/lzma. componentize-js still pins weval ^0.4.1 upstream, so semver alone cannot reach 0.5.0 and this override is what does it. Drop the override once componentize-js widens that range."
 }
