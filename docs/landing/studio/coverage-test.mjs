@@ -490,3 +490,27 @@ assert.match(wire.slice(0, 2000), /thisSystem\(\) !== "phone"/,
 assert.match(bridge, /function thisSystem\(\)/, "which computer this is");
 
 console.log("ok  a first-time person is asked, not dead-ended");
+
+// A file attached in a tab reaches the AI on every path that asks it for
+// something, not just some of them.
+//
+// There are three: the first build, the plan before a build, and a change
+// to an app that already exists. A person who attaches a screenshot and
+// then presses Build has attached it to the build; if only the planning
+// path carried it, the file would be silently dropped for anyone who
+// never used Plan -- and nothing would say so.
+for (const cmd of ["create_app", "plan_request", "revise_app"]) {
+  const at = bridge.indexOf(`async ${cmd}(`);
+  assert.ok(at > 0, `${cmd} exists`);
+  // To the end of the command, not a fixed window. create_app carries the
+  // attachments 55 lines in, and a 1200-character slice missed it and read
+  // as a missing feature.
+  const next = bridge.indexOf("\n  async ", at + 10);
+  const body = bridge.slice(at, next > 0 ? next : at + 6000);
+  assert.match(body, /attachments: attachmentsFor\(attachments\)/,
+    `${cmd} sends the files the person attached`);
+}
+assert.match(bridge, /const MAX_ATTACH_BYTES = 10 \* 1024 \* 1024;/,
+  "and there is a size the page refuses before the upload starts");
+
+console.log("ok  attachments reach the AI on all three paths");
