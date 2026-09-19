@@ -668,8 +668,31 @@ impl Runtime {
         output: OutputMode,
         world: RuntimeWorld,
     ) -> Result<RunOutcome> {
+        // KRATE_STAGE_TIMES splits the launch into its parts.
+        //
+        // A Krate run measured 99.6ms end-to-end against native hexyl's 4.9ms
+        // on a 64-byte input -- about 95ms before any of the app's own work.
+        // That number is the WHOLE gap: bundle open, validation, compilation,
+        // instantiation and host wiring are all inside it, and nobody had
+        // separated them, so "it is the compiler" was a guess (K-421).
+        //
+        // One number cannot be optimised. This prints the two the runtime
+        // owns, so the next person starts from a measurement.
+        let timed = std::env::var_os("KRATE_STAGE_TIMES").is_some();
+        let compile_started = std::time::Instant::now();
         let component = self.load_component(bytes)?;
-        self.run_component_with_output(&component, config, output, world)
+        let compile_ms = compile_started.elapsed().as_secs_f64() * 1000.0;
+        let run_started = std::time::Instant::now();
+        let outcome = self.run_component_with_output(&component, config, output, world);
+        if timed {
+            eprintln!(
+                "krate-stage: compile {:.1}ms  instantiate+run {:.1}ms  ({} bytes of component)",
+                compile_ms,
+                run_started.elapsed().as_secs_f64() * 1000.0,
+                bytes.len(),
+            );
+        }
+        outcome
     }
 
     fn run_component_with_output(
