@@ -663,6 +663,50 @@ class MetadataTests(unittest.TestCase):
                 self.assertIn('tabindex="0"', opening)
                 self.assertIn('aria-label="Command example"', opening)
 
+    def test_scroll_revealed_selectors_are_readable_without_javascript(self):
+        # Anything that starts at opacity 0 and waits for the scroll observer
+        # is invisible to a reader with JavaScript off and to one who asked
+        # for reduced motion. Both fallbacks must therefore name every such
+        # selector. K-726 shipped with .works .tag missing from the noscript
+        # list only -- the heading beside it read correctly, so the gap was
+        # easy to miss by eye. Measured at opacity 0 in a real browser.
+        source = LANDING.read_text()
+
+        def rules(block):
+            # Strip CSS comments first. A prose comment that merely mentions a
+            # selector must never satisfy this test -- checking the raw block
+            # let a sabotage run pass, because the explanatory comment above
+            # the rule contained the very selector the rule had lost.
+            block = re.sub(r"/\*.*?\*/", "", block, flags=re.S)
+            found = {}
+            for selectors, body in re.findall(r"([^{}]+)\{([^{}]*)\}", block):
+                names = [s.strip() for s in selectors.split(",") if s.strip()]
+                for name in names:
+                    found.setdefault(name, []).append(body)
+            return found
+
+        noscript = re.search(r"<noscript><style>(.*?)</style></noscript>", source, re.S)
+        self.assertIsNotNone(noscript, "the homepage must keep a noscript fallback")
+        reduced = re.search(
+            r"@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{(.*?)\n\}", source, re.S)
+        self.assertIsNotNone(reduced, "the homepage must keep a reduced-motion fallback")
+
+        for label, block in (("without JavaScript", noscript.group(1)),
+                             ("under reduced motion", reduced.group(1))):
+            found = rules(block)
+            for selector in (".works h2", ".works .copy", ".works .tag",
+                             ".ctaCard", ".ctaText h2", ".ctaText p", ".ctaActs"):
+                bodies = found.get(selector)
+                self.assertIsNotNone(
+                    bodies, f"{selector} has no rule, so it stays hidden {label}")
+                joined = " ".join(bodies)
+                self.assertIn("opacity: 1", joined,
+                              f"{selector} keeps opacity 0 {label}")
+            # .ctaText h2 is clipped to zero width as well as faded, so
+            # clearing opacity alone still leaves it unreadable.
+            self.assertIn("clip-path: none", " ".join(found[".ctaText h2"]),
+                          f".ctaText h2 stays clipped to zero width {label}")
+
     def test_metadata_is_escaped(self):
         page = dict(PAGES[0], title='A "quoted" <title> & more', description='Keep </script> as text')
         result = page_head("<html><head></head>", page)
