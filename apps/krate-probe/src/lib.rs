@@ -708,7 +708,7 @@ fn stack_root() -> types::WidgetNode {
         role: None,
         // No fixed size, and grow, so the canvas fills whatever window the
         // host gives it and the design size handles the scaling (K-003).
-        style: types::Style { width: None, height: None, grow: 1.0, padding: 0.0 },
+        style: types::Style { width: None, height: None, grow: 1.0, padding: 0.0, text: None, place: None, box_: None },
         checked: None,
         value: None,
         selected: None,
@@ -723,7 +723,7 @@ fn canvas_node() -> types::WidgetNode {
         kind: types::WidgetKind::Canvas,
         label: None,
         role: Some(pure_string("canvas")),
-        style: types::Style { width: None, height: None, grow: 1.0, padding: 0.0 },
+        style: types::Style { width: None, height: None, grow: 1.0, padding: 0.0, text: None, place: None, box_: None },
         checked: None,
         value: None,
         selected: None,

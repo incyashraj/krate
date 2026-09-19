@@ -557,7 +557,7 @@ fn stack_root() -> types::WidgetNode {
         // No fixed size, and grow so the canvas fills the window. Pinning
         // these to WIDTH/HEIGHT froze the canvas at its design size no matter
         // how the window was resized (K-003).
-        style: types::Style { width: None, height: None, grow: 1.0, padding: 0.0 },
+        style: types::Style { width: None, height: None, grow: 1.0, padding: 0.0, text: None, place: None, box_: None },
         checked: None,
         value: None,
         selected: None,
@@ -572,7 +572,7 @@ fn canvas_node() -> types::WidgetNode {
         kind: types::WidgetKind::Canvas,
         label: None,
         role: Some(pure_string("canvas")),
-        style: types::Style { width: None, height: None, grow: 1.0, padding: 0.0 },
+        style: types::Style { width: None, height: None, grow: 1.0, padding: 0.0, text: None, place: None, box_: None },
         checked: None,
         value: None,
         selected: None,

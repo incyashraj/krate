@@ -510,7 +510,7 @@ fn stack_root() -> types::WidgetNode {
         // these to WIDTH/HEIGHT meant the canvas stayed 1080x700 no matter
         // how the window was resized -- the layout engine was obeying the
         // app, and the app was asking for the wrong thing (K-003).
-        style: types::Style { width: None, height: None, grow: 1.0, padding: 0.0 },
+        style: types::Style { width: None, height: None, grow: 1.0, padding: 0.0, text: None, place: None, box_: None },
         checked: None,
         value: None,
         selected: None,
@@ -529,7 +529,7 @@ fn canvas_node() -> types::WidgetNode {
         // these to WIDTH/HEIGHT meant the canvas stayed 1080x700 no matter
         // how the window was resized -- the layout engine was obeying the
         // app, and the app was asking for the wrong thing (K-003).
-        style: types::Style { width: None, height: None, grow: 1.0, padding: 0.0 },
+        style: types::Style { width: None, height: None, grow: 1.0, padding: 0.0, text: None, place: None, box_: None },
         checked: None,
         value: None,
         selected: None,

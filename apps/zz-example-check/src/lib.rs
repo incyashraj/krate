@@ -181,7 +181,7 @@ fn node(id: u64, parent: Option<u64>, kind: types::WidgetKind) -> types::WidgetN
         kind,
         label: None,
         role: None,
-        style: types::Style { width: None, height: None, grow: 0.0, padding: 0.0 },
+        style: types::Style { width: None, height: None, grow: 0.0, padding: 0.0, text: None, place: None, box_: None },
         checked: None,
         value: None,
         selected: None,

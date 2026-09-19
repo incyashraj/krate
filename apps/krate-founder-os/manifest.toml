@@ -1,0 +1,26 @@
+[app]
+id = "dev.krate.founder-os"
+name = "Krate Founder OS"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_founder_os.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the Founder OS board"
+required = true
+
+[[capabilities]]
+cap = "store.kv"
+rationale = "Save task status changes and tasks you add"
+required = true
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Report task counts during automated checks"
+required = false
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read the quick-run flag used by automated checks"
+required = false
