@@ -1908,3 +1908,103 @@ requireSignIn();
 })();
 
 console.info("krate: studio bridge ready (hub + builder)");
+
+/* The browser's own back button, and the phone's back swipe.
+ *
+ * Studio swaps screens by class: showView hides one and shows another, and
+ * nothing was ever written to the browser's history. So back from a session
+ * did not go up one screen -- it LEFT Studio, because the previous history
+ * entry was whatever page the person was on before they arrived. On a phone
+ * that is the edge swipe, which people do constantly and without thinking.
+ *
+ * Fixed here rather than in app.js because it is a browser fact: the desktop
+ * shell has no browser back button and no history to keep in step.
+ *
+ * The screen is kept in history.state rather than the URL. A ?view= would be
+ * shareable, which sounds better until somebody sends a friend a link to a
+ * session that only exists in their browser.
+ */
+(function keepBrowserBackHonest() {
+  if (!window.history || !window.history.pushState) return;
+  if (typeof window.showView !== "function") {
+    // app.js has not booted yet. It declares showView at the top level of a
+    // classic script, so it lands on window -- wait for it rather than
+    // guessing at load order.
+    let tries = 0;
+    const wait = setInterval(() => {
+      if (typeof window.showView === "function" || ++tries > 200) {
+        clearInterval(wait);
+        if (typeof window.showView === "function") keepBrowserBackHonest();
+      }
+    }, 50);
+    return;
+  }
+
+  const real = window.showView;
+  // Where back goes from each screen. A screen missing from this map is a
+  // screen back should leave alone.
+  const UP = {
+    session: "home",
+    apps: "home",
+    cloud: "home",
+    appDetail: "cloud",
+  };
+  // The gate and onboarding are not places to go back INTO: a person who has
+  // signed in should not land on the sign-in screen by pressing back.
+  const NO_ENTRY = new Set(["gate", "onboard"]);
+
+  let current = null;
+  let restoring = false;
+
+  window.showView = function (name) {
+    real(name);
+    if (restoring) return;
+    if (name === current) return;
+    current = name;
+    try {
+      if (NO_ENTRY.has(name)) {
+        history.replaceState({ krateView: name }, "");
+      } else {
+        history.pushState({ krateView: name }, "");
+      }
+    } catch (e) {
+      // A history that refuses to be written is not worth breaking the
+      // screen change over.
+    }
+  };
+
+  window.addEventListener("popstate", (event) => {
+    const want = event.state && event.state.krateView;
+    if (!want) {
+      // Popped past Studio's own entries: send them to the screen back
+      // would have gone to, rather than letting the page sit on whatever
+      // was showing. Leaving Studio needs one more press than that.
+      const up = UP[current];
+      if (!up) return;
+      restoring = true;
+      try { real(up); current = up; } finally { restoring = false; }
+      try { history.replaceState({ krateView: up }, ""); } catch (e) {}
+      return;
+    }
+    restoring = true;
+    try { real(want); current = want; } finally { restoring = false; }
+  });
+
+  // Whatever is showing when this runs is the first entry, so the first
+  // back press has somewhere to land.
+  try {
+    const showing = ["home", "session", "apps", "cloud", "appDetail", "gate", "onboard"]
+      .find((n) => {
+        const el = document.getElementById({
+          home: "viewHome", session: "viewSession", apps: "viewApps",
+          cloud: "viewCloud", appDetail: "viewApp", gate: "viewGate",
+          onboard: "viewOnboard",
+        }[n]);
+        return el && !el.classList.contains("hidden");
+      });
+    if (showing) {
+      current = showing;
+      history.replaceState({ krateView: showing }, "");
+    }
+  } catch (e) {}
+})();

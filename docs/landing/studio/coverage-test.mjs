@@ -404,3 +404,28 @@ assert.ok(!/box\.disabled = true;/.test(begin.slice(0, 1100)),
   "beginBuild never locks the box it tells people to type in");
 
 console.log("ok  the composer is open while a build runs");
+
+// The browser's back button goes up one screen, not out of Studio.
+//
+// Studio swaps screens by class and wrote nothing to history, so back from
+// a session did not go up a level -- it LEFT, because the previous entry
+// was whatever page the person was on before arriving. On a phone that is
+// the edge swipe, which people do constantly and without thinking.
+//
+// It belongs in the bridge: the desktop shell has no browser back button.
+assert.match(bridge, /function keepBrowserBackHonest\(\)/,
+  "the browser's back button is handled");
+const back = bridge.slice(bridge.indexOf("function keepBrowserBackHonest()"));
+assert.match(back.slice(0, 3000), /history\.pushState\(\{ krateView: name \}/,
+  "each screen change writes an entry");
+assert.match(back.slice(0, 3500), /addEventListener\("popstate"/,
+  "and back is listened for");
+// Not in the URL. A ?view= would be shareable, which sounds better until
+// somebody sends a friend a link to a session only their browser has.
+assert.ok(!/location\.search|location\.hash\s*=/.test(back.slice(0, 3500)),
+  "the screen rides in history.state, not in a shareable URL");
+// Back must not land on the sign-in screen for somebody already signed in.
+assert.match(back.slice(0, 3000), /NO_ENTRY = new Set\(\["gate", "onboard"\]\)/,
+  "the gate and onboarding are not places back can return into");
+
+console.log("ok  browser back goes up one screen");
