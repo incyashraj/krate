@@ -1340,13 +1340,18 @@ picture source { display: none; }
   }
 </style>
 <noscript><style>
+  /* .works .tag belongs in both lists below. The three chips start at
+     opacity 0 and are cleared by the scroll observer, so without this they
+     stay invisible for a reader with JavaScript off -- measured at opacity 0
+     while the heading beside them read correctly. The reduced-motion block
+     already covers them; this list had simply left them out. */
   .brandbar, .heroContent h1, .heroSub, .heroCtas, .works h2, .works .copy,
-  .how h2, .how .lead, .step, .price h2, .price .lead, .plan, .ctaCard,
-  .ctaText h2, .ctaText p, .ctaActs { opacity: 1 !important; filter: none !important; }
+  .works .tag, .how h2, .how .lead, .step, .price h2, .price .lead, .plan,
+  .ctaCard, .ctaText h2, .ctaText p, .ctaActs { opacity: 1 !important; filter: none !important; }
   .brandbar { transform: translateX(-50%); }
   .heroContent h1, .heroSub, .heroCtas, .step, .plan { transform: none !important; }
-  .works h2, .works .copy, .ctaCard, .ctaText h2, .ctaText p, .ctaActs {
-    transform: none !important; clip-path: none !important;
+  .works h2, .works .copy, .works .tag, .ctaCard, .ctaText h2, .ctaText p, .ctaActs {
+    transform: none !important; clip-path: none !important; scale: 1 !important;
   }
   .heroTrack { height: auto; min-height: 680px; }
   .heroStick { position: relative; height: auto; min-height: 680px; overflow: visible; }
