@@ -18,10 +18,13 @@ const server = createServer(async (req, res) => {
     if (file !== root && !file.startsWith(root + sep)) throw new Error('outside root');
     if ((await stat(file)).isDirectory()) file = resolve(file, 'index.html');
     let content = await readFile(file);
-    // Same document with the previous font-dependent measure, for comparing
-    // fully loaded geometry. No source file is changed by the test.
+    // Restore the previous measure and remove the narrow-screen line
+    // reservation when comparing fully loaded geometry and pixels.
+    // No source file is changed by the test.
     if (file === resolve(root,'index.html') && new URL(req.url,'http://local').searchParams.has('baseline'))
-      content = Buffer.from(content.toString().replace('max-width: 22.848em;', 'max-width: 34ch;'));
+      content = Buffer.from(content.toString()
+        .replace('max-width: 22.848em;', 'max-width: 34ch;')
+        .replace('min-height: 3lh;', 'min-height: 0;'));
     if (extname(file) === '.woff2') {
       fontRequests++;
       await new Promise(resolve => setTimeout(resolve, 1200));
@@ -41,7 +44,12 @@ const base = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch({headless:true});
 const results = [];
 try {
-  for (const [width,height] of [[320,740],[360,800],[375,812],[390,1000],[430,932],[760,1000],[768,1000],[1440,1000]]) {
+  // Width 320 alone is not enough: below 801px in height, the smaller
+  // subtitle font hides the tall-screen two-to-three-line fallback swap.
+  // Check both sides of the 322/323px width and 800/801px height boundaries.
+  for (const [width,height] of [[320,1000],[322,1000],[323,1000],[324,1000],
+      [320,800],[320,801],[322,800],[322,801],[323,800],[323,801],
+      [320,740],[360,800],[375,812],[390,1000],[430,932],[760,1000],[768,1000],[1440,1000]]) {
     const context = await browser.newContext({viewport:{width,height}, reducedMotion:'reduce'});
     await context.addInitScript(() => {
       window.layoutShifts = [];

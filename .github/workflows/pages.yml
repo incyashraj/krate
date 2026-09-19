@@ -29,6 +29,7 @@ on:
       - "scripts/test-public-facts.py"
       - "scripts/test-landing-assets.py"
       - "scripts/discovery-report.py"
+      - "scripts/pages-release.py"
       - "scripts/replay-ported-apps.sh"
       - "scripts/site-seo.py"
       - "scripts/test-site-seo.py"
@@ -59,10 +60,17 @@ on:
       # is not hypothetical: a first-run notice printed into the JSON the
       # build parses, the deploy failed, and no page had changed.
       - "crates/**"
+      - "wit/**"
+      - "apps/krate-checklist/src/lib.rs"
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
+  # Releases finish after the source push. Refresh their public facts only
+  # after a successful stable promotion, using website code from current main.
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
 
 permissions:
   contents: read
@@ -77,11 +85,53 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  release-context:
+    name: Check website refresh context
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    outputs:
+      publish: ${{ steps.context.outputs.publish }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # Never execute files from the triggering release's tag or branch.
+          ref: ${{ github.event_name == 'workflow_run' && 'main' || github.sha }}
+          persist-credentials: false
+      - name: Verify release refresh policy
+        run: python3 scripts/pages-release.py --self-test
+      - name: Check stable promotion
+        id: context
+        run: python3 scripts/pages-release.py
+      - name: Resolve published release
+        id: release
+        if: ${{ steps.context.outputs.publish == 'true' }}
+        # This job has contents:read only. Pass the version, never the token,
+        # to the build job and its generated pages.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$(gh api repos/incyashraj/krate/releases/latest --jq .tag_name)"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Latest stable release did not return a stable version tag"
+            exit 1
+          fi
+          echo "version=$tag" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build mdBook
+    needs: release-context
+    if: ${{ needs.release-context.outputs.publish == 'true' }}
+    env:
+      KRATE_PUBLIC_RELEASE: ${{ needs.release-context.outputs.version }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && 'main' || github.sha }}
+          persist-credentials: false
       - name: Verify landing image alternatives
         run: python3 scripts/test-landing-assets.py
       - name: Verify discovery snapshot accounting

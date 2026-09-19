@@ -2,6 +2,8 @@
 
 **Published:** 2026-08-05
 
+**Updated:** 2026-09-20
+
 WebAssembly outside the browser has been "almost ready" for years. Some of that
 is real progress and some is marketing, and the line between them is worth
 drawing precisely if you are deciding whether to build on it.
@@ -10,48 +12,58 @@ Here is what we found building a desktop app runtime on it.
 
 ## What genuinely works
 
-**One binary, three systems.** This is the promise and it holds. The same
-`.wasm` bytes run unmodified on macOS, Windows, and Linux, on both Intel and
-ARM. No conditional compilation, no per-platform CI matrix, no three sets of
-release artifacts.
+**One app file, three systems.** Krate lets developers ship the same `.krate`
+file on Mac, Windows, and Linux. The native runtime handles the platform;
+the application bytes stay the same. You distribute one app artifact and
+test its behaviour on the systems you support.
 
-**The size is real.** A desktop app with a window, buttons, saved state, and
-drawing is typically 15 to 40 KB. Not a typo, and not a hello-world -- that is
-a working tool with persistence. An Electron equivalent is four orders of
-magnitude larger.
+**The app does not need its own browser engine.** Krate puts the platform
+implementation in a shared runtime installed once. Each app carries its own
+code and assets. Our [notes comparison](https://krate.tech/reports/) measured
+a 36.6 KiB notes-app bundle, excluding the 88.6 MiB shared runtime.
+That historical bundle is not a size promise for current apps: a `.krate`
+download can also carry source, SDK interfaces and assets.
 
-**Startup is not a problem.** A component loads and paints its first frame in
-tens of milliseconds. The old objection that Wasm is slow to start was about
-large modules and cold JIT; for apps this size it does not apply.
+**Measure startup with a real workload.** Module compilation, runtime caches,
+window creation and loading the user's data all contribute. The same notes
+comparison measured a 237.1 ms median warm open for a 50,000-line document
+on an Apple M4 Mac. That is one workload, not a startup guarantee for every
+WebAssembly app.
 
 **The component model is the part that matters.** Plain WebAssembly gives you a
 sandbox with integers. The component model gives you typed interfaces across
 the boundary -- strings, records, lists, results -- defined in WIT and generated
-into bindings on both sides. That is what makes "the app can call
+into bindings on both sides. [WIT](https://component-model.bytecodealliance.org/design/wit.html)
+describes the interface contract, not the implementation. That is what makes "the app can call
 `canvas2d::fill_rect`" a real statement rather than a convention about memory
 offsets.
 
 ## What does not work the way people imply
 
-**WASI is not free.** WASI gives a guest a POSIX-shaped world: files, clocks,
-environment variables, sockets. That is exactly what you do not want if the
-point is a capability sandbox -- it hands over a filesystem and asks the host to
-police it afterwards.
+**Choose your host interfaces deliberately.** WASI is itself designed around
+[capability-based security](https://github.com/WebAssembly/WASI/blob/main/docs/DesignPrinciples.md).
+It does not automatically give an app access to the host filesystem. The
+host decides which capabilities to supply.
 
-Avoiding it is harder than it sounds, because the Rust standard library pulls
-WASI in through paths that look unrelated. `std::fs` obviously. But also, in
-practice: an allocation-error handler, a panic formatter, a timer someone
-called once. We spent real time tracking down twenty leaked `wasi:*` imports
-that traced back to `Vec::with_capacity`'s out-of-memory path.
+Krate uses its own `krate:*` interfaces so app requests go through Krate's
+permission checks. Our import policy rejects `wasi:*` imports. That is a
+choice about the interfaces Krate exposes, not a claim that WASI cannot
+support capability security.
 
-The fix is building the guest `#![no_std]` with your own allocator and panic
-handler. It works, and it is not the getting-started experience anyone
-advertises.
+Keeping those imports out takes work, because the Rust standard library can
+introduce WASI dependencies through paths that look unrelated to filesystem
+access. Even allocation and error-handling paths need checking. Our
+[chart sample](https://github.com/incyashraj/krate/tree/main/apps/krate-chart)
+documents one such allocation path.
 
-**There is no UI story.** The component model tells you how to pass a string
+Krate's Rust guest setup uses `#![no_std]` with an allocator and panic handler.
+The [developer quickstart](../quickstart.md) provides the build path; the
+[porting guide](../porting.md) explains how to assess an existing project.
+
+**Desktop UI needs host interfaces.** The component model tells you how to pass a string
 across the boundary. It says nothing about how a guest opens a window, draws a
-button, or receives a click. Every project doing this invents its own
-interfaces, and they are all incompatible.
+button, or receives a click. Krate supplies those interfaces; a component
+built for another host's UI API is not automatically a Krate app.
 
 That is a real cost and worth being clear-eyed about: choosing this means
 choosing someone's UI world, not a standard.
@@ -65,19 +77,28 @@ about how great Wasm is.
 
 ## The honest summary
 
-WebAssembly delivers on portability and size, completely and impressively. It
-delivers nothing on user interface, and its default system interface actively
-works against a capability model.
+WebAssembly gives us portable application code and a boundary between the
+guest and its host. A usable desktop system still needs UI interfaces,
+permission enforcement and platform adapters. Package size and responsiveness
+depend on what the app and runtime do, so we measure them with actual workloads.
 
 If you are building a desktop app runtime on it, budget most of your effort for
 the parts Wasm does not give you: the UI interfaces, the host adapters for
 three windowing systems, and keeping the standard library out of your guests.
 The portable-bytes part is the easy half.
 
-We think it is worth it, because the alternative is shipping three binaries and
-a code-signing certificate. But "just use Wasm" understates the work by a lot.
+We think it is worth it because developers can distribute one application
+file across operating systems. But "just use Wasm" understates the work by a lot.
 
 [Krate](https://krate.tech) is what we built on it: apps as single
 `.krate` files that run on Mac, Windows, and Linux with a capability wall in
 front of them. The [source is public](https://github.com/incyashraj/krate),
 including all of the unglamorous parts.
+
+## Try it with your app
+
+Start with the [developer quickstart](../quickstart.md#get-krate) to install
+Krate and run an app. If you already have a project, use the
+[porting guide](../porting.md) to check its dependencies and host API needs.
+You can also create an app with AI in [Krate Studio](https://krate.tech/studio/)
+and share the resulting `.krate` file.

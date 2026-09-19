@@ -16,6 +16,7 @@ on:
       - "scripts/test-site-seo.py"
       - "scripts/test-landing-assets.py"
       - "scripts/discovery-report.py"
+      - "scripts/pages-release.py"
   push:
     branches: [main]
     paths:
@@ -32,6 +33,7 @@ on:
       - "scripts/test-site-seo.py"
       - "scripts/test-landing-assets.py"
       - "scripts/discovery-report.py"
+      - "scripts/pages-release.py"
   workflow_dispatch:
 
 permissions:
@@ -58,3 +60,5 @@ jobs:
         run: python3 scripts/test-landing-assets.py
       - name: Discovery snapshot accounting
         run: python3 scripts/discovery-report.py --self-test
+      - name: Release refresh and website workflow inputs
+        run: python3 scripts/pages-release.py --self-test
