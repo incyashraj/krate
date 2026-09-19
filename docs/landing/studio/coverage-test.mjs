@@ -629,3 +629,36 @@ console.log("ok  the gift option is honest in a browser");
 }
 
 console.log("ok  Details survives a reload");
+
+// Every element a top-level listener binds to actually exists in the markup.
+//
+// app.js wires its buttons at the top level, so `$("someBtn").addEventListener`
+// on an element that is not there throws during boot -- and everything
+// defined AFTER that line never runs. There is no error on screen. The
+// person just finds that half of Studio does nothing, with no way to tell
+// which half or why.
+//
+// Measured, by accident: a stale copy of the bridge removed #changeDirBtn,
+// app.js died at that line, and the theme module 1,200 lines below it never
+// installed. The Appearance buttons looked wired and were dead. It took a
+// console read to find, on a screen that showed nothing wrong.
+//
+// So: every id bound unguarded at the top level must be in index.html.
+{
+  const bound = [...app.matchAll(/^\$\("([A-Za-z0-9_]+)"\)\.addEventListener/gm)]
+    .map((m) => m[1]);
+  assert.ok(bound.length > 20, `found ${bound.length} top-level listeners -- the scan broke`);
+  const missing = bound.filter((id) => !html.includes(`id="${id}"`));
+  assert.deepEqual(
+    missing,
+    [],
+    `these ids are wired at the top level of app.js but are not in `
+      + `index.html, so app.js throws while booting and every feature `
+      + `defined after that line silently never installs:\n`
+      + missing.map((id) => `  - ${id}`).join("\n")
+      + `\n\nEither add the element, or bind it with ?. if it is genuinely `
+      + `optional.`,
+  );
+}
+
+console.log(`ok  every top-level listener has an element to bind to`);
