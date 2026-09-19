@@ -125,6 +125,19 @@ pub struct Phase3GuiHost {
     /// see it, so clicking the close button did nothing. Pumped events wait
     /// here and are handed over by the next `poll` or `wait`.
     pending_events: std::cell::RefCell<std::collections::VecDeque<ui::types::Event>>,
+    /// Drops and hovers, already turned into what a guest may see.
+    ///
+    /// Phase 3's `event` variant has no case for either, and its WIT is
+    /// frozen, so these cannot ride the ordinary queue -- they would have
+    /// nowhere to go. Phase 4's events implementation drains this first.
+    ///
+    /// A drop is stored as a NAME and a TOKEN, never a path: the conversion
+    /// happens here, at the moment the host learns of it, so there is no point
+    /// later where a path could reach a guest by accident (K-175).
+    pending_drops: std::cell::RefCell<std::collections::VecDeque<DropNotice>>,
+    /// Whether `KRATE_TEST_DROP` has already been delivered, so a test drop
+    /// arrives once rather than on every poll.
+    test_drop_done: std::cell::Cell<bool>,
     /// When this headless run began waiting for events, for [`HEADLESS_RUN_BUDGET`].
     /// Set on the first wait rather than at construction, so time spent
     /// building the window tree is not charged against the budget.
@@ -404,6 +417,8 @@ impl Phase3GuiHost {
             app_name: None,
             close_requests: std::cell::Cell::new(0),
             pending_events: std::cell::RefCell::new(std::collections::VecDeque::new()),
+            pending_drops: std::cell::RefCell::new(std::collections::VecDeque::new()),
+            test_drop_done: std::cell::Cell::new(false),
             headless_started: std::cell::Cell::new(None),
             headless_close_told: std::cell::Cell::new(None),
             images: std::cell::RefCell::new(std::collections::BTreeMap::new()),
@@ -2298,6 +2313,35 @@ impl Phase3GuiHost {
             if let UiEvent::Key(key) = &event {
                 self.synthesize_activation(&dispatcher, key);
             }
+            // Drops and hovers leave the ordinary path here.
+            //
+            // Phase 3's `event` variant has no case for either and its WIT is
+            // frozen, so `event_to_wit` would drop them on the floor. The
+            // conversion from PATH to name-and-token happens right here, at
+            // the moment the host learns of the drop, so there is no later
+            // point at which a path could reach a guest (K-175).
+            match &event {
+                UiEvent::FileDropped { path, .. } => {
+                    let name = crate::chosen_files::ChosenFiles::display_name(path);
+                    if let Some(token) = self.chosen_files.borrow_mut().remember(path.clone()) {
+                        self.pending_drops
+                            .borrow_mut()
+                            .push_back(DropNotice::Dropped { name, token });
+                    }
+                    // A drop the token store could not hold (64 files already
+                    // open) is silently ignored rather than delivered without
+                    // a token: an event naming a file the app cannot open is
+                    // worse than no event.
+                    continue;
+                }
+                UiEvent::FileHovering { over, .. } => {
+                    self.pending_drops
+                        .borrow_mut()
+                        .push_back(DropNotice::Hovering(*over));
+                    continue;
+                }
+                _ => {}
+            }
             if let Some(event) = event_to_wit(event) {
                 // Count a close request at the one point every real event
                 // passes exactly once -- not in poll/wait/key-held, where an
@@ -2817,6 +2861,58 @@ fn widget_node_from_wit(node: ui::types::WidgetNode) -> Result<WidgetNode, ui::t
 /// which is what this function holds. Splitting it this way is what keeps the
 /// frozen phase and the current one from drifting on validation (K-403).
 #[allow(clippy::too_many_arguments)]
+impl Phase3GuiHost {
+    /// Take the next drop or hover, if one is waiting.
+    ///
+    /// Phase 4's events implementation calls this before delegating, so a drop
+    /// is delivered ahead of the ordinary queue rather than behind a backlog
+    /// of pointer moves.
+    pub(crate) fn take_drop_notice(&self) -> Option<DropNotice> {
+        self.inject_test_drop();
+        self.pending_drops.borrow_mut().pop_front()
+    }
+
+    /// Deliver a drop named by `KRATE_TEST_DROP`, once.
+    ///
+    /// A drop cannot be driven from a `--shoot`: it needs a hand on a mouse,
+    /// and a capability nobody can test without one is a capability nobody
+    /// tests. This injects exactly what a real drop injects -- a hover, then
+    /// the file -- through the same path, so what it proves is the real path
+    /// and not a parallel one.
+    ///
+    /// The path still becomes a token here, so even the test cannot hand a
+    /// guest a path (K-175).
+    fn inject_test_drop(&self) {
+        if self.test_drop_done.get() {
+            return;
+        }
+        let Some(raw) = std::env::var_os("KRATE_TEST_DROP") else {
+            self.test_drop_done.set(true);
+            return;
+        };
+        self.test_drop_done.set(true);
+        let path = std::path::PathBuf::from(raw);
+        let name = crate::chosen_files::ChosenFiles::display_name(&path);
+        let mut queue = self.pending_drops.borrow_mut();
+        queue.push_back(DropNotice::Hovering(true));
+        if let Some(token) = self.chosen_files.borrow_mut().remember(path) {
+            queue.push_back(DropNotice::Dropped { name, token });
+        }
+        queue.push_back(DropNotice::Hovering(false));
+    }
+}
+
+/// A drop or a hover, in the form a guest may see it.
+///
+/// Never carries a path. A `Dropped` holds the file's own name and an opaque
+/// token for `fs.files.open-chosen`; a `Hovering` holds nothing at all,
+/// because a hover is not consent and reveals nothing about the file.
+#[derive(Debug, Clone)]
+pub(crate) enum DropNotice {
+    Dropped { name: String, token: String },
+    Hovering(bool),
+}
+
 pub(crate) fn widget_node_from_parts(
     raw_id: u64,
     raw_parent: Option<u64>,

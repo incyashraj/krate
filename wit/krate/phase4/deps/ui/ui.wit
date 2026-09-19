@@ -399,6 +399,22 @@ interface types {
   }
 
   /// Host event sent to the app.
+  /// A file the person handed to the app: a name to show, and a token to open.
+  ///
+  /// Used by `dialog.open-file`, `dialog.save-file` and the `file-dropped`
+  /// event, because all three are the same promise: the person's own act --
+  /// a click or a drop -- IS the permission, and the app gets what it needs
+  /// to open that one file and nothing that would let it go looking.
+  ///
+  /// Never a path. The app cannot learn where the file lives, cannot walk to
+  /// its folder, and cannot come back for it on a later run.
+  record chosen-file {
+    /// The file's own name, for showing in the app. Never a path.
+    name: string,
+    /// An opaque token for this run only. Pass it to `fs.files.open-chosen`.
+    token: string,
+  }
+
   variant event {
     /// The user requested that a window close.
     close-requested(u64),
@@ -440,6 +456,35 @@ interface types {
     focus-changed(option<u64>),
     /// Host theme changed.
     theme-changed(theme),
+    /// The person dropped a file onto the window.
+    ///
+    /// The drop IS the permission, exactly as the click is for `open-file`:
+    /// somebody dragged this file here deliberately, which is a clearer act of
+    /// consent than any dialog. So the app gets a name and an opaque token and
+    /// never a path -- it cannot learn where the file lives, cannot walk to
+    /// its folder, and cannot come back for it on a later run.
+    ///
+    /// Pass the token to `fs.files.open-chosen`, the same call `open-file`'s
+    /// token goes to.
+    ///
+    /// One event per file: a drop of several files arrives as several of
+    /// these, in the order the system reported them, so an app that handles
+    /// one file needs no extra code and an app that handles many just keeps
+    /// collecting until the queue is empty.
+    ///
+    /// `ui.dropzone` was declarable, validated by the manifest, worded on the
+    /// consent screen ("accept files you drag onto it") and RECOMMENDED by the
+    /// port analyzer, with nothing behind it -- an app was told it had the
+    /// capability and had no way to receive a drop (K-175).
+    file-dropped(chosen-file),
+    /// A dragged file is over the window, or has left it again.
+    ///
+    /// `true` when a drag enters, `false` when it leaves or is cancelled. An
+    /// app uses it to show a target -- a highlighted border, a "drop here"
+    /// panel -- so the person can see the window will accept what they are
+    /// holding. Nothing is revealed about the file: a hover is not consent,
+    /// and the app learns only that something is being dragged.
+    file-hovering(bool),
   }
 }
 
@@ -590,7 +635,7 @@ interface events {
 
 /// System dialog calls.
 interface dialog {
-  use types.{ui-error};
+  use types.{chosen-file, ui-error};
 
   /// Show a simple message dialog.
   message: func(window: u64, title: string, body: string) -> result<_, ui-error>;
@@ -611,12 +656,6 @@ interface dialog {
   /// buys the right to ask; the person's click decides the answer.
   ///
   /// `none` means they cancelled, which is a normal outcome and not an error.
-  record chosen-file {
-    /// The file's own name, for showing in the app. Never a path.
-    name: string,
-    /// An opaque token for this run only. Pass it to `fs.files.open-chosen`.
-    token: string,
-  }
 
   /// Show the system's open-file dialog.
   ///

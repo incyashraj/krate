@@ -296,6 +296,18 @@ impl WindowAdapter for WindowsUiAdapter {
         WindowAdapter::queue_close_requested(&self.draft, id)
     }
 
+    fn queue_file_dropped(
+        &self,
+        id: WindowId,
+        path: std::path::PathBuf,
+    ) -> Result<(), UiAdapterError> {
+        WindowAdapter::queue_file_dropped(&self.draft, id, path)
+    }
+
+    fn queue_file_hovering(&self, id: WindowId, over: bool) -> Result<(), UiAdapterError> {
+        WindowAdapter::queue_file_hovering(&self.draft, id, over)
+    }
+
     fn queue_host_resize(&self, id: WindowId, size: WindowSize) -> Result<(), UiAdapterError> {
         WindowAdapter::queue_host_resize(&self.draft, id, size)
     }
@@ -463,6 +475,18 @@ impl WindowAdapter for WindowsWinitPrototypeUiAdapter {
 
     fn queue_close_requested(&self, id: WindowId) -> Result<(), UiAdapterError> {
         WindowAdapter::queue_close_requested(&self.headless, id)
+    }
+
+    fn queue_file_dropped(
+        &self,
+        id: WindowId,
+        path: std::path::PathBuf,
+    ) -> Result<(), UiAdapterError> {
+        WindowAdapter::queue_file_dropped(&self.headless, id, path)
+    }
+
+    fn queue_file_hovering(&self, id: WindowId, over: bool) -> Result<(), UiAdapterError> {
+        WindowAdapter::queue_file_hovering(&self.headless, id, over)
     }
 
     fn queue_host_resize(&self, id: WindowId, size: WindowSize) -> Result<(), UiAdapterError> {

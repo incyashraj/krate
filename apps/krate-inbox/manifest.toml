@@ -1,0 +1,36 @@
+[app]
+id = "dev.krate.inbox"
+name = "Inbox"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_inbox.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the table window"
+required = true
+
+# The app times its own frame, so the number it reports is measured rather
+# than claimed. That is the entire reason this capability is here.
+# The capability this app exists to prove. It was declarable, validated,
+# worded on the consent screen ("accept files you drag onto it") and
+# RECOMMENDED by the port analyzer -- with no way to receive a drop (K-175).
+[[capabilities]]
+cap = "ui.dropzone"
+rationale = "Accept a file you drag onto the window"
+required = true
+
+[[capabilities]]
+cap = "time.clock"
+rationale = "Measure how long a frame takes, and say so on screen"
+required = false
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Report state on exit for automated runs"
+required = false
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read the quick-run flag used by automated checks"
+required = false

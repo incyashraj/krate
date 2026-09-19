@@ -1186,10 +1186,13 @@ impl Runtime {
         link_gui!(ui4::types);
         link_gui!(ui4::tree);
         link_gui!(ui4::dialog);
+        // Phase 4's event variant carries two cases Phase 3's cannot express,
+        // so it gets its own events module rather than reusing Phase 3's
+        // (K-175).
+        link_gui!(ui4::events);
 
         link_gui!(ui::window);
         link_gui!(ui::image);
-        link_gui!(ui::events);
         link_gui!(ui::clipboard);
         link_gui!(ui::menu);
         link_gui!(ui::launcher);

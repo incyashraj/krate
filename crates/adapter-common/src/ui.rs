@@ -941,6 +941,24 @@ pub enum UiEvent {
     Key(KeyEvent),
     TextInput(TextInputEvent),
     TextChanged(TextChangedEvent),
+    /// The person dropped a file onto a window.
+    ///
+    /// Carries the PATH, because this is the host side of the boundary. The
+    /// runtime turns it into a name and a token before the guest sees it, so
+    /// an app never learns where the file lives (K-175).
+    FileDropped {
+        window: WindowId,
+        path: std::path::PathBuf,
+    },
+    /// A dragged file entered or left a window.
+    ///
+    /// Nothing about the file is carried: a hover is not consent. The app
+    /// learns only that something is being dragged, which is enough to show
+    /// a drop target and nothing more.
+    FileHovering {
+        window: WindowId,
+        over: bool,
+    },
 }
 
 /// Summary from one non-blocking host event-loop tick.
@@ -991,6 +1009,11 @@ pub enum WinitWindowNativeEvent {
     ScaleChanged(f32),
     RedrawRequested,
     Snapshot(WinitWindowSnapshot),
+    /// A file was dropped on this window. Carries the path; the runtime turns
+    /// it into a name and a token before any guest sees it (K-175).
+    FileDropped(std::path::PathBuf),
+    /// A dragged file entered (`true`) or left (`false`) this window.
+    FileHovering(bool),
 }
 
 /// One non-blocking unit of future winit event-loop work.
@@ -1164,6 +1187,14 @@ impl WinitWindowSession {
         match event {
             WinitWindowNativeEvent::CloseRequested => {
                 adapter.queue_close_requested(self.id)?;
+                Ok(None)
+            }
+            WinitWindowNativeEvent::FileDropped(path) => {
+                adapter.queue_file_dropped(self.id, path)?;
+                Ok(None)
+            }
+            WinitWindowNativeEvent::FileHovering(over) => {
+                adapter.queue_file_hovering(self.id, over)?;
                 Ok(None)
             }
             WinitWindowNativeEvent::Resized(size) => {
@@ -1345,6 +1376,16 @@ pub trait WindowAdapter: Send + Sync {
 
     /// Queue a host close request without closing the window yet.
     fn queue_close_requested(&self, id: WindowId) -> Result<(), UiAdapterError>;
+
+    /// Queue a dropped file for a window.
+    fn queue_file_dropped(
+        &self,
+        id: WindowId,
+        path: std::path::PathBuf,
+    ) -> Result<(), UiAdapterError>;
+
+    /// Queue a drag entering or leaving a window.
+    fn queue_file_hovering(&self, id: WindowId, over: bool) -> Result<(), UiAdapterError>;
 
     /// Queue a host resize event and update the tracked window size.
     fn queue_host_resize(&self, id: WindowId, size: WindowSize) -> Result<(), UiAdapterError>;
@@ -1787,6 +1828,18 @@ impl WindowAdapter for DraftUiAdapter {
         self.registry()?.queue_close_requested(id)
     }
 
+    fn queue_file_dropped(
+        &self,
+        id: WindowId,
+        path: std::path::PathBuf,
+    ) -> Result<(), UiAdapterError> {
+        self.registry()?.queue_file_dropped(id, path)
+    }
+
+    fn queue_file_hovering(&self, id: WindowId, over: bool) -> Result<(), UiAdapterError> {
+        self.registry()?.queue_file_hovering(id, over)
+    }
+
     fn queue_host_resize(&self, id: WindowId, size: WindowSize) -> Result<(), UiAdapterError> {
         self.registry()?.queue_host_resize(id, size)
     }
@@ -2101,6 +2154,27 @@ impl DraftWindowRegistry {
     pub fn queue_close_requested(&mut self, id: WindowId) -> Result<(), UiAdapterError> {
         self.open_window(id)?;
         self.events.push_back(UiEvent::WindowCloseRequested(id));
+        Ok(())
+    }
+
+    /// Queue a dropped file. The path stops at the runtime, which mints a
+    /// token before any guest sees it (K-175).
+    pub fn queue_file_dropped(
+        &mut self,
+        id: WindowId,
+        path: std::path::PathBuf,
+    ) -> Result<(), UiAdapterError> {
+        self.open_window(id)?;
+        self.events
+            .push_back(UiEvent::FileDropped { window: id, path });
+        Ok(())
+    }
+
+    /// Queue a drag entering or leaving a window.
+    pub fn queue_file_hovering(&mut self, id: WindowId, over: bool) -> Result<(), UiAdapterError> {
+        self.open_window(id)?;
+        self.events
+            .push_back(UiEvent::FileHovering { window: id, over });
         Ok(())
     }
 

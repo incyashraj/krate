@@ -30,6 +30,16 @@ impl OpenMode {
 pub struct OpenedFile {
     pub path: String,
     pub mode: OpenMode,
+    /// True when the PERSON granted this file -- they picked it in a dialog
+    /// or dropped it on the window -- rather than the app naming a path.
+    ///
+    /// The `fs.read` / `fs.write` globs are the right rule for a path the app
+    /// chose and the wrong rule for a file it was handed: a chosen file is by
+    /// definition outside whatever the manifest declared, which is why
+    /// `fs_open_chosen` skips them. Without this flag the OPEN skipped them
+    /// and the first READ applied them anyway, so an app could open the file
+    /// it was given and not read a byte of it (K-418).
+    pub person_granted: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,6 +64,7 @@ impl FileHandle {
             opened_file: Some(OpenedFile {
                 path: path.into(),
                 mode,
+                person_granted: false,
             }),
             stdio_stream: None,
         }
@@ -63,7 +74,18 @@ impl FileHandle {
         self.opened_file = Some(OpenedFile {
             path: path.into(),
             mode,
+            person_granted: false,
         });
+        self
+    }
+
+    /// Mark this handle as one the person granted by picking or dropping the
+    /// file, so later reads and writes do not re-check the globs the open
+    /// deliberately skipped (K-418).
+    fn person_granted(mut self) -> Self {
+        if let Some(file) = self.opened_file.as_mut() {
+            file.person_granted = true;
+        }
         self
     }
 
@@ -374,7 +396,7 @@ impl<'a> UapiDispatcher<'a> {
         self.adapter
             .fs()
             .open(&path, mode)
-            .map(|handle| handle.with_opened_file(&path, mode))
+            .map(|handle| handle.with_opened_file(&path, mode).person_granted())
             .map_err(Into::into)
     }
 
@@ -650,10 +672,17 @@ impl<'a> UapiDispatcher<'a> {
             FsDispatchError::Policy("file handle is missing its capability metadata".to_string())
         })?;
 
+        // The MODE check applies to every handle: a file opened for reading
+        // cannot be written whoever granted it. Only the GLOB check is skipped
+        // for a person-granted file, because the person's own act is the
+        // grant and the globs describe paths the app named (K-418).
         match access {
             FileAccess::Read => {
                 if !file.mode.allows_read() {
                     return Err(FsDispatchError::PermissionDenied);
+                }
+                if file.person_granted {
+                    return Ok(());
                 }
                 self.check_fs(UapiCall::Fs(FsCall::Read {
                     path: file.path.clone(),
@@ -662,6 +691,9 @@ impl<'a> UapiDispatcher<'a> {
             FileAccess::Write => {
                 if !file.mode.allows_write() {
                     return Err(FsDispatchError::PermissionDenied);
+                }
+                if file.person_granted {
+                    return Ok(());
                 }
                 self.check_fs(UapiCall::Fs(FsCall::Write {
                     path: file.path.clone(),
@@ -679,6 +711,9 @@ impl<'a> UapiDispatcher<'a> {
                 } else {
                     return Err(FsDispatchError::PermissionDenied);
                 };
+                if file.person_granted {
+                    return Ok(());
+                }
                 self.check_fs(UapiCall::Fs(call))
             }
         }
@@ -1312,6 +1347,38 @@ mod tests {
 
         assert!(matches!(err, FsDispatchError::PermissionDenied));
         assert_eq!(adapter.calls.borrow().fs_read, 0);
+    }
+
+    #[test]
+    fn a_file_the_person_granted_reads_without_any_fs_grant() {
+        // K-418. `fs_open_chosen` deliberately skips the fs.read/fs.write
+        // globs -- the person picked or dropped this exact file, which is a
+        // more direct grant than any glob a manifest could carry. But every
+        // READ re-derived the path and ran it through the same globs, so an
+        // app could open the file it was handed and not read a byte of it.
+        //
+        // Measured before the fix, with apps/krate-inbox declaring no fs
+        // capability at all: "could not read it: permission denied".
+        let adapter = RecordingAdapter::default();
+        let guard = UapiGuard::new(SessionPolicy::default());
+        let dispatcher = UapiDispatcher::new(&guard, &adapter);
+
+        let mut handle = FileHandle::opened_file(47, "/somewhere/else/photo.png", OpenMode::Read);
+        handle = handle.person_granted();
+        dispatcher
+            .fs_read(&handle, 128)
+            .expect("a file the person granted must be readable");
+        assert_eq!(adapter.calls.borrow().fs_read, 1);
+
+        // The MODE is still enforced: person-granted is not a skeleton key.
+        // A file opened for reading cannot be written, whoever granted it.
+        let read_only = FileHandle::opened_file(48, "/somewhere/else/photo.png", OpenMode::Read)
+            .person_granted();
+        let err = dispatcher
+            .fs_write(&read_only, b"nope")
+            .expect_err("a read-mode handle must refuse a write");
+        assert!(matches!(err, FsDispatchError::PermissionDenied));
+        assert_eq!(adapter.calls.borrow().fs_write, 0);
     }
 
     #[test]

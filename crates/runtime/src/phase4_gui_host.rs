@@ -274,6 +274,140 @@ fn error_to_phase4(err: ui3::types::UiError) -> ui4::types::UiError {
     }
 }
 
+/// Phase 4's events, which differ from Phase 3's in exactly two cases.
+///
+/// Everything else delegates to the Phase 3 implementation and is translated
+/// case for case, because the two variants are otherwise identical and the
+/// Phase 3 one carries real logic -- the usability driver, interrupt
+/// handling, the headless budget -- that must not be duplicated.
+///
+/// The two new cases are `file-dropped` and `file-hovering`. They are drained
+/// FIRST, so a drop is answered before a backlog of pointer moves (K-175).
+impl ui4::events::Host for Phase3GuiHost {
+    fn poll(&mut self) -> wasmtime::Result<Option<ui4::types::Event>> {
+        if let Some(notice) = self.take_drop_notice() {
+            return Ok(Some(drop_notice_to_phase4(notice)));
+        }
+        let event = ui3::events::Host::poll(self)?;
+        Ok(event.map(event_to_phase4))
+    }
+
+    fn wait(&mut self, timeout_millis: Option<u32>) -> wasmtime::Result<Option<ui4::types::Event>> {
+        if let Some(notice) = self.take_drop_notice() {
+            return Ok(Some(drop_notice_to_phase4(notice)));
+        }
+        let event = ui3::events::Host::wait(self, timeout_millis)?;
+        // A drop can arrive DURING the wait, so ask again before answering
+        // nothing: otherwise a dropped file waits for the next input to shake
+        // it loose.
+        if event.is_none() {
+            if let Some(notice) = self.take_drop_notice() {
+                return Ok(Some(drop_notice_to_phase4(notice)));
+            }
+        }
+        Ok(event.map(event_to_phase4))
+    }
+
+    fn key_held(&mut self, key: String) -> wasmtime::Result<bool> {
+        ui3::events::Host::key_held(self, key)
+    }
+
+    fn gamepad_connected(&mut self) -> wasmtime::Result<bool> {
+        ui3::events::Host::gamepad_connected(self)
+    }
+
+    fn gamepad_held(&mut self, button: String) -> wasmtime::Result<bool> {
+        ui3::events::Host::gamepad_held(self, button)
+    }
+
+    fn gamepad_axis(&mut self, axis: String) -> wasmtime::Result<f32> {
+        ui3::events::Host::gamepad_axis(self, axis)
+    }
+}
+
+/// A drop or hover, as the Phase 4 guest sees it.
+fn drop_notice_to_phase4(notice: crate::phase3_gui_host::DropNotice) -> ui4::types::Event {
+    match notice {
+        crate::phase3_gui_host::DropNotice::Dropped { name, token } => {
+            ui4::types::Event::FileDropped(ui4::types::ChosenFile { name, token })
+        }
+        crate::phase3_gui_host::DropNotice::Hovering(over) => ui4::types::Event::FileHovering(over),
+    }
+}
+
+/// Every case the two phases share, translated one for one.
+///
+/// Exhaustive on purpose: adding a case to Phase 3 without deciding what
+/// Phase 4 does with it should not compile.
+fn event_to_phase4(event: ui3::types::Event) -> ui4::types::Event {
+    use ui3::types::Event as E3;
+    use ui4::types::Event as E4;
+    match event {
+        E3::CloseRequested(id) => E4::CloseRequested(id),
+        E3::Resized(size) => E4::Resized(ui4::types::WindowSize {
+            width: size.width,
+            height: size.height,
+        }),
+        E3::RedrawRequested(id) => E4::RedrawRequested(id),
+        E3::Pointer(p) => E4::Pointer(ui4::types::PointerEvent {
+            window: p.window,
+            widget: p.widget,
+            x: p.x,
+            y: p.y,
+            button: p.button.map(pointer_button_to_phase4),
+            pressed: p.pressed,
+            modifiers: modifiers_to_phase4(p.modifiers),
+        }),
+        E3::Key(k) => E4::Key(ui4::types::KeyEvent {
+            window: k.window,
+            widget: k.widget,
+            key: k.key,
+            pressed: k.pressed,
+            modifiers: modifiers_to_phase4(k.modifiers),
+        }),
+        E3::Wheel(w) => E4::Wheel(ui4::types::WheelEvent {
+            window: w.window,
+            widget: w.widget,
+            x: w.x,
+            y: w.y,
+            dx: w.dx,
+            dy: w.dy,
+            modifiers: modifiers_to_phase4(w.modifiers),
+        }),
+        E3::TextInput(text) => E4::TextInput(text),
+        E3::TextChanged(c) => E4::TextChanged(ui4::types::TextChangedEvent {
+            window: c.window,
+            widget: c.widget,
+            text: c.text,
+        }),
+        E3::Action(id) => E4::Action(id),
+        E3::FocusChanged(widget) => E4::FocusChanged(widget),
+        E3::ThemeChanged(theme) => E4::ThemeChanged(match theme {
+            ui3::types::Theme::Light => ui4::types::Theme::Light,
+            ui3::types::Theme::Dark => ui4::types::Theme::Dark,
+            ui3::types::Theme::Unknown => ui4::types::Theme::Unknown,
+        }),
+    }
+}
+
+fn pointer_button_to_phase4(button: ui3::types::PointerButton) -> ui4::types::PointerButton {
+    match button {
+        ui3::types::PointerButton::Primary => ui4::types::PointerButton::Primary,
+        ui3::types::PointerButton::Secondary => ui4::types::PointerButton::Secondary,
+        ui3::types::PointerButton::Middle => ui4::types::PointerButton::Middle,
+        ui3::types::PointerButton::Other => ui4::types::PointerButton::Other,
+    }
+}
+
+fn modifiers_to_phase4(m: ui3::types::Modifiers) -> ui4::types::Modifiers {
+    ui4::types::Modifiers {
+        shift: m.shift,
+        control: m.control,
+        alt: m.alt,
+        meta: m.meta,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

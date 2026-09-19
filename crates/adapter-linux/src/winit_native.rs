@@ -333,6 +333,19 @@ mod real {
             };
             let mapped = match event {
                 WindowEvent::CloseRequested => Some(WinitWindowNativeEvent::CloseRequested),
+                // A drop IS the permission, the same way a click on the
+                // open-file dialog is: somebody dragged this here on purpose.
+                // The path goes no further than the runtime, which mints a
+                // token for it (K-175).
+                WindowEvent::DroppedFile(path) => {
+                    Some(WinitWindowNativeEvent::FileDropped(path.clone()))
+                }
+                // A hover reveals nothing about the file. It exists so an app
+                // can show a drop target, and that is all it can do.
+                WindowEvent::HoveredFile(_) => Some(WinitWindowNativeEvent::FileHovering(true)),
+                WindowEvent::HoveredFileCancelled => {
+                    Some(WinitWindowNativeEvent::FileHovering(false))
+                }
                 WindowEvent::Resized(size) if size.width > 0 && size.height > 0 => {
                     // Logical to the app, like every pointer coordinate; the
                     // painter is the single place logical becomes physical.
