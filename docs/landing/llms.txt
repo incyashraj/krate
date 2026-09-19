@@ -15,13 +15,13 @@ Applications begin without file or network access and receive approved capabilit
 The following is the recorded 2026-08-25 notes comparison, not a measurement of the latest release or all Krate apps.
 MarkText 0.17.1 ARM64 vs the Krate notes replica, Apple M4, macOS 27 (build 26A5388g), on AC power; equivalent-workload comparison, not feature parity.
 
-- Historical code payload versus installed application: Krate 36.6 KiB; MarkText 284.6 MiB installed.
+- Historical app bundle versus installed application: Krate 36.6 KiB; MarkText 284.6 MiB installed.
 - memory, 50,000-line document: Krate 178.5 MiB, one process; MarkText 2,299.4 MiB across four processes.
 - warm start to a visible window, 50,000-line document: Krate 237.1 ms median; MarkText 611.5 ms median.
 
-The historical Krate runtime was installed separately at 88.6 MiB. The 36.6 KiB payload is not the total first-install cost. Warm open is the median of ten runs per app; memory includes the whole process tree.
+The historical Krate runtime was installed separately at 88.6 MiB. The 36.6 KiB app bundle is not the total first-install cost. Warm open is the median of ten runs per app; memory includes the whole process tree.
 
-Energy was not measured. Source-bearing bundles and assets add to the historical code payload; the published analysis does not establish the current full-bundle install ratio.
+Energy was not measured. Source-bearing bundles can also include SDK interfaces and assets; the historical analysis does not establish the current full-bundle install ratio.
 
 Analysis: https://github.com/incyashraj/krate/blob/main/evidence/benchmarks/marktext-vs-krate/runs/20260825T085644Z/analysis.md
 The public benchmark kit contains the protocol, analysis and seal. Retained raw run data is not all distributed in the public checkout.

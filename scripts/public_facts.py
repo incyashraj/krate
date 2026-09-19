@@ -94,10 +94,10 @@ def render_llms():
              "The following is the recorded 2026-08-25 notes comparison, not a measurement of the latest release or all Krate apps.",
              claims[0]["scope"] + ".", ""]
     for claim in claims:
-        label = "Historical code payload versus installed application" if claim["id"] == "app-file-size" else claim["metric"]
+        label = "Historical app bundle versus installed application" if claim["id"] == "app-file-size" else claim["metric"]
         lines.append(f"- {label}: Krate {claim['us']}; MarkText {claim['them']}.")
-    lines += ["", f"The historical Krate runtime was installed separately at {runtime_size[1]}. The {claims[0]['us']} payload is not the total first-install cost. Warm open is the median of ten runs per app; memory includes the whole process tree.",
-              "", "Energy was not measured. Source-bearing bundles and assets add to the historical code payload; the published analysis does not establish the current full-bundle install ratio.",
+    lines += ["", f"The historical Krate runtime was installed separately at {runtime_size[1]}. The {claims[0]['us']} app bundle is not the total first-install cost. Warm open is the median of ten runs per app; memory includes the whole process tree.",
+              "", "Energy was not measured. Source-bearing bundles can also include SDK interfaces and assets; the historical analysis does not establish the current full-bundle install ratio.",
               "", f"Analysis: {source_url(claims[0]['source'])}",
               "The public benchmark kit contains the protocol, analysis and seal. Retained raw run data is not all distributed in the public checkout.",
               "", "## Main pages", "",

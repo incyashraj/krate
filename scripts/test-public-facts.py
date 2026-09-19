@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Regression tests for public fact scope, bundle accounting and generation."""
 import os
+import hashlib
 from pathlib import Path
 import subprocess
 import tempfile
+import tomllib
 import unittest
 from unittest.mock import patch
 import zipfile
@@ -12,6 +14,40 @@ import public_facts as facts
 
 
 class PublicFactsTests(unittest.TestCase):
+    def test_first_app_download_is_pinned_and_checksummed(self):
+        readme = (facts.ROOT / "README.md").read_text()
+        quickstart = (facts.ROOT / "docs/book/src/quickstart.md").read_text()
+        revision = "c46d29500f2b894c89285b04e1b5e2f75184e972"
+        url = ("https://raw.githubusercontent.com/incyashraj/krate/"
+               + revision + "/evidence/ported/chart.krate")
+        for text in (readme, quickstart):
+            self.assertIn(url, text)
+            self.assertIn(revision + "/apps/krate-chart", text)
+            self.assertIn("krate run chart.krate --dump-caps", text)
+        expected = "3d290c48f74936d5cdb45ceb0ee945bd0f7b5b0b21f87f79917bced3b4ca73c3"
+        self.assertIn(expected, quickstart)
+        self.assertIn("### Try the Chart sample", quickstart)
+        self.assertIn("#try-the-chart-sample", readme)
+        # This test intentionally notices sample changes: update the pinned
+        # download and its documented verification together after retesting.
+        bundle = facts.ROOT / "evidence/ported/chart.krate"
+        self.assertEqual(hashlib.sha256(bundle.read_bytes()).hexdigest(), expected)
+        with zipfile.ZipFile(bundle) as archive:
+            self.assertFalse(any(p.startswith("source/") for p in archive.namelist()))
+            manifest = tomllib.loads(archive.read("manifest.toml").decode())
+            capabilities = {row["cap"] for row in manifest["capabilities"]}
+            self.assertEqual(capabilities, {"ui.window:create", "io.stdout", "io.args"})
+            self.assertFalse(any(cap.startswith(("fs.", "net.")) for cap in capabilities))
+
+    def test_search_entry_article_keeps_measured_claim_scope(self):
+        article = (facts.ROOT / "docs/book/src/blog/0006-webassembly-outside-the-browser.md").read_text()
+        for stale in ("15 to 40 KB", "tens of milliseconds", "no per-platform CI matrix",
+                      "actively\nworks against a capability model"):
+            self.assertNotIn(stale, article)
+        for required in ("DesignPrinciples.md", "237.1 ms", "88.6 MiB", "../quickstart.md#get-krate",
+                         "../porting.md", "2026-09-20"):
+            self.assertIn(required, article)
+
     def test_llms_is_generated_and_scoped(self):
         rendered = facts.render_llms()
         self.assertEqual(rendered, (facts.ROOT / "docs/landing/llms.txt").read_text())
@@ -20,6 +56,8 @@ class PublicFactsTests(unittest.TestCase):
             self.assertIn(phrase, rendered)
         for phrase in ("15-40 KB", "guarantees", "cannot do anything", "80-200 MB"):
             self.assertNotIn(phrase, rendered)
+        self.assertIn("Historical app bundle versus installed application", rendered)
+        self.assertNotIn("Historical code payload", rendered)
 
     def test_three_claims_use_same_audited_run(self):
         claims = facts.benchmark_claims()
@@ -81,6 +119,8 @@ class PublicFactsTests(unittest.TestCase):
                 for row in facts.bundle_inventory():
                     self.assertIn(row["path"], html)
                 if name == "reports":
+                    self.assertIn("Historical app bundle versus installed application", html)
+                    self.assertNotIn("Historical code payload", html)
                     self.assertIn("237.1 ms median", html)
                     self.assertIn("2,299.4 MiB across four processes", html)
                     self.assertIn("does not run a new benchmark", html)

@@ -40,6 +40,54 @@ see the [platform requirements](https://github.com/incyashraj/krate/blob/main/do
 
 ## Open an app before building one
 
+### Try the Chart sample
+
+Download [chart.krate](https://raw.githubusercontent.com/incyashraj/krate/c46d29500f2b894c89285b04e1b5e2f75184e972/evidence/ported/chart.krate),
+a rainfall-chart example from this repository. No authoring tools or AI account
+are needed. Its [Rust source](https://github.com/incyashraj/krate/tree/c46d29500f2b894c89285b04e1b5e2f75184e972/apps/krate-chart)
+is available separately; this particular sample bundle contains the manifest
+and compiled component, not embedded source.
+
+The complete file's SHA-256 is:
+
+```text
+3d290c48f74936d5cdb45ceb0ee945bd0f7b5b0b21f87f79917bced3b4ca73c3
+```
+
+Check it with `shasum -a 256 chart.krate` on macOS,
+`sha256sum chart.krate` on Linux, or
+`Get-FileHash chart.krate -Algorithm SHA256` in Windows PowerShell.
+Then, from the folder containing the download:
+
+```sh
+krate run chart.krate --dump-caps
+krate run chart.krate --prompt
+```
+
+Chart requests window creation, standard output and command-line arguments.
+It requests no file or network access. The inspection's app-identity digest
+is different from the complete-file download checksum above.
+
+For a terminal-only functional check:
+
+```sh
+krate run chart.krate --headless --profile first-app -- quick
+```
+
+Expected output includes:
+
+```text
+bars:7
+commands:10
+drawn:yes
+```
+
+This check passed with the published v0.5.0 macOS ARM64 runtime. It checks the
+chart's drawing commands, not an interactive session. The same sample also
+passes the [source-built runtime's Linux, macOS and Windows CI replay](https://github.com/incyashraj/krate/actions/runs/35454102875).
+
+### Open another app
+
 Use a `.krate` file from a source you trust, such as a project you have
 reviewed. Replace `app.krate` with the local filename:
 

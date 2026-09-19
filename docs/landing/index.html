@@ -1264,6 +1264,14 @@ picture source { display: none; }
   }
 }
 
+/* On narrow, tall screens the loaded subtitle occupies three lines, but
+   the fallback font fits it into two. Reserve the final line box so loading
+   Geist does not move the buttons and screenshot. At 323px it already fits
+   two lines; at heights up to 800px the smaller type below does too. */
+@media (max-width: 322px) and (min-height: 801px) {
+  .heroSubPhone { min-height: 3lh; }
+}
+
 /* Short screens, whatever the width. The hero and the marquee both live
    inside one 100vh sticky box, absolutely positioned, so neither can push
    the other along -- they simply collide once the screen is short enough.

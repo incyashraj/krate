@@ -104,7 +104,7 @@ def main():
     facts = load_facts()
     claims = benchmark_claims()
     inventory = bundle_inventory()
-    labels = {"app-file-size": "Historical code payload versus installed application",
+    labels = {"app-file-size": "Historical app bundle versus installed application",
               "memory-50k": "Memory, 50,000 lines", "warm-start-50k": "Warm open, 50,000 lines"}
     benchmark_rows = "\n".join(
         f'<tr><td>{labels[c["id"]]}</td><td>{html_escape(c["us"])}</td>'
@@ -257,7 +257,7 @@ def main():
       </div>
       <p class="method">Warm open is time to a visible window, median of ten
         runs per app. Memory is settled footprint across the whole process
-        tree. The code-payload row excludes Krate's shared runtime and does
+        tree. The historical app-bundle row excludes Krate's shared runtime and does
         not measure a current source-bearing bundle.</p>
       <p class="method">{html_escape(claims[0]["caveat"])}.
         That first-app ratio is the historical runtime-plus-payload accounting,

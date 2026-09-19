@@ -66,16 +66,20 @@ curl -fsSL https://krate.tech/install.sh | sh
 irm https://krate.tech/install.ps1 | iex
 ```
 
-For a `.krate` file you received from a trusted source:
+Try a ready-made app: download [Chart](https://raw.githubusercontent.com/incyashraj/krate/c46d29500f2b894c89285b04e1b5e2f75184e972/evidence/ported/chart.krate),
+our rainfall-chart sample, then run these commands in your download folder:
 
 ```sh
 krate --version
-krate run app.krate --dump-caps
-krate run app.krate --prompt
+krate run chart.krate --dump-caps
+krate run chart.krate --prompt
 ```
 
-Replace `app.krate` with your downloaded file. Inspection does not execute
-the application. Review permissions before granting them. Running a packaged
+The [sample source](https://github.com/incyashraj/krate/tree/c46d29500f2b894c89285b04e1b5e2f75184e972/apps/krate-chart)
+and [checksum and terminal check](https://krate.tech/docs/quickstart.html#try-the-chart-sample)
+are available to inspect. This sample requests no file or network access.
+Use the same commands with any other `.krate` filename from a source you trust.
+Inspection does not execute the application. Review permissions before granting them. Running a packaged
 app does not require the author's Rust toolchain or AI account; Linux X11
 users may need [an additional system library](docs/build.md#running-an-app-on-linux-without-building-anything).
 
@@ -127,25 +131,28 @@ state are retained beside the run.
 
 | | MarkText | Krate |
 |---|---:|---:|
-| Installed app / component payload (different boundaries) | 284.6 MiB installed | **36.6 KiB payload**, runtime excluded |
+| Installed app / historical app bundle (different boundaries) | 284.6 MiB installed | **36.6 KiB bundle**, runtime excluded |
 | Memory, 50,000 lines | 2,299.4 MiB across four processes | **178.5 MiB, one process** |
 | Warm open, 50,000 lines | 611.5 ms median of 10 | **237.1 ms median of 10** |
 
 Krate does not put another browser inside every app. The 36.6 KiB is the
-per-app payload: the shared player is installed once at 88.6 MiB, so the
-runtime plus this measured payload is about 3.21 times smaller than the
+historical notes-app bundle: the shared player is installed once at 88.6 MiB, so the
+runtime plus this measured bundle is about 3.21 times smaller than the
 MarkText installed application. This does not include the editable source
 bundle, saved user data or the authoring toolchain. Further apps still add
 their own code, assets and data.
 
-The `.krate` file you actually send is bigger than its payload, because it
-can carry source, SDK interfaces and assets beside the compiled code. Compare
+A `.krate` file can carry source, SDK interfaces and assets beside the
+compiled code, so this historical bundle does not predict every app's size. Compare
 the complete download with other downloads, and the installed runtime plus
 app with other installed applications. Payload size is not download size.
 
-Method, raw samples and seal: the
+Method and published analysis: the
 [reproducible benchmark kit](evidence/benchmarks/marktext-vs-krate/README.md)
 and [this run](evidence/benchmarks/marktext-vs-krate/runs/20260825T085644Z/analysis.md).
+The published run includes the analysis, audit result, redacted machine details
+and checksum seal; the original raw samples are not currently included in the
+public repository.
 Energy was not measured and no battery-life claim is made from it.
 
 ## Why a file
