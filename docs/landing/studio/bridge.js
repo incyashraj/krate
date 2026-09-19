@@ -1563,6 +1563,15 @@ const WEB_WORDING = [
   ["all together, on this computer", "all together"],
   ["Your apps stay on this computer", "Your apps stay in your account"],
   ["How Krate looks on this computer.", "How Krate looks for you."],
+  // The session log is the local build workspace: the agent's transcript,
+  // the generated lib.rs, the Cargo.toml. A browser build happens on the
+  // build service and leaves none of that here, so the desktop sentence
+  // promises an attachment that cannot be made. The ticket itself works;
+  // only the promise about what rides with it is wrong.
+  [
+    "Goes to us with the session log attached; replies land in this window",
+    "Goes to us, and replies land in this window",
+  ],
   // The AI panel, which on a desktop lists the coding tools the person has
   // installed and how to fix each one. In a tab there is one AI, ours, and
   // nothing to install, pick, refresh or sign into -- so every sentence in

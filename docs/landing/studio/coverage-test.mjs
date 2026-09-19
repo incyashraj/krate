@@ -190,3 +190,27 @@ console.log("ok  Back does not wait on the network");
 console.log("ok  Home paints before the hub answers");
 console.log("ok  the sign-in screen is never shown to somebody signed in");
 console.log("ok  no dashes in user-facing text");
+
+// The done card's caption must not cover the app it is captioning.
+//
+// The strip is drawn OVER the bottom of the preview, which is what makes
+// the card one screenshot-able object. It also means the bottom of the
+// app's own window is behind it, and the bottom of a window is where its
+// buttons are. Measured on a pomodoro timer at 1280x820: the strip
+// covered the bottom 63px of a 344px picture at 88% opacity, cutting its
+// Start button in half.
+//
+// The fix is room for the strip on the rule that SIZES the image. A
+// separate later rule does not work: this sheet opens with
+// `* { margin: 0 }`, and a universal reset beats a compound selector, so
+// an override silently did nothing.
+const css = readFileSync("studio/ui/style.css", "utf8");
+const shotImg = css.slice(css.indexOf(".shot-stage img {"));
+const rule = shotImg.slice(0, shotImg.indexOf("}"));
+assert.match(rule, /margin-bottom:\s*\d+px/,
+  "the preview reserves room for the caption strip drawn over it");
+const reserved = Number((rule.match(/margin-bottom:\s*(\d+)px/) || [])[1]);
+assert.ok(reserved >= 63,
+  `the strip wraps to two lines and measures 63px; ${reserved}px still covers the app`);
+
+console.log("ok  the done card's caption does not cover the app");

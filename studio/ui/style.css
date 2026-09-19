@@ -826,6 +826,14 @@ body.windows.light .titlebar .side-toggle:hover { color: #000; }
   display: block;
   max-width: 100%; max-height: 42vh;
   width: auto; height: auto;
+  /* Room for the caption strip, which is drawn over the bottom of this
+     box. Without it the strip covered the bottom 18% of every preview at
+     88% opacity: on a pomodoro timer that was its Start button, which is
+     the one thing somebody wants to see in the picture.
+     Two lines' worth, because the strip wraps its trust line onto a
+     second row on a narrow card. Measured at 63px there, 40px when it
+     fits on one. */
+  margin-bottom: 64px;
   border: 1px solid var(--line-strong);
   border-bottom: none;
   border-radius: 8px 8px 0 0;
@@ -3413,13 +3421,30 @@ body.light .send-opt span, body.light .send-done p { color: rgba(0,0,0,0.55); }
 }
 
 /* The done card's caption sits along the bottom of the shot, like the
-   card's own strip -- not as a flex column beside it. */
+   card's own strip -- not as a flex column beside it.
+ *
+ * It is DRAWN OVER the picture, which is what makes the card one
+ * screenshot-able object, and that is also its hazard: the bottom of an
+ * app's window is where its buttons are. Measured on a pomodoro timer,
+ * the strip covered the bottom 18% of the shot at 88% opacity and cut its
+ * Start button in half.
+ *
+ * So the stage reserves room for it. The picture is inset by the strip's
+ * own height, the strip sits in that reserved band rather than on top of
+ * anything, and the card still reads as one object because the two share
+ * a background. Nothing an app drew is hidden. */
 .shot-stage .shot-cap {
   position: absolute; left: 0; right: 0; bottom: 0;
   border-top: 1px solid var(--line);
   background: rgba(10, 10, 11, 0.88);
   -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
 }
+/* The band the strip lives in, kept clear of the picture above it.
+ *
+ * Set on the same rule that sizes the image (`.shot-stage img`, above),
+ * not as a later override: the sheet opens with `* { margin: 0 }`, and a
+ * universal reset beats a compound selector on specificity, so a separate
+ * rule here was silently doing nothing. Measured before believing it. */
 .shot-stage.no-shot .shot-cap { display: none; }
 
 /* Change must be seen to do something: the composer answers with one
