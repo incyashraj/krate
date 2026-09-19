@@ -7,6 +7,9 @@ on:
       - ".github/workflows/pages.yml"
       - "docs/**"
       - "README.md"
+      - "CONTRIBUTING.md"
+      - ".github/PULL_REQUEST_TEMPLATE.md"
+      - "scripts/test-contributor-docs.py"
       - "scripts/build-answer-pages.py"
       - "scripts/build-progress-page.py"
       - "scripts/build-reports-page.py"
@@ -24,6 +27,9 @@ on:
       - ".github/workflows/pages.yml"
       - "docs/**"
       - "README.md"
+      - "CONTRIBUTING.md"
+      - ".github/PULL_REQUEST_TEMPLATE.md"
+      - "scripts/test-contributor-docs.py"
       - "scripts/build-answer-pages.py"
       - "scripts/build-progress-page.py"
       - "scripts/build-reports-page.py"
@@ -52,6 +58,8 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Public facts
         run: python3 scripts/test-public-facts.py
+      - name: Contributor entry points
+        run: python3 scripts/test-contributor-docs.py
       - name: Answer-page generation
         run: python3 scripts/build-answer-pages.py --self-test
       - name: Crawl metadata

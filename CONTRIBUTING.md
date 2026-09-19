@@ -1,15 +1,15 @@
 # Contributing to Krate
 
-First off: thank you. Krate is a long project built on first principles, and
-every contribution -- code, docs, design, or ideas -- compounds.
+Thanks for helping improve Krate. Code, documentation, examples and reports
+from trying the software are all useful contributions.
 
 ---
 
 ## Before you start
 
 1. Read the [Code of Conduct](CODE_OF_CONDUCT.md). We enforce it.
-2. Read the [Roadmap](Plan/Build-Plan.md) and the [current phase plan](Plan/Phase-2-Plan.md)
-   so you know where we are.
+2. Read the public [roadmap](docs/book/src/roadmap.md) and
+   [current capability limits](docs/book/src/limits.md).
 3. Check [open issues](https://github.com/incyashraj/krate/issues) -- especially
    those labelled `good first issue`.
 4. For anything bigger than a typo fix, open an issue or start a
@@ -25,25 +25,35 @@ every contribution -- code, docs, design, or ideas -- compounds.
 git clone https://github.com/<your-handle>/krate.git
 cd krate
 
-# 2. Install the right Rust toolchain (rust-toolchain.toml does this automatically)
-#    rustup will read the file and install the pinned toolchain.
+# 2. Check the pinned Rust toolchain
 rustup show
+```
 
-# 3. Build the workspace
+Before building Rust code, install the platform prerequisites in
+[Building Krate from source](docs/build.md). The toolchain version and targets
+are pinned in [rust-toolchain.toml](rust-toolchain.toml). Building guest apps
+also needs `cargo-component`; opening a packaged app does not.
+
+For Rust changes, run the workspace checks from the repository root:
+
+```bash
 cargo build --workspace
-
-# 4. Run tests
 cargo test --workspace
-
-# 5. Lint (must pass with zero warnings)
 cargo clippy --all-targets --all-features -- -D warnings
-
-# 6. Format check
 cargo fmt --all -- --check
 ```
 
-Everything should work in under 10 minutes on a modern machine.
-If it doesn't, [open a bug report](https://github.com/incyashraj/krate/issues/new?template=bug_report.md) -- that's a real bug.
+For book changes, use the mdBook version used by CI:
+
+```bash
+cargo install mdbook --locked --version 0.4.40
+mdbook build docs/book
+```
+
+A cold Rust build can take time and depends on your machine. If setup fails,
+include your OS, architecture, command and error in a
+[bug report](https://github.com/incyashraj/krate/issues/new?template=bug_report.md).
+Remove credentials and private paths from logs before sharing them.
 
 ---
 
@@ -51,14 +61,8 @@ If it doesn't, [open a bug report](https://github.com/incyashraj/krate/issues/ne
 
 ### Branch naming
 
-```
-p{phase}-{area}-{short-description}
-```
-
-Examples:
-- `p0-docs-fix-typo-readme`
-- `p1-runtime-add-wasmtime-embed`
-- `p2-uapi-io-write-impl`
+Use a descriptive name, such as `docs/improve-quickstart` or
+`fix/manifest-error`. You do not need an internal plan or phase task ID.
 
 ### Commit style
 
@@ -73,13 +77,13 @@ We use [Conventional Commits](https://www.conventionalcommits.org/):
 
 Types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `build`, `ci`
 
-Scopes follow the crate name or plan phase, e.g. `runtime`, `cli`, `uapi`, `p0`.
+Scopes can name the crate or area, for example `runtime`, `cli` or `docs`.
 
 Examples:
 ```
 feat(runtime): embed wasmtime engine
 fix(cli): handle missing manifest gracefully
-docs(p0): add ADR-0001 rust-for-runtime
+docs: clarify the runtime installation steps
 chore(ci): pin cargo-deny to v0.14
 ```
 
@@ -87,7 +91,7 @@ chore(ci): pin cargo-deny to v0.14
 
 1. Keep PRs focused. One logical change per PR.
 2. Fill in the [PR template](.github/PULL_REQUEST_TEMPLATE.md) completely.
-3. Reference the task ID in the PR description (format: `P{N}-{AREA}-{NN}`).
+3. Link the public issue or discussion, if there is one, and explain the change.
 4. All CI checks must pass. Zero clippy warnings.
 5. Add an entry to `CHANGELOG.md` under `[Unreleased]`.
 6. If you changed the book, run `mdbook build docs/book`.
@@ -107,8 +111,17 @@ obvious from code alone. See [ADR process](docs/adr/README.md) and
 
 ## Licensing of contributions
 
-By submitting a pull request you agree to license your contribution under the
-same terms as this project: **MIT OR Apache-2.0** (your choice per file).
+Contributions use the existing license terms of the code they change:
+
+- The player, `.krate` format, CLI and runtime use
+  [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACHE).
+- Krate Studio and the hub worker have separate Business Source License 1.1
+  terms in [studio/LICENSE](studio/LICENSE) and
+  [cloud/worker/LICENSE](cloud/worker/LICENSE). Those files specify their use
+  grants and change to Apache-2.0 on August 30, 2030.
+
+Read the applicable license before contributing. This guide does not replace
+or change those terms.
 
 There is no CLA. The `SPDX-License-Identifier` header approach is used for
 any new source files.

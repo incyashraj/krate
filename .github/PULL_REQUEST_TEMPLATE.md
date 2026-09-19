@@ -2,13 +2,13 @@
 
 Brief summary of the change and why it's needed.
 
-Closes: <!-- issue number, e.g. Closes #42 or task ID e.g. Closes P1-RT-02 -->
+Related issue or discussion: <!-- public link, if applicable; use Closes #42 only when this PR resolves it -->
 
 ---
 
 ## Checklist
 
-- [ ] Task ID is in the branch name (`p{N}-{area}-{n}-description`) and referenced above.
+- [ ] The change and its reason are described above, with a related public issue or discussion if applicable.
 - [ ] `cargo fmt --all -- --check` passes locally.
 - [ ] `cargo clippy --all-targets --all-features -- -D warnings` passes locally.
 - [ ] `cargo test --workspace` passes locally.
