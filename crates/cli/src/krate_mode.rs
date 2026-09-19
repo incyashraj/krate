@@ -53,6 +53,15 @@ pub fn generate() -> String {
     out.push_str(&authoring_context::sdk_surface_section());
     out.push_str(&authoring_context::capability_catalog_section());
     out.push_str(&authoring_context::gui_world_section());
+    // The design guidance, which this prompt shipped without.
+    //
+    // krate-mode is what Studio and every outside AI reads, and it was a pure
+    // API reference -- every function, and nothing about what the app should
+    // look like. An AI given only the calls invents the rest, and what it
+    // invents is the same every time: a marketing headline over a utility,
+    // decorative cards, a soft gradient behind somebody's data. People can
+    // tell, and they say so.
+    out.push_str(authoring_context::design_guidance_section());
     out.push_str(&worked_examples_section());
     out.push_str(HANDOFF);
     out
@@ -588,6 +597,55 @@ mod tests {
     /// and it is a checked-in copy of generated output -- so the moment the SDK,
     /// the capability registry, the WIT, or either example app changes, this
     /// fails until the file is regenerated with `krate krate-mode`.
+    /// The published prompt must teach DESIGN, not only the API.
+    ///
+    /// It shipped as a pure function reference for months: every call, and
+    /// not one sentence about what the app should look like. An AI given
+    /// only the calls invents the rest, and what it invents is the same
+    /// every time -- a marketing headline over a utility, decorative cards,
+    /// a soft gradient behind somebody's data. People can tell, and they
+    /// said so.
+    ///
+    /// Asserted on the PROMPT rather than on the constant, because the
+    /// failure was never that the guidance did not exist. It existed in the
+    /// local pack the whole time and was never wired into the published one,
+    /// so a test that only checked the constant would have passed
+    /// throughout.
+    #[test]
+    fn the_published_prompt_teaches_design_and_not_only_the_api() {
+        let prompt = generate();
+
+        // The decision the whole section turns on.
+        assert!(
+            prompt.contains("what KIND of app is this"),
+            "the prompt must make an AI decide tool-or-piece before designing"
+        );
+        assert!(
+            prompt.contains("A TOOL shows someone their own data"),
+            "and must define what a tool is"
+        );
+
+        // The named tells. These are what people recognise as AI-made, so
+        // each one an AI has read is one it can avoid.
+        for tell in [
+            "marketing headline on a utility",
+            "Everything rounded",
+            "Emoji as iconography",
+            "A card around each thing",
+        ] {
+            assert!(
+                prompt.contains(tell),
+                "the prompt must name the tell {tell:?} so an AI can avoid it"
+            );
+        }
+
+        // And the rule that keeps decoration off a data grid.
+        assert!(
+            prompt.contains("No shadows, gradients, glows or rounded cards on a tool"),
+            "the prompt must say decoration belongs on a piece, not a tool"
+        );
+    }
+
     #[test]
     fn the_published_prompt_matches_the_generator() {
         let published =

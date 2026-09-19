@@ -62,6 +62,7 @@ pub fn generate(app_dir: &Path) -> String {
     out.push_str(DESIGN_PATTERNS_SECTION);
     out.push_str(BACKEND_CLIENT_SECTION);
     out.push_str(SENSES_SECTION);
+    out.push_str(APP_DESIGN_SECTION);
     out.push_str(GAME_FEEL_SECTION);
     out.push_str(NO_STD_SECTION);
     out.push_str(&gui_world_section());
@@ -377,7 +378,10 @@ alive rather than busy.\n\
 - **Press feedback**: on pointer-down over a control, draw it 3-4% \
 smaller (inset its rect) for as long as it is held; release springs it \
 back. 60ms of feel that separates an app from a screenshot.\n\
-- **Soft-blob backdrops** (the look of every friendly modern hero screen): \
+- **Soft-blob backdrops** -- for a PIECE, never a tool. This is the look of \
+every friendly modern hero screen, which is exactly why it makes a utility \
+look generated. Behind a game or a visualiser it is right; behind a list of \
+someone's data it is decoration in front of the thing they came to read: \
 layer 3-5 big `radial-gradient` discs over a light base, each with a \
 saturated `inner` and an `outer` whose ALPHA IS ZERO -- the falloff to \
 transparent is what makes them read as soft light instead of circles. \
@@ -414,6 +418,21 @@ best at weight 600-700 with slightly negative letter-spacing via \
 /// `pub(crate)` because Krate Mode (`crate::krate_mode`) publishes the same
 /// generated section into its paste-in prompt. One generator, two consumers, so
 /// the published prompt cannot teach an API the pack has moved on from.
+/// The design guidance, for the PUBLISHED prompt as well as the local pack.
+///
+/// `krate-mode` -- the prompt Studio and every outside AI actually reads --
+/// shipped as a pure API reference: every function, and not one sentence
+/// about what the app should look like. So an AI got "here are the calls"
+/// and invented the rest, which is why generated apps arrived looking
+/// interchangeable: a marketing headline, decorative cards, a soft gradient,
+/// on whatever the app happened to be.
+///
+/// The guidance existed the whole time. It was in the local pack and never
+/// in the published one.
+pub fn design_guidance_section() -> &'static str {
+    APP_DESIGN_SECTION
+}
+
 pub(crate) fn sdk_surface_section() -> String {
     let functions = sdk_reference::parse_sdk(sdk_reference::GUEST_SDK_SOURCE);
     let mut out = String::from("\n---\n\n# 1. The SDK: every `krate::*` function you can call\n\n");
@@ -697,6 +716,135 @@ person did not just ask for.\n\n";
 /// the agent without shipped flat rectangles. Taste can be written down.
 /// This section is the floor-raiser for every agent that is not the best
 /// one.
+const APP_DESIGN_SECTION: &str = "\n---\n\n\
+# 2g. What the app should look like\n\n\
+## Before any of that: what KIND of app is this?\n\n\
+This is the first design decision and the one most often skipped. Everything \
+below depends on it, and getting it wrong is why a generated app can be \
+technically correct and still look wrong to the person who asked for it.\n\n\
+**A TOOL shows someone their own data.** A hex viewer, a log reader, a \
+spreadsheet, a file browser, a diff, a monitor, a terminal, a database \
+client. The content IS the interface. The person came to read something, and \
+every pixel spent on chrome is a pixel not spent on what they came for.\n\n\
+**A PIECE has no data of its own.** A game, a toy, a visualiser, a clock, a \
+demo. Nothing on screen belongs to the person, so the app is the thing being \
+looked at, and it can spend its whole surface on how it feels.\n\n\
+Most requests are tools. \"Show me...\", \"a viewer for...\", \"track my...\", \
+\"a list of...\" are all tools. If you are unsure, it is a tool.\n\n\
+### Designing a tool\n\n\
+**The data gets the room; the chrome gets what is left.** Controls go in one \
+compact band, not a hero area. A tool that opens with a large heading and a \
+row of decorative cards above its actual content has put the furniture in \
+front of the window.\n\n\
+**Name the app in the title bar, not on the screen.** \
+`window::create(\"Hexview\", size)` already names it. A big \"Every byte, in \
+view.\" heading inside the window is marketing copy aimed at somebody who has \
+already opened the app. Kill the tagline, and the subtitle under it.\n\n\
+**Alignment and monospace carry more than colour does.** Columns that line \
+up, one text size for the data, and generous ROW spacing rather than generous \
+padding. A dense grid that aligns reads as professional; the same grid with \
+softer colours and bigger gaps reads as a mock-up of one.\n\n\
+**Two or three greys and one accent.** A tool's colour budget goes on \
+MEANING -- this byte is ASCII, that one is a control character, this line \
+changed. Colour spent decoratively is colour the data needed. If everything \
+is tinted, no tint means anything.\n\n\
+**No shadows, gradients, glows or rounded cards on a tool.** Those are for \
+things that float above other things, and nothing in a data grid floats. A \
+1px border, or a background one shade different from its neighbour, separates \
+two regions completely -- without softening the edges the eye uses to track a \
+column.\n\n\
+**Size text in fixed pixels, never as a fraction of the window.** A tool is \
+resized to see MORE ROWS, not bigger text. A font size computed from the \
+canvas size means resizing zooms the app instead of revealing more of it, \
+which no real tool does and every person notices at once.\n\n\
+### Designing a piece\n\n\
+The section after next applies, and applies fully. A game or a visualiser \
+that is flat and grey has failed in the other direction: it is supposed to be \
+looked at.\n\n\
+## Not looking like it was generated\n\n\
+People can tell, and they do not like it. The tells are consistent, and every \
+one comes from reaching for decoration to signal effort:\n\n\
+- **A marketing headline on a utility.** \"Every byte, in view.\" over a hex \
+editor. Real tools do not advertise themselves to the person already using \
+them.\n\
+- **Everything rounded.** Rounded cards inside rounded panels inside a \
+rounded window, wrapping content that is rectangular.\n\
+- **A gradient with no reason.** Purple-to-blue behind a settings list.\n\
+- **Emoji as iconography.** A rocket beside \"Run\", a sparkle beside \
+anything.\n\
+- **Three sizes of the same grey** where one weight change would have done \
+the job.\n\
+- **Padding everywhere, hierarchy nowhere.** Even spacing around every \
+element means nothing is grouped, so the eye has nothing to follow.\n\
+- **A card around each thing.** A card is for content that belongs together \
+and is separate from its neighbours. Four cards holding one number each are \
+four boxes, not a design.\n\n\
+The fix is never a different palette. It is asking what the person is looking \
+AT, giving that the space, the contrast and the alignment -- and then \
+stopping. An interface looks designed when every decision was made for a \
+reason you could say out loud.\n\n\
+**Look at what you made.** `krate run <entry.wasm> --shoot frame.png -- \
+quick`, then actually LOOK at the picture before calling it done. Is the \
+content the biggest thing on screen? Could you delete a heading, a card or a \
+colour and lose nothing? Is any text blurry or mis-aligned? That pass catches \
+more than any rule here.\n\n\
+## Making a PIECE look built, not sketched\n\n\
+This section is for a piece -- a game, a toy, a visualiser, a demo. On a tool \
+most of it is the wrong instinct; see above. The difference between a piece \
+that looks like a prototype and one that looks finished is a handful of \
+habits:\n\n\
+**Go full-bleed when the design owns its whole surface.** \
+`window::set-full-bleed(win, true)` right after create extends your content \
+into the title-bar band with the host's window controls overlaid -- the shape \
+every modern editor and terminal has. Always `let _ =` it: a host that cannot \
+do it says unsupported and keeps the standard title bar. Leave the top ~40 \
+pixels free of controls so nothing sits under the overlaid window buttons. \
+`apps/krate-glow` shows it. This one is right for a tool as well: a terminal \
+or an editor wants its whole surface.\n\n\
+**Measure text before you place it.** `canvas2d::measure_text` is the \
+difference between a centred label and a nearly-centred one. Never estimate a \
+width from the character count -- the face is proportional, so `i` and `W` \
+differ about four times. Not optional anywhere: guessed spacing is the most \
+visible defect a generated app ships with, and in a monospace grid it is what \
+makes columns drift.\n\n\
+**Outline round things with `stroke_circle`, never `stroke_rect`.** A rim on \
+a bubble, a ring, a dial, an unfilled dot -- all `stroke_circle(canvas, \
+center, radius, width, colour)`. Reaching for `stroke_rect` instead puts a \
+visible square box around a round shape, which a real generated app shipped \
+with.\n\n\
+**Use the real rounded-rect call, never a hand-built one.** \
+`canvas2d::fill_round_rect(canvas, area, radii, colour)` draws a card or a \
+button in one call, correctly antialiased. Do not fake it by filling a \
+rectangle and four `fill_circle` corners: the seams show, the edges alias \
+differently from the curves, and it costs five calls to look worse. \
+`stroke_round_rect` is the bordered version. A radius of 8-12 reads as a \
+control, 16-20 as a card, and half the height as a pill.\n\n\
+**Put a soft shadow under anything that floats.** \
+`canvas2d::drop_shadow_round_rect(canvas, area, radii, blur, colour)`, drawn \
+*before* the card itself and offset a few pixels down. Use a low-alpha black \
+(alpha 0.15-0.3) and a blur near the corner radius. A card with no shadow on \
+a flat background looks painted on; one with a shadow looks placed. A shadow \
+under something that does not float -- a table row, a column heading -- looks \
+like a mistake, because it is one.\n\n\
+**Reach for gradients, with stops.** `linear_gradient_stops(canvas, area, \
+angle_degrees, stops)` takes an angle and a list, so a backdrop can run \
+diagonally through three colours instead of straight down through two. \
+`radial_gradient` with a transparent outer colour is still the way to put a \
+soft glow behind something important.\n\n\
+**Vary the font weight -- this is what makes text look designed.** \
+`draw_text_styled` takes a weight (400 body, 600-700 headings and big \
+numbers), italic, and letter spacing. Big numbers read best at 600-700 with \
+slightly negative letter spacing. An app whose text is all one weight looks \
+like a form no matter how good the colours are; measure with \
+`measure_text_styled` so the styled width is the one you place against.\n\n\
+**Give things room.** Cramped is a common reason a generated app looks \
+wrong: 16-24px of padding inside a card, 12-16px between rows, and a clear \
+margin around the window edge. On a tool, spend that budget on row spacing \
+rather than on padding around a shrinking grid.\n\n\
+**Pick three colours and stop.** A dark background, one bright accent for the \
+thing you want clicked, and one ink colour for text. Every extra hue makes it \
+look less designed, not more.\n\n\
+";
 const GAME_FEEL_SECTION: &str = "\n---\n\n\
 # 2f. Making a game feel finished\n\n\
 A playable game and a finished-feeling game differ by a dozen small \
@@ -786,57 +934,6 @@ registered. Do not hand-shim it. Add `features = [\"getrandom-backend\"]` to the
 `rustflags = [\"--cfg\", \"getrandom_backend=\\\"custom\\\"\"]`, and declare the \
 `random.bytes` capability. The SDK then routes every draw to the host. \
 `apps/krate-diceroll` is a working example.\n\n\
-## Making it look built, not sketched\n\n\
-The difference between an app that looks like a prototype and one that looks \
-finished is a handful of habits, and none of them are hard. Apply them to \
-whatever the app is -- these are not decoration for showcase apps, they are \
-what an ordinary tool needs to look like it was built on purpose:\n\n\
-**Go full-bleed when the design owns its whole surface.** \
-`window::set-full-bleed(win, true)` right after create extends your content \
-into the title-bar band with the host's window controls overlaid -- the \
-shape every modern editor and terminal has. Always `let _ =` it: a host \
-that cannot do it says unsupported and keeps the standard title bar. Leave \
-the top ~40 pixels of your layout free of controls so nothing sits under \
-the overlaid window buttons. `apps/krate-glow` shows it.\n\n\
-**Measure text before you place it.** `canvas2d::measure_text` is the \
-difference between a centred label and a nearly-centred one. Never estimate a \
-width from the character count -- the face is proportional, so `i` and `W` \
-differ about four times.\n\n\
-**Outline round things with `stroke_circle`, never `stroke_rect`.** A rim on \
-a bubble, a ring, a dial, an unfilled dot -- all `stroke_circle(canvas, \
-center, radius, width, colour)`. Reaching for `stroke_rect` instead puts a \
-visible square box around a round shape, which a real generated app shipped \
-with.\n\n\
-**Use the real rounded-rect call, never a hand-built one.** \
-`canvas2d::fill_round_rect(canvas, area, radii, colour)` draws a card or a \
-button in one call, correctly antialiased. Do not fake it by filling a \
-rectangle and four `fill_circle` corners: the seams show, the edges alias \
-differently from the curves, and it costs five calls to look worse. \
-`stroke_round_rect` is the bordered version. A radius of 8-12 reads as a \
-control, 16-20 as a card, and half the height as a pill.\n\n\
-**Put a soft shadow under anything that floats.** \
-`canvas2d::drop_shadow_round_rect(canvas, area, radii, blur, colour)`, drawn \
-*before* the card itself and offset a few pixels down, is the single change \
-that separates a flat 2015 layout from a current one. Use a low-alpha black \
-(alpha 0.15-0.3) and a blur near the corner radius. A card with no shadow on \
-a flat background looks painted on; one with a shadow looks placed.\n\n\
-**Reach for gradients, with stops.** `linear_gradient_stops(canvas, area, \
-angle_degrees, stops)` takes an angle and a list, so a backdrop can run \
-diagonally through three colours instead of straight down through two. \
-`radial_gradient` with a transparent outer colour is still the way to put a \
-soft glow behind something important.\n\n\
-**Vary the font weight -- this is what makes text look designed.** \
-`draw_text_styled` takes a weight (400 body, 600-700 headings and big \
-numbers), italic, and letter spacing. Big numbers read best at 600-700 with \
-slightly negative letter spacing. An app whose text is all one weight looks \
-like a form no matter how good the colours are; measure with \
-`measure_text_styled` so the styled width is the one you place against.\n\n\
-**Give things room.** Cramped is the commonest reason a generated app looks \
-wrong: 16-24px of padding inside a card, 12-16px between rows, and a clear \
-margin around the window edge. Space costs nothing and reads as care.\n\n\
-**Pick three colours and stop.** A dark background, one bright accent for the \
-thing you want clicked, and one ink colour for text. Every extra hue makes it \
-look less designed, not more.\n\n\
 ## Texturing a 3D scene\n\n\
 `scene3d` fills flat-shaded triangles by default, which looks like 1995. \
 Textures are what make it look like a game: upload an image once, then draw \

@@ -806,6 +806,77 @@ Declare `camera.capture` in the manifest, required if the app IS the camera. It 
 The measurement is single-line and unwrapped, because `draw_text` is too. To wrap a paragraph, measure words and break the lines yourself.
 
 Start from the closest example in section 5 rather than these signatures alone -- the samples show the call order (bind a canvas, draw, present) that the signatures do not.
+
+---
+
+# 2g. What the app should look like
+
+## Before any of that: what KIND of app is this?
+
+This is the first design decision and the one most often skipped. Everything below depends on it, and getting it wrong is why a generated app can be technically correct and still look wrong to the person who asked for it.
+
+**A TOOL shows someone their own data.** A hex viewer, a log reader, a spreadsheet, a file browser, a diff, a monitor, a terminal, a database client. The content IS the interface. The person came to read something, and every pixel spent on chrome is a pixel not spent on what they came for.
+
+**A PIECE has no data of its own.** A game, a toy, a visualiser, a clock, a demo. Nothing on screen belongs to the person, so the app is the thing being looked at, and it can spend its whole surface on how it feels.
+
+Most requests are tools. "Show me...", "a viewer for...", "track my...", "a list of..." are all tools. If you are unsure, it is a tool.
+
+### Designing a tool
+
+**The data gets the room; the chrome gets what is left.** Controls go in one compact band, not a hero area. A tool that opens with a large heading and a row of decorative cards above its actual content has put the furniture in front of the window.
+
+**Name the app in the title bar, not on the screen.** `window::create("Hexview", size)` already names it. A big "Every byte, in view." heading inside the window is marketing copy aimed at somebody who has already opened the app. Kill the tagline, and the subtitle under it.
+
+**Alignment and monospace carry more than colour does.** Columns that line up, one text size for the data, and generous ROW spacing rather than generous padding. A dense grid that aligns reads as professional; the same grid with softer colours and bigger gaps reads as a mock-up of one.
+
+**Two or three greys and one accent.** A tool's colour budget goes on MEANING -- this byte is ASCII, that one is a control character, this line changed. Colour spent decoratively is colour the data needed. If everything is tinted, no tint means anything.
+
+**No shadows, gradients, glows or rounded cards on a tool.** Those are for things that float above other things, and nothing in a data grid floats. A 1px border, or a background one shade different from its neighbour, separates two regions completely -- without softening the edges the eye uses to track a column.
+
+**Size text in fixed pixels, never as a fraction of the window.** A tool is resized to see MORE ROWS, not bigger text. A font size computed from the canvas size means resizing zooms the app instead of revealing more of it, which no real tool does and every person notices at once.
+
+### Designing a piece
+
+The section after next applies, and applies fully. A game or a visualiser that is flat and grey has failed in the other direction: it is supposed to be looked at.
+
+## Not looking like it was generated
+
+People can tell, and they do not like it. The tells are consistent, and every one comes from reaching for decoration to signal effort:
+
+- **A marketing headline on a utility.** "Every byte, in view." over a hex editor. Real tools do not advertise themselves to the person already using them.
+- **Everything rounded.** Rounded cards inside rounded panels inside a rounded window, wrapping content that is rectangular.
+- **A gradient with no reason.** Purple-to-blue behind a settings list.
+- **Emoji as iconography.** A rocket beside "Run", a sparkle beside anything.
+- **Three sizes of the same grey** where one weight change would have done the job.
+- **Padding everywhere, hierarchy nowhere.** Even spacing around every element means nothing is grouped, so the eye has nothing to follow.
+- **A card around each thing.** A card is for content that belongs together and is separate from its neighbours. Four cards holding one number each are four boxes, not a design.
+
+The fix is never a different palette. It is asking what the person is looking AT, giving that the space, the contrast and the alignment -- and then stopping. An interface looks designed when every decision was made for a reason you could say out loud.
+
+**Look at what you made.** `krate run <entry.wasm> --shoot frame.png -- quick`, then actually LOOK at the picture before calling it done. Is the content the biggest thing on screen? Could you delete a heading, a card or a colour and lose nothing? Is any text blurry or mis-aligned? That pass catches more than any rule here.
+
+## Making a PIECE look built, not sketched
+
+This section is for a piece -- a game, a toy, a visualiser, a demo. On a tool most of it is the wrong instinct; see above. The difference between a piece that looks like a prototype and one that looks finished is a handful of habits:
+
+**Go full-bleed when the design owns its whole surface.** `window::set-full-bleed(win, true)` right after create extends your content into the title-bar band with the host's window controls overlaid -- the shape every modern editor and terminal has. Always `let _ =` it: a host that cannot do it says unsupported and keeps the standard title bar. Leave the top ~40 pixels free of controls so nothing sits under the overlaid window buttons. `apps/krate-glow` shows it. This one is right for a tool as well: a terminal or an editor wants its whole surface.
+
+**Measure text before you place it.** `canvas2d::measure_text` is the difference between a centred label and a nearly-centred one. Never estimate a width from the character count -- the face is proportional, so `i` and `W` differ about four times. Not optional anywhere: guessed spacing is the most visible defect a generated app ships with, and in a monospace grid it is what makes columns drift.
+
+**Outline round things with `stroke_circle`, never `stroke_rect`.** A rim on a bubble, a ring, a dial, an unfilled dot -- all `stroke_circle(canvas, center, radius, width, colour)`. Reaching for `stroke_rect` instead puts a visible square box around a round shape, which a real generated app shipped with.
+
+**Use the real rounded-rect call, never a hand-built one.** `canvas2d::fill_round_rect(canvas, area, radii, colour)` draws a card or a button in one call, correctly antialiased. Do not fake it by filling a rectangle and four `fill_circle` corners: the seams show, the edges alias differently from the curves, and it costs five calls to look worse. `stroke_round_rect` is the bordered version. A radius of 8-12 reads as a control, 16-20 as a card, and half the height as a pill.
+
+**Put a soft shadow under anything that floats.** `canvas2d::drop_shadow_round_rect(canvas, area, radii, blur, colour)`, drawn *before* the card itself and offset a few pixels down. Use a low-alpha black (alpha 0.15-0.3) and a blur near the corner radius. A card with no shadow on a flat background looks painted on; one with a shadow looks placed. A shadow under something that does not float -- a table row, a column heading -- looks like a mistake, because it is one.
+
+**Reach for gradients, with stops.** `linear_gradient_stops(canvas, area, angle_degrees, stops)` takes an angle and a list, so a backdrop can run diagonally through three colours instead of straight down through two. `radial_gradient` with a transparent outer colour is still the way to put a soft glow behind something important.
+
+**Vary the font weight -- this is what makes text look designed.** `draw_text_styled` takes a weight (400 body, 600-700 headings and big numbers), italic, and letter spacing. Big numbers read best at 600-700 with slightly negative letter spacing. An app whose text is all one weight looks like a form no matter how good the colours are; measure with `measure_text_styled` so the styled width is the one you place against.
+
+**Give things room.** Cramped is a common reason a generated app looks wrong: 16-24px of padding inside a card, 12-16px between rows, and a clear margin around the window edge. On a tool, spend that budget on row spacing rather than on padding around a shrinking grid.
+
+**Pick three colours and stop.** A dark background, one bright accent for the thing you want clicked, and one ink colour for text. Every extra hue makes it look less designed, not more.
+
 ---
 
 # Worked examples
