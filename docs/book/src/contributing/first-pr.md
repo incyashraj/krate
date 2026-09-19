@@ -8,9 +8,12 @@ Start with the `good first issue` label:
 
 <https://github.com/incyashraj/krate/labels/good%20first%20issue>
 
-Good Phase 0 starter tasks are documentation fixes, broken-link fixes, CI
-polish, and small scaffolding improvements. If an issue looks bigger than two
-hours, leave a comment and ask for help trimming the scope.
+Read the issue's current discussion before starting. Documentation fixes,
+broken-link fixes and small test improvements can be useful first changes.
+If the scope is unclear, leave a comment and ask what needs to be covered.
+
+See the [contribution guide](https://github.com/incyashraj/krate/blob/main/CONTRIBUTING.md)
+for review conventions and the licenses that apply to different parts of Krate.
 
 ## 2. Fork and clone
 
@@ -24,17 +27,19 @@ git remote add upstream https://github.com/incyashraj/krate.git
 
 ## 3. Create a branch
 
-Branch names follow the task phase:
+Give the branch a name that describes the change:
 
 ```bash
-git checkout -b p0-docs-fix-first-pr-guide
+git checkout -b docs/improve-first-pr-guide
 ```
 
-Use `p0-` for Phase 0 work, `p1-` for Phase 1 work, and so on.
+No internal plan or phase task ID is needed.
 
 ## 4. Run the baseline checks
 
-Before changing anything, confirm the repo works on your machine:
+For a Rust change, first read the
+[platform build requirements](https://github.com/incyashraj/krate/blob/main/docs/build.md).
+The repository pins Rust in `rust-toolchain.toml`. Then run:
 
 ```bash
 cargo build --workspace
@@ -43,9 +48,10 @@ cargo fmt --all -- --check
 cargo clippy --all-targets --all-features -- -D warnings
 ```
 
-For documentation-only work, also build the book:
+For a book change, install the version of mdBook used by CI and build the book:
 
 ```bash
+cargo install mdbook --locked --version 0.4.40
 mdbook build docs/book
 ```
 
@@ -60,33 +66,26 @@ diff.
 Use a Conventional Commit subject:
 
 ```bash
-git add .
-git commit -m "docs(p0): fix first-pr guide"
+git add docs/book/src/contributing/first-pr.md
+git commit -m "docs: clarify the first-PR guide"
 ```
+
+Replace the example path with the files you changed. Check `git diff --staged`
+before committing so unrelated work stays out of the PR.
 
 ## 7. Open the PR
 
 Push your branch and open a pull request against `main`:
 
 ```bash
-git push origin p0-docs-fix-first-pr-guide
+git push origin docs/improve-first-pr-guide
 ```
 
-Fill out the PR template, link the issue or task ID, and include the checks you
-ran. If the PR changes visible documentation, add a screenshot or a short note
-describing the rendered page.
+Fill out the PR template, link the public issue or discussion if applicable,
+and include the checks you ran. If the PR changes visible documentation, add
+a screenshot or a short note describing the rendered page.
 
 ## What happens next
 
 A maintainer will review the PR, ask questions if needed, and merge once CI is
 green and the scope is clear. Review is a conversation, not an exam.
-
-## Screenshot checklist
-
-When GitHub Pages is live, the guide should include screenshots of:
-
-- The `good first issue` label page.
-- The GitHub fork button.
-- The pull request form with the template filled in.
-
-Until then, the commands above are the source of truth for the local workflow.

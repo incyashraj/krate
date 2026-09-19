@@ -1,0 +1,29 @@
+[app]
+id = "dev.krate.grex"
+name = "grex"
+version = "0.1.0-dev"
+entry = "code.wasm"
+world = "krate:app/cli@0.1.0"
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read the test cases, options, and optional --file path"
+required = true
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Print the generated regular expression"
+required = true
+
+[[capabilities]]
+cap = "io.stderr"
+rationale = "Print usage and input errors"
+required = true
+
+# Direct INPUT arguments and the quick path do not read files. --file needs
+# this optional permission to be approved; the runtime still refuses reads
+# without a grant and paths outside the approved input directory.
+[[capabilities]]
+cap = "fs.read:./input/**"
+rationale = "Read newline-separated test cases from the file passed to --file"
+required = false

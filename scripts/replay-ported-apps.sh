@@ -115,8 +115,17 @@ TOML
   # regression harness that pops eleven windows is both slow and different from
   # what it does on a CI runner with no display. What this checks is that each
   # app still computes the right answer.
-  out="$( cd "$work" && "$KRATE" run --headless --auto-grant "$bundle" -- "$arg" 2>&1 )"
-  code="$?"
+  if [ "$name" = "grex" ]; then
+    # grex's direct inputs need no filesystem permission. Blanket grants hid
+    # a required/optional manifest error, so exercise both no-grant inputs
+    # and the allowed/denied file paths on every replay host.
+    out="$(python3 "$ROOT/scripts/test-grex.py" --self-test 2>&1 &&
+      python3 "$ROOT/scripts/test-grex.py" --krate "$KRATE" --bundle "$bundle" 2>&1)"
+    code="$?"
+  else
+    out="$( cd "$work" && "$KRATE" run --headless --auto-grant "$bundle" -- "$arg" 2>&1 )"
+    code="$?"
+  fi
   set -e
 
   elapsed=$(( $(now_ms) - started ))
