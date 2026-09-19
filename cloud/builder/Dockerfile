@@ -84,7 +84,7 @@ RUN rustup target add wasm32-wasip1 wasm32-wasip2 wasm32-unknown-unknown
 # image build, and the shipped one is by construction the version this exact
 # engine was released against. A mismatch there produces components that
 # build fine and fail to run.
-ARG KRATE_VERSION=0.4.0
+ARG KRATE_VERSION=0.5.0
 RUN set -eux; \
     base="https://github.com/incyashraj/krate/releases/download/v${KRATE_VERSION}"; \
     file="krate-${KRATE_VERSION}-x86_64-unknown-linux-gnu.tar.gz"; \
