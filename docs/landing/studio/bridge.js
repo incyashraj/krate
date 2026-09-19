@@ -213,6 +213,107 @@ async function builder(path, opts = {}) {
  * email address for another funded app -- because the id survives signing
  * out and signing in as someone else. The account key catches the rest.
  */
+/* The files somebody attached, by the name Studio shows on the chip.
+ *
+ * Studio's attachment list is a list of STRINGS, because on a desktop
+ * those are paths. A browser has no path to give it, so the string is the
+ * file's own name and the bytes live here beside it. Keyed by the exact
+ * string handed back from the picker, so removing a chip and re-adding a
+ * file of the same name behave the way a person expects.
+ */
+const attached = new Map();
+
+/// The most one attachment may be. Ten megabytes covers a screenshot, a
+/// logo, a CSV or a source file with room to spare; past that the request
+/// gets slow to send and the model cannot read it usefully anyway.
+const MAX_ATTACH_BYTES = 10 * 1024 * 1024;
+
+/* Open the browser's own file picker and read what was chosen.
+ *
+ * Returns the names, which is what Studio's UI renders. A file too big is
+ * refused BY NAME, so a person who attached three things and one was too
+ * large is told which one rather than losing all three silently.
+ */
+function pickLocalFiles({ accept, multiple }) {
+  return new Promise((resolve, reject) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    if (accept) input.accept = accept;
+    input.multiple = Boolean(multiple);
+    input.style.display = "none";
+    document.body.appendChild(input);
+
+    // A picker that is cancelled must not hang the promise for ever:
+    // Studio awaits this, and an await that never settles leaves the
+    // composer waiting on a dialog the person already dismissed. There is
+    // no reliable cancel event, so the window regaining focus is the
+    // signal, one tick late so a real choice lands first.
+    let settled = false;
+    const done = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      try { input.remove(); } catch (e) {}
+      fn(value);
+    };
+    window.addEventListener("focus", () => {
+      setTimeout(() => done(resolve, []), 400);
+    }, { once: true });
+
+    input.addEventListener("change", async () => {
+      const files = [...(input.files || [])];
+      if (!files.length) return done(resolve, []);
+      const names = [];
+      for (const file of files) {
+        if (file.size > MAX_ATTACH_BYTES) {
+          return done(reject, new Error(
+            `${file.name} is ${Math.round(file.size / 1024 / 1024)} MB. ` +
+            `Attachments are up to ${MAX_ATTACH_BYTES / 1024 / 1024} MB each.`,
+          ));
+        }
+        try {
+          attached.set(file.name, {
+            name: file.name,
+            type: file.type || "application/octet-stream",
+            bytes: await fileToBase64(file),
+          });
+          names.push(file.name);
+        } catch (err) {
+          return done(reject, new Error(`${file.name} could not be read.`));
+        }
+      }
+      done(resolve, names);
+    });
+
+    input.click();
+  });
+}
+
+/// A file's bytes as base64, which is what JSON can carry.
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error || new Error("read failed"));
+    reader.onload = () => {
+      // `readAsDataURL` gives "data:<type>;base64,<payload>"; the payload
+      // is what the build service wants, so the prefix is dropped here
+      // rather than on the wire.
+      const out = String(reader.result || "");
+      const comma = out.indexOf(",");
+      resolve(comma >= 0 ? out.slice(comma + 1) : "");
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/// The attachments named in a request, in the shape the build service
+/// takes. Anything it does not recognise is dropped rather than sent as
+/// an empty file.
+function attachmentsFor(names) {
+  return (names || [])
+    .map((name) => attached.get(name))
+    .filter(Boolean);
+}
+
 function deviceId() {
   try {
     let id = localStorage.getItem("krate_device");
@@ -721,7 +822,7 @@ const COMMANDS = {
    * builder, which parses the same engine output Studio parses locally.
    */
 
-  async create_app({ request, session, starterShape } = {}) {
+  async create_app({ request, session, starterShape, attachments } = {}) {
     // Plan mode means plan mode. Studio's chat has an escape hatch -- typing
     // "build it" during planning starts the build -- and on a desktop that
     // is right, because the person chose to plan in that moment. Here they
@@ -767,7 +868,14 @@ const COMMANDS = {
     try {
       started = await builder("/build", {
         method: "POST",
-        body: JSON.stringify({ request, device: deviceId(), shape: starterShape || "" }),
+        body: JSON.stringify({
+          request,
+          device: deviceId(),
+          shape: starterShape || "",
+          // The bytes, not the names: the build service writes them back
+          // to disk and hands the engine `--attach <file>` for each.
+          attachments: attachmentsFor(attachments),
+        }),
       });
     } catch (err) {
       // The one-app wall. The builder answers with `download: true` when the
@@ -791,7 +899,7 @@ const COMMANDS = {
    * service runs `krate revise` on the file it made, exactly as Studio on
    * a desktop runs it on the file in your folder. The app's URL names the
    * build it came from; the service checks that build is theirs. */
-  async revise_app({ path, change } = {}) {
+  async revise_app({ path, change, attachments } = {}) {
     if (!bridge.token) return refuse("Sign in to change your app.");
     const id = jobIdOf(path);
     if (!id) return refuse("This app was not made here, so it cannot be changed here. Open it in Studio on your computer.");
@@ -799,7 +907,7 @@ const COMMANDS = {
     try {
       started = await builder(`/build/${id}/revise`, {
         method: "POST",
-        body: JSON.stringify({ change, device: deviceId() }),
+        body: JSON.stringify({ change, device: deviceId(), attachments: attachmentsFor(attachments) }),
       });
     } catch (err) {
       const text = String((err && err.message) || err || "");
@@ -818,16 +926,18 @@ const COMMANDS = {
 
   /* The conversation before a build: the engine's own `plan` step, on the
    * build service, so the questions and the plan are the same ones Studio
-   * asks on a desktop. Attachments are not carried to the web yet, and the
-   * plan says so rather than pretending to have read them. */
+   * asks on a desktop. Attachments go with it, because `krate plan` takes
+   * them: the questions can then be about the file rather than only the
+   * sentence. */
   async plan_request({ request, attachments } = {}) {
     if (!bridge.token) return refuse("Sign in first.");
-    if (attachments && attachments.length) {
-      return refuse("Attaching files is coming to the web version; the plan is made from your words alone.");
-    }
     const answer = await builder("/plan", {
       method: "POST",
-      body: JSON.stringify({ request, device: deviceId() }),
+      body: JSON.stringify({
+        request,
+        device: deviceId(),
+        attachments: attachmentsFor(attachments),
+      }),
     });
     // Studio's UI expects the engine's JSON as text, exactly as the
     // desktop hands it over.
@@ -959,11 +1069,24 @@ const COMMANDS = {
   pick_folder() {
     return refuse("A browser chooses where downloads go, not this page.");
   },
+  /* Attaching a file, in a tab.
+   *
+   * A desktop picker answers with PATHS, and everything downstream --
+   * the chips, the engine's `--attach` -- is written against a path. A
+   * browser has no paths: it has a File the person chose, and bytes we
+   * must carry ourselves.
+   *
+   * So the browser keeps both. `bridge.attached` maps a name to its
+   * bytes, and the name alone is what Studio's own UI sees, so the chips
+   * and the remove button work unchanged. The bytes ride with the build
+   * request and are written back to disk on the build service, which is
+   * where `--attach` can reach them.
+   */
   pick_files() {
-    return refuse("Attaching files is coming to the web version.");
+    return pickLocalFiles({ accept: "", multiple: true });
   },
   pick_image() {
-    return refuse("Attaching a picture is coming to the web version.");
+    return pickLocalFiles({ accept: "image/*", multiple: false });
   },
   install_agent() {
     return refuse("The web version uses our AI, so there is nothing to install.");

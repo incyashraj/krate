@@ -361,7 +361,7 @@ async function allowedToBuild(token, device) {
  * the same command the desktop runs, so a change made in a tab and a change
  * made in Studio cannot come out different. `revise` names the finished job
  * it starts from: { parentId, source, change, caseId, name }. */
-async function startBuild({ request, token, account, device, revise = null, shape = "" }) {
+async function startBuild({ request, token, account, device, revise = null, shape = "", attachments = [] }) {
   // 128 random bits. The id appears in URLs and is all a page holds, so it
   // must not be guessable -- the truncated UUID this used to be was the only
   // thing between anyone on the internet and another person's app file.
@@ -414,9 +414,21 @@ async function startBuild({ request, token, account, device, revise = null, shap
   // never written to the job record or to disk.
   const theirKey = API_AGENTS[AGENT] ? await ownKey(token, AGENT) : null;
   job.paidBy = theirKey ? "own" : "krate";
+  // What the person attached, written into this build's own directory so
+  // the engine can read it. `--attach` is repeatable and takes a path, so
+  // the bytes a browser sent become real files exactly here. A failure to
+  // write one must not fail the build: an app made from the words alone is
+  // better than no app.
+  let attachArgs = [];
+  try {
+    const paths = await writeAttachments(attachments, dir);
+    attachArgs = paths.flatMap((path) => ["--attach", path]);
+  } catch (e) {
+    console.warn(`[build] could not write attachments: ${e.message}`);
+  }
   const args = revise
-    ? ["revise", revise.source, revise.change, "--agent", AGENT, "--output", output]
-    : ["create", request, "--output", output, "--agent", AGENT, "--transcript", transcript];
+    ? ["revise", revise.source, revise.change, "--agent", AGENT, "--output", output, ...attachArgs]
+    : ["create", request, "--output", output, "--agent", AGENT, "--transcript", transcript, ...attachArgs];
   const runEnv = { ...process.env };
   if (theirKey) runEnv[API_AGENTS[AGENT]] = theirKey;
   // The shape the plan picked: the engine seeds that working example as
@@ -573,27 +585,80 @@ async function startBuild({ request, token, account, device, revise = null, shap
 /* `krate plan <request>`: the engine's own pre-build answer, as JSON text.
  * Bounded, because a model that never answers must not hold the request
  * open; and one answer at a time is plenty. */
-async function planRequest(request, theirKey = null) {
+/// The most one attachment may be, and the most one request may carry.
+///
+/// A browser sends bytes as base64, which is about a third larger than
+/// the file, so the wire budget is set from the decoded size and the
+/// body limit is raised to match.
+const MAX_ATTACH_BYTES = 10 * 1024 * 1024;
+const MAX_ATTACHMENTS = 6;
+
+/* Write what the person attached into a directory the engine can read.
+ *
+ * A browser has no paths to send, so it sends names and bytes. They
+ * become real files here, and `--attach <file>` points the engine at
+ * them. Returns the paths written, in the order given.
+ *
+ * The name is NOT trusted: it arrives from a browser and is used to
+ * build a path. Only the basename is kept, anything outside a safe set
+ * of characters is replaced, and an empty result gets a generated name.
+ * A `../..` in an attachment name must not be able to write outside the
+ * directory this creates.
+ */
+async function writeAttachments(list, dir) {
+  const items = Array.isArray(list) ? list.slice(0, MAX_ATTACHMENTS) : [];
+  if (!items.length) return [];
+  const into = join(dir, "attachments");
+  await mkdir(into, { recursive: true });
+  const written = [];
+  for (const [index, item] of items.entries()) {
+    if (!item || typeof item.bytes !== "string") continue;
+    const bytes = Buffer.from(item.bytes, "base64");
+    if (!bytes.length || bytes.length > MAX_ATTACH_BYTES) continue;
+    const raw = String(item.name || "").split(/[\\/]/).pop() || "";
+    const safe = raw.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^[.-]+/, "");
+    const name = safe || `attachment-${index + 1}`;
+    const path = join(into, name);
+    await writeFile(path, bytes);
+    written.push(path);
+  }
+  return written;
+}
+
+async function planRequest(request, theirKey = null, attachments = []) {
+  // The plan reads what was attached too: `krate plan --attach` exists
+  // precisely so the questions can be about the file rather than only the
+  // sentence. Written to a temp dir that is removed once the plan answers.
+  const holding = await mkdtemp(join(tmpdir(), "krate-plan-"));
+  let files = [];
+  try {
+    files = await writeAttachments(attachments, holding);
+  } catch (e) { /* a plan without the file is better than no plan */ }
+  const attachArgs = files.flatMap((f) => ["--attach", f]);
   return new Promise((resolve) => {
+    const finish = (value) => {
+      rm(holding, { recursive: true, force: true }).catch(() => {});
+      resolve(value);
+    };
     let out = "";
     let err = "";
     const env = { ...process.env };
     if (theirKey) env[API_AGENTS[AGENT]] = theirKey;
-    const proc = spawn(KRATE, ["plan", request, "--agent", AGENT], { env });
+    const proc = spawn(KRATE, ["plan", request, "--agent", AGENT, ...attachArgs], { env });
     const killer = setTimeout(() => { try { proc.kill("SIGKILL"); } catch (e) {} }, PLAN_TIMEOUT_MS);
     proc.stdout.on("data", (b) => { out += b.toString(); });
     proc.stderr.on("data", (b) => { err = (err + b.toString()).slice(-2000); });
-    proc.on("error", (e) => { clearTimeout(killer); resolve({ ok: false, message: `could not run the engine: ${e.message}` }); });
+    proc.on("error", (e) => { clearTimeout(killer); finish({ ok: false, message: `could not run the engine: ${e.message}` }); });
     proc.on("close", (code) => {
       clearTimeout(killer);
       const text = out.trim();
       if (code !== 0 || !text) {
-        return resolve({ ok: false, message: plainFailure(err || "the plan step failed") });
+        return finish({ ok: false, message: plainFailure(err || "the plan step failed") });
       }
       try { JSON.parse(text); } catch (e) {
-        return resolve({ ok: false, message: "the plan step answered with something that is not a plan" });
+        return finish({ ok: false, message: "the plan step answered with something that is not a plan" });
       }
-      resolve({ ok: true, text });
+      finish({ ok: true, text });
     });
   });
 }
@@ -856,7 +921,7 @@ const server = createServer(async (req, res) => {
         return send(res, 429, "One app is already being made. It will be a few minutes.");
       }
 
-      const job = await startBuild({ request, token, account: allowed.account, device, shape });
+      const job = await startBuild({ request, token, account: allowed.account, device, shape, attachments: body.attachments });
       return json(res, 200, { id: job.id });
     }
 
@@ -874,7 +939,7 @@ const server = createServer(async (req, res) => {
       const theirs = API_AGENTS[AGENT] ? await ownKey(token, AGENT) : null;
       const off = authoringOff();
       if (off && !theirs) return json(res, 503, { wall: true, download: true, message: off });
-      const answer = await planRequest(request, theirs);
+      const answer = await planRequest(request, theirs, body.attachments);
       if (!answer.ok) return send(res, 502, answer.message);
       res.statusCode = 200;
       res.setHeader("content-type", "application/json");
@@ -929,6 +994,7 @@ const server = createServer(async (req, res) => {
       await writeFile(source, bytes);
       const next = await startBuild({
         request: job.request, token, account, device,
+        attachments: body.attachments,
         revise: { parentId: id, source, change, caseId: mayRevise.caseId, name: job.result.name },
       });
       return json(res, 200, { id: next.id, parent: id });
@@ -1028,7 +1094,10 @@ function readBody(req) {
     let data = "";
     req.on("data", (c) => {
       data += c;
-      if (data.length > 100_000) reject(new Error("too big"));
+      // Attachments ride in the body as base64, which is about a third
+      // larger than the file. Six files at 10 MB each is the ceiling the
+      // browser enforces, so this is that plus room for the request.
+      if (data.length > 90_000_000) reject(new Error("too big"));
     });
     req.on("end", () => {
       try { resolve(data ? JSON.parse(data) : {}); } catch (e) { resolve({}); }

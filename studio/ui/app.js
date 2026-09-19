@@ -588,7 +588,16 @@ async function enterHome() {
   // the probe did return, the settings load overwrote its choice. The chip
   // painted "Codex" while state.agent said "claude", and the build failed
   // naming an agent the user never picked. Settings load first, always.
-  const settings = await invoke("settings_get");
+  // Defaults if this ever fails. Nine places call `enterHome` without
+  // awaiting it, and none catches, so a rejection here would abandon the
+  // whole function: no sessions, no shelf, no agents, a blank Home with
+  // nothing on screen saying why. Settings are a preference, not a
+  // precondition, so they must never be the thing that stops Home
+  // painting.
+  let settings = {};
+  try {
+    settings = (await invoke("settings_get")) || {};
+  } catch (e) { /* defaults below */ }
   state.outDir = settings.out_dir;
   state.agent = settings.agent || "claude";
   // The person's apps come from local disk in milliseconds; the agent probe
@@ -706,6 +715,12 @@ function renderAccount() {
 }
 
 function renderSessions(sessions) {
+  // Guarded HERE rather than at each caller, because there are six and
+  // three of them already pass `|| []` while three do not. The spread
+  // below throws on undefined, and this runs on the path that paints
+  // Home: a command that answered with nothing would blank the screen
+  // rather than show an empty list.
+  if (!Array.isArray(sessions)) sessions = [];
   const grid = $("appsGrid");
   // The grid lives on its own page now. Startup still calls this before
   // that page has ever been shown, which is fine -- but a guard means a
@@ -3054,8 +3069,25 @@ window.addEventListener("focus", () => {
 /* ---- attachments ------------------------------------------------------ */
 
 async function attach() {
-  const picked = await invoke("pick_files");
-  for (const p of picked) {
+  // A refusal here has to be SEEN. On a desktop `pick_files` always
+  // succeeds or returns nothing, so this never threw and needed no catch.
+  // In a browser it refuses -- attaching is not built yet -- and with no
+  // catch that refusal became an unhandled rejection: the paperclip
+  // appeared to do nothing at all, which reads as a broken button rather
+  // than a feature that has not arrived.
+  let picked;
+  try {
+    picked = await invoke("pick_files");
+  } catch (err) {
+    const box = $("homeHint") || $("composerHint");
+    if (box) {
+      const was = box.textContent;
+      box.textContent = plainWords(err);
+      setTimeout(() => { box.textContent = was; }, 4000);
+    }
+    return;
+  }
+  for (const p of picked || []) {
     if (!state.attachments.includes(p)) state.attachments.push(p);
   }
   renderAttachments();
@@ -4524,7 +4556,27 @@ $("loginBrowserBtn").addEventListener("click", async () => {
 });
 $("attachBtn").addEventListener("click", attach);
 $("homeAttachBtn").addEventListener("click", attach);
-$("openKrateBtn").addEventListener("click", () => invoke("open_krate").catch(() => {}));
+/* "Open a file" is a real refusal in a browser, and it has to be read.
+ *
+ * On a desktop this opens a file picker and runs what you choose, so a
+ * swallowed error was harmless: nothing to say. In a tab there is no
+ * engine to run a .krate, and the bridge says so in a sentence worth
+ * reading. `.catch(() => {})` threw that sentence away, so the button did
+ * nothing at all -- no picker, no message, no sign it had been pressed. */
+$("openKrateBtn").addEventListener("click", async () => {
+  try {
+    await invoke("open_krate");
+  } catch (err) {
+    // Beside the button that was pressed, which is where a person is
+    // already looking. It holds the app count, so it is put back after.
+    const note = $("appsCount");
+    if (note) {
+      const was = note.textContent;
+      note.textContent = plainWords(err);
+      setTimeout(() => { note.textContent = was; }, 5000);
+    }
+  }
+});
 $("cloudBtn").addEventListener("click", openCloud);
 $("cloudBackBtn").addEventListener("click", enterHome);
 $("cloudRefresh").addEventListener("click", openCloud);
@@ -5057,8 +5109,17 @@ $("supSend")?.addEventListener("click", async () => {
 }
 $("reportBtn")?.addEventListener("click", openReportSheet);
 $("repSend")?.addEventListener("click", sendReport);
-$("repReveal")?.addEventListener("click", () => {
-  if (state.report) invoke("reveal", { path: state.report.path });
+$("repReveal")?.addEventListener("click", async () => {
+  if (!state.report) return;
+  // In a browser "reveal" downloads the file and then SAYS so. That
+  // sentence is the useful part -- without it a file appears in the
+  // downloads folder with nothing on screen explaining why.
+  try {
+    await invoke("reveal", { path: state.report.path });
+  } catch (err) {
+    const note = $("repResult");
+    if (note) note.textContent = plainWords(err);
+  }
 });
 $("retryBtn").addEventListener("click", () => {
   const again = state.lastFailed;
@@ -5144,11 +5205,26 @@ $("buildingNowStop")?.addEventListener("click", stopBuild);
 $("settingsBtn")?.addEventListener("click", openSettings);
 $("accountBtn").addEventListener("click", openAccount);
 $("changeDirBtn").addEventListener("click", async () => {
-  const dir = await invoke("pick_folder");
+  // A browser has no folder to choose: downloads go where the browser
+  // puts them. The bridge says exactly that, and without a catch the
+  // sentence was thrown away and the button did nothing.
+  let dir;
+  try {
+    dir = await invoke("pick_folder");
+  } catch (err) {
+    const value = $("outDirValue");
+    if (value) {
+      const was = value.textContent;
+      value.textContent = plainWords(err);
+      setTimeout(() => { value.textContent = was; }, 5000);
+    }
+    return;
+  }
   if (dir) {
     state.outDir = dir;
     $("outDirValue").textContent = dir;
-    await invoke("settings_set", { settings: { out_dir: dir, agent: state.agent } });
+    await invoke("settings_set", { settings: { out_dir: dir, agent: state.agent } })
+      .catch(() => {});
   }
 });
 $("logoutBtn").addEventListener("click", async () => {

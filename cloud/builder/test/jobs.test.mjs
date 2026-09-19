@@ -126,6 +126,17 @@ if [ "$1" = "revise" ]; then
 fi
 if [ "$1" = "create" ]; then
   case "$*" in *FAIL*) echo "the engine fell over" >&2; exit 1;; esac
+  # Record every --attach the service passed, and what was in the file, so
+  # a test can prove the bytes a browser sent reached the engine.
+  if [ -n "$KRATE_ATTACH_LOG" ]; then
+    prev=""
+    for a in "$@"; do
+      if [ "$prev" = "--attach" ]; then
+        echo "$(basename "$a")|$(cat "$a" 2>/dev/null)" >> "$KRATE_ATTACH_LOG"
+      fi
+      prev="$a"
+    done
+  fi
   out=""
   transcript=""
   prev=""
@@ -270,7 +281,10 @@ process.on("exit", () => {
 });
 
 hub.listen(HUB_PORT);
-let builder = startBuilder(stateDir, krateBin);
+// Where the fake engine records the --attach files it was handed, so the
+// attachment test can prove the bytes reached it.
+const attachLog = join(stateDir, "attachments.log");
+let builder = startBuilder(stateDir, krateBin, { KRATE_ATTACH_LOG: attachLog });
 await until(async () => (await get("/health")).status === 200);
 
 // Alice starts a build.
@@ -444,6 +458,47 @@ assert.strictEqual(revisedAttempt.id, editCaseId,
   const opened = caseCalls.filter((c) => c.path === "/case/open");
   assert.strictEqual(opened.length, jobsBefore + 1, "the refused change asked the hub once");
   assert.strictEqual(opened[opened.length - 1].body.edit, true, "and asked as an edit");
+}
+
+/* ---- what somebody attached reaches the engine -------------------------- */
+//
+// A browser has no file paths to send, so it sends a name and the bytes as
+// base64. Those have to become real files on this machine, because the
+// engine's `--attach` takes a path. This proves the whole chain: bytes in
+// the request, a file on disk, `--attach` on the command line, and the
+// engine able to read what it was given.
+//
+// It also proves the name cannot escape: a browser supplies it, and it is
+// used to build a path.
+{
+  const before = attemptCount();
+  const started = await post("/build", {
+    request: "an app that looks like this sketch",
+    attachments: [
+      { name: "sketch.png", type: "image/png", bytes: Buffer.from("PNGDATA").toString("base64") },
+      // Hostile on purpose: this must land inside the build directory
+      // under a safe name, never at the path it asks for.
+      { name: "../../etc/passwd", type: "text/plain", bytes: Buffer.from("HOSTILE").toString("base64") },
+    ],
+  }, asAlice);
+  assert.strictEqual(started.status, 200, `a build with attachments starts: ${started.body}`);
+  const id = JSON.parse(started.body).id;
+  await until(async () => JSON.parse((await get(`/build/${id}`, asAlice)).body).state === "done");
+  await until(async () => attemptCount() > before);
+
+  const log = await readFile(attachLog, "utf8").catch(() => "");
+  const rows = log.trim().split("\n").filter(Boolean).map((l) => l.split("|"));
+  const byName = new Map(rows.map(([name, body]) => [name, body]));
+
+  assert.ok(byName.has("sketch.png"), `the engine was handed sketch.png: ${log}`);
+  assert.strictEqual(byName.get("sketch.png"), "PNGDATA",
+    "and the bytes in it are the bytes the browser sent");
+
+  // The hostile name kept only its basename, so it was written inside the
+  // build directory rather than over anything.
+  assert.ok(!byName.has("../../etc/passwd"), "a path is never used as given");
+  assert.ok(byName.has("passwd"), `the basename is what survives: ${[...byName.keys()]}`);
+  assert.strictEqual(byName.get("passwd"), "HOSTILE", "and its bytes still arrive");
 }
 
 /* ---- what it cost, and whose money ------------------------------------- */
