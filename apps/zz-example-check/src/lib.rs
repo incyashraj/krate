@@ -181,7 +181,19 @@ fn node(id: u64, parent: Option<u64>, kind: types::WidgetKind) -> types::WidgetN
         kind,
         label: None,
         role: None,
-        style: types::Style { width: None, height: None, grow: 0.0, padding: 0.0, text: None, place: None, box_: None },
+        style: types::Style {
+            width: None,
+            height: None,
+            grow: 0.0,
+            padding: 0.0,
+            // `text` inks the label (K-402), `place` positions the widget in
+            // its parent (K-410), and `box` paints its background, border and
+            // corners. `None` on all three is the host's own look, which is
+            // what this example wants.
+            text: None,
+            place: None,
+            box_: None,
+        },
         checked: None,
         value: None,
         selected: None,

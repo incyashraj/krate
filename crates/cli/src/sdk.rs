@@ -99,15 +99,44 @@ mod tests {
     use super::*;
 
     #[test]
-    fn embeds_the_wit_and_bindings() {
-        // The embedded set must at least carry both WIT worlds and the bindings.
+    fn embeds_every_wit_phase_the_checkout_has() {
+        // The SDK must carry EVERY phase, not a list somebody remembered to
+        // extend. This test named phase2 and phase3 by hand; phase 4 was
+        // created, `build.rs` kept its two-element list, and every bundle
+        // packed after that carried an SDK that could not rebuild a phase 4
+        // app -- "failed to create a target world" (K-419). The test could
+        // not see it, because it was asking about the two phases that were
+        // there when it was written.
+        //
+        // So ask the CHECKOUT what phases exist and require all of them. A
+        // phase 5 that nobody adds to the SDK fails here.
+        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(std::path::Path::parent)
+            .expect("repo root");
+        let wit_root = repo.join("wit/krate");
+        let phases: Vec<String> = std::fs::read_dir(&wit_root)
+            .expect("read wit/krate")
+            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+            .filter(|path| path.join("world.wit").is_file())
+            .filter_map(|path| path.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .collect();
+        assert!(
+            !phases.is_empty(),
+            "no WIT phase found under {}",
+            wit_root.display()
+        );
+
         let paths: Vec<&str> = EMBEDDED_SDK.iter().map(|(p, _)| *p).collect();
-        assert!(paths
-            .iter()
-            .any(|p| p.ends_with("wit/krate/phase2/world.wit")));
-        assert!(paths
-            .iter()
-            .any(|p| p.ends_with("wit/krate/phase3/world.wit")));
+        for phase in &phases {
+            let world = format!("wit/krate/{phase}/world.wit");
+            assert!(
+                paths.iter().any(|p| p.ends_with(&world)),
+                "the SDK must carry {world}, or an app on that phase cannot \
+                 rebuild from a bundle. Phases in the checkout: {phases:?}"
+            );
+        }
+
         assert!(paths.contains(&"crates/bindings-rust/Cargo.toml"));
         assert!(paths.contains(&"crates/bindings-rust/src/lib.rs"));
     }

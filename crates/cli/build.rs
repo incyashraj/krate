@@ -94,9 +94,35 @@ fn embed_sdk() {
     // (relative path under the materialized SDK root, source bytes).
     let mut files: Vec<(String, Vec<u8>)> = Vec::new();
 
-    // The WIT trees for both phases.
-    for wit in ["wit/krate/phase2", "wit/krate/phase3"] {
-        collect_dir(&repo_root, &repo_root.join(wit), &mut files);
+    // Every WIT phase, DISCOVERED rather than listed.
+    //
+    // This was a hard-coded ["phase2", "phase3"]. Phase 4 was created and the
+    // list was not touched, so every bundle packed after that carried an SDK
+    // with no phase 4 WIT in it -- and an editable phase 4 app unpacked
+    // elsewhere could not rebuild: "failed to create a target world". The CP1
+    // exit test's clause 4 is exactly that claim, and it had been failing on
+    // it (K-419).
+    //
+    // A list a person has to remember to extend is a list that will be wrong
+    // again at phase 5. The directory is the source of truth: every phase is
+    // a directory under wit/krate with a world.wit in it, so ask.
+    let wit_root = repo_root.join("wit/krate");
+    println!("cargo:rerun-if-changed={}", wit_root.display());
+    let mut phases: Vec<PathBuf> = fs::read_dir(&wit_root)
+        .unwrap_or_else(|e| panic!("read {}: {e}", wit_root.display()))
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| path.join("world.wit").is_file())
+        .collect();
+    // Sorted, so the embedded list is the same on every machine and the SDK
+    // digest does not depend on directory order.
+    phases.sort();
+    assert!(
+        !phases.is_empty(),
+        "no WIT phase found under {}",
+        wit_root.display()
+    );
+    for phase in &phases {
+        collect_dir(&repo_root, phase, &mut files);
     }
 
     // The Rust bindings crate. Its Cargo.toml is rewritten to stand alone.

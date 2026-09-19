@@ -363,6 +363,14 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 - `locale::format_number(value: f64, style: NumberStyle, loc: &LocaleId) -> String`
 - `locale::timezone() -> String`
 
+### `mem`
+
+- `mem::have_room_for(bytes: usize) -> bool`
+- `mem::try_grow(v: &mut Vec<T>, additional: usize) -> bool`
+- `mem::try_grow_string(s: &mut String, additional: usize) -> bool`
+- `mem::try_string(capacity: usize) -> Option<String>`
+- `mem::try_vec(capacity: usize) -> Option<Vec<T>>`
+
 ### `motion`
 
 - `motion::ease_in_out(t: f32) -> f32`
@@ -601,6 +609,10 @@ takes this path, so any of them is a model for the wiring.
 - `scene3d::place: func(scene: u64, vertices: list<f32>, translate: list<f32>, rotate-degrees: list<f32>, scale: f32, tint: color) -> result<_, gfx-error>`
 - `scene3d::upload-texture: func(scene: u64, width: u32, height: u32, rgba: list<u8>) -> result<u64, gfx-error>`
 - `scene3d::textured: func(scene: u64, vertices: list<f32>, uvs: list<f32>, texture: u64, tint: color) -> result<_, gfx-error>`
+- `scene3d::smooth: func(scene: u64, vertices: list<f32>, normals: list<f32>, uvs: list<f32>, texture: u64, tint: color) -> result<_, gfx-error>`
+- `scene3d::set-lighting: func(scene: u64, lighting: lighting) -> result<_, gfx-error>`
+- `scene3d::normal-mapped: func(scene: u64, vertices: list<f32>, normals: list<f32>, tangents: list<f32>, uvs: list<f32>, texture: u64, normal-texture: u64, tint: color) -> result<_, gfx-error>`
+- `scene3d::unlit: func(scene: u64, vertices: list<f32>, uvs: list<f32>, texture: u64, tint: color) -> result<_, gfx-error>`
 - `scene3d::cull-back-faces: func(scene: u64, enabled: bool) -> result<_, gfx-error>`
 - `scene3d::present: func(scene: u64) -> result<_, gfx-error>`
 
@@ -1926,6 +1938,9 @@ fn node(id: u64, parent: Option<u64>, kind: types::WidgetKind) -> types::WidgetN
             height: None,
             grow: 0.0,
             padding: 0.0,
+            text: None,
+            place: None,
+            box_: None,
         },
         checked: None,
         value: None,
