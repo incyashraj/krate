@@ -422,6 +422,11 @@ picture source { display: none; }
 }
 .tag:first-child { border-radius: 999px 2px 2px 999px; }
 .tag:last-child { border-radius: 2px 999px 999px 2px; }
+@media (max-width: 760px) {
+  /* Keep every label readable when the three-chip row exceeds a phone's
+     content width. Larger screens keep the existing single row. */
+  .tagRow { flex-wrap: wrap; row-gap: 6px; }
+}
 .works.in .tag { opacity: 1; filter: blur(0); transform: none;
   transition: opacity 0.7s ease, filter 0.7s ease, transform 0.7s cubic-bezier(0.2,0.8,0.2,1.2); }
 .works.in .tag:nth-child(1) { transition-delay: 0.22s; }
@@ -989,7 +994,10 @@ picture source { display: none; }
      measure of roughly 34 characters is what a phone paragraph wants. */
   .heroSubPhone {
     display: block;
-    max-width: 34ch;
+    /* Geist's zero is 0.672em wide: keep the same final 34-character
+       measure without sizing the box from the temporary fallback font.
+       Using ch here changed three lines to two when Geist loaded. */
+    max-width: 22.848em;
     margin-left: auto; margin-right: auto;
     padding: 0 18px;
   }
@@ -1330,6 +1338,68 @@ picture source { display: none; }
   <meta name="twitter:image" content="https://krate.tech/og-v3.png">
   <script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebPage", "@id": "https://krate.tech/desktop-app-distribution.html#webpage", "url": "https://krate.tech/desktop-app-distribution.html", "name": "Krate, Electron and Tauri: desktop distribution models", "description": "Compare shared codebases with a shared application artifact: what Electron, Tauri and Krate distribute, runtime requirements, migration work and measurement boundaries.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}}</script>
   <style>
+    /* The article shell owns its layout. The homepage supplies fonts and
+       colors, not styles for these differently named elements. */
+    .subnav {
+      position: sticky; top: 0; z-index: 40;
+      background: rgba(0,0,0,.94); border-bottom: 1px solid #27272a;
+      -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+    }
+    .subnav-inner, .subfoot-inner {
+      width: min(1120px, calc(100% - 48px)); margin: 0 auto;
+      display: flex; align-items: center; flex-wrap: wrap; gap: 12px 24px;
+    }
+    .subnav-inner { padding: 12px 0; }
+    .subnav .brand {
+      display: inline-flex; align-items: center; gap: 8px;
+      min-height: 44px; font-size: 16px; font-weight: 500; letter-spacing: .02em;
+    }
+    .subnav .brand img { flex: none; }
+    .subnav nav { display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }
+    .subnav nav a, .subfoot a {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-height: 44px; padding: 10px 12px; color: #a1a1aa;
+      font-size: 14px; line-height: 1.5; border-radius: 8px;
+    }
+    .subnav nav a:hover, .subfoot a:hover { color: #fff; background: #18181b; }
+    .page-wrap {
+      width: min(760px, calc(100% - 48px)); margin: 0 auto;
+      padding: 64px 0 88px; color: #d4d4d8; line-height: 1.75;
+    }
+    .page-wrap h1, .page-wrap h2, .page-wrap h3 {
+      font-family: var(--disp); color: #fafafa; font-weight: 700;
+      letter-spacing: -.025em;
+    }
+    .page-wrap h1 { font-size: clamp(30px, 4.5vw, 46px); line-height: 1.14; margin-bottom: 20px; }
+    .page-wrap h2 { font-size: clamp(22px, 3vw, 28px); line-height: 1.25; margin-bottom: 18px; }
+    .page-wrap h3 { font-size: 20px; line-height: 1.35; margin: 24px 0 12px; }
+    .page-wrap p { margin: 0 0 18px; }
+    .page-wrap .page-lede { font-size: 18px; line-height: 1.7; color: #a1a1aa; margin-bottom: 24px; }
+    .page-wrap > section { margin-top: 40px; padding-top: 32px; border-top: 1px solid #27272a; }
+    .page-wrap ul, .page-wrap ol { padding-left: 24px; margin: 0 0 20px; }
+    .page-wrap li { padding-left: 4px; margin-bottom: 10px; }
+    .page-wrap strong { color: #fafafa; font-weight: 500; }
+    .page-wrap :is(p, li) a {
+      color: #c4b5fd; text-decoration: underline; text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
+    }
+    .page-wrap :is(p, li) a:hover { color: #ede9fe; }
+    .page-wrap :is(p, li) code { color: #e4e4e7; font-size: .9em; }
+    :is(.subnav, .page-wrap) .pill {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-height: 44px; padding: 10px 18px; border-radius: 999px;
+      border: 1px solid #3f3f46; background: #09090b; color: #e4e4e7;
+      font-size: 14px; font-weight: 500; line-height: 1.4; text-align: center;
+    }
+    :is(.subnav, .page-wrap) .pill:hover { background: #18181b; border-color: #71717a; }
+    :is(.subnav, .page-wrap) .pill-primary { background: #fafafa; border-color: #fafafa; color: #09090b; }
+    :is(.subnav, .page-wrap) .pill-primary:hover { background: #d4d4d8; border-color: #d4d4d8; }
+    :is(.subnav, .page-wrap, .subfoot) :is(a, pre, [tabindex]):focus-visible {
+      outline: 2px solid #c4b5fd; outline-offset: 4px;
+    }
+    .subfoot { border-top: 1px solid #27272a; color: #a1a1aa; }
+    .subfoot-inner { padding: 24px 0; justify-content: space-between; font-size: 13px; }
+    .subfoot-inner > span:last-child { display: flex; flex-wrap: wrap; gap: 4px; }
     /* Command blocks: scroll inside the box, never widen the page. */
     .answer-cmd {
       margin: 0 0 18px;
@@ -1348,8 +1418,11 @@ picture source { display: none; }
     }
     /* Nothing inside the page shell may widen it either: a long URL or an
        inline <code> token is the other way a page starts scrolling. */
-    .page-wrap { overflow-x: clip; }
+    .page-wrap { min-width: 0; }
     .page-wrap :is(p, li, h1, h2, h3, td) { overflow-wrap: anywhere; }
+    .page-wrap section[id] { scroll-margin-top: 88px; }
+    .answer-entry { margin-bottom: 28px; }
+    .answer-entry > p { margin-top: 18px; font-size: 14px; color: #a1a1aa; }
     /* The two pills at the foot of the page. They wrap rather than squeeze,
        and they are a real tap target rather than a line of text: measured
        at 26px before this, against the 44px the same pill gets in the nav. */
@@ -1364,10 +1437,12 @@ picture source { display: none; }
       align-items: center;
       justify-content: center;
       min-height: 44px;
-      padding: 0 20px;
+      padding: 10px 20px;
     }
     .answer-table-wrap { max-width: 100%; overflow-x: auto; margin: 20px 0; }
-    .answer-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .answer-table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 14px; }
+    .answer-table caption { text-align: left; color: #a1a1aa; font-size: 13px; margin-bottom: 12px; }
+    .answer-table thead th { color: #fafafa; background: #18181b; }
     .answer-table th, .answer-table td {
       padding: 12px; text-align: left; vertical-align: top;
       border-bottom: 1px solid rgba(255,255,255,.14);
@@ -1379,26 +1454,45 @@ picture source { display: none; }
       .answer-actions { flex-direction: column; align-items: stretch; }
       .answer-actions .pill { width: 100%; }
     }
+    @media (max-width: 640px) {
+      .subnav-inner, .subfoot-inner { width: calc(100% - 32px); gap: 6px 12px; }
+      .subnav nav { order: 2; flex-basis: 100%; margin: 0; justify-content: space-between; }
+      .subnav-inner > .pill { margin-left: auto; }
+      .page-wrap { width: calc(100% - 40px); padding: 40px 0 56px; }
+      .page-wrap h1 { font-size: clamp(28px, 7.5vw, 36px); }
+      .page-wrap .page-lede { font-size: 16px; }
+      .page-wrap > section { margin-top: 32px; padding-top: 28px; }
+      .page-wrap section[id] { scroll-margin-top: 144px; }
+      .subfoot-inner { align-items: flex-start; gap: 12px; }
+      .subfoot-inner > span:last-child { flex-basis: 100%; }
+    }
   </style>
 </head>
 <body>
 <header class="subnav">
   <div class="wrap subnav-inner">
     <a class="brand" href="/"><img src="/krate-logo.png" alt="" width="22" height="22" /> KRATE</a>
-    <nav>
+    <nav aria-label="Primary">
       <a href="/docs/quickstart.html">Start</a>
       <a href="/docs/">Docs</a>
       <a href="/cloud/">Apps</a>
       <a href="https://github.com/incyashraj/krate">GitHub</a>
     </nav>
-    <a class="pill pill-primary" href="/#install">Install</a>
+    <a class="pill pill-primary" href="/docs/quickstart.html#get-krate">Install</a>
   </div>
 </header>
     <main id="main" class="page-wrap">
     <h1>One codebase is not the same as one app file</h1>
     <p class="page-lede">Electron, Tauri and Krate separate application code from platform details differently. The useful question is what you build, what your users install and which capabilities your app needs.</p>
+    <div class="answer-entry">
+      <nav class="answer-actions" aria-label="Choose your next step">
+<a class="pill pill-primary" href="/docs/porting.html">Check your project&#x27;s fit</a>
+<a class="pill" href="/docs/quickstart.html">Try Krate</a>
+      </nav>
 
-    <section>
+    </div>
+
+    <section id="compare-the-distribution-boundary">
       <h2>Compare the distribution boundary</h2>
 <div class="answer-table-wrap" role="region" aria-label="Distribution comparison" tabindex="0"><table class="answer-table">
 <caption>Desktop distribution models, reviewed 19 September 2026</caption>
@@ -1411,23 +1505,23 @@ picture source { display: none; }
 </tbody></table></div>
 <p>Electron's <a href="https://www.electronjs.org/docs/latest/tutorial/distribution-overview">distribution guide</a> covers packaging, signing, publishing and updates; its <a href="https://www.electronjs.org/docs/latest/tutorial/process-model">process model</a> explains Chromium and Node. Tauri documents <a href="https://tauri.app/distribute/">platform-specific distribution</a> and its <a href="https://tauri.app/concept/architecture/">WebView/Rust architecture</a>. Tauri does not bundle Chromium like Electron.</p>
     </section>
-    <section>
+    <section id="what-krate-changes">
       <h2>What Krate changes</h2>
 <p>With Krate, the developer builds a component against Krate's interfaces and packages the application once. The recipient's native runtime supplies the platform-specific implementation. The same application bytes can be copied between supported desktop systems; the runtime binary itself differs.</p>
 <p>This trades per-application platform packaging for dependence on a shared runtime and its API coverage. Runtime delivery, updates, OS trust checks and compatibility still need maintenance. A shared artifact also does not eliminate cross-platform behavior testing.</p>
     </section>
-    <section>
+    <section id="how-to-decide-for-your-project">
       <h2>How to decide for your project</h2>
 <p>If your application depends on a browser DOM or Node ecosystem, account for that investment before moving away from Electron. If you want a web UI plus custom Rust/native integrations, examine Tauri's APIs and deployment requirements. Neither choice means rewriting the entire application independently for every OS.</p>
 <p>Evaluate Krate when distributing the same application file matters and your required features map to its interfaces. Start with <code>krate port ./my-project</code>, then validate the findings against the <a href="/docs/limits.html">current capability limits</a>. A scan is evidence for planning, not proof the port will preserve every feature.</p>
 <p>For a specific app, compare a representative end-to-end task first. If an essential OS integration is missing, stay with a suitable platform or contribute that capability before migrating. See the <a href="/docs/porting.html">porting checklist</a>.</p>
     </section>
-    <section>
+    <section id="compare-costs-at-the-same-boundary">
       <h2>Compare costs at the same boundary</h2>
 <p>Do not compare a compressed component with another product's whole installed application and call the ratio a universal win. Record the full download, installed footprint, runtime requirements and additional cost of the next app separately.</p>
 <p>For performance, hold the task and inputs constant, record versions and hardware, distinguish cold/warm startup and count all relevant processes. Native dependencies, renderer work and application design can dominate. The <a href="/reports/">Krate reports</a> describe particular workloads; they are not benchmarks of all Electron or Tauri applications.</p>
     </section>
-    <section>
+    <section id="try-the-model-before-choosing-it">
       <h2>Try the model before choosing it</h2>
 <p>Use the <a href="/docs/quickstart.html">quickstart</a> to open an app, then follow the <a href="/portable-desktop-app-format.html">same-artifact verification procedure</a> across your target systems. Build a representative feature with real data, not just an empty window. Record missing APIs, behavioral differences and deployment friction alongside the benefits.</p>
     </section>
@@ -1443,6 +1537,7 @@ picture source { display: none; }
       <div class="answer-actions">
         <a class="pill pill-primary" href="/docs/quickstart.html">Developer quickstart</a>
         <a class="pill" href="/docs/porting.html">Evaluate your app</a>
+        <a class="pill" href="/studio/">Make an app in Studio</a>
       </div>
     </section>
     </main>

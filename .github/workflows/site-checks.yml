@@ -1,0 +1,60 @@
+name: Website checks
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/site-checks.yml"
+      - ".github/workflows/pages.yml"
+      - "docs/**"
+      - "README.md"
+      - "scripts/build-answer-pages.py"
+      - "scripts/build-progress-page.py"
+      - "scripts/build-reports-page.py"
+      - "scripts/public_facts.py"
+      - "scripts/test-public-facts.py"
+      - "scripts/site-seo.py"
+      - "scripts/test-site-seo.py"
+      - "scripts/test-landing-assets.py"
+      - "scripts/discovery-report.py"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/site-checks.yml"
+      - ".github/workflows/pages.yml"
+      - "docs/**"
+      - "README.md"
+      - "scripts/build-answer-pages.py"
+      - "scripts/build-progress-page.py"
+      - "scripts/build-reports-page.py"
+      - "scripts/public_facts.py"
+      - "scripts/test-public-facts.py"
+      - "scripts/site-seo.py"
+      - "scripts/test-site-seo.py"
+      - "scripts/test-landing-assets.py"
+      - "scripts/discovery-report.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: website-checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Website regression checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Public facts
+        run: python3 scripts/test-public-facts.py
+      - name: Answer-page generation
+        run: python3 scripts/build-answer-pages.py --self-test
+      - name: Crawl metadata
+        run: python3 scripts/test-site-seo.py
+      - name: Image alternatives and layout dimensions
+        run: python3 scripts/test-landing-assets.py
+      - name: Discovery snapshot accounting
+        run: python3 scripts/discovery-report.py --self-test

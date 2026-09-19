@@ -422,6 +422,11 @@ picture source { display: none; }
 }
 .tag:first-child { border-radius: 999px 2px 2px 999px; }
 .tag:last-child { border-radius: 2px 999px 999px 2px; }
+@media (max-width: 760px) {
+  /* Keep every label readable when the three-chip row exceeds a phone's
+     content width. Larger screens keep the existing single row. */
+  .tagRow { flex-wrap: wrap; row-gap: 6px; }
+}
 .works.in .tag { opacity: 1; filter: blur(0); transform: none;
   transition: opacity 0.7s ease, filter 0.7s ease, transform 0.7s cubic-bezier(0.2,0.8,0.2,1.2); }
 .works.in .tag:nth-child(1) { transition-delay: 0.22s; }
@@ -989,7 +994,10 @@ picture source { display: none; }
      measure of roughly 34 characters is what a phone paragraph wants. */
   .heroSubPhone {
     display: block;
-    max-width: 34ch;
+    /* Geist's zero is 0.672em wide: keep the same final 34-character
+       measure without sizing the box from the temporary fallback font.
+       Using ch here changed three lines to two when Geist loaded. */
+    max-width: 22.848em;
     margin-left: auto; margin-right: auto;
     padding: 0 18px;
   }
@@ -1330,6 +1338,68 @@ picture source { display: none; }
   <meta name="twitter:image" content="https://krate.tech/og-v3.png">
   <script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebPage", "@id": "https://krate.tech/share-an-app-made-with-ai.html#webpage", "url": "https://krate.tech/share-an-app-made-with-ai.html", "name": "How to share an AI-built desktop app | Krate", "description": "Create a Krate app with AI, inspect its permissions and share the .krate file. What the author needs, what the recipient installs and what to test first.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}}</script>
   <style>
+    /* The article shell owns its layout. The homepage supplies fonts and
+       colors, not styles for these differently named elements. */
+    .subnav {
+      position: sticky; top: 0; z-index: 40;
+      background: rgba(0,0,0,.94); border-bottom: 1px solid #27272a;
+      -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+    }
+    .subnav-inner, .subfoot-inner {
+      width: min(1120px, calc(100% - 48px)); margin: 0 auto;
+      display: flex; align-items: center; flex-wrap: wrap; gap: 12px 24px;
+    }
+    .subnav-inner { padding: 12px 0; }
+    .subnav .brand {
+      display: inline-flex; align-items: center; gap: 8px;
+      min-height: 44px; font-size: 16px; font-weight: 500; letter-spacing: .02em;
+    }
+    .subnav .brand img { flex: none; }
+    .subnav nav { display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }
+    .subnav nav a, .subfoot a {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-height: 44px; padding: 10px 12px; color: #a1a1aa;
+      font-size: 14px; line-height: 1.5; border-radius: 8px;
+    }
+    .subnav nav a:hover, .subfoot a:hover { color: #fff; background: #18181b; }
+    .page-wrap {
+      width: min(760px, calc(100% - 48px)); margin: 0 auto;
+      padding: 64px 0 88px; color: #d4d4d8; line-height: 1.75;
+    }
+    .page-wrap h1, .page-wrap h2, .page-wrap h3 {
+      font-family: var(--disp); color: #fafafa; font-weight: 700;
+      letter-spacing: -.025em;
+    }
+    .page-wrap h1 { font-size: clamp(30px, 4.5vw, 46px); line-height: 1.14; margin-bottom: 20px; }
+    .page-wrap h2 { font-size: clamp(22px, 3vw, 28px); line-height: 1.25; margin-bottom: 18px; }
+    .page-wrap h3 { font-size: 20px; line-height: 1.35; margin: 24px 0 12px; }
+    .page-wrap p { margin: 0 0 18px; }
+    .page-wrap .page-lede { font-size: 18px; line-height: 1.7; color: #a1a1aa; margin-bottom: 24px; }
+    .page-wrap > section { margin-top: 40px; padding-top: 32px; border-top: 1px solid #27272a; }
+    .page-wrap ul, .page-wrap ol { padding-left: 24px; margin: 0 0 20px; }
+    .page-wrap li { padding-left: 4px; margin-bottom: 10px; }
+    .page-wrap strong { color: #fafafa; font-weight: 500; }
+    .page-wrap :is(p, li) a {
+      color: #c4b5fd; text-decoration: underline; text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
+    }
+    .page-wrap :is(p, li) a:hover { color: #ede9fe; }
+    .page-wrap :is(p, li) code { color: #e4e4e7; font-size: .9em; }
+    :is(.subnav, .page-wrap) .pill {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-height: 44px; padding: 10px 18px; border-radius: 999px;
+      border: 1px solid #3f3f46; background: #09090b; color: #e4e4e7;
+      font-size: 14px; font-weight: 500; line-height: 1.4; text-align: center;
+    }
+    :is(.subnav, .page-wrap) .pill:hover { background: #18181b; border-color: #71717a; }
+    :is(.subnav, .page-wrap) .pill-primary { background: #fafafa; border-color: #fafafa; color: #09090b; }
+    :is(.subnav, .page-wrap) .pill-primary:hover { background: #d4d4d8; border-color: #d4d4d8; }
+    :is(.subnav, .page-wrap, .subfoot) :is(a, pre, [tabindex]):focus-visible {
+      outline: 2px solid #c4b5fd; outline-offset: 4px;
+    }
+    .subfoot { border-top: 1px solid #27272a; color: #a1a1aa; }
+    .subfoot-inner { padding: 24px 0; justify-content: space-between; font-size: 13px; }
+    .subfoot-inner > span:last-child { display: flex; flex-wrap: wrap; gap: 4px; }
     /* Command blocks: scroll inside the box, never widen the page. */
     .answer-cmd {
       margin: 0 0 18px;
@@ -1348,8 +1418,11 @@ picture source { display: none; }
     }
     /* Nothing inside the page shell may widen it either: a long URL or an
        inline <code> token is the other way a page starts scrolling. */
-    .page-wrap { overflow-x: clip; }
+    .page-wrap { min-width: 0; }
     .page-wrap :is(p, li, h1, h2, h3, td) { overflow-wrap: anywhere; }
+    .page-wrap section[id] { scroll-margin-top: 88px; }
+    .answer-entry { margin-bottom: 28px; }
+    .answer-entry > p { margin-top: 18px; font-size: 14px; color: #a1a1aa; }
     /* The two pills at the foot of the page. They wrap rather than squeeze,
        and they are a real tap target rather than a line of text: measured
        at 26px before this, against the 44px the same pill gets in the nav. */
@@ -1364,10 +1437,12 @@ picture source { display: none; }
       align-items: center;
       justify-content: center;
       min-height: 44px;
-      padding: 0 20px;
+      padding: 10px 20px;
     }
     .answer-table-wrap { max-width: 100%; overflow-x: auto; margin: 20px 0; }
-    .answer-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .answer-table { width: 100%; min-width: 640px; border-collapse: collapse; font-size: 14px; }
+    .answer-table caption { text-align: left; color: #a1a1aa; font-size: 13px; margin-bottom: 12px; }
+    .answer-table thead th { color: #fafafa; background: #18181b; }
     .answer-table th, .answer-table td {
       padding: 12px; text-align: left; vertical-align: top;
       border-bottom: 1px solid rgba(255,255,255,.14);
@@ -1379,57 +1454,76 @@ picture source { display: none; }
       .answer-actions { flex-direction: column; align-items: stretch; }
       .answer-actions .pill { width: 100%; }
     }
+    @media (max-width: 640px) {
+      .subnav-inner, .subfoot-inner { width: calc(100% - 32px); gap: 6px 12px; }
+      .subnav nav { order: 2; flex-basis: 100%; margin: 0; justify-content: space-between; }
+      .subnav-inner > .pill { margin-left: auto; }
+      .page-wrap { width: calc(100% - 40px); padding: 40px 0 56px; }
+      .page-wrap h1 { font-size: clamp(28px, 7.5vw, 36px); }
+      .page-wrap .page-lede { font-size: 16px; }
+      .page-wrap > section { margin-top: 32px; padding-top: 28px; }
+      .page-wrap section[id] { scroll-margin-top: 144px; }
+      .subfoot-inner { align-items: flex-start; gap: 12px; }
+      .subfoot-inner > span:last-child { flex-basis: 100%; }
+    }
   </style>
 </head>
 <body>
 <header class="subnav">
   <div class="wrap subnav-inner">
     <a class="brand" href="/"><img src="/krate-logo.png" alt="" width="22" height="22" /> KRATE</a>
-    <nav>
+    <nav aria-label="Primary">
       <a href="/docs/quickstart.html">Start</a>
       <a href="/docs/">Docs</a>
       <a href="/cloud/">Apps</a>
       <a href="https://github.com/incyashraj/krate">GitHub</a>
     </nav>
-    <a class="pill pill-primary" href="/#install">Install</a>
+    <a class="pill pill-primary" href="/docs/quickstart.html#get-krate">Install</a>
   </div>
 </header>
     <main id="main" class="page-wrap">
     <h1>Share the app, not your development setup</h1>
     <p class="page-lede">If an AI-built application uses Krate's interfaces, you can package it as one .krate file and send it to someone on macOS, Windows or Linux. They need a compatible Krate runtime.</p>
+    <div class="answer-entry">
+      <nav class="answer-actions" aria-label="Choose your next step">
+<a class="pill pill-primary" href="#send-the-file-directly">Share a .krate file</a>
+<a class="pill" href="/studio/">Make one in Studio</a>
+      </nav>
+<p>Already have a <code>.krate</code> file? Jump to the handoff steps. If your AI generated a website, Python script or another kind of app, start with the <a href="/docs/porting.html">porting guide</a>; renaming the file does not convert it.</p>
+    </div>
 
-    <section>
+    <section id="choose-the-authoring-path">
       <h2>Choose the authoring path</h2>
 <p><a href="/studio/">Krate Studio</a> provides a graphical way to make and revise apps with AI. Developers can also use the CLI or write the code themselves. AI is an authoring option, not a runtime requirement.</p>
 <p>The local CLI example below requires Rust/component build tools and an installed, authenticated Claude Code CLI. Your provider's subscription or API charges are separate. Check the <a href="/docs/quickstart.html">quickstart</a> for installation and platform requirements.</p>
-<pre class="answer-cmd">krate doctor
+<pre class="answer-cmd" tabindex="0" aria-label="Command example">krate doctor
 krate ai
 krate create "a regex tester with a pattern box and live matches" --agent claude --output regex.krate</pre>
-<p>Use <code>krate create --help</code> for your installed version's options. An arbitrary generated website, Python script or native executable is not already a Krate app; existing code may need a <a href="/docs/porting.html">port</a>.</p>
+<p>Use <code>krate create --help</code> for your installed version's options.</p>
     </section>
-    <section>
+    <section id="test-before-you-send-it">
       <h2>Test before you send it</h2>
-<pre class="answer-cmd">krate run regex.krate --dump-caps
+<pre class="answer-cmd" tabindex="0" aria-label="Command example">krate run regex.krate --dump-caps
 krate run regex.krate --prompt</pre>
 <p>The first command inspects capabilities without executing the component. The second runs it after permission review. Try valid and invalid inputs, resizing, save/reopen behavior and permission denial. Build and first-frame checks cannot establish that every feature works.</p>
 <p>The normal authoring path includes editable source. Review the bundle for secrets, private sample data and third-party licensing obligations before sharing. Do not assume that generated code is correct or appropriately licensed just because it compiles.</p>
     </section>
-    <section>
+    <section id="send-the-file-directly">
       <h2>Send the file directly</h2>
-<p>Email the <code>.krate</code> file, put it in a shared folder or send it through a chat that accepts files. Include the runtime version you tested, a short description and the task the recipient can try. Optional hosted publishing is not required.</p>
+<p>Once you have <a href="#test-before-you-send-it">tested the app</a>, email the <code>.krate</code> file, put it in a shared folder or send it through a chat that accepts files. Include the runtime version you tested, a short description and the task the recipient can try. Optional hosted publishing is not required.</p>
 <p>The recipient follows <a href="/open/">the open-a-file instructions</a>, installs the runtime for their own system, then inspects and opens the file. They do not need your AI account, source checkout or Rust toolchain. GUI file association depends on the installed runtime/opener; the CLI provides an explicit path:</p>
-<pre class="answer-cmd">krate run regex.krate --dump-caps
+<pre class="answer-cmd" tabindex="0" aria-label="Command example">krate run regex.krate --dump-caps
 krate run regex.krate --prompt</pre>
 <p>Sending an app does not automatically send its separate saved data, copy credentials or synchronize accounts. If it needs a network service, document that dependency.</p>
     </section>
-    <section>
+    <section id="publishing-is-an-optional-separate-step">
       <h2>Publishing is an optional separate step</h2>
 <p>A hub can host the bundle so you share a URL. Publishing uploads the file and may list it publicly, depending on the selected options. Read the current command's authentication, hub and listing requirements first:</p>
-<pre class="answer-cmd">krate publish --help
+<pre class="answer-cmd" tabindex="0" aria-label="Command example">krate publish --help
 krate publish regex.krate</pre>
 <p>Do not publish private code or user data by accident. Direct file sharing remains available without a hosted publishing service.</p>
     </section>
-    <section>
+    <section id="what-the-recipient-can-trust">
       <h2>What the recipient can trust</h2>
 <p>A capability declaration describes requested access, not a guarantee of good behavior. Approved file or network access can still be misused within its scope. Review the source and permissions and start with apps from people you trust. See <a href="/run-ai-generated-code-safely.html">the security boundaries</a> and <a href="/portable-desktop-app-format.html">how to verify the same artifact across systems</a>.</p>
     </section>
@@ -1445,6 +1539,7 @@ krate publish regex.krate</pre>
       <div class="answer-actions">
         <a class="pill pill-primary" href="/docs/quickstart.html">Developer quickstart</a>
         <a class="pill" href="/docs/porting.html">Evaluate your app</a>
+        <a class="pill" href="/studio/">Make an app in Studio</a>
       </div>
     </section>
     </main>
