@@ -1,0 +1,13 @@
+{
+  "schema": "krate.public-facts.v1",
+  "name": "Krate",
+  "description": "Krate lets developers package software as one .krate file that runs through native Krate runtimes on macOS, Windows and Linux.",
+  "prerequisite": "The recipient installs a compatible Krate runtime once. Applications use supported Krate APIs; existing desktop binaries do not become portable without adaptation.",
+  "bundle_accounting": "A .krate bundle contains a WebAssembly component and manifest, and can also carry source, SDK interfaces and assets. Full bundle bytes, uncompressed code payload, runtime download and installed runtime size are different measurements.",
+  "security": "Applications begin without file or network access and receive approved capabilities through the runtime. This boundary is not a guarantee of bug-free or harmless software; review the threat model and only run apps you trust.",
+  "studio": "Krate Studio provides AI-assisted app creation and revision. Developers can also build against the Rust SDK. Optional hosted services are separate from the local runtime and file format.",
+  "website": "https://krate.tech",
+  "repository": "https://github.com/incyashraj/krate",
+  "latest_release_url": "https://github.com/incyashraj/krate/releases/latest",
+  "benchmark_claim_ids": ["app-file-size", "memory-50k", "warm-start-50k"]
+}

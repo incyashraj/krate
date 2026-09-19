@@ -1312,21 +1312,21 @@ img { max-width: 100%; display: block; }
   .eclipse, .marqWrap, .marqLabel, .chip, .orbitStage { display: none; }
   .whatis { display: block; }
 </style></noscript>
-<title>One desktop app file for macOS, Windows and Linux | Krate</title>
-  <meta name="description" content="How the .krate format separates your application from native runtimes: bundle contents, recipient requirements, portability checks and current limits.">
-  <link rel="canonical" href="https://krate.tech/portable-desktop-app-format.html">
+<title>Krate, Electron and Tauri: desktop distribution models</title>
+  <meta name="description" content="Compare shared codebases with a shared application artifact: what Electron, Tauri and Krate distribute, runtime requirements, migration work and measurement boundaries.">
+  <link rel="canonical" href="https://krate.tech/desktop-app-distribution.html">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Krate">
-  <meta property="og:title" content="One desktop app file for macOS, Windows and Linux | Krate">
-  <meta property="og:description" content="How the .krate format separates your application from native runtimes: bundle contents, recipient requirements, portability checks and current limits.">
-  <meta property="og:url" content="https://krate.tech/portable-desktop-app-format.html">
+  <meta property="og:title" content="Krate, Electron and Tauri: desktop distribution models">
+  <meta property="og:description" content="Compare shared codebases with a shared application artifact: what Electron, Tauri and Krate distribute, runtime requirements, migration work and measurement boundaries.">
+  <meta property="og:url" content="https://krate.tech/desktop-app-distribution.html">
   <meta property="og:image" content="https://krate.tech/og-v3.png">
   <meta property="og:image:alt" content="Krate desktop application runtime">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="One desktop app file for macOS, Windows and Linux | Krate">
-  <meta name="twitter:description" content="How the .krate format separates your application from native runtimes: bundle contents, recipient requirements, portability checks and current limits.">
+  <meta name="twitter:title" content="Krate, Electron and Tauri: desktop distribution models">
+  <meta name="twitter:description" content="Compare shared codebases with a shared application artifact: what Electron, Tauri and Krate distribute, runtime requirements, migration work and measurement boundaries.">
   <meta name="twitter:image" content="https://krate.tech/og-v3.png">
-  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebPage", "@id": "https://krate.tech/portable-desktop-app-format.html#webpage", "url": "https://krate.tech/portable-desktop-app-format.html", "name": "One desktop app file for macOS, Windows and Linux | Krate", "description": "How the .krate format separates your application from native runtimes: bundle contents, recipient requirements, portability checks and current limits.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}}</script>
+  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebPage", "@id": "https://krate.tech/desktop-app-distribution.html#webpage", "url": "https://krate.tech/desktop-app-distribution.html", "name": "Krate, Electron and Tauri: desktop distribution models", "description": "Compare shared codebases with a shared application artifact: what Electron, Tauri and Krate distribute, runtime requirements, migration work and measurement boundaries.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}}</script>
   <style>
     /* Command blocks: scroll inside the box, never widen the page. */
     .answer-cmd {
@@ -1393,42 +1393,41 @@ img { max-width: 100%; display: block; }
   </div>
 </header>
     <main id="main" class="page-wrap">
-    <h1>One desktop app file, three operating systems</h1>
-    <p class="page-lede">Build against Krate's interfaces and distribute one .krate artifact. Each recipient runs it through a compatible native Krate runtime on macOS, Windows or Linux.</p>
+    <h1>One codebase is not the same as one app file</h1>
+    <p class="page-lede">Electron, Tauri and Krate separate application code from platform details differently. The useful question is what you build, what your users install and which capabilities your app needs.</p>
 
     <section>
-      <h2>What is portable, and what is installed?</h2>
-<p>The <strong>application file</strong> stays the same. The <strong>runtime</strong> is installed for each machine's operating system and CPU. It executes the WebAssembly component and handles permitted host operations. Your users do not need your development toolchain to open a packed app.</p>
-<p>This is not a converter for arbitrary Windows executables, native libraries or existing Electron/Tauri packages. The application must use Krate's supported interfaces and a compatible format/API version. See the <a href="/desktop-app-distribution.html">distribution-model comparison</a>.</p>
+      <h2>Compare the distribution boundary</h2>
+<div class="answer-table-wrap" role="region" aria-label="Distribution comparison" tabindex="0"><table class="answer-table">
+<caption>Desktop distribution models, reviewed 19 September 2026</caption>
+<thead><tr><th scope="col">Question</th><th scope="col">Electron</th><th scope="col">Tauri</th><th scope="col">Krate</th></tr></thead>
+<tbody>
+<tr><th scope="row">Application artifact</th><td>Platform-specific packaged application.</td><td>Platform-specific application bundle or installer.</td><td>One .krate application bundle for compatible runtimes.</td></tr>
+<tr><th scope="row">UI/runtime model</th><td>Chromium and Node.js in Electron's process model.</td><td>Web frontend in an OS WebView with a Rust backend.</td><td>WebAssembly guest using Krate UI and host interfaces.</td></tr>
+<tr><th scope="row">Recipient prerequisite</th><td>The packaged application and its platform requirements.</td><td>The packaged application and platform/WebView requirements.</td><td>A compatible native Krate runtime installed for that system.</td></tr>
+<tr><th scope="row">Existing app migration</th><td>Fits browser/Node-based applications.</td><td>Fits web UI with Rust/native integration.</td><td>Port logic and adapt UI/host dependencies to supported Krate APIs.</td></tr>
+</tbody></table></div>
+<p>Electron's <a href="https://www.electronjs.org/docs/latest/tutorial/distribution-overview">distribution guide</a> covers packaging, signing, publishing and updates; its <a href="https://www.electronjs.org/docs/latest/tutorial/process-model">process model</a> explains Chromium and Node. Tauri documents <a href="https://tauri.app/distribute/">platform-specific distribution</a> and its <a href="https://tauri.app/concept/architecture/">WebView/Rust architecture</a>. Tauri does not bundle Chromium like Electron.</p>
     </section>
     <section>
-      <h2>What is inside a .krate file?</h2>
-<p>The bundle is a ZIP-based application format, not just a renamed executable. Its core entries are <code>manifest.toml</code> and <code>code.wasm</code>. Bundles can also contain assets, source, SDK material and format-specific metadata. The normal authoring workflow carries editable source with the app.</p>
-<p>The manifest identifies the app and its requested capabilities. The component calls Krate interfaces described in WIT; the native runtime supplies their implementations. Files, network and other host resources are governed by the capability model.</p>
-<p>Read the <a href="https://github.com/incyashraj/krate/tree/main/crates/bundle">bundle implementation</a> and <a href="https://github.com/incyashraj/krate/tree/main/wit">interface definitions</a>. Do not put credentials or private inputs in source or assets that will be distributed.</p>
+      <h2>What Krate changes</h2>
+<p>With Krate, the developer builds a component against Krate's interfaces and packages the application once. The recipient's native runtime supplies the platform-specific implementation. The same application bytes can be copied between supported desktop systems; the runtime binary itself differs.</p>
+<p>This trades per-application platform packaging for dependence on a shared runtime and its API coverage. Runtime delivery, updates, OS trust checks and compatibility still need maintenance. A shared artifact also does not eliminate cross-platform behavior testing.</p>
     </section>
     <section>
-      <h2>Verify a shared artifact yourself</h2>
-<p>Start with an app you built or reviewed. Install a compatible runtime on each target machine, copy the <em>same</em> file, record <code>krate --version</code>, inspect permissions and run it:</p>
-<pre class="answer-cmd">krate --version
-krate run app.krate --dump-caps
-krate run app.krate --prompt</pre>
-<p>Compare the full-file SHA-256 on each host. On macOS use <code>shasum -a 256 app.krate</code>; on Linux use <code>sha256sum app.krate</code>; in Windows PowerShell use <code>Get-FileHash app.krate -Algorithm SHA256</code>. Matching hashes establish identical bytes, not correctness or trust.</p>
-<p>Then complete the same meaningful task on each OS: load representative data, interact with the UI, save, close and reopen. Test denied permissions and OS-specific file dialogs. Keep runtime versions, hashes and results together. This is a reproduction procedure, not a claim that every application has already passed that test.</p>
+      <h2>How to decide for your project</h2>
+<p>If your application depends on a browser DOM or Node ecosystem, account for that investment before moving away from Electron. If you want a web UI plus custom Rust/native integrations, examine Tauri's APIs and deployment requirements. Neither choice means rewriting the entire application independently for every OS.</p>
+<p>Evaluate Krate when distributing the same application file matters and your required features map to its interfaces. Start with <code>krate port ./my-project</code>, then validate the findings against the <a href="/docs/limits.html">current capability limits</a>. A scan is evidence for planning, not proof the port will preserve every feature.</p>
+<p>For a specific app, compare a representative end-to-end task first. If an essential OS integration is missing, stay with a suitable platform or contribute that capability before migrating. See the <a href="/docs/porting.html">porting checklist</a>.</p>
     </section>
     <section>
-      <h2>Does one file remove all platform work?</h2>
-<p>No. Krate maintains native runtime builds. Developers still need to test behavior on target systems, check supported capabilities and manage API/format compatibility. A runtime update may be necessary for apps using newer interfaces.</p>
-<p>The benefit is a shared application artifact rather than a separate app package for each OS. OS installation, trust checks and updates still apply to the runtime. The format does not make unsupported APIs available or bypass platform security.</p>
+      <h2>Compare costs at the same boundary</h2>
+<p>Do not compare a compressed component with another product's whole installed application and call the ratio a universal win. Record the full download, installed footprint, runtime requirements and additional cost of the next app separately.</p>
+<p>For performance, hold the task and inputs constant, record versions and hardware, distinguish cold/warm startup and count all relevant processes. Native dependencies, renderer work and application design can dominate. The <a href="/reports/">Krate reports</a> describe particular workloads; they are not benchmarks of all Electron or Tauri applications.</p>
     </section>
     <section>
-      <h2>What about size and performance?</h2>
-<p>Measure three different things: the compiled component, the complete bundle you distribute, and the installed runtime plus app. Source and assets can make the bundle much larger than its component. A shared runtime is not free disk space; its cost is paid once and must appear in first-app comparisons.</p>
-<p>The <a href="/reports/">measurement reports</a> identify workloads and accounting boundaries. Do not extrapolate a notes workload into a universal speed, memory or file-size claim.</p>
-    </section>
-    <section>
-      <h2>Check whether your project fits</h2>
-<p>Krate's aim is software distribution for developers, not a fixed list of toy apps. What determines today's fit is the available API surface: UI, data, networking, media and OS integration. Check the <a href="/docs/limits.html">current limits</a> and use the <a href="/docs/porting.html">porting guide</a> to inventory dependencies before committing to a migration.</p>
+      <h2>Try the model before choosing it</h2>
+<p>Use the <a href="/docs/quickstart.html">quickstart</a> to open an app, then follow the <a href="/portable-desktop-app-format.html">same-artifact verification procedure</a> across your target systems. Build a representative feature with real data, not just an empty window. Record missing APIs, behavioral differences and deployment friction alongside the benefits.</p>
     </section>
 
     <section>

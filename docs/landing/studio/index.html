@@ -3,10 +3,13 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Krate Studio: your tool, to make a krate file</title>
-<meta name="description" content="Write it, build it, run it, pack it. Krate Studio makes one file that works on Mac, Windows and Linux." />
-<meta property="og:title" content="Krate Studio" />
-<meta property="og:description" content="Your tool, to make a krate file. One artifact for Mac, Windows and Linux." />
+<title>Krate Studio: build and share desktop apps with AI</title>
+<meta name="description" content="Create and revise desktop apps with AI in Krate Studio. Inspect the source, test the app and share one .krate file for native Krate runtimes on Mac, Windows and Linux." />
+<meta property="og:title" content="Krate Studio: build and share desktop apps with AI" />
+<meta property="og:description" content="Create and revise desktop apps, inspect their source and share one .krate file across compatible runtimes on Mac, Windows and Linux." />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://krate.tech/studio/" />
+<meta property="og:site_name" content="Krate" />
 <meta property="og:image" content="https://krate.tech/og-v3.png" />
 <meta name="twitter:card" content="summary_large_image" />
 <link rel="icon" href="/krate-logo.png" />
@@ -354,19 +357,20 @@ p.sub { color: #a1a1aa; margin-top: 12px; max-width: 62ch; line-height: 1.65; }
 
 <!-- ================================================================ hero -->
 <section class="sHero wrapx">
-  <h1>Studio?<span class="dim">Your tool, to make a krate file.</span></h1>
-  <p class="lede">Write it, build it, run it, pack it. One file that works on
-  Mac, Windows and Linux from the same bytes.</p>
+  <h1>Krate Studio<span class="dim">Make an app. Share the file.</span></h1>
+  <p class="lede">Create and revise desktop software with AI, inspect its
+  source and test what you built. Share one <code>.krate</code> file for Mac,
+  Windows and Linux. Recipients install a compatible Krate runtime to open it.</p>
   <div class="sCtas">
     <a class="pill pill-primary" href="/#ctaSec" id="dlBtn">Download Studio</a>
     <a class="pill" href="https://github.com/incyashraj/krate">Read the source</a>
   </div>
-  <p class="freeline">Free while we build it &middot; the player is
-  <a href="https://github.com/incyashraj/krate">MIT and Apache licensed</a>
-  &middot; works with the AI you already pay for</p>
+  <p class="freeline">The runtime is free and
+  <a href="https://github.com/incyashraj/krate">MIT or Apache-2.0 licensed</a>.
+  Your AI provider and optional hosted services have separate terms.</p>
   <p class="freeline">Not ready to install? <a href="/login/?next=studio">Sign
-  in and Studio runs in your browser</a>&nbsp;-- the same interface, the same
-  engine, and your first app is on us.</p>
+  in to use Studio in your browser</a>, or
+  <a href="/docs/quickstart.html">build directly with the developer tools</a>.</p>
 
   <!-- Studio, doing its job. Recaptured from the real app after the
        2026-09 redesign (K-217). A short screen recording would suit this
@@ -393,8 +397,8 @@ p.sub { color: #a1a1aa; margin-top: 12px; max-width: 62ch; line-height: 1.65; }
     </div>
     <div class="tool">
       <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-      <h3>Any AI, or none</h3>
-      <p>Drives the coding AI you already pay for. Your keys stay with your tool. Turn it off and write every line yourself.</p>
+      <h3>AI-assisted, source included</h3>
+      <p>Use a supported coding provider in Studio, then inspect and revise the source. Prefer your editor? The CLI supports the build and packaging workflow.</p>
     </div>
     <div class="tool">
       <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 4.5-3.2 7.8-8 9-4.8-1.2-8-4.5-8-9V7z"/><path d="M9 12l2 2 4-4"/></svg>
@@ -477,10 +481,9 @@ p.sub { color: #a1a1aa; margin-top: 12px; max-width: 62ch; line-height: 1.65; }
       <summary>What language do I write in?</summary>
       <div class="ans">Rust today, compiled to a WebAssembly component. The guest
       is ordinary Rust with one rule: it may import only <code>krate:*</code>
-      interfaces, never <code>wasi:*</code>. That rule is what keeps an app to
-      tens of kilobytes and inside its sandbox. <code>krate check-app</code> is
-      the oracle: it tells you whether your code builds, imports cleanly, runs
-      and paints a frame.</div>
+      interfaces, never <code>wasi:*</code>. Host access goes through Krate's
+      capability checks. <code>krate check-app</code> checks the build, imports,
+      execution and rendering; you still need to test the app's behavior.</div>
     </details>
     <details class="faqItem">
       <summary>Can I bring an app I already have?</summary>
@@ -492,42 +495,41 @@ p.sub { color: #a1a1aa; margin-top: 12px; max-width: 62ch; line-height: 1.65; }
     </details>
     <details class="faqItem">
       <summary>What can it not do yet?</summary>
-      <div class="ans">Plenty, and we would rather say so. Working today:
-      windows and widgets, 2D canvas and GPU rendering, audio in and out,
-      speech to text, camera, scoped filesystem, HTTP and WebSockets, key-value
-      and SQL storage, clipboard, dialogs, notifications. Not yet: text to
-      speech, printing, multiple windows, serial and Bluetooth, screen capture.
-      Anything needing heavy GPU work is early.</div>
+      <div class="ans">Check the <a href="/docs/limits.html">current capability
+      and limits guide</a> against what your app needs. Some host integrations
+      and UI features are still incomplete; a successful build is not proof
+      that every interaction works on every platform.</div>
     </details>
     <details class="faqItem">
       <summary>How big is the runtime my users install?</summary>
-      <div class="ans">About 11 MB on macOS, once. After that every Krate app
-      they receive is just a file. You ship no installer and maintain no
-      per-platform build, and the player is open source so nobody is trusting a
-      binary they cannot read.</div>
+      <div class="ans">Size depends on platform, architecture and release.
+      The <a href="https://github.com/incyashraj/krate/releases/latest">current
+      release</a> lists download sizes; these differ from installed footprint.
+      Users install the runtime once, then receive compatible apps as files.
+      Our <a href="/reports/">measurement guide</a> separates runtime, bundle
+      and application-payload costs.</div>
     </details>
     <details class="faqItem">
       <summary>What happens to my dependencies?</summary>
-      <div class="ans">Pure Rust crates generally work. Anything reaching the
-      operating system directly does not, because that is what the sandbox
-      exists to prevent. Krate provides the same capability through its own
-      interface instead, which is why the import rule is strict.
+      <div class="ans">Dependencies must support the guest target and Krate's
+      import boundary. Direct OS calls need a supported Krate interface or a
+      rewrite; not every library or host feature has an equivalent.
       <code>krate port</code> tells you which of your dependencies land on which
       side of that line.</div>
     </details>
     <details class="faqItem">
       <summary>Do I have to use the AI?</summary>
-      <div class="ans">No. Studio drives whichever coding AI you already pay for,
-      and it can be turned off entirely. The CLI does everything the window
-      does, so <code>krate create</code>, <code>krate pack</code> and
-      <code>krate run</code> work fine from a terminal and a text editor.</div>
+      <div class="ans">No. You can write the source yourself and use the CLI
+      to build, pack and run it. <code>krate create</code> is the AI-assisted
+      route and needs a configured provider. The
+      <a href="/docs/quickstart.html">quickstart</a> explains the prerequisites.</div>
     </details>
     <details class="faqItem">
       <summary>Is my app locked to your servers?</summary>
-      <div class="ans">No. A <code>.krate</code> is a plain zip that carries the
-      app and its own source. It runs with the open source player and nothing
-      else. If we disappeared tomorrow, every file already shipped keeps
-      working.</div>
+      <div class="ans">A local app can run with the open-source Krate runtime
+      without Krate Cloud. The bundle carries the app and its source. Apps
+      that call APIs or use hosted services still depend on those services;
+      the file format cannot make an online service work offline.</div>
     </details>
   </div>
 </section>
@@ -535,8 +537,8 @@ p.sub { color: #a1a1aa; margin-top: 12px; max-width: 62ch; line-height: 1.65; }
 <!-- =============================================================== close -->
 <section class="close wrapx">
   <h2>Build once. Ship one file.</h2>
-  <p>Free while we build it. The player is open source, and every app you make
-  is a file that is yours forever.</p>
+  <p>Use Studio to create and revise an app, then share the file.
+  The runtime is open source; hosted services are optional.</p>
   <div class="sCtas">
     <a class="pill pill-primary" href="/#ctaSec">Download Studio</a>
     <a class="pill" href="/docs/">Read the docs</a>

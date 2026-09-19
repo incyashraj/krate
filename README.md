@@ -5,13 +5,13 @@
 <h1 align="center">Krate</h1>
 
 <p align="center">
-  <strong>Build once. Ship one file. It runs on Mac, Windows, and Linux.</strong>
+  <strong>Build desktop software once. Ship one .krate file.</strong>
 </p>
 
 <p align="center">
-  No per-app installer, no per-OS port, no signing dance. A Krate app is a<br>
-  few hundred kilobytes, carries its own source, and reaches nothing it did not declare.<br>
-  The <strong>player</strong> is open source and installs once (~11 MB on macOS).
+  The same application file runs through native Krate runtimes on macOS, Windows and Linux.<br>
+  Share the app, its assets and its requested permissions.<br>
+  No separate application build per OS.
 </p>
 
 <p align="center">
@@ -42,28 +42,67 @@
   </a>
 </p>
 
-## Start
+## Start with the runtime
+
+Krate is for developers who want a shared application artifact, not just a
+shared codebase. Build once, send the file, and let the native runtime handle
+the platform.
+
+Install the CLI/runtime on the machine that will open the app. These commands
+download and execute the published installer; read the
+[Unix script](scripts/install.sh) or [PowerShell script](scripts/install.ps1)
+first, or download a matching archive from
+[Releases](https://github.com/incyashraj/krate/releases/latest).
+
+**macOS or Linux**
 
 ```sh
-curl -fsSL https://krate.tech/install.sh | sh     # macOS and Linux
-irm https://krate.tech/install.ps1 | iex          # Windows
+curl -fsSL https://krate.tech/install.sh | sh
 ```
+
+**Windows PowerShell**
+
+```powershell
+irm https://krate.tech/install.ps1 | iex
+```
+
+For a `.krate` file you received from a trusted source:
 
 ```sh
-krate create "a tip calculator" --output tip.krate   # write one
-krate port ./my-existing-app                         # or bring one you have
-krate run tip.krate --dump-caps                      # read what it asks for
+krate --version
+krate run app.krate --dump-caps
+krate run app.krate --prompt
 ```
 
-`krate check-app` is the oracle: it compiles the crate, confirms it imports
-only `krate:*`, runs it once headless and paints a frame, then names the
-stage and the fix when something fails.
+Replace `app.krate` with your downloaded file. Inspection does not execute
+the application. Review permissions before granting them. Running a packaged
+app does not require the author's Rust toolchain or AI account; Linux X11
+users may need [an additional system library](docs/build.md#running-an-app-on-linux-without-building-anything).
 
-Prefer a window? [Krate Studio](https://krate.tech/studio/) does the same
-things with the same engine underneath.
+## Build your app
 
-Sent a `.krate` and just want to open it?
-[krate.tech/open](https://krate.tech/open/).
+| Your starting point | Next step |
+| --- | --- |
+| Write the code yourself | [Developer quickstart](https://krate.tech/docs/quickstart.html) and [Rust SDK](crates/bindings-rust/README.md) |
+| Bring an existing project | [Porting guide](https://krate.tech/docs/porting.html); start with the read-only `krate port ./my-project` scan |
+| Build with AI | [Krate Studio](https://krate.tech/studio/) or the CLI example below |
+| Evaluate the architecture | [Portable format](https://krate.tech/portable-desktop-app-format.html), [distribution comparison](https://krate.tech/desktop-app-distribution.html) and [current limits](https://krate.tech/docs/limits.html) |
+
+For CLI authoring, you need the Rust/component build tools and an installed,
+authenticated coding agent. Check the environment first; the agent's own
+subscription or API charges are separate from Krate:
+
+```sh
+krate doctor
+krate ai
+krate create "a regex tester with a pattern box and live matches" --agent claude --output regex.krate
+krate run regex.krate --dump-caps
+krate run regex.krate --prompt
+```
+
+`krate check-app` checks build, imports and basic execution/rendering. You still
+need to use the app, test its behavior and test the same artifact on each OS
+you intend to support. A passing build is not a functional or security audit.
 
 ## Nothing installed? Start in the browser
 
@@ -78,30 +117,31 @@ an AI you already have (Claude, Codex, Gemini, or an API key you hold). The
 session follows your account, so anything you start in the browser opens on
 the desktop ready to edit.
 
-## 285 MB became a file you can email
+## A measured notes workload
 
 The same 50,000-line notes workload, same Apple M4 Mac, head to head against
-MarkText 0.17.1 (Electron). Both builds ARM64. Every number below comes from
-one reproducible run whose raw samples, input digests and machine state are
-committed beside it and covered by a seal.
+MarkText 0.17.1 (Electron), measured on 25 August 2026. Both builds ARM64.
+This is an equivalent document workload, not full editor feature parity
+or a prediction for every Krate app. Raw samples, input digests and machine
+state are retained beside the run.
 
 | | MarkText | Krate |
 |---|---:|---:|
-| The app payload | 284.6 MiB installed | **36.6 KiB** |
+| Installed app / component payload (different boundaries) | 284.6 MiB installed | **36.6 KiB payload**, runtime excluded |
 | Memory, 50,000 lines | 2,299.4 MiB across four processes | **178.5 MiB, one process** |
-| Opens in, 50,000 lines | 611.5 ms median of 10 | **237.1 ms median of 10** |
-| CPU, document open | 7.38% of a core | **1.97% of a core** |
+| Warm open, 50,000 lines | 611.5 ms median of 10 | **237.1 ms median of 10** |
 
 Krate does not put another browser inside every app. The 36.6 KiB is the
 per-app payload: the shared player is installed once at 88.6 MiB, so the
-first app you ship costs 3.21x less disk than the Electron build, and every
-app after that costs almost nothing.
+runtime plus this measured payload is about 3.21 times smaller than the
+MarkText installed application. This does not include the editable source
+bundle, saved user data or the authoring toolchain. Further apps still add
+their own code, assets and data.
 
 The `.krate` file you actually send is bigger than its payload, because it
-carries the app's own source and the SDK interfaces beside the code: about
-105 KB to 360 KB for the apps in this repository, and more for one that
-embeds large assets. That is the honest number to compare against an
-installer, and it is still roughly a thousandth of the Electron build.
+can carry source, SDK interfaces and assets beside the compiled code. Compare
+the complete download with other downloads, and the installed runtime plus
+app with other installed applications. Payload size is not download size.
 
 Method, raw samples and seal: the
 [reproducible benchmark kit](evidence/benchmarks/marktext-vs-krate/README.md)
@@ -110,21 +150,20 @@ Energy was not measured and no battery-life claim is made from it.
 
 ## Why a file
 
-Shipping a desktop app means a build per operating system, an installer to
-maintain, and a code-signing certificate for each platform. A web app
-trades that for hosting you keep paying for and a machine you do not
-control.
+Cross-platform frameworks can share source while still producing separate
+application packages for each platform. Krate moves the platform-specific
+part into a shared runtime and makes the application artifact portable.
 
 1. The app and the access it asks for go into one `.krate` file.
 2. That same file opens on Mac, Windows, and Linux. The bytes do not change.
 3. Krate shows the person what it wants before it runs.
-4. The app gets only what they allow, and nothing else.
+4. Host operations are checked against the session's capabilities.
 
 A Krate app is a WebAssembly component compiled from ordinary Rust. It
-carries no browser and no per-app runtime: the compiled code for a playable
-game is **13 KB** and for the notes editor in the benchmark **37 KB**. The
-file you send wraps that in its own source and the SDK interfaces, so a
-`.krate` is typically **105 KB to 360 KB**.
+carries no browser engine or per-app native runtime. Package size depends on
+code, source, dependencies and assets; there is no universal size promise.
+The goal is to make `.krate` a standard way developers ship software.
+Today, that depends on the app fitting Krate's supported interfaces.
 
 ## Krate Studio
 
@@ -260,6 +299,10 @@ link works from Studio, `krate publish`, or
 
 Known limits, stated plainly:
 
+- Apps use Krate's interfaces. Existing native binaries, Electron apps and
+  Tauri apps need a port, not a file-extension change. Check
+  [capability limits](https://krate.tech/docs/limits.html) and the
+  [porting guide](https://krate.tech/docs/porting.html).
 - Windows and Linux studio builds are unsigned for now; macOS is signed and
   notarised by Apple.
 - An AI has to write against the current Krate APIs, which are still changing.

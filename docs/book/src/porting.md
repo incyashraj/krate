@@ -1,9 +1,29 @@
 # Porting an app you already have
 
 `krate port` looks at a project you already wrote and tells you what it
-would take to run it as a Krate app. It never runs your code, never
-copies your source into the output, and never changes anything in the
-directory you point it at.
+would take to run it as a Krate app. The default scan reads source without
+building or executing the project. It is an assessment, not a conversion of
+an existing native executable. Preparation and AI-assisted transformation are
+separate, explicit steps described below.
+
+## Check the fit before porting
+
+List the behavior users depend on, then map each dependency to a Krate API:
+
+| Part of your app | Question to answer |
+|---|---|
+| Business logic, parsers, calculations | Can it compile to a WebAssembly component without OS-specific dependencies? |
+| User interface | Can you implement its interactions with Krate widgets/canvas rather than DOM, AppKit or Win32 calls? |
+| Files and saved state | Which paths need user approval, and which data belongs in app-scoped storage? |
+| Network | Which hosts/ports are needed, and are HTTP or WebSocket interfaces sufficient? |
+| Native libraries and subprocesses | Is there a portable replacement? A native shared library or shell process does not become a Krate API. |
+| OS integration | Is every required feature in the [current capability list](limits.md)? |
+
+For Electron projects, inventory Node and browser/DOM dependencies. For Tauri
+projects, inventory Rust commands, plugins and WebView interactions. Neither
+project runs unchanged inside Krate. Pure logic may be reusable; UI and host
+integration often need adaptation. A missing essential API is a stop condition,
+not something a packaging flag can fix.
 
 ## Look first
 
@@ -12,8 +32,8 @@ krate port ./my-project
 ```
 
 You get a verdict, the capabilities the app appears to need, and a list
-of findings with the file and line that caused each one. Nothing is
-written anywhere.
+of findings with the file and line that caused each one. The default scan
+does not create an output workspace.
 
 Run it on a small CLI that reads a file and you get back something like
 this:
@@ -97,3 +117,21 @@ conversion.
 
 Read [what Krate cannot do yet](limits.md) before you start a port. It is
 the fastest way to find out if the thing you are porting is a fit.
+
+## Decide whether the port is ready to share
+
+A successful build is only the start. Use `JOURNEYS.md` to compare the original
+and port: open representative files, edit and save, restart, try invalid input,
+resize the UI and deny permissions. Check that the same `.krate` file completes
+those tasks on each target OS with a compatible runtime. Record changed or
+missing behavior rather than calling it feature parity prematurely.
+
+Measure payload, complete bundle and runtime footprint separately. For speed
+or memory comparisons, use the same inputs and task, include the full process
+tree and distinguish cold from warm runs. See the
+[distribution comparison](https://krate.tech/desktop-app-distribution.html)
+for the architectural tradeoffs.
+
+If a required feature is missing, describe the operation, expected behavior
+and a minimal example in [GitHub Discussions](https://github.com/incyashraj/krate/discussions).
+Do not share private project source or credentials to demonstrate the need.

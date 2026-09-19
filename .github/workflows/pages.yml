@@ -15,6 +15,7 @@ on:
       - "docs/support/**"
       - "docs/pages/**"
       - "docs/answers/**"
+      - "docs/public-facts.json"
       # The Krate Mode prompt, served at the site root. Without this a
       # regenerated prompt would sit in the repo while the live URL kept
       # handing models the old API.
@@ -22,6 +23,15 @@ on:
       - "scripts/build-store.sh"
       - "scripts/store-listing.py"
       - "scripts/build-answer-pages.py"
+      - "scripts/build-progress-page.py"
+      - "scripts/build-reports-page.py"
+      - "scripts/public_facts.py"
+      - "scripts/test-public-facts.py"
+      - "scripts/replay-ported-apps.sh"
+      - "scripts/site-seo.py"
+      - "scripts/test-site-seo.py"
+      - "evidence/benchmarks/**"
+      - "evidence/claims/performance.json"
       - "scripts/fingerprint-css.py"
       # Injects the phone rules into every assembled page. Editing it
       # without this line changes the repo and not the site -- which is
@@ -100,6 +110,7 @@ jobs:
           cp -R docs/landing/. _site/
           # One page per question people actually search, generated from one
           # template so they cannot drift the way four copies of a stylesheet did.
+          python3 scripts/build-answer-pages.py --self-test
           python3 scripts/build-answer-pages.py
           cp docs/answers/*.html _site/
           cp docs/landing/faq.html _site/faq.html
@@ -174,9 +185,11 @@ jobs:
           python3 scripts/build-progress-page.py
           mkdir -p _site/progress
           cp docs/landing/progress.html _site/progress/index.html
+          cp docs/landing/progress.html _site/progress.html
           python3 scripts/build-reports-page.py
           mkdir -p _site/reports
           cp docs/landing/reports.html _site/reports/index.html
+          cp docs/landing/reports.html _site/reports.html
           cp docs/landing/*.png _site/
           # Screenshots of the real apps the AI built, shown on the
           # make-an-app-with-AI page (which references them at /app-shots/).
@@ -207,12 +220,9 @@ jobs:
           # it has to be copied on every deploy. Without it Pages forgets the
           # domain and krate.tech stops resolving to this site.
           cp docs/landing/CNAME _site/CNAME
-          # Crawlers only read robots.txt and sitemap.xml from the site root.
-          # mdBook emits them under /docs/, where nothing looks for them, and
-          # robots.txt itself advertises the sitemap at the root -- so without
-          # this copy that link is a 404 and the sitemap goes unread.
+          # robots.txt advertises the root sitemap, generated from the final
+          # artifact below rather than the historical hand-maintained list.
           cp docs/book/book/robots.txt _site/robots.txt
-          cp docs/book/book/sitemap.xml _site/sitemap.xml
           # Serve the installers from the domain, so the command someone pastes
           # into a terminal is `curl -fsSL https://krate.tech/install.sh | sh`
           # rather than a raw.githubusercontent URL with a branch name in it.
@@ -313,6 +323,14 @@ jobs:
           # new HTML against whatever copy the visitor already had -- the page
           # rendered unstyled and nothing on the server was wrong.
           python3 scripts/fingerprint-css.py _site
+      - name: Finalize and verify crawl metadata
+        run: |
+          python3 scripts/test-public-facts.py
+          python3 scripts/public_facts.py --check
+          python3 scripts/public_facts.py --output _site/llms.txt
+          python3 scripts/test-site-seo.py
+          python3 scripts/site-seo.py finalize _site
+          python3 scripts/site-seo.py check _site --require-priority
       - name: Setup Pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
       - name: Upload artifact

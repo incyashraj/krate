@@ -1,68 +1,123 @@
 # Quickstart
 
-From nothing to a running app you can send someone.
+Install the runtime, inspect an app, then choose how you want to build.
+The same `.krate` artifact runs through compatible native Krate runtimes on
+macOS, Windows and Linux. The recipient needs the runtime, not your build
+tools. Existing OS-specific applications need a port to Krate's APIs.
 
 ## Get Krate
 
-Download the release for your machine from
-[the releases page](https://github.com/incyashraj/krate/releases), or build
-from source if you would rather:
+Download the runtime archive for your OS and CPU from
+[the latest release](https://github.com/incyashraj/krate/releases/latest),
+or use the published installer. The following commands execute a downloaded
+script: inspect [install.sh](https://github.com/incyashraj/krate/blob/main/scripts/install.sh)
+or [install.ps1](https://github.com/incyashraj/krate/blob/main/scripts/install.ps1)
+first if you want to review it.
+
+macOS and Linux:
 
 ```sh
-cargo build --release -p krate-cli
+curl -fsSL https://krate.tech/install.sh | sh
 ```
 
-Check it can build apps on this machine:
+Windows **PowerShell**, not Command Prompt:
+
+```powershell
+irm https://krate.tech/install.ps1 | iex
+```
+
+Open a new terminal if the installer updated your PATH, then check:
 
 ```sh
+krate --version
 krate doctor
 ```
 
-That reports the toolchain, the WebAssembly target and whether an AI agent
-is reachable, and it names the fix for anything missing.
+`doctor` reports authoring tools as well as the runtime environment. Missing
+Rust or AI tooling is relevant to building, not to opening an already packed
+app. On Linux X11 desktops, the keyboard bridge library may also be needed;
+see the [platform requirements](https://github.com/incyashraj/krate/blob/main/docs/build.md).
+
+## Open an app before building one
+
+Use a `.krate` file from a source you trust, such as a project you have
+reviewed. Replace `app.krate` with the local filename:
+
+```sh
+krate run app.krate --dump-caps
+krate run app.krate --prompt
+```
+
+The first command reports capabilities without executing the component.
+The second asks about missing permissions before running. Do not grant a
+capability just to dismiss a prompt: check why the app needs it. A permission
+list describes access, not every behavior of the app.
 
 ## Make something
 
+**With AI:** the CLI path below needs Rust/Cargo, the WebAssembly build
+target, component tooling, and an installed, authenticated Claude Code CLI.
+`krate ai` shows detected providers. Krate can offer to install missing build
+tools; add `--no-install` if you want missing tools to stop the command instead.
+Your AI provider's costs and terms still apply.
+
 ```sh
+krate ai
 krate create "a regex tester with a pattern box and live matches" \
   --agent claude --output regex.krate
 ```
 
-The agent writes the code, `check-app` builds it, checks that it imports only
-`krate:*`, runs it and confirms it paints a frame. What lands is one file.
+**Without AI:** use the [Rust SDK](uapi/rust-sdk.md) and the from-source
+walkthrough below. Prefer a graphical authoring interface? See
+[Krate Studio](https://krate.tech/studio/).
+
+The authoring checks cover the build, accepted imports, basic execution and
+rendering. They do not prove every interaction works. Use the generated app,
+test invalid input and saved data, and verify it on your target operating
+systems before distributing it.
 
 ## Run it, and read what it may touch
 
 ```sh
-krate run regex.krate
 krate run regex.krate --dump-caps
+krate run regex.krate --prompt
 ```
 
-The second command prints the capability list without running anything. That
-list is the manifest's, and the runtime enforces it rather than trusting the
-code.
+Inspect first, then review the permission prompt. Use
+`krate run --help` for the flags supported by the installed version.
 
 ## Send it
 
-The `.krate` is the whole app, source included. Mail it, drop it in a chat,
-or publish it and send a URL:
+Send the `.krate` file by email, chat or a shared folder. The normal authoring
+path includes editable source; inspect what is inside before sharing and do
+not include secrets or private inputs. The recipient installs a compatible
+Krate runtime once and runs the same file. Application data stored separately
+on your machine is not automatically copied or synchronized.
+
+Publishing to a hub is optional and uploads your bundle. Check the selected
+hub, authentication and listing settings first:
 
 ```sh
+krate publish --help
 krate publish regex.krate
 ```
 
-Anyone with Krate can open the file. Anyone without it can use the wrapped
-double-clickable from Studio's Ship it sheet.
+You do not need a hosted service to pass the file directly to another person.
 
 ## Where next
 
 - **[Porting](porting.md)** to bring a project you already have.
-- **[What Krate cannot do yet](limits.md)** before planning anything large.
+- **[Current capability limits](limits.md)** before choosing APIs for a project.
+- **[Distribution models](https://krate.tech/desktop-app-distribution.html)**
+  to compare a shared artifact with Electron/Tauri packaging.
 - **[The Rust SDK](uapi/rust-sdk.md)** for writing the code by hand.
 
 ---
 
-The rest of this page is the from-source path, kept for contributors.
+The rest of this page is the from-source path for contributors. Some commands
+exercise historical Phase 2 fixtures and evidence helpers rather than the
+normal released-app workflow above. Their phase names are not the current
+release version.
 
 ## Prerequisites
 
@@ -85,7 +140,7 @@ cargo install cargo-component --locked --version 0.21.1
 
 ```bash
 git clone https://github.com/incyashraj/krate.git
-cd layer6x6
+cd krate
 ```
 
 ## Build Krate

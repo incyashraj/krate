@@ -4,13 +4,13 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0a0a0a" />
-  <meta name="description" content="Krate is not a concept. See the apps, sizes, platform coverage, interfaces and limits measured from the repository today." />
+  <meta name="description" content="Krate repository inventory: complete app bundle sizes, source inclusion, test configuration, release links and current capability references." />
   <link rel="canonical" href="https://krate.tech/progress/" />
-  <meta property="og:title" content="Krate: this is what ships today" />
-  <meta property="og:description" content="Every app we have shipped, its size, and what still does not work. Generated from the repository, not written by hand." />
+  <meta property="og:title" content="Krate: repository inventory and releases" />
+  <meta property="og:description" content="App artifacts and their complete sizes, generated from this checkout. Release support and test results are linked separately." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://krate.tech/progress/" />
-  <title>Krate: this is what ships today</title>
+  <title>Krate repository inventory and release links</title>
   <link rel="icon" href="/krate-favicon.png" />
   <link rel="apple-touch-icon" href="/krate-favicon.png" />
   <style>
@@ -90,120 +90,83 @@
 </header>
 
   <main class="page-wide">
-    <p class="page-kicker">PROOF</p>
-    <h1>This is not a concept. It ships.</h1>
-    <p>
-      Every app we have shipped, its real size, and whether it is re-tested every
-      night on Mac, Windows, and Linux. This page is generated from the
-      repository. The current release is <code>v0.4.0</code>, with Krate
-      Studio downloads for Mac, Windows and Linux.
-    </p>
-    <p class="generated">Generated 2026-09-15 from commit <code>011228b93</code>.</p>
+    <p class="page-kicker">REPOSITORY INVENTORY</p>
+    <h1>What is in this checkout.</h1>
+    <p>Krate lets developers package software as one .krate file that runs through native Krate runtimes on macOS, Windows and Linux.</p>
+    <p>The recipient installs a compatible Krate runtime once. Applications use supported Krate APIs; existing desktop binaries do not become portable without adaptation.</p>
+    <p>Latest published release at generation: <a href="https://github.com/incyashraj/krate/releases/latest"><code>v0.5.0</code></a>.</p>
+    <p class="generated">Generated 2026-09-19 from commit <code>38d66590b</code>.
+      This is a source snapshot, not a fresh cross-platform test run.</p>
 
-    <h2>Apps that exist and run</h2>
-    <!-- Five columns do not fit a phone. Measured at 390px wide the table
-         needed 426px and took the whole PAGE sideways with it, which is
-         the one layout failure a reader cannot work around. It scrolls
-         inside its own box now, the same way /reports/ already did. -->
+    <h2>Application artifacts</h2>
     <div class="table-scroll">
-    <table>
-      <thead>
-        <tr><th>App</th><th class="num">Bytes</th><th class="num">vs Discord</th><th>What it is</th><th>Nightly</th></tr>
-      </thead>
-      <tbody>
-          <tr><td><code>grex</code></td><td class="num">54,084</td><td class="num">8,349&times;</td><td>Regex builder, ported from 5,396 lines</td><td>Yes</td></tr>
-          <tr><td><code>envelope</code></td><td class="num">19,495</td><td class="num">23,161&times;</td><td>Budgeting app with a real database</td><td>Yes</td></tr>
-          <tr><td><code>mdview</code></td><td class="num">18,965</td><td class="num">23,808&times;</td><td>Markdown viewer, ported from 4,863 lines</td><td>Yes</td></tr>
-          <tr><td><code>rssfwd</code></td><td class="num">18,084</td><td class="num">24,968&times;</td><td>Feed forwarder that talks to the internet</td><td>Not nightly</td></tr>
-          <tr><td><code>eo2</code></td><td class="num">18,021</td><td class="num">25,056&times;</td><td>Image viewer, ported from 2,677 lines of desktop source</td><td>Yes</td></tr>
-          <tr><td><code>ddh</code></td><td class="num">17,778</td><td class="num">25,398&times;</td><td>Duplicate-file finder</td><td>Yes</td></tr>
-          <tr><td><code>savings</code></td><td class="num">15,227</td><td class="num">29,653&times;</td><td>Budget splitter with a window and saved state</td><td>Yes</td></tr>
-          <tr><td><code>hexyl</code></td><td class="num">14,872</td><td class="num">30,361&times;</td><td>Hex viewer, byte-identical output to the original</td><td>Yes</td></tr>
-          <tr><td><code>bounce</code></td><td class="num">13,047</td><td class="num">34,608&times;</td><td>2D game: a playable Breakout with paddle, bricks, lives, a win</td><td>Yes</td></tr>
-          <tr><td><code>cubes</code></td><td class="num">12,880</td><td class="num">35,056&times;</td><td></td><td>Yes</td></tr>
-          <tr><td><code>chart</code></td><td class="num">11,455</td><td class="num">39,417&times;</td><td>Draws its own bar chart, no image files</td><td>Yes</td></tr>
-      </tbody>
-    </table>
+      <table>
+        <thead><tr><th>Artifact</th><th class="num">Full bundle bytes</th>
+          <th class="num">Code payload bytes</th><th>Carries source</th></tr></thead>
+        <tbody><tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/ported/grex.krate"><code>evidence/ported/grex.krate</code></a></td><td class="num">54,084</td><td class="num">145,016</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/ported/envelope.krate"><code>evidence/ported/envelope.krate</code></a></td><td class="num">19,495</td><td class="num">55,178</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-mdview.krate"><code>evidence/store/krate-mdview.krate</code></a></td><td class="num">19,416</td><td class="num">43,917</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/ported/mdview.krate"><code>evidence/ported/mdview.krate</code></a></td><td class="num">18,965</td><td class="num">42,876</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-eo2.krate"><code>evidence/store/krate-eo2.krate</code></a></td><td class="num">18,253</td><td class="num">41,261</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-journal.krate"><code>evidence/store/krate-journal.krate</code></a></td><td class="num">18,128</td><td class="num">41,488</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/ported/rssfwd.krate"><code>evidence/ported/rssfwd.krate</code></a></td><td class="num">18,084</td><td class="num">42,484</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/ported/eo2.krate"><code>evidence/ported/eo2.krate</code></a></td><td class="num">18,021</td><td class="num">40,868</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/ported/ddh.krate"><code>evidence/ported/ddh.krate</code></a></td><td class="num">17,778</td><td class="num">44,399</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-nova.krate"><code>evidence/store/krate-nova.krate</code></a></td><td class="num">16,881</td><td class="num">39,370</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-notes.krate"><code>evidence/store/krate-notes.krate</code></a></td><td class="num">15,835</td><td class="num">36,882</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/ported/savings.krate"><code>evidence/ported/savings.krate</code></a></td><td class="num">15,227</td><td class="num">35,579</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-fetch.krate"><code>evidence/store/krate-fetch.krate</code></a></td><td class="num">15,135</td><td class="num">35,875</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/ported/hexyl.krate"><code>evidence/ported/hexyl.krate</code></a></td><td class="num">14,872</td><td class="num">34,759</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-contacts.krate"><code>evidence/store/krate-contacts.krate</code></a></td><td class="num">14,507</td><td class="num">34,561</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-clip.krate"><code>evidence/store/krate-clip.krate</code></a></td><td class="num">14,467</td><td class="num">34,545</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-pulse.krate"><code>evidence/store/krate-pulse.krate</code></a></td><td class="num">14,090</td><td class="num">33,607</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-checklist.krate"><code>evidence/store/krate-checklist.krate</code></a></td><td class="num">13,739</td><td class="num">33,039</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-savings.krate"><code>evidence/store/krate-savings.krate</code></a></td><td class="num">13,394</td><td class="num">32,549</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-clocks.krate"><code>evidence/store/krate-clocks.krate</code></a></td><td class="num">13,200</td><td class="num">31,335</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/ported/bounce.krate"><code>evidence/ported/bounce.krate</code></a></td><td class="num">13,047</td><td class="num">30,923</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/ported/cubes.krate"><code>evidence/ported/cubes.krate</code></a></td><td class="num">12,880</td><td class="num">30,388</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-focus.krate"><code>evidence/store/krate-focus.krate</code></a></td><td class="num">12,803</td><td class="num">30,347</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-weather.krate"><code>evidence/store/krate-weather.krate</code></a></td><td class="num">12,114</td><td class="num">29,172</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/ported/chart.krate"><code>evidence/ported/chart.krate</code></a></td><td class="num">11,455</td><td class="num">26,696</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-keyvault.krate"><code>evidence/store/krate-keyvault.krate</code></a></td><td class="num">11,260</td><td class="num">27,034</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-paint.krate"><code>evidence/store/krate-paint.krate</code></a></td><td class="num">11,194</td><td class="num">25,970</td><td>No</td></tr></tbody>
+      </table>
     </div>
-    <p>
-      <strong>All 11 apps together: 213,908 bytes (209&nbsp;KB).</strong>
-      Discord, which solves the same one-codebase-three-systems problem with a
-      browser inside the app, is 2,110.8&times; that on its own.
-    </p>
-    <p class="generated">
-      One app is not re-run nightly on purpose: <code>rssfwd</code> reaches the
-      internet, and a nightly test that depends on someone else's server reports
-      their uptime rather than our runtime.
-    </p>
+    <p>27 artifacts, 448,324 full-bundle bytes in total.
+      These are files, not a count of unique applications or confirmed users.
+      Apps with the same name can have different builds on different shelves.</p>
+    <p class="generated">A .krate bundle contains a WebAssembly component and manifest, and can also carry source, SDK interfaces and assets. Full bundle bytes, uncompressed code payload, runtime download and installed runtime size are different measurements.
+      Code payload means the uncompressed <code>code.wasm</code> entry;
+      older bundles without source are identified instead of presented as the
+      size of all current apps. The shared runtime is not included.</p>
 
-    <h2>What the current public release can run</h2>
-    <p>
-      All of them. The current release is <code>v0.4.0</code>. Drawing,
-      animation, audio capture, speech transcription and 3D scenes work, and each release is
-      checked by downloading the published binary and running the 2D game, the
-      chart and the sandbox escape test with it, not by trusting the build that
-      made it. Krate also has <code>krate run app.wasm --shoot frame.png</code>,
-      which paints any app's window to a PNG on any machine with no display.
-    </p>
-    <p class="generated">
-      Six platforms ship, including arm64 Linux and ARM Windows.
-      The earlier gap (no arm64 Linux binary in rc5) is closed.
-    </p>
+    <h2>Test configuration is not a test result</h2>
+    <p>The repository's ported-app replay script names 10
+      checks: <code>bounce</code>, <code>chart</code>, <code>cubes</code>, <code>ddh</code>, <code>envelope</code>, <code>eo2</code>, <code>grex</code>, <code>hexyl</code>, <code>mdview</code>, <code>savings</code>. This list says what the script is configured to
+      exercise, not whether the latest run passed.</p>
+    <p>Inspect <a href="https://github.com/incyashraj/krate/blob/main/scripts/replay-ported-apps.sh">the replay script</a>,
+      <a href="https://github.com/incyashraj/krate/actions/workflows/ci.yml">CI run results</a>
+      and <a href="https://github.com/incyashraj/krate/releases/latest">release notes</a> for the
+      revision and host you intend to use. A file existing in this checkout
+      does not prove it works with every published runtime version.</p>
 
-    <h2>New this month</h2>
+    <h2>Choose a supported application</h2>
+    <p>Start with the <a href="/docs/porting.html">porting guide</a> and
+      <a href="/docs/limits.html">current limits</a>. Runtime APIs and bundle
+      formats evolve; use a compatible runtime, SDK and artifact.</p>
     <ul>
-      <li><strong>Shared apps without accounts.</strong> Two machines holding
-          the same ten-character invite code see the same data, synced through
-          krate.tech. A grocery list built by an AI in one sentence ("a shared
-          grocery list my wife and I can both edit") showed one merged list on
-          a Mac and a Windows PC. No sign-up, no server of yours.</li>
-      <li><strong>The machine's senses.</strong> Generated apps now use the
-          microphone, the camera, local speech-to-text and sound. Asked for
-          "a voice memo app", the AI shipped one on the first try: record
-          button, live level meter, playback, memos kept between launches.</li>
-      <li><strong>Mac downloads open clean.</strong> Krate Studio and the
-          runtime are signed and notarized with a Developer ID; macOS opens
-          them like any other download, offline included.</li>
-      <li><strong>You can only download a verified release.</strong> Every
-          release is born unlisted and is promoted to the public channel only
-          after the published files themselves pass checksum, Gatekeeper, and
-          run-a-real-app checks on all three systems.</li>
-      <li><strong>Windows looks right.</strong> Native-density rendering,
-          window controls on every app window, drag and double-click-to-
-          maximize -- verified on a physical Windows PC, not an emulator.</li>
-      <li><strong>The AI starts warm.</strong> Everything the AI needs rides
-          inside its first instruction, and the build continues the very
-          conversation that planned it -- so it writes code from the first
-          minute instead of reading files.</li>
+      <li><a href="/docs/reference/interface-parity.html">Interface coverage</a></li>
+      <li><a href="/docs/reference/widget-parity.html">Widget coverage</a></li>
+      <li><a href="/docs/quickstart.html">Developer quickstart</a></li>
+      <li><a href="/studio/">AI-assisted authoring in Studio</a></li>
     </ul>
+    <p>Applications begin without file or network access and receive approved capabilities through the runtime. This boundary is not a guarantee of bug-free or harmless software; review the threat model and only run apps you trust.</p>
 
-    <h2>How much of the system is real</h2>
-    <ul>
-      <li>12 of 15 declared interfaces are fully implemented. 1 are declared and do nothing yet. Two more interfaces are partial.</li>
-      <li>17 of 17 declared widgets work on all three systems.</li>
-    </ul>
-    <p>
-      Both lines are generated from the runtime itself, not written by hand, and
-      the build fails if they drift from what the code does.
-    </p>
-
-    <h2>What does not work yet</h2>
-    <p>We publish this for the same reason we publish the rest.</p>
-    <ul>
-      <li><strong>GPU 3D.</strong> Software 3D works with triangles, depth
-          and lighting, 54 frames a second at 640x480 on a laptop. A modern 3D
-          game needs the GPU path, which is planned rather than written.</li>
-      <li><strong>Video.</strong> No decoder, no frame clock.</li>
-      <li><strong>Live connections.</strong> HTTPS works; streaming and
-          WebSockets do not, so no multiplayer and no live feeds.</li>
-      <li><strong>System menu bars.</strong> Apps use in-window buttons instead.</li>
-      <li><strong>Judgment inside the sandbox.</strong> When an AI builds an app,
-          Krate guarantees it cannot exceed the permissions you granted. It does
-          not guarantee the AI chose well inside them. We caught our own
-          generated password manager storing passwords in ordinary storage, and
-          fixed the instructions that led it there.</li>
-    </ul>
-
+    <h2>Performance needs its own evidence</h2>
+    <p>The <a href="/reports/">measurement report</a> describes one
+      architecture-matched notes workload and separates full bundle, code
+      payload and shared-runtime costs. This inventory makes no speed, memory
+      or size-ratio claim against unrelated applications.</p>
     <p style="margin-top:3rem"><a href="/">&larr; Back to krate.tech</a></p>
   </main>
 

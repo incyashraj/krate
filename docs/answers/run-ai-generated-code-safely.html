@@ -4,19 +4,21 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="theme-color" content="#000000" />
-<title>How to run AI-generated code safely -- Krate</title>
-<meta name="description" content="AI wrote it and you have not read all of it. Krate runs the app with no access to your files or network until you allow each thing, and refuses to package an app that reaches outside what it declared." />
+
+
 <link rel="icon" href="/krate-favicon.png" />
-  <link rel="canonical" href="https://krate.tech/run-ai-generated-code-safely.html" />
-  <meta property="og:title" content="Krate: build once, ship one file" />
-  <meta property="og:description" content="Build once, ship one file. Desktop software in tens of kilobytes that runs on Mac, Windows and Linux -- no per-app installer, no port, no signing dance." />
-  <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://krate.tech/" />
-  <meta property="og:image" content="https://krate.tech/og-v3.png" />
-  <meta property="og:image:width" content="1200" />
-  <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="Build once. Ship one file. Desktop software in tens of kilobytes that runs on Mac, Windows, and Linux." />
-  <meta name="twitter:card" content="summary_large_image" />
+
+
+
+
+
+
+
+
+
+
+
+
 
 <style>
 @font-face { font-family: "Geist"; src: url("/fonts/geist-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
@@ -94,7 +96,7 @@ img { max-width: 100%; display: block; }
      from the footer, and four 12.5px links in a phone header would be
      four targets nobody can hit. */
   .bnav { display: flex; margin-left: 0; }
-  .bnav a:not([href="/login/?next=studio"]) { display: none; }
+  .bnav a:not([href="/docs/quickstart.html"]) { display: none; }
   /* A quiet link, not a second white button.
      The hero already has "Make an app" as a full-width white button a
      few hundred pixels down -- the page's one action. Repeating it in the
@@ -102,7 +104,7 @@ img { max-width: 100%; display: block; }
      wordmark beside it and asked the same question twice. Here it is a
      link: present if you want it before you have read anything, and out
      of the way if you do not. */
-  .bnav a[href="/login/?next=studio"] {
+  .bnav a[href="/docs/quickstart.html"] {
     font-size: 14px; font-weight: 500; color: #e4e4e7;
     background: none; padding: 10px 2px; border-radius: 0;
     min-height: 44px; display: inline-flex; align-items: center;
@@ -691,6 +693,11 @@ img { max-width: 100%; display: block; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .eclipse { opacity: 1 !important; filter: none !important; transform: translateY(-50%) !important; }
   .heroContent h1, .heroSub, .heroCtas { opacity: 1 !important; filter: none !important; transform: none !important; }
+  .works h2, .works .copy, .works .tag, .ring, .orbIcon, .centerGlyph,
+  .ctaCard, .ctaText h2, .ctaText p, .ctaActs {
+    opacity: 1 !important; filter: none !important; transform: none !important;
+    clip-path: none !important; scale: 1 !important;
+  }
 }
 
 /* ---- the hero, on a phone -------------------------------------------- */
@@ -1044,10 +1051,52 @@ img { max-width: 100%; display: block; }
     padding: 6px 14px 6px 12px;
     padding-top: calc(6px + env(safe-area-inset-top));
     border-radius: 0;
-    background: rgba(10, 10, 10, 0.78);
+    /* The bar used to be a flat near-black panel with a 1px white
+       hairline under it, sitting directly on the hero's purple glow. Two
+       hard edges in the same place -- the tone step from near-black to
+       purple, and the line itself -- and it read as two stacked
+       rectangles rather than one surface.
+       The panel now fades out over its last few pixels instead, so the
+       bar meets the glow rather than cutting it. */
+    background: linear-gradient(
+      to bottom,
+      rgba(10, 10, 10, 0.88) 0%,
+      rgba(10, 10, 10, 0.82) 62%,
+      rgba(10, 10, 10, 0.55) 88%,
+      rgba(10, 10, 10, 0) 100%
+    );
     -webkit-backdrop-filter: blur(16px) saturate(1.4);
     backdrop-filter: blur(16px) saturate(1.4);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    /* No hairline. A border draws the same crisp edge the gradient
+       exists to avoid; the blur behind the bar is what separates it
+       from the page. */
+    border-bottom: 0;
+  }
+  /* The glow begins at full strength at y=0, because the eclipse's box
+     sits entirely above the fold (measured: its lowest layer ends at
+     -33px) and only its 90px blur spills into view -- so there is
+     nothing above it to fade from, and it met the bar as a flat wash.
+     This is the missing top of that falloff: a short, dark veil over the
+     first stretch of the hero, behind the content and above the glow, so
+     the colour arrives instead of starting.
+
+     Kept SHORT and light on purpose: a first pass at 190px and 0.72
+     alpha softened the seam and flattened the glow with it, which trades
+     one problem for a worse one -- the colour is the hero. This reaches
+     just past the bar and is gone by 96px. */
+  .heroStick::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 70px;
+    z-index: 1;
+    pointer-events: none;
+    background: linear-gradient(
+      to bottom,
+      rgba(10, 10, 10, 0.42) 0%,
+      rgba(10, 10, 10, 0.16) 60%,
+      rgba(10, 10, 10, 0) 100%
+    );
   }
   /* The entrance animation re-centres with a transform; on a full-width
      bar there is nothing to centre and it would slide the bar sideways. */
@@ -1154,7 +1203,16 @@ img { max-width: 100%; display: block; }
        headline began at 22px, hiding 35px of "Build once." behind it.
        Measured, not guessed. The bar is 44px of content plus its
        safe-area inset, so clear that and then add the air. */
-    padding: calc(44px + env(safe-area-inset-top) + 26px) 0 4px;
+    /* +52, not +26. The bar's `backdrop-filter: blur(16px)` blurs what is
+       BEHIND its box, and that sampling feathers past the box edge -- so
+       a headline sitting 14px under the bar gets softened by it even
+       though the geometry says the two never overlap. Measured on a real
+       render: "Build once." came out at maxEdge 27 / avgEdge 2.01 while
+       "Ship one file." on the next line was 36 / 3.32. Only the first
+       line was affected, which is the signature of a blur that reaches
+       down rather than of anything wrong with the type.
+       Clearing the blur radius with room to spare fixes it. */
+    padding: calc(44px + env(safe-area-inset-top) + 52px) 0 4px;
     justify-content: flex-start;
   }
   /* Absolutely positioned for the cross-fade; in the stacked phone layout
@@ -1239,38 +1297,36 @@ img { max-width: 100%; display: block; }
     a.btn, a.pill, a.cta, .brandbar .name { min-height: 44px; display: inline-flex; align-items: center; }
   }
 </style>
-  <script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "FAQPage",
-  "mainEntity": [
-    {
-      "@type": "Question",
-      "name": "Is it safe to run code that AI wrote?",
-      "acceptedAnswer": {
-        "@type": "Answer",
-        "text": "Not by default, anywhere. Krate changes what happens when it is wrong: an app starts with no access to your files or the network, must ask for each capability it needs, and you see that list before any of its code runs. It receives only what you allow."
-      }
-    },
-    {
-      "@type": "Question",
-      "name": "How do I know what an AI-generated app will do?",
-      "acceptedAnswer": {
-        "@type": "Answer",
-        "text": "Run `krate run app.krate --dump-caps`. It lists every capability the app declared without executing any of it, so you can decide whether to run it at all."
-      }
-    },
-    {
-      "@type": "Question",
-      "name": "What stops an app from just ignoring the permission screen?",
-      "acceptedAnswer": {
-        "@type": "Answer",
-        "text": "The check is not inside the app. A Krate app cannot call the operating system directly; it calls Krate interfaces, and the runtime verifies the capability before it touches the host. An app that imports anything outside that boundary is rejected at packaging time and never becomes a .krate file."
-      }
-    }
-  ]
-}
-  </script>
+<noscript><style>
+  .brandbar, .heroContent h1, .heroSub, .heroCtas, .works h2, .works .copy,
+  .how h2, .how .lead, .step, .price h2, .price .lead, .plan, .ctaCard,
+  .ctaText h2, .ctaText p, .ctaActs { opacity: 1 !important; filter: none !important; }
+  .brandbar { transform: translateX(-50%); }
+  .heroContent h1, .heroSub, .heroCtas, .step, .plan { transform: none !important; }
+  .works h2, .works .copy, .ctaCard, .ctaText h2, .ctaText p, .ctaActs {
+    transform: none !important; clip-path: none !important;
+  }
+  .heroTrack { height: auto; min-height: 680px; }
+  .heroStick { position: relative; height: auto; min-height: 680px; overflow: visible; }
+  .heroContent { position: relative; padding-bottom: 60px; }
+  .eclipse, .marqWrap, .marqLabel, .chip, .orbitStage { display: none; }
+  .whatis { display: block; }
+</style></noscript>
+<title>Inspect permissions before running AI-built apps | Krate</title>
+  <meta name="description" content="How Krate&#x27;s capability model limits host access, how to inspect an app before running it, and what permissions cannot prove about AI-generated software.">
+  <link rel="canonical" href="https://krate.tech/run-ai-generated-code-safely.html">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Krate">
+  <meta property="og:title" content="Inspect permissions before running AI-built apps | Krate">
+  <meta property="og:description" content="How Krate&#x27;s capability model limits host access, how to inspect an app before running it, and what permissions cannot prove about AI-generated software.">
+  <meta property="og:url" content="https://krate.tech/run-ai-generated-code-safely.html">
+  <meta property="og:image" content="https://krate.tech/og-v3.png">
+  <meta property="og:image:alt" content="Krate desktop application runtime">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Inspect permissions before running AI-built apps | Krate">
+  <meta name="twitter:description" content="How Krate&#x27;s capability model limits host access, how to inspect an app before running it, and what permissions cannot prove about AI-generated software.">
+  <meta name="twitter:image" content="https://krate.tech/og-v3.png">
+  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebPage", "@id": "https://krate.tech/run-ai-generated-code-safely.html#webpage", "url": "https://krate.tech/run-ai-generated-code-safely.html", "name": "Inspect permissions before running AI-built apps | Krate", "description": "How Krate's capability model limits host access, how to inspect an app before running it, and what permissions cannot prove about AI-generated software.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}}</script>
   <style>
     /* Command blocks: scroll inside the box, never widen the page. */
     .answer-cmd {
@@ -1308,6 +1364,12 @@ img { max-width: 100%; display: block; }
       min-height: 44px;
       padding: 0 20px;
     }
+    .answer-table-wrap { max-width: 100%; overflow-x: auto; margin: 20px 0; }
+    .answer-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .answer-table th, .answer-table td {
+      padding: 12px; text-align: left; vertical-align: top;
+      border-bottom: 1px solid rgba(255,255,255,.14);
+    }
     @media (max-width: 760px) {
       .answer-cmd { font-size: 12.5px; padding: 12px 14px; }
       /* One per line on a phone, each full width: two pills side by side
@@ -1322,7 +1384,7 @@ img { max-width: 100%; display: block; }
   <div class="wrap subnav-inner">
     <a class="brand" href="/"><img src="/krate-logo.png" alt="" width="22" height="22" /> KRATE</a>
     <nav>
-      <a href="/#install">Start</a>
+      <a href="/docs/quickstart.html">Start</a>
       <a href="/docs/">Docs</a>
       <a href="/cloud/">Apps</a>
       <a href="https://github.com/incyashraj/krate">GitHub</a>
@@ -1331,68 +1393,57 @@ img { max-width: 100%; display: block; }
   </div>
 </header>
     <main id="main" class="page-wrap">
-    <h1>How to run AI-generated code safely</h1>
-    <p class="page-lede">You did not read every line, and honestly you were not going to. The question is what the app can reach if it turns out to be wrong.</p>
+    <h1>Inspect what an AI-built app can access</h1>
+    <p class="page-lede">Krate applications start without file or network access. They use Krate interfaces and receive approved capabilities. That narrows host access; it does not prove the code is correct or harmless.</p>
 
     <section>
-      <h2>The real risk is not bad code, it is reach</h2>
-        <p>Most AI-generated code is not malicious. It is confidently wrong. It deletes the wrong directory, uploads something it should not have, or loops until the disk fills.</p>
-        <p>Reading it all is not realistic once it is more than a page long. The useful question is not whether the code is correct, but what it can touch when it is not.</p>
+      <h2>Read the permission request before execution</h2>
+<p>For a local bundle from a source you trust, inspect its capability information without executing the component:</p>
+<pre class="answer-cmd">krate run app.krate --dump-caps</pre>
+<p>Check the requested file scope, network destinations and media/device access against the app's purpose. A document viewer asking to upload data needs an explanation. The capability list is not a transcript of everything the code might do.</p>
     </section>
     <section>
-      <h2>Look at it before you run it</h2>
-        <p>You can inspect a Krate app without executing a single instruction:</p>
-        <pre class="answer-cmd">$ krate run notes.krate --dump-caps
-
-Identity
-  - 467e4b0e1124b7a8aa86fb1ce39909046508819d55f161e408e282de177b0f16
-
-This app will ask for
-  - read files in notes (fs.read:notes/**)
-  - save files in notes (fs.write:notes/**)
-  - read from the clipboard (ui.clipboard:read)
-  - copy to the clipboard (ui.clipboard:write)</pre>
-        <p>That is the real output. The identity is computed from the file's contents, so you can check that what you received is what somebody else verified.</p>
+      <h2>Review each grant when opening</h2>
+<pre class="answer-cmd">krate run app.krate --prompt</pre>
+<p>The runtime checks host operations against session capabilities. Required capabilities that are not granted prevent the corresponding launch from proceeding; optional behavior and failure handling still need application testing. Avoid <code>--auto-grant</code> for an app you have not reviewed.</p>
+<p>A grant can permit a damaging operation inside its allowed scope. Giving an app write access to a folder is not the same as proving it will preserve the contents. Use disposable copies of important data when evaluating software.</p>
     </section>
     <section>
-      <h2>Refusing actually refuses</h2>
-        <p>Withhold something the app needs and it does not start. It does not run in a degraded mode and quietly fail later:</p>
-        <pre class="answer-cmd">$ krate run notes.krate --grant ui.window:create
-
-This app needs permission it was not given, so it did not run.
-It needs to:
-  - read files in notes (fs.read:notes/**)
-  - save files in notes (fs.write:notes/**)</pre>
-        <p>The check happens before the host is touched, not inside the app where a bug could skip it.</p>
+      <h2>Where enforcement happens</h2>
+<p>The guest is a WebAssembly component. The normal app profile uses Krate's WIT interfaces rather than ambient host APIs; import validation and host-side capability checks are part of the boundary. File, network and UI implementations live in the native runtime, not in a permission dialog that the guest controls.</p>
+<p>Explore the <a href="https://github.com/incyashraj/krate/tree/main/wit">interface definitions</a>, <a href="https://github.com/incyashraj/krate/tree/main/crates/policy">policy implementation</a> and <a href="/docs/architecture.html">architecture guide</a>. Packaging/import checks and runtime enforcement have different jobs: passing the first is not an audit of the second.</p>
     </section>
     <section>
-      <h2>Why an app cannot lie about this</h2>
-        <p>A Krate app is a WebAssembly component. It has no way to call the operating system directly &mdash; only Krate's own interfaces, and every one of those verifies the capability first.</p>
-                <p>An app that imports anything outside that boundary is rejected while it is being packaged, so it never becomes a shareable file at all. That check runs whether the code came from a person or a model.</p>
+      <h2>What is outside the guarantee</h2>
+<ul><li>Application correctness, data integrity and honest behavior inside granted access.</li>
+<li>The security of your machine, coding agent, dependency installer or build toolchain.</li>
+<li>Protection against every runtime, compiler, driver or host-adapter vulnerability.</li>
+<li>A claim of production hardening against deliberately hostile third-party code.</li></ul>
+<p>Building downloaded source is a separate trust decision from running a packaged guest: build scripts and external authoring tools are not automatically inside the app sandbox. Review dependencies and use an appropriately isolated development environment.</p>
     </section>
     <section>
-      <h2>What it does not claim</h2>
-        <p>Krate limits what an app can reach and enforces your decision. It does not prove the app is correct, and it is not yet a safe way to run arbitrary untrusted software from the internet.</p>
-        <p>Saying so matters: a security claim that overstates itself is worse than a smaller true one.</p>
+      <h2>A practical review checklist</h2>
+<ol><li>Obtain the bundle and source from an identifiable publisher.</li><li>Record its version and hash; a hash only helps when compared with a trusted reference.</li><li>Inspect permissions before executing it.</li><li>Try it with non-sensitive data and the narrowest useful access.</li><li>Test what happens when access is refused.</li><li>Recheck the artifact and permission request after changes.</li></ol>
+<p>See the <a href="/docs/limits.html">current security limitations</a> and the project's <a href="https://github.com/incyashraj/krate/blob/main/SECURITY.md">security reporting policy</a>. Krate is not a reason to run unknown internet code casually.</p>
     </section>
 
     <section>
-      <h2>Try it</h2>
-      <p>Krate is open source and installs with one command. Nothing to sign up for.</p>
+      <h2>Build with Krate</h2>
+      <p>Start with the runtime and a project that fits the current APIs. The runtime and CLI are MIT OR Apache-2.0; Studio has a separate license. Check the <a href="https://github.com/incyashraj/krate#license">licensing details</a> and <a href="/docs/limits.html">capability limits</a>.</p>
       <!-- A <p> turned into a flex row made these two pills flex children,
            so they took the line-box height (measured 26px) instead of their
            own padding, while the identical pill in the nav measured 44px.
            A div with a class, so the rule below can reach it and the two
            wrap instead of squeezing on a narrow screen. -->
       <div class="answer-actions">
-        <a class="pill pill-primary" href="/#install">Get Krate</a>
-        <a class="pill" href="/cloud/">Open the store</a>
+        <a class="pill pill-primary" href="/docs/quickstart.html">Developer quickstart</a>
+        <a class="pill" href="/docs/porting.html">Evaluate your app</a>
       </div>
     </section>
     </main>
 <footer class="subfoot">
   <div class="wrap subfoot-inner">
-    <span>© 2026 Krate Labs</span>
+    <span>© 2026 Krate</span>
     <span>
       <a href="/docs/">Docs</a>
       <a href="/reports/">Reports</a>

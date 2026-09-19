@@ -15,6 +15,9 @@ already drifted, and prose pages drift the same way.
 import html
 import json
 import re
+import sys
+import unittest
+from html.parser import HTMLParser
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -33,9 +36,10 @@ def chrome():
     /faq.html) is what these pages actually want, so it is written out here.
     """
     s = LANDING.read_text()
-    head = s[: s.find("</head>") + len("</head>")]
-    # Drop the landing page's own structured data; each answer page has its own.
-    head = re.sub(r"  <!-- Structured data.*?</script>\n", "", head, flags=re.S)
+    end = re.search(r"</head\s*>", s, re.I)
+    if end is None:
+        raise ValueError("Landing page has no closing head tag")
+    head = s[:end.end()]
     # These live at the site root; the landing's relative links do not.
     head = head.replace('href="./', 'href="/').replace('src="./', 'src="/')
 
@@ -43,7 +47,7 @@ def chrome():
   <div class="wrap subnav-inner">
     <a class="brand" href="/"><img src="/krate-logo.png" alt="" width="22" height="22" /> KRATE</a>
     <nav>
-      <a href="/#install">Start</a>
+      <a href="/docs/quickstart.html">Start</a>
       <a href="/docs/">Docs</a>
       <a href="/cloud/">Apps</a>
       <a href="https://github.com/incyashraj/krate">GitHub</a>
@@ -54,7 +58,7 @@ def chrome():
 
     foot = """<footer class="subfoot">
   <div class="wrap subfoot-inner">
-    <span>© 2026 Krate Labs</span>
+    <span>© 2026 Krate</span>
     <span>
       <a href="/docs/">Docs</a>
       <a href="/reports/">Reports</a>
@@ -114,6 +118,12 @@ ANSWER_CSS = """  <style>
       min-height: 44px;
       padding: 0 20px;
     }
+    .answer-table-wrap { max-width: 100%; overflow-x: auto; margin: 20px 0; }
+    .answer-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .answer-table th, .answer-table td {
+      padding: 12px; text-align: left; vertical-align: top;
+      border-bottom: 1px solid rgba(255,255,255,.14);
+    }
     @media (max-width: 760px) {
       .answer-cmd { font-size: 12.5px; padding: 12px 14px; }
       /* One per line on a phone, each full width: two pills side by side
@@ -125,50 +135,98 @@ ANSWER_CSS = """  <style>
 """
 
 
-def faq_schema(pairs):
-    """Structured data so a search result can carry the answer, not just a link."""
-    return json.dumps(
-        {
-            "@context": "https://schema.org",
-            "@type": "FAQPage",
-            "mainEntity": [
-                {
-                    "@type": "Question",
-                    "name": q,
-                    "acceptedAnswer": {"@type": "Answer", "text": a},
-                }
-                for q, a in pairs
-            ],
-        },
-        indent=2,
-    )
+class PageHead(HTMLParser):
+    """Keep shared styles/assets, never inherit the homepage's identity.
+
+    Attribute order, quote style and optional HTML self-closing slashes must
+    not determine whether the canonical and social metadata are replaced.
+    """
+
+    def __init__(self):
+        super().__init__(convert_charrefs=False)
+        self.parts = []
+        self.skip = None
+
+    def handle_starttag(self, tag, attrs):
+        values = {key.lower(): (value or "").lower() for key, value in attrs}
+        name = values.get("name", "")
+        prop = values.get("property", "")
+        if tag == "title" or (tag == "script" and values.get("type") == "application/ld+json"):
+            self.skip = tag
+            return
+        if self.skip:
+            return
+        if tag == "meta" and (name in {"description", "robots"} or name.startswith("twitter:") or prop.startswith("og:")):
+            return
+        if tag == "link" and "canonical" in values.get("rel", "").split():
+            return
+        self.parts.append(self.get_starttag_text())
+
+    def handle_startendtag(self, tag, attrs):
+        self.handle_starttag(tag, attrs)
+
+    def handle_endtag(self, tag):
+        if self.skip:
+            if tag == self.skip:
+                self.skip = None
+            return
+        self.parts.append(f"</{tag}>")
+
+    def handle_data(self, data):
+        if not self.skip:
+            self.parts.append(data)
+
+    def handle_entityref(self, name):
+        self.handle_data(f"&{name};")
+
+    def handle_charref(self, name):
+        self.handle_data(f"&#{name};")
+
+    def handle_comment(self, data):
+        if not self.skip:
+            self.parts.append(f"<!--{data}-->")
+
+    def handle_decl(self, decl):
+        self.parts.append(f"<!{decl}>")
+
+
+def page_head(head, page):
+    parser = PageHead()
+    parser.feed(head)
+    parser.close()
+    title = html.escape(page["title"], quote=True)
+    description = html.escape(page["description"], quote=True)
+    url = "https://krate.tech/" + page["slug"]
+    schema = json.dumps({
+        "@context": "https://schema.org", "@type": "WebPage",
+        "@id": url + "#webpage", "url": url, "name": page["title"],
+        "description": page["description"], "inLanguage": "en",
+        "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"},
+    }, ensure_ascii=False).replace("<", "\\u003c")
+    metadata = f'''<title>{title}</title>
+  <meta name="description" content="{description}">
+  <link rel="canonical" href="{url}">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Krate">
+  <meta property="og:title" content="{title}">
+  <meta property="og:description" content="{description}">
+  <meta property="og:url" content="{url}">
+  <meta property="og:image" content="https://krate.tech/og-v3.png">
+  <meta property="og:image:alt" content="Krate desktop application runtime">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{title}">
+  <meta name="twitter:description" content="{description}">
+  <meta name="twitter:image" content="https://krate.tech/og-v3.png">
+  <script type="application/ld+json">{schema}</script>
+{ANSWER_CSS}'''
+    rendered = re.sub(r"</head\s*>", lambda _: metadata + "</head>", "".join(parser.parts), count=1, flags=re.I)
+    return "\n".join(line.rstrip() for line in rendered.splitlines())
 
 
 def render(page):
     head, nav, foot = chrome()
 
-    head = re.sub(
-        r"<title>.*?</title>",
-        f"<title>{html.escape(page['title'])}</title>",
-        head,
-        count=1,
-        flags=re.S,
-    )
-    head = re.sub(
-        r'<meta name="description" content="[^"]*" />',
-        f'<meta name="description" content="{html.escape(page["description"])}" />',
-        head,
-        count=1,
-    )
-    head = head.replace(
-        '<link rel="canonical" href="https://krate.tech/" />',
-        f'<link rel="canonical" href="https://krate.tech/{page["slug"]}" />',
-    )
-    head = head.replace(
-        "</head>",
-        f'  <script type="application/ld+json">\n{faq_schema(page["faq"])}\n  </script>\n'
-        f"{ANSWER_CSS}</head>",
-    )
+    head = page_head(head, page)
 
     sections = "\n".join(
         f'''    <section>
@@ -188,16 +246,16 @@ def render(page):
 {sections}
 
     <section>
-      <h2>Try it</h2>
-      <p>Krate is open source and installs with one command. Nothing to sign up for.</p>
+      <h2>Build with Krate</h2>
+      <p>Start with the runtime and a project that fits the current APIs. The runtime and CLI are MIT OR Apache-2.0; Studio has a separate license. Check the <a href="https://github.com/incyashraj/krate#license">licensing details</a> and <a href="/docs/limits.html">capability limits</a>.</p>
       <!-- A <p> turned into a flex row made these two pills flex children,
            so they took the line-box height (measured 26px) instead of their
            own padding, while the identical pill in the nav measured 44px.
            A div with a class, so the rule below can reach it and the two
            wrap instead of squeezing on a narrow screen. -->
       <div class="answer-actions">
-        <a class="pill pill-primary" href="/#install">Get Krate</a>
-        <a class="pill" href="/cloud/">Open the store</a>
+        <a class="pill pill-primary" href="/docs/quickstart.html">Developer quickstart</a>
+        <a class="pill" href="/docs/porting.html">Evaluate your app</a>
       </div>
     </section>
     </main>
@@ -209,164 +267,165 @@ def render(page):
 
 PAGES = [
     {
-        "slug": "share-an-app-made-with-ai.html",
-        "title": "How to share an app you made with AI -- Krate",
-        "description": "You asked AI to build something and it works on your machine. Here is how to send it to someone else so it opens on their Mac, Windows, or Linux computer without a build step.",
-        "h1": "How to share an app you made with AI",
-        "lead": "It works on your machine. Getting it onto someone else's is the part nobody solved &mdash; until the app becomes one file.",
-        "faq": [
-            (
-                "How do I share an app I made with AI?",
-                "Two ways. Send the .krate file however you send any file -- the person installs Krate once, double-clicks it, and the app opens on Mac, Windows, or Linux. Or publish it with `krate publish yourapp.krate` and send the link instead; anyone can run it straight from that URL, and it shows up at krate.tech/cloud with your name on it.",
-            ),
-            (
-                "Do I need to build it separately for each operating system?",
-                "No. A .krate file contains a WebAssembly component that calls Krate interfaces rather than operating system APIs, so one file runs on all three. There is no per-platform build and no installer to sign.",
-            ),
-            (
-                "Does the person receiving it need to trust me?",
-                "Less than you might think. Before the app runs, Krate shows them exactly what it is asking for, in plain words, and gives it nothing else. An app that asks to save a list cannot read the rest of their computer.",
-            ),
-        ],
+        "slug": "portable-desktop-app-format.html",
+        "title": "One desktop app file for macOS, Windows and Linux | Krate",
+        "description": "How the .krate format separates your application from native runtimes: bundle contents, recipient requirements, portability checks and current limits.",
+        "h1": "One desktop app file, three operating systems",
+        "lead": "Build against Krate's interfaces and distribute one .krate artifact. Each recipient runs it through a compatible native Krate runtime on macOS, Windows or Linux.",
         "sections": [
-            (
-                "The problem with sharing what AI builds",
-                """        <p>AI is good at writing a small useful app. The trouble starts after that. A script needs the right language installed. A web app needs hosting and cannot touch local files. A desktop app needs a separate build for each operating system, and on Mac it needs signing before anyone can open it without a warning.</p>
-        <p>So the app that took ten minutes to write takes an afternoon to give away, and usually does not get given away at all.</p>""",
-            ),
-            (
-                "Make it one file",
-                """        <p>Describe the app, and Krate has AI write it, checks it, and packages the result:</p>
-        <pre class="answer-cmd">krate</pre>
-        <p>What comes out is <code>checklist.krate</code> &mdash; around 12 KB, containing the app and the list of what it needs to be allowed to do.</p>""",
-            ),
-            (
-                "Send it like a document",
-                """        <p>Email it, drop it in a shared folder, put it in a chat. There is nothing else to install alongside it and no link that stops working.</p>
-        <p>On the other end they install Krate once with a single command, then double-click the file. It opens on Mac, Windows, and Linux from that same file &mdash; not three downloads.</p>""",
-            ),
-            (
-                "They see what it wants before it runs",
-                """        <p>This is what makes sending AI-written software reasonable rather than reckless. Before any of the app's code runs, Krate shows what it is asking for:</p>
-        <pre class="answer-cmd">This app is asking to:
-  [1] read files in notes (fs.read:notes/**)
-      Load your saved notes
-  [2] save files in notes (fs.write:notes/**)
-      Save the note you are editing
-
-Grant [A]ll / [N]one / numbers (for example 1,2):</pre>
-        <p>They decide. The app gets what they allow and nothing more, and if they refuse something it needs, it does not start half-working &mdash; it does not start at all.</p>""",
-            ),
+            ("What is portable, and what is installed?", """<p>The <strong>application file</strong> stays the same. The <strong>runtime</strong> is installed for each machine's operating system and CPU. It executes the WebAssembly component and handles permitted host operations. Your users do not need your development toolchain to open a packed app.</p>
+<p>This is not a converter for arbitrary Windows executables, native libraries or existing Electron/Tauri packages. The application must use Krate's supported interfaces and a compatible format/API version. See the <a href="/desktop-app-distribution.html">distribution-model comparison</a>.</p>"""),
+            ("What is inside a .krate file?", """<p>The bundle is a ZIP-based application format, not just a renamed executable. Its core entries are <code>manifest.toml</code> and <code>code.wasm</code>. Bundles can also contain assets, source, SDK material and format-specific metadata. The normal authoring workflow carries editable source with the app.</p>
+<p>The manifest identifies the app and its requested capabilities. The component calls Krate interfaces described in WIT; the native runtime supplies their implementations. Files, network and other host resources are governed by the capability model.</p>
+<p>Read the <a href="https://github.com/incyashraj/krate/tree/main/crates/bundle">bundle implementation</a> and <a href="https://github.com/incyashraj/krate/tree/main/wit">interface definitions</a>. Do not put credentials or private inputs in source or assets that will be distributed.</p>"""),
+            ("Verify a shared artifact yourself", """<p>Start with an app you built or reviewed. Install a compatible runtime on each target machine, copy the <em>same</em> file, record <code>krate --version</code>, inspect permissions and run it:</p>
+<pre class="answer-cmd">krate --version
+krate run app.krate --dump-caps
+krate run app.krate --prompt</pre>
+<p>Compare the full-file SHA-256 on each host. On macOS use <code>shasum -a 256 app.krate</code>; on Linux use <code>sha256sum app.krate</code>; in Windows PowerShell use <code>Get-FileHash app.krate -Algorithm SHA256</code>. Matching hashes establish identical bytes, not correctness or trust.</p>
+<p>Then complete the same meaningful task on each OS: load representative data, interact with the UI, save, close and reopen. Test denied permissions and OS-specific file dialogs. Keep runtime versions, hashes and results together. This is a reproduction procedure, not a claim that every application has already passed that test.</p>"""),
+            ("Does one file remove all platform work?", """<p>No. Krate maintains native runtime builds. Developers still need to test behavior on target systems, check supported capabilities and manage API/format compatibility. A runtime update may be necessary for apps using newer interfaces.</p>
+<p>The benefit is a shared application artifact rather than a separate app package for each OS. OS installation, trust checks and updates still apply to the runtime. The format does not make unsupported APIs available or bypass platform security.</p>"""),
+            ("What about size and performance?", """<p>Measure three different things: the compiled component, the complete bundle you distribute, and the installed runtime plus app. Source and assets can make the bundle much larger than its component. A shared runtime is not free disk space; its cost is paid once and must appear in first-app comparisons.</p>
+<p>The <a href="/reports/">measurement reports</a> identify workloads and accounting boundaries. Do not extrapolate a notes workload into a universal speed, memory or file-size claim.</p>"""),
+            ("Check whether your project fits", """<p>Krate's aim is software distribution for developers, not a fixed list of toy apps. What determines today's fit is the available API surface: UI, data, networking, media and OS integration. Check the <a href="/docs/limits.html">current limits</a> and use the <a href="/docs/porting.html">porting guide</a> to inventory dependencies before committing to a migration.</p>"""),
+        ],
+    },
+    {
+        "slug": "share-an-app-made-with-ai.html",
+        "title": "How to share an AI-built desktop app | Krate",
+        "description": "Create a Krate app with AI, inspect its permissions and share the .krate file. What the author needs, what the recipient installs and what to test first.",
+        "h1": "Share the app, not your development setup",
+        "lead": "If an AI-built application uses Krate's interfaces, you can package it as one .krate file and send it to someone on macOS, Windows or Linux. They need a compatible Krate runtime.",
+        "sections": [
+            ("Choose the authoring path", """<p><a href="/studio/">Krate Studio</a> provides a graphical way to make and revise apps with AI. Developers can also use the CLI or write the code themselves. AI is an authoring option, not a runtime requirement.</p>
+<p>The local CLI example below requires Rust/component build tools and an installed, authenticated Claude Code CLI. Your provider's subscription or API charges are separate. Check the <a href="/docs/quickstart.html">quickstart</a> for installation and platform requirements.</p>
+<pre class="answer-cmd">krate doctor
+krate ai
+krate create "a regex tester with a pattern box and live matches" --agent claude --output regex.krate</pre>
+<p>Use <code>krate create --help</code> for your installed version's options. An arbitrary generated website, Python script or native executable is not already a Krate app; existing code may need a <a href="/docs/porting.html">port</a>.</p>"""),
+            ("Test before you send it", """<pre class="answer-cmd">krate run regex.krate --dump-caps
+krate run regex.krate --prompt</pre>
+<p>The first command inspects capabilities without executing the component. The second runs it after permission review. Try valid and invalid inputs, resizing, save/reopen behavior and permission denial. Build and first-frame checks cannot establish that every feature works.</p>
+<p>The normal authoring path includes editable source. Review the bundle for secrets, private sample data and third-party licensing obligations before sharing. Do not assume that generated code is correct or appropriately licensed just because it compiles.</p>"""),
+            ("Send the file directly", """<p>Email the <code>.krate</code> file, put it in a shared folder or send it through a chat that accepts files. Include the runtime version you tested, a short description and the task the recipient can try. Optional hosted publishing is not required.</p>
+<p>The recipient follows <a href="/open/">the open-a-file instructions</a>, installs the runtime for their own system, then inspects and opens the file. They do not need your AI account, source checkout or Rust toolchain. GUI file association depends on the installed runtime/opener; the CLI provides an explicit path:</p>
+<pre class="answer-cmd">krate run regex.krate --dump-caps
+krate run regex.krate --prompt</pre>
+<p>Sending an app does not automatically send its separate saved data, copy credentials or synchronize accounts. If it needs a network service, document that dependency.</p>"""),
+            ("Publishing is an optional separate step", """<p>A hub can host the bundle so you share a URL. Publishing uploads the file and may list it publicly, depending on the selected options. Read the current command's authentication, hub and listing requirements first:</p>
+<pre class="answer-cmd">krate publish --help
+krate publish regex.krate</pre>
+<p>Do not publish private code or user data by accident. Direct file sharing remains available without a hosted publishing service.</p>"""),
+            ("What the recipient can trust", """<p>A capability declaration describes requested access, not a guarantee of good behavior. Approved file or network access can still be misused within its scope. Review the source and permissions and start with apps from people you trust. See <a href="/run-ai-generated-code-safely.html">the security boundaries</a> and <a href="/portable-desktop-app-format.html">how to verify the same artifact across systems</a>.</p>"""),
         ],
     },
     {
         "slug": "run-ai-generated-code-safely.html",
-        "title": "How to run AI-generated code safely -- Krate",
-        "description": "AI wrote it and you have not read all of it. Krate runs the app with no access to your files or network until you allow each thing, and refuses to package an app that reaches outside what it declared.",
-        "h1": "How to run AI-generated code safely",
-        "lead": "You did not read every line, and honestly you were not going to. The question is what the app can reach if it turns out to be wrong.",
-        "faq": [
-            (
-                "Is it safe to run code that AI wrote?",
-                "Not by default, anywhere. Krate changes what happens when it is wrong: an app starts with no access to your files or the network, must ask for each capability it needs, and you see that list before any of its code runs. It receives only what you allow.",
-            ),
-            (
-                "How do I know what an AI-generated app will do?",
-                "Run `krate run app.krate --dump-caps`. It lists every capability the app declared without executing any of it, so you can decide whether to run it at all.",
-            ),
-            (
-                "What stops an app from just ignoring the permission screen?",
-                "The check is not inside the app. A Krate app cannot call the operating system directly; it calls Krate interfaces, and the runtime verifies the capability before it touches the host. An app that imports anything outside that boundary is rejected at packaging time and never becomes a .krate file.",
-            ),
-        ],
+        "title": "Inspect permissions before running AI-built apps | Krate",
+        "description": "How Krate's capability model limits host access, how to inspect an app before running it, and what permissions cannot prove about AI-generated software.",
+        "h1": "Inspect what an AI-built app can access",
+        "lead": "Krate applications start without file or network access. They use Krate interfaces and receive approved capabilities. That narrows host access; it does not prove the code is correct or harmless.",
         "sections": [
-            (
-                "The real risk is not bad code, it is reach",
-                """        <p>Most AI-generated code is not malicious. It is confidently wrong. It deletes the wrong directory, uploads something it should not have, or loops until the disk fills.</p>
-        <p>Reading it all is not realistic once it is more than a page long. The useful question is not whether the code is correct, but what it can touch when it is not.</p>""",
-            ),
-            (
-                "Look at it before you run it",
-                """        <p>You can inspect a Krate app without executing a single instruction:</p>
-        <pre class="answer-cmd">$ krate run notes.krate --dump-caps
-
-Identity
-  - 467e4b0e1124b7a8aa86fb1ce39909046508819d55f161e408e282de177b0f16
-
-This app will ask for
-  - read files in notes (fs.read:notes/**)
-  - save files in notes (fs.write:notes/**)
-  - read from the clipboard (ui.clipboard:read)
-  - copy to the clipboard (ui.clipboard:write)</pre>
-        <p>That is the real output. The identity is computed from the file's contents, so you can check that what you received is what somebody else verified.</p>""",
-            ),
-            (
-                "Refusing actually refuses",
-                """        <p>Withhold something the app needs and it does not start. It does not run in a degraded mode and quietly fail later:</p>
-        <pre class="answer-cmd">$ krate run notes.krate --grant ui.window:create
-
-This app needs permission it was not given, so it did not run.
-It needs to:
-  - read files in notes (fs.read:notes/**)
-  - save files in notes (fs.write:notes/**)</pre>
-        <p>The check happens before the host is touched, not inside the app where a bug could skip it.</p>""",
-            ),
-            (
-                "Why an app cannot lie about this",
-                """        <p>A Krate app is a WebAssembly component. It has no way to call the operating system directly &mdash; only Krate's own interfaces, and every one of those verifies the capability first.</p>
-                <p>An app that imports anything outside that boundary is rejected while it is being packaged, so it never becomes a shareable file at all. That check runs whether the code came from a person or a model.</p>""",
-            ),
-            (
-                "What it does not claim",
-                """        <p>Krate limits what an app can reach and enforces your decision. It does not prove the app is correct, and it is not yet a safe way to run arbitrary untrusted software from the internet.</p>
-        <p>Saying so matters: a security claim that overstates itself is worse than a smaller true one.</p>""",
-            ),
+            ("Read the permission request before execution", """<p>For a local bundle from a source you trust, inspect its capability information without executing the component:</p>
+<pre class="answer-cmd">krate run app.krate --dump-caps</pre>
+<p>Check the requested file scope, network destinations and media/device access against the app's purpose. A document viewer asking to upload data needs an explanation. The capability list is not a transcript of everything the code might do.</p>"""),
+            ("Review each grant when opening", """<pre class="answer-cmd">krate run app.krate --prompt</pre>
+<p>The runtime checks host operations against session capabilities. Required capabilities that are not granted prevent the corresponding launch from proceeding; optional behavior and failure handling still need application testing. Avoid <code>--auto-grant</code> for an app you have not reviewed.</p>
+<p>A grant can permit a damaging operation inside its allowed scope. Giving an app write access to a folder is not the same as proving it will preserve the contents. Use disposable copies of important data when evaluating software.</p>"""),
+            ("Where enforcement happens", """<p>The guest is a WebAssembly component. The normal app profile uses Krate's WIT interfaces rather than ambient host APIs; import validation and host-side capability checks are part of the boundary. File, network and UI implementations live in the native runtime, not in a permission dialog that the guest controls.</p>
+<p>Explore the <a href="https://github.com/incyashraj/krate/tree/main/wit">interface definitions</a>, <a href="https://github.com/incyashraj/krate/tree/main/crates/policy">policy implementation</a> and <a href="/docs/architecture.html">architecture guide</a>. Packaging/import checks and runtime enforcement have different jobs: passing the first is not an audit of the second.</p>"""),
+            ("What is outside the guarantee", """<ul><li>Application correctness, data integrity and honest behavior inside granted access.</li>
+<li>The security of your machine, coding agent, dependency installer or build toolchain.</li>
+<li>Protection against every runtime, compiler, driver or host-adapter vulnerability.</li>
+<li>A claim of production hardening against deliberately hostile third-party code.</li></ul>
+<p>Building downloaded source is a separate trust decision from running a packaged guest: build scripts and external authoring tools are not automatically inside the app sandbox. Review dependencies and use an appropriately isolated development environment.</p>"""),
+            ("A practical review checklist", """<ol><li>Obtain the bundle and source from an identifiable publisher.</li><li>Record its version and hash; a hash only helps when compared with a trusted reference.</li><li>Inspect permissions before executing it.</li><li>Try it with non-sensitive data and the narrowest useful access.</li><li>Test what happens when access is refused.</li><li>Recheck the artifact and permission request after changes.</li></ol>
+<p>See the <a href="/docs/limits.html">current security limitations</a> and the project's <a href="https://github.com/incyashraj/krate/blob/main/SECURITY.md">security reporting policy</a>. Krate is not a reason to run unknown internet code casually.</p>"""),
         ],
     },
     {
-        "slug": "portable-desktop-app-format.html",
-        "title": "A portable desktop app format: one file for Mac, Windows, and Linux -- Krate",
-        "description": "One file that opens on all three desktop operating systems, without a separate build, an installer, or a bundled browser engine. How the .krate format works and where it does not fit.",
-        "h1": "One app file for Mac, Windows, and Linux",
-        "lead": "Not three installers behind one download button. One file, and the same file, on every desktop.",
-        "faq": [
-            (
-                "Can one file really run on Mac, Windows, and Linux?",
-                "Yes. A .krate file contains a WebAssembly component that calls Krate interfaces instead of operating system APIs. The Krate runtime on each system translates approved calls into local behaviour, so the same bytes run everywhere.",
-            ),
-            (
-                "How is this different from Electron?",
-                "An Electron app bundles a browser engine, so every app carries about 100 MB of Chromium and still needs platform packaging. A Krate app is typically tens of kilobytes and shares one runtime, and the runtime controls what it can access.",
-            ),
-            (
-                "What kinds of apps fit this format?",
-                "Small and medium desktop apps: lists, notes, trackers, file tools, API clients, dashboards. They can open a window, keep settings, keep a database, stay signed in, send notifications, and open links. Games with native engines and system tools are out of scope.",
-            ),
-        ],
+        "slug": "desktop-app-distribution.html",
+        "title": "Krate, Electron and Tauri: desktop distribution models",
+        "description": "Compare shared codebases with a shared application artifact: what Electron, Tauri and Krate distribute, runtime requirements, migration work and measurement boundaries.",
+        "h1": "One codebase is not the same as one app file",
+        "lead": "Electron, Tauri and Krate separate application code from platform details differently. The useful question is what you build, what your users install and which capabilities your app needs.",
         "sections": [
-            (
-                "Why one desktop app usually means three",
-                """        <p>A desktop app is normally written against one operating system's own interface &mdash; AppKit, Win32, GTK. Supporting all three means three builds, three sets of platform bugs, an installer each, and code signing on at least two.</p>
-        <p>That cost is why most small useful software never leaves the machine it was written on.</p>""",
-            ),
-            (
-                "What a .krate file is",
-                """        <p>A ZIP archive with two things in it: a WebAssembly component, and a manifest declaring what the app wants to be allowed to do.</p>
-        <p>The component never calls the operating system. It calls Krate interfaces described in WIT, and the runtime on each system turns approved calls into local behaviour. The file is the same bytes on every machine, which is checkable: it carries an identity computed from its own contents.</p>""",
-            ),
-            (
-                "What an app can actually do",
-                """        <p>Enough for a real app. It can open a window with real controls, keep its own settings, keep its own database, stay signed in, send notifications, open links in your browser, read and write folders you choose, and reach hosts you name.</p>
-        <p>Each of those is a separate permission the person sees before the app runs, so an app that keeps a list never sees your folders.</p>""",
-            ),
-            (
-                "Where it does not fit",
-                """        <p>This format is for small and medium desktop software. A game with a native engine, a driver, or a tool that needs deep system access is the wrong shape for it, and Krate says so rather than half-supporting them.</p>
-        <p><code>krate port</code> reads an existing project without building or running it and tells you which of the three answers applies: ready, needs changes, or not supported yet.</p>""",
-            ),
+            ("Compare the distribution boundary", """<div class="answer-table-wrap" role="region" aria-label="Distribution comparison" tabindex="0"><table class="answer-table">
+<caption>Desktop distribution models, reviewed 19 September 2026</caption>
+<thead><tr><th scope="col">Question</th><th scope="col">Electron</th><th scope="col">Tauri</th><th scope="col">Krate</th></tr></thead>
+<tbody>
+<tr><th scope="row">Application artifact</th><td>Platform-specific packaged application.</td><td>Platform-specific application bundle or installer.</td><td>One .krate application bundle for compatible runtimes.</td></tr>
+<tr><th scope="row">UI/runtime model</th><td>Chromium and Node.js in Electron's process model.</td><td>Web frontend in an OS WebView with a Rust backend.</td><td>WebAssembly guest using Krate UI and host interfaces.</td></tr>
+<tr><th scope="row">Recipient prerequisite</th><td>The packaged application and its platform requirements.</td><td>The packaged application and platform/WebView requirements.</td><td>A compatible native Krate runtime installed for that system.</td></tr>
+<tr><th scope="row">Existing app migration</th><td>Fits browser/Node-based applications.</td><td>Fits web UI with Rust/native integration.</td><td>Port logic and adapt UI/host dependencies to supported Krate APIs.</td></tr>
+</tbody></table></div>
+<p>Electron's <a href="https://www.electronjs.org/docs/latest/tutorial/distribution-overview">distribution guide</a> covers packaging, signing, publishing and updates; its <a href="https://www.electronjs.org/docs/latest/tutorial/process-model">process model</a> explains Chromium and Node. Tauri documents <a href="https://tauri.app/distribute/">platform-specific distribution</a> and its <a href="https://tauri.app/concept/architecture/">WebView/Rust architecture</a>. Tauri does not bundle Chromium like Electron.</p>"""),
+            ("What Krate changes", """<p>With Krate, the developer builds a component against Krate's interfaces and packages the application once. The recipient's native runtime supplies the platform-specific implementation. The same application bytes can be copied between supported desktop systems; the runtime binary itself differs.</p>
+<p>This trades per-application platform packaging for dependence on a shared runtime and its API coverage. Runtime delivery, updates, OS trust checks and compatibility still need maintenance. A shared artifact also does not eliminate cross-platform behavior testing.</p>"""),
+            ("How to decide for your project", """<p>If your application depends on a browser DOM or Node ecosystem, account for that investment before moving away from Electron. If you want a web UI plus custom Rust/native integrations, examine Tauri's APIs and deployment requirements. Neither choice means rewriting the entire application independently for every OS.</p>
+<p>Evaluate Krate when distributing the same application file matters and your required features map to its interfaces. Start with <code>krate port ./my-project</code>, then validate the findings against the <a href="/docs/limits.html">current capability limits</a>. A scan is evidence for planning, not proof the port will preserve every feature.</p>
+<p>For a specific app, compare a representative end-to-end task first. If an essential OS integration is missing, stay with a suitable platform or contribute that capability before migrating. See the <a href="/docs/porting.html">porting checklist</a>.</p>"""),
+            ("Compare costs at the same boundary", """<p>Do not compare a compressed component with another product's whole installed application and call the ratio a universal win. Record the full download, installed footprint, runtime requirements and additional cost of the next app separately.</p>
+<p>For performance, hold the task and inputs constant, record versions and hardware, distinguish cold/warm startup and count all relevant processes. Native dependencies, renderer work and application design can dominate. The <a href="/reports/">Krate reports</a> describe particular workloads; they are not benchmarks of all Electron or Tauri applications.</p>"""),
+            ("Try the model before choosing it", """<p>Use the <a href="/docs/quickstart.html">quickstart</a> to open an app, then follow the <a href="/portable-desktop-app-format.html">same-artifact verification procedure</a> across your target systems. Build a representative feature with real data, not just an empty window. Record missing APIs, behavioral differences and deployment friction alongside the benefits.</p>"""),
         ],
     },
 ]
+
+
+class MetadataTests(unittest.TestCase):
+    def test_homepage_identity_is_replaced_with_varied_html(self):
+        variants = [
+            '<meta name="description" content="old" />',
+            "<meta content='old' NAME='description'>",
+            '<META content="old" name="description"/>',
+        ]
+        for description in variants:
+            with self.subTest(description=description):
+                original = f'''<!DOCTYPE html><html lang="en"><head>
+                <title>OLD HOME</title>{description}
+                <link href='https://krate.tech/' rel='canonical'>
+                <meta content='OLD HOME' property='og:title'>
+                <meta content='OLD HOME' name='twitter:title'>
+                <script type='application/ld+json'>{{"name":"OLD HOME"}}</script>
+                <style>.kept {{ color: red; }}</style></head>'''
+                result = page_head(original, PAGES[0])
+                self.assertNotIn("OLD HOME", result)
+                self.assertNotIn('content="old"', result)
+                self.assertNotIn("content='old'", result)
+                self.assertEqual(result.count('rel="canonical"'), 1)
+                self.assertEqual(result.count('name="description"'), 1)
+                self.assertIn(".kept { color: red; }", result)
+
+    def test_each_page_owns_its_metadata(self):
+        for page in PAGES:
+            with self.subTest(slug=page["slug"]):
+                result = render(page)
+                self.assertEqual(result.count("<title>"), 1)
+                self.assertEqual(result.count('rel="canonical"'), 1)
+                self.assertEqual(result.count('property="og:url"'), 1)
+                self.assertEqual(result.count('name="description"'), 1)
+                self.assertEqual(result.count('name="twitter:title"'), 1)
+                schemas = re.findall(r'<script type="application/ld\+json">(.*?)</script>', result, re.S)
+                self.assertEqual(len(schemas), 1)
+                schema = json.loads(schemas[0])
+                self.assertEqual(schema["@type"], "WebPage")
+                self.assertEqual(schema["name"], page["title"])
+                self.assertEqual(schema["url"], "https://krate.tech/" + page["slug"])
+                self.assertIn("/docs/quickstart.html", result)
+                self.assertEqual(result.count("<h1>"), 1)
+
+    def test_unique_page_intents(self):
+        for key in ("slug", "title", "description", "h1"):
+            self.assertEqual(len({p[key] for p in PAGES}), len(PAGES), key)
+
+    def test_metadata_is_escaped(self):
+        page = dict(PAGES[0], title='A "quoted" <title> & more', description='Keep </script> as text')
+        result = page_head("<html><head></head>", page)
+        self.assertIn("&quot;quoted&quot; &lt;title&gt; &amp; more", result)
+        schemas = re.findall(r'<script type="application/ld\+json">(.*?)</script>', result, re.S)
+        self.assertEqual(json.loads(schemas[0])["description"], page["description"])
 
 
 def main() -> int:
@@ -379,4 +438,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    if "--self-test" in sys.argv:
+        unittest.main(argv=[sys.argv[0]])
+    else:
+        raise SystemExit(main())

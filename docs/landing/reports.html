@@ -4,10 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0a0a0a" />
-  <meta name="description" content="Krate's measured results: app sizes, startup times, sandbox cost, and what the runtime can and cannot do. Every chart is drawn from a real measurement." />
+  <meta name="description" content="Krate benchmark methodology: a scoped MarkText notes comparison, complete bundle sizes, code payload and shared runtime costs." />
   <link rel="canonical" href="https://krate.tech/reports/" />
   <meta property="og:title" content="Krate: the measurements" />
-  <meta property="og:description" content="A 2D game in 11 KB. Sandboxed code at native speed. Every chart drawn from a real measurement, with the limits published beside them." />
+  <meta property="og:description" content="A measured notes workload, with methods and limitations. Full application bundles and shared runtime costs are shown separately." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://krate.tech/reports/" />
   <meta property="og:image" content="https://krate.tech/og-v2.png" />
@@ -133,408 +133,132 @@
 
   <main class="report">
     <p class="eyebrow">Reports</p>
-    <h1>The measurements.</h1>
-    <p class="lede">
-      Every chart here is drawn from a number we measured, not one we chose. The
-      script that builds this page reads the app files directly and re-runs the
-      apps to time them, so a chart cannot show something the repository does
-      not contain. Where a number cannot be re-measured automatically, the method
-      is written underneath it.
-    </p>
-    <p class="method">Generated 2026-09-15. Anyone can reproduce it: <code>python3 scripts/build-reports-page.py</code>.</p>
+    <h1>Measurements you can inspect.</h1>
+    <p class="lede">A notes workload compared on the same machine, plus an
+      inventory of application files in this checkout. These are different
+      kinds of evidence: neither establishes a performance result for every
+      Krate app or for the latest release.</p>
+    <p class="method">Page generated 2026-09-19 from commit <code>38d66590b</code>.
+      Benchmark measured 2026-08-25.
+      Building this page does not run a new benchmark.</p>
 
     
     <nav class="toc" aria-label="What is in this report">
       <h2 class="toc-h">What is in here</h2>
       <ol>
-        <li><a href="#a-complete-2d-game">A complete 2D game</a></li>
-        <li><a href="#smaller-than-the-way-it-is-done-today">Smaller than the way it is done today</a></li>
-        <li><a href="#an-app-opens-in-18-11-043-milliseconds">An app opens in 18-11,043 milliseconds</a></li>
-        <li><a href="#the-sandbox-is-free-where-it-matters">The sandbox is free where it matters</a></li>
-        <li><a href="#we-hold-it-to-one-pixel">We hold it to one pixel</a></li>
-        <li><a href="#an-app-can-only-touch-what-you-allowed">An app can only touch what you allowed</a></li>
-        <li><a href="#ten-apps-and-where-each-one-runs">Ten apps, and where each one runs</a></li>
-        <li><a href="#how-much-of-the-system-is-real">How much of the system is real</a></li>
-        <li><a href="#what-you-can-build-right-now">What you can build right now</a></li>
-        <li><a href="#what-krate-cannot-do">What Krate cannot do</a></li>
+        <li><a href="#krate-notes-and-marktext">Krate notes and MarkText</a></li>
+        <li><a href="#bundle-code-payload-and-runtime-are-different-co">Bundle, code payload and runtime are different costs</a></li>
+        <li><a href="#how-to-evaluate-your-application">How to evaluate your application</a></li>
       </ol>
     </nav>
 <section>
-      <p class="eyebrow">Size</p>
-      <p class="headline-number">13 KB</p>
-      <h2 id="a-complete-2d-game">A complete 2D game.</h2>
-      <p>
-        A Breakout you play: a paddle steered by arrow keys or a gamepad,
-        bricks, lives, a score, a win. One file that
-        opens on Mac, Windows and Linux. It is that small because nothing is
-        bundled inside it that your computer already has: no browser, no
-        framework, no runtime copy.
-      </p>
-      <svg viewBox="0 0 640 816" role="img" class="chart" aria-label="Bar chart, longest bar is 52.8 KB">
-  <text x="0" y="17" class="bl">grex</text><rect x="132" y="5" width="412.0" height="18" rx="4" fill="#5c93f8"/><text x="554.0" y="19" class="bv">52.8 KB</text>
-  <text x="0" y="51" class="bl">envelope</text><rect x="132" y="39" width="148.3" height="18" rx="4" fill="#5c93f8"/><text x="290.3" y="53" class="bv">19 KB</text>
-  <text x="0" y="85" class="bl">mdview</text><rect x="132" y="73" width="144.4" height="18" rx="4" fill="#5c93f8"/><text x="286.4" y="87" class="bv">18.5 KB</text>
-  <text x="0" y="119" class="bl">journal</text><rect x="132" y="107" width="138.1" height="18" rx="4" fill="#5c93f8"/><text x="280.1" y="121" class="bv">17.7 KB</text>
-  <text x="0" y="153" class="bl">rssfwd</text><rect x="132" y="141" width="138.1" height="18" rx="4" fill="#5c93f8"/><text x="280.1" y="155" class="bv">17.7 KB</text>
-  <text x="0" y="187" class="bl">eo2</text><rect x="132" y="175" width="137.3" height="18" rx="4" fill="#5c93f8"/><text x="279.3" y="189" class="bv">17.6 KB</text>
-  <text x="0" y="221" class="bl">ddh</text><rect x="132" y="209" width="135.8" height="18" rx="4" fill="#5c93f8"/><text x="277.8" y="223" class="bv">17.4 KB</text>
-  <text x="0" y="255" class="bl">nova</text><rect x="132" y="243" width="128.8" height="18" rx="4" fill="#5c93f8"/><text x="270.8" y="257" class="bv">16.5 KB</text>
-  <text x="0" y="289" class="bl">notes</text><rect x="132" y="277" width="120.9" height="18" rx="4" fill="#5c93f8"/><text x="262.9" y="291" class="bv">15.5 KB</text>
-  <text x="0" y="323" class="bl">savings</text><rect x="132" y="311" width="116.3" height="18" rx="4" fill="#5c93f8"/><text x="258.3" y="325" class="bv">14.9 KB</text>
-  <text x="0" y="357" class="bl">fetch</text><rect x="132" y="345" width="115.5" height="18" rx="4" fill="#5c93f8"/><text x="257.5" y="359" class="bv">14.8 KB</text>
-  <text x="0" y="391" class="bl">hexyl</text><rect x="132" y="379" width="113.1" height="18" rx="4" fill="#5c93f8"/><text x="255.1" y="393" class="bv">14.5 KB</text>
-  <text x="0" y="425" class="bl">contacts</text><rect x="132" y="413" width="110.8" height="18" rx="4" fill="#5c93f8"/><text x="252.8" y="427" class="bv">14.2 KB</text>
-  <text x="0" y="459" class="bl">clip</text><rect x="132" y="447" width="110.0" height="18" rx="4" fill="#5c93f8"/><text x="252.0" y="461" class="bv">14.1 KB</text>
-  <text x="0" y="493" class="bl">pulse</text><rect x="132" y="481" width="107.7" height="18" rx="4" fill="#5c93f8"/><text x="249.7" y="495" class="bv">13.8 KB</text>
-  <text x="0" y="527" class="bl">checklist</text><rect x="132" y="515" width="104.6" height="18" rx="4" fill="#5c93f8"/><text x="246.6" y="529" class="bv">13.4 KB</text>
-  <text x="0" y="561" class="bl">clocks</text><rect x="132" y="549" width="100.7" height="18" rx="4" fill="#5c93f8"/><text x="242.7" y="563" class="bv">12.9 KB</text>
-  <text x="0" y="595" class="bl">bounce</text><rect x="132" y="583" width="99.1" height="18" rx="4" fill="#5c93f8"/><text x="241.1" y="597" class="bv">12.7 KB</text>
-  <text x="0" y="629" class="bl">cubes</text><rect x="132" y="617" width="98.3" height="18" rx="4" fill="#5c93f8"/><text x="240.3" y="631" class="bv">12.6 KB</text>
-  <text x="0" y="663" class="bl">focus</text><rect x="132" y="651" width="97.5" height="18" rx="4" fill="#5c93f8"/><text x="239.5" y="665" class="bv">12.5 KB</text>
-  <text x="0" y="697" class="bl">weather</text><rect x="132" y="685" width="92.1" height="18" rx="4" fill="#5c93f8"/><text x="234.1" y="699" class="bv">11.8 KB</text>
-  <text x="0" y="731" class="bl">chart</text><rect x="132" y="719" width="87.4" height="18" rx="4" fill="#5c93f8"/><text x="229.4" y="733" class="bv">11.2 KB</text>
-  <text x="0" y="765" class="bl">keyvault</text><rect x="132" y="753" width="85.8" height="18" rx="4" fill="#5c93f8"/><text x="227.8" y="767" class="bv">11 KB</text>
-  <text x="0" y="799" class="bl">paint</text><rect x="132" y="787" width="85.1" height="18" rx="4" fill="#5c93f8"/><text x="227.1" y="801" class="bv">10.9 KB</text>
-</svg>
-      <p>
-        All 24 apps together come to <strong>388&nbsp;KB</strong>.
-      </p>
-      <p class="method">
-        Sizes read from the packaged <code>.krate</code> files in the public
-        repository. Each one contains the whole app for all three operating
-        systems.
-      </p>
-    </section>
-
-    <section>
-      <p class="eyebrow">The same job, done differently</p>
-      <p class="headline-number">119,918&times;</p>
-      <h2 id="smaller-than-the-way-it-is-done-today">Smaller than the way it is done today.</h2>
-      <p>
-        Every app below solves the problem Krate solves: one codebase, shipped
-        to Mac, Windows and Linux. They do it by putting a copy of a web browser
-        inside every app. Krate does not, so the app is the app.
-      </p>
-      <table class="table">
-        <thead>
-          <tr><th>App</th><th>Built with</th><th class="num">Installed size</th>
-              <th class="num">vs a Krate game</th></tr>
-        </thead>
-        <tbody>
-        <tr><td>Visual Studio Code</td><td>Electron</td><td class="num">1,492 MB</td><td class="num">119,918&times;</td></tr>        <tr><td>Discord</td><td>Electron</td><td class="num">431 MB</td><td class="num">34,608&times;</td></tr>        <tr><td>Spotify</td><td>Electron</td><td class="num">351 MB</td><td class="num">28,195&times;</td></tr>
-        </tbody>
-      </table>
-      <p class="method">
-        Measured with <code>du -sk</code> on this machine while the page was
-        generated, against <code>bounce.krate</code> at
-        13,047 bytes, a playable Breakout with a paddle, bricks,
-        lives and a win. Installed sizes, not download sizes. These are
-        large applications and a game is not one; the point is the floor each
-        approach starts from, which is a browser copy for one and nothing for
-        the other.
-      </p>
-    </section>
-
-
-    <section>
-      <p class="eyebrow">Speed</p>
-      <h2 id="an-app-opens-in-18-11-043-milliseconds">An app opens in 18&ndash;11,043 milliseconds.</h2>
-      <p>
-        One frame of 60&nbsp;fps video lasts 16.7&nbsp;ms. Most Krate apps have
-        finished opening before a screen finishes drawing a single frame. The
-        slowest here are the two ported desktop applications, which do real
-        work on startup.
-      </p>
-      <svg viewBox="0 0 640 748" role="img" class="chart" aria-label="Bar chart, longest bar is 11,043.1 ms">
-  <text x="0" y="17" class="bl">envelope</text><rect x="132" y="5" width="2.0" height="18" rx="4" fill="#7cc4a4"/><text x="144.0" y="19" class="bv">18 ms</text>
-  <text x="0" y="51" class="bl">rssfwd</text><rect x="132" y="39" width="2.0" height="18" rx="4" fill="#7cc4a4"/><text x="144.0" y="53" class="bv">19.6 ms</text>
-  <text x="0" y="85" class="bl">grex</text><rect x="132" y="73" width="2.0" height="18" rx="4" fill="#7cc4a4"/><text x="144.0" y="87" class="bv">33.5 ms</text>
-  <text x="0" y="119" class="bl">cubes</text><rect x="132" y="107" width="2.8" height="18" rx="4" fill="#7cc4a4"/><text x="144.8" y="121" class="bv">76.3 ms</text>
-  <text x="0" y="153" class="bl">savings</text><rect x="132" y="141" width="3.6" height="18" rx="4" fill="#7cc4a4"/><text x="145.6" y="155" class="bv">96.7 ms</text>
-  <text x="0" y="187" class="bl">chart</text><rect x="132" y="175" width="3.6" height="18" rx="4" fill="#7cc4a4"/><text x="145.6" y="189" class="bv">97.3 ms</text>
-  <text x="0" y="221" class="bl">focus</text><rect x="132" y="209" width="3.7" height="18" rx="4" fill="#7cc4a4"/><text x="145.7" y="223" class="bv">97.9 ms</text>
-  <text x="0" y="255" class="bl">mdview</text><rect x="132" y="243" width="3.7" height="18" rx="4" fill="#7cc4a4"/><text x="145.7" y="257" class="bv">98.2 ms</text>
-  <text x="0" y="289" class="bl">journal</text><rect x="132" y="277" width="3.8" height="18" rx="4" fill="#7cc4a4"/><text x="145.8" y="291" class="bv">100.6 ms</text>
-  <text x="0" y="323" class="bl">clocks</text><rect x="132" y="311" width="3.8" height="18" rx="4" fill="#7cc4a4"/><text x="145.8" y="325" class="bv">100.6 ms</text>
-  <text x="0" y="357" class="bl">checklist</text><rect x="132" y="345" width="3.8" height="18" rx="4" fill="#7cc4a4"/><text x="145.8" y="359" class="bv">101.7 ms</text>
-  <text x="0" y="391" class="bl">pulse</text><rect x="132" y="379" width="4.0" height="18" rx="4" fill="#7cc4a4"/><text x="146.0" y="393" class="bv">108.1 ms</text>
-  <text x="0" y="425" class="bl">eo2</text><rect x="132" y="413" width="4.0" height="18" rx="4" fill="#7cc4a4"/><text x="146.0" y="427" class="bv">108.4 ms</text>
-  <text x="0" y="459" class="bl">keyvault</text><rect x="132" y="447" width="5.6" height="18" rx="4" fill="#7cc4a4"/><text x="147.6" y="461" class="bv">150.1 ms</text>
-  <text x="0" y="493" class="bl">clip</text><rect x="132" y="481" width="12.3" height="18" rx="4" fill="#7cc4a4"/><text x="154.3" y="495" class="bv">329.9 ms</text>
-  <text x="0" y="527" class="bl">fetch</text><rect x="132" y="515" width="12.5" height="18" rx="4" fill="#7cc4a4"/><text x="154.5" y="529" class="bv">335.3 ms</text>
-  <text x="0" y="561" class="bl">contacts</text><rect x="132" y="549" width="12.5" height="18" rx="4" fill="#7cc4a4"/><text x="154.5" y="563" class="bv">335.3 ms</text>
-  <text x="0" y="595" class="bl">weather</text><rect x="132" y="583" width="42.5" height="18" rx="4" fill="#7cc4a4"/><text x="184.5" y="597" class="bv">1,138.3 ms</text>
-  <text x="0" y="629" class="bl">notes</text><rect x="132" y="617" width="61.7" height="18" rx="4" fill="#7cc4a4"/><text x="203.7" y="631" class="bv">1,654.3 ms</text>
-  <text x="0" y="663" class="bl">paint</text><rect x="132" y="651" width="64.6" height="18" rx="4" fill="#7cc4a4"/><text x="206.6" y="665" class="bv">1,730.9 ms</text>
-  <text x="0" y="697" class="bl">nova</text><rect x="132" y="685" width="166.4" height="18" rx="4" fill="#7cc4a4"/><text x="308.4" y="699" class="bv">4,460.3 ms</text>
-  <text x="0" y="731" class="bl">bounce</text><rect x="132" y="719" width="412.0" height="18" rx="4" fill="#7cc4a4"/><text x="554.0" y="733" class="bv">11,043.1 ms</text>
-</svg>
-      <p class="method">
-        Measured while this page was generated: five runs of each app on this
-        machine, median reported, whole-process time including everything the
-        app itself does. These numbers were hardcoded once and had drifted
-        within a day, so the page now runs the apps instead of remembering them.
-        Two of the ten are missing from this chart because they take a file path
-        rather than a fixed argument, and one command cannot start every app.
-      </p>
-      <p class="method">
-        Every run includes the permission check. Krate reads the app's
-        manifest and grants each capability it declares before a line of the
-        app runs. That safety work is about 10&nbsp;ms of the times above, and
-        it is counted, because an app that has not been checked is not an app
-        anyone should time.
-      </p>
-    </section>
-
-    <section>
-      <p class="eyebrow">Cost of safety</p>
-      <p class="headline-number">1.00&times;</p>
-      <h2 id="the-sandbox-is-free-where-it-matters">The sandbox is free where it matters.</h2>
-      <p>
-        The question every engineer asks. At 300 million integer operations, the
-        difference between native code and the same code inside Krate's sandbox
-        is inside measurement noise.
-      </p>
-      <svg viewBox="0 0 640 156" role="img" class="chart" aria-label="Native and Krate timings side by side at the same scale">
-  <text x="0" y="18" class="bl">30 million operations</text><rect x="150" y="4" width="43.5" height="15" rx="3" fill="#8a919e"/><text x="203.5" y="16" class="bv">83 ms native</text><rect x="150" y="23" width="45.4" height="15" rx="3" fill="#5c93f8"/><text x="205.4" y="35" class="bv">86.7 ms Krate</text>
-  <text x="0" y="70" class="bl">100 million operations</text><rect x="150" y="56" width="115.2" height="15" rx="3" fill="#8a919e"/><text x="275.2" y="68" class="bv">220 ms native</text><rect x="150" y="75" width="123.9" height="15" rx="3" fill="#5c93f8"/><text x="283.9" y="87" class="bv">236.6 ms Krate</text>
-  <text x="0" y="122" class="bl">300 million operations</text><rect x="150" y="108" width="368.7" height="15" rx="3" fill="#8a919e"/><text x="528.7" y="120" class="bv">703.9 ms native</text><rect x="150" y="127" width="370.0" height="15" rx="3" fill="#5c93f8"/><text x="530.0" y="139" class="bv">706.3 ms Krate</text>
-</svg>
-      <p class="method">
-        Output was checked identical before every timing. The first version of
-        this benchmark reported Krate as <em>faster</em> than native, which was a
-        bug in the harness rebuilding one side and not the other. The output
-        check is what caught it. The honest worst case is <strong>5.14&times;</strong>,
-        for a program that crosses the sandbox boundary constantly and computes
-        almost nothing in between; that is the price of checking a permission on
-        every crossing. The method, the machine and the commands are recorded
-        with the measurement; the numbers above are what they produced.
-      </p>
-    </section>
-
-    <section>
-      <p class="eyebrow">Same file, same picture</p>
-      <p class="headline-number">1 pixel</p>
-      <h2 id="we-hold-it-to-one-pixel">We hold it to one pixel.</h2>
-      <p>
-        &ldquo;Runs on all three&rdquo; is easy to say. This is what we mean by
-        it.
-      </p>
-      <p>
-        A spinning cube drew <strong>256 pixels on a Mac and 255 on Linux</strong>.
-        One pixel, on one frame, in a picture nobody could tell apart. The build
-        went red and stayed red until it was fixed.
-      </p>
-      <p>
-        The cause is real, not a flaky test. A pixel sitting exactly on the edge
-        of a triangle is a tie, and the maths for breaking that tie lands on a
-        number too small for a computer to represent exactly. Whether it rounds
-        up or down depends on the processor. Apple's chips and Intel's chips
-        choose differently, and the outline of a cube is made entirely of those
-        edges.
-      </p>
-      <p>
-        We measured how often it matters instead of guessing:
-        <strong>16.5% of edge pixels</strong> disagreed between the two. The fix
-        was to treat anything within a millionth of an edge as inside, which
-        takes the disagreement to zero. A looser guess of one ten-millionth
-        would have left 109 pixels in 20,000 still wrong.
-      </p>
-      <div class="callout">
-        <p style="margin:0">
-          <strong>Why this is on a page about results.</strong> A one-pixel
-          difference is invisible. No user would report it and no demo would
-          reveal it. It was caught because the same test runs on all three
-          systems on every change and demands the picture be identical rather
-          than close enough. That is the standard &ldquo;write once, run
-          everywhere&rdquo; has to be held to before it means anything.
-          The fix ships with a test that reproduces both processors&rsquo;
-          behaviour on whichever machine you are sitting at, so the next one is
-          caught without owning three computers.
-        </p>
-      </div>
-    </section>
-
-    <section>
-      <p class="eyebrow">Safety</p>
-      <h2 id="an-app-can-only-touch-what-you-allowed">An app can only touch what you allowed.</h2>
-      <p>
-        Every request for something outside the app passes through one check.
-      </p>
-      <svg viewBox="0 0 640 210" role="img" class="chart"
-     aria-label="An app's request passes through one permission check; allowed requests reach the computer, everything else is refused.">
-  <rect x="10" y="78" width="140" height="58" rx="8" fill="#161b26" stroke="#39425a"/>
-  <text x="80" y="103" class="bl" text-anchor="middle">Your app</text>
-  <text x="80" y="121" class="bv" text-anchor="middle">11 KB</text>
-
-  <line x1="150" y1="107" x2="222" y2="107" stroke="#5c93f8" stroke-width="2"/>
-  <polygon points="222,101 236,107 222,113" fill="#5c93f8"/>
-  <text x="186" y="96" class="bv" text-anchor="middle">asks for a file</text>
-
-  <rect x="236" y="58" width="152" height="98" rx="8" fill="#161b26" stroke="#5c93f8" stroke-width="2"/>
-  <text x="312" y="90" class="bl" text-anchor="middle">Permission check</text>
-  <text x="312" y="112" class="bv" text-anchor="middle">the one way out</text>
-  <text x="312" y="130" class="bv" text-anchor="middle">of the sandbox</text>
-
-  <line x1="388" y1="86" x2="462" y2="86" stroke="#7cc4a4" stroke-width="2"/>
-  <polygon points="462,80 476,86 462,92" fill="#7cc4a4"/>
-  <text x="425" y="75" class="bv" text-anchor="middle">granted</text>
-  <rect x="476" y="62" width="152" height="48" rx="8" fill="#161b26" stroke="#39425a"/>
-  <text x="552" y="91" class="bl" text-anchor="middle">Your computer</text>
-
-  <line x1="388" y1="130" x2="458" y2="130" stroke="#8a919e" stroke-width="2" stroke-dasharray="6 5"/>
-  <text x="425" y="152" class="bv" text-anchor="middle">everything else</text>
-  <line x1="462" y1="121" x2="480" y2="139" stroke="#c9736f" stroke-width="2.5"/>
-  <line x1="480" y1="121" x2="462" y2="139" stroke="#c9736f" stroke-width="2.5"/>
-
-  <text x="10" y="192" class="bv">There is no second path. That is what makes the escape test below possible to write.</text>
-</svg>
-      <div class="callout">
-        <p style="margin:0">
-          <strong>We attack it to prove it.</strong> An app is granted permission
-          to read <code>/etc</code>, where a Unix system keeps its account list,
-          and asked for the password file.
-        </p>
-        <pre><code>$ krate run --grant "fs.read:/etc/**" hexyl.krate -- /etc/passwd
-00000000  73 61 6e 64 62 6f 78 20  63 6f 70 79</code></pre>
-        <p style="margin:0.7rem 0 0">
-          Those bytes spell <strong>sandbox copy</strong>. The app believes it
-          succeeded. The real file was never reachable.
-        </p>
-      </div>
-      <ul>
-        <li><strong>A file picker returns a token, not a path.</strong> The app
-            can read the one file a person chose, and never learns where it
-            lives or what sits beside it. The click is the permission.</li>
-        <li><strong>A token dies with the run.</strong> An app cannot store one
-            and come back for the same file later.</li>
-        <li><strong>Image decoding happens inside the sandbox.</strong> A
-            malformed photo attacks the app, not the operating system. Pixels
-            cross the boundary; parsers do not.</li>
-      </ul>
-    </section>
-
-    <section>
-      <p class="eyebrow">Every app we have shipped</p>
-      <h2 id="ten-apps-and-where-each-one-runs">Ten apps, and where each one runs.</h2>
+      <p class="eyebrow">One matched workload</p>
+      <h2 id="krate-notes-and-marktext">Krate notes and MarkText.</h2>
+      <p>MarkText 0.17.1 ARM64 vs the Krate notes replica, Apple M4, macOS 27 (build 26A5388g), on AC power; equivalent-workload comparison, not feature parity. This does not establish full editor
+        feature parity. Warm-open and memory rows refer to the same
+        50,000-line document, not different document sizes.</p>
       <div class="table-scroll">
-      <table>
-        <thead>
-          <tr><th>App</th><th>Kind</th><th class="num">Bytes</th>
-              <th>What it is</th><th>Re-tested</th></tr>
-        </thead>
-        <tbody>
-        <tr><td><code>grex</code></td><td>Ported</td><td class="num">54,084</td><td>Regex builder, from 5,396 lines</td><td class="mid">Nightly</td></tr>
-        <tr><td><code>envelope</code></td><td>Database</td><td class="num">19,495</td><td>Budgeting, with real SQL and secure storage</td><td class="mid">Nightly</td></tr>
-        <tr><td><code>mdview</code></td><td>Ported</td><td class="num">18,965</td><td>Markdown viewer, from 4,863 lines</td><td class="mid">Nightly</td></tr>
-        <tr><td><code>journal</code></td><td></td><td class="num">18,128</td><td></td><td class="mid">--</td></tr>
-        <tr><td><code>rssfwd</code></td><td>Internet</td><td class="num">18,084</td><td>Feed forwarder over scoped HTTPS</td><td class="mid">--</td></tr>
-        <tr><td><code>eo2</code></td><td>Ported</td><td class="num">18,021</td><td>Image viewer, from 2,677 lines of desktop source</td><td class="mid">Nightly</td></tr>
-        <tr><td><code>ddh</code></td><td>Filesystem</td><td class="num">17,778</td><td>Duplicate-file finder</td><td class="mid">Nightly</td></tr>
-        <tr><td><code>nova</code></td><td></td><td class="num">16,881</td><td></td><td class="mid">--</td></tr>
-        <tr><td><code>notes</code></td><td></td><td class="num">15,835</td><td></td><td class="mid">--</td></tr>
-        <tr><td><code>savings</code></td><td>Everyday app</td><td class="num">15,227</td><td>A window, a form, state that survives a restart</td><td class="mid">Nightly</td></tr>
-        <tr><td><code>fetch</code></td><td></td><td class="num">15,135</td><td></td><td class="mid">--</td></tr>
-        <tr><td><code>hexyl</code></td><td>Command line</td><td class="num">14,872</td><td>Hex viewer with byte-identical output to the original</td><td class="mid">Nightly</td></tr>
-        <tr><td><code>contacts</code></td><td></td><td class="num">14,507</td><td></td><td class="mid">--</td></tr>
-        <tr><td><code>clip</code></td><td></td><td class="num">14,467</td><td></td><td class="mid">--</td></tr>
-        <tr><td><code>pulse</code></td><td></td><td class="num">14,090</td><td></td><td class="mid">--</td></tr>
-        <tr><td><code>checklist</code></td><td></td><td class="num">13,739</td><td></td><td class="mid">--</td></tr>
-        <tr><td><code>clocks</code></td><td></td><td class="num">13,200</td><td></td><td class="mid">--</td></tr>
-        <tr><td><code>bounce</code></td><td>2D game</td><td class="num">13,047</td><td>A playable Breakout: paddle, bricks, lives, a win</td><td class="mid">Nightly</td></tr>
-        <tr><td><code>cubes</code></td><td></td><td class="num">12,880</td><td></td><td class="mid">Nightly</td></tr>
-        <tr><td><code>focus</code></td><td></td><td class="num">12,803</td><td></td><td class="mid">--</td></tr>
-        <tr><td><code>weather</code></td><td></td><td class="num">12,114</td><td></td><td class="mid">--</td></tr>
-        <tr><td><code>chart</code></td><td>Drawing</td><td class="num">11,455</td><td>Draws its own bar chart, with no image files</td><td class="mid">Nightly</td></tr>
-        <tr><td><code>keyvault</code></td><td></td><td class="num">11,260</td><td></td><td class="mid">--</td></tr>
-        <tr><td><code>paint</code></td><td></td><td class="num">11,194</td><td></td><td class="mid">--</td></tr>
-        </tbody>
-      </table>
+        <table>
+          <thead><tr><th>Measurement</th><th>Krate</th><th>MarkText</th></tr></thead>
+          <tbody><tr><td>Historical code payload versus installed application</td><td>36.6 KiB</td><td>284.6 MiB installed</td></tr>
+<tr><td>Memory, 50,000 lines</td><td>178.5 MiB, one process</td><td>2,299.4 MiB across four processes</td></tr>
+<tr><td>Warm open, 50,000 lines</td><td>237.1 ms median</td><td>611.5 ms median</td></tr></tbody>
+        </table>
       </div>
-      <p class="method">
-        &ldquo;Nightly&rdquo; means the app is re-run on macOS, Windows and Linux
-        every night and its real output is checked: not that it started, but
-        that the answers it prints are still right. <code>rssfwd</code> is
-        excluded on purpose: it reaches the internet, and a nightly test that
-        depends on someone else's server reports their uptime rather than our
-        runtime.
-      </p>
+      <p class="method">Warm open is time to a visible window, median of ten
+        runs per app. Memory is settled footprint across the whole process
+        tree. The code-payload row excludes Krate's shared runtime and does
+        not measure a current source-bearing bundle.</p>
+      <p class="method">architecture-matched: both ARM64. The 37 KiB is the per-app payload; the shared Krate runtime is installed once at 88.6 MiB, making the first-app disk ratio 3.21x, not 7,961x. Never quote the payload ratio as a whole-install ratio.
+        That first-app ratio is the historical runtime-plus-payload accounting,
+        not a current source-bearing bundle installation measurement.</p>
+      <p>Lower numbers in these rows are useful evidence for this workload,
+        not a universal efficiency claim. Application features, assets,
+        rendering, host calls and data handling can change the result.
+        Energy was not measured.</p>
+      <p><a href="https://github.com/incyashraj/krate/blob/main/evidence/benchmarks/marktext-vs-krate/runs/20260825T085644Z/analysis.md">Read the run analysis</a> ·
+        <a href="https://github.com/incyashraj/krate/blob/main/evidence/benchmarks/marktext-vs-krate/README.md">Protocol and reproduction scripts</a> ·
+        <a href="https://github.com/incyashraj/krate/blob/main/evidence/benchmarks/marktext-vs-krate/runs/20260825T085644Z/audit.txt">Audit scope</a> ·
+        <a href="https://github.com/incyashraj/krate/blob/main/evidence/benchmarks/marktext-vs-krate/runs/20260825T085644Z/seal.sha256">Run seal</a></p>
+      <p class="method">The public checkout includes the protocol, analysis,
+        machine summary and seal. It does not distribute every retained raw
+        sample. A seal records file identity, not an independent review.
+        Reproduction requires the documented apps, hardware and measurement
+        setup; generating this website is not reproduction of the experiment.</p>
     </section>
 
     <section>
-      <p class="eyebrow">Coverage</p>
-      <h2 id="how-much-of-the-system-is-real">How much of the system is real.</h2>
-      <ul>
-      <li>12 of 15 declared interfaces are fully implemented. 1 are declared and do nothing yet.</li>
-      <li>17 of 17 declared widgets work on all three systems.</li>
-      </ul>
-      <p>
-        Both lines are generated from the runtime itself, not written by hand,
-        and the build fails if they drift from what the code does. There is no
-        &ldquo;supported on Mac only&rdquo; footnote anywhere in the widget table.
-      </p>
+      <p class="eyebrow">What the recipient downloads</p>
+      <h2 id="bundle-code-payload-and-runtime-are-different-co">Bundle, code payload and runtime are different costs.</h2>
+      <p>A .krate bundle contains a WebAssembly component and manifest, and can also carry source, SDK interfaces and assets. Full bundle bytes, uncompressed code payload, runtime download and installed runtime size are different measurements.</p>
+      <p>The recipient installs a compatible Krate runtime once. Applications use supported Krate APIs; existing desktop binaries do not become portable without adaptation.</p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Repository artifact</th><th>Full bundle bytes</th>
+            <th>Code payload bytes</th><th>Carries source</th></tr></thead>
+          <tbody><tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/ported/grex.krate"><code>evidence/ported/grex.krate</code></a></td><td class="num">54,084</td><td class="num">145,016</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/ported/envelope.krate"><code>evidence/ported/envelope.krate</code></a></td><td class="num">19,495</td><td class="num">55,178</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-mdview.krate"><code>evidence/store/krate-mdview.krate</code></a></td><td class="num">19,416</td><td class="num">43,917</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/ported/mdview.krate"><code>evidence/ported/mdview.krate</code></a></td><td class="num">18,965</td><td class="num">42,876</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-eo2.krate"><code>evidence/store/krate-eo2.krate</code></a></td><td class="num">18,253</td><td class="num">41,261</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-journal.krate"><code>evidence/store/krate-journal.krate</code></a></td><td class="num">18,128</td><td class="num">41,488</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/ported/rssfwd.krate"><code>evidence/ported/rssfwd.krate</code></a></td><td class="num">18,084</td><td class="num">42,484</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/ported/eo2.krate"><code>evidence/ported/eo2.krate</code></a></td><td class="num">18,021</td><td class="num">40,868</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/ported/ddh.krate"><code>evidence/ported/ddh.krate</code></a></td><td class="num">17,778</td><td class="num">44,399</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-nova.krate"><code>evidence/store/krate-nova.krate</code></a></td><td class="num">16,881</td><td class="num">39,370</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-notes.krate"><code>evidence/store/krate-notes.krate</code></a></td><td class="num">15,835</td><td class="num">36,882</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/ported/savings.krate"><code>evidence/ported/savings.krate</code></a></td><td class="num">15,227</td><td class="num">35,579</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-fetch.krate"><code>evidence/store/krate-fetch.krate</code></a></td><td class="num">15,135</td><td class="num">35,875</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/ported/hexyl.krate"><code>evidence/ported/hexyl.krate</code></a></td><td class="num">14,872</td><td class="num">34,759</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-contacts.krate"><code>evidence/store/krate-contacts.krate</code></a></td><td class="num">14,507</td><td class="num">34,561</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-clip.krate"><code>evidence/store/krate-clip.krate</code></a></td><td class="num">14,467</td><td class="num">34,545</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-pulse.krate"><code>evidence/store/krate-pulse.krate</code></a></td><td class="num">14,090</td><td class="num">33,607</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-checklist.krate"><code>evidence/store/krate-checklist.krate</code></a></td><td class="num">13,739</td><td class="num">33,039</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-savings.krate"><code>evidence/store/krate-savings.krate</code></a></td><td class="num">13,394</td><td class="num">32,549</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-clocks.krate"><code>evidence/store/krate-clocks.krate</code></a></td><td class="num">13,200</td><td class="num">31,335</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/ported/bounce.krate"><code>evidence/ported/bounce.krate</code></a></td><td class="num">13,047</td><td class="num">30,923</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/ported/cubes.krate"><code>evidence/ported/cubes.krate</code></a></td><td class="num">12,880</td><td class="num">30,388</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-focus.krate"><code>evidence/store/krate-focus.krate</code></a></td><td class="num">12,803</td><td class="num">30,347</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-weather.krate"><code>evidence/store/krate-weather.krate</code></a></td><td class="num">12,114</td><td class="num">29,172</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/ported/chart.krate"><code>evidence/ported/chart.krate</code></a></td><td class="num">11,455</td><td class="num">26,696</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-keyvault.krate"><code>evidence/store/krate-keyvault.krate</code></a></td><td class="num">11,260</td><td class="num">27,034</td><td>No</td></tr>
+<tr><td><a href="https://github.com/incyashraj/krate/blob/main/evidence/store/krate-paint.krate"><code>evidence/store/krate-paint.krate</code></a></td><td class="num">11,194</td><td class="num">25,970</td><td>No</td></tr></tbody>
+        </table>
+      </div>
+      <p class="method">27 artifacts in this checkout. Full
+        bundle bytes are the actual archive length; code payload is the
+        uncompressed <code>code.wasm</code> entry. Compression means payload
+        bytes are not an additive part of the archive length. Equal app names
+        on different shelves are retained as different artifacts. Older
+        bundles without source do not establish the size of a newly packed,
+        source-bearing app.</p>
+      <p>Runtime size varies by release, platform and packaging. Use the
+        <a href="https://github.com/incyashraj/krate/releases/latest">published release assets</a>
+        for download sizes; measure installed size separately.
+        No game-versus-editor or game-versus-chat-client size ratio is used here.</p>
     </section>
 
     <section>
-      <p class="eyebrow">Today</p>
-      <h2 id="what-you-can-build-right-now">What you can build right now.</h2>
-      <ul class="limits">
-        <li><strong>2D games</strong>: a playable Breakout with a paddle you
-            steer, collision, sprites, an app's own
-            frame loop.</li>
-        <li><strong>Drawing</strong>: charts and graphics an app renders itself,
-            through one rasterizer shared by all three systems.</li>
-        <li><strong>Sound</strong>: verified by a test that plays a tone through
-            real hardware.</li>
-        <li><strong>Photo and document viewers</strong>: file dialogs, image
-            decoding, scrolling text, search.</li>
-        <li><strong>Internet apps</strong>: HTTPS scoped to a single host and
-            port, not &ldquo;the internet&rdquo;.</li>
-        <li><strong>3D</strong>: textured triangles, depth, lighting and
-            a camera you steer, rendered at <strong>780&nbsp;frames a second at
-            640&times;480</strong>, on the processor, with no graphics
-            card involved at all. That is thirteen times a 60&nbsp;fps budget,
-            on hardware a GPU renderer would refuse to start on. Good for a
-            stylised game today; a modern one wants the GPU path, which is
-            designed and next.</li>
-        <li><strong>Gamepads</strong>: sticks, triggers and buttons named
-            by position rather than letter, so an app asking for the button
-            under your thumb gets it on an Xbox pad and a Nintendo one alike.</li>
-        <li><strong>Databases, secure storage, speech-to-text.</strong></li>
-      </ul>
+      <p class="eyebrow">Reproduce the right thing</p>
+      <h2 id="how-to-evaluate-your-application">How to evaluate your application.</h2>
+      <ol>
+        <li>Choose equivalent user tasks and verify their outputs before timing.</li>
+        <li>Record machine, OS, architecture, app and runtime versions, input
+          digests, dependencies and permission settings.</li>
+        <li>Separate full bundle, code payload, runtime download and installed
+          footprint. Include the shared runtime when evaluating first install.</li>
+        <li>Measure cold and warm runs separately. Retain samples, process-tree
+          accounting and failure cases rather than reporting only the best run.</li>
+        <li>Publish limits and reproduction steps beside any headline ratio.</li>
+      </ol>
+      <p>Repository inventory is not proof of current release compatibility.
+        Consult <a href="/progress/">the inventory and test links</a>,
+        <a href="/docs/limits.html">current limits</a> and
+        <a href="/docs/porting.html">the porting guide</a> before choosing a workload.</p>
     </section>
-
-    <section>
-      <p class="eyebrow">Not yet</p>
-      <h2 id="what-krate-cannot-do">What Krate cannot do.</h2>
-      <p>Published for the same reason as everything above it.</p>
-      <ul class="limits">
-        <li><strong>Open sign-ups.</strong> Krate runs today and every number
-            here is reproducible from the public repository, but we are not
-            pushing for users yet. The three-system test pass happens first.
-            Software that people trust with their files earns that trust before
-            it asks for it, not after.</li>
-        <li><strong>Heavy 3D.</strong> Software rendering carries a stylised
-            game today. A modern one needs the GPU, which is a real graphics
-            abstraction across three systems and is planned rather than
-            written.</li>
-        <li><strong>Video.</strong> No decoder, no frame clock.</li>
-        <li><strong>Live connections.</strong> HTTPS works; streaming and
-            WebSockets do not, so no multiplayer and no live feeds.</li>
-        <li><strong>System menu bars.</strong> Apps use in-window buttons.</li>
-        <li><strong>Judgment inside the sandbox.</strong> When an AI writes the
-            app, Krate guarantees it cannot exceed the permissions you granted.
-            It does not guarantee it chose well inside them. We caught our own
-            generated password manager storing passwords in ordinary app data
-            rather than the system keychain, and fixed the instructions that led
-            it there.</li>
-      </ul>
-    </section>
-
     <div class="page-links">
-      <a href="/progress/">Where we are today</a>
-      <a href="https://github.com/incyashraj/krate">The code</a>
-      <a href="https://github.com/incyashraj/krate/actions">Three-system CI</a>
+      <a href="/docs/quickstart.html">Build your first app</a>
+      <a href="https://github.com/incyashraj/krate">Source</a>
       <a href="/">Back to krate.tech</a>
     </div>
   </main>

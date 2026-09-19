@@ -4,19 +4,45 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="theme-color" content="#000000" />
-<title>Krate -- Build once. Ship one file.</title>
-<meta name="description" content="Ship desktop software as one small file that runs on Mac, Windows and Linux. No per-app installer, no per-OS port, no signing dance, and a sandbox the runtime enforces." />
+<title>Krate: build desktop apps once, ship one file</title>
+<meta name="description" content="Build desktop software and share one .krate file across macOS, Windows and Linux. Open-source runtimes, explicit permissions and AI-assisted authoring in Krate Studio." />
 <link rel="icon" href="/krate-favicon.png" />
   <link rel="canonical" href="https://krate.tech/" />
-  <meta property="og:title" content="Krate: build once, ship one file" />
-  <meta property="og:description" content="Build once, ship one file. Desktop software in tens of kilobytes that runs on Mac, Windows and Linux -- no per-app installer, no port, no signing dance." />
+  <meta property="og:title" content="Krate: build desktop apps once, ship one file" />
+  <meta property="og:site_name" content="Krate" />
+  <meta property="og:description" content="One .krate application file for macOS, Windows and Linux, running through native Krate runtimes. Build with your editor or with AI in Krate Studio." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://krate.tech/" />
   <meta property="og:image" content="https://krate.tech/og-v3.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="Build once. Ship one file. Desktop software in tens of kilobytes that runs on Mac, Windows, and Linux." />
+  <meta property="og:image:alt" content="Krate: build once and share one desktop application file across Mac, Windows and Linux." />
   <meta name="twitter:card" content="summary_large_image" />
+  <script id="krate-identity" type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        "@id": "https://krate.tech/#website",
+        "name": "Krate",
+        "url": "https://krate.tech/",
+        "description": "Build desktop software and share one .krate file across macOS, Windows and Linux through native Krate runtimes.",
+        "sameAs": ["https://github.com/incyashraj/krate"]
+      },
+      {
+        "@type": "SoftwareSourceCode",
+        "@id": "https://krate.tech/#source",
+        "name": "Krate",
+        "codeRepository": "https://github.com/incyashraj/krate",
+        "programmingLanguage": "Rust",
+        "runtimePlatform": "WebAssembly",
+        "url": "https://krate.tech/docs/",
+        "isPartOf": {"@id": "https://krate.tech/#website"}
+      }
+    ]
+  }
+  </script>
 
 <style>
 @font-face { font-family: "Geist"; src: url("/fonts/geist-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
@@ -94,7 +120,7 @@ img { max-width: 100%; display: block; }
      from the footer, and four 12.5px links in a phone header would be
      four targets nobody can hit. */
   .bnav { display: flex; margin-left: 0; }
-  .bnav a:not([href="/login/?next=studio"]) { display: none; }
+  .bnav a:not([href="/docs/quickstart.html"]) { display: none; }
   /* A quiet link, not a second white button.
      The hero already has "Make an app" as a full-width white button a
      few hundred pixels down -- the page's one action. Repeating it in the
@@ -102,7 +128,7 @@ img { max-width: 100%; display: block; }
      wordmark beside it and asked the same question twice. Here it is a
      link: present if you want it before you have read anything, and out
      of the way if you do not. */
-  .bnav a[href="/login/?next=studio"] {
+  .bnav a[href="/docs/quickstart.html"] {
     font-size: 14px; font-weight: 500; color: #e4e4e7;
     background: none; padding: 10px 2px; border-radius: 0;
     min-height: 44px; display: inline-flex; align-items: center;
@@ -691,6 +717,11 @@ img { max-width: 100%; display: block; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
   .eclipse { opacity: 1 !important; filter: none !important; transform: translateY(-50%) !important; }
   .heroContent h1, .heroSub, .heroCtas { opacity: 1 !important; filter: none !important; transform: none !important; }
+  .works h2, .works .copy, .works .tag, .ring, .orbIcon, .centerGlyph,
+  .ctaCard, .ctaText h2, .ctaText p, .ctaActs {
+    opacity: 1 !important; filter: none !important; transform: none !important;
+    clip-path: none !important; scale: 1 !important;
+  }
 }
 
 /* ---- the hero, on a phone -------------------------------------------- */
@@ -1290,6 +1321,21 @@ img { max-width: 100%; display: block; }
     a.btn, a.pill, a.cta, .brandbar .name { min-height: 44px; display: inline-flex; align-items: center; }
   }
 </style>
+<noscript><style>
+  .brandbar, .heroContent h1, .heroSub, .heroCtas, .works h2, .works .copy,
+  .how h2, .how .lead, .step, .price h2, .price .lead, .plan, .ctaCard,
+  .ctaText h2, .ctaText p, .ctaActs { opacity: 1 !important; filter: none !important; }
+  .brandbar { transform: translateX(-50%); }
+  .heroContent h1, .heroSub, .heroCtas, .step, .plan { transform: none !important; }
+  .works h2, .works .copy, .ctaCard, .ctaText h2, .ctaText p, .ctaActs {
+    transform: none !important; clip-path: none !important;
+  }
+  .heroTrack { height: auto; min-height: 680px; }
+  .heroStick { position: relative; height: auto; min-height: 680px; overflow: visible; }
+  .heroContent { position: relative; padding-bottom: 60px; }
+  .eclipse, .marqWrap, .marqLabel, .chip, .orbitStage { display: none; }
+  .whatis { display: block; }
+</style></noscript>
 </head>
 <body>
 
@@ -1304,7 +1350,7 @@ img { max-width: 100%; display: block; }
     <span><span class="num" id="starNum">open source</span></span>
   </a>
   <nav class="bnav" aria-label="Primary">
-    <a href="/login/?next=studio">Make an app</a>
+    <a href="/docs/quickstart.html">Start building</a>
     <a href="#receipts">Why Krate</a>
     <a href="/cloud/">Apps</a>
     <a href="/docs/">Docs</a>
@@ -1326,9 +1372,9 @@ img { max-width: 100%; display: block; }
         <span class="heroCycle" id="heroCycle"><span class="glyph" id="heroGlyph"></span></span>
         <span class="dim">Ship one file.</span>
       </h1>
-      <p class="heroSub" id="heroSub">No installer. No per-OS port. No signing
-      dance. A Krate app is tens of kilobytes, runs on Mac, Windows and Linux
-      from the same file, and cannot touch anything it did not declare.</p>
+      <p class="heroSub" id="heroSub">Build desktop software once. Share one
+      <code>.krate</code> file that runs on Mac, Windows and Linux.
+      No separate builds for each OS.</p>
       <!-- The same promise, said forwards.
            The line above opens with three things Krate is NOT, which lands
            for somebody who has felt those problems and means nothing to
@@ -1344,14 +1390,13 @@ img { max-width: 100%; display: block; }
            reader met, before they knew what the thing was -- and they are
            already made, in full, in "What you get" immediately below.
            One sentence that lands the idea; the list does the rest. -->
-      <p class="heroSub heroSubPhone">Build a desktop app, get one small
-      file, and send it to anyone on Mac, Windows or Linux. They open it
-      like a photo.</p>
+      <p class="heroSub heroSubPhone">Build desktop software. Share one
+      <code>.krate</code> file that runs on Mac, Windows and Linux.</p>
       <div class="heroCtas" id="heroCtas">
         <div class="ctaRow">
           <a class="btn btn-primary" id="makeBtn" data-pressed="false"
-             href="/login/?next=studio">
-            <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>Make an app</span>
+             href="/docs/quickstart.html">
+            <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>Start building</span>
             <span class="hoverco"></span><span class="ripple"></span>
           </a>
           <a class="btn btn-ghost" id="srcBtn" data-pressed="false"
@@ -1360,7 +1405,7 @@ img { max-width: 100%; display: block; }
             <span class="hoverco"></span><span class="ripple"></span>
           </a>
         </div>
-        <div class="secondDoor dlLine"><span>Want it on your machine?</span>
+        <div class="secondDoor dlLine"><span>Build with AI? <a href="/studio/">Meet Studio</a></span>
             <div class="split">
               <button class="btn btn-primary main" id="dlMain" data-pressed="false">
                 <span><svg id="dlOsIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg><span id="dlLabel">Download for macOS</span></span>
@@ -1410,7 +1455,7 @@ img { max-width: 100%; display: block; }
         <div class="marqTrack" id="marqTrack"></div>
       </div>
     </div>
-    <p class="marqLabel" id="marqLabel">All true today -- Krate 0.4.0, September 2026</p>
+    <p class="marqLabel" id="marqLabel">One application artifact. Native runtimes on three desktops.</p>
 
   </div>
 </div>
@@ -1433,21 +1478,27 @@ img { max-width: 100%; display: block; }
        hero makes the promise; this section answers the question a reader
        actually has next, which is what they get for it. -->
   <h2>What you get</h2>
-  <p class="lead">Seven things that are true of every app you build with
-  Krate. Each one is measured, and the evidence is further down this
-  page.</p>
-  <ul class="whatisList" id="whatisList"></ul>
+  <p class="lead">How a Krate app gets from your machine to someone else's.</p>
+  <ul class="whatisList" id="whatisList">
+    <li data-icon="photo"><span class="wIc" aria-hidden="true"></span><span class="wTx"><b>The app, in a file</b><span>Your application, permissions and source, together in one .krate.</span></span></li>
+    <li data-icon="laptop"><span class="wIc" aria-hidden="true"></span><span class="wTx"><b>Same bytes, three desktops</b><span>Build once. The same file runs on Mac, Windows and Linux.</span></span></li>
+    <li data-icon="click"><span class="wIc" aria-hidden="true"></span><span class="wTx"><b>Install the runtime once</b><span>Your users install the open-source player for their system. You send the application file.</span></span></li>
+    <li data-icon="shield"><span class="wIc" aria-hidden="true"></span><span class="wTx"><b>Your computer, your permissions</b><span>File and network access start off. You decide what an app can use.</span></span></li>
+    <li data-icon="clock"><span class="wIc" aria-hidden="true"></span><span class="wTx"><b>Your editor. Or your AI.</b><span>Write Rust yourself or make apps with AI in Krate Studio. The source stays with the app.</span></span></li>
+    <li data-icon="inf"><span class="wIc" aria-hidden="true"></span><span class="wTx"><b>Keep your software</b><span>Your apps run locally. Krate Cloud is optional.</span></span></li>
+    <li data-icon="link"><span class="wIc" aria-hidden="true"></span><span class="wTx"><b>Share the file</b><span>Send it to someone. Put it on your website. You choose how your software reaches people.</span></span></li>
+  </ul>
 </section>
 
 <!-- ================================================== works-with-your-AI -->
 <section class="works" id="works">
   <div class="worksGrid">
     <div>
-      <h2>Your AI already knows how.</h2>
-      <p class="copy">Krate Studio works with the AI you already pay for --
-      Claude, ChatGPT, Grok or Gemini -- and teaches it to build real apps for
-      your computer. Your sign-ins stay on your machine; Krate never sees
-      them. What comes out is a real app you can keep, use, and send.</p>
+      <h2>Your editor. Or your AI.</h2>
+      <p class="copy">Write against Krate's Rust APIs, or describe an app in
+      Krate Studio and build it with an AI coding provider. Inspect the source,
+      test the app and share the resulting file. The local authoring path uses
+      your configured provider; hosted Studio has its own account and usage terms.</p>
       <div class="tagRow">
         <div class="tag">Works with your AI</div>
         <div class="tag">Plain words in</div>
@@ -1494,14 +1545,14 @@ img { max-width: 100%; display: block; }
 <!-- ========================================================= how it works -->
 <section class="how" id="how">
   <h2>Write it. Pack it. Ship it.</h2>
-  <p class="lead">Your code, your toolchain, your editor. One file out the
-  other end, and no platform between you and the person using it.</p>
+  <p class="lead">Your code, your toolchain, your editor.
+  One file for all three desktop operating systems.</p>
   <div class="stepGrid">
     <div class="step">
       <div class="n">1</div>
       <h3>Write it</h3>
-      <p>Rust today, compiled to WebAssembly. Bring an app you already have
-      with <code>krate port</code>, start from a template, or let an AI draft
+      <p>Rust today, compiled to WebAssembly. Assess an existing project
+      with <code>krate port</code>, follow the quickstart, or let an AI draft
       it and take over from there -- on your machine, or
       <a href="/login/?next=studio">in your browser</a>.</p>
     </div>
@@ -1509,105 +1560,101 @@ img { max-width: 100%; display: block; }
       <div class="n">2</div>
       <h3>Pack it</h3>
       <p>One command produces one <code>.krate</code>: your app, its manifest,
-      and the source that made it. Tens of kilobytes, and the same bytes on
-      every platform -- there is no per-OS build.</p>
+      and the source that made it. No separate Mac, Windows or Linux builds.</p>
     </div>
     <div class="step">
       <div class="n">3</div>
       <h3>Ship it</h3>
       <p>Send the file, a link, or a card. Your user needs the player once --
-      free and open source -- and every app after that just opens. No
-      installer for you to maintain, no certificate per platform.</p>
+      free and open source -- then opens the apps you share.</p>
     </div>
   </div>
+  <p class="note"><a href="/portable-desktop-app-format.html">How the file format works</a>
+  &middot; <a href="/docs/porting.html">Bring an existing app</a>
+  &middot; <a href="/desktop-app-distribution.html">Compare distribution models</a></p>
 </section>
 
 <!-- ============================================================ receipts -->
 <section class="price" id="receipts">
-  <h2>The numbers, and how to check them.</h2>
-  <p class="lead">Every figure here came from a command you can run yourself.
-  Where the honest answer is "not yet", it says that instead.</p>
+  <h2>One file. Less baggage. Your control.</h2>
+  <p class="lead">A shared runtime, portable applications and permissions
+  you approve. The measurements and source are public.</p>
 
   <div class="priceGrid">
     <div class="plan">
-      <div class="top"><h3>Size</h3><span class="badge">measured</span></div>
-      <div class="amount">13 KB</div>
+      <div class="top"><h3>Size and performance</h3><span class="badge">evidence</span></div>
+      <div class="amount">Measure it</div>
       <ul>
-        <li>A playable 2D game -- paddle, bricks, lives, a win state</li>
-        <li>A markdown viewer, ported from 4,863 lines: <b>51 KB</b></li>
-        <li>An image viewer, ported from 2,677 lines: <b>77 KB</b></li>
-        <li>Ten complete apps together: <b>283 KB</b></li>
+        <li>A notes workload compared with MarkText on the same ARM64 Mac</li>
+        <li>Published benchmark protocol, analysis and application source</li>
+        <li>App payload, full bundle and installed runtime counted separately</li>
+        <li>Results describe those workloads, not every app built with Krate</li>
       </ul>
-      <p class="note" style="margin:10px 0 0;text-align:left">Against Electron
-      apps, which ship a browser in every copy: Discord is 431 MB, VS Code
-      1.4 GB. <code>ls -la evidence/ported/*.krate</code></p>
+      <p class="note" style="margin:10px 0 0;text-align:left"><a href="/reports/">Read the measurements and reproduce them &rarr;</a></p>
     </div>
 
     <div class="plan">
-      <div class="top"><h3>Portability</h3><span class="badge">six targets</span></div>
+      <div class="top"><h3>Portability</h3><span class="badge">desktop</span></div>
       <div class="amount">1 file</div>
       <ul>
-        <li>Intel and ARM, for each of Mac, Windows and Linux</li>
-        <li>The same bytes on all of them -- there is no per-OS build</li>
-        <li>Nine apps re-run nightly on all three, and the output is checked</li>
-        <li>Your user installs the player once, then files just open</li>
+        <li>One .krate application file for Mac, Windows and Linux</li>
+        <li>No separate application builds for each operating system</li>
+        <li>Native runtimes handle the platform underneath</li>
+        <li>Send the file directly or distribute it from your website</li>
       </ul>
-      <p class="note" style="margin:10px 0 0;text-align:left">ARM Windows is
-      included because a Windows VM on an Apple Silicon Mac is ARM -- which is
-      how most people try Windows.</p>
+      <p class="note" style="margin:10px 0 0;text-align:left"><a href="/docs/limits.html">Check supported capabilities and current limits &rarr;</a></p>
     </div>
 
     <div class="plan">
-      <div class="top"><h3>The wall</h3><span class="badge">enforced</span></div>
-      <div class="amount">0 trust</div>
+      <div class="top"><h3>Permissions</h3><span class="badge">explicit</span></div>
+      <div class="amount">Your call</div>
       <ul>
-        <li>An app reaches nothing it did not declare in its manifest</li>
-        <li>The runtime enforces it, whatever the code says</li>
-        <li>The person sees the list before the first line runs</li>
-        <li>956 tests, and a fuzzer on the bundle parser</li>
+        <li>Apps declare the system resources they need</li>
+        <li>Declarations do not grant access on their own</li>
+        <li>The runtime checks approved capabilities at host boundaries</li>
+        <li>See what an app requests before you open it</li>
       </ul>
       <p class="note" style="margin:10px 0 0;text-align:left">Read what any
       app asks for without running it: <code>krate run app.krate --dump-caps</code></p>
     </div>
   </div>
 
-  <p class="note">What we do not claim: a cold-start number. Most of a start is
-  window and GPU setup that any app pays, and we have not instrumented
-  time-to-first-frame yet -- so we do not print one.</p>
+  <p class="note">Explore the <a href="/run-ai-generated-code-safely.html">permission model</a>,
+  <a href="/reports/">benchmarks</a> and <a href="/progress/">what ships today</a>.</p>
 </section>
 
 <!-- ============================================================= pricing -->
 <section class="price" id="free">
-  <h2>Free while we build it.</h2>
-  <p class="lead">Everything here is free, with no cap and no meter. We will
-  charge one day, and we will say so long before we do -- but nobody should
-  bet their distribution on a runtime that might price them out at app four.</p>
+  <h2>An open-source runtime.</h2>
+  <p class="lead">Build and distribute apps with the free Krate runtime.
+  AI provider charges and optional hosted services are separate from running
+  the software you ship.</p>
   <div class="priceGrid">
     <div class="plan">
       <div class="top"><h3>The player</h3><span class="badge">open source</span></div>
       <div class="amount">$0</div>
       <ul>
         <li>MIT and Apache licensed</li>
-        <li>Runs any .krate on Mac, Windows and Linux</li>
+        <li>Runs .krate apps on Mac, Windows and Linux</li>
         <li>Every capability an app asks for is enforced by the runtime</li>
         <li>Build it from source if you would rather</li>
       </ul>
       <a class="btn ghosty" href="https://github.com/incyashraj/krate"><span>Read the source</span><span class="hoverco"></span><span class="ripple"></span></a>
     </div>
     <div class="plan hot">
-      <div class="top"><h3>Everything else</h3><span class="badge">free, for now</span></div>
-      <div class="amount">$0</div>
+      <div class="top"><h3>Build your way</h3><span class="badge">Studio or CLI</span></div>
+      <div class="amount">Your tools</div>
       <ul>
-        <li>Make as many apps as you want</li>
-        <li>Ship them as a file, a link, or a card</li>
-        <li>Your toolchain, your code, your AI -- or ours</li>
-        <li>Every app you make is a file that is yours forever</li>
+        <li>Write Rust directly or use AI-assisted authoring</li>
+        <li>Inspect and test your app before sharing it</li>
+        <li>Use your configured AI provider on your own machine</li>
+        <li>Build locally or use Studio in your browser</li>
       </ul>
       <button class="btn btn-primary jsTop" data-pressed="false"><span>Get Krate</span><span class="hoverco"></span><span class="ripple"></span></button>
     </div>
   </div>
-  <p class="note">Someone sent you a .krate? Opening apps is free, forever --
-  <a href="/open/">here is how</a>.</p>
+  <p class="note">Someone sent you a .krate?
+  <a href="/open/">Get the free runtime and open the file</a>.</p>
 </section>
 
 <!-- ================================================================= cta -->
@@ -1622,10 +1669,8 @@ img { max-width: 100%; display: block; }
              after it arrive as one file with nothing to install (IC-401).
              The open page already said this correctly -- "nothing to
              install per app" -- and this page did not. -->
-        <p>Free, no cap. Build once, get one file, and send it to anyone on
-        any desktop -- no per-app installer, no per-OS build, no signing
-        dance. They install the Krate player once; every app after that is
-        just the file.</p>
+        <p>Make it once. Send it anywhere. One <code>.krate</code> file
+        for Mac, Windows and Linux. Start building with your editor or AI.</p>
       </div>
       <div class="ctaActs">
         <div class="ctaRow">
@@ -1667,7 +1712,9 @@ img { max-width: 100%; display: block; }
       <a href="/cloud/">Gallery</a>
       <a href="/open/">Received an app?</a>
       <a href="/account/">Account</a>
-      <a href="/faq.html">FAQ</a>
+      <a href="/faq/">FAQ</a>
+      <a href="/docs/quickstart.html">Quickstart</a>
+      <a href="/share-an-app-made-with-ai.html">Share an AI-built app</a>
       <a href="/contact/">Contact</a>
       <a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Changelog</a>
     </nav>
@@ -1881,15 +1928,11 @@ var IC = {
   game: '<svg viewBox="0 0 24 24" fill="none" stroke="#b6abd8" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6.8 8.5h10.4a3.8 3.8 0 013.7 4.7l-.8 3.3a2.3 2.3 0 01-4 .9l-1.5-2.2h-5.2l-1.5 2.2a2.3 2.3 0 01-4-.9l-.8-3.3a3.8 3.8 0 013.7-4.7z"/><path d="M9 11.2v2.2M7.9 12.3h2.2M15 11.5h.01M17 13h.01"/></svg>',
   link: '<svg viewBox="0 0 24 24" fill="none" stroke="#b6abd8" stroke-width="1.4" stroke-linecap="round"><path d="M9.5 14.5l5-5"/><path d="M7.5 12.5l-2 2a3.5 3.5 0 105 5l2-2M16.5 11.5l2-2a3.5 3.5 0 10-5-5l-2 2"/></svg>'
 };
-var STATS = [
-  ["photo", "Tens of kilobytes", "A playable 2D game is 13 KB. A ported markdown viewer is 51 KB. No browser in the box."],
-  ["laptop", "One build, six targets", "Intel and ARM for Mac, Windows and Linux -- the same bytes, no per-OS build."],
-  ["click", "No installer to maintain", "Your user gets the player once, free and open source. Every app after that just opens."],
-  ["shield", "The capability wall", "An app reaches nothing it did not declare, and the runtime enforces it. Read any app with --dump-caps."],
-  ["clock", "No signing dance", "One artifact instead of a certificate per platform and a notarization queue."],
-  ["inf", "The file outlives us", "It carries its own source. Nothing you ship depends on our servers staying up."],
-  ["link", "Ship it however", "A file, a link, or a card -- whichever costs the person receiving it the least."]
-];
+var STATS = Array.from(document.querySelectorAll("#whatisList > li")).map(function (item) {
+  var icon = item.dataset.icon;
+  item.querySelector(".wIc").innerHTML = IC[icon];
+  return [icon, item.querySelector("b").textContent, item.querySelector(".wTx > span").textContent];
+});
 var trackEl = $("marqTrack");
 var cardHTML = STATS.map(function (s) {
   return '<div class="stat"><div class="head"><span class="ic">' + IC[s[0]] +
@@ -1901,13 +1944,8 @@ trackEl.innerHTML = cardHTML + cardHTML;
    from STATS rather than written out again in the markup: two copies of
    these sentences would drift, and the marquee's copy is the one the
    desktop shows. */
-var whatisEl = $("whatisList");
-if (whatisEl) {
-  whatisEl.innerHTML = STATS.map(function (s) {
-    return '<li><span class="wIc">' + IC[s[0]] + '</span>' +
-      '<span class="wTx"><b>' + s[1] + '</b>' + s[2] + '</span></li>';
-  }).join("");
-}
+// The phone list is already readable HTML; JavaScript only supplies icons
+// and the desktop marquee from that same copy.
 
 /* --------------------------------------------------- tactile buttons */
 document.querySelectorAll(".btn").forEach(function (b) {
