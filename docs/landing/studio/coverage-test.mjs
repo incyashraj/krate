@@ -799,3 +799,37 @@ console.log("ok  a status message is not offered as a link to send");
 }
 
 console.log("ok  the shelf is tappable on a phone");
+
+// "hi" is answered, not built.
+//
+// looksLikeAQuestion needs a question mark, which is right for its job: it
+// decides whether a FAILED plan step was really a question. It cannot catch
+// a greeting, and nothing else did, so "hi" went to the planner, which
+// invents an app for whatever it is given, and built one.
+//
+// On the web that is not just wasted minutes. The free allowance counts a
+// case that produced a FILE, so somebody typing "hi" to see what happens
+// could spend their whole allowance on a greeting before asking for
+// anything.
+assert.match(app, /function isJustAGreeting\(text\)/, "a greeting is recognised");
+{
+  const fn = app.slice(app.indexOf("function isJustAGreeting(text)"));
+  const body = fn.slice(0, fn.indexOf("\n}\n"));
+  // Deliberately narrow: only a message that is ONLY a greeting. "hi there,
+  // build me a clock" is a request and must build.
+  assert.match(body, /t\.length > 24/, "a long message is never just a greeting");
+  assert.match(body, /\^\(hi\|hey\|hello/, "matched whole, not as a substring");
+  assert.ok(body.includes("^") && body.includes("$"),
+    "anchored, or 'hello world app' and 'hi-fi mixer' would be swallowed");
+}
+// Both ways in are guarded: Home, and the composer inside a session.
+{
+  const home = app.slice(app.indexOf("function startFromHome()"));
+  assert.match(home.slice(0, 900), /if \(isJustAGreeting\(text\)\)/,
+    "Home answers a greeting instead of opening a build screen");
+  const session = app.slice(app.indexOf("function submitInSession()"));
+  assert.match(session.slice(0, 900), /if \(isJustAGreeting\(text\)\)/,
+    "and so does the composer in a session");
+}
+
+console.log("ok  a greeting does not spend an app");

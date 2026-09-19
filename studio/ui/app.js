@@ -4465,9 +4465,42 @@ function looksLikeAQuestion(text) {
   return !namesAThing;
 }
 
+/* A greeting is not an app.
+ *
+ * `looksLikeAQuestion` needs a question mark, which is right for its job --
+ * it decides whether a FAILED plan step was really a question. It cannot
+ * catch "hi", and nothing else did either, so a greeting went to the
+ * planner, which invented an app for it and built one.
+ *
+ * That is not merely wasted time on the web: the free allowance is one app
+ * that produced a file, so somebody who typed "hi" to see what happens
+ * could spend their whole allowance on a greeting before they had asked for
+ * anything.
+ *
+ * Deliberately narrow. Only a message that is ONLY a greeting, with nothing
+ * else in it -- "hi there, build me a clock" is a request and must build.
+ */
+function isJustAGreeting(text) {
+  const t = String(text || "").trim().toLowerCase().replace(/[!.,?]+$/, "");
+  if (!t || t.length > 24) return false;
+  return /^(hi|hey|hello|yo|hiya|howdy|sup|hi there|hey there|hello there|good morning|good afternoon|good evening|test|testing)$/.test(t);
+}
+
 function startFromHome() {
   const text = $("homePrompt").value.trim();
   if (!text) return;
+  if (isJustAGreeting(text)) {
+    // Answer where they are. Opening a session for "hi" would put them on
+    // a build screen with nothing being built.
+    const hint = $("homeHint");
+    if (hint) {
+      hint.textContent = "Hello. Tell me what the app should do and I'll build it: "
+        + "a window, saved data, drawing, sound, the network. One sentence is enough.";
+    }
+    $("homePrompt").value = "";
+    syncSendReady();
+    return;
+  }
   newSession(text);
   $("railTitle").textContent = state.session.title;
   $("thread").innerHTML = "";
@@ -4532,6 +4565,18 @@ async function replaceWithMidBuild(text) {
 function submitInSession() {
   const text = $("prompt").value.trim();
   if (!text) return;
+  // Same guard as Home. In a session with no app yet a greeting would start
+  // a build; in one with an app it would be read as a change to make.
+  if (isJustAGreeting(text)) {
+    $("prompt").value = "";
+    autoGrow($("prompt"));
+    syncSendReady();
+    say("YOU", text);
+    say("KRATE", state.session && state.session.result
+      ? "Hello. Tell me what to change and I'll make it."
+      : "Hello. Tell me what the app should do and I'll build it.");
+    return;
+  }
   if (state.buildingSession) {
     if (state.session && state.buildingSession.id === state.session.id) {
       // Words typed mid-build mean one of two things and we cannot tell
