@@ -2032,6 +2032,20 @@ THE ESSENTIALS, INLINED. Everything below is authoritative and          identica
     );
     out.push_str(&capability_catalog_section());
     out.push_str(DESIGN_PATTERNS_SECTION);
+    // What the app should LOOK like.
+    //
+    // This was written into the pack on disk and into `krate krate-mode`,
+    // and left out of here -- so the one path that writes apps for people
+    // who never see a prompt, the hosted AI behind Krate Studio in a
+    // browser, was the single path that never received it. Every rule about
+    // not looking generated (tool versus piece, the seven tells, the
+    // spacing and weight numbers) was written for an audience that could
+    // not read it, because the author is told a few lines later not to open
+    // the pack on disk.
+    //
+    // It is ~2,200 tokens against a ~22,000-token prompt that is cached
+    // after the first round, so it costs about a penny a build.
+    out.push_str(APP_DESIGN_SECTION);
     out.push_str(BACKEND_CLIENT_SECTION);
     out.push_str(SENSES_SECTION);
     // Game feel rides the prompt only when the request smells like a game;
@@ -2612,5 +2626,47 @@ interface api {
             .find(|e| e.name == "krate-cat")
             .expect("krate-cat is indexed");
         assert_eq!(cat.kind, "CLI", "cat has no window");
+    }
+
+    /// What the HOSTED author is sent, which is not the pack on disk.
+    ///
+    /// `generate()` writes the pack to a file and `the_pack_carries_every_section`
+    /// guards it. But `krate create --agent anthropic` -- the path behind
+    /// Krate Studio in a browser, and the only one a person who never opens
+    /// a terminal will ever use -- sends `inline_essentials` instead, and
+    /// then tells the model NOT to read the pack from disk. So a section
+    /// present in `generate()` and absent here reaches nobody, silently,
+    /// and no test could see it: the design guidance sat in that gap from
+    /// the day it was written.
+    ///
+    /// Asserted on load-bearing SENTENCES rather than section headers, so
+    /// this cannot pass on a heading with the content gutted.
+    #[test]
+    fn the_inlined_prompt_carries_every_section_the_pack_does() {
+        let inlined = inline_essentials("a hex viewer");
+        // The design section, the whole reason this test exists.
+        assert!(
+            inlined.contains("# 2g. What the app should look like"),
+            "the hosted author is not told what the app should look like"
+        );
+        assert!(
+            inlined.contains("A TOOL shows someone their own data"),
+            "the tool/piece distinction is the first design decision"
+        );
+        // The other sections that were always here, so a future edit that
+        // drops one is caught by the same test.
+        assert!(inlined.contains("# 2b."), "design patterns");
+        assert!(inlined.contains("# 2c."), "backend client");
+        assert!(inlined.contains("# 2e."), "senses");
+        assert!(inlined.contains("# 3."), "the import check");
+        assert!(inlined.contains("random.bytes"), "capability catalog");
+
+        // Game feel rides only on a game, and must still be there for one.
+        let game = inline_essentials("a snake game");
+        assert!(game.contains("# 2f."), "a game gets game feel");
+        assert!(
+            game.contains("# 2g. What the app should look like"),
+            "a game is told how it should look too"
+        );
     }
 }

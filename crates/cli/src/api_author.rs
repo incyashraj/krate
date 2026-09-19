@@ -32,6 +32,20 @@ use crate::api_key::{self, ApiVendor};
 /// and a runaway loop against a paid API is the person's money.
 const MAX_ROUNDS: usize = 40;
 
+/// The most one reply may be, in tokens.
+///
+/// 8,192 is roughly 30 KB of Rust, and a single-file app can reach that on
+/// its own: `krate-checklist`, the worked example the model is told to
+/// adapt, is 28 KB. A reply that hits the ceiling is truncated mid-file and
+/// costs a whole round to discover, so the ceiling was being paid for in
+/// rounds. Raised with room to spare; the loop still tells the model to
+/// split long files when it does hit it.
+///
+/// This is also what the budget guard reserves for the next call, so the
+/// two must be the same number: a request that may return 16,000 tokens and
+/// a guard that budgets 8,192 would let a run pass its ceiling by a round.
+const MAX_REPLY_TOKENS: u64 = 16_000;
+
 /// The most one app may cost before the loop stops, in US dollars.
 ///
 /// Rounds alone were never a spending limit, only a proxy for one, and a bad
@@ -99,9 +113,29 @@ fn prices(model: &str) -> ((f64, f64, f64, f64), bool) {
 ///
 /// Emitted on every exit that spent anything, success or not -- a build
 /// that failed on the fourth round still cost four rounds.
-pub(crate) fn announce_spend(dollars: f64, model: &str, rounds: usize) {
+/// The token counts ride along behind the number.
+///
+/// The dollars alone cannot say WHY a build cost what it did. Caching is
+/// the largest lever on that cost and it fails silently: if a breakpoint
+/// stops matching, nothing breaks and nothing is logged, the bill simply
+/// doubles. `cache_read` near zero on a multi-round build is that failure,
+/// visible at a glance.
+///
+/// Additive fields on the same prefix, so the build service's parser keeps
+/// working unchanged.
+pub(crate) fn announce_spend_detailed(
+    dollars: f64,
+    model: &str,
+    rounds: usize,
+    input: u64,
+    output: u64,
+    cache_write: u64,
+    cache_read: u64,
+) {
     eprintln!(
-        "krate-spend: {{\"usd\": {dollars:.4}, \"model\": \"{model}\", \"rounds\": {rounds}}}"
+        "krate-spend: {{\"usd\": {dollars:.4}, \"model\": \"{model}\", \"rounds\": {rounds}, \
+         \"input\": {input}, \"output\": {output}, \
+         \"cache_write\": {cache_write}, \"cache_read\": {cache_read}}}"
     );
 }
 
@@ -538,6 +572,50 @@ pub fn ask_once(vendor: ApiVendor, prompt: &str) -> Result<String> {
     Ok(text)
 }
 
+/// The conversation, with its tail marked cacheable.
+///
+/// The system prompt is cached (see `call_api`), and it was the only thing
+/// that was: the MESSAGES are resent in full on every round, at full input
+/// price, and they only grow. Every version of every file the model has
+/// written stays in the transcript forever, so a 25 KB `lib.rs` rewritten
+/// four times is 100 KB of dead source re-read on every later round. The
+/// cost of that grows with the SQUARE of the round count, which is why a
+/// build that needs twelve rounds costs so much more than twice one that
+/// needs six.
+///
+/// Marking the last block of the last message makes everything before it a
+/// cache prefix, read at a tenth of the price on the next round. The mark
+/// moves forward each round, so each round caches what the one before it
+/// added. Nothing is given up: the bytes the model sees do not change.
+///
+/// Only Anthropic has this; OpenAI caches automatically and takes no such
+/// field, so its messages are passed through untouched by the caller.
+fn cached_tail(messages: &[serde_json::Value]) -> Vec<serde_json::Value> {
+    let mut out = messages.to_vec();
+    let Some(last) = out.last_mut() else {
+        return out;
+    };
+    // A string content block cannot carry cache_control, so it is widened
+    // into the one-element array form the API also accepts. Both shapes are
+    // pushed by the loop above, depending on which branch appended them.
+    if let Some(text) = last["content"].as_str() {
+        last["content"] = serde_json::json!([{
+            "type": "text",
+            "text": text,
+            "cache_control": { "type": "ephemeral" }
+        }]);
+        return out;
+    }
+    if let Some(blocks) = last["content"].as_array_mut() {
+        if let Some(block) = blocks.last_mut() {
+            if block.is_object() {
+                block["cache_control"] = serde_json::json!({ "type": "ephemeral" });
+            }
+        }
+    }
+    out
+}
+
 /// One HTTP round trip to the vendor.
 fn call_api(
     vendor: ApiVendor,
@@ -551,7 +629,7 @@ fn call_api(
             "https://api.anthropic.com/v1/messages",
             serde_json::json!({
                 "model": model,
-                "max_tokens": 8192,
+                "max_tokens": MAX_REPLY_TOKENS,
                 // The authoring pack, marked cacheable.
                 //
                 // It is ~21,000 tokens and it is byte-identical on every
@@ -574,7 +652,7 @@ fn call_api(
                     "cache_control": { "type": "ephemeral" }
                 }],
                 "tools": tool_schema(vendor),
-                "messages": messages,
+                "messages": cached_tail(messages),
             }),
             "x-api-key",
             key.to_string(),
@@ -749,7 +827,7 @@ pub fn run(vendor: ApiVendor, app_dir: &str, request: &str) -> Result<u8> {
             .map(|body| body.len())
             .unwrap_or(0)
             + system.len();
-        let worst = spend.worst_next_call(&model, request_bytes, 8192);
+        let worst = spend.worst_next_call(&model, request_bytes, MAX_REPLY_TOKENS);
         let so_far = spend.dollars(&model);
         if so_far + worst > budget {
             anyhow::bail!(
@@ -779,7 +857,15 @@ pub fn run(vendor: ApiVendor, app_dir: &str, request: &str) -> Result<u8> {
         // stopped converging, and the round just spent must be admitted.
         let so_far = spend.dollars(&model);
         if so_far >= budget {
-            announce_spend(so_far, &model, round + 1);
+            announce_spend_detailed(
+                so_far,
+                &model,
+                round + 1,
+                spend.input,
+                spend.output,
+                spend.cache_write,
+                spend.cache_read,
+            );
             anyhow::bail!(
                 "this app has taken more work than we allow for one build \
                  (${so_far:.2} of a ${budget:.2} ceiling, {n} rounds). It is \
@@ -811,7 +897,15 @@ pub fn run(vendor: ApiVendor, app_dir: &str, request: &str) -> Result<u8> {
                 },
             );
             if verdict.starts_with("check-app PASSED") {
-                announce_spend(spend.dollars(&model), &model, round + 1);
+                announce_spend_detailed(
+                    spend.dollars(&model),
+                    &model,
+                    round + 1,
+                    spend.input,
+                    spend.output,
+                    spend.cache_write,
+                    spend.cache_read,
+                );
                 return Ok(0);
             }
             if round + 1 >= MAX_ROUNDS {
@@ -857,7 +951,15 @@ pub fn run(vendor: ApiVendor, app_dir: &str, request: &str) -> Result<u8> {
         // confusion or intent, the answer is the same: the verdict belongs
         // to the bytes on disk, and a later write takes it back.
         if batch_ends_verified(&events) {
-            announce_spend(spend.dollars(&model), &model, round + 1);
+            announce_spend_detailed(
+                spend.dollars(&model),
+                &model,
+                round + 1,
+                spend.input,
+                spend.output,
+                spend.cache_write,
+                spend.cache_read,
+            );
             return Ok(0);
         }
 
@@ -886,7 +988,27 @@ pub fn run(vendor: ApiVendor, app_dir: &str, request: &str) -> Result<u8> {
             }
         }
 
-        let _ = stop;
+        // A reply that ran out of room is not a reply.
+        //
+        // `stop_reason: "max_tokens"` means the model was cut off mid
+        // sentence, and when that happens inside a `write_file` the tool
+        // call still arrives, with `contents` truncated. It gets written to
+        // disk looking like a real file, fails to compile, and the next
+        // round is spent discovering that -- with no sign anywhere that the
+        // cause was a ceiling rather than the model's own mistake. This was
+        // being discarded (`let _ = stop`), so it had never once been seen.
+        if stop == "max_tokens" {
+            messages.push(serde_json::json!({
+                "role": "user",
+                "content": "Your last reply hit the length limit and was cut \
+                            off, so any file you wrote in it is incomplete. \
+                            Write that file again, and keep it shorter: split \
+                            large modules rather than emitting one long file.",
+            }));
+            eprintln!(
+                "  (!) the model hit its length limit; asking it to write that file again, shorter"
+            );
+        }
         let _ = std::io::stdout().flush();
     }
 
@@ -978,6 +1100,71 @@ mod tests {
     /// what went into the file, not just how big it was (IC-768, test 1628's
     /// shape: interruption can leave the old file or the complete new one,
     /// never a torn half, because the bytes travel via a renamed sibling).
+    #[test]
+    /// The transcript is cached, not just the pack.
+    ///
+    /// The system prompt carried the only `cache_control` in the codebase,
+    /// so the messages -- which are resent in full every round and only
+    /// grow -- were re-read at full price each time. That term grows with
+    /// the square of the round count and is what actually makes a long
+    /// build expensive.
+    ///
+    /// Both content shapes must be handled: the loop pushes a plain string
+    /// for its own nudges and an array of blocks for a model reply, and a
+    /// string cannot carry `cache_control` at all.
+    #[test]
+    fn the_conversation_tail_is_marked_cacheable() {
+        // Array-of-blocks content: the mark goes on the last block.
+        let blocks = vec![
+            serde_json::json!({"role": "user", "content": "make a thing"}),
+            serde_json::json!({"role": "assistant", "content": [
+                {"type": "text", "text": "here"},
+                {"type": "tool_use", "id": "t1", "name": "write_file", "input": {}}
+            ]}),
+        ];
+        let out = cached_tail(&blocks);
+        assert_eq!(out.len(), blocks.len(), "nothing is added or dropped");
+        assert_eq!(
+            out[1]["content"][1]["cache_control"]["type"], "ephemeral",
+            "the last block of the last message is the breakpoint"
+        );
+        assert!(
+            out[0]["content"].as_str().is_some(),
+            "earlier messages are left exactly as they were"
+        );
+        assert!(
+            out[1]["content"][0].get("cache_control").is_none(),
+            "only ONE breakpoint is set, not one per block"
+        );
+
+        // String content: widened into a block so it can carry the mark.
+        let plain = vec![serde_json::json!({"role": "user", "content": "keep going"})];
+        let out = cached_tail(&plain);
+        assert_eq!(out[0]["content"][0]["type"], "text");
+        assert_eq!(out[0]["content"][0]["text"], "keep going");
+        assert_eq!(out[0]["content"][0]["cache_control"]["type"], "ephemeral");
+
+        // An empty conversation must not panic.
+        assert!(cached_tail(&[]).is_empty());
+
+        // And the request must actually USE it. A correct helper that
+        // nothing calls saves nothing, and the tests above would still be
+        // green. Scoped to the Anthropic arm's body, because OpenAI caches
+        // on its own and passes its messages straight through.
+        let src = include_str!("api_author.rs");
+        let anthropic = src
+            .split("ApiVendor::Anthropic => (")
+            .nth(1)
+            .expect("the Anthropic request arm is there");
+        let body = &anthropic[..anthropic
+            .find("ApiVendor::OpenAi")
+            .unwrap_or(anthropic.len())];
+        assert!(
+            body.contains("\"messages\": cached_tail(messages)"),
+            "the Anthropic request must send the cache-marked conversation"
+        );
+    }
+
     #[test]
     fn a_write_is_atomic_recorded_and_leaves_no_litter() {
         let app = tempfile::tempdir().expect("app");
