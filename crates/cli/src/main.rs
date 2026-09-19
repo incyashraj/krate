@@ -249,6 +249,16 @@ enum Command {
         #[arg(long, hide = true)]
         test_time: Option<u64>,
 
+        /// Advance the monotonic clock by this many milliseconds per drawn
+        /// frame instead of reading the host, and count --shoot's delay in
+        /// those frames. For screenshot comparisons: an animated app moves by
+        /// however long the last frame really took, so on a real clock the
+        /// captured frame depends on how fast the machine was, and two shots
+        /// of the same app disagree (K-721). Never use it for a real run --
+        /// the app would animate at the host's speed, not the clock's.
+        #[arg(long, hide = true, value_name = "MILLIS")]
+        frame_step_millis: Option<u64>,
+
         /// Fixed locale tag for deterministic tests.
         #[arg(long, hide = true)]
         test_locale: Option<String>,
@@ -1633,6 +1643,7 @@ fn run() -> Result<u8> {
             log_grants,
             log_grants_format,
             test_time,
+            frame_step_millis,
             test_locale,
             test_timezone,
             shoot,
@@ -1683,6 +1694,7 @@ fn run() -> Result<u8> {
             log_grants,
             log_grants_format,
             test_time_millis: test_time,
+            frame_step_millis,
             test_locale,
             test_timezone,
             check_layout,
@@ -3658,6 +3670,9 @@ struct RunRequest {
     log_grants: Option<PathBuf>,
     log_grants_format: GrantLogFormat,
     test_time_millis: Option<u64>,
+    /// Fixed milliseconds of monotonic time per drawn frame, for screenshots.
+    /// See the `--frame-step-millis` flag.
+    frame_step_millis: Option<u64>,
     test_locale: Option<String>,
     test_timezone: Option<String>,
     /// Report text drawn over other text in the captured frame.
@@ -4650,6 +4665,7 @@ pub(crate) fn run_bundle_inline(bundle: &Path) -> Result<()> {
         log_grants: None,
         log_grants_format: GrantLogFormat::Text,
         test_time_millis: None,
+        frame_step_millis: None,
         test_locale: None,
         test_timezone: None,
         screenshot_path: None,
@@ -12755,6 +12771,7 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
         // The sender line on a notification, fixed at consent (IC-271).
         app_name: manifest.map(|m| m.app.name.clone()),
         test_time_millis: request.test_time_millis,
+        frame_step_millis: request.frame_step_millis,
         test_locale: request.test_locale,
         test_timezone: request.test_timezone,
         check_layout: request.check_layout,
@@ -14933,6 +14950,7 @@ fn open_app(direct: Option<PathBuf>) -> Result<u8> {
         log_grants: None,
         log_grants_format: GrantLogFormat::Text,
         test_time_millis: None,
+        frame_step_millis: None,
         test_locale: None,
         test_timezone: None,
         screenshot_path: None,

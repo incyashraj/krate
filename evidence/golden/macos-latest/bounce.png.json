@@ -9,7 +9,7 @@
  "color_space": "sRGB 8-bit RGBA, straight alpha, from an ARGB8888 framebuffer",
  "os": "macos",
  "arch": "aarch64",
- "runtime": "0.4.0",
+ "runtime": "0.5.0",
  "golden": {
   "schema": "krate.golden.v1",
   "bundle_sha256": "0a7097301c368eefe26f4ad7f23d234c02adcae24afe332ae817c00db786faac",
@@ -19,6 +19,7 @@
    "channel_delta": 8
   },
   "after_ms": 400,
-  "commit": "18f555af0"
+  "frame_step_ms": 16,
+  "commit": "38d66590b"
  }
 }

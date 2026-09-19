@@ -198,6 +198,13 @@ pub struct Phase3GuiHost {
     /// a run shorter than the delay yields its final frame instead of nothing.
     shoot_after: Option<std::time::Duration>,
     shoot_started: std::cell::Cell<Option<std::time::Instant>>,
+    /// The stepped monotonic clock, when this run is a screenshot run. The
+    /// host ends a frame on it at every present, and the shoot delay counts
+    /// its frames instead of real milliseconds. Both halves matter: a stepped
+    /// clock nothing advances would freeze the app at time zero, and a delay
+    /// still measured in real time would capture a different frame on a fast
+    /// machine than a slow one, which is K-721.
+    stepped_clock: Option<krate_adapter_common::time::SteppedClock>,
     /// Whether to keep a copy of every draw call for a layout check.
     inspect_layout: std::cell::Cell<bool>,
     /// Draw calls recorded for the current frame, newest frame only.
@@ -440,12 +447,23 @@ impl Phase3GuiHost {
                 .and_then(|value| value.trim().parse::<u64>().ok())
                 .map(std::time::Duration::from_millis),
             shoot_started: std::cell::Cell::new(None),
+            stepped_clock: None,
             inspect_layout: std::cell::Cell::new(false),
             inspected_ops: std::cell::RefCell::new(Vec::new()),
             inspected_canvas_size: std::cell::Cell::new(None),
             frame_ended: std::cell::Cell::new(false),
             usability: None,
         })
+    }
+
+    /// Serve this run's monotonic time from a stepped clock instead of the
+    /// host. Only the screenshot path sets this. See the field's comment.
+    pub fn with_stepped_clock(
+        mut self,
+        clock: Option<krate_adapter_common::time::SteppedClock>,
+    ) -> Self {
+        self.stepped_clock = clock;
+        self
     }
 
     /// The name the person consented to, for anything shown outside the
@@ -541,6 +559,17 @@ impl Phase3GuiHost {
         self.maybe_take_screenshot_for(window);
     }
 
+    /// Move a stepped clock on by one frame. Called after a present, so every
+    /// clock read the app made while drawing that frame saw one instant.
+    ///
+    /// A no-op on an ordinary run, where there is no stepped clock and the app
+    /// reads real time.
+    fn end_stepped_frame(&self) {
+        if let Some(stepped) = self.stepped_clock.as_ref() {
+            stepped.end_frame();
+        }
+    }
+
     /// Whether `KRATE_SHOOT_AFTER_MS` has passed. Without the knob this is
     /// always true and the first frame is the one captured, as before. The
     /// clock starts at the first capture opportunity, not host construction,
@@ -549,6 +578,18 @@ impl Phase3GuiHost {
         let Some(delay) = self.shoot_after else {
             return true;
         };
+        // On a stepped clock the delay is counted in the app's own frames, not
+        // in real milliseconds. Real milliseconds are what made this random:
+        // 400 ms is more frames on a fast machine than a slow one, and an
+        // animated app is in a different pose in each. Frames are not, so the
+        // same run always captures the same one.
+        if let Some(stepped) = self.stepped_clock.as_ref() {
+            let step = stepped.step_nanos();
+            if step > 0 {
+                let wanted = (delay.as_nanos() as u64).div_ceil(step);
+                return stepped.frames() >= wanted;
+            }
+        }
         let now = std::time::Instant::now();
         match self.shoot_started.get() {
             None => {
@@ -5045,6 +5086,7 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         }
         // The measured frame is done with; the next draw op begins another.
         self.frame_ended.set(true);
+        self.end_stepped_frame();
         Ok(result)
     }
 }
@@ -5423,6 +5465,7 @@ impl gfx::scene3d::Host for Phase3GuiHost {
         }
         // The measured frame is done with; the next draw op begins another.
         self.frame_ended.set(true);
+        self.end_stepped_frame();
         Ok(result)
     }
 }
@@ -6894,6 +6937,81 @@ mod tests {
         assert_eq!(&image.rgba[0..4], &[255, 0, 0, 255], "the red fill");
         let last = image.rgba.len() - 4;
         assert_eq!(&image.rgba[last..], &[0, 0, 255, 255], "the blue clear");
+    }
+
+    #[test]
+    fn a_stepped_clock_holds_the_shot_for_a_fixed_number_of_frames() {
+        // K-721. `cubes` advances its spin by real elapsed time, so a shot
+        // taken 400 real milliseconds in caught it at whatever angle this
+        // machine happened to reach -- ten shots of one binary differed from
+        // each other by up to 1.1% against a 0.5% tolerance, and the macOS
+        // replay lane went red on about half of all pushes with no code change
+        // behind it. The cure is to stop counting the delay in real time: on a
+        // stepped clock the delay is a frame count, and 400 ms at 16 ms a frame
+        // is frame 25 on every machine however fast it is.
+        //
+        // What this asserts is exactly that: the delay does not elapse because
+        // real time passed, only because frames did. So the assertions sleep
+        // far longer than the delay first, and still expect it to be pending.
+        use krate_adapter_common::time::SteppedClock;
+
+        let stepped = SteppedClock::new(16_000_000);
+        let (mut host, _window, _widget) = host_with_canvas_widget();
+        host.shoot_after = Some(std::time::Duration::from_millis(400));
+        host.stepped_clock = Some(stepped.clone());
+
+        // Real time is not the clock any more: well past 400 ms of it, with no
+        // frame drawn, and the delay has not elapsed.
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        assert!(
+            !host.shoot_delay_elapsed(),
+            "real time must not move a frame-counted delay, or the shot goes \
+             back to depending on how fast the machine is"
+        );
+
+        // 400 ms of 16 ms frames is 25 frames. Frame 24 is still too early.
+        for _ in 0..24 {
+            stepped.end_frame();
+        }
+        assert_eq!(stepped.frames(), 24);
+        assert!(
+            !host.shoot_delay_elapsed(),
+            "the delay must not elapse a frame early"
+        );
+
+        stepped.end_frame();
+        assert!(
+            host.shoot_delay_elapsed(),
+            "25 frames of 16 ms is the requested 400 ms; the shot is due"
+        );
+    }
+
+    #[test]
+    fn presenting_a_canvas_advances_the_stepped_clock_by_one_frame() {
+        // The other half of K-721: the clock only moves because the host moves
+        // it. If present did not end the frame, an app on a stepped clock would
+        // read time zero forever, never animate, and the shot after N frames
+        // would be frame one -- a blank pose, not a deterministic one.
+        use krate_adapter_common::time::SteppedClock;
+
+        let stepped = SteppedClock::new(16_000_000);
+        let (mut host, window, widget) = host_with_canvas_widget();
+        host.stepped_clock = Some(stepped.clone());
+        let canvas = gfx::canvas2d::Host::bind(&mut host, window, widget)
+            .expect("bind call")
+            .expect("a canvas widget binds");
+
+        assert_eq!(stepped.frames(), 0, "no frame has been presented yet");
+        for expected in 1..=3 {
+            gfx::canvas2d::Host::present(&mut host, canvas)
+                .expect("present call")
+                .expect("present succeeds");
+            assert_eq!(
+                stepped.frames(),
+                expected,
+                "each presented frame must advance the stepped clock exactly once"
+            );
+        }
     }
 
     #[test]

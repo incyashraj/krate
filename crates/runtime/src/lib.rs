@@ -84,7 +84,7 @@ use krate_adapter_common::net::{
 #[cfg(feature = "phase2-bindings")]
 use krate_adapter_common::path::{FsOperation, LogicalPath, PathError};
 #[cfg(feature = "phase2-bindings")]
-use krate_adapter_common::time::{HostClock, TimeError};
+use krate_adapter_common::time::{HostClock, SteppedClock, TimeError};
 use krate_policy::SessionPolicy;
 use uapi::UapiGuard;
 use uapi_dispatch::{
@@ -132,6 +132,17 @@ pub struct Config {
     pub session_policy: SessionPolicy,
     /// Optional fixed wall-clock time for deterministic test runs.
     pub test_time_millis: Option<u64>,
+    /// When set, the monotonic clock reports whole frames this many
+    /// milliseconds long instead of reading the host, and the screenshot delay
+    /// counts those frames instead of real time.
+    ///
+    /// This is for screenshot comparisons only. An animated app advances its
+    /// motion by however long the last frame took, so on a real machine the
+    /// frame captured after 400 ms depends on how fast the machine was --
+    /// which is K-721, the `cubes` golden that failed at random on macOS with
+    /// no code change behind it. Leave it `None` for a person's run or the app
+    /// stops animating at real speed.
+    pub frame_step_millis: Option<u64>,
     /// Optional locale override for deterministic test runs.
     pub test_locale: Option<String>,
     /// Optional timezone override for deterministic test runs.
@@ -188,6 +199,7 @@ impl Default for Config {
             memory_bytes: 256 * 1024 * 1024,
             session_policy: SessionPolicy::default(),
             test_time_millis: None,
+            frame_step_millis: None,
             test_locale: None,
             test_timezone: None,
             app_args: Vec::new(),
@@ -1064,6 +1076,7 @@ impl Runtime {
         .with_usability(config.usability_plan.clone())
         .with_layout_check(config.check_layout)
         .with_chosen_files(store.data().chosen.clone())
+        .with_stepped_clock(store.data().stepped_clock.clone())
         .with_app_name(config.app_name.clone());
         store.data_mut().phase3_gui = Some(gui_host);
 
@@ -1107,6 +1120,7 @@ impl Runtime {
         .with_usability(config.usability_plan.clone())
         .with_layout_check(config.check_layout)
         .with_chosen_files(store.data().chosen.clone())
+        .with_stepped_clock(store.data().stepped_clock.clone())
         .with_app_name(config.app_name.clone());
         store.data_mut().phase3_gui = Some(gui_host);
 
@@ -1357,6 +1371,13 @@ struct HostState {
     /// into one and fs resolved against the other, so every token failed.
     #[cfg(feature = "phase2-bindings")]
     chosen: Rc<RefCell<chosen_files::ChosenFiles>>,
+    /// The stepped monotonic clock, when this run is a screenshot run. Held
+    /// here because both hosts need the same one: the Phase 2 adapter answers
+    /// the app's clock reads from it, and the GUI host ends a frame on it at
+    /// every present. Two separate clocks would leave the app reading a clock
+    /// nothing advanced.
+    #[cfg(feature = "phase2-bindings")]
+    stepped_clock: Option<SteppedClock>,
 }
 
 impl HostState {
@@ -1367,6 +1388,11 @@ impl HostState {
         create_dir_all_on_host(&config.sandbox_root)?;
         #[cfg(feature = "phase2-bindings")]
         let chosen: Rc<RefCell<chosen_files::ChosenFiles>> = Default::default();
+        #[cfg(feature = "phase2-bindings")]
+        let stepped_clock = config
+            .frame_step_millis
+            .filter(|step| *step > 0)
+            .map(|step| SteppedClock::new(step.saturating_mul(1_000_000)));
 
         Ok(Self {
             exit_code: None,
@@ -1379,6 +1405,7 @@ impl HostState {
                 Box::new(LocalPhase2Adapter::new(
                     output,
                     config.test_time_millis,
+                    stepped_clock.clone(),
                     config.test_locale.clone(),
                     config.test_timezone.clone(),
                     config.app_args.clone(),
@@ -1441,6 +1468,8 @@ impl HostState {
             phase3_gui: None,
             #[cfg(feature = "phase2-bindings")]
             chosen,
+            #[cfg(feature = "phase2-bindings")]
+            stepped_clock,
         })
     }
 
@@ -1569,12 +1598,13 @@ struct LocalPhase2Adapter {
 
 #[cfg(feature = "phase2-bindings")]
 impl LocalPhase2Adapter {
-    // Eight arguments: the adapter genuinely has eight independent inputs,
+    // Nine arguments: the adapter genuinely has nine independent inputs,
     // and a builder here would obscure which test overrides what.
     #[allow(clippy::too_many_arguments)]
     fn new(
         output: Rc<RefCell<OutputMode>>,
         test_time_millis: Option<u64>,
+        stepped_clock: Option<SteppedClock>,
         test_locale: Option<String>,
         test_timezone: Option<String>,
         app_args: Vec<String>,
@@ -1585,7 +1615,7 @@ impl LocalPhase2Adapter {
         Self {
             output,
             state: RefCell::new(LocalPhase2AdapterState::default()),
-            clock: discover_host_clock(test_time_millis),
+            clock: discover_host_clock(test_time_millis).with_stepped(stepped_clock),
             locale: discover_host_locale(test_locale.as_deref(), test_timezone.as_deref()),
             app_args,
             max_http_response_bytes,
@@ -3799,6 +3829,7 @@ mod tests {
         let adapter = LocalPhase2Adapter::new(
             Rc::new(RefCell::new(OutputMode::Sink)),
             None,
+            None,
             Some("en_US.UTF-8".to_string()),
             Some("UTC".to_string()),
             Vec::new(),
@@ -3825,6 +3856,7 @@ mod tests {
         let adapter = LocalPhase2Adapter::new(
             Rc::new(RefCell::new(OutputMode::Sink)),
             Some(1_234_567_890),
+            None,
             Some("en_GB.UTF-8".to_string()),
             Some("UTC".to_string()),
             Vec::new(),
@@ -3849,6 +3881,7 @@ mod tests {
     fn local_phase2_adapter_normalizes_timezone_offset_override() {
         let adapter = LocalPhase2Adapter::new(
             Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
             None,
             Some("en_US.UTF-8".to_string()),
             Some("UTC+5:30".to_string()),
@@ -3880,6 +3913,7 @@ mod tests {
 
         let adapter = LocalPhase2Adapter::new(
             Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
             None,
             None,
             None,
@@ -3923,6 +3957,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             Vec::new(),
             1024,
             temp.clone(),
@@ -3963,6 +3998,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             vec!["clock".to_string(), "--utc".to_string()],
             1024,
             PathBuf::from("."),
@@ -3981,6 +4017,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             vec!["ok".to_string(), "".to_string()],
             1024,
             PathBuf::from("."),
@@ -3996,6 +4033,7 @@ mod tests {
 
         let newline_arg_adapter = LocalPhase2Adapter::new(
             Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
             None,
             None,
             None,
@@ -4022,6 +4060,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             vec![oversized],
             1024,
             PathBuf::from("."),
@@ -4042,6 +4081,7 @@ mod tests {
     fn local_io_adapter_rejects_too_many_raw_args() {
         let adapter = LocalPhase2Adapter::new(
             Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
             None,
             None,
             None,
@@ -4080,6 +4120,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             Vec::new(),
             1024,
             temp.clone(),
@@ -4115,6 +4156,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             Vec::new(),
             1024,
             PathBuf::from("."),
@@ -4143,6 +4185,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             Vec::new(),
             1024,
             PathBuf::from("."),
@@ -4167,6 +4210,7 @@ mod tests {
     fn local_io_adapter_releases_slot_on_close() {
         let adapter = LocalPhase2Adapter::new(
             Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
             None,
             None,
             None,
@@ -4207,6 +4251,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             Vec::new(),
             1024,
             PathBuf::from("."),
@@ -4238,6 +4283,7 @@ mod tests {
     fn local_io_adapter_allocates_from_free_list_before_id_overflow() {
         let adapter = LocalPhase2Adapter::new(
             Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
             None,
             None,
             None,
@@ -4274,6 +4320,7 @@ mod tests {
 
         let adapter = LocalPhase2Adapter::new(
             Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
             None,
             None,
             None,
@@ -4326,6 +4373,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             Vec::new(),
             1024,
             temp.clone(),
@@ -4361,6 +4409,7 @@ mod tests {
 
         let adapter = LocalPhase2Adapter::new(
             Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
             None,
             None,
             None,
@@ -4425,6 +4474,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             Vec::new(),
             1024,
             temp.join("sandbox-that-does-not-contain-any-of-this"),
@@ -4479,6 +4529,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             Vec::new(),
             1024,
             sandbox,
@@ -4528,6 +4579,7 @@ mod tests {
 
         let adapter = LocalPhase2Adapter::new(
             Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
             None,
             None,
             None,
@@ -4608,6 +4660,7 @@ mod tests {
     fn local_plain_http_adapter_zero_timeout_fails_as_timeout() {
         let adapter = LocalPhase2Adapter::new(
             Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
             None,
             None,
             None,
@@ -4765,6 +4818,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             Vec::new(),
             1024,
             PathBuf::from("."),
@@ -4909,6 +4963,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             Vec::new(),
             1024,
             sandbox.path().to_path_buf(),
@@ -4967,6 +5022,7 @@ mod tests {
             .expect("token");
         let adapter = LocalPhase2Adapter::new(
             Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
             None,
             None,
             None,
@@ -5032,6 +5088,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             Vec::new(),
             1024,
             sandbox.path().to_path_buf(),
@@ -5084,6 +5141,7 @@ mod tests {
         let sandbox = tempfile::tempdir().expect("sandbox");
         let adapter = LocalPhase2Adapter::new(
             Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
             None,
             None,
             None,

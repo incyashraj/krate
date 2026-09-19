@@ -276,17 +276,39 @@ def compare(golden_png, fresh_png, tolerance=None, diff_path=None):
 
 # ------------------------------------------------------- shoot and record ----
 
-def shoot(krate, bundle, out_png, scale, after_ms):
+def shoot(krate, bundle, out_png, scale, after_ms, frame_step_ms=None):
+    """Take one shot. `frame_step_ms` puts the run on a stepped clock: the app
+    sees each drawn frame as exactly that many milliseconds long and the delay
+    is counted in those frames, so the pose it is caught in does not depend on
+    how fast this machine happened to be.
+
+    That dependency is K-721. `cubes` advances its spin by real elapsed time,
+    so at 400 real milliseconds it had turned a different amount on every run
+    and the macOS lane went red on about half of all pushes with no code change
+    behind it. Ten shots differed from each other by up to 1.1%, against a
+    0.5% tolerance. On a stepped clock all ten are byte-identical, and stay so
+    under heavy CPU load."""
     env = dict(os.environ)
     if after_ms:
         env["KRATE_SHOOT_AFTER_MS"] = str(after_ms)
-    cmd = [krate, "run", "--shoot", str(out_png), "--shoot-scale", str(scale), "--auto-grant", str(bundle)]
+    cmd = shoot_command(krate, bundle, out_png, scale, frame_step_ms)
     proc = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=300)
     if not Path(out_png).is_file():
         raise RuntimeError(f"no shot was written by {' '.join(cmd)} (exit {proc.returncode}):\n{proc.stderr[-2000:]}")
     if not sidecar_of(out_png).is_file():
         raise RuntimeError(f"the runtime wrote {out_png} but no sidecar beside it; this Krate predates krate.shot.v1")
     return proc.returncode
+
+
+def shoot_command(krate, bundle, out_png, scale, frame_step_ms=None):
+    """The argv one shot runs. Split out so a self-test can check that the
+    stepped clock actually reaches the runtime -- a shot that quietly fell back
+    to the host clock would look reproducible in this tool and stay random in
+    CI, which is K-721 coming back with nothing to show it had."""
+    cmd = [krate, "run", "--shoot", str(out_png), "--shoot-scale", str(scale), "--auto-grant", str(bundle)]
+    if frame_step_ms:
+        cmd[4:4] = ["--frame-step-millis", str(frame_step_ms)]
+    return cmd
 
 
 def bundle_sha256(bundle):
@@ -305,7 +327,7 @@ def record(args):
     png, sidecar = golden_paths(golden_dir, args.bundle)
     with tempfile.TemporaryDirectory() as tmp:
         shot_png = Path(tmp) / "shot.png"
-        shoot(args.krate, args.bundle, shot_png, args.scale, args.after_ms)
+        shoot(args.krate, args.bundle, shot_png, args.scale, args.after_ms, args.frame_step_ms)
         data, why = load_sidecar(shot_png)
         if why:
             print(why, file=sys.stderr)
@@ -316,6 +338,12 @@ def record(args):
             "bundle": Path(args.bundle).name,
             "tolerance": {"max_differing_fraction": args.tolerance, "channel_delta": args.channel_delta},
             "after_ms": args.after_ms,
+            # The clock the golden was taken on, so a check uses the same one.
+            # A golden shot on the host clock and re-shot on a stepped one is
+            # two different poses of an animated app, which is not a
+            # comparison -- the same reason this tool refuses to compare two
+            # different renderers or scales.
+            "frame_step_ms": args.frame_step_ms,
             "commit": _head(),
         }
         png.write_bytes(shot_png.read_bytes())
@@ -334,9 +362,35 @@ def check(args):
     if declared.get("bundle_sha256") and declared["bundle_sha256"] != bundle_sha256(args.bundle):
         print("refused: the golden was recorded from a different bundle than the one being checked; re-record it for this app (1547)", file=sys.stderr)
         return 2
+    if "frame_step_ms" not in declared:
+        # A golden recorded before the stepped clock (K-721) was taken on the
+        # host clock, so it is re-shot on the host clock -- comparing it against
+        # a stepped shot would compare two different poses of an animated app,
+        # which is not a comparison at all.
+        #
+        # So this is not a refusal, it is the old behaviour, kept working, with
+        # a note that the old behaviour is the unreliable one. Each host records
+        # its own goldens (K-337), so the macOS set moved to the stepped clock
+        # on the machine that could re-record it and the others move when
+        # theirs can. Until then those hosts keep the flakiness they already
+        # had -- which on Linux and Windows measured 0.001-0.01% against a
+        # 0.5% tolerance, so it has never actually bitten them.
+        print(
+            f"note: the golden for {Path(args.bundle).name} predates the stepped screenshot clock, "
+            "so this check re-shoots on the host clock and an animated app may differ from run to "
+            "run (K-721); re-record it on this host to make it reproducible",
+            file=sys.stderr,
+        )
     with tempfile.TemporaryDirectory() as tmp:
         shot_png = Path(tmp) / "shot.png"
-        shoot(args.krate, args.bundle, shot_png, golden.get("scale", 2.0), declared.get("after_ms", 0))
+        shoot(
+            args.krate,
+            args.bundle,
+            shot_png,
+            golden.get("scale", 2.0),
+            declared.get("after_ms", 0),
+            declared.get("frame_step_ms"),
+        )
         code, message = compare(png, shot_png, diff_path=args.diff)
     print(message, file=sys.stderr if code else sys.stdout)
     return code
@@ -464,12 +518,33 @@ def self_test():
         code, msg = compare(notol, same, tolerance=0.01)
         check_("unless one is given on the command line", code == 0, msg)
 
+        # The stepped clock reaches the runtime (K-721). A shot that fell back
+        # to the host clock would still look fine here and stay random in CI,
+        # so the flag is asserted rather than assumed.
+        stepped = shoot_command("krate", "a.krate", "o.png", 2.0, 16)
+        check_(
+            "a stepped shot passes --frame-step-millis to the runtime",
+            "--frame-step-millis" in stepped and stepped[stepped.index("--frame-step-millis") + 1] == "16",
+            " ".join(stepped),
+        )
+        check_(
+            "the step does not disturb the rest of the argv",
+            [a for a in stepped if a not in ("--frame-step-millis", "16")]
+            == shoot_command("krate", "a.krate", "o.png", 2.0, None),
+            " ".join(stepped),
+        )
+        check_(
+            "and a step of 0 or None leaves the host clock alone",
+            "--frame-step-millis" not in shoot_command("krate", "a.krate", "o.png", 2.0, 0)
+            and "--frame-step-millis" not in shoot_command("krate", "a.krate", "o.png", 2.0, None),
+        )
+
     if failures:
         print("golden-shots self-test FAILED:\n")
         for f in failures:
             print(f"  - {f}")
         return 1
-    print("golden-shots self-test OK -- the PNG reader survives every filter, a wobble under the channel delta is not a difference, a change is counted and located, and a comparison across renderer, scale, colour space, size or without a tolerance is refused")
+    print("golden-shots self-test OK -- the PNG reader survives every filter, a wobble under the channel delta is not a difference, a change is counted and located, and a comparison across renderer, scale, colour space, size or without a tolerance is refused, and a stepped shot really passes --frame-step-millis")
     return 0
 
 
@@ -485,6 +560,10 @@ def main(argv):
     r.add_argument("--krate", default=os.environ.get("KRATE_BIN", "target/release/krate"))
     r.add_argument("--scale", type=float, default=2.0)
     r.add_argument("--after-ms", type=int, default=400)
+    # On by default: an app that does not read the clock is unaffected, and an
+    # app that does is the only kind this tool ever compared unreliably.
+    r.add_argument("--frame-step-ms", type=int, default=16,
+                   help="milliseconds of app-visible time per drawn frame; 0 uses the host clock")
     r.add_argument("--tolerance", type=float, default=DEFAULT_MAX_FRACTION)
     r.add_argument("--channel-delta", type=int, default=DEFAULT_CHANNEL_DELTA)
     c = sub.add_parser("check")
