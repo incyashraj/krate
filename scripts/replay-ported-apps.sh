@@ -119,7 +119,8 @@ TOML
     # grex's direct inputs need no filesystem permission. Blanket grants hid
     # a required/optional manifest error, so exercise both no-grant inputs
     # and the allowed/denied file paths on every replay host.
-    out="$(python3 "$ROOT/scripts/test-grex.py" --krate "$KRATE" --bundle "$bundle" 2>&1)"
+    out="$(python3 "$ROOT/scripts/test-grex.py" --self-test 2>&1 &&
+      python3 "$ROOT/scripts/test-grex.py" --krate "$KRATE" --bundle "$bundle" 2>&1)"
     code="$?"
   else
     out="$( cd "$work" && "$KRATE" run --headless --auto-grant "$bundle" -- "$arg" 2>&1 )"

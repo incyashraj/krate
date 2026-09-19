@@ -14,12 +14,68 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
+import unittest
 import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
 MANIFEST = ROOT / "evidence/ported/grex.manifest.toml"
 EXPECTED = "^a(?:bc?)?$\n"
+
+
+def resolve_runtime(path, platform=None):
+    """Match Git Bash's implicit .exe lookup without changing Unix lookup."""
+    path = Path(path).resolve()
+    platform = sys.platform if platform is None else platform
+    if platform == "win32" and not path.is_file() and not path.suffix:
+        executable = path.with_suffix(".exe")
+        if executable.is_file():
+            return executable
+    return path
+
+
+class RuntimePathTests(unittest.TestCase):
+    def test_explicit_windows_executable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            executable = Path(tmp) / "krate.exe"
+            executable.touch()
+            self.assertEqual(resolve_runtime(executable, "win32"), executable.resolve())
+
+    def test_windows_extensionless_path_finds_executable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            executable = Path(tmp) / "krate.exe"
+            executable.touch()
+            self.assertEqual(resolve_runtime(Path(tmp) / "krate", "win32"), executable.resolve())
+
+    def test_unix_does_not_substitute_windows_executable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "krate.exe").touch()
+            bare = Path(tmp) / "krate"
+            for platform in ("darwin", "linux"):
+                self.assertEqual(resolve_runtime(bare, platform), bare.resolve())
+                self.assertFalse(resolve_runtime(bare, platform).is_file())
+
+    def test_existing_extensionless_file_is_not_replaced(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bare = Path(tmp) / "krate"
+            bare.touch()
+            bare.with_suffix(".exe").touch()
+            self.assertEqual(resolve_runtime(bare, "win32"), bare.resolve())
+
+    def test_missing_windows_executable_stays_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bare = Path(tmp) / "krate"
+            self.assertEqual(resolve_runtime(bare, "win32"), bare.resolve())
+            self.assertFalse(resolve_runtime(bare, "win32").is_file())
+
+    def test_text_capture_normalizes_windows_newlines(self):
+        # The real runtime calls also use text=True, so a Windows CRLF is
+        # compared to EXPECTED's LF rather than falsely failing exact output.
+        result = subprocess.run([sys.executable, "-c",
+                                 "import sys; sys.stdout.buffer.write(b'^a(?:bc?)?$\\r\\n')"],
+                                capture_output=True, text=True, check=True)
+        self.assertEqual(result.stdout, EXPECTED)
 
 
 def bundle_parts(bundle):
@@ -93,12 +149,18 @@ def check_case(krate, bundle, name, args, grant=False, denied=False,
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--krate", type=Path, required=True)
+    parser.add_argument("--krate", type=Path)
     parser.add_argument("--bundle", type=Path,
                         default=ROOT / "evidence/ported/grex.krate")
     parser.add_argument("--repack", action="store_true")
+    parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
-    krate, bundle = args.krate.resolve(), args.bundle.resolve()
+    if args.self_test:
+        unittest.main(argv=[__file__])
+        return
+    if args.krate is None:
+        parser.error("--krate is required unless --self-test is used")
+    krate, bundle = resolve_runtime(args.krate), args.bundle.resolve()
     if not krate.is_file():
         parser.error(f"runtime does not exist: {krate}")
     print(subprocess.check_output([str(krate), "--version"], text=True).strip())
