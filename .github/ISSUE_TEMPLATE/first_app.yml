@@ -1,0 +1,62 @@
+name: Bring an app to Krate
+description: Check the fit for your project or get help with your first Krate app.
+title: "app: "
+labels: [needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Tell us what you're trying to ship. A description is enough; you do not
+        need to publish private source code. Do not include keys, tokens or user data.
+        For a reproducible runtime failure, use the bug report instead.
+  - type: input
+    id: app
+    attributes:
+      label: What are you building?
+      description: A name or one-sentence description of the application.
+    validations:
+      required: true
+  - type: textarea
+    id: workflow
+    attributes:
+      label: What should someone be able to do with it?
+      description: Describe the main workflow and who the app is for.
+    validations:
+      required: true
+  - type: dropdown
+    id: platforms
+    attributes:
+      label: Where should it run?
+      multiple: true
+      options:
+        - macOS
+        - Windows
+        - Linux
+    validations:
+      required: true
+  - type: textarea
+    id: current_stack
+    attributes:
+      label: What do you have today?
+      description: Current language, framework and dependencies, or say if this is a new project.
+    validations:
+      required: true
+  - type: textarea
+    id: capabilities
+    attributes:
+      label: Which features must work?
+      description: For example, file access, networking, UI, audio, graphics or device integration. Describe the operations you need.
+    validations:
+      required: true
+  - type: textarea
+    id: blocker
+    attributes:
+      label: Where would you like help?
+      description: What have you tried, what happened, and what would a successful first version look like? Include your Krate version if you have installed it.
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: Public references, if available
+      description: Optional repository, screenshots or documentation. Please do not share confidential material.

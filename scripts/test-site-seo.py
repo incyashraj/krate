@@ -76,6 +76,43 @@ class SeoTests(unittest.TestCase):
         self.assertNotIn("navigation", description)
         self.assertNotIn("Build a desktop", description)
 
+    def test_seven_editorial_descriptions_are_unique_and_page_specific(self):
+        descriptions = seo.EDITORIAL_DESCRIPTIONS
+        self.assertEqual(len(descriptions), 7)
+        self.assertEqual(len(set(descriptions.values())), 7)
+        for path, description in descriptions.items():
+            with self.subTest(path=path):
+                self.assertGreaterEqual(len(description), 100)
+                self.assertLessEqual(len(description), 170)
+                self.assertNotIn("15 kilobytes", description)
+                self.assertNotIn("15 to 40 KB", description)
+                self.assertNotIn("Status: Active", description)
+                self.assertNotIn("safe to open", description)
+                self.assertTrue((Path(__file__).resolve().parents[1] / "docs/book/src" /
+                                 path.removeprefix("/docs/").replace(".html", ".md")).is_file())
+
+    def test_editorial_summaries_replace_old_snippets_without_changing_body(self):
+        body = '<p>Original dated prose: 15 kilobytes. Status: Active.</p>'
+        for path, description in seo.EDITORIAL_DESCRIPTIONS.items():
+            file = self.page(path.lstrip("/"), path, body=body,
+                             head='<meta name="description" content="Old summary: 15 kilobytes.">')
+            original_body = file.read_text().split("<body>", 1)[1]
+            seo.finalize(self.root)
+            self.assertEqual(seo.Page(file.read_text()).descriptions, [description])
+            self.assertEqual(file.read_text().split("<body>", 1)[1], original_body)
+        before = {p: p.read_bytes() for p in self.root.rglob("*.html")}
+        seo.finalize(self.root)
+        self.assertEqual(before, {p: p.read_bytes() for p in self.root.rglob("*.html")})
+
+    def test_historical_summaries_do_not_reframe_current_quickstart_as_archive(self):
+        descriptions = seo.EDITORIAL_DESCRIPTIONS
+        self.assertIn("Historical product framing", descriptions[
+            "/docs/blog/0008-make-a-desktop-app-without-being-a-programmer.html"])
+        self.assertIn("notes-v0.1.0", descriptions["/docs/try-krate-notes.html"])
+        self.assertIn("Phase 2 design record", descriptions["/docs/phases/phase-2.html"])
+        self.assertIn("Install Krate", descriptions["/docs/quickstart.html"])
+        self.assertNotIn("Historical", descriptions["/docs/quickstart.html"])
+
     def test_internal_alias_links_keep_query_and_anchor(self):
         self.page("docs/index.html", "Docs")
         self.page("docs/introduction.html", "Docs")

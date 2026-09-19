@@ -27,6 +27,8 @@ on:
       - "scripts/build-reports-page.py"
       - "scripts/public_facts.py"
       - "scripts/test-public-facts.py"
+      - "scripts/test-landing-assets.py"
+      - "scripts/discovery-report.py"
       - "scripts/replay-ported-apps.sh"
       - "scripts/site-seo.py"
       - "scripts/test-site-seo.py"
@@ -80,6 +82,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Verify landing image alternatives
+        run: python3 scripts/test-landing-assets.py
+      - name: Verify discovery snapshot accounting
+        run: python3 scripts/discovery-report.py --self-test
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@9376cdc5a5e25b16da71af47712785cf06b0d6d4 # 1.94.1
       - name: Install Linux audio development files

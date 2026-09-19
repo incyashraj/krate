@@ -8,20 +8,23 @@ assignees: []
 
 ## Problem / motivation
 
-What problem does this solve? Why does it belong in Krate? Be specific.
+What are you trying to build or ship, and what gets in the way today?
 
 ## Proposed solution
 
-Describe what you'd like to happen. If it touches UAPI, sketch the WIT interface.
+Describe the behaviour you need. A concrete example helps. If you already have
+an interface design in mind, include it, but that is not required.
 
 ## Alternatives considered
 
 Other ways to solve this; why this approach is better.
 
-## Phase alignment
+## Platforms and required capabilities
 
-Which phase of the build plan does this fall into? (See `Plan/Build-Plan.md §6`)
+Which of macOS, Windows and Linux do you need? Mention relevant requirements
+such as files, networking, UI, media or device access. The
+[current capability reference](https://krate.tech/docs/limits.html) may help.
 
 ## Additional context
 
-Any other context — links, prior art, related issues, relevant ADRs.
+Links, prior art or related issues. Please leave out secrets and private data.
