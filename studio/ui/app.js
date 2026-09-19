@@ -2590,6 +2590,46 @@ async function buildNow(request, files, revising, planSession, starterShape) {
     } else if (refusal) {
       say("KRATE", `This one can't work as a real app: ${refusal[1].trim()}\n\nTell me a different version of the idea and I'll build that.`, null, { variant: "ask" });
       show("idle");
+    } else if (err && err.refusal) {
+      // The shell said no, in its own words, and nothing failed.
+      //
+      // These ran through failBuild, which paints "That one didn't come
+      // together" over the sentence and offers to report an issue. In Plan
+      // mode -- a setting the person chose, remembered across visits -- the
+      // card read as a broken build and invited them to file a bug about
+      // their own preference. The same was true of a paste that was too
+      // long and a file that was too big: every refusal in the bridge came
+      // out looking like a defect in Krate.
+      //
+      // Settle the build's furniture the way the wall above does, then say
+      // the refusal plainly. No Try again: the answer is to change the
+      // thing the sentence names, not to run the same request twice.
+      clearInterval(state.watchdog);
+      clearInterval(state.timer);
+      clearProgress(false);
+      if (state.buildChip) {
+        state.buildChip.remove();
+        state.buildChip = null;
+      }
+      state.buildSettled = true;
+      unlockComposer("Describe the app you want…");
+      // Plan mode is a setting, so the answer is a button that changes it,
+      // not a sentence pointing at a control they thought they had used.
+      const actions = err.planMode && typeof window.setWebMode === "function"
+        ? [{
+            label: "Switch to Build and make it",
+            primary: true,
+            run: () => {
+              window.setWebMode("build");
+              make(request);
+            },
+          }]
+        : [];
+      say("KRATE", String(err.message || "That cannot be done here."), null, {
+        variant: "ask",
+        actions,
+      });
+      show("idle");
     } else {
       failBuild(plainWords(err), request);
     }

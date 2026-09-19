@@ -266,7 +266,11 @@ assert.match(bridge, /const MAX_REQUEST_CHARS = 2000;/,
 for (const [cmd, word] of [["create_app", "request"], ["plan_request", "request"], ["revise_app", "change"]]) {
   const at = bridge.indexOf(`async ${cmd}(`);
   assert.ok(at > 0, `${cmd} exists`);
-  const body = bridge.slice(at, at + 900);
+  // To the end of the command, not a fixed window. A 900-character slice
+  // broke the moment create_app grew a few lines at the top, and read as a
+  // missing guard rather than as a test that had stopped looking far enough.
+  const next = bridge.indexOf("\n  async ", at + 10);
+  const body = bridge.slice(at, next > 0 ? next : at + 6000);
   assert.ok(
     body.includes(`tooLong(${word}, "${word}")`),
     `${cmd} refuses a ${word} longer than the service will take`,
@@ -514,3 +518,55 @@ assert.match(bridge, /const MAX_ATTACH_BYTES = 10 \* 1024 \* 1024;/,
   "and there is a size the page refuses before the upload starts");
 
 console.log("ok  attachments reach the AI on all three paths");
+
+// A refusal from the shell is an answer, not a failed build.
+//
+// Every refusal the bridge raises -- Plan mode, a paste that is too long, a
+// file that is too big -- came out through `failBuild`, which paints "That
+// one didn't come together" over the sentence, offers Try again, and offers
+// to report an issue. So a person in Plan mode, a setting THEY chose and
+// the browser remembers across visits, met a broken-looking build and an
+// invitation to file a bug about their own preference.
+//
+// The wall already had this shape. Refusals now share it: settle the
+// build's furniture, say the words, stay on idle.
+const caughtRefusal = app.slice(app.indexOf("} else if (err && err.refusal) {"));
+assert.ok(
+  app.includes("} else if (err && err.refusal) {"),
+  "a refusal is handled before the build-failure card",
+);
+{
+  // Scoped to this branch alone. A fixed window ran past the closing brace
+  // into the `} else {` beside it, found that arm's failBuild and called
+  // the fix broken -- the branch ends where the next arm begins.
+  const end = caughtRefusal.indexOf("} else {");
+  assert.ok(end > 0, "the refusal branch is followed by the failure arm");
+  const branch = caughtRefusal.slice(0, end);
+  assert.match(branch, /show\("idle"\)/, "a refusal leaves the person on idle");
+  assert.ok(!/failBuild\(/.test(branch),
+    "and never paints the failure card over it");
+  assert.ok(!/retryBtn/.test(branch),
+    "and offers no Try again for a thing that did not fail");
+}
+// The refusal must be handled BEFORE the generic failure, or the order
+// makes the branch unreachable.
+{
+  const refusalAt = app.indexOf("} else if (err && err.refusal) {");
+  const failAt = app.indexOf("failBuild(plainWords(err), request);");
+  assert.ok(refusalAt > 0 && failAt > 0 && refusalAt < failAt,
+    "the refusal branch comes before the build-failure card");
+}
+
+// Plan mode answers with the switch, not with directions to it.
+//
+// "Switch to Build in the box below" tells somebody to go and do the thing
+// they thought they had just done, on a setting that persists, so they meet
+// it on every build until they find the control.
+assert.match(bridge, /err\.planMode = true;/,
+  "the Plan-mode refusal says which refusal it is");
+assert.match(caughtRefusal.slice(0, 1800), /err\.planMode && typeof window\.setWebMode === "function"/,
+  "and Studio offers a button that changes the setting");
+assert.match(caughtRefusal.slice(0, 1800), /window\.setWebMode\("build"\);\s*\n\s*make\(request\);/,
+  "which switches the mode and then builds what they asked for");
+
+console.log("ok  a refusal reads as an answer, and Plan mode offers the switch");

@@ -916,7 +916,17 @@ const COMMANDS = {
     // chose a MODE, before typing, and a mode that sometimes builds is not
     // a mode. The refusal says how to change it.
     if (webMode() === "plan") {
-      return refuse("You are in Plan mode, so nothing is built. Switch to Build in the box below to make this app.");
+      // Flagged so Studio offers the switch as a button rather than telling
+      // them where to find it. Plan is remembered across visits, so somebody
+      // who tried it once meets this on every build afterwards -- and
+      // "switch to Build in the box below" is a instruction to go and do the
+      // thing they thought they had just done.
+      const err = new Error(
+        "You are in Plan mode, so nothing was built. Switch to Build and I will make this app.",
+      );
+      err.refusal = true;
+      err.planMode = true;
+      return Promise.reject(err);
     }
     const overCreate = tooLong(request, "request");
     if (overCreate) return overCreate;
