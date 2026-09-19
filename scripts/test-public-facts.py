@@ -14,6 +14,15 @@ import public_facts as facts
 
 
 class PublicFactsTests(unittest.TestCase):
+    def test_sharing_guide_describes_permissions_without_blanket_assurances(self):
+        guide = (facts.ROOT / "docs/book/src/create-and-share.md").read_text()
+        normalized = " ".join(guide.split())
+        for stale in ("does not need to trust you", "Nothing else on the machine is reachable",
+                      "a broken app is caught, not shipped", "same file behaves identically"):
+            self.assertNotIn(stale, normalized)
+        self.assertIn("permission review does not establish that an app is harmless", normalized)
+        self.assertIn("Test the app on each system", normalized)
+
     def test_first_app_download_is_pinned_and_checksummed(self):
         readme = (facts.ROOT / "README.md").read_text()
         quickstart = (facts.ROOT / "docs/book/src/quickstart.md").read_text()

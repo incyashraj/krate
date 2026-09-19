@@ -61,6 +61,29 @@ class Pictures(HTMLParser):
 
 
 class LandingAssets(unittest.TestCase):
+    def test_current_social_preview_is_sized_and_referenced(self):
+        self.assertEqual(png_size(ROOT / "og-v4.png"), (1200, 630))
+        for page in ("index.html", "studio/index.html", "privacy/index.html"):
+            source = (ROOT / page).read_text()
+            self.assertIn('content="https://krate.tech/og-v4.png"', source)
+            self.assertNotIn("og-v3.png", source)
+        repo = ROOT.parents[1]
+        self.assertIn('src="docs/landing/og-v4.png"', (repo / "README.md").read_text())
+        for page in (repo / "docs/answers").glob("*.html"):
+            self.assertNotIn("og-v3.png", page.read_text(), str(page))
+            self.assertIn('content="https://krate.tech/og-v4.png"', page.read_text())
+
+    def test_social_preview_source_keeps_current_positioning(self):
+        source = (ROOT.parent / "social/preview.html").read_text()
+        for required in ("krate-glyph-blue.png", "One app file for",
+                         "Mac, Windows and Linux.", "krate.tech"):
+            self.assertIn(required, source)
+        for retired in ("12 stars", "No installer", "tens of kilobytes", "cannot touch anything"):
+            self.assertNotIn(retired, source)
+        self.assertNotIn("<script", source)
+        for decoration in ("box-shadow", "class=\"file\""):
+            self.assertNotIn(decoration, source)
+
     def test_lossless_derivatives_keep_dimensions_and_reduce_bytes(self):
         for asset in ASSETS:
             with self.subTest(asset=asset):

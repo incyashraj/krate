@@ -18,8 +18,8 @@
   <a href="https://github.com/incyashraj/krate/actions/workflows/ci.yml">
     <img src="https://github.com/incyashraj/krate/actions/workflows/ci.yml/badge.svg" alt="CI status">
   </a>
-  <a href="https://github.com/incyashraj/krate/releases">
-    <img src="https://img.shields.io/github/v/release/incyashraj/krate?include_prereleases&sort=semver" alt="Latest release">
+  <a href="https://github.com/incyashraj/krate/releases/latest">
+    <img src="https://img.shields.io/github/v/release/incyashraj/krate" alt="Latest stable release">
   </a>
   <a href="LICENSE-MIT">
     <img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-2563eb" alt="MIT or Apache 2.0 license">
@@ -37,8 +37,18 @@
 </p>
 
 <p align="center">
+  <a href="#start-with-the-runtime">Run a sample app</a>
+  ·
+  <a href="#build-your-app">Build your app</a>
+  ·
+  <a href="#a-measured-notes-workload">See the benchmark</a>
+  ·
+  <a href="https://github.com/incyashraj/krate/discussions">Talk to us</a>
+</p>
+
+<p align="center">
   <a href="https://krate.tech/">
-    <img src="docs/landing/og-v3.png" width="900" alt="Krate turns an app into one file that opens on Mac, Windows, and Linux">
+    <img src="docs/landing/og-v4.png" width="900" alt="Krate turns an app into one file that opens on Mac, Windows, and Linux">
   </a>
 </p>
 
@@ -82,6 +92,10 @@ Use the same commands with any other `.krate` filename from a source you trust.
 Inspection does not execute the application. Review permissions before granting them. Running a packaged
 app does not require the author's Rust toolchain or AI account; Linux X11
 users may need [an additional system library](docs/build.md#running-an-app-on-linux-without-building-anything).
+
+Have an app you want to ship? Tell us what it does and which operating systems
+you need to support in the [welcome discussion](https://github.com/incyashraj/krate/discussions/1).
+If you want to come back to Krate later, star this repository to save it.
 
 ## Build your app
 
@@ -337,7 +351,6 @@ one-package Linux receiver note live in [docs/build.md](docs/build.md).
 apps/       Sample apps and apps used to test Krate
 crates/     Runtime, CLI, policy, adapters, MCP server, authoring, and SDK
 docs/       Website, book, design records, and technical documentation
-Plan/       Current and future implementation plans
 scripts/    Build, install, test, evidence, and release tools
 test/       Integration fixtures and cross-language tests
 wit/        Krate interface definitions

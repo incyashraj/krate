@@ -1343,12 +1343,12 @@ picture source { display: none; }
   <meta property="og:title" content="How to share an AI-built desktop app | Krate">
   <meta property="og:description" content="Create a Krate app with AI, inspect its permissions and share the .krate file. What the author needs, what the recipient installs and what to test first.">
   <meta property="og:url" content="https://krate.tech/share-an-app-made-with-ai.html">
-  <meta property="og:image" content="https://krate.tech/og-v3.png">
+  <meta property="og:image" content="https://krate.tech/og-v4.png">
   <meta property="og:image:alt" content="Krate desktop application runtime">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="How to share an AI-built desktop app | Krate">
   <meta name="twitter:description" content="Create a Krate app with AI, inspect its permissions and share the .krate file. What the author needs, what the recipient installs and what to test first.">
-  <meta name="twitter:image" content="https://krate.tech/og-v3.png">
+  <meta name="twitter:image" content="https://krate.tech/og-v4.png">
   <script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebPage", "@id": "https://krate.tech/share-an-app-made-with-ai.html#webpage", "url": "https://krate.tech/share-an-app-made-with-ai.html", "name": "How to share an AI-built desktop app | Krate", "description": "Create a Krate app with AI, inspect its permissions and share the .krate file. What the author needs, what the recipient installs and what to test first.", "inLanguage": "en", "isPartOf": {"@type": "WebSite", "@id": "https://krate.tech/#website", "name": "Krate", "url": "https://krate.tech/"}}</script>
   <style>
     /* The article shell owns its layout. The homepage supplies fonts and
@@ -1460,6 +1460,19 @@ picture source { display: none; }
       padding: 12px; text-align: left; vertical-align: top;
       border-bottom: 1px solid rgba(255,255,255,.14);
     }
+    .shipping-flow { margin: 24px 0; }
+    .shipping-flow figcaption { margin-bottom: 16px; color: #a1a1aa; font-size: 14px; }
+    .shipping-lane { padding: 20px; border: 1px solid #3f3f46; border-radius: 12px; margin-top: 12px; }
+    .shipping-lane h3 { margin: 0 0 14px; font-family: var(--sans); font-size: 16px; letter-spacing: 0; }
+    .shipping-lane ol { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: 1fr 1fr 1.35fr; gap: 12px; }
+    .shipping-lane li { padding: 12px; margin: 0; min-width: 0; background: #18181b; border-radius: 8px; font-size: 14px; }
+    .shipping-lane li span { display: block; color: #a1a1aa; font-size: 12px; margin-bottom: 6px; }
+    .shipping-lane-krate { border-color: #8b5cf6; background: rgba(139,92,246,.06); }
+    .shipping-lane-krate li { background: rgba(139,92,246,.12); }
+    @media (max-width: 540px) {
+      .shipping-lane { padding: 16px; }
+      .shipping-lane ol { grid-template-columns: 1fr; }
+    }
     @media (max-width: 760px) {
       .answer-cmd { font-size: 12.5px; padding: 12px 14px; }
       /* One per line on a phone, each full width: two pills side by side
@@ -1553,6 +1566,7 @@ krate publish regex.krate</pre>
         <a class="pill pill-primary" href="/docs/quickstart.html">Developer quickstart</a>
         <a class="pill" href="/docs/porting.html">Evaluate your app</a>
         <a class="pill" href="/studio/">Make an app in Studio</a>
+        <a class="pill" href="https://github.com/incyashraj/krate">Explore Krate on GitHub</a>
       </div>
     </section>
     </main>
