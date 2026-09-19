@@ -38,6 +38,8 @@ body {
 a { color: inherit; text-decoration: none; }
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
 img { max-width: 100%; display: block; }
+picture { display: contents; }
+picture source { display: none; }
 ::selection { background: rgba(165, 88, 251, 0.35); }
 
 /* ------------------------------------------------ progressive blur bar */
@@ -340,7 +342,7 @@ p.sub { color: #a1a1aa; margin-top: 12px; max-width: 62ch; line-height: 1.65; }
 
 <div class="brandbar" id="brandbar">
   <a class="name" href="/">
-    <img src="/krate-logo.png" alt="" /> KRATE
+    <picture><source srcset="/krate-logo.webp" type="image/webp" /><img src="/krate-logo.png" width="415" height="410" alt="" /></picture> KRATE
   </a>
   <a class="starpill" href="https://github.com/incyashraj/krate" target="_blank" rel="noopener" aria-label="Krate on GitHub">
     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
@@ -376,7 +378,7 @@ p.sub { color: #a1a1aa; margin-top: 12px; max-width: 62ch; line-height: 1.65; }
        2026-09 redesign (K-217). A short screen recording would suit this
        slot better still, if one gets made. -->
   <div class="bench">
-    <img src="/app-shots/studio-home.png" alt="Krate Studio, ready to build, with previously built apps along the bottom" />
+    <picture><source srcset="/app-shots/studio-home.webp" type="image/webp" /><img src="/app-shots/studio-home.png" width="2536" height="1656" alt="Krate Studio, ready to build, with previously built apps along the bottom" /></picture>
   </div>
 </section>
 

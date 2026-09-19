@@ -29,6 +29,40 @@ PRIORITY_PATHS = {"/", "/studio/", "/faq/", "/docs/", "/docs/quickstart.html",
                   "/open/", "/cloud/", "/portable-desktop-app-format.html",
                   "/run-ai-generated-code-safely.html", "/share-an-app-made-with-ai.html",
                   "/desktop-app-distribution.html"}
+# Narrow editorial summaries for search entry points whose opening paragraph
+# is setup text, an old size claim or a phase-status snapshot. Summarize the
+# actual page rather than turning historical prose into a current promise.
+# These are metadata only; dated articles and source instructions stay intact.
+EDITORIAL_DESCRIPTIONS = {
+    "/docs/create-and-share.html": (
+        "Build a checklist app with Krate, package it as one .krate file, "
+        "review its permissions and share it with someone who has the Krate runtime."
+    ),
+    "/docs/blog/0004-what-happens-when-an-ai-writes-a-desktop-app.html": (
+        "An August 2026 test of eight AI-written Krate apps: what event-loop, "
+        "input and layout failures taught us about testing beyond compilation."
+    ),
+    "/docs/phases/phase-2.html": (
+        "Krate's Phase 2 design record covers typed WebAssembly interfaces, "
+        "file and network capabilities, host adapters, language bindings and exit checks."
+    ),
+    "/docs/try-krate-notes.html": (
+        "Walk through the notes-v0.1.0 Krate Notes example: inspect permissions, "
+        "run the app and save notes locally. Use the quickstart for current setup."
+    ),
+    "/docs/blog/0003-why-sharing-a-desktop-app-is-still-hard.html": (
+        "Why sharing desktop software involves per-platform packaging, runtime "
+        "delivery and permissions, and how Krate's shared-file model approaches those costs."
+    ),
+    "/docs/blog/0008-make-a-desktop-app-without-being-a-programmer.html": (
+        "An August 2026 walkthrough of AI-assisted app creation, editing and "
+        "sharing in Krate. Historical product framing; today's developer path is the quickstart."
+    ),
+    "/docs/quickstart.html": (
+        "Install Krate on macOS, Windows or Linux, inspect an app's permissions, "
+        "then build with AI or the Rust SDK and share a .krate file."
+    ),
+}
 TAGS = re.compile(r"<(?:meta|link)\b(?:[^>\"']|\"[^\"]*\"|'[^']*')*>", re.I)
 HREF = re.compile(r"(\bhref\s*=\s*)([\"'])(.*?)\2", re.I | re.S)
 
@@ -181,6 +215,8 @@ def update_head(source, canonical, description, noindex):
 
 
 def description_for(page, path):
+    if path in EDITORIAL_DESCRIPTIONS:
+        return EDITORIAL_DESCRIPTIONS[path]
     # mdBook duplicates the book-wide description on every chapter. Replace
     # only that known generic value; editorial descriptions remain untouched.
     existing = page.descriptions[0].strip() if page.descriptions else ""

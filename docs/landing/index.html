@@ -68,6 +68,8 @@ body {
 a { color: inherit; text-decoration: none; }
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
 img { max-width: 100%; display: block; }
+picture { display: contents; }
+picture source { display: none; }
 ::selection { background: rgba(165, 88, 251, 0.35); }
 
 /* ------------------------------------------------ progressive blur bar */
@@ -1343,7 +1345,7 @@ img { max-width: 100%; display: block; }
 
 <div class="brandbar" id="brandbar">
   <a class="name" href="/">
-    <img src="/krate-logo.png" alt="" /> KRATE
+    <picture><source srcset="/krate-logo.webp" type="image/webp" /><img src="/krate-logo.png" width="415" height="410" alt="" /></picture> KRATE
   </a>
   <a class="starpill" href="https://github.com/incyashraj/krate" target="_blank" rel="noopener" aria-label="Krate on GitHub">
     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
@@ -1431,7 +1433,7 @@ img { max-width: 100%; display: block; }
 
     <div class="shotWrap" id="shotWrap">
       <div class="shotBox">
-        <div class="frame"><img src="/app-shots/studio-session.png" alt="Krate Studio building a hex viewer from one sentence" /></div>
+        <div class="frame"><picture><source srcset="/app-shots/studio-session.webp" type="image/webp" /><img src="/app-shots/studio-session.png" width="2480" height="1600" alt="Krate Studio building a hex viewer from one sentence" /></picture></div>
         <div class="chip c1" title="Claude">
           <span class="float"><svg viewBox="0 0 24 24" fill="#D97757"><path d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z"/></svg></span>
         </div>
@@ -1536,7 +1538,7 @@ img { max-width: 100%; display: block; }
             </div>
           </div>
         </div>
-        <div class="centerGlyph"><div class="inner"><img src="/krate-logo.png" alt="Krate" /></div></div>
+        <div class="centerGlyph"><div class="inner"><picture><source srcset="/krate-logo.webp" type="image/webp" /><img src="/krate-logo.png" width="415" height="410" alt="Krate" /></picture></div></div>
       </div>
     </div>
   </div>
@@ -1701,7 +1703,7 @@ img { max-width: 100%; display: block; }
   </div>
   <footer class="foot">
     <div class="who">
-      <img src="/krate-logo.png" alt="" />
+      <picture><source srcset="/krate-logo.webp" type="image/webp" /><img src="/krate-logo.png" width="415" height="410" alt="" /></picture>
       <span>© 2026 Krate Labs. The player is open source, MIT or Apache-2.0.</span>
     </div>
     <nav>
