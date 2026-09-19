@@ -10,34 +10,20 @@
     @font-face { font-family: Geist; src: url('../landing/fonts/geist-500.woff2'); font-weight: 500; }
     * { box-sizing: border-box; }
     html, body { width: 1200px; height: 630px; margin: 0; overflow: hidden; }
-    body { font-family: Geist, sans-serif; color: #fafafa; background: #060609; }
-    main { width: 100%; height: 100%; padding: 56px 68px; position: relative; isolation: isolate; }
-    main::before { content: ''; position: absolute; z-index: -1; inset: 0; background: radial-gradient(ellipse at 90% 70%, #48239166, transparent 55%); }
-    main::after { content: ''; position: absolute; z-index: -1; width: 1350px; height: 400px; left: -75px; bottom: -372px; border-radius: 50%; box-shadow: 0 -4px 36px #ac83ff, 0 -24px 130px #662ad8; }
-    header { display: flex; align-items: center; gap: 12px; font-size: 26px; font-weight: 500; letter-spacing: .04em; }
-    header img { width: 34px; height: 34px; object-fit: contain; }
-    .domain { position: absolute; top: 62px; right: 68px; font-size: 18px; letter-spacing: .01em; color: #b0aabc; }
-    h1 { font-size: 76px; font-weight: 500; line-height: 1.08; letter-spacing: -.06em; margin: 82px 0 26px; max-width: 740px; }
-    h1 span { display: block; color: #bfa2ff; }
-    .platforms { margin: 0; font-size: 27px; letter-spacing: -.025em; color: #e0dce7; }
-    .platforms span { color: #726980; margin: 0 12px; }
-    .model { margin: 22px 0 0; max-width: 650px; font-size: 19px; color: #aaa3b6; }
-    .file { position: absolute; top: 192px; right: 77px; width: 222px; height: 270px; border: 1px solid #b499e46b; border-radius: 24px; background: linear-gradient(135deg, #c8acff20, #44316b12); box-shadow: 0 20px 80px #07030b, inset 0 1px #e2d6ff30; transform: rotate(8deg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; }
-    .file::before { content: ''; width: 186px; height: 244px; border-radius: 22px; border: 1px solid #9b75d63d; position: absolute; z-index: -1; transform: translate(-13px, 13px) rotate(-15deg); }
-    .file img { width: 108px; height: 108px; object-fit: contain; filter: drop-shadow(0 8px 25px #743ef26b); }
-    .file strong { font-size: 32px; font-weight: 500; letter-spacing: -.03em; }
-    footer { position: absolute; bottom: 53px; left: 68px; font-size: 17px; color: #aaa3b6; }
+    body { font-family: Geist, sans-serif; color: #fafafa; background: #090909; }
+    main { width: 100%; height: 100%; padding: 94px 80px; position: relative; }
+    header { display: flex; align-items: center; gap: 23px; font-size: 60px; font-weight: 500; letter-spacing: -.045em; }
+    header img { width: 90px; height: 90px; object-fit: contain; }
+    h1 { font-size: 66px; font-weight: 400; line-height: 1.17; letter-spacing: -.045em; margin: 66px 0 0; }
+    h1 span { display: block; }
+    footer { position: absolute; bottom: 57px; left: 80px; font-size: 23px; color: #999; }
   </style>
 </head>
 <body>
   <main>
-    <header><img src="../landing/krate-glyph-blue.png" alt="">KRATE</header>
-    <div class="domain">krate.tech</div>
-    <h1>Build once.<span>Ship one app file.</span></h1>
-    <p class="platforms">Mac<span>·</span>Windows<span>·</span>Linux</p>
-    <p class="model">One .krate file. Native runtimes on each OS.</p>
-    <div class="file" aria-hidden="true"><img src="../landing/krate-glyph-blue.png" alt=""><strong>.krate</strong></div>
-    <footer>Open-source runtime · Built in Rust · Powered by WebAssembly</footer>
+    <header><img src="../landing/krate-glyph-blue.png" alt="">Krate</header>
+    <h1>One app file for<span>Mac, Windows and Linux.</span></h1>
+    <footer>krate.tech</footer>
   </main>
 </body>
 </html>

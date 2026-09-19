@@ -75,12 +75,14 @@ class LandingAssets(unittest.TestCase):
 
     def test_social_preview_source_keeps_current_positioning(self):
         source = (ROOT.parent / "social/preview.html").read_text()
-        for required in ("Build once.", "Ship one app file.", "Native runtimes on each OS.",
-                         "Open-source runtime", "Built in Rust", "Powered by WebAssembly"):
+        for required in ("krate-glyph-blue.png", "One app file for",
+                         "Mac, Windows and Linux.", "krate.tech"):
             self.assertIn(required, source)
         for retired in ("12 stars", "No installer", "tens of kilobytes", "cannot touch anything"):
             self.assertNotIn(retired, source)
         self.assertNotIn("<script", source)
+        for decoration in ("gradient(", "box-shadow", "class=\"file\""):
+            self.assertNotIn(decoration, source)
 
     def test_lossless_derivatives_keep_dimensions_and_reduce_bytes(self):
         for asset in ASSETS:
