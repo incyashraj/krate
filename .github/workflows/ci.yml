@@ -1307,6 +1307,19 @@ jobs:
       - name: Install cross
         run: cargo install cross --locked
       - name: Build the release binary the way the release does
+        env:
+          # The same variable the release build step sets, for the same
+          # reason and forwarded by the same line in Cross.toml.
+          #
+          # This step is here to catch an arm64 Linux break BEFORE a release
+          # hits it, and it can only do that if it builds the way the
+          # release actually builds. Without this it does not: the container
+          # carries Ubuntu 16.04's preinstalled libclang 3.8 beside the
+          # clang 9 the pre-build installs, v4l2-sys-mit finds 3.8 first,
+          # and the build dies with "loaded libclang instance = 3.8.x"
+          # (K-717) -- so the lane would fail while the release passed, and
+          # the name on this step would be a lie.
+          LIBCLANG_PATH: /usr/lib/llvm-9/lib
         run: cross build --release --target aarch64-unknown-linux-gnu -p krate-cli
 
   port-regression:
@@ -1747,6 +1760,16 @@ jobs:
         run: |
           python3 scripts/check-licensing.py
           python3 scripts/check-licensing.py --self-test
+      # The cross-build lane exists to catch an arm64 Linux break before a
+      # release hits it, and its step is literally named "the way the release
+      # does". That claim was false: the release set LIBCLANG_PATH and the
+      # lane did not, so the lane failed on a break the release had already
+      # fixed (K-717). Two files, read months apart, with nothing keeping
+      # them in step.
+      - name: Check the cross build matches the release
+        run: |
+          python3 scripts/check-cross-parity.py
+          python3 scripts/check-cross-parity.py --self-test
       # The hub worker's tests mirror its logic rather than importing it (it
       # is one file with no module boundary), and a mirrored test that never
       # runs cannot catch the drift it was written for. Three of these
