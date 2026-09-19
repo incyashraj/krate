@@ -1061,23 +1061,23 @@ std_feature = true
 package = "krate:{name}"
 
 [package.metadata.component.target]
-path = "{sdk_prefix}/wit/krate/phase3"
+path = "{sdk_prefix}/wit/krate/phase4"
 world = "gui"
 
 [package.metadata.component.target.dependencies]
-"krate:io" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/io" }}
-"krate:fs" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/fs" }}
-"krate:net" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/net" }}
-"krate:time" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/time" }}
-"krate:locale" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/locale" }}
-"krate:resources" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/resources" }}
-"krate:store" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/store" }}
-"krate:random" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/random" }}
-"krate:ui" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/ui" }}
-"krate:gfx" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/gfx" }}
-"krate:audio" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/audio" }}
-"krate:camera" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/camera" }}
-"krate:speech" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/speech" }}
+"krate:io" = {{ path = "{sdk_prefix}/wit/krate/phase4/deps/io" }}
+"krate:fs" = {{ path = "{sdk_prefix}/wit/krate/phase4/deps/fs" }}
+"krate:net" = {{ path = "{sdk_prefix}/wit/krate/phase4/deps/net" }}
+"krate:time" = {{ path = "{sdk_prefix}/wit/krate/phase4/deps/time" }}
+"krate:locale" = {{ path = "{sdk_prefix}/wit/krate/phase4/deps/locale" }}
+"krate:resources" = {{ path = "{sdk_prefix}/wit/krate/phase4/deps/resources" }}
+"krate:store" = {{ path = "{sdk_prefix}/wit/krate/phase4/deps/store" }}
+"krate:random" = {{ path = "{sdk_prefix}/wit/krate/phase4/deps/random" }}
+"krate:ui" = {{ path = "{sdk_prefix}/wit/krate/phase4/deps/ui" }}
+"krate:gfx" = {{ path = "{sdk_prefix}/wit/krate/phase4/deps/gfx" }}
+"krate:audio" = {{ path = "{sdk_prefix}/wit/krate/phase4/deps/audio" }}
+"krate:camera" = {{ path = "{sdk_prefix}/wit/krate/phase4/deps/camera" }}
+"krate:speech" = {{ path = "{sdk_prefix}/wit/krate/phase4/deps/speech" }}
 
 [profile.release]
 panic = "abort"
@@ -1550,7 +1550,7 @@ mod tests {
         let app = generate(&AppRequest::checklist("my-list"), "../..").expect("generate");
         let cargo = app.file("Cargo.toml").expect("cargo");
         // The GUI world needs the phase3 target and the ui package.
-        assert!(cargo.contains(r#"path = "../../wit/krate/phase3""#));
+        assert!(cargo.contains(r#"path = "../../wit/krate/phase4""#));
         // Without this, a GUI app cannot be `#![no_std]` -- the generated
         // bindings carry `impl std::error::Error` and so require std, and
         // linking std brings a dependency's panic path with it. An image
@@ -1563,7 +1563,7 @@ mod tests {
              app with any real dependency needs it"
         );
         assert!(cargo.contains("world = \"gui\""));
-        assert!(cargo.contains(r#""krate:ui" = { path = "../../wit/krate/phase3/deps/ui" }"#));
+        assert!(cargo.contains(r#""krate:ui" = { path = "../../wit/krate/phase4/deps/ui" }"#));
         let manifest = app.file("manifest.toml").expect("manifest");
         assert!(manifest.contains(r#"cap = "ui.window:create""#));
         // The app keeps its items in its own store, so it asks to remember

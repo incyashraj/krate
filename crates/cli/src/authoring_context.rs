@@ -30,23 +30,23 @@ use crate::sdk_reference;
 /// reference always matches the interfaces this binary builds against. These
 /// four are the interfaces an app reaches through its generated `bindings`
 /// rather than through the `krate::*` SDK functions.
-const UI_WIT: &str = include_str!("../../../wit/krate/phase3/deps/ui/ui.wit");
-const GFX_WIT: &str = include_str!("../../../wit/krate/phase3/deps/gfx/gfx.wit");
-const AUDIO_WIT: &str = include_str!("../../../wit/krate/phase3/deps/audio/audio.wit");
-const CAMERA_WIT: &str = include_str!("../../../wit/krate/phase3/deps/camera/camera.wit");
-const SPEECH_WIT: &str = include_str!("../../../wit/krate/phase3/deps/speech/speech.wit");
+const UI_WIT: &str = include_str!("../../../wit/krate/phase4/deps/ui/ui.wit");
+const GFX_WIT: &str = include_str!("../../../wit/krate/phase4/deps/gfx/gfx.wit");
+const AUDIO_WIT: &str = include_str!("../../../wit/krate/phase4/deps/audio/audio.wit");
+const CAMERA_WIT: &str = include_str!("../../../wit/krate/phase4/deps/camera/camera.wit");
+const SPEECH_WIT: &str = include_str!("../../../wit/krate/phase4/deps/speech/speech.wit");
 // The shared packages too, so the pack's interface index is COMPLETE. The
 // authoring study measured what an incomplete index costs: a build that
 // cannot answer "what exactly does locale expose?" from the pack opens
 // bindings.rs or the SDK source instead, and each such hunt is a full model
 // round trip (~14s and ~128k tokens re-read, measured across 15 builds).
-const FS_WIT: &str = include_str!("../../../wit/krate/phase3/deps/fs/fs.wit");
-const IO_WIT: &str = include_str!("../../../wit/krate/phase3/deps/io/io.wit");
-const LOCALE_WIT: &str = include_str!("../../../wit/krate/phase3/deps/locale/locale.wit");
-const NET_WIT: &str = include_str!("../../../wit/krate/phase3/deps/net/net.wit");
-const RANDOM_WIT: &str = include_str!("../../../wit/krate/phase3/deps/random/random.wit");
-const STORE_WIT: &str = include_str!("../../../wit/krate/phase3/deps/store/store.wit");
-const TIME_WIT: &str = include_str!("../../../wit/krate/phase3/deps/time/time.wit");
+const FS_WIT: &str = include_str!("../../../wit/krate/phase4/deps/fs/fs.wit");
+const IO_WIT: &str = include_str!("../../../wit/krate/phase4/deps/io/io.wit");
+const LOCALE_WIT: &str = include_str!("../../../wit/krate/phase4/deps/locale/locale.wit");
+const NET_WIT: &str = include_str!("../../../wit/krate/phase4/deps/net/net.wit");
+const RANDOM_WIT: &str = include_str!("../../../wit/krate/phase4/deps/random/random.wit");
+const STORE_WIT: &str = include_str!("../../../wit/krate/phase4/deps/store/store.wit");
+const TIME_WIT: &str = include_str!("../../../wit/krate/phase4/deps/time/time.wit");
 
 /// Generate the full `KRATE_AUTHORING.md` for an app in `app_dir`.
 ///

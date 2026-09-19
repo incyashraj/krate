@@ -146,7 +146,7 @@ implements `krate::Guest`.
 
 Same as above with four changes: the `krate` dependency turns on its `gui`
 feature (that is what makes the component declare the gui world), the WIT
-world is `gui` under `phase3`, four more WIT packages are listed, and the
+world is `gui` under `phase4`, four more WIT packages are listed, and the
 bindings need `std_feature = true`. The windowing, widget, event, drawing,
 sound, camera and speech interfaces are then `krate::ui::...`,
 `krate::gfx::...`, `krate::audio::...`, `krate::camera::...` and
@@ -177,22 +177,22 @@ std_feature = true
 package = "krate:NAME"
 
 [package.metadata.component.target]
-path = "PREFIX/wit/krate/phase3"
+path = "PREFIX/wit/krate/phase4"
 world = "gui"
 
 [package.metadata.component.target.dependencies]
-"krate:io" = { path = "PREFIX/wit/krate/phase3/deps/io" }
-"krate:fs" = { path = "PREFIX/wit/krate/phase3/deps/fs" }
-"krate:net" = { path = "PREFIX/wit/krate/phase3/deps/net" }
-"krate:time" = { path = "PREFIX/wit/krate/phase3/deps/time" }
-"krate:locale" = { path = "PREFIX/wit/krate/phase3/deps/locale" }
-"krate:resources" = { path = "PREFIX/wit/krate/phase3/deps/resources" }
-"krate:store" = { path = "PREFIX/wit/krate/phase3/deps/store" }
-"krate:random" = { path = "PREFIX/wit/krate/phase3/deps/random" }
-"krate:ui" = { path = "PREFIX/wit/krate/phase3/deps/ui" }
-"krate:gfx" = { path = "PREFIX/wit/krate/phase3/deps/gfx" }
-"krate:audio" = { path = "PREFIX/wit/krate/phase3/deps/audio" }
-"krate:speech" = { path = "PREFIX/wit/krate/phase3/deps/speech" }
+"krate:io" = { path = "PREFIX/wit/krate/phase4/deps/io" }
+"krate:fs" = { path = "PREFIX/wit/krate/phase4/deps/fs" }
+"krate:net" = { path = "PREFIX/wit/krate/phase4/deps/net" }
+"krate:time" = { path = "PREFIX/wit/krate/phase4/deps/time" }
+"krate:locale" = { path = "PREFIX/wit/krate/phase4/deps/locale" }
+"krate:resources" = { path = "PREFIX/wit/krate/phase4/deps/resources" }
+"krate:store" = { path = "PREFIX/wit/krate/phase4/deps/store" }
+"krate:random" = { path = "PREFIX/wit/krate/phase4/deps/random" }
+"krate:ui" = { path = "PREFIX/wit/krate/phase4/deps/ui" }
+"krate:gfx" = { path = "PREFIX/wit/krate/phase4/deps/gfx" }
+"krate:audio" = { path = "PREFIX/wit/krate/phase4/deps/audio" }
+"krate:speech" = { path = "PREFIX/wit/krate/phase4/deps/speech" }
 
 [profile.release]
 panic = "abort"
@@ -642,6 +642,7 @@ takes this path, so any of them is a model for the wiring.
 - `dialog::message: func(window: u64, title: string, body: string) -> result<_, ui-error>`
 - `dialog::confirm: func(window: u64, title: string, body: string) -> result<bool, ui-error>`
 - `dialog::open-file: func(window: u64, title: string, filter: string) -> result<option<chosen-file>, ui-error>`
+- `dialog::save-file: func(window: u64, title: string, suggested: string, filter: string) -> result<option<chosen-file>, ui-error>`
 - `dialog::open-folder: func(window: u64, title: string) -> result<option<chosen-folder>, ui-error>`
 - `clipboard::read-text: func() -> result<string, ui-error>`
 - `clipboard::write-text: func(text: string) -> result<_, ui-error>`
