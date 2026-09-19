@@ -47,4 +47,27 @@ pre-build = [
   # avoids it. Like the others it is a target-architecture package, found
   # through pkg-config rather than a hardcoded path.
   "apt-get --assume-yes install libasound2-dev:$CROSS_DEB_ARCH libwayland-dev:$CROSS_DEB_ARCH libxkbcommon-dev:$CROSS_DEB_ARCH libudev-dev:$CROSS_DEB_ARCH",
+  # The camera headers, for nokhwa's v4l2 binding. Video4Linux is how Linux
+  # enumerates cameras, so like libudev there is no feature that avoids it.
+  "apt-get --assume-yes install libv4l-dev:$CROSS_DEB_ARCH",
 ]
+
+# Which libclang bindgen loads, said once, for every crate that runs it.
+#
+# The symlink above was enough while whisper-rs-sys was the only bindgen user:
+# it looks at /usr/lib/libclang.so. v4l2-sys-mit (nokhwa, the camera) searches
+# the standard library directories itself and finds Ubuntu 16.04's preinstalled
+# libclang 3.8 FIRST -- so clang 9 installed, the guard above passed, and the
+# build still died three minutes later with "a libclang function was called
+# that is not supported by the loaded libclang instance / loaded libclang
+# instance = 3.8.x". That is what held v0.5.0's arm64 Linux target.
+#
+# LIBCLANG_PATH is not a search hint, it is the answer: clang-sys loads from
+# this directory and does not go looking. Naming it removes the ordering
+# question for every present and future bindgen dependency at once.
+#
+# The bare name forwards the value the workflow sets on the host, which is the
+# form cross documents plainly; the value itself lives beside the build step in
+# release.yml so the two cannot disagree about which LLVM was installed.
+[target.aarch64-unknown-linux-gnu.env]
+passthrough = ["LIBCLANG_PATH"]

@@ -298,6 +298,16 @@ jobs:
           # `krate --version` reports the real version rather than the crate's
           # 0.1.0-dev placeholder.
           KRATE_RELEASE_VERSION: ${{ inputs.tag || github.ref_name }}
+          # Which libclang bindgen loads inside the cross container. Cross.toml
+          # installs clang 9 there and forwards this variable; the path is here
+          # so the version installed and the version loaded are one edit apart.
+          #
+          # Without it, v4l2-sys-mit (nokhwa, the camera) searched the standard
+          # directories itself, found Ubuntu 16.04's preinstalled libclang 3.8
+          # before the clang 9 beside it, and killed the arm64 Linux target of
+          # v0.5.0 with "loaded libclang instance = 3.8.x". Harmless on every
+          # other target, which has no such container.
+          LIBCLANG_PATH: /usr/lib/llvm-9/lib
         run: |
           # Speech is opt-in at the crate level, so a RELEASE adds it back
           # rather than a broken platform subtracting it (K-149).
