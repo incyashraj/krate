@@ -570,3 +570,32 @@ assert.match(caughtRefusal.slice(0, 1800), /window\.setWebMode\("build"\);\s*\n\
   "which switches the mode and then builds what they asked for");
 
 console.log("ok  a refusal reads as an answer, and Plan mode offers the switch");
+
+// "For someone new to Krate" tells the truth before the click, not after.
+//
+// That option makes a gift: one double-clickable file that installs the
+// player and then opens the app. The krate binary makes it, on the sender's
+// own machine, so a tab cannot -- and the sheet said so only AFTER the
+// person had picked the option, picked an operating system, and waited.
+// Three clicks to reach "made in Studio on your computer", on a screen
+// where nothing had hinted at it.
+//
+// The link beside it already does this job here, so the option says that
+// instead, and the OS buttons that lead nowhere are removed.
+assert.match(bridge, /function tellTheTruthAboutTheGift\(\)/,
+  "the browser rewrites the gift option");
+{
+  const gift = bridge.slice(bridge.indexOf("function tellTheTruthAboutTheGift()"));
+  assert.match(gift.slice(0, 1800), /btn\.disabled = true;/,
+    "it is not a button here, so it does not behave like one");
+  assert.match(gift.slice(0, 1800), /os\.remove\(\)/,
+    "and the operating-system buttons that lead nowhere are gone");
+  assert.match(gift.slice(0, 1800), /share a link instead/i,
+    "it names the thing that does work from a tab");
+}
+// Rewritten from the bridge, not from Studio's markup: the desktop makes
+// the gift perfectly well, and changing the markup would lie there instead.
+assert.match(html, /id="sendWrapOs"/,
+  "the desktop still has its operating-system buttons");
+
+console.log("ok  the gift option is honest in a browser");

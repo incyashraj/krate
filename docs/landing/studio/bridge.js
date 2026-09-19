@@ -2149,3 +2149,41 @@ console.info("krate: studio bridge ready (hub + builder)");
     window.open("https://krate.tech/open/", "_blank", "noopener");
   });
 })();
+
+/* "For someone new to Krate", in a tab.
+ *
+ * That option makes a gift: one double-clickable file that installs the
+ * player and then opens the app. It is made by the krate binary on the
+ * sender's own machine, so a browser cannot make one -- and the sheet said
+ * so only AFTER the person had picked the option, picked an operating
+ * system, and waited. Three clicks to reach "made in Studio on your
+ * computer", on a screen where nothing had hinted at it.
+ *
+ * The link beside it already does this job here: anyone who opens a shared
+ * link gets the app, and gets Krate once if they do not have it. So the
+ * option says that instead of pretending, and the OS buttons that lead
+ * nowhere are not shown at all.
+ *
+ * Rewritten from the bridge rather than changed in Studio's markup because
+ * it is only true in a browser: the desktop makes the gift perfectly well.
+ */
+(function tellTheTruthAboutTheGift() {
+  const btn = document.getElementById("sendWrapBtn");
+  if (!btn) return;
+  const line = btn.querySelector("span");
+  if (line) {
+    line.textContent =
+      "Making that file needs Krate on your own computer. From here, "
+      + "share a link instead: whoever opens it gets the app, and gets "
+      + "Krate once if they do not have it.";
+  }
+  // It is not a button here, so it must not look like one. Left in place
+  // rather than removed because it answers a real question -- what happens
+  // to a friend who has never heard of Krate -- and the answer is the line
+  // above it.
+  btn.disabled = true;
+  btn.style.cursor = "default";
+  btn.style.opacity = "0.72";
+  const os = document.getElementById("sendWrapOs");
+  if (os) os.remove();
+})();
