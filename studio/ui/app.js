@@ -1207,8 +1207,10 @@ function showPlanning(title, line, tag, questions) {
 function skipCost(questions) {
   const all = questions.join(" ").toLowerCase();
   if (/\bhost|\bserver|\bapi\b|\burl\b|\bendpoint|\bdomain|\brequests to\b/.test(all)) {
-    return "Skip and the app can only reach your own computer -- an app "
-      + "meant to call a real API will not be able to. Naming a host "
+    // No " -- " here: it renders as a long dash, and coverage-test.mjs
+    // fails the site build over it. Two sentences say the same thing.
+    return "Skip and the app can only reach your own computer. An app "
+      + "meant to call a real API will not be able to, so naming a host "
       + "(api.github.com:443) is what lets it out.";
   }
   if (/\bfile|\bfolder|\bdirectory|\bsave|\bdisk\b/.test(all)) {
