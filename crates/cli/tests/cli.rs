@@ -8564,3 +8564,63 @@ fn an_agent_cannot_edit_the_criteria_that_judge_it() {
     );
     assert!(honest_bundle.is_file());
 }
+
+/// `--dump-caps` must never answer about a file it could not read.
+///
+/// It is the one command whose whole job is to let a stranger decide
+/// whether a file is safe to open, and Studio's app_info parses its output
+/// verbatim to fill that sheet. A DIRECTORY used to reach the printer with
+/// no manifest, fall through to the defaults, and print fifteen effective
+/// capabilities with exit 0 -- so the sheet said "Nothing beyond drawing
+/// its own window" about a folder nobody had opened. A safety claim about
+/// unread bytes is worse than no answer at all (K-769).
+#[test]
+fn dump_caps_refuses_what_it_could_not_read() {
+    let dir = tempfile::tempdir().expect("temp dir");
+
+    // A folder.
+    let out = krate()
+        .args(["run", "--dump-caps"])
+        .arg(dir.path())
+        .output()
+        .expect("run --dump-caps on a folder");
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        !out.status.success(),
+        "a folder must not report capabilities: {said}"
+    );
+    assert!(
+        !said.contains("Effective capabilities"),
+        "a folder must not print a capability list: {said}"
+    );
+    assert!(
+        said.contains("folder"),
+        "and it must say what is wrong in words: {said}"
+    );
+
+    // A file that is not a bundle.
+    let junk = dir.path().join("fake.krate");
+    std::fs::write(&junk, b"not a krate at all").expect("write the fake");
+    let out = krate()
+        .args(["run", "--dump-caps"])
+        .arg(&junk)
+        .output()
+        .expect("run --dump-caps on junk");
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        !out.status.success(),
+        "a damaged file must not report capabilities: {said}"
+    );
+    assert!(
+        !said.contains("Effective capabilities"),
+        "a damaged file must not print a capability list: {said}"
+    );
+}

@@ -7092,8 +7092,17 @@ fn report_send_command(
     note: &str,
     hub_override: Option<&str>,
 ) -> Result<u8> {
+    // Plain words here above all: this is the path somebody takes when
+    // something has ALREADY gone wrong, and "No such file or directory (os
+    // error 2)" is the last thing they need on top of it.
+    if !report.exists() {
+        anyhow::bail!(
+            "no report at {}. `krate support-report <session>` writes one.",
+            report.display()
+        );
+    }
     let bytes = fs::read(report)
-        .with_context(|| format!("could not read the report {}", report.display()))?;
+        .with_context(|| format!("could not read the report at {}", report.display()))?;
     if bytes.len() > 12 * 1024 * 1024 {
         anyhow::bail!("that report is over 12 MB; send the session's own log instead");
     }
@@ -12903,6 +12912,32 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
     // on exactly the apps a person most wants to inspect first. --log-grants
     // is written first so pairing the two still records what was inspected.
     if request.dump_caps {
+        // A file we could not read as an app must not be answered with a
+        // capability list.
+        //
+        // A DIRECTORY reached here with `manifest: None`, fell through to
+        // the defaults, and printed fifteen effective capabilities under
+        // "Effective capabilities" with exit 0. Studio's app_info parses
+        // exactly this output to tell a stranger what a file wants before
+        // they open it -- so the one command whose whole job is to answer
+        // "is this safe?" answered it about a folder it had never opened
+        // (K-769).
+        //
+        // `krate launch` and `krate card` both already refuse the same
+        // input; this path was the exception.
+        if manifest.is_none() {
+            let path = &request.file;
+            if path.is_dir() {
+                anyhow::bail!(
+                    "{} is a folder, not a Krate app. Point at the .krate file.",
+                    path.display()
+                );
+            }
+            anyhow::bail!(
+                "this is not a Krate app, or the file is damaged, so there is \
+                 nothing to report about what it would ask for."
+            );
+        }
         if let Some(log_path) = &request.log_grants {
             write_grant_log(
                 log_path,

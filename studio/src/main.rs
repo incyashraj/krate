@@ -2329,6 +2329,29 @@ async fn app_info(path: String) -> Result<serde_json::Value, String> {
             .arg(&target)
             .output()
             .map_err(|err| format!("could not run the Krate engine: {err}"))?;
+        // The STATUS, before the output.
+        //
+        // This read stdout and never looked at whether the engine succeeded.
+        // On a damaged or non-Krate file the engine exits 1 with an empty
+        // stdout and a perfectly good sentence on stderr -- and the parse
+        // below turned that emptiness into `capabilities: []`, which the
+        // sheet renders as "Nothing beyond drawing its own window."
+        //
+        // That is the worst possible failure for this particular command:
+        // the sheet exists so a stranger can decide whether a file is safe
+        // to open, and its failure mode was an affirmative safety claim
+        // about a file it had never read. Every other engine-driven command
+        // in this file checks the status; this was the one that did not
+        // (K-769).
+        if !out.status.success() {
+            let said = String::from_utf8_lossy(&out.stderr);
+            let line = said
+                .lines()
+                .map(str::trim)
+                .find(|l| !l.is_empty())
+                .unwrap_or("that file could not be read as a Krate app");
+            return Err(line.trim_start_matches("error: ").to_string());
+        }
         let text = String::from_utf8_lossy(&out.stdout).to_string();
 
         // `--dump-caps` prints two sections: an identity hash, then one
