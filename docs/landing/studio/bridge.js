@@ -188,8 +188,20 @@ async function hub(path, opts = {}) {
   if (bridge.token) headers.authorization = `Bearer ${bridge.token}`;
   if (opts.body && !headers["content-type"]) headers["content-type"] = "application/json";
   const res = await fetch(HUB + path, { ...opts, headers });
-  if (!res.ok) throw new Error((await res.text().catch(() => "")) || res.statusText);
+  if (!res.ok) throw withStatus(new Error((await res.text().catch(() => "")) || res.statusText), res.status);
   return (res.headers.get("content-type") || "").includes("json") ? res.json() : res.text();
+}
+
+/* Carry the HTTP status on the error.
+ *
+ * Without it every refusal is just a string, and two very different things
+ * become indistinguishable downstream: 503 (we are switched off) and 402
+ * (your allowance is spent) both surface as `wall: true`, so Studio told a
+ * stranger who had built nothing that their free app was used up.
+ */
+function withStatus(err, status) {
+  err.status = status;
+  return err;
 }
 
 async function builder(path, opts = {}) {
@@ -197,7 +209,7 @@ async function builder(path, opts = {}) {
   if (bridge.token) headers.authorization = `Bearer ${bridge.token}`;
   if (opts.body && !headers["content-type"]) headers["content-type"] = "application/json";
   const res = await fetch(BUILDER + path, { ...opts, headers });
-  if (!res.ok) throw new Error((await res.text().catch(() => "")) || res.statusText);
+  if (!res.ok) throw withStatus(new Error((await res.text().catch(() => "")) || res.statusText), res.status);
   return (res.headers.get("content-type") || "").includes("json") ? res.json() : res.text();
 }
 
@@ -1083,6 +1095,12 @@ const COMMANDS = {
         const wall = new Error(parsed.message || "You have made your app.");
         wall.wall = true;
         wall.download = Boolean(parsed.download);
+        // The STATUS travels too. 503 is the build service being switched
+        // off and 402 is the allowance being spent, and both arrive here as
+        // `wall: true` -- so without this the UI cannot tell "we are paused"
+        // from "you used your free app", and told a stranger who had built
+        // nothing that their first app was on us.
+        if (err && err.status) wall.status = err.status;
         throw wall;
       }
       throw err;
@@ -1114,6 +1132,12 @@ const COMMANDS = {
         const wall = new Error(parsed.message || "You have made your app.");
         wall.wall = true;
         wall.download = Boolean(parsed.download);
+        // The STATUS travels too. 503 is the build service being switched
+        // off and 402 is the allowance being spent, and both arrive here as
+        // `wall: true` -- so without this the UI cannot tell "we are paused"
+        // from "you used your free app", and told a stranger who had built
+        // nothing that their first app was on us.
+        if (err && err.status) wall.status = err.status;
         throw wall;
       }
       throw err;

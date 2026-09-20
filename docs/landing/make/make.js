@@ -55,16 +55,44 @@ const IDEAS = [
 
 /* ---- the hub ------------------------------------------------------------ */
 
+/* Turn a refused response into an error carrying the SENTENCE, not the body.
+ *
+ * Both callers used `new Error(await res.text())`, so a structured refusal
+ * arrived as its own JSON: a stranger pressing the button while the build
+ * service was switched off saw
+ *
+ *   {"wall":true,"download":true,"message":"Making apps in the browser is
+ *    not switched on yet. Krate Studio is free, and it makes apps on your
+ *    own machine."}
+ *
+ * printed on screen as the explanation for a failed build. The server's
+ * sentence was correct and kind; this layer threw it away and showed the
+ * envelope. The fields ride along on the error so the caller can branch on
+ * them instead of sniffing the text for words.
+ */
+async function refusal(res) {
+  const raw = await res.text().catch(() => "");
+  let body = null;
+  try {
+    body = JSON.parse(raw);
+  } catch (e) {}
+  const err = new Error(
+    (body && typeof body.message === "string" && body.message) || raw || res.statusText,
+  );
+  err.status = res.status;
+  if (body && typeof body === "object") {
+    err.wall = Boolean(body.wall);
+    err.download = Boolean(body.download);
+  }
+  return err;
+}
+
 async function hub(path, opts = {}) {
   const headers = { ...(opts.headers || {}) };
   if (state.token) headers.authorization = `Bearer ${state.token}`;
   if (opts.body && !headers["content-type"]) headers["content-type"] = "application/json";
   const res = await fetch(HUB + path, { ...opts, headers });
-  if (!res.ok) {
-    const err = new Error(await res.text().catch(() => res.statusText));
-    err.status = res.status;
-    throw err;
-  }
+  if (!res.ok) throw await refusal(res);
   const type = res.headers.get("content-type") || "";
   return type.includes("json") ? res.json() : res.text();
 }
@@ -74,11 +102,7 @@ async function builder(path, opts = {}) {
   if (state.token) headers.authorization = `Bearer ${state.token}`;
   if (opts.body && !headers["content-type"]) headers["content-type"] = "application/json";
   const res = await fetch(BUILDER + path, { ...opts, headers });
-  if (!res.ok) {
-    const err = new Error(await res.text().catch(() => res.statusText));
-    err.status = res.status;
-    throw err;
-  }
+  if (!res.ok) throw await refusal(res);
   const type = res.headers.get("content-type") || "";
   return type.includes("json") ? res.json() : res.text();
 }
@@ -172,6 +196,18 @@ async function startMake() {
     poll();
   } catch (err) {
     const message = String(err.message || err);
+    // 503 is OUR side being switched off, not the person's allowance.
+    //
+    // It used to fall through to failed(), which blamed the build, printed
+    // the raw JSON body as the explanation, and offered a Try again button
+    // that could never succeed while the key is off. A stranger who had
+    // made nothing was shown a broken product.
+    //
+    // It is not the wall either: hitTheWall() says the first app was on us
+    // and is spent, which is false for somebody who has built nothing.
+    if (err.status === 503) {
+      return paused(message);
+    }
     // 402 is the hub saying the funded first app is used up. The word
     // sniff stays as a fallback for older hub deployments whose 402
     // bodies predate err.status being carried through.
@@ -329,6 +365,38 @@ function signIn(path) {
   location.href = `${HUB}${path}?return=${back}`;
 }
 
+/* We are switched off, and that is OUR fault, not the person's.
+ *
+ * The build service answers 503 when browser authoring is not enabled. That
+ * used to fall through to failed(), which blamed the build, printed the raw
+ * JSON body as the reason, and offered a Try again that could never work.
+ * And hitTheWall() is not right either: it says the first app was on us and
+ * is spent, which is false for somebody who has built nothing.
+ *
+ * So: say what is true, do not offer a button that cannot work, and point at
+ * the thing that DOES work today.
+ */
+function paused(message) {
+  show("viewAsk");
+  const wrap = sheet(`
+    <h3>Making in the browser is paused</h3>
+    <p>${escapeHtml(
+      message ||
+        "This is on our side, not your account. Nothing has been used up.",
+    )}</p>
+    <div class="rows">
+      <button class="row" id="goStudio">
+        <span><b>Make it in Studio instead</b><small>Free and unlimited. Your own Claude or Codex does the writing, on your machine.</small></span>
+      </button>
+    </div>
+    <p class="note">Your words are kept. Nothing has been counted against you.</p>
+    <button class="close" data-close>Close</button>`);
+  wrap.querySelector("#goStudio").onclick = () => {
+    location.href = "/studio/";
+  };
+  wrap.querySelector("[data-close]").onclick = () => wrap.remove();
+}
+
 function hitTheWall(message) {
   show("viewAsk");
   const plan = (state.me && state.me.plan) || {};
@@ -342,7 +410,10 @@ function hitTheWall(message) {
     </div>
     <p class="note">${plan.active ? "" : "Changes to your app and builds that fail never counted against you."}</p>
     <button class="close" data-close>Not now</button>`);
-  wrap.querySelector("#goStudio").onclick = () => { location.href = "/studio"; };
+  // "/studio/" with the slash: the Studio DOWNLOAD page. /app/ used to send
+  // people to /open, which is the receive-an-app page and not where somebody
+  // who wants to keep making should land.
+  wrap.querySelector("#goStudio").onclick = () => { location.href = "/studio/"; };
   wrap.querySelector("[data-close]").onclick = () => wrap.remove();
 }
 

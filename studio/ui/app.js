@@ -2906,9 +2906,27 @@ async function buildNow(request, files, revising, planSession, starterShape) {
       }
       state.buildSettled = true;
       unlockComposer("Describe an app, or paste code to port…");
+      // Two different things arrive here as `wall: true`, and they must not
+      // be told the same way.
+      //
+      // 503 is US being switched off. The fallback sentence below says
+      // "Your first app was on us", which is FALSE for somebody who has
+      // built nothing -- a stranger hitting our outage was told, in effect,
+      // that they had used up their free app. The server's own sentence is
+      // correct and kind; only the fallback and the framing were wrong.
+      const paused = err.status === 503;
       say(
         "KRATE",
-        `${String(err.message || "Your first app was on us.")}\n\nYour work is saved here, and Studio on your own machine opens this session ready to edit.`,
+        `${String(
+          err.message ||
+            (paused
+              ? "Making apps in the browser is paused. This is on our side, not your account."
+              : "Your first app was on us."),
+        )}\n\n${
+          paused
+            ? "Nothing has been counted against you. Your work is saved here, and Studio on your own machine opens this session ready to edit."
+            : "Your work is saved here, and Studio on your own machine opens this session ready to edit."
+        }`,
         null,
         {
           variant: "ask",
@@ -2916,7 +2934,11 @@ async function buildNow(request, files, revising, planSession, starterShape) {
             ? [{
                 label: "Get Krate Studio",
                 primary: true,
-                run: () => invoke("open_external", { url: "https://krate.tech/open" }).catch(() => {}),
+                // krate.tech/studio/ is the DOWNLOAD page. This pointed at
+                // /open, which is the receive-an-app page -- the wrong
+                // destination for somebody who wants to keep making.
+                run: () =>
+                  invoke("open_external", { url: "https://krate.tech/studio/" }).catch(() => {}),
               }]
             : [],
         },

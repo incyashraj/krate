@@ -376,6 +376,27 @@ export default {
     } catch (err) {
       // Never leak a stack trace to a caller; log it for us instead.
       console.error("unhandled", err && err.stack ? err.stack : String(err));
+      // A body WE could not parse is the caller's fault, not ours.
+      //
+      // A deeply nested JSON body (~5000 levels) overflows the runtime's
+      // stack while parsing, and that RangeError is thrown inside the
+      // platform's own json() rather than by our code -- so the
+      // `.catch(() => ({}))` the handlers use never sees it and it lands
+      // here. Every one of /plan/get, /plan/count, /case/open and /case/list
+      // answered "something went wrong on our side" to a body the caller
+      // chose. Proved live at depth 5000; depth 4000 correctly gives 400.
+      //
+      // A 500 is a claim that we broke. It should be true when we say it,
+      // or the ones that matter get lost among the ones that do not.
+      const kind = err && err.constructor && err.constructor.name;
+      const message = String((err && err.message) || "");
+      if (
+        kind === "RangeError" ||
+        kind === "SyntaxError" ||
+        /JSON|stack|nest|depth/i.test(message)
+      ) {
+        return cors(text("that request body could not be read", 400));
+      }
       return cors(text("something went wrong on our side", 500));
     }
   },
@@ -2445,7 +2466,20 @@ async function authStart(env) {
 }
 
 async function authPoll(request, env) {
-  const { device_code } = await request.json();
+  // A caller's bad body is a 400, never a 500.
+  //
+  // This was a bare `await request.json()`: an empty or malformed body threw
+  // a SyntaxError that escaped to the top-level handler and answered "500
+  // something went wrong on our side". It was not our side -- and it is
+  // reachable by anyone, with no auth and no cost. Proved live:
+  //
+  //   curl -X POST https://hub.krate.tech/auth/poll           -> 500
+  //   curl -X POST -d 'notjson' https://hub.krate.tech/auth/poll -> 500
+  //
+  // The same `.catch(() => ({}))` every other handler in this file already
+  // uses. A 500 is a claim that WE broke; it should be true when we say it.
+  const body = await request.json().catch(() => null);
+  const device_code = body && body.device_code;
   if (!device_code) return text("no device code", 400);
 
   const response = await fetch("https://github.com/login/oauth/access_token", {
