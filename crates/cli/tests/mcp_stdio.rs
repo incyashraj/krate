@@ -32,13 +32,34 @@ fn krate_bin() -> PathBuf {
 /// toolchain to compile a component with, so the build half is skipped rather
 /// than reported as a failure of this code.
 fn has_cargo_component() -> bool {
-    Command::new("cargo-component")
+    // Bounded, like the identical probe in cli.rs. `.status()` waits for
+    // ever, and a version probe that takes over a minute is the Windows
+    // hang rather than a slow machine (K-240). Spawned and polled rather
+    // than waited on, so a wedged child is killed instead of taking the
+    // suite down with it.
+    let child = Command::new("cargo-component")
         .arg("--version")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
+        .spawn();
+    let Ok(mut child) = child else {
+        return false;
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.success(),
+            Ok(None) => {
+                if std::time::Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return false;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            Err(_) => return false,
+        }
+    }
 }
 
 /// One connected MCP server, spoken to the way a client speaks to it.

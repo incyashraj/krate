@@ -10806,6 +10806,26 @@ fn probe_cache_file(provider: &str) -> Option<PathBuf> {
 /// Not-ready and missing are never cached: those are exactly the states a
 /// person is actively fixing, and the recheck existing to notice the fix must
 /// not be blinded by its own cache.
+/// How long a readiness probe may take before it is called not-ready.
+///
+/// 20 seconds on a person's machine: long enough for a cold tool to answer,
+/// short enough that `krate ai` is not a coffee break.
+///
+/// Overridable because CI is not a person's machine. The Windows lane has
+/// agents on PATH that can never answer -- no sign-in, no network to their
+/// vendors -- so every probe there runs the full 20s, five of them, and the
+/// test that lists them sat for minutes at a time. Three stalls of 9 minutes
+/// in one run came from exactly this (K-240). The lane sets
+/// KRATE_PROBE_TIMEOUT_SECS low; nothing a person runs is affected.
+fn probe_timeout() -> std::time::Duration {
+    let secs = std::env::var("KRATE_PROBE_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(20);
+    std::time::Duration::from_secs(secs)
+}
+
 fn probe_with_cache(provider: &dyn agent_provider::AgentProvider) -> agent_provider::Readiness {
     const TTL: u64 = 15 * 60;
     let now = std::time::SystemTime::now()
@@ -10840,7 +10860,7 @@ fn probe_with_cache(provider: &dyn agent_provider::AgentProvider) -> agent_provi
         }
     }
 
-    let readiness = agent_provider::probe(provider, std::time::Duration::from_secs(20));
+    let readiness = agent_provider::probe(provider, probe_timeout());
     if let (Some((path, mtime)), agent_provider::Readiness::Working, Some(file)) =
         (&key, &readiness, &cache_file)
     {
@@ -10906,7 +10926,7 @@ fn ai_status(json: bool) -> Result<u8> {
                 scope.spawn(move || {
                     (
                         **provider,
-                        agent_provider::probe(**provider, std::time::Duration::from_secs(20)),
+                        agent_provider::probe(**provider, probe_timeout()),
                     )
                 })
             })

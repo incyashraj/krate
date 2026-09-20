@@ -353,7 +353,27 @@ function deviceId() {
  * follows them between machines -- something the desktop cannot do. Held
  * in local storage as well so the page is not blank while the hub answers. */
 function localSessions() {
-  try { return JSON.parse(localStorage.getItem("krate-sessions") || "[]"); } catch (e) { return []; }
+  // Shape-checked, not just parse-checked.
+  //
+  // The catch caught bad JSON and nothing else, so anything that PARSED got
+  // through: `null` (JSON.parse("null") is null, which defeats the `|| "[]"`
+  // fallback), an object, a number, or an array with null members. Each one
+  // reached the UI's `[...sessions].sort(...)` and threw
+  // "sessions is not iterable" or "Cannot read properties of null" on every
+  // paint -- the sidebar died, "My apps" stopped responding, and nothing
+  // self-healed it because the bad value stayed in storage across reloads.
+  //
+  // Proved against the live site by writing each shape and reloading.
+  //
+  // Anything that is not a usable list is treated as no sessions, and the
+  // members are filtered too: one null in the array was enough.
+  try {
+    const raw = JSON.parse(localStorage.getItem("krate-sessions") || "[]");
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((s) => s && typeof s === "object" && s.id);
+  } catch (e) {
+    return [];
+  }
 }
 function saveLocalSessions(list) {
   try { localStorage.setItem("krate-sessions", JSON.stringify(list.slice(0, 60))); } catch (e) {}
@@ -755,11 +775,26 @@ function runningJob() {
     const raw = localStorage.getItem(RUNNING_KEY);
     if (!raw) return null;
     const rec = JSON.parse(raw);
-    if (!rec || !rec.job) return null;
+    // The job id must be a STRING. An object here became
+    // `/build/[object Object]` in a real request; the builder answers 404,
+    // so it cost a wasted round trip on every page load rather than
+    // anything worse, but a request built from a shape nobody checked is
+    // not a request worth sending.
+    if (!rec || typeof rec.job !== "string" || !rec.job) return null;
     // A build that cannot still be running is not worth reattaching to. The
     // service drops a job long before this; the point is only to stop an
     // ancient record making the page chase something that is gone.
-    if (Date.now() - Number(rec.at || 0) > 60 * 60 * 1000) {
+    //
+    // `at` is validated as a NUMBER first, because Number("yesterday") is
+    // NaN and every NaN comparison is false -- so a non-numeric timestamp
+    // made the record immortal and the page chased it forever, on every
+    // load, with no way to clear it.
+    const at = Number(rec.at);
+    if (!Number.isFinite(at) || at <= 0) {
+      forgetRunningJob();
+      return null;
+    }
+    if (Date.now() - at > 60 * 60 * 1000) {
       forgetRunningJob();
       return null;
     }
@@ -2070,7 +2105,14 @@ requireSignIn();
   if (!window.addEventListener) return;
   let due = null;
   window.addEventListener("storage", (event) => {
-    if (event.key !== "krate-sessions") return;
+    // Sessions AND the make counter.
+    //
+    // This watched "krate-sessions" alone, so the other tab repainted its
+    // app list and kept a stale free-app count beside it -- which is the
+    // second half of the very confusion the comment above describes: the
+    // composer still offering a free app that was already used. Both keys
+    // are written when a build finishes, and both are display.
+    if (event.key !== "krate-sessions" && event.key !== "krateMakes") return;
     clearTimeout(due);
     due = setTimeout(() => {
       // Studio owns its own painting; ask it to redraw rather than
@@ -2080,6 +2122,11 @@ requireSignIn();
       }
       if (typeof window.renderShelf === "function") {
         try { window.renderShelf(); } catch (e) {}
+      }
+      // The counter has its own painter. Without this the chip in the
+      // other tab keeps the number it had when that tab was opened.
+      if (typeof window.renderFreeCount === "function") {
+        try { window.renderFreeCount(); } catch (e) {}
       }
     }, 250);
   });

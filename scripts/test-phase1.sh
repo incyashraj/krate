@@ -111,6 +111,21 @@ status=0
 # a watchdog that kills healthy work turns one flaky lane into a lying one.
 export KRATE_TEST_WATCHDOG_SECS="${KRATE_TEST_WATCHDOG_SECS:-90}"
 
+# And bound the AGENT PROBE, which the watchdog cannot help with.
+#
+# `krate ai` probes five providers, 20 seconds each by default. That is right
+# on a person's machine. On the Windows runner the agents are on PATH and can
+# never answer -- no sign-in, no route to their vendors -- so every probe
+# burns its full 20s. Measured in run 35497836673: three stalls of 9 minutes
+# each, all immediately after the test that lists them, inside a step with a
+# 50 minute budget.
+#
+# The watchdog does not catch it because 90s is longer than the probe takes:
+# nothing is hung, it is just slow on purpose, five times over. 3s is far more
+# than a tool that is going to answer needs, and the tests here assert that
+# every provider is ACCOUNTED FOR, not that any of them is ready.
+export KRATE_PROBE_TIMEOUT_SECS="${KRATE_PROBE_TIMEOUT_SECS:-3}"
+
 # Let the log stream while it runs, instead of only after.
 #
 # `--nocapture` was added so a hang would say where it stopped, and then the

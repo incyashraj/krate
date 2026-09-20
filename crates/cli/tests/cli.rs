@@ -39,13 +39,68 @@ fn krate() -> Command {
 /// rather than to fail on a missing tool or, worse, to weaken the assertions so
 /// the test passes without building anything. The lanes that do install the
 /// toolchain still run these tests in full.
+/// Run a child and give up on it, instead of waiting for ever.
+///
+/// `.output()` and `.status()` have no timeout: a child that never returns
+/// blocks its test, and with `--test-threads=1` that blocks the whole suite.
+/// The Windows lane has burned to GitHub's ceiling on exactly this three
+/// times (K-240), and each time the log showed the suite going silent rather
+/// than failing, because a blocked wait is indistinguishable from slow work.
+///
+/// `arm_test_watchdog` in the binary covers a hung `krate`. It cannot cover
+/// `cargo-component`, which this file spawns directly four times -- including
+/// `has_cargo_component`, the probe every build test calls first. Those were
+/// the unbounded waits left.
+///
+/// Kills the child and returns None on expiry, so the caller fails with its
+/// own message naming the command rather than the suite stopping dead.
+fn output_bounded(mut command: Command, secs: u64) -> Option<std::process::Output> {
+    use std::io::Read;
+    let mut child = command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .ok()?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(secs);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                // Drain what it wrote. Both pipes, or a chatty child that
+                // filled one is reported as empty.
+                let mut out = Vec::new();
+                let mut err = Vec::new();
+                if let Some(mut s) = child.stdout.take() {
+                    let _ = s.read_to_end(&mut out);
+                }
+                if let Some(mut s) = child.stderr.take() {
+                    let _ = s.read_to_end(&mut err);
+                }
+                return Some(std::process::Output {
+                    status,
+                    stdout: out,
+                    stderr: err,
+                });
+            }
+            Ok(None) => {
+                if std::time::Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return None;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            Err(_) => return None,
+        }
+    }
+}
+
 fn has_cargo_component() -> bool {
-    Command::new("cargo-component")
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|status| status.success())
+    // 60s: a version probe that takes longer than a minute is the hang, not
+    // a slow machine.
+    let mut command = Command::new("cargo-component");
+    command.arg("--version");
+    output_bounded(command, 60)
+        .map(|out| out.status.success())
         .unwrap_or(false)
 }
 
@@ -6878,11 +6933,11 @@ fn an_editable_bundle_rebuilds_locked_from_what_it_carries() {
     let toolchain = repo.join("rust-toolchain.toml");
 
     // The original, built in the checkout the way CI builds it.
-    let built = Command::new("cargo-component")
-        .args(["build", "--release"])
-        .current_dir(&app)
-        .output()
-        .expect("cargo-component");
+    let mut build_cmd = Command::new("cargo-component");
+    build_cmd.args(["build", "--release"]).current_dir(&app);
+    // 15 minutes: a cold cargo cache on CI is slow, a hang is unbounded.
+    let built = output_bounded(build_cmd, 15 * 60)
+        .expect("cargo-component build did not finish within 15 minutes (K-240)");
     assert!(
         built.status.success(),
         "building krate-hello-gui: {}",
@@ -6969,11 +7024,12 @@ fn an_editable_bundle_rebuilds_locked_from_what_it_carries() {
     .unwrap();
     std::fs::copy(&toolchain, source.join("rust-toolchain.toml")).unwrap();
 
-    let rebuilt = Command::new("cargo-component")
+    let mut rebuild_cmd = Command::new("cargo-component");
+    rebuild_cmd
         .args(["build", "--release", "--locked"])
-        .current_dir(&source)
-        .output()
-        .expect("cargo-component");
+        .current_dir(&source);
+    let rebuilt = output_bounded(rebuild_cmd, 15 * 60)
+        .expect("cargo-component rebuild did not finish within 15 minutes (K-240)");
     assert!(
         rebuilt.status.success(),
         "the rebuild must resolve to the lock the bundle carries, against the SDK it carries: {}",

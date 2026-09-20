@@ -2214,8 +2214,22 @@ async function loadPlanMakes() {
       seedMonth: monthKey(),
       seedN: makesLocal(),
     });
-    state.planMakes = rec;
-    mirrorLocal(rec.n || 0);
+    // The two shells answer this with DIFFERENT SHAPES, and taking one
+    // for granted zeroed the count.
+    //
+    // The desktop returns a record ({month, n}); the browser bridge returns
+    // a bare NUMBER (`return out.n || 0`). Reading `rec.n` on a number gives
+    // undefined, so `mirrorLocal(undefined || 0)` wrote n:0 back over the
+    // real count -- and makesThisMonth() then fell through to that zero. A
+    // person who had used their one free app was shown as still having it.
+    //
+    // Nothing was ever given away: the builder counts server-side and the
+    // hub is the authority. It is a trust bug rather than a money one, which
+    // is its own kind of bad on the screen where somebody decides whether to
+    // pay.
+    const made = typeof rec === "number" ? rec : Number(rec && rec.n) || 0;
+    state.planMakes = typeof rec === "number" ? { n: rec } : rec;
+    mirrorLocal(made);
   } catch (e) { /* the localStorage fallback carries it */ }
   renderFreeCount();
 }
@@ -5596,6 +5610,22 @@ $("freeCount")?.addEventListener("click", openPlanSheet);
 $("setPlanBtn")?.addEventListener("click", openPlanSheet);
 renderFreeCount();
 loadPlanMakes();
+
+// The three painters the browser shell repaints with when ANOTHER TAB
+// writes.
+//
+// bridge.js's keepTabsInStep listens for `storage` and calls
+// window.renderSessions / window.renderShelf / window.renderFreeCount --
+// and none of them were ever put on `window`, so every one of those calls
+// was a silent no-op and the whole cross-tab repaint has never once run.
+// A `typeof x === "function"` guard around a name that does not exist
+// fails quietly forever, which is why nobody noticed.
+//
+// Exposed here rather than declaring them global, so the seam is one
+// visible line instead of three scattered definitions changing shape.
+window.renderSessions = renderSessions;
+window.renderShelf = renderShelf;
+window.renderFreeCount = renderFreeCount;
 
 /* ---- the paid plan ---------------------------------------------------- */
 // One truth from the hub: is billing live, and is THIS person's plan
