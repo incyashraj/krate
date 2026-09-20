@@ -380,10 +380,20 @@ fn collapse_whitespace(text: &str) -> String {
 fn render_widget_kinds() -> String {
     use krate_adapter_common::ui::WidgetKind;
 
-    // Named individually rather than iterated: the enum carries no iterator,
-    // and an explicit list means adding a kind fails to compile here until it
-    // is documented. Each note says what the kind is *for*, which is the part
-    // an agent cannot infer from the name.
+    // Named individually rather than iterated: the enum carries no iterator.
+    // Each note says what the kind is *for*, which is the part an agent
+    // cannot infer from the name.
+    //
+    // This comment used to claim "adding a kind fails to compile here until
+    // it is documented". It did not: KINDS is a plain array, not an
+    // exhaustive match, so `Overlay` was added to the enum and the WIT and
+    // compiled straight past this list. The pack then told every AI author
+    // "if something you want is not here, it does not exist" about a widget
+    // that exists -- and a HUD over a game, the very thing Overlay was added
+    // for, could not be written. The guard the comment believed in is now
+    // real: `every_kind_is_listed` below is an exhaustive match, so a new
+    // variant fails to compile there, and the test beside it holds this
+    // list to the WIT's own variant count.
     const KINDS: &[(WidgetKind, &str)] = &[
         (WidgetKind::Stack, "flex row or column; the usual root"),
         (WidgetKind::Grid, "wrapping grid"),
@@ -411,7 +421,13 @@ fn render_widget_kinds() -> String {
             "a picture; fill it with `image::set_pixels`, see \"Showing a picture\"",
         ),
         (WidgetKind::Canvas, "a region the app positions children in"),
+        (
+            WidgetKind::Overlay,
+            "children all fill it and paint back to front: a HUD over a game, \
+             a pause menu over a board, a caption over a photo",
+        ),
     ];
+    debug_assert!(KINDS.iter().all(|(kind, _)| every_kind_is_listed(*kind)));
 
     let mut out = String::from("\n### Widget kinds\n\n");
     out.push_str(
@@ -422,6 +438,108 @@ fn render_widget_kinds() -> String {
         out.push_str(&format!("- `{kind:?}` -- {note}\n"));
     }
     out
+}
+
+/// Every `WidgetKind`, or this does not compile.
+///
+/// An exhaustive match with no wildcard: the day a variant is added to the
+/// enum, this function stops compiling until the variant is named here --
+/// and the test in `widget_kinds_guard` then requires it in the rendered
+/// list. That is the guarantee the old comment on KINDS only claimed.
+fn every_kind_is_listed(kind: krate_adapter_common::ui::WidgetKind) -> bool {
+    use krate_adapter_common::ui::WidgetKind as K;
+    let listed = |k: K| {
+        // Mirrors render_widget_kinds' table; the test keeps the two equal.
+        matches!(
+            k,
+            K::Stack
+                | K::Grid
+                | K::Scroll
+                | K::Tabs
+                | K::Button
+                | K::Checkbox
+                | K::Radio
+                | K::Switch
+                | K::Slider
+                | K::Progress
+                | K::Text
+                | K::TextField
+                | K::TextArea
+                | K::ListView
+                | K::TreeView
+                | K::Image
+                | K::Canvas
+                | K::Overlay
+        )
+    };
+    match kind {
+        K::Stack
+        | K::Grid
+        | K::Scroll
+        | K::Tabs
+        | K::Button
+        | K::Checkbox
+        | K::Radio
+        | K::Switch
+        | K::Slider
+        | K::Progress
+        | K::Text
+        | K::TextField
+        | K::TextArea
+        | K::ListView
+        | K::TreeView
+        | K::Image
+        | K::Canvas
+        | K::Overlay => listed(kind),
+    }
+}
+
+#[cfg(test)]
+mod widget_kinds_guard {
+    /// The documented list has exactly the WIT's variants -- no more, no
+    /// fewer, none twice.
+    ///
+    /// The WIT is the ground truth an app is compiled against, and it is
+    /// what drifted: `overlay` was added there and here nobody noticed. So
+    /// the count is read from the WIT text itself rather than from anything
+    /// in this crate.
+    #[test]
+    fn the_rendered_widget_list_matches_the_wit() {
+        let wit = include_str!("../../../wit/krate/phase4/deps/ui/ui.wit");
+        let start = wit
+            .find("enum widget-kind {")
+            .expect("widget-kind enum in the WIT");
+        let end = wit[start..].find('}').expect("enum closes") + start;
+        let variants: Vec<&str> = wit[start..end]
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.starts_with("///") && !l.starts_with("enum"))
+            .map(|l| l.trim_end_matches(','))
+            .collect();
+        let rendered = super::render_widget_kinds();
+        for v in &variants {
+            // `text-field` in WIT is `TextField` in the rendered heading.
+            let pascal: String = v
+                .split('-')
+                .map(|w| {
+                    let mut c = w.chars();
+                    c.next()
+                        .map(|f| f.to_uppercase().collect::<String>() + c.as_str())
+                        .unwrap_or_default()
+                })
+                .collect();
+            assert!(
+                rendered.contains(&format!("`{pascal}`")),
+                "WIT variant `{v}` ({pascal}) is not in the rendered widget list -- an app \
+                 is being told it does not exist"
+            );
+        }
+        assert_eq!(
+            rendered.matches("\n- `").count(),
+            variants.len(),
+            "the rendered list and the WIT enum must have the same number of kinds"
+        );
+    }
 }
 
 pub fn render_reference(functions: &[SdkFunction]) -> String {

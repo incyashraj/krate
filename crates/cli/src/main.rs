@@ -8458,12 +8458,18 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     // every required capability's denial is proven by name, and anything that
     // needed a person's hardware is recorded as not exercised rather than
     // implied to have passed.
-    let wall = verify_permission_wall(
-        verify_dir.path(),
-        bundle_abs.to_str().unwrap(),
-        &manifest,
-        &verify_arg,
-    )?;
+    // Not `.to_str().unwrap()`: a path Windows and Linux both permit --
+    // non-UTF-8 bytes, which a person can produce with one odd folder name
+    // -- aborted the whole create here, after the app had already been
+    // built, with a panic instead of a sentence.
+    let Some(bundle_str) = bundle_abs.to_str() else {
+        anyhow::bail!(
+            "the output path {} is not valid UTF-8, and the verify step cannot \
+             hand it to the runtime. Write the app somewhere with a plain name.",
+            bundle_abs.display()
+        );
+    };
+    let wall = verify_permission_wall(verify_dir.path(), bundle_str, &manifest, &verify_arg)?;
     let gating = wall.denied_checked.first().cloned();
     steps.push(serde_json::json!({
         "step": "verify",
@@ -12965,32 +12971,14 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
     // on exactly the apps a person most wants to inspect first. --log-grants
     // is written first so pairing the two still records what was inspected.
     if request.dump_caps {
-        // A file we could not read as an app must not be answered with a
-        // capability list.
-        //
-        // A DIRECTORY reached here with `manifest: None`, fell through to
-        // the defaults, and printed fifteen effective capabilities under
-        // "Effective capabilities" with exit 0. Studio's app_info parses
-        // exactly this output to tell a stranger what a file wants before
-        // they open it -- so the one command whose whole job is to answer
-        // "is this safe?" answered it about a folder it had never opened
-        // (K-769).
-        //
-        // `krate launch` and `krate card` both already refuse the same
-        // input; this path was the exception.
-        if manifest.is_none() {
-            let path = &request.file;
-            if path.is_dir() {
-                anyhow::bail!(
-                    "{} is a folder, not a Krate app. Point at the .krate file.",
-                    path.display()
-                );
-            }
-            anyhow::bail!(
-                "this is not a Krate app, or the file is damaged, so there is \
-                 nothing to report about what it would ask for."
-            );
-        }
+        // No refusal here on `manifest.is_none()`: a loose component with no
+        // manifest is a legitimate thing to inspect, and the two cases that
+        // must NOT be answered with a capability list are already refused
+        // before this point -- a folder by the guard at the top of
+        // run_component_inner, a damaged file by bundle::open. A first cut
+        // put a blanket `manifest.is_none()` refusal here and broke
+        // run_dump_caps_prints_effective_policy_without_running_component
+        // on the Ubuntu lane (K-769).
         if let Some(log_path) = &request.log_grants {
             write_grant_log(
                 log_path,

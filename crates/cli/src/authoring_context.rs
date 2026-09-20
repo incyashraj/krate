@@ -148,7 +148,7 @@ process after the window closes, one window per app.
 
 Every callable interface is in this file, generated from the same WIT and
 SDK source the bindings are built from. Do not open `src/bindings.rs` or
-the SDK's own sources (`main.rs`, `usability.rs`, `locale.rs`, ...) to
+the SDK's own sources (`lib.rs`, `bindings_gui.rs`, `phase3.rs`) to
 check a name: they are generated plumbing at under 1% signal, each open
 costs a full model round trip, and they contain nothing this file lacks.
 If a name is not in this file, it does not exist -- do not invent it. The
@@ -534,7 +534,7 @@ pub(crate) fn capability_catalog_section() -> String {
 
 fn capability_row(spec: &krate_manifest::CapabilitySpec) -> String {
     let default = if spec.default_granted() { "yes" } else { "no" };
-    let note = capability_note(&spec.name());
+    let note = capability_note(&spec.display_pattern());
     format!(
         "| `{}` | {} | {} |\n",
         spec.display_pattern(),
@@ -545,8 +545,30 @@ fn capability_row(spec: &krate_manifest::CapabilitySpec) -> String {
 
 /// A one-line human note for a capability, keyed by its `module.action` name.
 /// Kept short: the full story is in the SDK reference and the no_std section.
-fn capability_note(name: &str) -> &'static str {
-    match name {
+fn capability_note(pattern: &str) -> &'static str {
+    // The RESOURCE decides the note where it changes the meaning.
+    //
+    // This was keyed on `spec.name()`, which is module.action with the
+    // resource dropped -- so every variant of one capability got one note.
+    // `ui.dialog:message` and `ui.dialog:confirm` were annotated "system
+    // file dialogs (choose a file)": they are a message box and a yes/no
+    // box, no file moves, which is exactly why they are default-granted.
+    // An author reading that believed a default-granted capability lets
+    // the app choose files, which would make the file-dialog wall look
+    // hollow. And `gfx.gpu:compute` was annotated "GPU drawing (canvas2d
+    // present today)" while the registry says it is not implemented -- the
+    // pack vouching for a declarable capability with nothing behind it,
+    // the K-175/K-393 class exactly.
+    match pattern {
+        "ui.dialog:message" => return "a message box (no file access; default-granted)",
+        "ui.dialog:confirm" => return "a yes/no question box (no file access; default-granted)",
+        "gfx.gpu:compute" => return "GPU compute -- NOT implemented yet; do not declare it",
+        "gfx.gpu:basic" => return "GPU drawing (canvas2d present today)",
+        _ => {}
+    }
+    // Everything else is a property of the family, whatever the resource.
+    let family = pattern.split(':').next().unwrap_or(pattern);
+    match family {
         "io.stdin" => "read stdin",
         "io.stdout" => "print to stdout",
         "io.stderr" => "print to stderr",
@@ -579,7 +601,7 @@ fn capability_note(name: &str) -> &'static str {
         "ui.open-url" => "hand a link to the browser",
         "ui.notify" => "a desktop notification",
         "ui.dropzone" => "accept dragged files",
-        "ui.dialog" => "system file dialogs (choose a file)",
+        "ui.dialog" => "system file dialogs (open a file or folder, save a file); the person's pick is the grant",
         "gfx.gpu" => "GPU drawing (canvas2d present today)",
         "audio.playback" => "play sound",
         "audio.capture" => "record from the microphone",
@@ -703,7 +725,9 @@ ships today and satisfies most of them.\n\n\
 attributes it to the app. Use it when the thing the app waits for finishes \
 -- a timer, a long job -- because the person has usually switched windows. \
 No reply channel exists; do not build flows that depend on the person \
-clicking it.\n\n\
+clicking it. **Not available on Windows yet**: `show` returns an error \
+there, so treat it as a courtesy -- show the same state in the window too, \
+and never make a step depend on the notification having appeared.\n\n\
 **Open in the browser** (`ui.open-url`, an explicit ask): \
 `ui::launch::open_url(\"https://...\")` hands a link to the person's \
 browser. Pairs with 2c: a \"get your API token\" button that opens the \
@@ -986,10 +1010,10 @@ fails to build with \"no global memory allocator found\", \"`#[panic_handler]` \
 required\" or \"duplicate lang item\":\n\
 \u{20}\u{20}1. put `#![no_std]` at the top of `src/lib.rs`, then `extern crate alloc;`, \
 and take `String`, `Vec`, `format!` and `vec!` from `alloc`: \
-`use alloc::{{format, string::{{String, ToString}}, vec, vec::Vec}};`\n\
+`use alloc::{format, string::{String, ToString}, vec, vec::Vec};`\n\
 \u{20}\u{20}2. KEEP the `krate` dependency in `Cargo.toml` and drop `\"std\"` from its \
 features:\n\
-\u{20}\u{20}\u{20}\u{20}\u{20}krate = {{ path = \"<sdk>/crates/bindings-rust\", features = [\"gui\"] }}\n\
+\u{20}\u{20}\u{20}\u{20}\u{20}krate = { path = \"<sdk>/crates/bindings-rust\", features = [\"gui\"] }\n\
 Without `std` the SDK provides the allocator, the `#[panic_handler]` and the \
 `mem*` intrinsics a `no_std` guest needs; with `std` it leaves them to std. So a \
 `#![no_std]` guest that still says `\"std\"` fails with \"`#[panic_handler]` \
@@ -1022,6 +1046,29 @@ An app with no image files can still generate a texture in code: fill an RGBA \
 buffer with a checker, a noise pattern, or stripes, and upload that. A tiled \
 procedural texture on the ground and the walls is the single biggest \
 improvement available to a 3D scene, and it costs no assets.\n\n\
+## Files the person hands the app\n\n\
+Two more doors exist beside `open_file`, and both use the same grant model: \
+the person's own action IS the permission, the app gets a name and a token, \
+never a path, and the token is good for this run only.\n\n\
+**Drag and drop** (`ui.dropzone:<mime-type>`, an explicit ask). Declare it \
+and the window receives `Event::FileDropped(chosen)` when a file lands on \
+it -- `chosen.name` to show, `chosen.token` to open with \
+`fs::files::open_chosen(&token, OpenMode::Read)`. While something is being \
+dragged over the window, `Event::FileHovering(true)` arrives, then \
+`FileHovering(false)` when it leaves or drops: use it to highlight the \
+target, and nothing more -- a hover is not consent, and the app learns \
+nothing about the file until it is dropped. An app that declares the \
+capability and never handles `FileDropped` has told the person it accepts \
+files and will not.\n\n\
+**Saving** (`ui.dialog:file-save`, an explicit ask). \
+`ui::dialog::save_file(window, \"Save as\", \"notes.txt\", \"txt\")` shows the \
+system's save dialog and returns `Ok(None)` when they cancel -- a normal \
+outcome, not an error -- or `Ok(Some(chosen))`, whose token you pass to \
+`fs::files::open_chosen` with a writing mode. The token names a file the \
+person nominated; it creates nothing by itself, so asking and then not \
+writing leaves nothing behind. An editor that can open a document and not \
+save one is not an editor: any app that reads a file the person chose \
+should offer to save one too.\n\n\
 ## The app's icon\n\n\
 Write `assets/icon.png` (square PNG, 512px or larger) and the app wears it \
 everywhere: the dock while it runs, Finder when installed, the installer. \
@@ -1406,7 +1453,7 @@ pub(crate) fn gui_world_section() -> String {
          uses, with its `gui` feature on:\n\n\
          ```toml\n\
          [dependencies]\n\
-         krate = {{ path = \"<sdk>/crates/bindings-rust\", features = [\"gui\"] }}\n\
+         krate = { path = \"<sdk>/crates/bindings-rust\", features = [\"gui\"] }\n\
          ```\n\n\
          Then the interfaces below are `krate::<package>::<interface>::<fn>`, e.g.\n\
          `krate::ui::window::create(\"Title\", size)`,\n\
@@ -2286,8 +2333,7 @@ pub const EMBEDDED_EXAMPLES: &[EmbeddedExample] = &[
     },
     EmbeddedExample {
         name: "krate-fetch",
-        shows:
-            "an app that reaches the internet: net.http requests, async polling, showing results",
+        shows: "a live request without freezing the window: net::begin, then poll each frame, drawing the last known state meanwhile",
         keywords: &[
             "fetch",
             "api",

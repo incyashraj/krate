@@ -3398,13 +3398,22 @@ fn first_run_setup() {
     if marker.exists() {
         return;
     }
+    // Written at the END only if every step below succeeded. This wrote
+    // `setup-done` unconditionally, so a desktop missing
+    // update-desktop-database or xdg-mime got a permanent half-install: the
+    // marker said done, and it never tried again. macOS had the identical
+    // bug and its post-mortem is in the comment above (K-188: "failed
+    // silently on every machine, setup-done was written anyway, and it
+    // never tried again"); Windows re-asserts every launch for the same
+    // reason. The lesson had not reached this arm.
+    let mut all_ok = true;
     let home = dirs_home();
     let data = home.join(".local/share");
 
     // The MIME type, so files managers know what a .krate is.
     let mime_dir = data.join("mime/packages");
-    let _ = std::fs::create_dir_all(&mime_dir);
-    let _ = std::fs::write(
+    all_ok &= std::fs::create_dir_all(&mime_dir).is_ok();
+    all_ok &= std::fs::write(
         mime_dir.join("krate.xml"),
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
@@ -3414,16 +3423,19 @@ fn first_run_setup() {
   </mime-type>
 </mime-info>
 "#,
-    );
-    let _ = silent_cmd("update-mime-database")
+    )
+    .is_ok();
+    all_ok &= silent_cmd("update-mime-database")
         .arg(data.join("mime"))
-        .status();
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
 
     // The studio's own icon, written from the build so no theme install is
     // needed.
     let icon_path = data.join("krate/krate.png");
-    let _ = std::fs::create_dir_all(icon_path.parent().expect("krate data dir"));
-    let _ = std::fs::write(&icon_path, include_bytes!("../icons/128x128.png"));
+    all_ok &= std::fs::create_dir_all(icon_path.parent().expect("krate data dir")).is_ok();
+    all_ok &= std::fs::write(&icon_path, include_bytes!("../icons/128x128.png")).is_ok();
 
     // The launcher entry. For an AppImage, APPIMAGE is the real on-disk
     // path; current_exe would name the transient mount point.
@@ -3432,24 +3444,30 @@ fn first_run_setup() {
         .or_else(|_| std::env::current_exe())
         .unwrap_or_default();
     let apps_dir = data.join("applications");
-    let _ = std::fs::create_dir_all(&apps_dir);
+    all_ok &= std::fs::create_dir_all(&apps_dir).is_ok();
     let desktop = apps_dir.join("krate.desktop");
-    let _ = std::fs::write(
+    all_ok &= std::fs::write(
         &desktop,
         format!(
             "[Desktop Entry]\nType=Application\nName=Krate\nComment=Describe an app. Watch it become real.\nExec=\"{}\" %f\nTerminal=false\nCategories=Development;Utility;\nIcon={}\nMimeType=application/vnd.krate.bundle;\n",
             exe.display(),
             icon_path.display(),
         ),
-    );
-    let _ = silent_cmd("update-desktop-database")
+    ).is_ok();
+    all_ok &= silent_cmd("update-desktop-database")
         .arg(&apps_dir)
-        .status();
-    let _ = silent_cmd("xdg-mime")
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    all_ok &= silent_cmd("xdg-mime")
         .args(["default", "krate.desktop", "application/vnd.krate.bundle"])
-        .status();
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
 
-    let _ = std::fs::write(&marker, "1");
+    if all_ok {
+        let _ = std::fs::write(&marker, "1");
+    }
 }
 
 /// Windows: claim .krate for the studio in the user's registry. The NSIS

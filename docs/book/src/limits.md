@@ -16,7 +16,7 @@ written from memory.
 | Files | A scoped folder the app owns, plus a file picker for anything else |
 | Network | HTTP and WebSockets, granted per host and port |
 | Storage | Key-value, SQL, a secret store, and a shared store across machines |
-| System | Clipboard, dialogs, notifications, open-a-URL, locale, time, random |
+| System | Clipboard, dialogs, notifications (macOS and Linux; Windows reports them unavailable for now), open-a-URL, locale, time, random |
 | Input | Keyboard, pointer, wheel |
 
 ## Not yet

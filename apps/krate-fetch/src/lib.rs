@@ -31,7 +31,7 @@ use alloc::{
     vec::Vec,
 };
 use krate::bindings::krate::io::{args, stdio};
-use krate::bindings::krate::net::http_client;
+use krate::net::{self, FetchStatus, HttpMethod, Request};
 use krate::gfx::{canvas2d, types as gfx};
 use krate::ui::{events, tree, types, window};
 
@@ -81,6 +81,8 @@ refused or the connection failed.";
 /// Outcome of the fetch, for the status line.
 #[derive(Clone, Copy, PartialEq)]
 enum Status {
+    /// A live request is in flight; the window keeps drawing meanwhile.
+    Loading,
     /// Live fetch succeeded; carries the byte count.
     Ok(usize),
     /// Live fetch failed.
@@ -105,6 +107,9 @@ struct Reader {
     /// Fetch button state.
     hover: bool,
     pressed: bool,
+    /// The in-flight request, if any: `net::begin` handed it back at once,
+    /// and the event loop asks `net::poll` about it every round.
+    pending: Option<u64>,
 }
 
 impl Reader {
@@ -119,6 +124,7 @@ impl Reader {
             scroll: 0,
             hover: false,
             pressed: false,
+            pending: None,
         }
     }
 
@@ -289,6 +295,11 @@ impl krate::Guest for Component {
                     let _ = draw(canvas, &reader);
                 }
             }
+            // The request, if one is in flight, is asked about once per round
+            // -- after the event, so a click during a slow fetch still lands.
+            if settle_fetch(&mut reader, &out) {
+                let _ = draw(canvas, &reader);
+            }
             r += 1;
         }
 
@@ -297,30 +308,72 @@ impl krate::Guest for Component {
     }
 }
 
-/// Run the fetch: a live GET when a URL is present, else load the sample. Prints
-/// the machine-readable result line for automated runs.
+/// One poll of the in-flight request. Returns true when something changed and
+/// the reader should be drawn again.
+fn settle_fetch(reader: &mut Reader, out: &stdio::OutputStream) -> bool {
+    let Some(handle) = reader.pending else {
+        return false;
+    };
+    match net::poll(handle) {
+        // Still going: draw the frame, take the next event, ask again.
+        FetchStatus::Pending => false,
+        FetchStatus::Ready(res) => {
+            reader.pending = None;
+            let n = res.body.len();
+            reader.load_body(&res.body);
+            reader.status = Status::Ok(n);
+            let _ = out.write(b"fetch:ok:");
+            let _ = out.write(u64_slice(n as u64, &mut [0u8; 20]));
+            let _ = out.write(b"\n");
+            true
+        }
+        // A finished handle answers UnknownHandle if asked again; both mean
+        // "this request is over and did not deliver".
+        FetchStatus::Failed(_) | FetchStatus::UnknownHandle => {
+            reader.pending = None;
+            fetch_failed(reader, out);
+            true
+        }
+    }
+}
+
+fn fetch_failed(reader: &mut Reader, out: &stdio::OutputStream) {
+    reader.load_body(
+        b"The fetch failed. The host refused the\nconnection or the server did not answer.",
+    );
+    reader.status = Status::Failed;
+    let _ = out.write(b"fetch:error\n");
+}
+
+/// Start the fetch: a live GET when a URL is present, else load the sample.
+/// Prints the machine-readable result line for automated runs (a live one
+/// prints it when the request settles).
 fn do_fetch(reader: &mut Reader, has_url: bool, out: &stdio::OutputStream) {
     if has_url {
         if let Ok(url) = core::str::from_utf8(reader.url_bytes()) {
-            match http_client::get(url) {
-                Ok(body) => {
-                    let n = body.len();
-                    reader.load_body(&body);
-                    reader.status = Status::Ok(n);
-                    let _ = out.write(b"fetch:ok:");
-                    let _ = out.write(u64_slice(n as u64, &mut [0u8; 20]));
-                    let _ = out.write(b"\n");
-                    return;
+            // `net::begin`, never the blocking `get`. This app is named by the
+            // authoring pack as THE example of a request that does not freeze
+            // the window -- and for a long time it called the blocking form
+            // from its pointer handler, so every generated app that fetched
+            // anything inherited a window that stopped answering until the
+            // server did (K-770). `begin` returns a handle at once; the event
+            // loop polls it each round and keeps drawing the last known
+            // state, which is the whole point.
+            let req = Request {
+                method: HttpMethod::Get,
+                url: alloc::string::String::from(url),
+                headers: alloc::vec::Vec::new(),
+                body: alloc::vec::Vec::new(),
+                timeout_millis: Some(15_000),
+            };
+            match net::begin(req) {
+                Ok(handle) => {
+                    reader.pending = Some(handle);
+                    reader.status = Status::Loading;
                 }
-                Err(_) => {
-                    reader.load_body(
-                        b"The fetch failed. The host refused the\nconnection or the server did not answer.",
-                    );
-                    reader.status = Status::Failed;
-                    let _ = out.write(b"fetch:error\n");
-                    return;
-                }
+                Err(_) => fetch_failed(reader, out),
             }
+            return;
         }
     }
     // No URL: the built-in sample.
@@ -587,6 +640,7 @@ fn draw_scrollbar(canvas: u64, reader: &Reader) -> Result<(), gfx::GfxError> {
 fn draw_status(canvas: u64, reader: &Reader) -> Result<(), gfx::GfxError> {
     let sy = HEIGHT - 34.0;
     let dot = match reader.status {
+        Status::Loading => color(0.98, 0.80, 0.35, 1.0),
         Status::Ok(_) => color(0.42, 0.90, 0.55, 1.0),
         Status::Failed => color(0.98, 0.45, 0.55, 1.0),
         Status::Sample => color(0.36, 0.72, 1.0, 1.0),
@@ -595,6 +649,7 @@ fn draw_status(canvas: u64, reader: &Reader) -> Result<(), gfx::GfxError> {
 
     let mut buf = [0u8; 64];
     let text: &[u8] = match reader.status {
+        Status::Loading => b"Fetching... the window stays live; scroll or press Fetch again.",
         Status::Ok(n) => status_ok(n as u64, &mut buf),
         Status::Failed => b"Fetch failed: the host refused or the server did not answer.",
         Status::Sample => b"Built-in sample - pass a URL to fetch a live page.",

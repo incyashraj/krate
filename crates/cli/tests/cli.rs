@@ -7894,6 +7894,15 @@ fn a_failed_port_says_what_kind_of_failure_it_was() {
 /// The same class of trap as double-clicking a stale installed app.
 #[test]
 fn the_agent_seam_invokes_this_binary_not_one_from_path() {
+    if cfg!(windows) {
+        // Three independent reasons the decoy can never run there: it is
+        // written as `krate` not `krate.exe`, the chmod is cfg(unix), and
+        // PATH is joined with `:`. So on Windows this test passed without
+        // testing anything -- the exact K-269 shape, which the skip-count
+        // report exists to surface. Said out loud instead of silent.
+        eprintln!("skipping the decoy-on-PATH check on Windows: the decoy is a Unix script and PATH is colon-joined");
+        return;
+    }
     let dir = tempfile::tempdir().expect("tempdir");
     // A decoy `krate` earlier on PATH. If the seam resolves by name, this is
     // what would run, and it fails loudly.
