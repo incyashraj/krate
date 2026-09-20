@@ -2581,13 +2581,44 @@ async fn open_krate(app: tauri::AppHandle) -> Result<(), String> {
     // activation, so its window is created and never shown (K-110). launch
     // wraps the app under ~/.krate and opens it properly -- which also means
     // nothing keeps touching Downloads or the volume afterwards.
-    silent_cmd(&engine)
+    let mut child = silent_cmd(&engine)
         .current_dir(studio_dir())
         .arg("launch")
         .arg(&path)
         .spawn()
-        .map(|_| ())
-        .map_err(|err| err.to_string())
+        .map_err(|err| err.to_string())?;
+    // Wait only long enough to catch an IMMEDIATE refusal.
+    //
+    // This was `.spawn().map(|_| ())`, so the child's exit was never
+    // observed: a person picked a damaged .krate from the dialog and Studio
+    // reported success while `krate launch` exited 1 with a perfectly good
+    // sentence nobody saw (K-769).
+    //
+    // It cannot simply wait: `launch` runs the app for as long as the person
+    // uses it, and blocking here would freeze Studio behind it. But every
+    // refusal -- not a bundle, damaged, missing -- happens before anything is
+    // drawn. So: a short grace period, and only a child that has ALREADY
+    // failed is reported. One that is still running is the success case.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(900);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) if !status.success() => {
+                return Err("that file could not be opened as a Krate app. It may be \
+                     damaged, or not a Krate app at all."
+                    .to_string());
+            }
+            // Exited cleanly inside the grace period: an app that opened and
+            // was closed at once is still an app that opened.
+            Ok(Some(_)) => return Ok(()),
+            Ok(None) => {
+                if std::time::Instant::now() >= deadline {
+                    return Ok(());
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Err(err) => return Err(err.to_string()),
+        }
+    }
 }
 
 /// Open the krate.tech sign-in page in the person's browser.
@@ -3122,7 +3153,24 @@ fn reveal(path: String) -> Result<(), String> {
                 .as_os_str(),
         )
         .status();
-    ok.map_err(|err| err.to_string()).map(|_| ())
+    // The STATUS, not just the spawn.
+    //
+    // `.map(|_| ())` threw the ExitStatus away, so only a failure to LAUNCH
+    // the helper was reported -- a helper that ran and refused was success.
+    // `open -R` on a path that is gone exits 1 saying so, and the UI's
+    // fallback swallows the error, so the person clicked "Show in Finder"
+    // and nothing whatsoever happened (K-769). `existing()` above closes
+    // most of it, but the window between the check and the call is real.
+    //
+    // Windows is exempt: explorer.exe exits 1 on success often enough that
+    // checking it would report a failure that did not happen.
+    let status = ok.map_err(|err| err.to_string())?;
+    #[cfg(not(target_os = "windows"))]
+    if !status.success() {
+        return Err("that file could not be shown in the file manager".to_string());
+    }
+    let _ = status;
+    Ok(())
 }
 
 /// The build's progress on the dock icon (macOS) and taskbar button
