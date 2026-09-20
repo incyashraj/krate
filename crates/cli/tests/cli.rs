@@ -3458,6 +3458,82 @@ fn sample_manifest(app: &str) -> PathBuf {
     workspace_path(PathBuf::from(format!("apps/{app}/manifest.toml")))
 }
 
+/// Concurrent builds of the same app name must not spoil each
+/// other's artifact.
+///
+/// The shared build cache exists so every app does not recompile the SDK,
+/// and it worked -- but it gave every app with the same crate name the same
+/// output FILENAME. Cargo's lock serializes the builds and is released
+/// between them, so a second build overwrote the first's wasm in the window
+/// before it was copied home. What came out was half-written, and the two
+/// failures a half-written wasm causes are exactly what CI reported:
+///
+///   error: ... code.wasm is not a WebAssembly component
+///   error: the build produced no dashboard.wasm in ...
+///
+/// Measured before the fix, six concurrent runs: three exited 6 as they
+/// should and three failed. After: ten concurrent runs, all 6.
+///
+/// Six, not two. Two was tried first and did NOT reproduce it: the
+/// sabotage run -- the fix reverted, one shared artifact name again --
+/// passed three times running with two builds. The window is small, and a
+/// test that catches a race only sometimes is worse than none, because a
+/// green run stops meaning anything. Six is the number that failed
+/// reliably when this was first reproduced by hand.
+#[test]
+fn concurrent_builds_of_one_app_name_do_not_spoil_each_other() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+
+    let work = tempfile::tempdir().expect("temp dir");
+    let mut kids = Vec::new();
+    for i in 0..6 {
+        let out = work.path().join(format!("out{i}.krate"));
+        let inspect = work.path().join(format!("inspect{i}"));
+        kids.push(
+            krate()
+                .arg("create")
+                .arg("a small dashboard")
+                .args(["--author-cmd", "true"])
+                .arg("--output")
+                .arg(&out)
+                .arg("--work-dir")
+                .arg(&inspect)
+                .spawn()
+                .expect("spawn create"),
+        );
+    }
+    for (i, kid) in kids.into_iter().enumerate() {
+        let done = kid.wait_with_output().expect("wait for create");
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&done.stdout),
+            String::from_utf8_lossy(&done.stderr)
+        );
+        // The artifact must never be the half-written one. These two
+        // sentences are what a spoiled wasm produces, and neither may
+        // appear however the run ends.
+        assert!(
+            !text.contains("is not a WebAssembly component"),
+            "build {i} packed a spoiled artifact: {text}"
+        );
+        assert!(
+            !text.contains("the build produced no"),
+            "build {i} lost its artifact to the other build: {text}"
+        );
+        // And the run itself still reaches its honest verdict: a no-op
+        // author leaves the starter unchanged, which is exit 6.
+        assert_eq!(
+            done.status.code(),
+            Some(6),
+            "build {i} did not reach the starter verdict: {text}"
+        );
+    }
+}
+
 #[test]
 fn create_with_an_agent_seam_builds_the_skeleton_and_refuses_to_call_it_authored() {
     // The agent path drops a minimal skeleton + KRATE_AUTHORING.md, then builds

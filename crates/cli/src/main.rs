@@ -11459,6 +11459,41 @@ fn component_build_command(app_dir: &Path) -> ProcessCommand {
     if let Some(shared) = shared_build_dir() {
         let _ = fs::create_dir_all(&shared);
         command.env("CARGO_TARGET_DIR", &shared);
+        // Two apps with the same crate name write the same output filename
+        // into that one directory, and cargo's lock does not save them: it
+        // serializes the BUILDS and is released between them, while the
+        // artifact keeps one name for everybody.
+        //
+        // So a second build of "dashboard" overwrites the first's
+        // dashboard.wasm in the window between this build finishing and its
+        // artifact being copied home. What comes out the other side is a
+        // half-written file, and the failures are exactly what a half-written
+        // file causes:
+        //
+        //   error: ... code.wasm is not a WebAssembly component
+        //   error: the build produced no dashboard.wasm in ...
+        //
+        // Reproduced here, six concurrent `krate create "a small dashboard"`:
+        // three exited 6 as they should and three failed with those two
+        // messages. It reached CI as a one-in-a-run flake on macOS and as
+        // K-250 on Windows, and read as an environment problem both times.
+        //
+        // CARGO_BUILD_TARGET_DIR is not the lever -- that is the same
+        // directory. The lever is that no two concurrent builds may claim one
+        // filename, so each gets its own leaf under the shared root. The
+        // dependency cache is what the sharing was FOR and it lives in
+        // cargo's own fingerprint directories, which are keyed by content and
+        // stay shared.
+        let leaf = format!("app-{:x}", {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            app_dir.hash(&mut hasher);
+            std::process::id().hash(&mut hasher);
+            hasher.finish()
+        });
+        let per_app = shared.join(leaf);
+        let _ = fs::create_dir_all(&per_app);
+        command.env("CARGO_TARGET_DIR", &per_app);
     }
 
     #[cfg(windows)]
