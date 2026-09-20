@@ -51,8 +51,27 @@ const MAX_REPLY_TOKENS: u64 = 16_000;
 /// Rounds alone were never a spending limit, only a proxy for one, and a bad
 /// proxy: measured on this machine, the same request converged in 7 rounds on
 /// Opus and took 92 on Haiku. Priced out on Opus with the pack cached, the 40
-/// rounds allowed here run to about $7.72 -- an order of magnitude above the
-/// $0.76 a normal build costs. Nothing was watching that.
+/// rounds allowed here run to about $7.72 -- several times what a normal
+/// build costs. Nothing was watching that.
+///
+/// A WARNING about that "normal build" figure: this comment used to name
+/// $0.76, and nothing ever measured it. The only $0.76 anywhere was a
+/// hardcoded string in a test harness's fake agent, written to match this
+/// sentence, which the sentence then cited back. The hub has recorded zero
+/// real builds. Derived from this machine's own transcripts instead -- a
+/// ~25,000 token pack, a MEDIAN of 14.5 tool calls (not the 7 above, which
+/// is the optimistic tail), and this crate's own rate card -- a typical
+/// Opus build prices at about $1.40, with a realistic range of $0.50 to
+/// $3.00 and the ceiling below stopping anything worse.
+///
+/// That is still derived, not measured. The FIRST real build emits a true
+/// `krate-spend:` line; that line is the number to trust, and it is worth
+/// reading before opening the door wide.
+///
+/// One correction to the intuition around it: losing the cache costs about
+/// 75%, but DOUBLING THE ROUNDS costs more, because output tokens are the
+/// majority of the bill at these sizes and output is never cacheable. A
+/// build that will not converge is the expensive failure, not a cold cache.
 ///
 /// So the ceiling is the thing actually being protected: money. It is checked
 /// against the token counts the API itself returns, not an estimate, and a
@@ -1434,6 +1453,70 @@ mod tests {
         assert!(
             small < 1.0,
             "an ordinary round must not be blocked by the reservation, got ${small:.2}"
+        );
+    }
+
+    /// The money ceiling is the only thing bounding what one build can cost,
+    /// and nothing tested it.
+    ///
+    /// It matters more than it looks. The founder will not switch on a paid
+    /// key until the worst case is known, and the derived numbers say a
+    /// typical Opus build is ~$1.40 with a realistic range of $0.50-$3.00 --
+    /// so DEFAULT_BUDGET_USD at $3.50 is the difference between "volume x
+    /// $1.40" and an unbounded bill on a build that will not converge.
+    ///
+    /// This asserts the reservation is CONSERVATIVE: it prices input at the
+    /// full uncached rate, so it over-reserves and stops early rather than
+    /// discovering the overrun afterwards.
+    #[test]
+    fn the_budget_reservation_stops_before_it_spends_not_after() {
+        let spend = Spend::default();
+        let model = "claude-opus-5";
+
+        // A large conversation: 400 KB of messages, the shape a long build
+        // reaches. The reservation must be big enough to matter.
+        let worst = spend.worst_next_call(model, 400_000, MAX_REPLY_TOKENS);
+        assert!(
+            worst > 0.5,
+            "a 400 KB round must reserve real money, got ${worst:.4}"
+        );
+
+        // And it must price input at the FULL rate, not the cache-read rate.
+        // Reserving at $0.50/M instead of $5.00/M would under-reserve by 10x
+        // on exactly the rounds that are about to overrun.
+        let ((inp, out, _cw, cr), known) = prices(model);
+        assert!(
+            known,
+            "opus must be priced from its own row, not the fallback"
+        );
+        let at_full = (400_000.0 / 3.0 * inp + MAX_REPLY_TOKENS as f64 * out) / 1e6;
+        let at_cached = (400_000.0 / 3.0 * cr + MAX_REPLY_TOKENS as f64 * out) / 1e6;
+        assert!(
+            (worst - at_full).abs() < 1e-9,
+            "the reservation must use the full input rate: got ${worst:.4}, \
+             full ${at_full:.4}, cached ${at_cached:.4}"
+        );
+        assert!(
+            at_full > at_cached,
+            "this test is meaningless if the two rates are the same"
+        );
+
+        // The ceiling itself: the default is what fly.toml also sets, so the
+        // deployed cap and the code's cap cannot silently diverge.
+        assert!(
+            (DEFAULT_BUDGET_USD - 3.50).abs() < 1e-9,
+            "the default ceiling moved: cloud/builder/fly.toml sets 3.50 and \
+             the two must agree, or the deployed cap is not the one here"
+        );
+
+        // An unknown model must NOT be cheap. Falling back to a low rate
+        // would under-reserve on the model we understand least.
+        let ((u_inp, u_out, _, _), u_known) = prices("some-model-we-have-never-seen");
+        assert!(!u_known, "an unknown model must be reported as a guess");
+        assert!(
+            u_inp >= inp && u_out >= out,
+            "an unknown model must be priced at least as high as Opus, got \
+             {u_inp}/{u_out} against {inp}/{out}"
         );
     }
 }
