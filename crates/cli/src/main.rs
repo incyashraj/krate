@@ -12884,6 +12884,20 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
         ..request
     };
 
+    // A folder is never a thing to run, and saying so here beats letting
+    // the wasm loader say it.
+    //
+    // Without this the runtime's own error came through raw: "failed to read
+    // wasm input: Is a directory (os error 21): Is a directory (os error
+    // 21)" -- jargon, an errno, and the same sentence twice. Studio's
+    // "it won't open, tell me why" button shows that text verbatim, so it
+    // was the answer a person got when they asked what was wrong (K-769).
+    if request.file.is_dir() {
+        anyhow::bail!(
+            "{} is a folder, not a Krate app. Point at the .krate file inside it.",
+            request.file.display()
+        );
+    }
     let loaded_manifest = load_run_manifest(&request.file, request.manifest_path.as_deref())?;
     if let Some(loaded) = &loaded_manifest {
         if !manifest_entry_matches(&request.file, loaded)? {
