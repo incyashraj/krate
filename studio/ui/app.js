@@ -2039,6 +2039,20 @@ function showFailReporting(on) {
     const el = $(id);
     if (el) el.classList.toggle("hidden", !on);
   }
+  // "Report an issue" collects the build's workspace off the disk, which the
+  // browser does not have -- the bridge implements neither `report_collect`
+  // nor `report_send`. On the web it opened a sheet with an empty file list,
+  // a disabled Send and "That part of Studio needs the app on your
+  // computer.", which is a dead end offered to somebody whose build just
+  // failed and who has no other channel.
+  //
+  // Hidden there. "Send the request" beside it is NOT hidden: it posts to
+  // /makeit, which the bridge does implement, so the web keeps a real way to
+  // tell us what went wrong.
+  if (!tauri) {
+    const report = $("reportBtn");
+    if (report) report.classList.add("hidden");
+  }
   const offer = document.querySelector(".fail-offer");
   if (offer) offer.classList.toggle("hidden", !on);
 }
@@ -2328,8 +2342,27 @@ async function make(request, opts) {
   // real user said exactly that and watched the studio announce it was
   // "making that change" -- editing an app nobody can open. Check the app
   // ourselves and report what the runtime says instead.
+  // Desktop only: diagnosing means RUNNING the app, and the browser has no
+  // app to run. The bridge has no `diagnose_app`, so on the web this used to
+  // reach the shell, get refused, and print "I couldn't check it (That part
+  // of Studio needs the app on your computer.)" -- a dead end handed to
+  // somebody who just said their app is broken, which is the exact scenario
+  // the comment above describes fixing.
+  //
+  // On the web the honest answer is to treat it as what it is: a change
+  // request we cannot pre-check, and say so before building.
   if (currentApp() && /\b(can'?t|cannot|unable|won'?t|doesn'?t|not)\s+(open|start|launch|run|work)|crash|nothing happens|not working|no window/i.test(request)) {
-    return diagnoseCurrent();
+    if (tauri) return diagnoseCurrent();
+    say(
+      "KRATE",
+      "I cannot open it from the browser to see for myself, so tell me what " +
+        "you saw and I will change the app to fix it. If you have Krate on " +
+        "your computer, opening it there says exactly what the runtime " +
+        "reports.",
+      null,
+      { variant: "ask" },
+    );
+    return buildNow(request, files, true);
   }
   // A change to an app that already works goes straight to the build: the
   // conversation already happened.

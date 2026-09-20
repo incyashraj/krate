@@ -1909,30 +1909,31 @@ fn notify(app: &tauri::AppHandle, body: &str) {
     if focused {
         return;
     }
-    // Ask for permission before assuming we have it.
+    // NO permission check here, and that is not an oversight.
     //
-    // Nothing ever requested it. On macOS an unauthorized bundle has its
-    // notifications dropped by the OS, and the `let _ =` below made that
-    // indistinguishable from success -- so "we notify people" was true in
-    // the code and possibly false on the machine, with no way to tell which.
-    // A user missed a question he was supposedly notified about, and this is
-    // the first thing that could not be ruled out (K-761).
+    // An earlier cut of this called `permission_state()` and
+    // `request_permission()` before showing anything, on the reasoning that
+    // macOS drops notifications from an unauthorized bundle. Both calls are
+    // HARDCODED on desktop in tauri-plugin-notification 2.3.3, the version
+    // in studio/Cargo.lock:
     //
-    // Requested here rather than at startup on purpose: the prompt then
-    // arrives attached to a real notification the person is about to want,
-    // not as an unexplained permission box during their first ten seconds.
-    match app.notification().permission_state() {
-        Ok(tauri_plugin_notification::PermissionState::Granted) => {}
-        Ok(_) => {
-            if let Err(err) = app.notification().request_permission() {
-                eprintln!("note: could not ask to show notifications: {err}");
-                return;
-            }
-        }
-        Err(err) => {
-            eprintln!("note: could not read the notification permission: {err}");
-        }
-    }
+    //   pub fn request_permission(&self) -> crate::Result<PermissionState> {
+    //       Ok(PermissionState::Granted)
+    //   }
+    //   pub fn permission_state(&self) -> crate::Result<PermissionState> {
+    //       Ok(PermissionState::Granted)
+    //   }
+    //
+    // They never touch UNUserNotificationCenter. So the check always said
+    // Granted, no prompt was ever raised, and every arm except the happy one
+    // was unreachable -- code that looked like a guard and guarded nothing,
+    // under a comment claiming it solved K-761. Worse than absent: the next
+    // person reads it and stops looking.
+    //
+    // The honest position: on desktop we cannot ask, so we show and report
+    // what happens. `show()` does return a real Result from notify-rust,
+    // which is the one signal that is actually live here.
+    //
     // A dropped notification is said out loud.
     //
     // This was `let _ =`, so every delivery failure -- no permission, Do Not

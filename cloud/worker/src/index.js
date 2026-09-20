@@ -3466,9 +3466,12 @@ async function planCount(request, env, increment) {
 
   // The wire contract is unchanged -- {n, keys} in, {device, n} out -- but
   // the number now comes from the funded-case ledger, with the old counters
-  // as a migration floor. No month anywhere. Three EVER, per Yashraj's
-  // ruling (2026-09-01): the words must not promise a reset the wall will
-  // not honour.
+  // as a migration floor. No month anywhere. ONE app EVER, plus one change
+  // to it, per the 2026-09-19 ruling -- see CASE_LIMIT_FREE and
+  // EDIT_LIMIT_FREE above, which are what actually enforce it. This comment
+  // said "three ever" after that ruling landed, which is the third time the
+  // number has drifted between a comment, the UI and the wall. The wall is
+  // the policy; the words must not promise more than it honours.
   const prefixes = caseKeys(user, device);
   // Materialise the old counters only when this call was going to write
   // anyway. A plain read reports the same number without spending puts.
