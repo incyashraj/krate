@@ -8624,3 +8624,44 @@ fn dump_caps_refuses_what_it_could_not_read() {
         "a damaged file must not print a capability list: {said}"
     );
 }
+
+/// A refusal with stderr piped must return at once, on every platform.
+///
+/// This is the test that would have failed on the Windows lane for three
+/// full runs. `krate run` on a file it refuses printed the refusal to
+/// stderr and then, on Windows, showed a native modal dialog -- because
+/// `GetConsoleWindow()` is null for a headless child exactly as it is for a
+/// double-clicked app -- and waited for a click that a CI runner can never
+/// give. Every error-path test hung for the watchdog's full ceiling, and
+/// the lane burned 46 of its 50 minutes on thirteen of them (K-240).
+///
+/// A pipe on stderr means somebody is reading it. That is the case here,
+/// and the process must exit the moment it has said its piece.
+#[test]
+fn a_refusal_with_piped_stderr_returns_at_once() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let junk = dir.path().join("junk.krate");
+    std::fs::write(&junk, b"not a krate").expect("write junk");
+
+    let started = std::time::Instant::now();
+    let out = krate()
+        .arg("run")
+        .arg(&junk)
+        .args(["--headless", "--auto-grant"])
+        .output()
+        .expect("run junk");
+    let took = started.elapsed();
+
+    assert!(!out.status.success(), "junk must be refused");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("not a Krate app"),
+        "the refusal must reach stderr: {stderr}"
+    );
+    // Generous, so a loaded runner cannot fail it; a hung dialog is the
+    // watchdog ceiling, ninety seconds, not fifteen.
+    assert!(
+        took < std::time::Duration::from_secs(15),
+        "a refusal with a reader on stderr must not wait on a dialog: took {took:?}"
+    );
+}

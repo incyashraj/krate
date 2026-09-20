@@ -1463,6 +1463,28 @@ fn raise_timer_resolution() {
     }
 }
 
+/// Whether anything is on the other end of stderr.
+///
+/// A double-clicked app has had its console freed (`detach_owned_console`),
+/// so its standard handles are invalid: an error printed there is lost, and
+/// a dialog is the only way to show it (K-178). A child spawned by a test
+/// harness, by Studio, or by CI has stderr as a PIPE, or redirected to a
+/// file -- somebody is reading it, and a dialog would block a process nobody
+/// can see. That second case is the one this tells apart (K-240).
+#[cfg(windows)]
+fn stderr_has_a_reader() -> bool {
+    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+    use windows_sys::Win32::Storage::FileSystem::{GetFileType, FILE_TYPE_DISK, FILE_TYPE_PIPE};
+    use windows_sys::Win32::System::Console::{GetStdHandle, STD_ERROR_HANDLE};
+    unsafe {
+        let handle = GetStdHandle(STD_ERROR_HANDLE);
+        if handle.is_null() || handle == INVALID_HANDLE_VALUE {
+            return false;
+        }
+        matches!(GetFileType(handle), FILE_TYPE_PIPE | FILE_TYPE_DISK)
+    }
+}
+
 #[cfg(windows)]
 fn detach_owned_console() {
     unsafe {
@@ -1544,10 +1566,27 @@ fn main() -> ExitCode {
             // window that no longer exists. Windowless is detectable, so
             // put the same words where they can be read. A terminal run
             // still has a console and never gets a dialog.
+            //
+            // "Windowless" is NOT the right test on its own, and getting that
+            // wrong is what K-240 was. `GetConsoleWindow()` is null for a
+            // double-clicked app -- and equally null for a child that a test
+            // harness, Studio, or CI spawned with stderr piped. So on the
+            // Windows runner every refusal popped this modal dialog and
+            // waited for a click that could never come: each hung child
+            // held its test until the watchdog shot it at exactly the
+            // ceiling, thirteen of them ate 46 of the step's 50 minutes, and
+            // three investigations blamed three different tests because
+            // EVERY error-path test hung and the one that exhausted the
+            // budget got the blame. The refusal line was on stderr the
+            // whole time; the process just never exited.
+            //
+            // The condition the comment above actually describes is "the
+            // line went nowhere". A pipe or a file on stderr means somebody
+            // is reading it, so that is what is checked.
             #[cfg(windows)]
             unsafe {
                 use windows_sys::Win32::System::Console::GetConsoleWindow;
-                if GetConsoleWindow().is_null() {
+                if GetConsoleWindow().is_null() && !stderr_has_a_reader() {
                     let _ = rfd::MessageDialog::new()
                         .set_title("Krate could not open this app")
                         .set_description(&message)
