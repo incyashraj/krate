@@ -1770,6 +1770,14 @@ jobs:
         run: |
           python3 scripts/check-cross-parity.py
           python3 scripts/check-cross-parity.py --self-test
+      # A version bump is not one edit. v0.5.1 learned that over three CI
+      # rounds, each surfacing one more thing the number had moved: the
+      # synthetic pack digest, the licence map, and 64 app lockfiles that
+      # CI builds with --locked. This learns all of it in a second.
+      - name: Every version pin agrees
+        run: |
+          python3 scripts/check-version-pins.py
+          python3 scripts/check-version-pins.py --self-test
       # The hub worker's tests mirror its logic rather than importing it (it
       # is one file with no module boundary), and a mirrored test that never
       # runs cannot catch the drift it was written for. Three of these
