@@ -11522,14 +11522,7 @@ fn component_build_command(app_dir: &Path) -> ProcessCommand {
         // dependency cache is what the sharing was FOR and it lives in
         // cargo's own fingerprint directories, which are keyed by content and
         // stay shared.
-        let leaf = format!("app-{:x}", {
-            use std::hash::{Hash, Hasher};
-            let mut hasher = std::collections::hash_map::DefaultHasher::new();
-            app_dir.hash(&mut hasher);
-            std::process::id().hash(&mut hasher);
-            hasher.finish()
-        });
-        let per_app = shared.join(leaf);
+        let per_app = per_app_target_dir(&shared, app_dir);
         let _ = fs::create_dir_all(&per_app);
         command.env("CARGO_TARGET_DIR", &per_app);
     }
@@ -11570,8 +11563,26 @@ fn shared_build_dir() -> Option<PathBuf> {
     })
 }
 
+/// Where one app's build output goes, under the shared dependency cache.
+///
+/// Keyed on the app directory and nothing else. The first version mixed in
+/// the process id, which made the builder and the finder disagree -- the
+/// build wrote to one leaf and the finder looked in another, so a clean
+/// machine reported "the build produced no <name>.wasm". It passed locally
+/// only because stale artifacts from before the change were still sitting in
+/// the old shared path.
+fn per_app_target_dir(shared: &Path, app_dir: &Path) -> PathBuf {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    app_dir.hash(&mut hasher);
+    shared.join(format!("app-{:x}", hasher.finish()))
+}
+
 fn find_built_component(app_dir: &Path) -> Result<PathBuf> {
-    let target_root = shared_build_dir().unwrap_or_else(|| app_dir.join("target"));
+    let target_root = match shared_build_dir() {
+        Some(shared) => per_app_target_dir(&shared, app_dir),
+        None => app_dir.join("target"),
+    };
     let release = target_root.join("wasm32-wasip1/release");
     // The shared cache holds every app's artifact side by side, so the match
     // must be by THIS crate's name, not "any wasm in the directory".
