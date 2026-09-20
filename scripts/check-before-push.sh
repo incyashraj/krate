@@ -50,13 +50,13 @@ run "rustfmt (workspace)" cargo fmt --all -- --check
 run "rustfmt (studio)" sh -c 'cd studio && cargo fmt -- --check'
 run "clippy" cargo clippy --workspace --all-targets
 
-# The unit tests inside every crate and binary -- about a minute, already
-# compiled by the clippy line above. This is where the generated-file
-# freshness tests live (docs/krate-mode.md against the authoring pack, the
-# widget-kind list against the WIT), and a pack edit that forgot to
-# regenerate its published copy failed CI twice before this line existed.
-# The integration suites stay on CI: they take minutes, not seconds.
-run "unit tests (workspace)" cargo test --workspace --lib --bins
+# The exact command CI's quick lane runs ("Run workspace tests"), four
+# minutes on this machine. Until 2026-09-20 this gate ran no cargo tests at
+# all, and every quick-lane failure that day -- five runs, all of them tests
+# that take seconds -- was something this line would have stopped at the
+# desk. A push that fails CI costs the next ninety-minute full run too, so
+# four minutes here is the cheap side of that trade.
+run "workspace tests (CI quick lane)" cargo test --workspace --all-features
 
 # The studio web tests. These read studio/ui directly, run in about a second,
 # and are exactly what failed the pages deploy -- including the rule that

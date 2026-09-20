@@ -6766,10 +6766,23 @@ fn saved_data_exports_and_imports_to_the_app_it_came_from() {
         .env("HOME", home.path())
         .output()
         .unwrap();
-    if !installed.status.success() {
-        eprintln!("skipping the uninstall half: this platform has no installer");
+    if cfg!(windows) {
+        // Installing apps is not supported on Windows (the installer does
+        // the file associations there), so the uninstall half has nothing
+        // to test. Said with the platform in the sentence: the test report
+        // reads "on windows" as a deliberate platform gap, and anything
+        // else as a fixture that failed to build -- which is how the first
+        // Windows lane to get past K-240 failed with every test green.
+        eprintln!("skipping the uninstall half: installing apps is not supported on windows");
         return;
     }
+    // Everywhere else installing is supported, so a refusal here is a real
+    // failure and not a platform to skip.
+    assert!(
+        installed.status.success(),
+        "install refused on a platform that supports it: {}",
+        String::from_utf8_lossy(&installed.stderr)
+    );
     let blocker = dir.path().join("blocker");
     std::fs::write(&blocker, b"a file where a directory would need to be").unwrap();
     let out = krate()

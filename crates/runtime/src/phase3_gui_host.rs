@@ -6693,25 +6693,38 @@ mod tests {
                 .expect("present succeeds");
         };
 
-        // Two warm-up frames, not one. The first has no previous frame to
-        // pace against; the SECOND is the first that actually renders on a
-        // freshly created backend, and on the GPU that frame pays for device
-        // and pipeline setup -- which overruns the budget and leaves the frame
-        // after it nothing to wait for. Neither is a pacing failure, and
-        // measuring either would make this test fail on the backend that is
-        // working.
+        // Two warm-up frames: the first has no previous frame to pace
+        // against, and the second is the first that actually renders on a
+        // freshly created backend.
         present(&mut host);
         present(&mut host);
+
+        // A RUN of frames, not one. The pace stamp is taken before the
+        // render, so a frame whose render overruns the budget leaves the
+        // frame after it nothing to wait for. That is correct pacing, and it
+        // is what happens on a slow shared runner: the warm-up frame that
+        // pays for device and pipeline setup overran, and the single frame
+        // this test used to time was exactly the one that got no wait. It
+        // failed three times in two days on the macOS lane and never here.
+        //
+        // Over N consecutive presents the stamps are at least a budget apart
+        // whether or not any one render was slow -- a slow render only pushes
+        // the next stamp further out -- so the total is bounded below by
+        // (N - 1) budgets no matter which frame the setup cost lands on.
+        // Unpaced, the whole run was a few milliseconds.
+        const FRAMES: u32 = 6;
         let started = std::time::Instant::now();
-        present(&mut host);
+        for _ in 0..FRAMES {
+            present(&mut host);
+        }
         let elapsed = started.elapsed();
 
-        // Most of a frame, not all of it: the wait ends by yielding, and a
-        // loaded test machine can land a little under. Unpaced this was
-        // microseconds, so the margin is wide and still catches the bug.
+        // Most of a budget per frame, not all of it: the wait ends by
+        // yielding and a loaded machine can land a little under.
+        let floor = std::time::Duration::from_millis(12) * (FRAMES - 1);
         assert!(
-            elapsed >= std::time::Duration::from_millis(12),
-            "a second present should wait out most of the frame budget, took {elapsed:?}"
+            elapsed >= floor,
+            "{FRAMES} presents should wait out at least {floor:?} between them, took {elapsed:?}"
         );
     }
 

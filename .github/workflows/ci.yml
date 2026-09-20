@@ -36,7 +36,15 @@ concurrency:
   # thing that exercises three operating systems. That happened three times in
   # one afternoon: every push threw away the run that was proving the product's
   # core claim, and the claim went unverified because someone kept working.
-  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  #
+  # And a full run must not cancel the previous full run either. Keyed on
+  # the event name alone, a second dispatch killed the first: on 2026-09-20
+  # two ninety-minute runs were thrown away that way, each one the only
+  # thing about to prove the Windows lane, and the day ended with eight
+  # cancelled full runs and no verdict. Push runs share one group so the
+  # newest commit wins; every other run gets a group of its own and runs to
+  # its end.
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'push' && 'push' || github.run_id }}
   cancel-in-progress: true
 
 env:

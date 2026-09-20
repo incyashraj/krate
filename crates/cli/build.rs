@@ -334,6 +334,27 @@ fn watch_git_head() {
     for path in watched {
         println!("cargo:rerun-if-changed={path}");
     }
+
+    // Every tracked file as well, so the `-dirty` half of the stamp is
+    // re-asked when the TREE changes and not only when a commit lands. The
+    // ref files above catch commits; they do not move when a tracked file
+    // is edited, so a binary built from a clean tree kept saying "clean"
+    // after the tree was dirtied by an edit outside this crate -- ci.yml, a
+    // script -- and the test comparing stamp to tree failed at the desk
+    // (K-772). The generated bindings are left out, exactly as the dirty
+    // query leaves them out: a workspace build rewrites them and that is
+    // not a change to the source. About 1,450 paths; cargo stats them all
+    // in a few milliseconds.
+    if let Some(root) = command_output("git", &["rev-parse", "--show-toplevel"]) {
+        if let Some(files) = command_output("git", &["ls-files", "-z", "--full-name", ":(top)"]) {
+            for rel in files.split('\0').filter(|p| !p.is_empty()) {
+                if rel.ends_with("/src/bindings.rs") {
+                    continue;
+                }
+                println!("cargo:rerun-if-changed={root}/{rel}");
+            }
+        }
+    }
 }
 
 /// The commit this binary was built from, and whether the tree was clean.

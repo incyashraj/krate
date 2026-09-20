@@ -11389,9 +11389,19 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
     // compiles the whole shared dep graph in the background, so the agent's
     // FIRST check-app -- usually issued a minute into authoring -- meets hot
     // artifacts instead of paying the cold build inside the person's wait.
+    //
+    // Under the leaf lock, like every build. This warm-up and the real
+    // build write the same artifact in the same leaf, and cargo's own lock
+    // only covers the compile: when the author came back fast (a no-op
+    // --author-cmd, a one-line change) the real build's copy home landed
+    // in the window where this build had just uplifted the core module
+    // and not yet encoded the component. What came home was a core module
+    // and pack said "not a WebAssembly component". Reproduced at 3 of 30
+    // concurrent creates on 2026-09-20; the lock made it 0 of 36 (K-771).
     {
         let warm_dir = ctx.app_dir.to_path_buf();
         std::thread::spawn(move || {
+            let _lock = build_leaf_lock(&warm_dir);
             // Silent on purpose: build_component prints the compiler's words,
             // and a background warm-up interleaving rustc noise through the
             // authoring progress display would read as chaos.
@@ -11957,6 +11967,42 @@ fn per_app_target_dir(shared: &Path, app_dir: &Path) -> PathBuf {
     shared.join(format!("app-{:x}", hasher.finish()))
 }
 
+/// One build at a time per target leaf, held from before cargo-component
+/// starts until the artifact has been copied home.
+///
+/// Cargo's own lock covers the compile and is released between builds, and
+/// cargo-component writes its artifact in two steps: cargo uplifts the core
+/// module to `release/<name>.wasm`, then the component is encoded over it.
+/// A second build of the same leaf -- the authoring warm-up racing the real
+/// build, or a `krate check-app` the agent runs while the warm-up is still
+/// going -- can land its copy home between those two steps and carry off a
+/// core module. The file is packed, refused as "not a WebAssembly
+/// component", and the person is told to use a tool they already used.
+///
+/// Advisory and blocking: the second build waits, and a warm leaf is what
+/// it was waiting for anyway. The lock is released when the returned file
+/// is dropped, including on panic and on a killed process (the OS drops it
+/// with the descriptor), so a stale lock file is never a wedge. Every
+/// failure to take it is treated as "build unlocked" rather than "refuse to
+/// build": a lock that cannot be created must not stop a build that could
+/// have worked.
+fn build_leaf_lock(app_dir: &Path) -> Option<fs::File> {
+    let leaf = match shared_build_dir() {
+        Some(shared) => per_app_target_dir(&shared, app_dir),
+        None => app_dir.join("target"),
+    };
+    fs::create_dir_all(&leaf).ok()?;
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(leaf.join(".krate-build.lock"))
+        .ok()?;
+    file.lock().ok()?;
+    Some(file)
+}
+
 fn find_built_component(app_dir: &Path) -> Result<PathBuf> {
     let target_root = match shared_build_dir() {
         Some(shared) => per_app_target_dir(&shared, app_dir),
@@ -12006,6 +12052,11 @@ fn find_built_component(app_dir: &Path) -> Result<PathBuf> {
 }
 
 fn build_component(app_dir: &Path) -> Result<PathBuf> {
+    // Held through the copy home at the end, not just the compile: the
+    // window after cargo-component exits and before find_built_component
+    // has copied the artifact is where another build of this leaf spoils
+    // it (K-771).
+    let _lock = build_leaf_lock(app_dir);
     let mut command = component_build_command(app_dir);
     let output = command
         .output()
@@ -12079,6 +12130,7 @@ fn panic_site_hints(candidate: &Path) -> String {
 }
 
 fn build_component_captured(app_dir: &Path) -> std::result::Result<PathBuf, String> {
+    let _lock = build_leaf_lock(app_dir);
     let mut command = component_build_command(app_dir);
     let output = command.output().map_err(|error| {
         format!(
