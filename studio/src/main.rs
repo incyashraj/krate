@@ -2516,7 +2516,34 @@ async fn install_agent(app: tauri::AppHandle, name: String) -> Result<(), String
             });
         }
 
-        let status = child.wait().map_err(|err| err.to_string())?;
+        // Bounded. `npm install -g` had an unbounded wait() and there is no
+        // cancel path in the UI for it -- grep finds the two invoke sites
+        // and the listener, and nothing that stops it. So a hung or very
+        // slow npm left the sheet spinning for the life of the process,
+        // with the person's only escape being to quit Studio (K-769).
+        //
+        // stdin is already Stdio::null(), so it cannot be waiting on a
+        // prompt; what it can do is wait on the network. Ten minutes is far
+        // beyond any healthy install of a single CLI and short enough that
+        // somebody notices it ended.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(600);
+        let status = loop {
+            match child.try_wait().map_err(|err| err.to_string())? {
+                Some(status) => break status,
+                None => {
+                    if std::time::Instant::now() >= deadline {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return Err(
+                            "that install did not finish within ten minutes, so it \
+                             was stopped. Check your connection and try again."
+                                .to_string(),
+                        );
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                }
+            }
+        };
         if !status.success() {
             return Err(
                 "The install did not finish. Node may need permission to write                  its global folder."
