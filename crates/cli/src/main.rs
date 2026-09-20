@@ -6301,10 +6301,44 @@ fn compose_card_face(
         trust.to_string()
     } else if let Some(body) = trust.strip_suffix(TAIL) {
         let tail_w = measure(TAIL, meta_size, plain);
-        format!(
-            "{}{TAIL}",
-            elide(body, meta_size, plain, (avail - tail_w).max(0.0))
-        )
+        let room = (avail - tail_w).max(0.0);
+        // Drop WHOLE capabilities, rather than eliding mid-word.
+        //
+        // The elide alone produced "can open a window on your screen · save
+        // its own settings a… · nothing else" on a real card -- a sentence
+        // cut in the middle of "and", which reads as a rendering fault
+        // rather than a deliberate summary, on the one image a stranger
+        // judges the app by.
+        //
+        // Each capability is a whole phrase joined by " · ", so dropping
+        // from the end keeps every phrase it does show intact and true. The
+        // count of what was left out is named, because "and 2 more" is an
+        // honest summary while a severed word is not.
+        let prefix = "can ";
+        let listed = body.strip_prefix(prefix).unwrap_or(body);
+        let parts: Vec<&str> = listed.split(" · ").collect();
+        let mut kept = parts.len();
+        let fitted = loop {
+            if kept == 0 {
+                break None;
+            }
+            let more = parts.len() - kept;
+            let candidate = if more == 0 {
+                format!("{prefix}{}", parts[..kept].join(" · "))
+            } else {
+                format!("{prefix}{} · and {more} more", parts[..kept].join(" · "))
+            };
+            if measure(&candidate, meta_size, plain) <= room {
+                break Some(candidate);
+            }
+            kept -= 1;
+        };
+        match fitted {
+            Some(body) => format!("{body}{TAIL}"),
+            // Nothing fits, not even one phrase: the guarantee alone is
+            // still worth more than a severed list.
+            None => elide(body, meta_size, plain, room) + TAIL,
+        }
     } else {
         elide(trust, meta_size, plain, avail)
     };
