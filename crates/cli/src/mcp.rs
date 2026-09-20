@@ -224,7 +224,20 @@ pub(crate) fn inspect_json(target: &str, allow_http: bool) -> Result<Value> {
         )
     } else {
         let path = Path::new(target);
-        let bytes = std::fs::read(path).with_context(|| format!("read {target}"))?;
+        // Plain words for the two things a person actually types wrong.
+        //
+        // This was `read {target}`, so the OS error came straight through:
+        // "read /does/not/exist.krate: No such file or directory (os error
+        // 2)" and "read /tmp: Is a directory (os error 21)". A stranger who
+        // mistyped a path was shown an errno. The damaged-file case a few
+        // lines down already says the right kind of thing; these did not.
+        if !path.exists() {
+            anyhow::bail!("no file at {target}");
+        }
+        if path.is_dir() {
+            anyhow::bail!("{target} is a folder. Point at the .krate file inside it.");
+        }
+        let bytes = std::fs::read(path).with_context(|| format!("could not read {target}"))?;
         (
             krate_bundle::open(path).with_context(|| format!("open {target}"))?,
             Some(bytes),
