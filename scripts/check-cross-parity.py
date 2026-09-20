@@ -109,7 +109,17 @@ def self_test() -> int:
     # 2. A CI file with the variable removed must be caught. This is the
     #    exact shape of K-717, kept as a negative fixture so a checker that
     #    stops checking cannot pass quietly.
-    broken = ci_text.replace("          LIBCLANG_PATH: /usr/lib/llvm-9/lib\n", "", 1)
+    # Found by name, not by value. The first version hardcoded llvm-9 and
+    # broke the moment the cross build moved to libclang 8 from Ubuntu's own
+    # archive -- it reported "the line moved" rather than silently passing,
+    # which is the right failure, but a fixture that needs editing whenever
+    # the value changes is a fixture that will one day be edited wrong.
+    import re as _re
+    hit = _re.search(r"^\s*LIBCLANG_PATH: .+$\n", ci_text, _re.M)
+    if not hit:
+        print("self-test: CI sets no LIBCLANG_PATH -- the cross build cannot work")
+        return 1
+    broken = ci_text[: hit.start()] + ci_text[hit.end() :]
     if broken == ci_text:
         print("self-test: could not build the negative fixture -- the line moved")
         return 1
@@ -119,7 +129,7 @@ def self_test() -> int:
         return 1
 
     # 3. A value that drifts must be caught too, not just an absent one.
-    drifted = ci_text.replace("/usr/lib/llvm-9/lib", "/usr/lib/llvm-14/lib", 1)
+    drifted = _re.sub(r"(LIBCLANG_PATH: ).+", r"\1/usr/lib/llvm-14/lib", ci_text, count=1)
     if not any("differs" in p for p in check(release_text, drifted)):
         print("self-test: a drifted value was NOT caught")
         return 1

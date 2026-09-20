@@ -1315,11 +1315,11 @@ jobs:
           # hits it, and it can only do that if it builds the way the
           # release actually builds. Without this it does not: the container
           # carries Ubuntu 16.04's preinstalled libclang 3.8 beside the
-          # clang 9 the pre-build installs, v4l2-sys-mit finds 3.8 first,
+          # libclang 8 the pre-build installs, v4l2-sys-mit finds 3.8 first,
           # and the build dies with "loaded libclang instance = 3.8.x"
           # (K-717) -- so the lane would fail while the release passed, and
           # the name on this step would be a lie.
-          LIBCLANG_PATH: /usr/lib/llvm-9/lib
+          LIBCLANG_PATH: /usr/lib/llvm-8/lib
         run: cross build --release --target aarch64-unknown-linux-gnu -p krate-cli
 
   port-regression:
