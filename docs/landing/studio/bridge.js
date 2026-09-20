@@ -1154,14 +1154,39 @@ const COMMANDS = {
     if (!bridge.token) return refuse("Sign in first.");
     const overPlan = tooLong(request, "request");
     if (overPlan) return overPlan;
-    const answer = await builder("/plan", {
-      method: "POST",
-      body: JSON.stringify({
-        request,
-        device: deviceId(),
-        attachments: attachmentsFor(attachments),
-      }),
-    });
+    // A refusal from the plan step must arrive as a refusal, not as a raw
+    // body with no fields.
+    //
+    // This had NO catch at all, so a 503 -- the build service being
+    // switched off -- propagated with `message` set to the whole JSON
+    // envelope and no `wall` flag. Studio's runPlan then took its
+    // last-resort branch and told the person "I'll skip the questions this
+    // time and build right away", built into the SAME switched-off service,
+    // and finally showed the wall. Two wrong messages in a row before the
+    // true one.
+    let answer;
+    try {
+      answer = await builder("/plan", {
+        method: "POST",
+        body: JSON.stringify({
+          request,
+          device: deviceId(),
+          attachments: attachmentsFor(attachments),
+        }),
+      });
+    } catch (err) {
+      const text = String((err && err.message) || err || "");
+      let parsed = null;
+      try { parsed = JSON.parse(text); } catch (_) {}
+      if (parsed && parsed.wall) {
+        const wall = new Error(parsed.message || "Making apps in the browser is paused.");
+        wall.wall = true;
+        wall.download = Boolean(parsed.download);
+        if (err && err.status) wall.status = err.status;
+        throw wall;
+      }
+      throw err;
+    }
     // Studio's UI expects the engine's JSON as text, exactly as the
     // desktop hands it over.
     return typeof answer === "string" ? answer : JSON.stringify(answer);

@@ -2660,6 +2660,42 @@ async function runPlan() {
     // an afternoon. Say what is wrong and what fixes it, then still build,
     // because refusing to work would be a worse answer than working without
     // the conversation.
+    // A wall at the PLAN step must not become a build.
+    //
+    // The last-resort branch below says "I'll skip the questions this time
+    // and build right away" and then builds -- which is right when the plan
+    // step merely failed, and exactly wrong when it refused because the
+    // service is switched off or the allowance is spent. The build hits the
+    // same refusal, so the person read a cheerful sentence, waited, and got
+    // a wall. Say the true thing once instead.
+    if (err && err.wall) {
+      const paused = err.status === 503;
+      say(
+        "KRATE",
+        `${String(err.message || "Making apps in the browser is paused.")}\n\n${
+          paused
+            ? "Nothing has been counted against you."
+            : "Your work is saved here, and Studio on your own machine opens this session ready to edit."
+        }`,
+        null,
+        {
+          variant: "ask",
+          actions: err.download
+            ? [{
+                label: "Get Krate Studio",
+                primary: true,
+                run: () =>
+                  invoke("open_external", { url: "https://krate.tech/studio/" }).catch(() => {}),
+              }]
+            : [],
+        },
+      );
+      state.planning = null;
+      setIdleNote("");
+      show("idle");
+      $("send").disabled = false;
+      return;
+    }
     if (String(err).includes("STALE_ENGINE")) {
       say("KRATE", "The Krate engine on this machine is older than this "
         + "Studio, so I cannot talk an app through before building it. "

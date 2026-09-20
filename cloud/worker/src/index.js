@@ -376,27 +376,48 @@ export default {
     } catch (err) {
       // Never leak a stack trace to a caller; log it for us instead.
       console.error("unhandled", err && err.stack ? err.stack : String(err));
-      // A body WE could not parse is the caller's fault, not ours.
+      // A body WE could not parse is the caller's fault, not ours -- but
+      // only when it really was the CALLER'S body.
       //
       // A deeply nested JSON body (~5000 levels) overflows the runtime's
       // stack while parsing, and that RangeError is thrown inside the
-      // platform's own json() rather than by our code -- so the
+      // platform's own json() rather than by our code, so the
       // `.catch(() => ({}))` the handlers use never sees it and it lands
       // here. Every one of /plan/get, /plan/count, /case/open and /case/list
       // answered "something went wrong on our side" to a body the caller
       // chose. Proved live at depth 5000; depth 4000 correctly gives 400.
       //
-      // A 500 is a claim that we broke. It should be true when we say it,
-      // or the ones that matter get lost among the ones that do not.
-      const kind = err && err.constructor && err.constructor.name;
-      const message = String((err && err.message) || "");
-      if (
-        kind === "RangeError" ||
-        kind === "SyntaxError" ||
-        /JSON|stack|nest|depth/i.test(message)
-      ) {
+      // The first cut of this classified on the ERROR TYPE, and that was
+      // too loose: there are fourteen unguarded `await <upstream>.json()`
+      // calls in this file, so a SyntaxError from GITHUB returning an HTML
+      // error page would have been reported as the caller's bad body. Same
+      // for an ordinary RangeError from a real bug, or any internal message
+      // containing the word "depth" (Cloudflare's own "Too many
+      // subrequests: depth limit" among them).
+      //
+      // So the request's own body is re-read here, and it is the caller's
+      // fault only when THAT is what will not parse. Reading it again is
+      // cheap and certain, and a body that cannot be re-read is treated as
+      // ours, which is the safe direction.
+      let theirs = false;
+      try {
+        const copy = request.clone();
+        const raw = await copy.text();
+        if (raw) {
+          try {
+            JSON.parse(raw);
+          } catch (_) {
+            theirs = true;
+          }
+        }
+      } catch (_) {
+        // Body already consumed or unavailable: cannot prove it was theirs.
+      }
+      if (theirs) {
         return cors(text("that request body could not be read", 400));
       }
+      // A 500 is a claim that WE broke. It should be true when we say it,
+      // or the ones that matter get lost among the ones that do not.
       return cors(text("something went wrong on our side", 500));
     }
   },

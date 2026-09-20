@@ -210,8 +210,24 @@ async function startMake() {
     }
     // 402 is the hub saying the funded first app is used up. The word
     // sniff stays as a fallback for older hub deployments whose 402
-    // bodies predate err.status being carried through.
-    if (err.status === 402 || /funded|first app|three|limit|plan|subscri/i.test(message)) {
+    // bodies predate err.status being carried through -- but it is now
+    // NARROW, because the loose version was worse than no fallback.
+    //
+    // It used to include a bare `plan`, which matched three real
+    // non-allowance failures and told the person their free app was spent
+    // for each of them:
+    //
+    //   "the plan step failed"                                  (502)
+    //   "the plan step answered with something that is not a plan" (502)
+    //   "We could not check your plan just now."                 (401)
+    //
+    // The last is OUR outage, reported as the person's allowance. And
+    // `limit`, `three` and a bare `plan` are all words an ordinary error
+    // can contain. Only phrases that can mean nothing else are left.
+    if (
+      err.status === 402 ||
+      /funded|first app|free app|studio plan|subscri/i.test(message)
+    ) {
       return hitTheWall(message);
     }
     failed(message);
