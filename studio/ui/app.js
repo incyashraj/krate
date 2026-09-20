@@ -2103,23 +2103,32 @@ function cardAsks(asks) {
 /* ---- driving the engine ----------------------------------------------- */
 
 /* ---- the free-tier counter (stage 19) --------------------------------
- * Local, honest, soft: three free makes EVER, not three a month (IC-639).
- * Only a session's FIRST successful build counts -- failed builds and
- * revisions never do. In preview the sheet informs and lets them continue;
- * the same rail is where checkout attaches when Studio leaves preview.
+ * Local, honest, soft: ONE free app EVER, and one free change to it. Only
+ * a session's FIRST successful build counts -- failed builds and revisions
+ * never do. In preview the sheet informs and lets them continue; the same
+ * rail is where checkout attaches when Studio leaves preview.
  *
- * This said "three NEW apps a month" and the code matched it, while the hub
- * has always counted mkacct:/mkdev: with no month in the key. So on the
- * first of every month the client offered three fresh makes and the server
- * refused them -- two policies, one product. Three ever is the decision;
- * this layer is the one that had drifted. */
+ * The number has drifted twice, in the same direction both times, and the
+ * fix is the same each time: the HUB is the policy and this layer is the
+ * one that lags. It once said "three NEW apps a month" while the hub
+ * counted mkacct:/mkdev: with no month in the key, so every first of the
+ * month the client offered three fresh makes and the server refused them.
+ * That was corrected to "three ever" -- and then the ruling of 2026-09-19
+ * made it ONE ever, the worker was changed (CASE_LIMIT_FREE = 1,
+ * cloud/worker/src/index.js) and this layer was not. A person was told
+ * "3 free apps" by a product that would refuse the second.
+ *
+ * So the number is a named constant now rather than a literal repeated at
+ * six call sites, and it is the same number the worker enforces. If they
+ * ever disagree again, the worker wins and this is what changes. */
+const FREE_MAKES = 1;
 function monthKey() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 /* The counter of record lives in the shell, keyed to the machine's own
- * hardware identity (~/.krate/plan.json): three free makes belong to the
- * DEVICE, so a cleared cache or a fresh email does not mint three more.
+ * hardware identity (~/.krate/plan.json): the free app belongs to the
+ * DEVICE, so a cleared cache or a fresh email does not mint another.
  * localStorage stays as the seed for upgrades and the fallback when the
  * shell cannot answer. */
 function makesLocal() {
@@ -2173,7 +2182,7 @@ function planIsActiveSafe() {
 /* FREE, FOR NOW (Yashraj, 2026-09-01).
  *
  * Krate is aimed at developers, and a developer evaluating a runtime who
- * meets "3 free apps, then $12" reads it as a toy with a meter on it.
+ * meets "1 free app, then $12" reads it as a toy with a meter on it.
  * Nobody bets their distribution on something that might price them out
  * at app four. So the counter does not show and does not stop anyone.
  *
@@ -2202,8 +2211,8 @@ function renderFreeCount() {
   } else if (chip) {
     chip.textContent =
       planIsActiveSafe() ? "Studio plan"
-      : n === 0 ? "3 free apps"
-      : n <= 3 ? `${left} of 3 free left`
+      : n === 0 ? (FREE_MAKES === 1 ? "1 free app" : `${FREE_MAKES} free apps`)
+      : n < FREE_MAKES ? `${left} of ${FREE_MAKES} free left`
       : "Free plan";
     // When billing is open and the person is on free, the chip is a door
     // to the store -- dressed so it reads as one.
@@ -2218,8 +2227,8 @@ function renderFreeCount() {
     ? (planIsActiveSafe()
         ? `${n} made this month`
         : n === 0 ? "none used yet"
-        : n <= 3 ? `${n} of 3 used this month`
-        : `${n} made this month`)
+        : n <= FREE_MAKES ? `${n} of ${FREE_MAKES} used`
+        : `${n} made`)
     : "free";
   const sheetTag = $("planUsed");
   if (sheetTag) sheetTag.textContent = used;
@@ -2263,7 +2272,7 @@ async function make(request, opts) {
   // will be looking at this line.
   let overCap = !tauri
     && CHARGING
-    && makesThisMonth() >= 3
+    && makesThisMonth() >= FREE_MAKES
     && !(state.session && state.session.result)
     && !(opts && opts.pastLimit)
     && !planIsActive();
@@ -5642,9 +5651,13 @@ function openLimitSheet() {
   // markup's own copy stands: nothing is metered, so reaching here is a
   // bug on our side rather than a limit the person hit.
   if (CHARGING && live) {
-    $("limitTitle").textContent = "That's your three for this month";
+    $("limitTitle").textContent = "That's your free app";
+    // Worded to match what the hub actually enforces -- one app ever, plus
+    // one change to it (CASE_LIMIT_FREE / EDIT_LIMIT_FREE). A sheet that
+    // promises a monthly reset the server will never give is how the last
+    // two drifts were noticed, by people the product refused.
     $("limitSub").textContent =
-      "The free plan is three apps a month. Changes to an app and failed builds never count. Unlimited making is the Studio plan.";
+      "The free plan is one app, and one change to it. Failed builds never count. Unlimited making is the Studio plan. Krate Studio on your own machine is free and unlimited with your own AI.";
     $("limitSub2").classList.remove("hidden");
     $("limitSub2").textContent = state.billing.founding
       ? "The founding 200 lock it at $79 a year instead of $96."
