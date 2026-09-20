@@ -319,7 +319,21 @@ async function allowedToBuild(token, device) {
     // bringing a key: Krate pays for the first app, and after it you either
     // move to Studio or bring your own key and carry on here.
     if (API_AGENTS[AGENT] && (await ownKey(token, AGENT))) {
-      return { ok: true, account, byok: true };
+      // `me.user.login || me.user.email`, the same expression the paid-plan
+      // branch uses above. It said `account`, which is not a variable in
+      // this scope -- a ReferenceError, thrown on the one line that lets a
+      // bring-your-own-key person past the wall.
+      //
+      // The throw was caught by this function's own catch and reported as
+      // "We could not check your plan just now": a 401 blaming the hub for
+      // our typo. So the bargain the wall's message offers -- add your own
+      // key and carry on here -- could not be taken by anyone.
+      //
+      // Never caught because the test suite runs KRATE_AGENT=claude, for
+      // which API_AGENTS[AGENT] is undefined and this branch is unreachable.
+      // Production runs `anthropic` (fly.toml), so the deployed
+      // configuration was the one nothing exercised (K-765).
+      return { ok: true, account: me.user.login || me.user.email, byok: true };
     }
 
     const BROWSER_FREE_BUILDS = 1;

@@ -74,6 +74,48 @@ function isNewerVersion(a, b) {
 const tauri = window.__TAURI__ || null;
 const $ = (id) => document.getElementById(id);
 
+/* Storage that cannot take the page down with it.
+ *
+ * `localStorage` does not merely return null when site data is blocked --
+ * the ACCESSOR THROWS. In a private window, or with third-party data
+ * blocked, `localStorage.getItem(...)` raises SecurityError before it
+ * returns anything.
+ *
+ * Nine reads and writes in this file were unguarded, and one of them was
+ * fatal: `setupDivider()` reads "krate.railWidth" and is called on the line
+ * before `boot()`. So in a private window the throw escaped, boot never
+ * ran, and the whole Studio was a blank page -- no error the person could
+ * see, no Studio. Measured, with a negative control: the shipped function
+ * against a throwing store gives SecurityError; the same code against a
+ * working store runs to the end.
+ *
+ * `bridge.js` guards all 18 of its accesses. This file guarded some and not
+ * others, which is what a per-call-site rule always decays into, so the
+ * rule is now a function: nothing in here touches localStorage directly.
+ * A read returns null when storage is unavailable, a write is a no-op, and
+ * losing a remembered rail width is not worth a blank screen.
+ */
+function lsGet(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch (e) {
+    return null;
+  }
+}
+function lsSet(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+function lsRemove(key) {
+  try {
+    localStorage.removeItem(key);
+  } catch (e) {}
+}
+
 /* One door to the shell, and three things that can be behind it.
  *
  * On a desktop it is Tauri. In a browser it is the bridge, which answers
@@ -1649,7 +1691,7 @@ function onBuildShot(dataUrl) {
  */
 const DETAIL_KEY = "krateShowDetail";
 function detailOn() {
-  try { return localStorage.getItem(DETAIL_KEY) === "1"; } catch (e) { return false; }
+  try { return lsGet(DETAIL_KEY) === "1"; } catch (e) { return false; }
 }
 function applyDetail(on) {
   const term = $("buildTerm");
@@ -1666,7 +1708,7 @@ function applyDetail(on) {
   }
 }
 function setDetail(on) {
-  try { localStorage.setItem(DETAIL_KEY, on ? "1" : "0"); } catch (e) {}
+  try { lsSet(DETAIL_KEY, on ? "1" : "0"); } catch (e) {}
   applyDetail(on);
 }
 $("detailToggle")?.addEventListener("click", () => setDetail(!detailOn()));
@@ -1809,7 +1851,7 @@ function unlockComposer(placeholder) {
 
 function fillDone(result, opts) {
   unlockComposer("Want it different? Say what to change…");
-  try { localStorage.setItem("krateMadeOnce", "1"); } catch (e) {}
+  try { lsSet("krateMadeOnce", "1"); } catch (e) {}
   $("doneName").textContent = result.name;
   $("doneSize").textContent = result.size;
   // The verdict, when the engine gave one: the card must not read as
@@ -2266,7 +2308,7 @@ function renderFreeCount() {
   }
 }
 function limitAcked() {
-  try { return localStorage.getItem("krateLimitAck") === monthKey(); } catch (e) { return false; }
+  try { return lsGet("krateLimitAck") === monthKey(); } catch (e) { return false; }
 }
 
 async function make(request, opts) {
@@ -2778,7 +2820,7 @@ async function buildNow(request, files, revising, planSession, starterShape) {
       // median is ~13. "A few minutes" read as a promise and then as a lie.
       revising
         ? "changes are quicker, the AI reads your app first"
-        : localStorage.getItem("krateMadeOnce")
+        : lsGet("krateMadeOnce")
           ? "a minute or two, sometimes more"
           // "on this computer" is the desktop's first-build cost: it is
           // warming a Rust toolchain on this machine. On the web the build
@@ -4694,7 +4736,7 @@ function setupDivider() {
   const rail = document.querySelector(".rail");
   if (!divider || !rail) return;
 
-  const saved = Number(localStorage.getItem("krate.railWidth") || 0);
+  const saved = Number(lsGet("krate.railWidth") || 0);
   if (saved >= 240 && saved <= 720) {
     rail.style.width = rail.style.minWidth = saved + "px";
   }
@@ -4703,7 +4745,7 @@ function setupDivider() {
   // to an unusable width needs a way back that is not "guess 320px".
   divider.addEventListener("dblclick", () => {
     rail.style.width = rail.style.minWidth = "320px";
-    localStorage.setItem("krate.railWidth", "320");
+    lsSet("krate.railWidth", "320");
   });
 
   divider.addEventListener("mousedown", (e) => {
@@ -4719,7 +4761,7 @@ function setupDivider() {
       document.body.classList.remove("resizing");
       document.removeEventListener("mousemove", move);
       document.removeEventListener("mouseup", up);
-      localStorage.setItem("krate.railWidth", parseInt(rail.style.width, 10) || 320);
+      lsSet("krate.railWidth", parseInt(rail.style.width, 10) || 320);
     };
     document.addEventListener("mousemove", move);
     document.addEventListener("mouseup", up);
@@ -5463,7 +5505,7 @@ $("welcomeGo")?.addEventListener("click", () => {
 });
 
 $("limitGo").addEventListener("click", () => {
-  try { localStorage.setItem("krateLimitAck", monthKey()); } catch (e) {}
+  try { lsSet("krateLimitAck", monthKey()); } catch (e) {}
   $("limitSheet").classList.add("hidden");
   const p = state.pendingMake;
   state.pendingMake = null;
@@ -5565,7 +5607,7 @@ try {
   // stays unlocked through a hub blip, and the wall stays a wall for
   // everyone who has ever seen billing live -- going dark does not
   // reopen the free tap.
-  const cached = JSON.parse(localStorage.getItem("krateBilling") || "null");
+  const cached = JSON.parse(lsGet("krateBilling") || "null");
   if (cached && cached.live !== undefined) state.billing = cached;
 } catch (e) {}
 async function loadBilling() {
@@ -5708,7 +5750,7 @@ function openLimitSheet() {
 
 /* ---- support: a real conversation ------------------------------------ */
 function supKeys() {
-  try { return JSON.parse(localStorage.getItem("krateSupKeys") || "[]"); } catch (e) { return []; }
+  try { return JSON.parse(lsGet("krateSupKeys") || "[]"); } catch (e) { return []; }
 }
 function rememberSupKey(ref) {
   try {
@@ -5878,7 +5920,7 @@ $("makeitSend")?.addEventListener("click", async () => {
       agent: state.agent || "",
       why: state.makeit.why,
     });
-    try { localStorage.setItem("krateMakeitEmail", email); } catch (e) {}
+    try { lsSet("krateMakeitEmail", email); } catch (e) {}
     $("makeitSend").textContent = "Sent";
     // Not "the finished file lands in your inbox, usually within a day".
     // That was a delivery time with no queue, no staffing and no SLA
@@ -6304,7 +6346,7 @@ async function renderShelf() {
 const SHELF_KEY = "krateShelfOpen";
 
 function shelfIsOpen() {
-  try { return localStorage.getItem(SHELF_KEY) === "1"; } catch (e) { return false; }
+  try { return lsGet(SHELF_KEY) === "1"; } catch (e) { return false; }
 }
 
 function setShelfOpen(open) {
@@ -6317,7 +6359,7 @@ function setShelfOpen(open) {
     grip.setAttribute("aria-expanded", open ? "true" : "false");
     grip.title = open ? "Hide your apps" : "Show your apps";
   }
-  try { localStorage.setItem(SHELF_KEY, open ? "1" : "0"); } catch (e) {}
+  try { lsSet(SHELF_KEY, open ? "1" : "0"); } catch (e) {}
 }
 
 (function shelfControls() {
@@ -6370,7 +6412,7 @@ function setShelfOpen(open) {
   function setOpen(open, remember = true) {
     side.dataset.open = open ? "true" : "false";
     if (remember) {
-      try { localStorage.setItem(OPEN_KEY, open ? "1" : "0"); } catch (e) {}
+      try { lsSet(OPEN_KEY, open ? "1" : "0"); } catch (e) {}
     }
     // The body class is what lets the room step aside and take its rounded
     // corner, so the two panels read as one window with a seam.
@@ -6600,7 +6642,7 @@ function wireAccountOptions() {
   const nick = $("profNick");
   if (nick && !nick.dataset.wired) {
     nick.dataset.wired = "1";
-    try { nick.value = localStorage.getItem("krate-name") || ""; } catch (e) {}
+    try { nick.value = lsGet("krate-name") || ""; } catch (e) {}
     nick.addEventListener("input", () => {
       const value = nick.value.trim();
       try {
@@ -6634,7 +6676,7 @@ function paintThemeChoice() {
   const seg = $("profTheme");
   if (!seg) return;
   let mode = "system";
-  try { mode = localStorage.getItem("krate-theme") || "system"; } catch (e) {}
+  try { mode = lsGet("krate-theme") || "system"; } catch (e) {}
   for (const button of seg.querySelectorAll("button[data-theme]")) {
     button.classList.toggle("on", button.dataset.theme === mode);
   }
@@ -7038,7 +7080,7 @@ function showCloudSkeleton() {
   // "dark" and "light" are what older versions wrote, and they still mean
   // exactly what they used to -- an explicit choice. Anything else, including
   // nothing at all, is a fresh install, which follows the computer.
-  const stored = localStorage.getItem(KEY);
+  const stored = lsGet(KEY);
   let mode = MODES.includes(stored) ? stored : "system";
 
   function effective() {
@@ -7093,7 +7135,7 @@ function showCloudSkeleton() {
 
   button.addEventListener("click", () => {
     mode = nextMode();
-    localStorage.setItem(KEY, mode);
+    lsSet(KEY, mode);
     apply();
   });
 
@@ -7107,7 +7149,7 @@ function showCloudSkeleton() {
   window.__setTheme = (next) => {
     if (!MODES.includes(next)) return;
     mode = next;
-    localStorage.setItem(KEY, mode);
+    lsSet(KEY, mode);
     apply();
   };
 
@@ -7197,7 +7239,7 @@ function paintExamples() {
 function paintGreeting() {
   const greet = $("homeGreet");
   const fromAccount = state.account && state.account.name;
-  const saved = localStorage.getItem("krate-name") || "";
+  const saved = lsGet("krate-name") || "";
   const name = (fromAccount || saved || "").trim();
   const initial = name ? name.trim().charAt(0).toUpperCase() : "";
   // Greeting and question are two lines doing two jobs, at two weights:
@@ -7236,7 +7278,7 @@ const ONBOARD_KEY = "krate-onboarded";
 let obLastStep = 0;
 
 function needsOnboarding() {
-  return !localStorage.getItem(ONBOARD_KEY);
+  return !lsGet(ONBOARD_KEY);
 }
 
 function obGo(step) {
@@ -7399,8 +7441,8 @@ async function obLoadAgents() {
 
 function finishOnboarding() {
   const name = ($("obName") && $("obName").value.trim()) || "";
-  if (name) localStorage.setItem("krate-name", name);
-  localStorage.setItem(ONBOARD_KEY, "1");
+  if (name) lsSet("krate-name", name);
+  lsSet(ONBOARD_KEY, "1");
   showView("home");
   paintGreeting();
   paintExamples();
@@ -7417,7 +7459,7 @@ document.querySelectorAll("[data-go]").forEach((button) => {
 });
 $("obFinish")?.addEventListener("click", finishOnboarding);
 $("obSkipAll")?.addEventListener("click", () => {
-  localStorage.setItem(ONBOARD_KEY, "1");
+  lsSet(ONBOARD_KEY, "1");
   showView("home");
   paintGreeting();
   paintExamples();
@@ -7436,7 +7478,7 @@ paintGreeting();
  * gate offered no way past, so anyone who reached it signed out was stuck
  * behind an account wall guarding nothing. */
 $("gateSkip")?.addEventListener("click", () => {
-  localStorage.setItem(ONBOARD_KEY, "1");
+  lsSet(ONBOARD_KEY, "1");
   enterHome();
 });
 
@@ -7445,7 +7487,7 @@ $("gateSkip")?.addEventListener("click", () => {
  * it. This is the honest way to see it, and it belongs in Settings rather
  * than in a console command only we would know. */
 $("replayOnboard")?.addEventListener("click", () => {
-  localStorage.removeItem(ONBOARD_KEY);
+  lsRemove(ONBOARD_KEY);
   showView("onboard");
   obGo(1);
 });
@@ -7802,7 +7844,7 @@ $("aiRefresh")?.addEventListener("click", async () => {
     if (e.key === "ArrowLeft") { e.preventDefault(); apply(now - step); }
     else if (e.key === "ArrowRight") { e.preventDefault(); apply(now + step); }
     else return;
-    try { localStorage.setItem(KEY, String(parseInt(getComputedStyle(side).width, 10))); } catch (x) { }
+    try { lsSet(KEY, String(parseInt(getComputedStyle(side).width, 10))); } catch (x) { }
   });
 })();
 

@@ -2309,13 +2309,24 @@ async function emailStart(request, env) {
     // Google or email, gave up, and told the founder by hand. The email
     // button was the one that was genuinely broken, and it said nothing.
     const why = await sent.text().catch(() => "");
+    // The reason goes to the LOG, in full. That is where it is useful and
+    // where it is safe.
     console.error(`resend refused the sign-in email: ${sent.status} ${why}`);
-    // Returned to the caller too, trimmed. A person who cannot sign in is
-    // entitled to know whether to wait or to tell somebody.
+    // The PERSON gets one sentence they can act on.
+    //
+    // This used to pass the vendor's body straight through, and adversarial
+    // testing showed what that means: an over-long address made the page
+    // print `{"statusCode":422,"name":"validation_error","message":"The
+    // email address length is more than 320 characters long."}` -- raw JSON,
+    // naming our mail provider, to somebody who only wanted to sign in. It
+    // also broke the layout at 375px, because that blob contains a 58
+    // character unbreakable token.
+    //
+    // Naming the provider is the part that is not ours to give away. A
+    // status code is enough for us to find the log line.
     return text(
-      `The sign-in email could not be sent (${sent.status}). ` +
-        `Use Continue with GitHub or Google, which do not depend on mail. ` +
-        (why ? `The mail service said: ${why.slice(0, 200)}` : ""),
+      `The sign-in email could not be sent. Use Continue with GitHub or ` +
+        `Google, which do not depend on mail. (Reference: ${sent.status})`,
       502,
     );
   }

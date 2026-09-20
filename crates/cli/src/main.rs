@@ -7323,6 +7323,44 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
         return Ok(0);
     }
 
+    // The same feasibility screen `create` runs, for the same request.
+    //
+    // It did not run here, and the two doors gave opposite answers to one
+    // sentence. Asked for "an app that reads my Gmail inbox", `create`
+    // refuses in plain words -- a Krate app cannot sign in to another
+    // company's account, there is no browser to redirect through and
+    // nowhere safe to keep a token. `plan` returned three confident
+    // questions instead, the first of which sends the person off to obtain
+    // an OAuth credential for an app that will then be refused.
+    //
+    // That is worst on the web, where planning IS the front door: a
+    // stranger's first interaction would be an errand, followed by a no.
+    //
+    // `create`'s refusal has an escape hatch (--force) and this one does
+    // not need its own, because the refusal is advisory here: it is
+    // returned as the plan, so the Studio shows it and the person can say
+    // something else. Nothing is spent either way -- this screen is
+    // deterministic, with no AI and no network.
+    if let krate_author::feasibility::Verdict::Refuse(refusal) =
+        krate_author::feasibility::screen(request)
+    {
+        // Both halves: the reason, and the nearest thing Krate CAN build,
+        // phrased so the person can paste it straight back. A refusal
+        // without the second half reads as a dead end, which is the whole
+        // point of `instead` existing on the type.
+        println!(
+            "{}",
+            serde_json::json!({
+                // The reason does not end in a full stop (it is written to be
+                // embedded), so one is added rather than running two
+                // sentences together.
+                "plan": format!("{}. Try instead: {}.", refusal.reason.trim_end_matches('.'), refusal.instead.trim_end_matches('.')),
+                "needs": Vec::<String>::new(),
+            })
+        );
+        return Ok(0);
+    }
+
     // An API vendor is not a program on PATH, and resolve_agent refuses it
     // below before anything else runs. `create` has always routed those to
     // api_author; plan did not, so on the build service -- KRATE_AGENT is
