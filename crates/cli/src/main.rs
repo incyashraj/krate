@@ -694,18 +694,13 @@ enum Command {
         extensions: Vec<String>,
     },
 
-    /// Upload a .krate to a hub and print a URL anyone can `krate run`.
+    /// Send a report file to Krate support.
     ///
-    /// The bundle is stored by the hash of its bytes, so republishing the same
-    /// app returns the same URL. The hub to use comes from KRATE_HUB_URL,
-    /// defaulting to a local dev server at http://127.0.0.1:8787.
-    /// Gather everything about one authoring session into a single report
-    /// file: the conversation, the AI's own transcript, the code it wrote,
-    /// the engine's log, and this machine's toolchain facts. Writes a
-    /// .krate-report (a zip) and prints its path. Uploads nothing -- the
-    /// studio asks the person first, then sends it.
-    /// Send a report file to Krate support. Requires a sign-in, so a report
-    /// arrives with a name attached.
+    /// No sign-in needed. It used to demand one, which put an
+    /// authentication wall in front of the one action a person takes
+    /// BECAUSE the product is failing them -- and an outside user could not
+    /// get through it (K-757). A signed-in sender is still named; it is
+    /// simply never a condition of sending.
     #[command(name = "support-send")]
     SupportSend {
         /// The .krate-report file to send.
@@ -724,6 +719,11 @@ enum Command {
         hub: Option<String>,
     },
 
+    /// Gather everything about one authoring session into a single report
+    /// file: the conversation, the AI's own transcript, the code it wrote,
+    /// the engine's log, and this machine's toolchain facts. Writes a
+    /// .krate-report (a zip) and prints its path. Uploads nothing -- the
+    /// studio asks the person first, then sends it.
     #[command(name = "support-report")]
     SupportReport {
         /// The studio session id, e.g. s-1786964129525.
@@ -819,6 +819,11 @@ enum Command {
     #[command(hide = true)]
     GiftOpener,
 
+    /// Upload a .krate to a hub and print a URL anyone can `krate run`.
+    ///
+    /// The bundle is stored by the hash of its bytes, so republishing the
+    /// same app returns the same URL. The hub comes from KRATE_HUB_URL,
+    /// defaulting to a local dev server at http://127.0.0.1:8787.
     Publish {
         /// Path to the .krate bundle to upload.
         bundle: PathBuf,
@@ -1900,7 +1905,8 @@ fn run() -> Result<u8> {
                 // builds workspace so a retry resumes rather than restarts.
                 let Some(agent) = agent else {
                     anyhow::bail!(
-                        "--attach needs --agent: the built-in templates cannot read files.                          Try again with --agent claude."
+                        "--attach needs --agent: the built-in templates cannot \
+                         read files. Try again with --agent claude."
                     );
                 };
                 for file in &attachments {
@@ -3949,7 +3955,21 @@ pub(crate) fn author_app_for_tui(
                 continue;
             };
             let destination = inbox.join(name);
-            if fs::copy(source, &destination).is_ok() {
+            // A failed copy used to be discarded by this `is_ok()` with no
+            // else. A directory passed to --attach cannot be copied, so
+            // nothing was staged -- and the prompt still told the agent
+            // "The person attached these files, in this directory. Read
+            // them", pointing at an empty folder. A whole agent session
+            // spent on files that were never there, with no diagnostic.
+            //
+            // `plan` now refuses a directory outright, and this is the
+            // second door: whatever else fails here is said rather than
+            // swallowed.
+            if let Err(err) = fs::copy(source, &destination) {
+                eprintln!("note: could not attach {}: {err}", source.display());
+                continue;
+            }
+            {
                 named.push(format!("attached/{}", name.to_string_lossy()));
                 // A spreadsheet is a binary blob to a text-reading agent.
                 // Convert each sheet to CSV beside the original so the data
@@ -7086,7 +7106,18 @@ fn report_send_command(
                 body.trim()
             )
         }
-        Err(err) => anyhow::bail!("could not reach Krate support: {err}"),
+        Err(err) => {
+            // Plain words, not the transport's. This printed
+            // "Connection Failed: Connect error: Connection refused (os
+            // error 61)" -- to a person whose build had just broken and who
+            // was trying to tell us about it. The detail stays available on
+            // stderr for anyone debugging; the sentence is what they read.
+            eprintln!("detail: {err}");
+            anyhow::bail!(
+                "could not reach Krate support. Check your connection and \
+                 try again -- the report file is kept, so nothing is lost."
+            )
+        }
     }
 }
 
@@ -7376,6 +7407,46 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
         })?,
     };
 
+    // An attachment that is not there must stop the plan.
+    //
+    // This mapped straight to file NAMES with no check, so a path that did
+    // not exist became a filename in the prompt and the AI planned around
+    // it -- measured: `--attach /no/such/file/anywhere.csv` produced a plan
+    // that "starts by importing the rows from the attached anywhere.csv"
+    // and declared `fs.read:anywhere.csv`, a capability for a phantom. Exit
+    // 0. That is K-759's shape again: a plan impossible before a line is
+    // written, and on the web planning is the front door.
+    //
+    // `create` (main.rs, the --attach arm) and `revise` both check. This
+    // was the one door that did not.
+    const MAX_ATTACH_BYTES: u64 = 10 * 1024 * 1024;
+    for file in attachments {
+        if !file.exists() {
+            anyhow::bail!("attached file {} does not exist", file.display());
+        }
+        if file.is_dir() {
+            // A directory silently became an empty staging folder further
+            // down the create path, and the agent was told to read files
+            // that were never copied. Named here instead.
+            anyhow::bail!(
+                "{} is a folder, and a folder cannot be attached. Attach the \
+                 files inside it.",
+                file.display()
+            );
+        }
+        // No cap existed anywhere on this path: a 60 MB text file was
+        // accepted without comment. `support-send` caps at 12 MB and this
+        // is the same kind of door.
+        if let Ok(meta) = fs::metadata(file) {
+            if meta.len() > MAX_ATTACH_BYTES {
+                anyhow::bail!(
+                    "{} is {:.1} MB, over the 10 MB attachment limit.",
+                    file.display(),
+                    meta.len() as f64 / (1024.0 * 1024.0)
+                );
+            }
+        }
+    }
     let attached: Vec<String> = attachments
         .iter()
         .map(|p| {
@@ -16601,6 +16672,37 @@ fn build_fix(detail: &str) -> String {
     let generic = "Fix the compiler errors above. The build uses rustup's toolchain and the \
                    wasm32-wasip1 target; run `krate doctor` if the target or toolchain looks \
                    wrong.";
+    // A SANDBOX denial, not a compiler error.
+    //
+    // An agent runs inside its own sandbox, which confines writes to the
+    // project directory. The shared dependency cache lives under $HOME, and
+    // writing there fails with "Operation not permitted (os error 1)" --
+    // nothing to do with the code, and the generic message below told codex
+    // to "fix the compiler errors above" when there were none. Its
+    // transcript then shows it running `krate doctor` and trying
+    // KRATE_CACHE_DIR, KRATE_HOME and XDG_CACHE_HOME in turn, none of which
+    // this binary reads. A whole agent budget spent on advice that could
+    // not work (K-763).
+    //
+    // Named here with the one override that IS honoured. A person hitting
+    // this outside an agent gets the same sentence, which is still true.
+    if detail.contains("Operation not permitted")
+        || detail.contains("os error 1)")
+        || (detail.contains("Permission denied") && detail.contains("cache"))
+    {
+        return "The build could not WRITE to its cache -- this is a \
+                permission problem, not a compiler error, and nothing in the \
+                app's code will fix it.\n\
+                It usually means the build is running inside a sandbox that \
+                only allows writes under the project directory, while the \
+                shared dependency cache lives under your home directory.\n\
+                Set CARGO_TARGET_DIR to a path inside the project and build \
+                again, for example:\n\
+                \u{20}\u{20}CARGO_TARGET_DIR=./target krate check-app .\n\
+                KRATE_CACHE_DIR, KRATE_HOME and XDG_CACHE_HOME are NOT read \
+                by this build; CARGO_TARGET_DIR is the one that works."
+            .to_string();
+    }
     // The no_std guest with no SDK. rustc reports the missing lang items one at
     // a time, so match any of them rather than one exact string.
     if detail.contains("`#[panic_handler]` function required")
@@ -22457,6 +22559,59 @@ mod url_cache_tests {
             call.contains("?;"),
             "the download must STOP when the link lied, not note it and carry \
              on caching and running the bytes: {call}",
+        );
+    }
+
+    /// A sandbox denial is not a compiler error, and must not be reported as
+    /// one.
+    ///
+    /// An agent builds inside a sandbox that allows writes only under the
+    /// project directory, while the shared dependency cache lives under
+    /// $HOME. Writing there fails with "Operation not permitted (os error
+    /// 1)" -- and `build_fix` had no arm for it, so the message said "Fix
+    /// the compiler errors above" when there were none. Codex's transcript
+    /// shows it then running `krate doctor` and trying KRATE_CACHE_DIR,
+    /// KRATE_HOME and XDG_CACHE_HOME, none of which this binary reads: a
+    /// whole agent budget spent on advice that could not work (K-763).
+    #[test]
+    fn a_sandbox_denial_is_not_called_a_compiler_error() {
+        // The exact string the failing build printed.
+        let eperm = "error: Operation not permitted (os error 1) at path \
+                     \"/Users/x/.cache/krate/build/7964b5b5\"";
+        let said = super::build_fix(eperm);
+        assert!(
+            !said.contains("Fix the compiler errors"),
+            "a permission failure must not be blamed on the code: {said}"
+        );
+        assert!(
+            said.contains("permission problem"),
+            "it must name what actually went wrong: {said}"
+        );
+        // And it must name the override that WORKS, not the three that do
+        // not. Naming a variable this binary ignores is what cost the
+        // agent its budget.
+        assert!(
+            said.contains("CARGO_TARGET_DIR"),
+            "it must name the one override that is honoured: {said}"
+        );
+        assert!(
+            said.contains("KRATE_CACHE_DIR") && said.contains("NOT read"),
+            "and say plainly that the obvious guesses are not read: {said}"
+        );
+
+        // A REAL compiler error must still get the compiler message, or
+        // this arm has made the common case worse.
+        let real = "error[E0425]: cannot find value `foo` in this scope";
+        assert!(
+            super::build_fix(real).contains("Fix the compiler errors"),
+            "an actual compiler error still gets the compiler advice"
+        );
+        // And the no_std arm, which sits after this one, still wins for its
+        // own case.
+        let nostd = "error: `#[panic_handler]` function required, but not found";
+        assert!(
+            super::build_fix(nostd).contains("no_std"),
+            "the no_std guest advice must not be shadowed"
         );
     }
 

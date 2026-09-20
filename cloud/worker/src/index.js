@@ -2182,9 +2182,24 @@ function signInEmailHtml(link) {
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
         <tr><td style="padding:11px 14px;border-bottom:1px solid ${LINE};">
           <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-            <td><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#ff5f57;">&nbsp;</span></td>
-            <td style="padding-left:6px;"><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#febc2e;">&nbsp;</span></td>
-            <td style="padding-left:6px;"><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#28c840;">&nbsp;</span></td>
+            <!-- The dots are CELLS, not spans.
+                 As spans they came out as elongated ovals on Gmail mobile:
+                 the &nbsp; inside inherits the body's 1.75 line-height, and
+                 a mobile client ignores width/height on an inline-block, so
+                 the box grew taller than it was wide. A td with width,
+                 height and line-height:0 is the shape email clients
+                 actually honour. Photographed on a phone before and after.
+
+                 The hexes are the real macOS traffic lights and were never
+                 wrong -- #FF5F57, #FEBC2E, #28C840. They read as dull in a
+                 dark-mode client because it repaints around them, which is
+                 why bgcolor is set as well as the CSS background: the
+                 attribute is what survives that. -->
+            <td width="12" height="12" bgcolor="#FF5F57" style="width:12px;height:12px;line-height:0;font-size:0;border-radius:6px;background:#FF5F57;">&#8203;</td>
+            <td width="6" style="width:6px;line-height:0;font-size:0;">&#8203;</td>
+            <td width="12" height="12" bgcolor="#FEBC2E" style="width:12px;height:12px;line-height:0;font-size:0;border-radius:6px;background:#FEBC2E;">&#8203;</td>
+            <td width="6" style="width:6px;line-height:0;font-size:0;">&#8203;</td>
+            <td width="12" height="12" bgcolor="#28C840" style="width:12px;height:12px;line-height:0;font-size:0;border-radius:6px;background:#28C840;">&#8203;</td>
             <td style="padding-left:14px;font:400 11.5px/1 ${MONO};color:${DIM};">krate &mdash; login</td>
           </tr></table>
         </td></tr>
