@@ -1168,8 +1168,13 @@ jobs:
             cp "$bundle" "$work/app.krate"
 
             # A bundle built elsewhere has to run here, with its grants, and
-            # produce the same answer it produces at home.
-            out="$( cd "$work" && "$GITHUB_WORKSPACE/$exe" run app.krate --auto-grant -- quick 2>&1 )" || {
+            # produce the same answer it produces at home. Headless, exactly
+            # as the full-test lane runs the same bundle: the Linux runner
+            # has no display, and a windowed run there fails before the app
+            # starts. This job had never run to its end before 2026-09-20
+            # (it waits on the Windows full lane, K-240), so the missing
+            # flag was found by the first run that got here.
+            out="$( cd "$work" && "$GITHUB_WORKSPACE/$exe" run --headless app.krate --auto-grant -- quick 2>&1 )" || {
               echo "bundle from $origin FAILED to open on $RUNNER_OS:" >&2
               echo "$out" >&2
               exit 1

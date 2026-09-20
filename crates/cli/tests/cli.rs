@@ -8730,6 +8730,12 @@ fn a_second_app_reuses_the_first_apps_compiled_dependencies() {
             .env("CARGO_HOME", &cargo_home)
             .env("RUSTUP_HOME", &rustup_home)
             .env_remove("CARGO_TARGET_DIR")
+            // CI sets CARGO_TERM_COLOR=always, and cargo then prints
+            // "\x1b[1m\x1b[92m   Compiling\x1b[0m krate v0.5.1": the escape
+            // codes sit between the word and the crate, and the plain
+            // substring below never matches. Passed locally, failed on the
+            // first CI run.
+            .env("CARGO_TERM_COLOR", "never")
             .output()
             .expect("run krate create")
     };

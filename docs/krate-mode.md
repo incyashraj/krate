@@ -1254,7 +1254,7 @@ fn parse_line(line: &[u8], list: &mut Checklist) {
 fn save(list: &Checklist) -> bool {
     let mut out = [0u8; MAX_ITEMS * (ITEM_TEXT_CAP + 8)];
     let mut len = 0usize;
-    let mut push = |bytes: &[u8], out: &mut [u8], len: &mut usize| {
+    let push = |bytes: &[u8], out: &mut [u8], len: &mut usize| {
         for byte in bytes {
             if let Some(slot) = out.get_mut(*len) {
                 *slot = *byte;
