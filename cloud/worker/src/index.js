@@ -2109,33 +2109,45 @@ async function googleCallback(url, env) {
 /// The sign-in email, as HTML.
 ///
 /// It used to be one line of plain text with a bare URL, which reads as
-/// something a script sent rather than something a product did -- and it is
-/// often the very first thing a person sees from Krate, before the app, the
-/// site or anything else.
+/// something a script sent rather than something a product did -- and for
+/// somebody signing in by email it is the FIRST thing Krate ever shows them,
+/// before the app, before the site.
+///
+/// A terminal, because that is what Krate is: the site's own hero is a
+/// terminal window, and the people receiving this are developers. The
+/// palette is lifted from docs/landing/site.css rather than invented --
+/// --bg #0a0a0a, --panel #0f1012, --line #1f2228, --good #4ade80,
+/// --accent #6291ff, --warn #f4dc74, and the same traffic-light dots.
 ///
 /// Written for mail clients, not browsers, which is why it looks like 2005:
 /// nested tables for layout, every style inline, no flexbox, no grid, no
 /// external stylesheet. Gmail strips <style> blocks, Outlook renders through
-/// Word, and anything clever silently collapses. The constraints are real
-/// and this shape is what survives them.
+/// Word, and anything clever silently collapses.
+///
+/// Dark mail has one extra trap on top of that: a client that forces its own
+/// light theme will repaint backgrounds and leave the text colours alone. So
+/// nothing here depends on the dark background for legibility -- every text
+/// colour is readable on white too, and the button's label is white on a
+/// solid cell that carries `bgcolor` as well as a CSS background, which is
+/// what survives Outlook.
 ///
 /// Three things it must do even when images are blocked, which is the
 /// default in most clients:
-///   - the button still reads as a button (a background on the <a> itself,
-///     not on a background image),
-///   - the full URL is visible as text, so a person who cannot click can
-///     copy it,
+///   - the button still reads as a button (colour on the anchor itself),
+///   - the full URL is visible as text, so it can be copied,
 ///   - the logo has alt text that says the product's name.
 function signInEmailHtml(link) {
-  // The brand, taken from docs/landing/index.html rather than invented:
-  // --indigo #4922E5, --purple #A558FB, and the zinc ramp under them.
-  const INDIGO = "#4922E5";
-  const PURPLE = "#A558FB";
-  const INK = "#18181b";
-  const MUTED = "#71717a";
-  const LINE = "#e4e4e7";
-  const PAPER = "#fafafa";
-  // Absolute, because a mail client has no origin to resolve against.
+  const BG = "#0a0a0a";
+  const PANEL = "#0f1012";
+  const LINE = "#1f2228";
+  const GOOD = "#4ade80";
+  const ACCENT = "#6291ff";
+  const WARN = "#f4dc74";
+  const DIM = "#8b8f98";
+  const TEXT = "#e8eaed";
+  const MONO =
+    "SFMono-Regular,'Cascadia Code',Menlo,Consolas,'Liberation Mono',monospace";
+  // Absolute: a mail client has no origin to resolve against.
   const LOGO = "https://krate.tech/krate-logo.png";
   const esc = (s) =>
     String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -2145,77 +2157,100 @@ function signInEmailHtml(link) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light">
+<meta name="color-scheme" content="dark light">
 <title>Sign in to Krate</title>
 </head>
-<body style="margin:0;padding:0;background:${PAPER};">
-<!-- Preheader: the grey line a client shows next to the subject. Hidden in
-     the body itself, or it prints twice. -->
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;">Your sign-in link, good for 15 minutes.</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${PAPER};">
+<body style="margin:0;padding:0;background:${BG};">
+<!-- Preheader: the grey line a client shows beside the subject. Hidden in
+     the body, or it prints twice. -->
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">krate login &mdash; your link is good for 15 minutes.</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${BG};">
 <tr><td align="center" style="padding:32px 16px;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background:#ffffff;border:1px solid ${LINE};border-radius:16px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;">
 
-    <tr><td style="padding:32px 32px 0 32px;">
+    <!-- Wordmark above the window, so the sender is clear before anything
+         else renders. -->
+    <tr><td style="padding:0 4px 14px 4px;">
+      <img src="${LOGO}" width="26" height="26" alt="Krate"
+           style="display:inline-block;vertical-align:middle;border:0;">
+      <span style="display:inline-block;vertical-align:middle;padding-left:9px;font:600 16px/1 ${MONO};color:${TEXT};">krate</span>
+    </td></tr>
+
+    <tr><td style="background:${PANEL};border:1px solid ${LINE};border-radius:12px;">
+
+      <!-- Title bar: the same three dots as the site's terminal. -->
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr><td style="padding:11px 14px;border-bottom:1px solid ${LINE};">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+            <td><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#ff5f57;">&nbsp;</span></td>
+            <td style="padding-left:6px;"><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#febc2e;">&nbsp;</span></td>
+            <td style="padding-left:6px;"><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#28c840;">&nbsp;</span></td>
+            <td style="padding-left:14px;font:400 11.5px/1 ${MONO};color:${DIM};">krate &mdash; login</td>
+          </tr></table>
+        </td></tr>
+      </table>
+
+      <!-- Body: a session, read top to bottom. -->
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr><td style="padding:20px 18px 0 18px;font:400 14px/1.75 ${MONO};color:${TEXT};">
+          <span style="color:${GOOD};">$</span> <span style="color:${TEXT};">krate login</span>
+        </td></tr>
+
+        <tr><td style="padding:6px 18px 0 18px;font:400 14px/1.75 ${MONO};color:${DIM};">
+          <span style="color:${GOOD};">&#10003;</span> request received<br>
+          <span style="color:${GOOD};">&#10003;</span> link signed, valid for <span style="color:${WARN};">15 minutes</span><br>
+          <span style="color:${DIM};">&#8230;</span> waiting for you to confirm
+        </td></tr>
+
+        <!-- The button. bgcolor AND a CSS background: Outlook honours the
+             attribute, everything else the style. -->
+        <tr><td style="padding:22px 18px 0 18px;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+            <td align="center" bgcolor="${ACCENT}" style="border-radius:8px;">
+              <!-- A DARK label on the blue, and a border in the same blue.
+                   Email clients that force a light theme repaint backgrounds
+                   and leave text colours alone, so no single label colour is
+                   safe on its own: white vanished when the cell was
+                   repainted white, and dark-on-dark would vanish the other
+                   way. Dark ink reads on the blue AND on a repainted light
+                   cell, and the border keeps the shape either way. Checked
+                   by rendering with every background forced to #ffffff. -->
+              <a href="${href}"
+                 style="display:inline-block;padding:13px 26px;border-radius:8px;background:${ACCENT};border:1px solid ${ACCENT};color:#0a0a0a;text-decoration:none;font:700 14px/1 ${MONO};">
+                Sign in to Krate &rarr;
+              </a>
+            </td>
+          </tr></table>
+        </td></tr>
+
+        <tr><td style="padding:20px 18px 0 18px;font:400 12.5px/1.6 ${MONO};color:${DIM};">
+          <span style="color:${DIM};"># or paste this into your browser</span>
+        </td></tr>
+
+        <!-- word-break, or a long token pushes the card wider than a phone. -->
+        <tr><td style="padding:8px 18px 0 18px;">
+          <div style="padding:12px 13px;background:${BG};border:1px solid ${LINE};border-radius:8px;font:400 12.5px/1.7 ${MONO};color:${ACCENT};word-break:break-all;">
+            ${href}
+          </div>
+        </td></tr>
+
+        <tr><td style="padding:18px 18px 22px 18px;font:400 12.5px/1.7 ${MONO};color:${DIM};">
+          <span style="color:${DIM};"># the link works once. if you did not ask to sign in,</span><br>
+          <span style="color:${DIM};"># nothing has happened and you can ignore this.</span>
+        </td></tr>
+      </table>
+
+    </td></tr>
+
+    <tr><td style="padding:16px 4px 0 4px;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-        <td align="left" style="vertical-align:middle;">
-          <img src="${LOGO}" width="36" height="36" alt="Krate"
-               style="display:inline-block;vertical-align:middle;border:0;">
-          <span style="display:inline-block;vertical-align:middle;padding-left:10px;font:600 20px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};">Krate</span>
+        <td align="left" style="font:400 11.5px/1.5 ${MONO};color:${DIM};">
+          build once. run anywhere.
         </td>
-        <td align="right" style="vertical-align:middle;font:400 13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${MUTED};">
-          Build once. Run anywhere.
-        </td>
-      </tr></table>
-    </td></tr>
-
-    <tr><td style="padding:28px 32px 0 32px;">
-      <h1 style="margin:0;font:700 28px/1.25 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};">Sign in to Krate</h1>
-      <p style="margin:12px 0 0 0;font:400 16px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${MUTED};">
-        Click the button below and you are in. No password to remember.
-      </p>
-    </td></tr>
-
-    <tr><td style="padding:24px 32px 0 32px;">
-      <!-- The button. A background on the anchor itself, so it still looks
-           like a button when images are blocked. -->
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-        <td align="center" bgcolor="${INDIGO}" style="border-radius:999px;">
-          <a href="${href}"
-             style="display:inline-block;padding:14px 28px;border-radius:999px;background:${INDIGO};color:#ffffff;text-decoration:none;font:600 16px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-            Sign in to Krate
-          </a>
-        </td>
-      </tr></table>
-    </td></tr>
-
-    <tr><td style="padding:20px 32px 0 32px;">
-      <p style="margin:0 0 8px 0;font:400 13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${MUTED};">
-        Or paste this into your browser:
-      </p>
-      <!-- word-break, or a long token overflows the card on a phone. -->
-      <div style="padding:12px 14px;background:${PAPER};border:1px solid ${LINE};border-radius:10px;font:400 13px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:${INDIGO};word-break:break-all;">
-        ${href}
-      </div>
-    </td></tr>
-
-    <tr><td style="padding:20px 32px 0 32px;">
-      <p style="margin:0;font:400 13px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${MUTED};">
-        The link works once and expires in 15 minutes. If you did not ask to
-        sign in, nothing has happened and you can ignore this.
-      </p>
-    </td></tr>
-
-    <tr><td style="padding:24px 32px 28px 32px;">
-      <div style="height:1px;background:${LINE};line-height:1px;font-size:0;">&nbsp;</div>
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:16px;"><tr>
-        <td align="left" style="font:400 12px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${MUTED};">
-          Krate &middot; one file, any desktop
-        </td>
-        <td align="right" style="font:400 12px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-          <a href="https://krate.tech" style="color:${PURPLE};text-decoration:none;">krate.tech</a>
-          <span style="color:${LINE};">&nbsp;|&nbsp;</span>
-          <a href="https://krate.tech/docs/" style="color:${PURPLE};text-decoration:none;">Docs</a>
+        <td align="right" style="font:400 11.5px/1.5 ${MONO};">
+          <a href="https://krate.tech" style="color:${DIM};text-decoration:none;">krate.tech</a>
+          <span style="color:${LINE};">&nbsp;&middot;&nbsp;</span>
+          <a href="https://krate.tech/docs/" style="color:${DIM};text-decoration:none;">docs</a>
         </td>
       </tr></table>
     </td></tr>

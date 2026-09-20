@@ -90,10 +90,26 @@ status=0
 # the same hang came back on 2026-09-20 and held the v0.5.1 tag for 85
 # minutes on a lane whose other two hosts finished in 38 and 48.
 #
-# 300s: far above the slowest honest test measured here (check-app at ~17s,
-# and the port tests well under a minute) and far below the two-hour ceiling
-# that makes a run report "cancelled" with no cause.
-export KRATE_TEST_WATCHDOG_SECS="${KRATE_TEST_WATCHDOG_SECS:-300}"
+# 90s, measured rather than guessed.
+#
+# The first value here was 300, and the run that used it is the evidence for
+# this one. The watchdog worked -- it turned an 85-minute silent hang into
+# nine recoverable stalls -- but nine stalls at 300s is 47 minutes, and the
+# step has 50. It timed out having spent almost its whole budget waiting.
+#
+# From that run's own timestamps, across 1,098 gaps between test lines on the
+# Windows runner:
+#
+#   median 0s     p95 0s     slowest honest gap 66s
+#   stalls: 300, 300, 301, 300, 600, 601, 300  (600 = two in a row)
+#
+# So nothing legitimate here needs more than about a minute, and every wait
+# past that was the hang. 90s clears the slowest real step by half a minute
+# and cuts the same nine stalls from 47 minutes to 13.
+#
+# Deliberately not lower. A runner under load can stretch a genuine step, and
+# a watchdog that kills healthy work turns one flaky lane into a lying one.
+export KRATE_TEST_WATCHDOG_SECS="${KRATE_TEST_WATCHDOG_SECS:-90}"
 
 # Let the log stream while it runs, instead of only after.
 #
