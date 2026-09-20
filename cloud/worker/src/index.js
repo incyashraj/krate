@@ -2106,6 +2106,127 @@ async function googleCallback(url, env) {
 
 // -------------------------------------------------------------------- email
 
+/// The sign-in email, as HTML.
+///
+/// It used to be one line of plain text with a bare URL, which reads as
+/// something a script sent rather than something a product did -- and it is
+/// often the very first thing a person sees from Krate, before the app, the
+/// site or anything else.
+///
+/// Written for mail clients, not browsers, which is why it looks like 2005:
+/// nested tables for layout, every style inline, no flexbox, no grid, no
+/// external stylesheet. Gmail strips <style> blocks, Outlook renders through
+/// Word, and anything clever silently collapses. The constraints are real
+/// and this shape is what survives them.
+///
+/// Three things it must do even when images are blocked, which is the
+/// default in most clients:
+///   - the button still reads as a button (a background on the <a> itself,
+///     not on a background image),
+///   - the full URL is visible as text, so a person who cannot click can
+///     copy it,
+///   - the logo has alt text that says the product's name.
+function signInEmailHtml(link) {
+  // The brand, taken from docs/landing/index.html rather than invented:
+  // --indigo #4922E5, --purple #A558FB, and the zinc ramp under them.
+  const INDIGO = "#4922E5";
+  const PURPLE = "#A558FB";
+  const INK = "#18181b";
+  const MUTED = "#71717a";
+  const LINE = "#e4e4e7";
+  const PAPER = "#fafafa";
+  // Absolute, because a mail client has no origin to resolve against.
+  const LOGO = "https://krate.tech/krate-logo.png";
+  const esc = (s) =>
+    String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const href = esc(link);
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Sign in to Krate</title>
+</head>
+<body style="margin:0;padding:0;background:${PAPER};">
+<!-- Preheader: the grey line a client shows next to the subject. Hidden in
+     the body itself, or it prints twice. -->
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">Your sign-in link, good for 15 minutes.</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${PAPER};">
+<tr><td align="center" style="padding:32px 16px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background:#ffffff;border:1px solid ${LINE};border-radius:16px;">
+
+    <tr><td style="padding:32px 32px 0 32px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+        <td align="left" style="vertical-align:middle;">
+          <img src="${LOGO}" width="36" height="36" alt="Krate"
+               style="display:inline-block;vertical-align:middle;border:0;">
+          <span style="display:inline-block;vertical-align:middle;padding-left:10px;font:600 20px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};">Krate</span>
+        </td>
+        <td align="right" style="vertical-align:middle;font:400 13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${MUTED};">
+          Build once. Run anywhere.
+        </td>
+      </tr></table>
+    </td></tr>
+
+    <tr><td style="padding:28px 32px 0 32px;">
+      <h1 style="margin:0;font:700 28px/1.25 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${INK};">Sign in to Krate</h1>
+      <p style="margin:12px 0 0 0;font:400 16px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${MUTED};">
+        Click the button below and you are in. No password to remember.
+      </p>
+    </td></tr>
+
+    <tr><td style="padding:24px 32px 0 32px;">
+      <!-- The button. A background on the anchor itself, so it still looks
+           like a button when images are blocked. -->
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+        <td align="center" bgcolor="${INDIGO}" style="border-radius:999px;">
+          <a href="${href}"
+             style="display:inline-block;padding:14px 28px;border-radius:999px;background:${INDIGO};color:#ffffff;text-decoration:none;font:600 16px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+            Sign in to Krate
+          </a>
+        </td>
+      </tr></table>
+    </td></tr>
+
+    <tr><td style="padding:20px 32px 0 32px;">
+      <p style="margin:0 0 8px 0;font:400 13px/1.4 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${MUTED};">
+        Or paste this into your browser:
+      </p>
+      <!-- word-break, or a long token overflows the card on a phone. -->
+      <div style="padding:12px 14px;background:${PAPER};border:1px solid ${LINE};border-radius:10px;font:400 13px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:${INDIGO};word-break:break-all;">
+        ${href}
+      </div>
+    </td></tr>
+
+    <tr><td style="padding:20px 32px 0 32px;">
+      <p style="margin:0;font:400 13px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${MUTED};">
+        The link works once and expires in 15 minutes. If you did not ask to
+        sign in, nothing has happened and you can ignore this.
+      </p>
+    </td></tr>
+
+    <tr><td style="padding:24px 32px 28px 32px;">
+      <div style="height:1px;background:${LINE};line-height:1px;font-size:0;">&nbsp;</div>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:16px;"><tr>
+        <td align="left" style="font:400 12px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:${MUTED};">
+          Krate &middot; one file, any desktop
+        </td>
+        <td align="right" style="font:400 12px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+          <a href="https://krate.tech" style="color:${PURPLE};text-decoration:none;">krate.tech</a>
+          <span style="color:${LINE};">&nbsp;|&nbsp;</span>
+          <a href="https://krate.tech/docs/" style="color:${PURPLE};text-decoration:none;">Docs</a>
+        </td>
+      </tr></table>
+    </td></tr>
+
+  </table>
+</td></tr>
+</table>
+</body>
+</html>`;
+}
+
 async function emailStart(request, env) {
   if (!env.RESEND_API_KEY) {
     return text("Email sign-in is not configured on this hub yet.", 503);
@@ -2131,7 +2252,12 @@ async function emailStart(request, env) {
       from: "Krate <login@krate.tech>",
       to: [email],
       subject: "Sign in to Krate",
+      // Both parts, always. `text` is not a fallback nobody sees: plenty of
+      // clients are set to plain text, and a mail with only HTML is the one
+      // that lands in spam. The link is spelled out in both, so the mail
+      // works even when images and styles are stripped.
       text: `Click to sign in to Krate:\n\n${link}\n\nThe link works once and expires in 15 minutes. If you did not ask for this, ignore it.`,
+      html: signInEmailHtml(link),
     }),
   });
   if (!sent.ok) {
