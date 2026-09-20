@@ -2134,7 +2134,30 @@ async function emailStart(request, env) {
       text: `Click to sign in to Krate:\n\n${link}\n\nThe link works once and expires in 15 minutes. If you did not ask for this, ignore it.`,
     }),
   });
-  if (!sent.ok) return text("The sign-in email could not be sent. Try again.", 502);
+  if (!sent.ok) {
+    // Say what the mail provider actually said.
+    //
+    // This threw the reason away and returned "Try again", which is advice
+    // for a blip and useless for a misconfiguration -- and the failure here
+    // is almost always a misconfiguration, because a send either works every
+    // time or never. It never worked: SPF for krate.tech authorises
+    // Hostinger and not Resend, so every send was refused and the only
+    // person who could ever see why was reading Cloudflare's logs.
+    //
+    // An outside user hit exactly this. He could not sign in with GitHub,
+    // Google or email, gave up, and told the founder by hand. The email
+    // button was the one that was genuinely broken, and it said nothing.
+    const why = await sent.text().catch(() => "");
+    console.error(`resend refused the sign-in email: ${sent.status} ${why}`);
+    // Returned to the caller too, trimmed. A person who cannot sign in is
+    // entitled to know whether to wait or to tell somebody.
+    return text(
+      `The sign-in email could not be sent (${sent.status}). ` +
+        `Use Continue with GitHub or Google, which do not depend on mail. ` +
+        (why ? `The mail service said: ${why.slice(0, 200)}` : ""),
+      502,
+    );
+  }
   return json({ sent: true });
 }
 
