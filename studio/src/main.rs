@@ -1909,12 +1909,45 @@ fn notify(app: &tauri::AppHandle, body: &str) {
     if focused {
         return;
     }
-    let _ = app
+    // Ask for permission before assuming we have it.
+    //
+    // Nothing ever requested it. On macOS an unauthorized bundle has its
+    // notifications dropped by the OS, and the `let _ =` below made that
+    // indistinguishable from success -- so "we notify people" was true in
+    // the code and possibly false on the machine, with no way to tell which.
+    // A user missed a question he was supposedly notified about, and this is
+    // the first thing that could not be ruled out (K-761).
+    //
+    // Requested here rather than at startup on purpose: the prompt then
+    // arrives attached to a real notification the person is about to want,
+    // not as an unexplained permission box during their first ten seconds.
+    match app.notification().permission_state() {
+        Ok(tauri_plugin_notification::PermissionState::Granted) => {}
+        Ok(_) => {
+            if let Err(err) = app.notification().request_permission() {
+                eprintln!("note: could not ask to show notifications: {err}");
+                return;
+            }
+        }
+        Err(err) => {
+            eprintln!("note: could not read the notification permission: {err}");
+        }
+    }
+    // A dropped notification is said out loud.
+    //
+    // This was `let _ =`, so every delivery failure -- no permission, Do Not
+    // Disturb, a platform registration problem -- looked exactly like a
+    // delivered one. The whole point of this function is telling somebody
+    // something; failing at that silently is the one outcome worth printing.
+    if let Err(err) = app
         .notification()
         .builder()
         .title("Krate")
         .body(body)
-        .show();
+        .show()
+    {
+        eprintln!("note: a notification could not be shown ({err}): {body}");
+    }
 }
 
 fn notify_ready(app: &tauri::AppHandle, name: &str) {
@@ -2206,6 +2239,20 @@ async fn plan_request(
         // question that nobody sees is a build that never starts.
         if answer.contains("\"ask\"") {
             notify(&app, "Krate has a question about your app.");
+            // Bounce the dock as well, which `notify` cannot do.
+            //
+            // `notify` stays quiet when the window is focused, and that is
+            // right for "your build finished" -- somebody watching does not
+            // need the OS to repeat it. A QUESTION is different: the build
+            // is stopped until it is answered, and a person can sit with
+            // Studio frontmost while looking somewhere else entirely. Then
+            // the notification is suppressed for being focused and nothing
+            // else asks for them, which is how a real user came back to a
+            // question he never knew was waiting (K-761).
+            if let Some(window) = app.get_webview_window("main") {
+                let _ =
+                    window.request_user_attention(Some(tauri::UserAttentionType::Informational));
+            }
         }
     }
     out
@@ -4878,11 +4925,26 @@ mod tests {
     #[test]
     fn an_app_that_built_but_is_not_what_was_asked_is_a_result_with_a_verdict() {
         assert!(super::is_off_request(Some(6), false, true));
-        assert!(!super::is_off_request(Some(6), true, true), "a stop is a stop");
-        assert!(!super::is_off_request(Some(6), false, false), "no file, no result");
-        assert!(!super::is_off_request(Some(1), false, true), "exit 1 is a failure");
-        assert!(!super::is_off_request(Some(0), false, true), "exit 0 is accepted");
-        assert!(!super::is_off_request(None, false, true), "a signal is not a verdict");
+        assert!(
+            !super::is_off_request(Some(6), true, true),
+            "a stop is a stop"
+        );
+        assert!(
+            !super::is_off_request(Some(6), false, false),
+            "no file, no result"
+        );
+        assert!(
+            !super::is_off_request(Some(1), false, true),
+            "exit 1 is a failure"
+        );
+        assert!(
+            !super::is_off_request(Some(0), false, true),
+            "exit 0 is accepted"
+        );
+        assert!(
+            !super::is_off_request(None, false, true),
+            "a signal is not a verdict"
+        );
 
         let lines: Vec<String> = [
             "reading what krate can do",
@@ -4899,12 +4961,27 @@ mod tests {
         .map(|s| s.to_string())
         .collect();
         let detail = super::off_request_detail(&lines).expect("a detail");
-        assert!(detail.starts_with("Built /x/timer.krate, but it is not what you asked for."), "{detail}");
-        assert!(detail.contains("\nasked for: a countdown timer\n"), "{detail}");
-        assert!(detail.ends_with("but the app shows a checklist"), "{detail}");
-        assert!(!detail.contains("packing"), "only the verdict, not the log: {detail}");
+        assert!(
+            detail.starts_with("Built /x/timer.krate, but it is not what you asked for."),
+            "{detail}"
+        );
+        assert!(
+            detail.contains("\nasked for: a countdown timer\n"),
+            "{detail}"
+        );
+        assert!(
+            detail.ends_with("but the app shows a checklist"),
+            "{detail}"
+        );
+        assert!(
+            !detail.contains("packing"),
+            "only the verdict, not the log: {detail}"
+        );
 
-        assert_eq!(super::off_request_detail(&["Created /x/a.krate".to_string()]), None);
+        assert_eq!(
+            super::off_request_detail(&["Created /x/a.krate".to_string()]),
+            None
+        );
 
         let revise: Vec<String> = [
             "The change did not do what you asked, so it was not applied.",
@@ -4918,7 +4995,10 @@ mod tests {
         .map(|s| s.to_string())
         .collect();
         let detail = super::off_request_detail(&revise).expect("a detail");
-        assert!(detail.starts_with("The change did not do what you asked"), "{detail}");
+        assert!(
+            detail.starts_with("The change did not do what you asked"),
+            "{detail}"
+        );
         assert!(!detail.contains("unchanged"), "{detail}");
     }
 

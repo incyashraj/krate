@@ -7043,25 +7043,35 @@ fn report_send_command(
     if bytes.len() > 12 * 1024 * 1024 {
         anyhow::bail!("that report is over 12 MB; send the session's own log instead");
     }
-    let identity = match github_auth::current() {
-        Some(identity) => identity,
-        None => {
-            println!("Sending a report puts your name on it, so it needs a sign-in.");
-            github_auth::sign_in().map_err(|err| anyhow::anyhow!("could not sign in: {err}"))?
-        }
-    };
+    // Sending a report never asks anyone to sign in.
+    //
+    // It used to: no identity meant a device-flow sign-in before the zip
+    // could go. That put an authentication wall in front of the one action a
+    // person takes precisely BECAUSE the product is failing them -- and an
+    // outside user hit it exactly that way. His build failed, he pressed
+    // "Send to support", and could not get through the login with GitHub,
+    // Google or email. So the failure silenced the report about itself, and
+    // we only learned of it because he told the founder by hand (K-757).
+    //
+    // A signed-in person is still identified, because a report we can reply
+    // to is worth more. It is simply never a condition of sending.
+    let identity = github_auth::current();
     let hub = hub_override
         .map(str::to_string)
         .or_else(|| std::env::var("KRATE_HUB_URL").ok())
         .unwrap_or_else(|| DEFAULT_HUB_URL.to_string());
-    let response = ureq::post(&format!("{}/report", hub.trim_end_matches('/')))
-        .set("Authorization", &format!("Bearer {}", identity.token))
+    let mut request = ureq::post(&format!("{}/report", hub.trim_end_matches('/')))
         .set("Content-Type", "application/zip")
         .set("X-Krate-Session", session)
         .set("X-Krate-Version", krate_version())
         .set("X-Krate-Os", std::env::consts::OS)
-        .set("X-Krate-Note", &note.replace('\n', " "))
-        .send_bytes(&bytes);
+        .set("X-Krate-Note", &note.replace('\n', " "));
+    // Sent when we have it, absent when we do not. The header is the only
+    // difference between a named report and an anonymous one; both go.
+    if let Some(identity) = &identity {
+        request = request.set("Authorization", &format!("Bearer {}", identity.token));
+    }
+    let response = request.send_bytes(&bytes);
     match response {
         Ok(response) => {
             let body = response.into_string().unwrap_or_default();
@@ -8281,7 +8291,31 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     // source that was actually built and looks for evidence of what the
     // request named. A missing verdict is not a pass.
     let app_source = read_app_source(&app_dir);
-    let acceptance = krate_author::acceptance::judge(&req.request, &name, &app_source);
+    let mut acceptance = krate_author::acceptance::judge(&req.request, &name, &app_source);
+    // The manifest can make an app impossible while every word check passes.
+    //
+    // `judge` reads the SOURCE. A sandbox app reaches only what its manifest
+    // declares, so the manifest is the limit, not documentation -- and a real
+    // user's API playground mentioned url, method, headers and body in its
+    // code (so every requirement passed, and the build reported success)
+    // while declaring `net.connect:127.0.0.1:*` and nothing else. It could
+    // never call an API. Nobody was told (K-759).
+    if let Ok(manifest) = fs::read_to_string(app_dir.join("manifest.toml")) {
+        if let Some(problem) =
+            krate_author::acceptance::manifest_cannot_serve(&req.request, &manifest)
+        {
+            acceptance.accepted = false;
+            acceptance
+                .requirements
+                .push(krate_author::acceptance::Verdict {
+                    id: "req-manifest".to_string(),
+                    text: "reach what the request asks it to reach".to_string(),
+                    outcome: krate_author::acceptance::Outcome::Fail,
+                    detail: problem.clone(),
+                });
+            acceptance.summary = problem;
+        }
+    }
     steps.push(serde_json::json!({
         "step": "serves-request",
         "detail": acceptance.summary.clone(),
@@ -8963,6 +8997,28 @@ fn agent_home_for(real_home: &Path) -> PathBuf {
     // Opt-in, never set by us, and it says what it costs: the agent runs
     // with the person's own home, which is the trade only they can make.
     if std::env::var("KRATE_AGENT_HOME").is_ok_and(|v| v.trim().eq_ignore_ascii_case("real")) {
+        return real_home.to_path_buf();
+    }
+    // Confining an already-confined home is a no-op, not a second nesting.
+    //
+    // Two doors confine, deliberately: the Studio sets HOME for the agent,
+    // and the engine sets it again because `krate create` in a terminal is
+    // its own door (see the comment at the authoring caller). Nothing made
+    // the second application idempotent, so when the Studio's agent ran
+    // `krate check-app` itself -- which agents do, it is how they verify
+    // their own work -- that child read the confined HOME and confined it
+    // AGAIN:
+    //
+    //     ~/.krate/agent-home/.krate/agent-home/.cache/krate/build/...
+    //
+    // The build cache then sat outside the project directory the agent's
+    // sandbox allows it to write, so every such build died with "Operation
+    // not permitted" and the agent, which cannot see why, burned its budget
+    // trying four cache overrides that do not exist (K-755).
+    //
+    // Guarding here rather than at each door: one rule, and a third door
+    // cannot reintroduce it.
+    if real_home.ends_with(Path::new(".krate").join("agent-home")) {
         return real_home.to_path_buf();
     }
     real_home.join(".krate").join("agent-home")
@@ -10451,13 +10507,17 @@ fn ai_status_json() -> Result<u8> {
             .map(|provider| {
                 scope.spawn(move || {
                     let readiness = probe_with_cache(*provider);
-                    let (state, detail, remedy) = match &readiness {
-                        agent_provider::Readiness::Working => ("working", String::new(), None),
-                        agent_provider::Readiness::NotReady { summary, remedy } => {
-                            ("not-ready", summary.clone(), remedy.clone())
+                    let (state, detail, remedy, said) = match &readiness {
+                        agent_provider::Readiness::Working => {
+                            ("working", String::new(), None, None)
                         }
+                        agent_provider::Readiness::NotReady {
+                            summary,
+                            remedy,
+                            said,
+                        } => ("not-ready", summary.clone(), remedy.clone(), said.clone()),
                         agent_provider::Readiness::Missing => {
-                            ("missing", provider.install_hint().to_string(), None)
+                            ("missing", provider.install_hint().to_string(), None, None)
                         }
                     };
                     let name = provider.name();
@@ -10471,6 +10531,10 @@ fn ai_status_json() -> Result<u8> {
                         "state": state,
                         "detail": detail,
                         "remedy": remedy,
+                        // What the tool itself printed. `detail` is our reading
+                        // of it; this is the thing that settles an argument
+                        // about whether the reading is right (K-754).
+                        "said": said,
                         // The npm package, so a GUI can offer to install it
                         // rather than printing a command and sending someone
                         // to a terminal.
@@ -10673,8 +10737,21 @@ fn ai_status(json: bool) -> Result<u8> {
     if !broken.is_empty() {
         println!("Installed, but not usable yet:");
         for (provider, readiness) in &broken {
-            if let agent_provider::Readiness::NotReady { summary, remedy } = readiness {
+            if let agent_provider::Readiness::NotReady {
+                summary,
+                remedy,
+                said,
+            } = readiness
+            {
                 println!("  {:<9}{}", provider.name(), summary);
+                // The tool's own words, under our reading of them. When the two
+                // disagree the words win, and nobody can see that unless they
+                // are on screen (K-754).
+                if let Some(said) = said {
+                    for line in said.lines() {
+                        println!("           > {line}");
+                    }
+                }
                 if let Some(remedy) = remedy {
                     println!("           fix it with: {remedy}");
                 }
@@ -19879,6 +19956,58 @@ mod create_tests {
         );
     }
 
+    /// Confining twice must land in the same place as confining once.
+    ///
+    /// Two doors confine on purpose -- the Studio for its agent, the engine
+    /// because `krate create` in a terminal is its own door -- and the
+    /// second application was not a no-op. An agent verifying its own work
+    /// with `krate check-app` inherited the confined HOME, confined it
+    /// again, and the build cache landed at
+    /// `~/.krate/agent-home/.krate/agent-home/.cache/...`: outside the
+    /// project directory its sandbox lets it write. Every such build died
+    /// with "Operation not permitted", and the agent -- which cannot see the
+    /// path is wrong -- spent its budget on four cache overrides that do not
+    /// exist before giving up (K-755).
+    #[test]
+    fn confining_an_already_confined_home_changes_nothing() {
+        let real = Path::new("/Users/newcomer");
+        let once = agent_home_for(real);
+        let twice = agent_home_for(&once);
+
+        assert_eq!(
+            once,
+            twice,
+            "confinement must be idempotent, or a child process nests it \
+again: {} -> {}",
+            once.display(),
+            twice.display()
+        );
+
+        // Named explicitly, because this is the string that appeared in the
+        // failure and the one a reader will search for.
+        assert!(
+            !twice
+                .to_string_lossy()
+                .contains("agent-home/.krate/agent-home"),
+            "the agent's home must not nest inside itself, got {}",
+            twice.display()
+        );
+
+        // A third application must not drift either -- the Studio, the
+        // engine and a check-app the agent runs itself are three.
+        assert_eq!(agent_home_for(&twice), once, "a third pass must also hold");
+
+        // And the guard must not swallow a real home that merely mentions
+        // the words. Only a home ENDING in `.krate/agent-home` is already
+        // confined; one that contains it deeper still gets confined.
+        let lookalike = Path::new("/Users/newcomer/.krate/agent-home-backup");
+        assert_ne!(
+            agent_home_for(lookalike),
+            lookalike.to_path_buf(),
+            "a directory that is not the confined home must still be confined"
+        );
+    }
+
     /// A change and a new app are different jobs and must get different
     /// instructions. They used to share one prompt, so an AI asked to move a
     /// button was told to "find the closest example and adapt it" and
@@ -22159,6 +22288,67 @@ mod url_cache_tests {
             call.contains("?;"),
             "the download must STOP when the link lied, not note it and carry \
              on caching and running the bytes: {call}",
+        );
+    }
+
+    /// Sending a report must never start an interactive sign-in.
+    ///
+    /// `github_auth::sign_in()` is GitHub's DEVICE CODE flow: it prints a URL
+    /// and an eight-character code to stdout, then polls for fifteen minutes
+    /// while the person types that code into a browser. Studio spawns the
+    /// engine with `.output()`, which pipes stdout and returns it only after
+    /// the process exits -- so the code is stuck in a pipe nobody reads until
+    /// the flow has already given up.
+    ///
+    /// An outside user met exactly that. His build failed, he pressed "Send
+    /// to support", and got GitHub's device page asking for a code his screen
+    /// never showed. He tried GitHub, Google and email and concluded all
+    /// three were broken; none of them was the problem. The report about the
+    /// failure was silenced by the failure (K-757).
+    ///
+    /// `publish` learned this and guards it with `IsTerminal` (K-210). The
+    /// report path did not, a few thousand lines away. This asserts the rule
+    /// for the path where the answer is simply never to ask.
+    #[test]
+    fn sending_a_report_never_asks_anyone_to_sign_in() {
+        let source = include_str!("main.rs");
+        let start = source
+            .find("fn report_send_command(")
+            .expect("report_send_command exists");
+        // To the closing brace, so the window cannot silently narrow as the
+        // function grows.
+        let end = source[start..]
+            .find("\n}\n")
+            .map(|offset| start + offset)
+            .expect("closing brace");
+        // Comments stripped, or this test dies the moment someone writes the
+        // words `sign_in` in a comment explaining why it must not be called
+        // -- which the fix above does, at length.
+        let code: String = source[start..end]
+            .lines()
+            .map(str::trim_start)
+            .filter(|line| !line.starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(
+            !code.contains("sign_in("),
+            "sending a report must never start a sign-in: it is a terminal \
+             flow, Studio pipes stdout, and the person is already having a \
+             bad day. Found it in report_send_command:\n{code}",
+        );
+
+        // And the identity must stay optional rather than being unwrapped
+        // back into a requirement by a later edit.
+        assert!(
+            code.contains("github_auth::current()"),
+            "the report path still reads an existing sign-in, to name the \
+             sender when there is one",
+        );
+        assert!(
+            !code.contains("identity.token") || code.contains("if let Some(identity)"),
+            "the token may only be used behind a Some check, or an anonymous \
+             report panics on the happy path",
         );
     }
 

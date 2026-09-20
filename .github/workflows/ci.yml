@@ -180,6 +180,23 @@ jobs:
           cargo fetch --manifest-path "$tmp/Cargo.toml" --target wasm32-wasip1
       - name: Run workspace tests
         run: cargo test --workspace --all-features
+      # The half of the stranger's path that MAKES an app.
+      #
+      # `test-cold-install.sh` walks install/refuse/grant/run and stops there,
+      # and it has been green for months. In one week of 2026-09, five
+      # separate first-contact failures were found and every one of them was
+      # past that point -- the agent probe, the build, the failure message,
+      # the report, the plan (K-758). Nothing walked any of it.
+      #
+      # Runs on every push rather than only the full lanes: it is offline,
+      # stubs the agent, and takes seconds. A guard that runs nightly finds
+      # the bug the morning after somebody shipped it.
+      - name: Walk the make path with a stubbed agent
+        shell: bash
+        timeout-minutes: 10
+        run: |
+          cargo build -p krate-cli --bin krate
+          KRATE_BIN="$PWD/target/debug/krate" sh scripts/test-cold-make.sh "$RUNNER_TEMP/cold-make"
       - name: krate create fails clearly when build tools are missing
         shell: bash
         run: |
@@ -983,6 +1000,18 @@ jobs:
           cargo fetch --manifest-path "$tmp/Cargo.toml" --target wasm32-wasip1
       - name: Run Phase 1 tests
         shell: bash
+        # A bound on the step, because the in-process watchdog is not enough
+        # on its own. The watchdog kills a hung krate.exe CHILD; it cannot
+        # help if cargo itself, or the runner, is what stops. Without this a
+        # hang runs to GitHub's two-hour job ceiling and the run reports
+        # "cancelled" naming no cause -- measured three times, and on
+        # 2026-09-20 it held the v0.5.1 tag for 85 minutes on a lane whose
+        # other two hosts finished in 38 and 48 (K-240).
+        #
+        # 50 is roughly twice the slowest honest full run of this step and
+        # well under the ceiling, so a real slowdown still passes and a hang
+        # fails in a way that says which step it was.
+        timeout-minutes: 50
         env:
           KRATE_HELLO_WASM: krate-fixture/hello_world.wasm
           KRATE_HELLO_SHA256: ${{ needs.hello-fixture.outputs.sha256 }}

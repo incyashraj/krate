@@ -680,8 +680,22 @@ async function putShot(request, hash, env) {
 /// The bytes go to R2 and a small row to KV, so the admin list is one read
 /// rather than a bucket scan.
 async function putReport(request, env) {
-  const identity = await verifyGitHub(request, env);
-  if (!identity) return text("sign in first", 401);
+  // A bug report does NOT need a sign-in.
+  //
+  // It did, and that was backwards: the person whose product just broke was
+  // asked to authenticate before they could say so. One outside user hit
+  // exactly that -- the build failed, he pressed "Send to support", and got a
+  // login page he could not get through with GitHub, Google or email. The
+  // failure that made him want to report it is the same failure we then never
+  // heard about (K-757).
+  //
+  // The identity bought nothing. `from` was written into the metadata and
+  // read by no code anywhere -- not the admin list, not the detail view. We
+  // need the zip, not the name.
+  //
+  // Still recorded when it happens to be there, because a report we can reply
+  // to is better than an anonymous one. Optional, never a gate.
+  const identity = await verifyGitHub(request, env).catch(() => null);
   const body = new Uint8Array(await request.arrayBuffer());
   if (body.length === 0 || body.length > 12 * 1024 * 1024) {
     return text("a report must be a zip under 12 MiB", 413);
@@ -697,8 +711,8 @@ async function putReport(request, env) {
   });
   const meta = {
     id,
-    from: identity.login,
-    name: identity.name || identity.login,
+    from: identity ? identity.login : "anonymous",
+    name: identity ? identity.name || identity.login : "anonymous",
     session: header(request, "x-krate-session") || "",
     krate: header(request, "x-krate-version") || "",
     os: header(request, "x-krate-os") || "",

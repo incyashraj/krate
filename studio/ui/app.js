@@ -931,14 +931,26 @@ function openSession(s) {
   }
   msgs.forEach((m, i) => {
     if (i === lastAsk && state.planning) {
+      // Not primary, for the same reason it is not primary live: the bright
+      // button under an unanswered question is the one that skips it (K-760).
       appendMessage(m.who, m.body, m.files, {
         variant: "ask",
-        actions: [{ label: "Build it", primary: true, run: finishPlanningAndBuild }],
+        actions: [{ label: "Build it", run: finishPlanningAndBuild }],
       });
     } else {
       appendMessage(m.who, m.body, m.files);
     }
   });
+  // A replayed ask is either the numbered questions or the agreed plan, and
+  // only the questions belong on the stage card. The numbering is how the
+  // questions were written down (runPlan joins them "1. ", "2. "), so it is
+  // also how they are read back -- session files hold the rendered line, not
+  // the list the planner returned.
+  const replayedAsk = lastAsk !== undefined ? msgs[lastAsk] : null;
+  const replayedQuestions = replayedAsk && /^\s*1\.\s/.test(replayedAsk.body || "")
+    ? String(replayedAsk.body).split("\n").map((l) => l.replace(/^\s*\d+\.\s*/, "").trim()).filter(Boolean)
+    : [];
+  if (replayedQuestions.length && state.planning) state.planning.lastQuestions = replayedQuestions;
   if (building) {
     show("building");
     // Put the live progress back: stages, log, current line and clock. Without
@@ -962,9 +974,21 @@ function openSession(s) {
   } else if (lastAsk !== undefined) {
     // Waiting on the person, honestly resumable: the question or plan
     // (with its Build button) is back in the rail, and the right pane
-    // says so -- generic words, because the replayed ask can be either.
-    showPlanning("Waiting on you", "it's on the left: answer, or just hit Build it", "paused");
-    $("prompt").placeholder = "Answer here… or hit Build it";
+    // says so. When the ask was a QUESTION the pane repeats it in full --
+    // a reopened session that only said "it's on the left" left the same
+    // unanswered question as invisible as it was the first time (K-760).
+    if (replayedQuestions.length) {
+      showPlanning(
+        replayedQuestions.length > 1 ? "Some questions first" : "One question first",
+        "your answer goes in the box at the bottom",
+        "waiting on you",
+        replayedQuestions,
+      );
+      $("prompt").placeholder = "Type your answer here…";
+    } else {
+      showPlanning("Waiting on you", "the plan is on the left: change it, or hit Build it", "paused");
+      $("prompt").placeholder = "Anything to change? Or hit Build it";
+    }
   } else if (s.failedRequest || msgs.some((m) => m.who === "YOU")) {
     // Unfinished and not live: the build stopped, failed, or was cut off
     // by a restart. Never the idle "your app will appear here" ghost --
@@ -1154,14 +1178,95 @@ function show(phase) {
 /// The right pane during the conversation gate: the forming frame in
 /// listening dress. The seconds between the person's sentence and the
 /// first questions used to be an empty pane, and empty read as broken.
-function showPlanning(title, line, tag) {
+///
+/// `questions`, when given, puts the outstanding question ON this pane --
+/// see showPlanningAsk for why that is not optional.
+function showPlanning(title, line, tag, questions) {
   const t = $("planTitle");
   if (t) t.textContent = title;
   const l = $("planLine");
   if (l) l.textContent = line;
   const g = $("planTag");
   if (g) g.textContent = tag || "listening…";
+  showPlanningAsk(questions || []);
   show("planning");
+}
+
+/// What does skipping this particular question cost?
+///
+/// A question of taste costs nothing to skip: Krate picks a colour and the
+/// person says otherwise afterwards. A question whose answer becomes a
+/// CAPABILITY costs the app its ability to do the thing that was asked for,
+/// and there is no error anywhere -- the build "succeeds". That is K-759: an
+/// API playground whose host question went unanswered shipped with
+/// `net.connect:127.0.0.1:*` and could not reach a single API.
+///
+/// Matched on the question's own words rather than on a flag, because the
+/// planner returns plain sentences and nothing tells us which kind this is.
+/// A wrong guess here only costs an extra honest line, never a block.
+function skipCost(questions) {
+  const all = questions.join(" ").toLowerCase();
+  if (/\bhost|\bserver|\bapi\b|\burl\b|\bendpoint|\bdomain|\brequests to\b/.test(all)) {
+    return "Skip and the app can only reach your own computer -- an app "
+      + "meant to call a real API will not be able to. Naming a host "
+      + "(api.github.com:443) is what lets it out.";
+  }
+  if (/\bfile|\bfolder|\bdirectory|\bsave|\bdisk\b/.test(all)) {
+    return "Skip and the app gets its own private folder only. If it was "
+      + "meant to read your files, it will not be able to.";
+  }
+  if (/\bcamera|\bmicrophone|\bmic\b|\bscreen\b|\bclipboard|\bnotif|\bsound|\bspeech/.test(all)) {
+    return "Skip and Krate leaves that ability out. An app that needed it "
+      + "will come back without it.";
+  }
+  return "Skip and Krate decides for you. If it decides wrong you will see "
+    + "it in the finished app, and saying what to change makes the next "
+    + "version.";
+}
+
+/// Draw the outstanding question on the stage, or clear it.
+///
+/// The bug this exists for: the question "Which servers will you send
+/// requests to?" appeared in the LEFT transcript only, in the same dress as
+/// every other Krate message, while this entire pane was empty. A developer
+/// read it as narration, pressed the Build it the question itself offered,
+/// and got an app that could not work (K-760). Every other state of this
+/// pane -- building, done, "Stopped." -- uses the right side to say what is
+/// happening; a question was the one thing that did not.
+///
+/// Answering is the primary button and it goes to the composer, because the
+/// answer is typed, not clicked. Skipping stays available and says what it
+/// costs (K-759): the person is the boss, but not a person who was never
+/// told.
+function showPlanningAsk(questions) {
+  const box = $("planAsk");
+  if (!box) return;
+  const list = $("planAskList");
+  if (!questions.length) {
+    box.classList.add("hidden");
+    if (list) list.textContent = "";
+    return;
+  }
+  if (list) {
+    // Text nodes, never interpolated markup: these sentences come back from
+    // the planning engine, which is network-shaped data reaching the DOM
+    // (IC-320, same rule as appendMessage).
+    list.textContent = "";
+    for (const q of questions) {
+      const li = document.createElement("li");
+      li.textContent = q;
+      list.appendChild(li);
+    }
+  }
+  const lead = $("planAskLead");
+  if (lead) {
+    lead.textContent = questions.length > 1
+      ? `Krate needs ${questions.length} things from you before it can build this.`
+      : "Krate needs one thing from you before it can build this.";
+  }
+  const cost = $("planAskCost");
+  if (cost) cost.textContent = skipCost(questions);
+  box.classList.remove("hidden");
 }
 
 /* Never let a spinner outlive its build.
@@ -2356,9 +2461,13 @@ async function runPlan() {
       state.planning.rounds += 1;
       state.planning.lastQuestions = answer.ask;
       const questions = answer.ask.map((q, i) => `${i + 1}. ${q}`).join("\n");
+      // Build it is no longer the PRIMARY button on the question. It was, and
+      // that is most of K-760: the one bright button under a message the
+      // person had read as narration was the one that skipped the question.
+      // Skipping is still one click away, on the card and here.
       say("KRATE", questions, null, {
         variant: "ask",
-        actions: [{ label: "Build it", primary: true, run: finishPlanningAndBuild }],
+        actions: [{ label: "Build it", run: finishPlanningAndBuild }],
       });
       // The recorded message remembers it was a question, so reopening the
       // session can put the Build button back (see openSession) -- a
@@ -2367,8 +2476,23 @@ async function runPlan() {
       // sibling trap, seen live as a calculator session).
       const rec = state.session.messages[state.session.messages.length - 1];
       if (rec) rec.kind = "ask";
-      showPlanning("One question first", "answer on the left, or just hit Build it", "waiting on you");
-      $("prompt").placeholder = "Answer here… or hit Build it";
+      // The questions themselves go to the stage. They also stay in the
+      // transcript, where the answer is typed, so the two sides agree.
+      showPlanning(
+        answer.ask.length > 1 ? "Some questions first" : "One question first",
+        "your answer goes in the box at the bottom",
+        "waiting on you",
+        answer.ask,
+      );
+      // The composer is where the answer is typed, so it asks for one and
+      // takes the cursor. A placeholder offering "or hit Build it" as an
+      // equal option is how the question read as optional.
+      $("prompt").placeholder = "Type your answer here…";
+      const box = $("prompt");
+      if (box) {
+        box.disabled = false;
+        try { box.focus(); } catch (e) {}
+      }
     } else if (answer.plan) {
       state.planning.plan = answer.plan;
       state.planning.planShown = true;
@@ -2448,6 +2572,37 @@ function finishPlanningAndBuild() {
   let enriched = p.request;
   for (const qa of p.qa) {
     enriched += `\n\n(When asked "${qa.q}" the person answered: "${qa.a}")`;
+  }
+  // A question that was never answered must be PASSED ON as unanswered.
+  //
+  // It used to vanish. Skipping the question sent the agent the bare
+  // request, so the agent could not tell the difference between "nobody
+  // asked" and "we asked and got no answer" -- and it did what anything
+  // does with a missing fact: it guessed.
+  //
+  // Measured on a real user's build. Asked "which servers will you send
+  // requests to?", he pressed Build it without answering, and the manifest
+  // came out `net.connect:127.0.0.1:*`: an API playground that can only
+  // reach his own computer. Impossible before a line was written, and the
+  // build reported as a success (K-759).
+  //
+  // Saying it plainly costs one line and lets the agent choose the sane
+  // wide default, or ask again in its own plan, instead of inventing a
+  // narrow one nobody wanted.
+  // Answered means ANY answer was given, not a per-question match: when
+  // somebody replies, continuePlanning records one entry whose `q` is every
+  // question joined together, so matching question-by-question would call
+  // them all unanswered the moment one reply arrives.
+  const answeredSomething = p.qa.length > 0;
+  const unanswered = answeredSomething ? [] : p.lastQuestions || [];
+  if (unanswered.length) {
+    enriched +=
+      `\n\n(The person was asked ${unanswered
+        .map((q) => `"${q}"`)
+        .join(" and ")} and chose not to answer. Do NOT invent a narrow ` +
+      `answer. Pick the most generally useful option, and if it is a ` +
+      `capability, declare the broad form rather than a guess that would ` +
+      `make the app useless for what they asked.)`;
   }
   if (p.plan) {
     enriched += `\n\n(The agreed plan: ${p.plan})`;
@@ -3110,14 +3265,40 @@ function openAiSheet() {
     const detail = tooTechnical
       ? (a.state === "missing" ? "needs a one-time install" : "not ready · details under Terminal")
       : rawDetail;
-    const foldText = [tooTechnical ? rawDetail : "", a.remedy || ""].filter(Boolean).join("\n");
+    // What the tool itself printed, above our reading of it.
+    //
+    // The row says "is installed but not signed in". That is a CONCLUSION, and
+    // the fold used to hold only the fix for it -- so when Claude Code was
+    // signed in and working in a terminal, and Krate said it was not, there was
+    // nothing on the screen that could settle which one was wrong. Both were
+    // right: the tool really did print "Not logged in" to Krate's probe, for a
+    // reason on that machine alone (K-754). One line of the tool's own output
+    // ends that argument in a glance, so it goes first, named as the tool
+    // speaking rather than us.
+    // The summary already names the tool, so the block is not labelled again
+    // inside itself -- the fold's own title says whose words these are. The
+    // remedy IS labelled, because an unmarked command line under the tool's
+    // output reads as more output rather than as the thing to do about it.
+    const said = (a.said || "").trim();
+    const foldText = [
+      said,
+      tooTechnical ? rawDetail : "",
+      a.remedy ? `To fix it, run:  ${a.remedy}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    // A fold labelled "Terminal" reads as a place for machine noise, so a
+    // person with a question about their own sign-in does not open it. When
+    // there is output to show, say that it is the tool's answer.
+    const foldLabel = said ? `What ${a.label} said` : "Terminal";
     row.innerHTML = `
       <span class="ai-mark">${aiLogo(a.name)}<i class="dot ${dot}"></i></span>
       <div class="grow">
         <p class="ai-name"></p>
         <p class="ai-detail"></p>
-        ${foldText ? `<details class="ai-terminal"><summary>Terminal</summary><pre class="ai-remedy"></pre></details>` : ""}
+        ${foldText ? `<details class="ai-terminal"${said ? " open" : ""}><summary></summary><pre class="ai-remedy"></pre></details>` : ""}
       </div>`;
+    if (foldText) row.querySelector(".ai-terminal summary").textContent = foldLabel;
     row.querySelector(".ai-name").textContent = a.label;
     row.querySelector(".ai-detail").textContent = detail;
     if (foldText) row.querySelector(".ai-remedy").textContent = foldText;
@@ -5081,6 +5262,22 @@ async function stopBuild() {
 }
 
 $("stopBtn").addEventListener("click", stopBuild);
+// The stage's own answer path (K-760). "Answer it" does not answer anything
+// by itself -- it puts the cursor where the answer is typed, because the
+// composer is on the far side of the window from the card the person is
+// reading and a button that only says "type over there" is no help.
+$("planAnswerBtn").addEventListener("click", () => {
+  const box = $("prompt");
+  if (!box) return;
+  box.disabled = false;
+  try { box.focus(); } catch (e) {}
+});
+// The escape hatch, kept honest: the cost is already printed above this
+// button, so pressing it is a choice somebody made with the facts.
+$("planSkipBtn").addEventListener("click", () => {
+  if (!state.planning) return;
+  finishPlanningAndBuild();
+});
 $("openBtn").addEventListener("click", () => openApp());
 // Called with nothing on purpose: Ship it on the done card shares the app
 // that card is showing, which is the newest. Binding openSendSheet directly

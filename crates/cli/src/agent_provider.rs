@@ -253,6 +253,19 @@ pub enum Readiness {
         summary: String,
         /// The command that most likely fixes it, if there is an obvious one.
         remedy: Option<String>,
+        /// What the tool actually printed, verbatim and trimmed to a few lines.
+        ///
+        /// `summary` is our reading of that output, and a reading can be
+        /// wrong. Claude Code signed in and working in one terminal, while
+        /// Krate said "installed but not signed in", is exactly that case
+        /// (K-754): both were true -- the tool genuinely printed "Not logged
+        /// in" to Krate -- and with only the summary on screen there was no
+        /// way to tell a real refusal from a misread, so the person concluded
+        /// Krate was wrong about a tool they could see working.
+        ///
+        /// The tool's own words settle it in one glance, so they are carried
+        /// rather than discarded at classification time.
+        said: Option<String>,
     },
     /// Not on PATH at all.
     Missing,
@@ -340,6 +353,8 @@ pub fn probe(provider: &dyn AgentProvider, timeout: Duration) -> Readiness {
             return Readiness::NotReady {
                 summary: format!("could not be started ({err})"),
                 remedy: None,
+                // Nothing ran, so there is nothing it said.
+                said: None,
             };
         }
     };
@@ -376,6 +391,7 @@ pub fn probe(provider: &dyn AgentProvider, timeout: Duration) -> Readiness {
                     return Readiness::NotReady {
                         summary: reason,
                         remedy,
+                        said: what_it_said(&stdout, &stderr),
                     };
                 }
                 // Exit 0 with output on *either* stream. Codex reports a
@@ -401,6 +417,11 @@ pub fn probe(provider: &dyn AgentProvider, timeout: Duration) -> Readiness {
                     return Readiness::NotReady {
                         summary: format!("did not answer within {}s", timeout.as_secs()),
                         remedy: None,
+                        // The reader threads are still attached to a process we
+                        // just killed; joining them here is what the comment
+                        // above is avoiding. A tool that said nothing in time
+                        // has said nothing.
+                        said: None,
                     };
                 }
                 std::thread::sleep(Duration::from_millis(80));
@@ -409,6 +430,7 @@ pub fn probe(provider: &dyn AgentProvider, timeout: Duration) -> Readiness {
                 return Readiness::NotReady {
                     summary: format!("could not be checked ({err})"),
                     remedy: None,
+                    said: None,
                 };
             }
         }
@@ -497,7 +519,71 @@ fn diagnose(provider: &dyn AgentProvider, stdout: &str, stderr: &str) -> Readine
     };
 
     let _ = name;
-    Readiness::NotReady { summary, remedy }
+    Readiness::NotReady {
+        summary,
+        remedy,
+        said: what_it_said(stdout, stderr),
+    }
+}
+
+/// What the tool printed, trimmed to something a person will actually read.
+///
+/// Both streams, in the order a terminal would have shown them, minus the
+/// noise that is present on every run and means nothing: Claude Code prints a
+/// block of permission-rule warnings from the repository's own settings before
+/// it says anything about itself, and 39 lines of those above the one line
+/// that matters is how evidence gets skipped.
+///
+/// Capped at 6 lines and 600 characters. Not truncation for its own sake --
+/// this text goes on a chip in the AI picker, and a field that can be a
+/// thousand lines long is a field the UI has to hide, which is the bug this
+/// exists to fix.
+///
+/// JSON envelopes are unwrapped to the sentence inside them, and dropped when
+/// they contain none. Claude's probe runs with streaming JSON output, so its
+/// first line is a 2,000-character `{"type":"system","subtype":"init",...}`
+/// listing every tool it loaded. Passing that through verbatim replaces one
+/// misleading screen with a wall of machine noise, which is not an
+/// improvement: the person still cannot see what went wrong.
+fn what_it_said(stdout: &str, stderr: &str) -> Option<String> {
+    let keep: Vec<String> = stdout
+        .lines()
+        .chain(stderr.lines())
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .filter(|l| {
+            let low = l.to_lowercase();
+            // Per-run chatter, not a statement about the tool's health.
+            !low.starts_with("permission allow rule") && !low.contains("reading additional input")
+        })
+        .filter_map(|l| {
+            // A line that is machine structure rather than a sentence: keep
+            // only the human message inside it, and drop it when there is
+            // none. Judged by what the line LOOKS like, not by whether it
+            // parses -- a pretty-printed or truncated envelope is still
+            // machine noise, and letting those through the prose branch is
+            // how the init event leaked out as `"session_id":"8de9feae",...`.
+            let looks_machine = l.starts_with('{')
+                || l.starts_with('[')
+                || (l.starts_with('"') && l.contains("\":"));
+            if looks_machine {
+                extract_json_message(l)
+            } else {
+                Some(l.to_string())
+            }
+        })
+        .filter(|l| !l.trim().is_empty())
+        .take(6)
+        .collect();
+    if keep.is_empty() {
+        return None;
+    }
+    let joined = keep.join("\n");
+    if joined.chars().count() > 600 {
+        Some(joined.chars().take(600).collect::<String>() + "…")
+    } else {
+        Some(joined)
+    }
 }
 
 /// Pull the human sentence out of a JSON error line, if it is one.
@@ -514,6 +600,18 @@ fn extract_json_message(line: &str) -> Option<String> {
                 // An inner error object wins over the outer wrapper's message.
                 if let Some(found) = map.get("error").and_then(deepest) {
                     return Some(found);
+                }
+                // A streaming tool's final event puts its answer -- including
+                // its refusal -- under `result`, not `message`. Claude's probe
+                // ends with {"type":"result","is_error":true,
+                // "result":"Not logged in · Please run /login"}, and reading
+                // only `message` threw away the one sentence that explains the
+                // whole screen (K-754). Checked before `message` because the
+                // same event also carries a `message` object of token counts.
+                if let Some(text) = map.get("result").and_then(|r| r.as_str()) {
+                    if !text.trim().is_empty() {
+                        return Some(text.to_string());
+                    }
                 }
                 if let Some(msg) = map.get("message") {
                     if let Some(text) = msg.as_str() {
@@ -1906,5 +2004,133 @@ mod tests {
         // Anything we do not recognize prints nothing rather than guessing.
         assert_eq!(ClaudeProvider.progress_line("not json"), None);
         assert_eq!(ClaudeProvider.progress_line(r#"{"type":"other"}"#), None);
+    }
+
+    /// A verdict about someone's machine has to carry its evidence.
+    ///
+    /// Claude Code was signed in and answering in one terminal while Krate said
+    /// "is installed but not signed in". Both statements were true -- the probe
+    /// runs the tool for real, and for a reason local to that machine the tool
+    /// printed "Not logged in" to it -- but the screen showed only our reading,
+    /// so the only available conclusion was that Krate was wrong about a tool
+    /// the person could watch working. A second user hit the same screen.
+    ///
+    /// The fix is not a better summary. It is that the tool's own words travel
+    /// with the summary, so the two can be compared (K-754).
+    #[test]
+    fn a_refusal_carries_what_the_tool_actually_said() {
+        // The exact shape measured on the affected machine: the verdict on
+        // stdout, and a stderr full of this repository's permission-rule
+        // warnings, which every run prints and which say nothing about health.
+        let stdout = "Not logged in · Please run /login";
+        let stderr = "Permission allow rule (.claude/settings.local.json): Bash(grep -vE x) has a \
+wildcard before the rest of the command.\n\
+Permission allow rule (.claude/settings.local.json): Bash(cp docs/landing/*.png /tmp/) has a \
+wildcard before the rest of the command.";
+
+        let Readiness::NotReady { summary, said, .. } = diagnose(&ClaudeProvider, stdout, stderr)
+        else {
+            panic!("a tool printing 'Not logged in' must not read as ready");
+        };
+
+        // The reading is still made -- this does not replace the summary.
+        assert!(
+            summary.contains("not signed in"),
+            "the summary should still name the cause: {summary:?}"
+        );
+
+        // And the evidence for it is present, verbatim.
+        let said = said.expect("a refusal with output must carry that output");
+        assert!(
+            said.contains("Not logged in"),
+            "the tool's own verdict must survive to the screen: {said:?}"
+        );
+
+        // The per-run noise must NOT, or the one line that matters is the 40th
+        // line of the fold and nobody reads it. This is what made the evidence
+        // useless before it was filtered, not a cosmetic preference.
+        assert!(
+            !said.contains("Permission allow rule"),
+            "per-run chatter must be filtered out or it buries the reason: {said:?}"
+        );
+
+        // Bounded, because this text renders on a chip in the AI picker. A
+        // field that can be a thousand lines is a field the UI must hide,
+        // which is the bug being fixed.
+        assert!(
+            said.lines().count() <= 6 && said.chars().count() <= 601,
+            "the output must stay small enough to show without a fold: \
+{} lines, {} chars",
+            said.lines().count(),
+            said.chars().count()
+        );
+    }
+
+    /// A tool that prints nothing must say `said: None`, not `Some("")`.
+    ///
+    /// An empty string is truthy in the UI's check, so it would render an
+    /// "What Claude said" fold containing nothing -- which reads as the tool
+    /// having answered and the answer being lost.
+    #[test]
+    fn silence_is_reported_as_silence() {
+        assert_eq!(what_it_said("", ""), None);
+        assert_eq!(what_it_said("   \n\n  ", "\t"), None);
+        // Chatter alone is silence too: none of it is about the tool's health.
+        assert_eq!(
+            what_it_said("", "Reading additional input from stdin..."),
+            None
+        );
+    }
+
+    /// Showing the raw output is not the same as showing the reason.
+    ///
+    /// Claude's probe runs with streaming JSON, so `krate ai` printed a
+    /// 2,000-character `{"type":"system","subtype":"init",...}` listing every
+    /// tool it had loaded -- under a heading promising to say what the tool
+    /// said. That trades a misleading screen for an unreadable one and the
+    /// person still cannot see what went wrong, so the machine envelope is
+    /// unwrapped to the sentence inside it, or dropped when it holds none.
+    #[test]
+    fn machine_envelopes_are_unwrapped_not_dumped() {
+        // The real event, shortened only in the tool list. ONE line, because
+        // that is how a streaming tool emits it -- wrapping it here would test
+        // a shape the tool never produces.
+        let init = r#"{"type":"system","subtype":"init","cwd":"/repo","session_id":"8de9feae","tools":["Task","Bash","Edit","Read"]}"#;
+        // An init event says nothing about health, so it must not appear.
+        assert_eq!(what_it_said(init, ""), None);
+
+        // Nor may a FRAGMENT of one. A pretty-printed or clipped envelope
+        // does not start with a brace, and routing it to the prose branch put
+        // `"session_id":"8de9feae","tools":[...]` on screen under a heading
+        // promising what the tool said. Caught while reading real output.
+        assert_eq!(
+            what_it_said(r#""session_id":"8de9feae","tools":["Task","Bash"]}"#, ""),
+            None
+        );
+
+        // An envelope that DOES carry a sentence gives up the sentence, and
+        // nothing else -- no braces, no keys, no session id.
+        let err = r#"{"type":"result","error":{"message":"Credit balance is too low"}}"#;
+        let said = what_it_said(err, "").expect("an error envelope must yield its message");
+        assert_eq!(said, "Credit balance is too low");
+
+        // The event that actually carries Claude's refusal. Its answer is
+        // under `result`, and the same event's `message` holds token counts --
+        // so reading `message` first finds nothing usable and the one sentence
+        // that explains the screen is lost. Captured from a real probe run.
+        let result_event = r#"{"type":"result","subtype":"success","is_error":true,"session_id":"6d6279c0","message":{"usage":{"input_tokens":3}},"result":"Not logged in · Please run /login"}"#;
+        let said = what_it_said(result_event, "").expect("the result event carries the refusal");
+        assert_eq!(said, "Not logged in · Please run /login");
+
+        // And plain prose is still passed through untouched: copilot prints
+        // four usable lines of authentication advice, which is the best
+        // evidence any tool gives us and must not be mangled.
+        let prose = "Error: No authentication information found.\n\
+                     To authenticate, run 'gh auth login'.";
+        let said = what_it_said(prose, "").expect("prose must survive");
+        assert!(
+            said.contains("No authentication information found") && said.contains("gh auth login"),
+            "plain output must pass through whole: {said:?}"
+        );
     }
 }

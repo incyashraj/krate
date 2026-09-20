@@ -387,6 +387,23 @@
               <p class="build-title" id="planTitle">Reading your request</p>
             </div>
             <div class="bpeek"><span id="planLine">a few seconds…</span><span class="caret"></span></div>
+            <!-- The question, on the side of the screen the person is looking
+                 at. An outside developer was asked which servers his API
+                 playground would call, in the left transcript only, styled
+                 like every other Krate line, with this whole pane empty --
+                 so he never saw that an answer was wanted, pressed Build it,
+                 and got an app locked to 127.0.0.1 (K-760, K-759). Hidden
+                 for the reading and thinking states; filled only when there
+                 really is a question outstanding. -->
+            <div class="plan-ask hidden" id="planAsk">
+              <p class="plan-ask-lead" id="planAskLead">Krate needs one thing from you before it can build this.</p>
+              <ul class="plan-ask-list" id="planAskList"></ul>
+              <div class="plan-ask-actions">
+                <button class="btn btn-primary" id="planAnswerBtn">Answer it</button>
+                <button class="btn btn-ghost" id="planSkipBtn">Build without answering</button>
+              </div>
+              <p class="plan-ask-cost" id="planAskCost"></p>
+            </div>
           </div>
         </div>
 

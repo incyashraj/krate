@@ -2142,6 +2142,45 @@ body.light .bigbar:focus-within {
 .build-card.brail .build-log-wrap summary { color: var(--ghost); font-size: 11.5px; }
 .build-card.brail .bfoot { margin-top: 18px; }
 
+/* ---- the outstanding question, on the stage --------------------------- */
+
+/* Loud on purpose. The question used to live only in the transcript in the
+   same grey as every other Krate line, which is how a developer answered it
+   by pressing Build it (K-760). The tinted border is the one thing on this
+   pane asking for something.
+   `flex: none` is deliberate, and was measured. With `0 1 auto` plus a
+   scrollbar this block was the one the card's height cap squeezed: at
+   1280x860 it got 172px for 204px of content and the sentence saying what
+   skipping costs -- the whole point of K-759 -- scrolled out of sight. The
+   question does not shrink. The frame above it does (see below). */
+.plan-ask {
+  flex: none;
+  margin: 16px 0 0; padding: 14px 16px;
+  background: color-mix(in srgb, var(--blue) 8%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--blue) 42%, var(--line));
+  border-radius: 10px; text-align: left;
+}
+.plan-ask-lead { margin: 0; font-size: 13.5px; font-weight: 550; color: var(--text); }
+.plan-ask-list { margin: 10px 0 0; padding: 0 0 0 18px; }
+.plan-ask-list li {
+  font-size: 13px; line-height: 1.6; color: var(--muted);
+  margin: 0 0 6px;
+}
+.plan-ask-list li:last-child { margin-bottom: 0; }
+.plan-ask-actions { display: flex; gap: 8px; align-items: center; margin-top: 14px; flex-wrap: wrap; }
+/* The skip is a real way out and must stay clickable -- it is just not the
+   thing the eye lands on first. */
+.plan-ask-cost { margin: 10px 0 0; font-size: 12px; line-height: 1.6; color: var(--faint); }
+
+/* While a question is outstanding, the question outranks the decoration.
+   The forming ghost held 265px of a card that had to fit four more blocks;
+   it keeps a strip, so the card still reads as an app forming, and gives
+   the rest to the words. This is the block that shrinks when the window is
+   short, which is the whole reason .plan-ask can be flex: none. */
+#statePlanning:has(#planAsk:not(.hidden)) .build-shot {
+  height: 120px; min-height: 64px; margin-bottom: 14px;
+}
+
 /* ---- the report-an-issue consent sheet -------------------------------- */
 
 .sheet-report { max-width: 520px; text-align: left; }

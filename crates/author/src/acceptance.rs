@@ -350,6 +350,85 @@ fn is_subject_clause(req: &Requirement) -> bool {
     req.id == "req-1" && req.terms.len() <= 3
 }
 
+/// An app whose MANIFEST cannot serve the request it was built for.
+///
+/// `judge` reads the source and looks for evidence of the subject. That is
+/// blind to the one thing that can make an app impossible before a line of
+/// it runs: the capabilities it declared. A sandbox app reaches only what
+/// its manifest names, so a manifest is not documentation, it is the limit.
+///
+/// Measured on a real user's build. He asked for "an API playground: set a
+/// URL, method, headers and body, send the request, and show the status,
+/// timing and pretty-printed response". The source said url, method, headers
+/// and body, so every requirement passed and the build reported success. The
+/// manifest said:
+///
+/// ```text
+/// cap = "net.connect:127.0.0.1:*"
+/// ```
+///
+/// Localhost only. An API playground that cannot reach an API, called
+/// finished (K-759).
+///
+/// Deliberately narrow. It reports ONE thing -- a request that plainly means
+/// the internet, built with network access confined to the local machine --
+/// because a broad "does the manifest match the request?" check would guess,
+/// and a wrong guess here blocks a good app. Returns the sentence to show,
+/// or None when there is nothing to say.
+pub fn manifest_cannot_serve(request: &str, manifest: &str) -> Option<String> {
+    let caps: Vec<&str> = manifest
+        .lines()
+        .map(str::trim)
+        .filter(|l| l.starts_with("cap ="))
+        .collect();
+    let net: Vec<&&str> = caps.iter().filter(|l| l.contains("net.connect")).collect();
+    if net.is_empty() {
+        // No network at all is a different situation: the app may simply not
+        // need any, and saying so on every calculator would be noise.
+        return None;
+    }
+    // Every declared host is local. `localhost`, the loopback address, and
+    // the IPv6 form are the three ways to write the same confinement.
+    let all_local = net.iter().all(|l| {
+        let low = l.to_lowercase();
+        low.contains("127.0.0.1") || low.contains("localhost") || low.contains("[::1]")
+    });
+    if !all_local {
+        return None;
+    }
+    // Does the request plainly mean the wider internet? Only words that
+    // cannot reasonably describe a local-only tool count here.
+    let low = request.to_lowercase();
+    const OUTWARD: [&str; 8] = [
+        "api",
+        "internet",
+        "website",
+        "web page",
+        "http request",
+        "rest",
+        "endpoint",
+        "online",
+    ];
+    // "localhost:3000" in the request means they told us it IS local, and
+    // that is the one case where a local-only manifest is exactly right.
+    if low.contains("localhost") || low.contains("127.0.0.1") {
+        return None;
+    }
+    if !OUTWARD.iter().any(|w| low.contains(w)) {
+        return None;
+    }
+    Some(format!(
+        "it can only reach your own computer: the app declared {} and \
+         nothing else, so it cannot reach a server on the internet. Say \
+         which host it should reach (for example api.github.com:443) and \
+         build again.",
+        net.iter()
+            .map(|l| l.trim_start_matches("cap =").trim().trim_matches('"'))
+            .collect::<Vec<_>>()
+            .join(", ")
+    ))
+}
+
 /// Remove Rust comments, so prose about the app is not mistaken for the app.
 ///
 /// String literals are kept: an app whose UI says "Checkmate!" really does
@@ -727,5 +806,66 @@ mod tests {
     fn a_contentless_request_is_not_accepted() {
         let verdict = judge("make me an app", "thing", "fn main() {}");
         assert!(!verdict.accepted, "{verdict:?}");
+    }
+
+    /// A manifest that makes the request impossible is not a finished build.
+    ///
+    /// The exact case from a real user's report: his request named an API,
+    /// his source mentioned url/method/headers/body so every requirement
+    /// passed, and the manifest confined the app to 127.0.0.1. The build
+    /// reported success for an app that could never do the job (K-759).
+    #[test]
+    fn a_localhost_only_manifest_cannot_serve_a_request_about_an_api() {
+        // His request and his manifest, verbatim from the report.
+        let request = "an API playground: set a URL, method, headers and \
+                       body, send the request, and show the status, timing \
+                       and pretty-printed response";
+        let manifest = r#"
+[[capabilities]]
+cap = "ui.window:create"
+[[capabilities]]
+cap = "net.connect:127.0.0.1:*"
+"#;
+        let said = manifest_cannot_serve(request, manifest)
+            .expect("an API app locked to localhost must be reported");
+        assert!(
+            said.contains("only reach your own computer"),
+            "it must say what is wrong in plain words: {said}"
+        );
+        assert!(
+            said.contains("127.0.0.1"),
+            "and name the capability that does it: {said}"
+        );
+
+        // A real host is fine, and must not be reported.
+        let ok = manifest.replace("127.0.0.1:*", "api.github.com:443");
+        assert_eq!(
+            manifest_cannot_serve(request, &ok),
+            None,
+            "an app that declared a real host is not broken"
+        );
+
+        // Somebody who ASKED for localhost gets what they asked for.
+        assert_eq!(
+            manifest_cannot_serve("a tool that posts to localhost:3000", manifest),
+            None,
+            "a request that names localhost is served by a localhost manifest"
+        );
+
+        // An app with no network at all is a different thing entirely, and
+        // saying this on every calculator would be noise nobody reads.
+        assert_eq!(
+            manifest_cannot_serve(request, "[[capabilities]]\ncap = \"ui.window:create\""),
+            None,
+            "no network declared is not the same as network confined"
+        );
+
+        // And a request with nothing outward about it is left alone even
+        // when it is local-only, because that is a normal app.
+        assert_eq!(
+            manifest_cannot_serve("a timer that counts down", manifest),
+            None,
+            "a local app with a local manifest is correct, not a failure"
+        );
     }
 }

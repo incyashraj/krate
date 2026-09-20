@@ -847,8 +847,20 @@ fn choose_provider() -> Result<Option<&'static dyn AgentProvider>> {
         println!();
         for (provider, readiness) in &probes {
             match readiness {
-                Readiness::NotReady { summary, remedy } => {
+                Readiness::NotReady {
+                    summary,
+                    remedy,
+                    said,
+                } => {
                     println!("  {:<9}{summary}", provider.name());
+                    // On this screen nothing works, so the reading above is the
+                    // only thing standing between the person and a wrong
+                    // conclusion about their own machine. Show the words (K-754).
+                    if let Some(said) = said {
+                        for line in said.lines() {
+                            println!("           {} {line}", style::dim(">"));
+                        }
+                    }
                     if let Some(remedy) = remedy {
                         println!("           fix it with: {remedy}");
                     }
@@ -908,7 +920,13 @@ not move until it finishes. It is not stuck.",
         println!();
         for (provider, readiness) in &broken {
             match readiness {
-                Readiness::NotReady { summary, remedy } => {
+                // No `said` here on purpose. This list sits under a menu of
+                // AIs that DO work -- it is context, not a diagnosis, and six
+                // lines of raw output per broken tool would bury the choice
+                // the screen exists to offer. `krate ai` prints the words.
+                Readiness::NotReady {
+                    summary, remedy, ..
+                } => {
                     println!(
                         "     {}{}",
                         style::dim(&pad(provider.name(), 10)),

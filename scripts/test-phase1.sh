@@ -71,7 +71,7 @@ fi
 # just counts them and says so where a person will see it, at the end, next
 # to the number they were about to trust.
 log="${TMPDIR:-/tmp}/krate-phase1-$$.log"
-trap 'rm -f "$log"' EXIT
+trap 'rm -f "$log" "$log.code"' EXIT
 
 # The status has to be cargo's, not tee's. `set -e` is on, so a failing run
 # would normally end the script here -- `|| status=$?` keeps it alive just
@@ -79,13 +79,47 @@ trap 'rm -f "$log"' EXIT
 # bottom. Writing to the log and reading it back afterwards, rather than
 # piping, is what keeps the two separable.
 status=0
+# Arm the watchdog. It existed and had never once fired.
+#
+# `arm_test_watchdog` (crates/cli/src/main.rs) has been in the binary since
+# K-240's first investigation: a krate.exe child that never returns exits
+# itself after a ceiling, so the parent's `.output()` returns, one assertion
+# fails naming the command, and the suite carries on. It reads
+# KRATE_TEST_WATCHDOG_SECS -- and NOTHING SET IT. Not this script, not
+# ci.yml. A guard nobody armed is a guard that does not exist, which is why
+# the same hang came back on 2026-09-20 and held the v0.5.1 tag for 85
+# minutes on a lane whose other two hosts finished in 38 and 48.
+#
+# 300s: far above the slowest honest test measured here (check-app at ~17s,
+# and the port tests well under a minute) and far below the two-hour ceiling
+# that makes a run report "cancelled" with no cause.
+export KRATE_TEST_WATCHDOG_SECS="${KRATE_TEST_WATCHDOG_SECS:-300}"
+
+# Let the log stream while it runs, instead of only after.
+#
+# `--nocapture` was added so a hang would say where it stopped, and then the
+# whole run was redirected to a file that is only `cat`-ed at the end -- so a
+# hung run still printed nothing live. Measured on 2026-09-20: 85 minutes of
+# silence after two header lines, on a step whose output was supposedly
+# uncaptured. `tee` keeps both properties: a person watching sees progress,
+# and the file is still there for the tally below.
+#
+# The status must stay cargo's, not tee's. This script is `#!/usr/bin/env sh`,
+# where PIPESTATUS does not exist, so cargo's exit code is carried out of the
+# pipeline by hand: the subshell writes it to a file that is read back after.
+# Checked against dash and zsh, not just bash.
+code_file="${log}.code"
 if [ "${RUNNER_OS:-}" = "Windows" ]; then
-  KRATE_HELLO_WASM="$HELLO_WASM" cargo test --workspace -- \
-    --nocapture --test-threads=1 >"$log" 2>&1 || status=$?
+  { KRATE_HELLO_WASM="$HELLO_WASM" cargo test --workspace -- \
+      --nocapture --test-threads=1 2>&1 || echo "$?" >"$code_file"; } | tee "$log"
 else
-  KRATE_HELLO_WASM="$HELLO_WASM" cargo test --workspace -- --nocapture >"$log" 2>&1 || status=$?
+  { KRATE_HELLO_WASM="$HELLO_WASM" cargo test --workspace -- \
+      --nocapture 2>&1 || echo "$?" >"$code_file"; } | tee "$log"
 fi
-cat "$log"
+if [ -f "$code_file" ]; then
+  status="$(cat "$code_file")"
+  rm -f "$code_file"
+fi
 
 # The categorised report (IC-706): what cargo's "passed" actually contains --
 # tests that reached their assertions, OPTIONAL skips (a language variant
