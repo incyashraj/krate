@@ -1101,9 +1101,22 @@ async fn pick_files(app: tauri::AppHandle) -> Result<Vec<String>, String> {
 #[tauri::command]
 async fn read_image(path: String) -> Result<String, String> {
     let path = existing(&path)?;
-    let bytes = std::fs::read(&path).map_err(|err| err.to_string())?;
+    // Plain words, not the io error. This returned exactly "Is a directory
+    // (os error 21)" to the person.
+    let bytes = std::fs::read(&path).map_err(|_| "that image could not be read".to_string())?;
     if bytes.len() > 2 * 1024 * 1024 {
         return Err("that image is over 2 MB; pick a smaller PNG".to_string());
+    }
+    // It is labelled image/png below, so check that it IS one.
+    //
+    // Any bytes at all used to be wrapped as `data:image/png;base64,...`:
+    // a hundred random bytes went through unchallenged. The picker filters
+    // to .png, but the publish sheet can hold a path from a previous pick
+    // whose file has since changed, and a data URL that lies about its type
+    // renders as a broken image with nothing saying why (K-769).
+    const PNG_MAGIC: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+    if bytes.len() < 8 || bytes[..8] != PNG_MAGIC {
+        return Err("that file is not a PNG. Pick a .png image.".to_string());
     }
     Ok(format!(
         "data:image/png;base64,{}",
@@ -1345,7 +1358,10 @@ fn build_alive(state: tauri::State<Running>) -> Result<bool, String> {
     if state.1.load(std::sync::atomic::Ordering::SeqCst) {
         return Ok(true);
     }
-    let mut guard = state.0.lock().map_err(|_| "poisoned")?;
+    let mut guard = state
+        .0
+        .lock()
+        .map_err(|_| "Krate lost track of that build. Try again.")?;
     match *guard {
         Some(pid) if pid_alive(pid) => Ok(true),
         Some(_) => {
@@ -1360,7 +1376,11 @@ fn build_alive(state: tauri::State<Running>) -> Result<bool, String> {
 
 #[tauri::command]
 fn stop_build(state: tauri::State<Running>) -> Result<(), String> {
-    let pid = state.0.lock().map_err(|_| "poisoned")?.take();
+    let pid = state
+        .0
+        .lock()
+        .map_err(|_| "Krate lost track of that build. Try again.")?
+        .take();
     if let Some(pid) = pid {
         kill_tree(pid);
     }
@@ -1727,7 +1747,10 @@ fn run_author(
     // would keep burning AI quota with nothing able to end it.
     {
         let running = app.state::<Running>();
-        let mut guard = running.0.lock().map_err(|_| "poisoned")?;
+        let mut guard = running
+            .0
+            .lock()
+            .map_err(|_| "Krate lost track of that build. Try again.")?;
         if let Some(pid) = *guard {
             eprintln!(
                 "[run_author] slot holds pid {pid}, alive={}",
@@ -1753,7 +1776,10 @@ fn run_author(
         .map_err(|err| format!("could not start the Krate engine: {err}"))?;
 
     let running = app.state::<Running>();
-    *running.0.lock().map_err(|_| "poisoned")? = Some(child.id());
+    *running
+        .0
+        .lock()
+        .map_err(|_| "Krate lost track of that build. Try again.")? = Some(child.id());
     // The liveness flag is lowered by DROP, not by reaching a particular
     // line: any exit from this function -- success, error, panic -- lowers
     // it, because a flag stuck true is the eternal-spinner bug (K-131)
@@ -1829,7 +1855,10 @@ fn run_author(
     // Stop takes the pid out before killing; an empty slot on a failed exit
     // means the person asked for this outcome.
     let was_stopped = running.0.lock().map(|g| g.is_none()).unwrap_or(false);
-    *running.0.lock().map_err(|_| "poisoned")? = None;
+    *running
+        .0
+        .lock()
+        .map_err(|_| "Krate lost track of that build. Try again.")? = None;
 
     let off_request = is_off_request(status.code(), was_stopped, out_path.exists());
     if !status.success() && !off_request {
@@ -2644,14 +2673,24 @@ fn hub_url() -> String {
 #[tauri::command]
 fn agent_session_tag(path: String) -> Result<String, String> {
     use std::io::Read;
-    let file = std::fs::File::open(&path).map_err(|err| err.to_string())?;
-    let mut archive = zip::ZipArchive::new(file).map_err(|err| err.to_string())?;
+    // `existing()` like every other path-taking command here. This was the
+    // one that skipped it, and four raw `err.to_string()` calls leaked the
+    // io and zip crates' own words: "No such file or directory (os error
+    // 2)" and "invalid Zip archive: Could not find EOCD" (K-769).
+    //
+    // Every failure here means the same thing to a person -- this file is
+    // not a Krate app we can read a session out of -- so it says that once
+    // rather than in four dialects.
+    let path = existing(&path)?;
+    const NOT_READABLE: &str = "that file could not be read as a Krate app";
+    let file = std::fs::File::open(&path).map_err(|_| NOT_READABLE.to_string())?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|_| NOT_READABLE.to_string())?;
     let mut manifest = String::new();
     archive
         .by_name("manifest.toml")
-        .map_err(|err| err.to_string())?
+        .map_err(|_| NOT_READABLE.to_string())?
         .read_to_string(&mut manifest)
-        .map_err(|err| err.to_string())?;
+        .map_err(|_| NOT_READABLE.to_string())?;
     let id = manifest
         .lines()
         .find_map(|line| {
