@@ -1539,6 +1539,11 @@ jobs:
           Write-Host ''
           Write-Host 'the cold path works on Windows: install, refuse, grant, run, double-click'
 
+  # The Windows artifacts are named after the matrix entry, windows-2022,
+  # not windows-latest. The four compare jobs below asked for the wrong name
+  # for as long as the pin existed and nobody saw it, because the Windows
+  # full lane never finished (K-240) and so never produced one. The first
+  # lane that did, run 35518935739, failed here with every test green.
   language-variant-evidence-compare:
     name: Language variant evidence compare
     if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
@@ -1563,7 +1568,7 @@ jobs:
       - name: Download Windows language-variant evidence
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: language-variant-evidence-windows-latest
+          name: language-variant-evidence-windows-2022
           path: krate-evidence/windows
       - name: Compare language-variant evidence reports
         shell: bash
@@ -1571,7 +1576,7 @@ jobs:
           scripts/compare-phase2-language-variant-evidence.sh \
             krate-evidence/linux/language-variant-ubuntu-latest.md \
             krate-evidence/macos/language-variant-macos-latest.md \
-            krate-evidence/windows/language-variant-windows-latest.md
+            krate-evidence/windows/language-variant-windows-2022.md
 
   # ──────────────────────────────────────────────
   # 10. Compare UCap enforcement evidence across hosts
@@ -1600,7 +1605,7 @@ jobs:
       - name: Download Windows UCap evidence
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: ucap-enforcement-evidence-windows-latest
+          name: ucap-enforcement-evidence-windows-2022
           path: krate-evidence/windows
       - name: Compare UCap enforcement evidence reports
         shell: bash
@@ -1608,7 +1613,7 @@ jobs:
           scripts/compare-phase2-ucap-evidence.sh \
             krate-evidence/linux/ucap-enforcement-ubuntu-latest.md \
             krate-evidence/macos/ucap-enforcement-macos-latest.md \
-            krate-evidence/windows/ucap-enforcement-windows-latest.md
+            krate-evidence/windows/ucap-enforcement-windows-2022.md
 
   # ──────────────────────────────────────────────
   # 11. Compare adapter evidence across hosts
@@ -1637,7 +1642,7 @@ jobs:
       - name: Download Windows adapter evidence
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: adapter-evidence-windows-latest
+          name: adapter-evidence-windows-2022
           path: krate-evidence/windows
       - name: Compare adapter evidence reports
         shell: bash
@@ -1645,7 +1650,7 @@ jobs:
           scripts/compare-phase2-adapter-evidence.sh \
             krate-evidence/linux/adapter-evidence-ubuntu-latest.md \
             krate-evidence/macos/adapter-evidence-macos-latest.md \
-            krate-evidence/windows/adapter-evidence-windows-latest.md
+            krate-evidence/windows/adapter-evidence-windows-2022.md
 
   # ──────────────────────────────────────────────
   # 12. Compare sample evidence across hosts
@@ -1674,7 +1679,7 @@ jobs:
       - name: Download Windows sample evidence
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: sample-evidence-windows-latest
+          name: sample-evidence-windows-2022
           path: krate-evidence/windows
       - name: Compare sample evidence reports
         shell: bash
@@ -1682,7 +1687,7 @@ jobs:
           scripts/compare-phase2-sample-evidence.sh \
             krate-evidence/linux/sample-evidence-ubuntu-latest.md \
             krate-evidence/macos/sample-evidence-macos-latest.md \
-            krate-evidence/windows/sample-evidence-windows-latest.md \
+            krate-evidence/windows/sample-evidence-windows-2022.md \
             --allow-blocked-curl
 
   # ──────────────────────────────────────────────
