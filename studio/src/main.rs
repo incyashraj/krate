@@ -3729,7 +3729,7 @@ fn dirs_home() -> PathBuf {
 
 /* ---- the free counter, bound to the device ----------------------------
  *
- * Three free makes a month belong to the MACHINE, not to an email or a
+ * The free make belongs to the MACHINE, not to an email or a
  * browser store: a localStorage counter reset with a cache wipe, and an
  * account counter resets with a new address. The OS's own hardware
  * identity does neither. The raw id never leaves this function -- only a

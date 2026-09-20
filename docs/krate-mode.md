@@ -319,6 +319,7 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 - `TreeView` -- nested rows; `selected` is the chosen index
 - `Image` -- a picture; fill it with `image::set_pixels`, see "Showing a picture"
 - `Canvas` -- a region the app positions children in
+- `Overlay` -- children all fill it and paint back to front: a HUD over a game, a pause menu over a board, a caption over a photo
 
 ### `assets`
 
@@ -524,14 +525,14 @@ to exactly what the app needs, e.g. `fs.read:notes/**`.
 | `ui.open-url` | no | hand a link to the browser |
 | `ui.notify` | no | a desktop notification |
 | `ui.dropzone:<mime-type>` | no | accept dragged files |
-| `ui.dialog:message` | yes | system file dialogs (choose a file) |
-| `ui.dialog:confirm` | yes | system file dialogs (choose a file) |
-| `ui.dialog:*` | no | system file dialogs (choose a file) |
-| `ui.dialog:file-open` | no | system file dialogs (choose a file) |
-| `ui.dialog:file-save` | no | system file dialogs (choose a file) |
-| `ui.dialog:open-folder` | no | system file dialogs (choose a file) |
+| `ui.dialog:message` | yes | a message box (no file access; default-granted) |
+| `ui.dialog:confirm` | yes | a yes/no question box (no file access; default-granted) |
+| `ui.dialog:*` | no | system file dialogs (open a file or folder, save a file); the person's pick is the grant |
+| `ui.dialog:file-open` | no | system file dialogs (open a file or folder, save a file); the person's pick is the grant |
+| `ui.dialog:file-save` | no | system file dialogs (open a file or folder, save a file); the person's pick is the grant |
+| `ui.dialog:open-folder` | no | system file dialogs (open a file or folder, save a file); the person's pick is the grant |
 | `gfx.gpu:basic` | yes | GPU drawing (canvas2d present today) |
-| `gfx.gpu:compute` | no | GPU drawing (canvas2d present today) |
+| `gfx.gpu:compute` | no | GPU compute -- NOT implemented yet; do not declare it |
 | `audio.playback` | yes | play sound |
 | `audio.capture` | no | record from the microphone |
 | `camera.capture` | no | see through the camera |
@@ -551,7 +552,7 @@ uses, with its `gui` feature on:
 
 ```toml
 [dependencies]
-krate = {{ path = "<sdk>/crates/bindings-rust", features = ["gui"] }}
+krate = { path = "<sdk>/crates/bindings-rust", features = ["gui"] }
 ```
 
 Then the interfaces below are `krate::<package>::<interface>::<fn>`, e.g.

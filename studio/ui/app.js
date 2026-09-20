@@ -2318,7 +2318,7 @@ function renderFreeCount() {
       ? "Everything is free while we build Krate. Nothing is metered."
       : active
         ? "Unlimited apps. Every one is a file that is yours forever."
-        : "Three apps a month. Changes to an app and failed builds never count.";
+        : "One free app, plus one free change to it. Failed builds never count.";
   }
 }
 function limitAcked() {
@@ -2326,7 +2326,7 @@ function limitAcked() {
 }
 
 async function make(request, opts) {
-  // The gate: at three, the sheet says what the deal is, once a month.
+  // The gate: at the free limit, the sheet says what the deal is.
   // It never fires for revisions (the session already has a result).
   // CHARGING is false while Krate is free (see renderFreeCount): the
   // count still runs and still records, so the day this flips the numbers
@@ -2334,7 +2334,7 @@ async function make(request, opts) {
   // The WEB only, for the same reason the welcome sheet is (see
   // maybeWelcome). A desktop build runs on the person's own machine with
   // their own AI: it costs us nothing, so there is nothing to meter and a
-  // "that's your three for this month" wall with checkout buttons would be
+  // "that's your free app" wall with checkout buttons would be
   // charging for something we do not provide.
   //
   // CHARGING is false today, so this cannot fire yet either way. Guarding
@@ -2356,7 +2356,7 @@ async function make(request, opts) {
   }
   if (overCap && ((state.billing && state.billing.live) || !limitAcked())) {
     // Billing live: a real wall with a checkout door, every time past
-    // three. Preview: the soft sheet, once a month.
+    // the limit. Preview: the soft sheet, once.
     state.pendingMake = { request, opts };
     openLimitSheet();
     return;
