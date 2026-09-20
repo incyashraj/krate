@@ -8,7 +8,27 @@ use std::time::{Duration, Instant};
 use sha2::{Digest, Sha256};
 
 fn krate() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_krate"))
+    let mut command = Command::new(env!("CARGO_BIN_EXE_krate"));
+    // A hung child must name itself rather than eat the run.
+    //
+    // This suite makes 200-odd unbounded `.output()` calls. On Windows one
+    // of them hangs: the test starts, prints no result, and the job burns to
+    // GitHub's two-hour ceiling and reports "cancelled" with no cause. Three
+    // separate investigations each named a different culprit, because which
+    // test holds the bag is decided by position in the run, not by anything
+    // about the test (K-240).
+    //
+    // A watchdog inside the child turns that into a failure with a name.
+    // KRATE_TEST_WATCHDOG_SECS is read by the binary under test, which exits
+    // rather than waiting for ever -- so `.output()` returns, the assertion
+    // fails with the command that hung, and the other 200 tests still run.
+    //
+    // Generous on purpose: a real create compiles a component, which is
+    // minutes on a cold cache. This is a ceiling, not a budget.
+    if std::env::var_os("KRATE_TEST_WATCHDOG_SECS").is_none() {
+        command.env("KRATE_TEST_WATCHDOG_SECS", "600");
+    }
+    command
 }
 
 /// True when `cargo-component` is on PATH.

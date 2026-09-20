@@ -1475,7 +1475,45 @@ fn detach_owned_console() {
     }
 }
 
+/// Exit rather than hang for ever, when a test harness asks for it.
+///
+/// The CLI suite makes 200-odd unbounded `.output()` calls, and on Windows
+/// one of them never returns: the test prints no result, the job burns to
+/// GitHub's two-hour ceiling, and the run reports "cancelled" with no cause.
+/// Three investigations each blamed a different test, because which one holds
+/// the bag is decided by its position in the run (K-240).
+///
+/// A thread that exits the process after a ceiling turns that into an
+/// ordinary failure: `.output()` returns, the assertion fails naming the
+/// command, and the rest of the suite still runs. Exit 75 is picked so a
+/// watchdog exit cannot be mistaken for any verdict the CLI itself gives.
+///
+/// Only ever on when the variable is set, which only the test harness does.
+/// Nothing a person runs is affected.
+fn arm_test_watchdog() {
+    let Some(raw) = std::env::var_os("KRATE_TEST_WATCHDOG_SECS") else {
+        return;
+    };
+    let Some(secs) = raw.to_str().and_then(|text| text.parse::<u64>().ok()) else {
+        return;
+    };
+    if secs == 0 {
+        return;
+    }
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(secs));
+        eprintln!(
+            "krate: watchdog fired after {secs}s -- this run was going to hang. \
+             The command and its arguments are above; K-240 is the entry."
+        );
+        // The process, not this thread: the point is that the parent's
+        // `.output()` returns.
+        std::process::exit(75);
+    });
+}
+
 fn main() -> ExitCode {
+    arm_test_watchdog();
     #[cfg(windows)]
     detach_owned_console();
     #[cfg(windows)]
