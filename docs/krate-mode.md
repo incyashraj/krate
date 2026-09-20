@@ -824,7 +824,24 @@ Most requests are tools. "Show me...", "a viewer for...", "track my...", "a list
 
 ### Designing a tool
 
-**The data gets the room; the chrome gets what is left.** Controls go in one compact band, not a hero area. A tool that opens with a large heading and a row of decorative cards above its actual content has put the furniture in front of the window.
+**A tool is still designed. Restraint is not the same as doing nothing.** Everything under this heading tells you what a tool does NOT spend pixels on, and it is easy to read the whole list as permission to ship the default. It is not. A widget tree with no style block on any node is not a restrained tool -- it is an unfinished one, and it is the single commonest way a generated tool comes out wrong: a text box and two headings at the host's default 13px on the host's default grey, content crammed in the top fifth, the rest of the window empty. That app passes every check Krate runs -- it builds, it imports only `krate:*`, it runs, it paints a frame -- and it looks like nobody opened it. Passing the checks is the floor, not the goal.
+
+So a tool has a MINIMUM. Before you call one done, every item here is true:
+
+1. The root container names a background, so the window is your colour and not the host's grey: `root.style.box_ = Some(BoxStyle { background: Some(page), border: None, border_width: 0.0, corner_radius: 0.0 })`, with `root.style.grow = 1.0` and `root.style.padding` of 20-28 so the content is not against the frame.
+2. At least THREE distinct text treatments exist, set through `node.style.text = Some(TextStyle { color, outline: None, outline_width: 0.0, size: Some(px), bold })`. A tool needs a heading, a body/label ink, and a data ink -- sized and weighted apart. The host's default is 13px for everything, which is a form, and one size for the whole window is the flattest thing you can ship.
+3. The data region is visually separated from the controls: a background one shade different, or a `border` with `border_width: 1.0`. A 1px border does this completely and costs nothing.
+4. The content region grows with the window (`grow`), so a bigger window shows more and does not leave a lake of empty space under the content.
+
+Note the field is `box_`, not `box` -- `box` is a Rust keyword, so the generated binding renames it. Getting that wrong is a compile error, not a silent one.
+
+**Style the widget tree; do not abandon it for a canvas to get a corner.** A tool wants real controls: native text editing, host scrolling, focus, accessibility. You keep all of that AND get colour, weight, borders and corners, because every `WidgetNode` carries a `style` with `text`, `box_` and `place`. Painting the whole interface by hand on a canvas throws the controls away to gain nothing a style block could not do. What keeps this cheap is two helpers, written once and used for every node: an `ink(colour, size, bold) -> TextStyle` and a `boxed(background, border, width, radius) -> BoxStyle`. Build every node through those instead of spelling out a struct each time and a whole app stays consistent for about ten lines. `apps/krate-cards` and `apps/krate-inbox` are the worked examples if you have the repo checked out; if you do not, those two helpers are the whole idea -- do not go hunting the filesystem for them.
+
+A canvas is the right answer for a tool only when the content itself has to be DRAWN and no widget kind can hold it -- a hex grid, a waveform, a chart, a diff gutter. Then draw that region on a canvas and keep the surrounding controls as widgets.
+
+**Use `place` instead of padding to position things.** `node.style.place = Some(Placement::TopRight)` puts a widget where you mean it. Pushing something across the window with a few hundred pixels of padding changes the PARENT'S size, which moves everything else sharing that space.
+
+**The data gets the room; the chrome gets what is left.** Controls go in one compact band, not a hero area. A tool that opens with a large heading and a row of decorative cards above its actual content has put the furniture in front of the window. This is about PROPORTION, not about leaving the chrome unstyled: the compact band is still inked and still separated.
 
 **Name the app in the title bar, not on the screen.** `window::create("Hexview", size)` already names it. A big "Every byte, in view." heading inside the window is marketing copy aimed at somebody who has already opened the app. Kill the tagline, and the subtitle under it.
 
@@ -832,7 +849,7 @@ Most requests are tools. "Show me...", "a viewer for...", "track my...", "a list
 
 **Two or three greys and one accent.** A tool's colour budget goes on MEANING -- this byte is ASCII, that one is a control character, this line changed. Colour spent decoratively is colour the data needed. If everything is tinted, no tint means anything.
 
-**No shadows, gradients, glows or rounded cards on a tool.** Those are for things that float above other things, and nothing in a data grid floats. A 1px border, or a background one shade different from its neighbour, separates two regions completely -- without softening the edges the eye uses to track a column.
+**No shadows, gradients, glows or rounded cards on a tool.** Those are for things that float above other things, and nothing in a data grid floats. A 1px border, or a background one shade different from its neighbour, separates two regions completely -- without softening the edges the eye uses to track a column. This rule REPLACES those effects with a border and a shade; it does not excuse you from separating the regions at all. A small corner radius (4-8) on a control or an input is fine and normal -- what is banned is the rounded card wrapping rectangular data.
 
 **Size text in fixed pixels, never as a fraction of the window.** A tool is resized to see MORE ROWS, not bigger text. A font size computed from the canvas size means resizing zooms the app instead of revealing more of it, which no real tool does and every person notices at once.
 
@@ -856,9 +873,16 @@ The fix is never a different palette. It is asking what the person is looking AT
 
 **Look at what you made.** `krate run <entry.wasm> --shoot frame.png -- quick`, then actually LOOK at the picture before calling it done. Is the content the biggest thing on screen? Could you delete a heading, a card or a colour and lose nothing? Is any text blurry or mis-aligned? That pass catches more than any rule here.
 
+Two failures that picture shows, and they fail in OPPOSITE directions. Ask both:
+
+- **Over-decorated:** could you delete a heading, a card, a gradient or a colour and lose nothing?
+- **Under-built:** is most of the window empty, is the text all one size, is the background the host's default grey, is everything piled at the top? If the screenshot would read as "unfinished" to the person who asked, it is not done, and no rule above says to ship it. Go back and give the content room, ink and separation.
+
+An app is finished when neither question has an answer. A blank page is not a restrained design; it is the absence of one.
+
 ## Making a PIECE look built, not sketched
 
-This section is for a piece -- a game, a toy, a visualiser, a demo. On a tool most of it is the wrong instinct; see above. The difference between a piece that looks like a prototype and one that looks finished is a handful of habits:
+This section is for a piece -- a game, a toy, a visualiser, a demo. The DECORATIVE habits below (shadows, gradients, glows, full rounded cards) are the wrong instinct on a tool; see above. But the craft ones apply to everything that draws on a canvas, tool included: always `measure_text`/`measure_text_styled` rather than guessing a width, `stroke_circle` for round outlines, the real `fill_round_rect` rather than a hand-built one, and varied font weight. If a tool draws a region on a canvas, it obeys those four. The difference between a piece that looks like a prototype and one that looks finished is a handful of habits:
 
 **Go full-bleed when the design owns its whole surface.** `window::set-full-bleed(win, true)` right after create extends your content into the title-bar band with the host's window controls overlaid -- the shape every modern editor and terminal has. Always `let _ =` it: a host that cannot do it says unsupported and keeps the standard title bar. Leave the top ~40 pixels free of controls so nothing sits under the overlaid window buttons. `apps/krate-glow` shows it. This one is right for a tool as well: a terminal or an editor wants its whole surface.
 

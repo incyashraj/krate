@@ -732,10 +732,63 @@ looked at, and it can spend its whole surface on how it feels.\n\n\
 Most requests are tools. \"Show me...\", \"a viewer for...\", \"track my...\", \
 \"a list of...\" are all tools. If you are unsure, it is a tool.\n\n\
 ### Designing a tool\n\n\
+**A tool is still designed. Restraint is not the same as doing nothing.** \
+Everything under this heading tells you what a tool does NOT spend pixels on, \
+and it is easy to read the whole list as permission to ship the default. It \
+is not. A widget tree with no style block on any node is not a restrained \
+tool -- it is an unfinished one, and it is the single commonest way a \
+generated tool comes out wrong: a text box and two headings at the host's \
+default 13px on the host's default grey, content crammed in the top fifth, \
+the rest of the window empty. That app passes every check Krate runs -- it \
+builds, it imports only `krate:*`, it runs, it paints a frame -- and it looks \
+like nobody opened it. Passing the checks is the floor, not the goal.\n\n\
+So a tool has a MINIMUM. Before you call one done, every item here is true:\n\n\
+1. The root container names a background, so the window is your colour and \
+   not the host's grey: \
+   `root.style.box_ = Some(BoxStyle { background: Some(page), border: None, \
+   border_width: 0.0, corner_radius: 0.0 })`, with `root.style.grow = 1.0` \
+   and `root.style.padding` of 20-28 so the content is not against the \
+   frame.\n\
+2. At least THREE distinct text treatments exist, set through \
+   `node.style.text = Some(TextStyle { color, outline: None, \
+   outline_width: 0.0, size: Some(px), bold })`. A tool needs a heading, a \
+   body/label ink, and a data ink -- sized and weighted apart. The host's \
+   default is 13px for everything, which is a form, and one size for the \
+   whole window is the flattest thing you can ship.\n\
+3. The data region is visually separated from the controls: a background one \
+   shade different, or a `border` with `border_width: 1.0`. A 1px border does \
+   this completely and costs nothing.\n\
+4. The content region grows with the window (`grow`), so a bigger window \
+   shows more and does not leave a lake of empty space under the content.\n\n\
+Note the field is `box_`, not `box` -- `box` is a Rust keyword, so the \
+generated binding renames it. Getting that wrong is a compile error, not a \
+silent one.\n\n\
+**Style the widget tree; do not abandon it for a canvas to get a corner.** \
+A tool wants real controls: native text editing, host scrolling, focus, \
+accessibility. You keep all of that AND get colour, weight, borders and \
+corners, because every `WidgetNode` carries a `style` with `text`, `box_` and \
+`place`. Painting the whole interface by hand on a canvas throws the controls \
+away to gain nothing a style block could not do. What keeps this cheap is two \
+helpers, written once and used for every node: an `ink(colour, size, bold) -> \
+TextStyle` and a `boxed(background, border, width, radius) -> BoxStyle`. Build \
+every node through those instead of spelling out a struct each time and a \
+whole app stays consistent for about ten lines. `apps/krate-cards` and \
+`apps/krate-inbox` are the worked examples if you have the repo checked out; \
+if you do not, those two helpers are the whole idea -- do not go hunting the \
+filesystem for them.\n\n\
+A canvas is the right answer for a tool only when the content itself has to \
+be DRAWN and no widget kind can hold it -- a hex grid, a waveform, a chart, a \
+diff gutter. Then draw that region on a canvas and keep the surrounding \
+controls as widgets.\n\n\
+**Use `place` instead of padding to position things.** \
+`node.style.place = Some(Placement::TopRight)` puts a widget where you mean \
+it. Pushing something across the window with a few hundred pixels of padding \
+changes the PARENT'S size, which moves everything else sharing that space.\n\n\
 **The data gets the room; the chrome gets what is left.** Controls go in one \
 compact band, not a hero area. A tool that opens with a large heading and a \
 row of decorative cards above its actual content has put the furniture in \
-front of the window.\n\n\
+front of the window. This is about PROPORTION, not about leaving the chrome \
+unstyled: the compact band is still inked and still separated.\n\n\
 **Name the app in the title bar, not on the screen.** \
 `window::create(\"Hexview\", size)` already names it. A big \"Every byte, in \
 view.\" heading inside the window is marketing copy aimed at somebody who has \
@@ -752,7 +805,10 @@ is tinted, no tint means anything.\n\n\
 things that float above other things, and nothing in a data grid floats. A \
 1px border, or a background one shade different from its neighbour, separates \
 two regions completely -- without softening the edges the eye uses to track a \
-column.\n\n\
+column. This rule REPLACES those effects with a border and a shade; it does \
+not excuse you from separating the regions at all. A small corner radius \
+(4-8) on a control or an input is fine and normal -- what is banned is the \
+rounded card wrapping rectangular data.\n\n\
 **Size text in fixed pixels, never as a fraction of the window.** A tool is \
 resized to see MORE ROWS, not bigger text. A font size computed from the \
 canvas size means resizing zooms the app instead of revealing more of it, \
@@ -788,11 +844,27 @@ quick`, then actually LOOK at the picture before calling it done. Is the \
 content the biggest thing on screen? Could you delete a heading, a card or a \
 colour and lose nothing? Is any text blurry or mis-aligned? That pass catches \
 more than any rule here.\n\n\
+Two failures that picture shows, and they fail in OPPOSITE directions. Ask \
+both:\n\n\
+- **Over-decorated:** could you delete a heading, a card, a gradient or a \
+  colour and lose nothing?\n\
+- **Under-built:** is most of the window empty, is the text all one size, is \
+  the background the host's default grey, is everything piled at the top? If \
+  the screenshot would read as \"unfinished\" to the person who asked, it is \
+  not done, and no rule above says to ship it. Go back and give the content \
+  room, ink and separation.\n\n\
+An app is finished when neither question has an answer. A blank page is not a \
+restrained design; it is the absence of one.\n\n\
 ## Making a PIECE look built, not sketched\n\n\
-This section is for a piece -- a game, a toy, a visualiser, a demo. On a tool \
-most of it is the wrong instinct; see above. The difference between a piece \
-that looks like a prototype and one that looks finished is a handful of \
-habits:\n\n\
+This section is for a piece -- a game, a toy, a visualiser, a demo. The \
+DECORATIVE habits below (shadows, gradients, glows, full rounded cards) are \
+the wrong instinct on a tool; see above. But the craft ones apply to \
+everything that draws on a canvas, tool included: always \
+`measure_text`/`measure_text_styled` rather than guessing a width, \
+`stroke_circle` for round outlines, the real `fill_round_rect` rather than a \
+hand-built one, and varied font weight. If a tool draws a region on a canvas, \
+it obeys those four. The difference between a piece that looks like a \
+prototype and one that looks finished is a handful of habits:\n\n\
 **Go full-bleed when the design owns its whole surface.** \
 `window::set-full-bleed(win, true)` right after create extends your content \
 into the title-bar band with the host's window controls overlaid -- the shape \
@@ -2667,6 +2739,95 @@ interface api {
         assert!(
             game.contains("# 2g. What the app should look like"),
             "a game is told how it should look too"
+        );
+    }
+
+    /// A TOOL must be told how to STYLE something, not only what to leave out.
+    ///
+    /// K-716: two apps one session apart through the same agent and the same
+    /// pack came out 712 lines with 11 design-API calls, and 47 lines with
+    /// zero -- and the empty one was the TOOL the design guidance was
+    /// written for. The design section reached the prompt (the test above
+    /// proves that), so the hole was in what it SAID: every rule under
+    /// "Designing a tool" was a prohibition (no shadows, no gradients, no
+    /// rounded cards, no tagline, no window-fraction text), the subsection
+    /// named not one drawing or styling call, and the only part of the
+    /// section that named concrete calls opened by telling a tool to ignore
+    /// it. A bare widget tree on the host's default grey at the host's
+    /// default 13px satisfies every rule there, and passes check-app too --
+    /// it builds, imports only `krate:*`, runs and paints a frame.
+    ///
+    /// Worse, `box-style`, `text-style` and `placement` exist in the UI WIT
+    /// precisely so a tool can be styled WITHOUT abandoning widgets for a
+    /// canvas, and none of those three appeared anywhere in the pack. The
+    /// runtime could do it and nothing ever said so.
+    ///
+    /// So this asserts the guidance is CONCRETE and POSITIVE: the field
+    /// names an app actually compiles against, and the instruction that
+    /// shipping the host default is not an acceptable outcome. Asserted on
+    /// the assembled prompt rather than on this file's source, so nothing
+    /// here can be satisfied by the wording of this comment.
+    #[test]
+    fn a_tool_is_told_how_to_style_and_not_only_what_to_omit() {
+        // A tool-shaped request, the kind that failed: no keyword in it
+        // reaches a canvas example.
+        let inlined = inline_essentials(
+            "A JWT decoder: paste a token, see the header and payload decoded as readable fields",
+        );
+
+        // The prose must say, in as many words, that a tool is still
+        // designed and that the bare default is a failure -- the exact
+        // reading that let a blank page through.
+        assert!(
+            inlined.contains("A tool is still designed"),
+            "a tool is not told that restraint still requires design"
+        );
+        assert!(
+            inlined.contains("Passing the checks is the floor, not the goal"),
+            "nothing tells the author that check-app passing is not done"
+        );
+        assert!(
+            inlined.contains("A blank page is not a restrained design"),
+            "the screenshot pass does not catch the under-built direction"
+        );
+
+        // The concrete styling API. These are the calls a tool compiles
+        // against, and before K-716 not one of them appeared in the pack.
+        for needle in [
+            "style.box_",
+            "style.text",
+            "BoxStyle",
+            "TextStyle",
+            "background",
+            "border_width",
+            "corner_radius",
+            "Placement",
+        ] {
+            assert!(
+                inlined.contains(needle),
+                "the tool guidance never names `{needle}`, so an author cannot style a widget"
+            );
+        }
+
+        // `box` is a Rust keyword, so the binding renames the field. An
+        // author told `style.box` writes a compile error.
+        assert!(
+            inlined.contains("`box` is a Rust keyword"),
+            "the box_ rename is untaught, which is a compile error waiting"
+        );
+
+        // The worked examples for a styled widget tree have to be named,
+        // the way krate-checklist is named for everything else.
+        assert!(
+            inlined.contains("apps/krate-cards") || inlined.contains("apps/krate-inbox"),
+            "no worked example is named for a styled widget tree"
+        );
+
+        // And the canvas craft rules must NOT be fenced off from tools any
+        // more: a tool that draws a region still has to measure its text.
+        assert!(
+            inlined.contains("If a tool draws a region on a canvas, it obeys those four"),
+            "the canvas craft rules are still written as piece-only"
         );
     }
 }

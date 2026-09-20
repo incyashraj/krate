@@ -644,6 +644,22 @@ mod tests {
             prompt.contains("No shadows, gradients, glows or rounded cards on a tool"),
             "the prompt must say decoration belongs on a piece, not a tool"
         );
+
+        // K-716: every assertion above is a PROHIBITION or a tell to avoid,
+        // so this test passed while the tool half of the guidance told an
+        // author nothing it could actually DO. A bare, unstyled widget tree
+        // satisfied all of it. The positive half has to be here too, or the
+        // published prompt can lose it while this test stays green.
+        assert!(
+            prompt.contains("A tool is still designed"),
+            "the prompt must say a tool is designed, not merely restrained"
+        );
+        for call in ["style.box_", "style.text", "BoxStyle", "TextStyle"] {
+            assert!(
+                prompt.contains(call),
+                "the prompt must name `{call}` so a tool can be styled at all"
+            );
+        }
     }
 
     #[test]
