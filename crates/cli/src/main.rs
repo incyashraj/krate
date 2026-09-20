@@ -11913,6 +11913,9 @@ fn component_build_command(app_dir: &Path) -> ProcessCommand {
         // stay shared.
         let per_app = per_app_target_dir(&shared, app_dir);
         let _ = fs::create_dir_all(&per_app);
+        // A fresh leaf starts with the dependencies a finished leaf already
+        // compiled, so only this app's own crate is left to build (K-774).
+        seed_leaf_from_a_finished_one(&shared, &per_app, app_dir);
         command.env("CARGO_TARGET_DIR", &per_app);
     }
 
@@ -11986,6 +11989,159 @@ fn per_app_target_dir(shared: &Path, app_dir: &Path) -> PathBuf {
 /// failure to take it is treated as "build unlocked" rather than "refuse to
 /// build": a lock that cannot be created must not stop a build that could
 /// have worked.
+/// The app's crate name as cargo spells it in artifact names: the `name`
+/// from Cargo.toml with `-` turned into `_`.
+fn app_crate_name(app_dir: &Path) -> Option<String> {
+    let text = fs::read_to_string(app_dir.join("Cargo.toml")).ok()?;
+    text.lines().find_map(|line| {
+        let line = line.trim();
+        line.strip_prefix("name")
+            .and_then(|rest| rest.split('"').nth(1))
+            .map(|name| name.replace('-', "_"))
+    })
+}
+
+/// Give a fresh leaf the dependencies a finished leaf already compiled.
+///
+/// Every app's leaf is its own CARGO_TARGET_DIR (K-771 says why), and a
+/// target dir starts empty: the first version of this design compiled
+/// wit-bindgen-rt, dlmalloc, the SDK crate and the rest from zero for EVERY
+/// app -- 13 s alone, 30 s under load, on a build that should take the
+/// app's own crate and nothing else (K-774). The shared root existed so
+/// that would happen once per machine per SDK version.
+///
+/// So a new leaf is seeded from the newest sibling that has finished a
+/// build: its `deps/`, `.fingerprint/` and `build/` for the wasm target and
+/// for the host (build scripts, proc-macros) are copied over, minus
+/// anything belonging to that app's own crate. Cargo's freshness check
+/// compares each source's mtime against its fingerprint file, and a copy
+/// is newer than every source, so the dependencies arrive fresh and cargo
+/// compiles only what is missing. This is the same thing a CI cache
+/// restore does. On APFS the copy is a clone and costs nothing; elsewhere
+/// it is tens of megabytes, still far under one dependency build.
+///
+/// The seed is held with a non-blocking lock while it is read, so a build
+/// in progress there (a half-written cache) is skipped for the next
+/// candidate. A copy that fails partway leaves a partial cache, which is
+/// fine: cargo checks that an artifact exists before calling it fresh and
+/// rebuilds what is missing. Nothing here can make a build fail that would
+/// otherwise have worked; it can only make it shorter.
+fn seed_leaf_from_a_finished_one(shared: &Path, leaf: &Path, app_dir: &Path) {
+    const TARGET: &str = "wasm32-wasip1/release";
+    if leaf.join(TARGET).join(".fingerprint").is_dir() {
+        // Already warm: this app has built here before.
+        return;
+    }
+    let own_crate = app_crate_name(app_dir);
+    let Ok(entries) = fs::read_dir(shared) else {
+        return;
+    };
+    let mut finished: Vec<(std::time::SystemTime, PathBuf)> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            if path == leaf || !path.file_name()?.to_str()?.starts_with("app-") {
+                return None;
+            }
+            let stamp = fs::metadata(path.join(TARGET).join(".fingerprint"))
+                .ok()?
+                .modified()
+                .ok()?;
+            Some((stamp, path))
+        })
+        .collect();
+    finished.sort_by(|a, b| b.0.cmp(&a.0));
+    for (_, seed) in finished.into_iter().take(3) {
+        let Ok(hold) = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(seed.join(".krate-build.lock"))
+        else {
+            continue;
+        };
+        if hold.try_lock().is_err() {
+            // Being built right now; its cache is not finished.
+            continue;
+        }
+        // Every APP's artifacts stay behind, not only the seed's own: the
+        // seed was itself seeded, and without this each generation would
+        // carry every earlier app's program forward. An app is the only
+        // thing that leaves a `.wasm` in deps/ (dependencies are rlibs),
+        // so the wasm files name the crates to leave out.
+        let mut apps: Vec<String> = own_crate.iter().cloned().collect();
+        if let Ok(deps) = fs::read_dir(seed.join(TARGET).join("deps")) {
+            for entry in deps.flatten() {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                if let Some(stem) = name.strip_suffix(".wasm") {
+                    apps.push(stem.replace('-', "_"));
+                }
+            }
+        }
+        for profile in [TARGET, "release"] {
+            for dir in ["deps", ".fingerprint", "build"] {
+                let from = seed.join(profile).join(dir);
+                if from.is_dir() {
+                    let _ = copy_dir_except(&from, &leaf.join(profile).join(dir), &apps);
+                }
+            }
+        }
+        return;
+    }
+}
+
+/// Whether a target-dir entry belongs to the crate named `krate_name`
+/// (given with underscores, as `app_crate_name` spells it).
+///
+/// Cargo spells one crate's files several ways, and not consistently: the
+/// fingerprint directory keeps the package's dashes (`todo-list-<hash>`),
+/// a wasm cdylib in `deps/` is the bare underscored `todo_list.wasm` and
+/// `todo_list.d`, and a host library is `libtodo_list-<hash>.rlib`. Seen
+/// with every dash read as an underscore, each is the crate name followed
+/// by nothing, a `_` or a `.`. A crate named `todo` also claims
+/// `todo_list`'s files, which only means they are not copied; the
+/// direction that matters -- the seed app's own program travelling under
+/// the new app's name -- cannot happen.
+fn belongs_to_crate(entry: &str, krate_name: &str) -> bool {
+    let entry = entry.replace('-', "_");
+    let rest = entry
+        .strip_prefix(krate_name)
+        .or_else(|| entry.strip_prefix("lib")?.strip_prefix(krate_name));
+    match rest {
+        Some("") => true,
+        Some(rest) => rest.starts_with('_') || rest.starts_with('.'),
+        None => false,
+    }
+}
+
+/// Copy a directory tree, skipping top-level entries that belong to any of
+/// the crates in `skip`: an app's own artifacts must not travel, or cargo
+/// would call the new app fresh and hand back another app's program.
+fn copy_dir_except(from: &Path, to: &Path, skip: &[String]) -> std::io::Result<()> {
+    fs::create_dir_all(to)?;
+    for entry in fs::read_dir(from)?.flatten() {
+        let name = entry.file_name();
+        if skip
+            .iter()
+            .any(|krate_name| belongs_to_crate(&name.to_string_lossy(), krate_name))
+        {
+            continue;
+        }
+        let source = entry.path();
+        let target = to.join(&name);
+        let kind = entry.file_type()?;
+        if kind.is_dir() {
+            copy_dir_except(&source, &target, &[])?;
+        } else if kind.is_file() {
+            fs::copy(&source, &target)?;
+        }
+        // Symlinks are not something cargo puts in a target dir; skipped.
+    }
+    Ok(())
+}
+
 fn build_leaf_lock(app_dir: &Path) -> Option<fs::File> {
     let leaf = match shared_build_dir() {
         Some(shared) => per_app_target_dir(&shared, app_dir),
@@ -12011,16 +12167,7 @@ fn find_built_component(app_dir: &Path) -> Result<PathBuf> {
     let release = target_root.join("wasm32-wasip1/release");
     // The shared cache holds every app's artifact side by side, so the match
     // must be by THIS crate's name, not "any wasm in the directory".
-    let wanted = fs::read_to_string(app_dir.join("Cargo.toml"))
-        .ok()
-        .and_then(|text| {
-            text.lines().find_map(|line| {
-                let line = line.trim();
-                line.strip_prefix("name")
-                    .and_then(|rest| rest.split('"').nth(1))
-                    .map(|name| format!("{}.wasm", name.replace('-', "_")))
-            })
-        });
+    let wanted = app_crate_name(app_dir).map(|name| format!("{name}.wasm"));
     if let Some(name) = &wanted {
         let exact = release.join(name);
         if exact.exists() {

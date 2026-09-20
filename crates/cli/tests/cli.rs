@@ -8687,3 +8687,79 @@ fn a_refusal_with_piped_stderr_returns_at_once() {
         "a refusal with a reader on stderr must not wait on a dialog: took {took:?}"
     );
 }
+
+/// The second app on a machine compiles its own crate and nothing else.
+///
+/// Every app builds in its own target leaf (K-771), and a leaf starts
+/// empty, so the first cut of that design compiled the whole dependency
+/// graph -- wit-bindgen-rt, dlmalloc, the SDK crate -- for EVERY app: 13 s
+/// alone, 30 s under load, on a build that should take one crate (K-774).
+/// A fresh leaf is now seeded from a finished one. Measured with a fresh
+/// HOME so the shared cache starts empty: the first build compiles the SDK
+/// crate, the second must not.
+#[test]
+fn a_second_app_reuses_the_first_apps_compiled_dependencies() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+
+    // A fresh HOME empties ~/.cache/krate, so the shared build root starts
+    // with no leaf at all. CARGO_HOME and RUSTUP_HOME stay real: the point
+    // is an empty Krate cache, not a machine with no Rust on it.
+    let home = tempfile::tempdir().expect("home");
+    let real_home = std::env::var_os("HOME").expect("HOME is set");
+    let cargo_home = std::env::var_os("CARGO_HOME")
+        .unwrap_or_else(|| std::path::Path::new(&real_home).join(".cargo").into());
+    let rustup_home = std::env::var_os("RUSTUP_HOME")
+        .unwrap_or_else(|| std::path::Path::new(&real_home).join(".rustup").into());
+    let work = tempfile::tempdir().expect("work");
+    let build = |i: u32| {
+        krate()
+            .arg("create")
+            // The built-in generator, not an agent: the agent path warms
+            // the cache in a silent background build, and this test needs
+            // to read cargo's own words from the build that counts.
+            .arg("a grocery list app")
+            .arg("--output")
+            .arg(work.path().join(format!("out{i}.krate")))
+            .arg("--work-dir")
+            .arg(work.path().join(format!("w{i}")))
+            .env("HOME", home.path())
+            .env("CARGO_HOME", &cargo_home)
+            .env("RUSTUP_HOME", &rustup_home)
+            .env_remove("CARGO_TARGET_DIR")
+            .output()
+            .expect("run krate create")
+    };
+    let text = |out: &std::process::Output| {
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        )
+    };
+
+    let first = build(0);
+    let first_text = text(&first);
+    assert!(first.status.success(), "first build: {first_text}");
+    // Prove the cache really was empty, or the second assertion is hollow.
+    assert!(
+        first_text.contains("Compiling krate v"),
+        "the first build should have compiled the SDK crate from an empty cache: {first_text}"
+    );
+
+    let second = build(1);
+    let second_text = text(&second);
+    assert!(second.status.success(), "second build: {second_text}");
+    assert!(
+        !second_text.contains("Compiling krate v"),
+        "the second app recompiled the SDK crate instead of reusing the first app's build: \
+         {second_text}"
+    );
+    assert!(
+        second_text.contains("Compiling "),
+        "the second app's own crate must still be compiled: {second_text}"
+    );
+}
