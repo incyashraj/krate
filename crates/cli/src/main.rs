@@ -9180,8 +9180,36 @@ fn seed_agent_home(real_home: &Path, agent_home: &Path) -> bool {
     if dest.exists() && !dest.is_symlink() {
         let _ = fs::remove_file(&dest);
     }
-    if !dest.exists() {
-        let source = real_home.join(".claude/.credentials.json");
+    // A DANGLING link is worse than no link, and invisible to `exists()`.
+    //
+    // `Path::exists` follows symlinks, so a link whose target is gone
+    // reports false -- and the `!dest.exists()` below then tries to create a
+    // link at a path that is already occupied, which fails with EEXIST. The
+    // error was discarded, so the dead link stayed there forever and the
+    // agent read a credential that was not there.
+    //
+    // That is not hypothetical, and it is how this whole thread started. The
+    // founder's `~/.claude/.credentials.json` was a symlink to ITSELF: this
+    // code ran once while HOME was already the confined home, so `source`
+    // and `dest` were the same path and it linked the file to itself. Claude
+    // could then never save a refreshed token, the session expired, and
+    // every Krate build said "not signed in" while `claude` worked fine in a
+    // terminal. Deleting the loop and signing in again fixed the terminal --
+    // and Krate still said not signed in, because the confined home's link
+    // now pointed at the file that had just been deleted (K-763).
+    //
+    // So: judge the LINK, not what it points at, and clear a dead one.
+    #[cfg(unix)]
+    if dest.is_symlink() && !dest.exists() {
+        let _ = fs::remove_file(&dest);
+    }
+    let source = real_home.join(".claude/.credentials.json");
+    // Never link a path to itself. When HOME is already the confined home,
+    // `real_home` and the agent home are the same directory, and this is
+    // exactly the loop that gets created -- a file that can be neither read
+    // nor written, and that cannot be told apart from a working one without
+    // calling readlink.
+    if !dest.exists() && source != dest && source.exists() {
         // A LINK, not a copy (K-206): OAuth refresh tokens rotate, so a
         // copied credential forks -- whichever copy refreshes first kills
         // the other, and that other was the person's own sign-in. A link
@@ -9190,6 +9218,63 @@ fn seed_agent_home(real_home: &Path, agent_home: &Path) -> bool {
         let _ = std::os::unix::fs::symlink(&source, &dest);
         #[cfg(windows)]
         let _ = fs::hard_link(&source, &dest).or_else(|_| fs::copy(&source, &dest).map(|_| ()));
+    }
+
+    // No file to link, but a credential in the keychain: write it out.
+    //
+    // The keychain fall-through this relied on is DEAD on macOS 27. The
+    // design was that the confined keychain's search list would include the
+    // person's real login keychain, so there would be one token, refreshed
+    // in place. Measured on 2026-09-20, macOS silently drops it:
+    //
+    //   $ HOME=<agent-home> security list-keychains -d user -s \
+    //       <agent login.keychain-db> ~/Library/Keychains/login.keychain-db
+    //   $ HOME=<agent-home> security list-keychains
+    //       "<agent-home>/Library/Keychains/login.keychain-db"
+    //       "/Library/Keychains/System.keychain"      <- the real one is gone
+    //
+    // The command exits 0. Setting ONLY the real keychain gives the same
+    // answer. So a signed-in person whose credential lives in the keychain
+    // -- which is now the default, and is what `claude /login` produces --
+    // had an agent that could never see it, while `claude` worked perfectly
+    // in their own terminal. That is the "Claude Code is signed in but Krate
+    // says sign in" report, and the last piece of it (K-763).
+    //
+    // Writing the file is the fork K-206 warns about, and it is accepted
+    // knowingly here because the alternative is an agent that cannot run at
+    // all. Two things keep it honest: this only happens when there is no
+    // file to link, and the file is refreshed from the keychain on every
+    // seed, so the agent's copy cannot drift far behind the real one.
+    #[cfg(target_os = "macos")]
+    if !dest.exists() {
+        if let Ok(out) = ProcessCommand::new("/usr/bin/security")
+            .args([
+                "find-generic-password",
+                "-s",
+                "Claude Code-credentials",
+                "-w",
+            ])
+            .output()
+        {
+            if out.status.success() && !out.stdout.is_empty() {
+                if let Ok(text) = String::from_utf8(out.stdout) {
+                    let text = text.trim();
+                    // Only if it parses. A keychain read that returns
+                    // something unexpected must not become a file the agent
+                    // then reports as a corrupt sign-in.
+                    if serde_json::from_str::<serde_json::Value>(text).is_ok()
+                        && fs::write(&dest, text).is_ok()
+                    {
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::PermissionsExt;
+                            let _ = fs::set_permissions(&dest, fs::Permissions::from_mode(0o600));
+                        }
+                        claude_ready = true;
+                    }
+                }
+            }
+        }
     }
 
     // Every OTHER tool's sign-in, for the same reason Claude's is here.
@@ -19954,6 +20039,52 @@ mod create_tests {
             confined, real,
             "the agent must never be handed the person's real home"
         );
+    }
+
+    /// A dead credential link must be cleared, not left forever.
+    ///
+    /// `Path::exists` FOLLOWS symlinks, so a link whose target is gone
+    /// reports false -- and the seeding then tried to create a link at a
+    /// path that was already occupied, which fails with EEXIST. That error
+    /// was discarded, so the dead link stayed and the agent read a
+    /// credential that was not there.
+    ///
+    /// This is the tail of the founder's own week. His real credentials file
+    /// was a symlink to ITSELF (seeding had run once with HOME already set
+    /// to the confined home, so source and dest were one path). Deleting the
+    /// loop and signing in again fixed his terminal, and Krate STILL said
+    /// not signed in -- because the confined home's link now pointed at the
+    /// file he had just deleted (K-763).
+    #[test]
+    #[cfg(unix)]
+    fn a_dangling_credential_link_is_cleared_rather_than_kept() {
+        let dir = std::env::temp_dir().join(format!("krate-dangling-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let dest = dir.join(".credentials.json");
+        std::os::unix::fs::symlink(dir.join("gone.json"), &dest).expect("dangling link");
+
+        // The trap, asserted rather than assumed: the link is invisible to
+        // exists() and yet blocks symlink().
+        assert!(dest.is_symlink(), "the fixture must really be a symlink");
+        assert!(
+            !dest.exists(),
+            "exists() follows the link, so a dead one reads as absent -- that is the trap"
+        );
+        assert!(
+            std::os::unix::fs::symlink(dir.join("other.json"), &dest).is_err(),
+            "and the occupied path refuses a new link, which is why the dead one stayed"
+        );
+
+        // What the fix does: judge the LINK, not its target.
+        if dest.is_symlink() && !dest.exists() {
+            std::fs::remove_file(&dest).expect("clear the dead link");
+        }
+        assert!(!dest.is_symlink(), "the dead link must be gone");
+        std::os::unix::fs::symlink(dir.join("other.json"), &dest)
+            .expect("and a fresh link can now be made, which is the whole point");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Confining twice must land in the same place as confining once.
