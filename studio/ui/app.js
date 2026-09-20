@@ -333,6 +333,22 @@ const WELCOME_SEEN = "krate.welcome.seen.v1";
 
 function maybeWelcome(name) {
   if (name !== "home") return;
+  // The WEB only. Every sentence in this sheet is about the web version:
+  // "nothing to install", one free app, and then an advert for Krate Studio
+  // on your own machine.
+  //
+  // On the desktop all three are wrong at once. There is nothing to
+  // install because they already installed it; nothing is "on us" because
+  // their builds run on their own machine with their own AI and cost us
+  // nothing to give; and the closing line recommends the product they are
+  // currently looking at. The founder opened the PC version and was
+  // offered a free first build he did not need and we were not giving.
+  //
+  // `tauri` is the shell test the rest of this file already uses, so the
+  // desktop is the case that returns rather than the web being the case
+  // that opts in -- a future third shell should have to say what it wants
+  // here rather than inheriting the web's pricing story by default.
+  if (tauri) return;
   let seen = false;
   try {
     seen = localStorage.getItem(WELCOME_SEEN) === "1";
@@ -2173,7 +2189,14 @@ function renderFreeCount() {
   const n = makesThisMonth();
   const left = Math.max(0, 3 - n);
   const chip = $("freeCount");
-  if (chip && !CHARGING) {
+  // Desktop has no allowance to report, so it gets no chip -- the same
+  // seam as maybeWelcome and the limit gate. A "3 free apps" badge on a
+  // machine whose builds cost us nothing is an upsell for something the
+  // person already has, and today it is hidden only because CHARGING is
+  // false rather than because anyone decided it should be.
+  if (chip && tauri) {
+    chip.classList.add("hidden");
+  } else if (chip && !CHARGING) {
     // No count, no cap, no upsell dressed as a status.
     chip.classList.add("hidden");
   } else if (chip) {
@@ -2229,7 +2252,17 @@ async function make(request, opts) {
   // CHARGING is false while Krate is free (see renderFreeCount): the
   // count still runs and still records, so the day this flips the numbers
   // are already right. It simply does not stop anyone today.
-  let overCap = CHARGING
+  // The WEB only, for the same reason the welcome sheet is (see
+  // maybeWelcome). A desktop build runs on the person's own machine with
+  // their own AI: it costs us nothing, so there is nothing to meter and a
+  // "that's your three for this month" wall with checkout buttons would be
+  // charging for something we do not provide.
+  //
+  // CHARGING is false today, so this cannot fire yet either way. Guarding
+  // it now rather than the day it flips, because that is the day nobody
+  // will be looking at this line.
+  let overCap = !tauri
+    && CHARGING
     && makesThisMonth() >= 3
     && !(state.session && state.session.result)
     && !(opts && opts.pastLimit)
