@@ -2925,7 +2925,16 @@ async function developerRoute(request, url, login, env) {
   const channel = stored && stored.current ? await settleChannel(env, stored, "gone") : null;
   if (!channel) {
     return wantsPage
-      ? htmlPage(`Nothing here yet`, `<p class="sub">${escapeForHtml(login)} has no app called <b>${escapeForHtml(slug)}</b>.</p><p><a href="/">See what they have made</a></p>`, 404)
+      ? htmlPage(
+          `Nothing here yet`,
+          // A heading on the PAGE, not only in the tab. Verified live: the
+          // body opened mid-sentence with nothing above it, so a person
+          // following a dead link landed on a stray line of text.
+          `<h1>Nothing here yet</h1>
+           <p class="sub">${escapeForHtml(login)} has no app called <b>${escapeForHtml(slug)}</b>.</p>
+           <p><a href="/">See what ${escapeForHtml(login)} has made</a></p>`,
+          404,
+        )
       : text("not found", 404);
   }
   const takedown = await env.APPS.get(`takedown:${channel.current}`);
