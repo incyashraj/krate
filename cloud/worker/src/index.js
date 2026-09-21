@@ -84,6 +84,20 @@ export default {
       return cors(new Response(null, { status: 204 }));
     }
 
+    // A developer's own name: alice.krate.tech.
+    //
+    // Answered before anything else, because on these hostnames the paths
+    // mean something different -- "/" is a person, "/notes" is their app,
+    // and neither is a hub route. Everything underneath already existed:
+    // the channel is the mutable per-developer name the hub has always
+    // kept (channel:<login>/<slug>, 50 moves of history, rollback, moved
+    // by that publisher alone), and nothing ever showed it to a human.
+    // This is a face on that, not a new subsystem (K-849).
+    const subdomain = developerHost(url, env);
+    if (subdomain) {
+      return cors(await developerRoute(request, url, subdomain, env));
+    }
+
     try {
       if (request.method === "GET" && pathname === "/health") {
         return cors(await health(env));
@@ -2833,6 +2847,251 @@ async function sha256Hex(bytes) {
 function header(request, name) {
   const value = request.headers.get(name);
   return value ? value.trim() : "";
+}
+
+/* ================= a developer's own name: alice.krate.tech ==============
+ *
+ * The hub has always kept a channel per published app --
+ * `channel:<login>/<slug>`, mutable, 50 moves of history, rollback, moved
+ * by that publisher and nobody else. What it never had was a face: nothing
+ * linked it, there was no page for a person, and the gallery was one
+ * global shelf. This serves that machinery on a name a developer can put
+ * in their own README (K-849).
+ *
+ * One label only, deliberately. Cloudflare's free Universal SSL covers the
+ * apex and exactly one level of subdomain, so `alice.krate.tech` is
+ * covered and `beta.alice.krate.tech` is not. Environments belong in the
+ * path, never in a second label.
+ */
+
+/// Which developer this hostname belongs to, or null for the hub itself.
+///
+/// Names that are part of the service can never be a person: a developer
+/// called "hub" must not be able to answer for hub.krate.tech. Checked
+/// against the same shape GitHub logins use, which is what the publisher
+/// identity already is.
+function developerHost(url, env) {
+  const host = url.hostname.toLowerCase();
+  const root = ((env.PUBLIC_BASE || "").replace(/^https?:\/\//, "").replace(/\/$/, "") || "hub.krate.tech")
+    .split(".")
+    .slice(-2)
+    .join(".");
+  if (!host.endsWith(`.${root}`)) return null;
+  const label = host.slice(0, -(root.length + 1));
+  // One label. A dotted prefix is not a developer and has no certificate
+  // under the free wildcard, which covers exactly one level.
+  //
+  // Belt and braces: the charset test below already rejects a dot, so
+  // removing this line changes no behaviour -- checked by sabotage. It
+  // stays because the RULE is worth stating where a reader looks for it,
+  // and because a future edit that widens the charset would otherwise
+  // silently start serving pages on hostnames with no certificate.
+  if (label.includes(".")) return null;
+  const RESERVED = new Set([
+    "hub", "www", "api", "app", "studio", "docs", "cloud", "builder",
+    "admin", "mail", "smtp", "imap", "ns1", "ns2", "cdn", "assets",
+    "status", "blog", "help", "support", "play", "open", "make", "login",
+  ]);
+  if (RESERVED.has(label)) return null;
+  if (!/^[a-z0-9-]{1,39}$/.test(label) || label.startsWith("-") || label.endsWith("-")) {
+    return null;
+  }
+  return label;
+}
+
+/// Serve one developer's namespace.
+///
+/// The same URL answers two callers, which is the trick the hub already
+/// uses for bundles (classifyClient): a browser gets a page, a runtime
+/// gets the bytes. So `krate run alice.krate.tech/notes` works and the
+/// same address pasted into a browser explains itself.
+async function developerRoute(request, url, login, env) {
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return text("not found", 404);
+  }
+  const parts = url.pathname.split("/").filter(Boolean);
+  const wantsPage = classifyClient(request) !== "tool";
+
+  if (parts.length === 0) {
+    return wantsPage
+      ? developerPage(login, await developerApps(env, login), env)
+      : json({ login, apps: (await developerApps(env, login)).map((a) => a.slug) });
+  }
+  if (parts.length !== 1) return text("not found", 404);
+
+  const slug = parts[0].toLowerCase();
+  if (!/^[a-z0-9-]{1,48}$/.test(slug)) return text("not found", 404);
+  const stored = await readChannel(env, login, slug);
+  const channel = stored && stored.current ? await settleChannel(env, stored, "gone") : null;
+  if (!channel) {
+    return wantsPage
+      ? htmlPage(`Nothing here yet`, `<p class="sub">${escapeForHtml(login)} has no app called <b>${escapeForHtml(slug)}</b>.</p><p><a href="/">See what they have made</a></p>`, 404)
+      : text("not found", 404);
+  }
+  const takedown = await env.APPS.get(`takedown:${channel.current}`);
+  if (takedown) return takedownResponse(takedown, env);
+
+  const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
+  // A runtime asked for the app: hand it the fixed content address, never
+  // the bytes from here, so what runs is what the address names.
+  if (!wantsPage) {
+    return new Response(null, {
+      status: 302,
+      headers: { location: `${base}/a/${channel.current}?dl=1`, "cache-control": "no-store" },
+    });
+  }
+  const meta = await appMeta(env, channel.current);
+  return appPage(login, channel, meta, env);
+}
+
+/// Every app this developer has a channel for, newest move first.
+async function developerApps(env, login) {
+  const listing = await env.APPS.list({ prefix: `channel:${login}/`, limit: 200 });
+  const rows = await Promise.all(
+    listing.keys.map(async (key) => {
+      const raw = await env.APPS.get(key.name);
+      if (!raw) return null;
+      let channel;
+      try {
+        channel = JSON.parse(raw);
+      } catch (_) {
+        return null;
+      }
+      if (!channel.current) return null;
+      if (await env.APPS.get(`takedown:${channel.current}`)) return null;
+      return {
+        slug: channel.slug,
+        name: channel.name || channel.slug,
+        current: channel.current,
+        moved_at: channel.moved_at || 0,
+        meta: await appMeta(env, channel.current),
+      };
+    }),
+  );
+  return rows.filter(Boolean).sort((a, b) => (b.moved_at || 0) - (a.moved_at || 0));
+}
+
+/// One app's stored metadata, or an empty object. Never throws: a page
+/// that cannot read a size is still a page worth serving.
+async function appMeta(env, hash) {
+  try {
+    const raw = await env.APPS.get(`app:${hash}`);
+    return raw ? JSON.parse(raw) : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+/// Everything that reaches these pages is publisher-supplied -- an app's
+/// name, its description, a login. Escaped on the way out, every time.
+function escapeForHtml(value) {
+  return String(value == null ? "" : value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/// The shell every page here shares. Deliberately one file with inline
+/// styles: a page that depends on a stylesheet on another host is a page
+/// that breaks when that host does, and this one has to work when
+/// somebody has pasted the URL into a README and a stranger clicked it.
+function htmlPage(title, body, status = 200) {
+  return new Response(
+    `<!doctype html><html lang="en"><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${escapeForHtml(title)}</title>
+<link rel="icon" href="https://krate.tech/krate-logo.png" />
+<style>
+:root { color-scheme: dark; --bg:#0b0d12; --text:#fff; --muted:rgba(255,255,255,0.62);
+  --faint:rgba(255,255,255,0.42); --line:rgba(255,255,255,0.12); --blue:#6c8cff; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--text);
+  font:15px/1.6 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+  padding:48px 20px; }
+.wrap { max-width:720px; margin:0 auto; }
+a { color:var(--blue); text-decoration:none; }
+a:hover { text-decoration:underline; }
+h1 { font-size:26px; margin:0 0 6px; letter-spacing:-0.01em; }
+.sub { color:var(--muted); margin:0 0 30px; }
+.app { display:flex; gap:16px; align-items:flex-start; padding:18px 0;
+  border-bottom:1px solid var(--line); }
+.app:last-of-type { border-bottom:0; }
+.shot { width:132px; height:88px; flex:none; border-radius:10px;
+  border:1px solid var(--line); object-fit:cover; object-position:top center;
+  background:rgba(255,255,255,0.04); }
+.app h2 { font-size:16px; margin:0 0 4px; font-weight:560; }
+.app p { margin:0 0 6px; color:var(--muted); font-size:13.5px; }
+.meta { color:var(--faint); font-size:12px; }
+.run { font:12.5px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace;
+  background:rgba(255,255,255,0.05); border:1px solid var(--line);
+  border-radius:8px; padding:10px 12px; margin:14px 0 0; overflow-x:auto;
+  white-space:nowrap; color:var(--muted); }
+.btn { display:inline-block; background:#fff; color:#0b0d12; font-weight:560;
+  font-size:14px; padding:9px 18px; border-radius:999px; margin-top:14px; }
+.btn:hover { text-decoration:none; opacity:0.9; }
+.asks { color:var(--faint); font-size:12px; margin-top:10px; }
+footer { margin-top:44px; color:var(--faint); font-size:12.5px; }
+</style></head><body><div class="wrap">${body}</div></body></html>`,
+    { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=60" } },
+  );
+}
+
+/// A developer's own page: who they are, and everything they have made.
+function developerPage(login, apps, env) {
+  const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
+  const host = `${login}.${((env.PUBLIC_BASE || "").replace(/^https?:\/\//, "").split(".").slice(-2).join(".")) || "krate.tech"}`;
+  const rows = apps.length
+    ? apps
+        .map((app) => {
+          const size = app.meta && app.meta.size ? `${Math.round(app.meta.size / 1024)} KB` : "";
+          const desc = app.meta && app.meta.description ? escapeForHtml(app.meta.description) : "";
+          const shot = app.meta && app.meta.shot
+            ? `<img class="shot" src="${base}/shot/${escapeForHtml(app.current)}" alt="" loading="lazy" />`
+            : `<div class="shot"></div>`;
+          return `<div class="app">${shot}<div>
+            <h2><a href="/${escapeForHtml(app.slug)}">${escapeForHtml(app.name)}</a></h2>
+            ${desc ? `<p>${desc}</p>` : ""}
+            <div class="meta">${size}${size ? " &middot; " : ""}runs on Mac, Windows and Linux</div>
+          </div></div>`;
+        })
+        .join("")
+    : `<p class="sub">No apps published yet.</p>`;
+  return htmlPage(
+    `${login} on Krate`,
+    `<h1>${escapeForHtml(login)}</h1>
+     <p class="sub">Apps by ${escapeForHtml(login)}, each one file that runs on Mac, Windows and Linux.</p>
+     ${rows}
+     <footer>Every app here is a single sandboxed file. It reaches only what it
+     declares, and you see that before it runs. <a href="https://krate.tech">What is Krate?</a></footer>`,
+  );
+}
+
+/// One app's page: what it is, what it asks for, and how to run it.
+function appPage(login, channel, meta, env) {
+  const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
+  const root = ((env.PUBLIC_BASE || "").replace(/^https?:\/\//, "").split(".").slice(-2).join(".")) || "krate.tech";
+  const host = `${login}.${root}`;
+  const size = meta && meta.size ? `${Math.round(meta.size / 1024)} KB` : "";
+  const asks = Array.isArray(meta && meta.asks) && meta.asks.length
+    ? `<p class="asks">Asks for: ${meta.asks.map((a) => escapeForHtml(a)).join(", ")}</p>`
+    : "";
+  const shot = meta && meta.shot
+    ? `<img class="shot" style="width:100%;height:auto;max-height:360px" src="${base}/shot/${escapeForHtml(channel.current)}" alt="" />`
+    : "";
+  return htmlPage(
+    `${channel.name || channel.slug} by ${login}`,
+    `<h1>${escapeForHtml(channel.name || channel.slug)}</h1>
+     <p class="sub">by <a href="/">${escapeForHtml(login)}</a>${size ? ` &middot; ${size}` : ""} &middot; runs on Mac, Windows and Linux</p>
+     ${shot}
+     ${meta && meta.description ? `<p>${escapeForHtml(meta.description)}</p>` : ""}
+     ${asks}
+     <a class="btn" href="${base}/a/${escapeForHtml(channel.current)}?dl=1">Download the app</a>
+     <p class="run">krate run ${escapeForHtml(host)}/${escapeForHtml(channel.slug)}</p>
+     <footer>One sandboxed file. It reaches only what it declares, and Krate
+     asks you before it does. <a href="https://krate.tech/open/">Get Krate</a></footer>`,
+  );
 }
 
 function text(body, status = 200) {

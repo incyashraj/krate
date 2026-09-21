@@ -25,6 +25,27 @@ bucket_name = "krate-bundles"
 binding = "APPS"
 id = "184313bf18694dff800e580de42b2cda"
 
+# A developer's own name, alice.krate.tech (K-849).
+#
+# ONE route covers every developer -- Cloudflare matches `*.` against all
+# subhosts, and the limit of 1000 routes per zone is irrelevant to a design
+# that needs one. The DNS side is a single proxied wildcard record,
+# `* -> krate-hub`, which has been available on every plan (including Free)
+# since May 2022. Free Universal SSL then covers the apex and exactly one
+# level of subdomain, which is why developerHost() refuses a second label:
+# beta.alice.krate.tech would have no certificate.
+#
+# Not added automatically. A route claims a hostname pattern for this
+# Worker, and the DNS record has to exist first, so both are the founder's
+# to make in the dashboard:
+#   1. DNS: add a PROXIED record, name `*`, pointing at this Worker
+#   2. Route: `*.krate.tech/*` -> krate-hub
+# Until then nothing changes: the hub answers on hub.krate.tech as always,
+# and the code path below simply never sees a developer hostname.
+# [[routes]]
+# pattern = "*.krate.tech/*"
+# zone_name = "krate.tech"
+
 [vars]
 PUBLIC_BASE = "https://hub.krate.tech"
 # The account whose Analytics Engine dataset /stats reads. Not a secret --
