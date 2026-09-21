@@ -4947,8 +4947,35 @@ function openPublishSheet() {
   pubState.iconPath = null;
   $("pubName").value = (app.name || "").replace(/\.krate$/, "").replace(/-/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase());
-  const firstAsk = (state.session.messages.find((m) => m.who === "YOU") || {}).body || "";
-  $("pubDesc").value = firstAsk.replace(/\s+/g, " ").trim().slice(0, 140);
+  // The description is what the app IS, not what somebody typed to get it.
+  //
+  // This prefilled the person's raw prompt, so the public gallery filled
+  // with instructions to a builder: "make a weather app", "make a app
+  // which plays like a chess ame" -- typo and all -- shown to strangers
+  // as though it described the software. Three of the four people who
+  // have published to the hub have a card like that (K-850).
+  //
+  // The AI already writes the right sentence: the plan it agreed to,
+  // "Here's what I'll build: ...", is a description of the finished thing
+  // in the third person. Prefer it, fall back to the request when there
+  // is no plan (a starter build, a session replayed from an old file),
+  // because a prompt is better than an empty box.
+  const said = (body) => String(body || "").replace(/\s+/g, " ").trim();
+  const planMsg = [...state.session.messages]
+    .reverse()
+    .find((m) => m.who === "KRATE" && /^Here's what I'll build:/i.test(said(m.body)));
+  const firstAsk = said((state.session.messages.find((m) => m.who === "YOU") || {}).body);
+  const fromPlan = planMsg
+    ? said(planMsg.body)
+        .replace(/^Here's what I'll build:\s*/i, "")
+        // The plan ends with the permissions it needs, which the app's own
+        // page already lists beside the download. Not description.
+        .replace(/\s*From you it needs:.*$/i, "")
+        .trim()
+    : "";
+  // One sentence, not the whole plan: this is a card in a gallery.
+  const firstSentence = fromPlan.split(/(?<=[.!?])\s+/)[0] || fromPlan;
+  $("pubDesc").value = (firstSentence || firstAsk).slice(0, 140);
   const shotImg = $("pubShotImg");
   const noShot = () => {
     shotImg.classList.add("hidden");
