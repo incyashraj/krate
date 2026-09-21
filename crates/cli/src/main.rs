@@ -9662,7 +9662,10 @@ fn run_provider_author(
             // So on macOS claude simply keeps the real HOME: the one
             // keychain token, refreshed in place, no fork to rotate dead.
             // Its own permission flags already govern what it may touch.
-            let claude_native_keychain = cfg!(target_os = "macos") && provider.name() == "claude";
+            // The provider's own answer, so the probe and this path cannot
+            // drift apart -- they did, and it cost the founder three failed
+            // builds behind a screen that said his AI was ready (K-825).
+            let claude_native_keychain = provider.keeps_real_home();
             if !claude_native_keychain {
                 command.env("HOME", &agent_home);
             }

@@ -1858,7 +1858,20 @@ body.resizing .divider { background: var(--blue); }
 .gate-code { cursor: copy; }
 .gate-code.copied::after { content: " copied"; color: var(--good, #4ade80); font-size: 12px; }
 .ai-error { color: var(--danger); font-size: 12.5px; line-height: 1.5; word-break: break-word; }
-.fail-raw { margin-top: 10px; font-family: var(--mono); font-size: 11px; color: var(--quiet, rgba(255,255,255,0.35)); word-break: break-word; max-width: 520px; }
+/* The engine's own words, inside the card rather than across it.
+ *
+ * A <pre> does not wrap, so one long line -- "This is a problem with the
+ * AI tool, not with Krate..." -- ran off the right edge of the failure
+ * card and over whatever was beside it. max-width alone could not hold it
+ * because nothing told it to break (K-827). pre-wrap keeps the engine's
+ * own line breaks, which is why it is a <pre> at all, and wraps the rest;
+ * the width follows the card instead of a fixed 520. */
+.fail-raw {
+  margin-top: 10px; font-family: var(--mono); font-size: 11px;
+  color: var(--quiet, rgba(255, 255, 255, 0.35));
+  white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
+  max-width: 100%; max-height: 220px; overflow-y: auto;
+}
 
 /* The update chip: present, never shouting. */
 .update-chip { color: var(--accent); }

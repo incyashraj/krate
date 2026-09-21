@@ -2666,6 +2666,7 @@ async function continuePlanning(text, files) {
   if (state.planning.planShown) {
     return finishPlanningAndBuild();
   }
+  clearAnsweredActions();
   showPlanning("Thinking it through", "folding your answer in…");
   await runPlan();
 }
@@ -2868,6 +2869,21 @@ function setIdleNote(text) {
   if (note) note.textContent = text;
 }
 
+/* Take the buttons off questions that no longer need an answer.
+ *
+ * Clicking one removes its own row, but ANSWERING BY TYPING -- which is
+ * what the composer invites, and what the card tells people to do -- left
+ * every "Build it" sitting in the transcript, live. The founder answered
+ * a question and then found the old button still there, with no way to
+ * know whether pressing it would build the thing he had just corrected
+ * (K-828). A question that has been dealt with keeps its words and loses
+ * its buttons. */
+function clearAnsweredActions() {
+  const thread = $("thread");
+  if (!thread) return;
+  thread.querySelectorAll(".msg-actions").forEach((row) => row.remove());
+}
+
 function finishPlanningAndBuild() {
   const p = state.planning;
   // The question has already been dealt with.
@@ -2883,6 +2899,7 @@ function finishPlanningAndBuild() {
     return;
   }
   state.planning = null;
+  clearAnsweredActions();
   $("prompt").placeholder = "Describe the app you want…";
   let enriched = p.request;
   for (const qa of p.qa) {
@@ -5114,11 +5131,22 @@ async function startFromHome() {
   // box, the screen still makes sense, and the sheet arrives over
   // something rather than over nothing.
   if (tauri) {
+    // The button keeps its ARROW.
+    //
+    // This set textContent on it, which deleted the two SVGs inside and
+    // left a bare blue circle with "Checking your AI..." spilling out of
+    // it and across the hint below -- a send button that stopped looking
+    // like one the moment it was pressed (K-826). The waiting state is a
+    // class, the way every other busy control here does it, so the icon
+    // survives and the word goes where words go.
     const send = $("homeSend");
-    const was = send ? send.textContent : "";
-    if (send) { send.disabled = true; send.textContent = "Checking your AI…"; }
+    if (send) { send.disabled = true; send.classList.add("checking"); }
+    const hint = $("homeHint");
+    const hintWas = hint ? hint.textContent : "";
+    if (hint) hint.textContent = "checking your AI\u2026";
     try { await refreshAgents(); } catch (e) { /* use the list we have */ }
-    if (send) { send.disabled = false; send.textContent = was; }
+    if (send) { send.disabled = false; send.classList.remove("checking"); }
+    if (hint) hint.textContent = hintWas;
     if (!(state.agents || []).some((a) => a.state === "working")) {
       openAiSheet();
       say(

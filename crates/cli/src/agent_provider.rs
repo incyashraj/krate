@@ -116,6 +116,24 @@ pub trait AgentProvider: Send + Sync {
         self.author_args("Reply with the single word: ok")
     }
 
+    /// Does this provider keep the person's REAL home when it runs?
+    ///
+    /// Claude on macOS does: its credential is in the login keychain, which
+    /// the Security framework resolves from the real user session whatever
+    /// $HOME says, and copying it forks a token that rotates (K-206). Every
+    /// other provider is file-based and is confined the ordinary way
+    /// (K-179).
+    ///
+    /// This lives on the provider because the PROBE and the BUILD must
+    /// agree. The rule was written in main.rs where authoring runs, and the
+    /// probe knew nothing about it -- so each answered about a different
+    /// machine. Grok, signed in under the real home and signed out under
+    /// the confined one, was probed in the confined home... and reported
+    /// ready, because it prints its refusal and exits 0 (K-825).
+    fn keeps_real_home(&self) -> bool {
+        false
+    }
+
     /// What to run to sign in, for the provider whose credentials have expired.
     fn login_hint(&self) -> String {
         format!("{} login", self.program())
@@ -335,8 +353,13 @@ pub fn probe(provider: &dyn AgentProvider, timeout: Duration) -> Readiness {
     //   authoring (confined HOME)-> "Not signed in. Run: grok login ..."
     // That is the green dot above a failing build the first outside user
     // reported, and it made the chip actively misleading (K-190).
-    if let Some(home) = probe_home() {
-        command.env("HOME", home);
+    // The home the BUILD will use, which is not the same for every
+    // provider (K-825). Asking about a different home than the one that
+    // does the work is the bug this whole function was written to avoid.
+    if !provider.keeps_real_home() {
+        if let Some(home) = probe_home() {
+            command.env("HOME", home);
+        }
     }
     for arg in provider.probe_args() {
         command.arg(arg);
@@ -398,8 +421,33 @@ pub fn probe(provider: &dyn AgentProvider, timeout: Duration) -> Readiness {
                 // healthy login on stderr, so demanding stdout marked a working
                 // tool as broken. The empty-and-failed case is still caught
                 // below, which is the one that matters.
+                //
+                // AND the answer has to be the answer.
+                //
+                // The probe asks for the single word "ok" and then did not
+                // look at what came back: any output at all with exit 0 was
+                // "Working". A tool that prints its own refusal and exits 0
+                // -- Grok does this, reporting `{"type":"error","message":
+                // "Not signed in..."}` -- was therefore shown with a green
+                // dot and "ready, in use", and every build against it failed
+                // in one second. The founder saw "your AI is not signed in"
+                // on a screen that listed that AI as ready, switched to the
+                // other one, and got the same thing (K-825).
+                //
+                // The check is the word we asked for, not the absence of
+                // scary words: a refusal we have never seen before still
+                // fails, because it will not contain "ok" as its answer.
+                // Tools wrap it (JSON, quotes, punctuation, a trailing
+                // newline), so the test is a whole-word match over the last
+                // part of what was said rather than equality.
                 if status.success() && !(stdout.is_empty() && stderr.is_empty()) {
-                    return Readiness::Working;
+                    if said_ok(&stdout, &stderr) {
+                        return Readiness::Working;
+                    }
+                    // It ran, it succeeded, and it did not answer. Whatever
+                    // it said instead is the reason -- diagnose reads it the
+                    // same way it reads a failure's.
+                    return diagnose(provider, &stdout, &stderr);
                 }
                 return diagnose(provider, &stdout, &stderr);
             }
@@ -435,6 +483,30 @@ pub fn probe(provider: &dyn AgentProvider, timeout: Duration) -> Readiness {
             }
         }
     }
+}
+
+/// Did the tool actually answer the probe's question?
+///
+/// The probe asks every provider for the single word "ok". A tool that
+/// answers something else -- its own "not signed in", a usage limit, a
+/// prompt for a password -- has not proved it can author, whatever its
+/// exit code says (K-825).
+///
+/// Deliberately loose about FORM and strict about CONTENT: providers wrap
+/// the answer in JSON, quotes, markdown or a trailing newline, and any of
+/// those is still an answer. What must be there is the word itself, as a
+/// word -- so "not ok", "broken", or a refusal that happens to contain
+/// "took" do not pass.
+fn said_ok(stdout: &str, stderr: &str) -> bool {
+    let blob = format!("{stdout}\n{stderr}").to_lowercase();
+    // An error envelope is never an answer, however it exited. Checked
+    // first because a tool can print BOTH -- a JSON error object whose
+    // message happens to contain the word.
+    if blob.contains("\"type\":\"error\"") || blob.contains("\"error\":") {
+        return false;
+    }
+    blob.split(|c: char| !c.is_ascii_alphanumeric())
+        .any(|word| word == "ok" || word == "okay")
 }
 
 /// Turn whatever the tool printed into one line a person can act on.
@@ -877,6 +949,13 @@ pub struct ClaudeProvider;
 impl AgentProvider for ClaudeProvider {
     fn name(&self) -> &'static str {
         "claude"
+    }
+
+    /// macOS only: the keychain follows the real user session, so confining
+    /// HOME would hide the credential rather than protect anything. See the
+    /// trait's note and the authoring path in main.rs, which reads this.
+    fn keeps_real_home(&self) -> bool {
+        cfg!(target_os = "macos")
     }
 
     fn description(&self) -> &'static str {
