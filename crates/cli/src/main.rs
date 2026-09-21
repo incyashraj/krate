@@ -12136,6 +12136,20 @@ fn copy_dir_except(from: &Path, to: &Path, skip: &[String]) -> std::io::Result<(
             copy_dir_except(&source, &target, &[])?;
         } else if kind.is_file() {
             fs::copy(&source, &target)?;
+            // Keep the source's mtime. Cargo calls a unit stale when its
+            // output is older than any of its dependencies' fingerprints,
+            // and it compares real timestamps: a copy stamped "now" in
+            // directory order makes whichever dependency was copied last
+            // newer than the SDK crate's rlib, and the SDK crate rebuilds.
+            // macOS's copy clones the file with its mtime and hid this;
+            // Linux stamps now, and the first Ubuntu run recompiled the
+            // SDK crate for the second app. A tar-based cache restore
+            // keeps mtimes for the same reason.
+            if let Ok(modified) = entry.metadata().and_then(|meta| meta.modified()) {
+                if let Ok(file) = fs::OpenOptions::new().write(true).open(&target) {
+                    let _ = file.set_modified(modified);
+                }
+            }
         }
         // Symlinks are not something cargo puts in a target dir; skipped.
     }
