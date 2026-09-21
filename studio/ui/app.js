@@ -1193,11 +1193,11 @@ function appendLiveChip(version) {
   // read where they were already looking. Every terminal agent shows its
   // working inline and lets you open it; this is that, in the transcript
   // (K-823). Collapsed it is one live line; open it is the recent steps.
-  el.innerHTML = `<span class="who">KRATE</span><span class="vchip vlivec"><b>v${version}</b> building <span class="vbar"><i style="transform:scaleX(0.08)"></i></span> <span class="vm" data-phase>starting…</span></span>`
+  el.innerHTML = `<span class="who">KRATE</span><span class="vchip vlivec"><b>v${version}</b> building <span class="vbar"><i style="transform:scaleX(0.08)"></i></span> <span class="vm" data-phase>getting started…</span></span>`
     + `<div class="vwork" data-work>`
     +   `<button class="vwork-head" data-worktoggle aria-expanded="false">`
     +     `<span class="vwork-caret">›</span>`
-    +     `<span class="vwork-now" data-worknow>starting…</span>`
+    +     `<span class="vwork-now" data-worknow>getting the AI started…</span>`
     +   `</button>`
     +   `<div class="vwork-steps" data-worksteps hidden></div>`
     + `</div>`;
@@ -1543,6 +1543,21 @@ function addWorkTool(tool, file, path) {
   // The collapsed face follows the work too, so the chip is never stale.
   const face = liveChip.querySelector("[data-worknow]");
   if (face && label) face.textContent = `${verb} ${label}`;
+  // AND the chip's own word, which is the one always on screen.
+  //
+  // K-839 made it advance with the STAGE, and a stage lasts minutes -- so
+  // the founder still watched "starting..." while the AI was demonstrably
+  // reading and writing files. The work is the truest thing we know about
+  // what is happening right now, so the chip says that, and the stage
+  // rewrites it when the stage genuinely turns over (K-848).
+  const phase = liveChip.querySelector("[data-phase]");
+  if (phase && label) phase.textContent = `${verb} ${label}`;
+  // Nudge the bar off zero on the first real sign of work: the build has
+  // demonstrably started, whatever the stage machinery has noticed.
+  const bar = liveChip.querySelector(".vbar i");
+  if (bar && (bar.style.transform === "" || bar.style.transform === "scaleX(0.08)")) {
+    bar.style.transform = "scaleX(0.16)";
+  }
 }
 
 function restoreBuild(sessionId) {
@@ -2849,7 +2864,32 @@ async function ensureUsableAgent() {
   return usable(state.agent);
 }
 
+/* One plan at a time, whatever asked for it.
+ *
+ * K-842 guarded startFromHome, and the founder still got two plans: the
+ * session composer reaches planning by a different door, and
+ * startPlanning OVERWRITES state.planning, so a second call wipes the
+ * first's context and runs a second request against the model. Two
+ * "Here's what I'll build" paragraphs, each with its own Build it, each
+ * describing a slightly different app -- and no way to tell which one
+ * pressing a button would make.
+ *
+ * Guarded where the work actually happens rather than at each door, so a
+ * third door added later is covered too (K-847).
+ */
+let planning = false;
+
 async function runPlan() {
+  if (planning) return;
+  planning = true;
+  try {
+    await runPlanInner();
+  } finally {
+    planning = false;
+  }
+}
+
+async function runPlanInner() {
   $("composerHint").textContent = "thinking it through…";
   $("send").disabled = true;
   await ensureUsableAgent();
@@ -2915,6 +2955,13 @@ async function runPlan() {
       // The plan is the one KRATE message a person reads closely -- it is
       // what they are agreeing to. Marked so it is set as substance rather
       // than as another line of narration (K-835).
+      // A newer plan supersedes the older one's button.
+      //
+      // Belt and braces beside the runPlan guard (K-847): if a second
+      // plan ever does reach the transcript, the person must not be left
+      // choosing between two live Build it buttons describing two
+      // different apps.
+      clearAnsweredActions();
       say("KRATE", `Here's what I'll build: ${answer.plan}${needsLine}`, null, {
         variant: "plan",
         actions: [
