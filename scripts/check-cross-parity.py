@@ -36,12 +36,8 @@ RELEASE_STEP = "- name: Build release binary"
 CI_STEP = "- name: Build the release binary the way the release does"
 
 
-def step_env(text: str, marker: str) -> dict[str, str]:
-    """The env: block of one step, as {NAME: value}.
-
-    Reads from the marker to the next step at the same indentation, so a
-    later step's env cannot be read as this one's.
-    """
+def step_body(text: str, marker: str) -> str:
+    """One step's text, from its name to the next step at the same indent."""
     at = text.find(marker)
     if at < 0:
         raise SystemExit(f"could not find the step {marker!r} -- it was renamed or removed")
@@ -49,7 +45,20 @@ def step_env(text: str, marker: str) -> dict[str, str]:
     rest = text[at + len(marker):]
     # The step ends at the next line starting with the same indent and a dash.
     end = re.search(rf"\n {{{indent}}}- ", rest)
-    body = rest[: end.start()] if end else rest
+    return rest[: end.start()] if end else rest
+
+
+# The variable is carried in env as CROSS_LIBCLANG_PATH and handed to the
+# cross command alone. Set as LIBCLANG_PATH for a whole step it makes bindgen
+# look nowhere else, which is right inside the container and fatal on a
+# native host: v0.5.1's first release run lost macOS and x86_64 Linux that
+# way. So the env must match AND each step must pass it on this exact line.
+HANDOFF = 'LIBCLANG_PATH="$CROSS_LIBCLANG_PATH"'
+
+
+def step_env(text: str, marker: str) -> dict[str, str]:
+    """The env: block of one step, as {NAME: value}."""
+    body = step_body(text, marker)
 
     env: dict[str, str] = {}
     env_at = re.search(r"\n\s+env:\n", body)
@@ -90,6 +99,13 @@ def check(release_text: str, ci_text: str) -> list[str]:
             problems.append(
                 f"{name} differs: release={value!r}, ci={ci_env[name]!r}"
             )
+    for label, text, marker in (("release", release_text, RELEASE_STEP), ("CI", ci_text, CI_STEP)):
+        body = step_body(text, marker)
+        if not re.search(re.escape(HANDOFF) + r"\s*\\?\s*\n?\s*cross build", body):
+            problems.append(
+                f"the {label} cross build does not hand {HANDOFF} to `cross build`, "
+                f"so bindgen inside the container will not find libclang"
+            )
     return problems
 
 
@@ -115,26 +131,43 @@ def self_test() -> int:
     # which is the right failure, but a fixture that needs editing whenever
     # the value changes is a fixture that will one day be edited wrong.
     import re as _re
-    hit = _re.search(r"^\s*LIBCLANG_PATH: .+$\n", ci_text, _re.M)
+    hit = _re.search(r"^\s*CROSS_LIBCLANG_PATH: .+$\n", ci_text, _re.M)
     if not hit:
-        print("self-test: CI sets no LIBCLANG_PATH -- the cross build cannot work")
+        print("self-test: CI sets no CROSS_LIBCLANG_PATH -- the cross build cannot work")
         return 1
     broken = ci_text[: hit.start()] + ci_text[hit.end() :]
     if broken == ci_text:
         print("self-test: could not build the negative fixture -- the line moved")
         return 1
     caught = check(release_text, broken)
-    if not any("LIBCLANG_PATH" in p for p in caught):
-        print("self-test: removing LIBCLANG_PATH from CI was NOT caught")
+    if not any("CROSS_LIBCLANG_PATH" in p and "does not" in p for p in caught):
+        print("self-test: removing CROSS_LIBCLANG_PATH from CI was NOT caught")
         return 1
 
     # 3. A value that drifts must be caught too, not just an absent one.
-    drifted = _re.sub(r"(LIBCLANG_PATH: ).+", r"\1/usr/lib/llvm-14/lib", ci_text, count=1)
+    drifted = _re.sub(r"(CROSS_LIBCLANG_PATH: ).+", r"\1/usr/lib/llvm-14/lib", ci_text, count=1)
     if not any("differs" in p for p in check(release_text, drifted)):
         print("self-test: a drifted value was NOT caught")
         return 1
 
-    print("self-test: ok -- agreement holds, and both a missing and a drifted value are caught")
+    # 4. The env alone is not enough: the value must be handed to the cross
+    #    command. A CI step that keeps the env but drops the handoff builds
+    #    with the container's libclang 3.8 again, and a release that drops
+    #    it does the same on the one target the variable exists for.
+    for label, text in (("CI", ci_text), ("release", release_text)):
+        if HANDOFF not in text:
+            print(f"self-test: the {label} file has no {HANDOFF} handoff to remove")
+            return 1
+        no_handoff = text.replace(HANDOFF, "", 1)
+        args = (release_text, no_handoff) if label == "CI" else (no_handoff, ci_text)
+        if not any("hand" in p and label in p for p in check(*args)):
+            print(f"self-test: dropping the handoff from the {label} step was NOT caught")
+            return 1
+
+    print(
+        "self-test: ok -- agreement holds; a missing value, a drifted value and a "
+        "dropped handoff are each caught"
+    )
     return 0
 
 
