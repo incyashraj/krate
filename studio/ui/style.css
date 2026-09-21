@@ -621,6 +621,11 @@ body.windows.light .titlebar .side-toggle:hover { color: #000; }
  * the build chip without competing with it. Open: the recent steps in the
  * mono face the log uses, capped in height so a long build cannot push the
  * composer off the screen. The caret turns, as every disclosure does. */
+/* The plan card's action row (K-824). Centred under the plan, with the
+   same air the question card's actions have. */
+.plan-actions { display: flex; gap: 10px; justify-content: center; margin-top: 18px; }
+.plan-actions.hidden { display: none; }
+
 .vwork { margin: 6px 0 0 0; }
 .vwork-head {
   display: flex; align-items: center; gap: 7px;

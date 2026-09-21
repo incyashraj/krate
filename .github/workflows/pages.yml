@@ -254,6 +254,14 @@ jobs:
           cp docs/landing/reports.html _site/reports/index.html
           cp docs/landing/reports.html _site/reports.html
           cp docs/landing/*.png _site/
+          # /favicon.ico, because browsers ask for it whatever a page
+          # declares. Every page here declares its own icon and they all
+          # resolve -- and Safari and Chrome still request the root .ico on
+          # a cold load, so every visit logged a 404 that looked like a
+          # broken site to anyone reading the console (K-788). A PNG served
+          # at that name is what every browser in use accepts; the format
+          # has not been required since IE.
+          cp docs/landing/krate-favicon.png _site/favicon.ico
           # Screenshots of the real apps the AI built, shown on the
           # make-an-app-with-AI page (which references them at /app-shots/).
           mkdir -p _site/app-shots

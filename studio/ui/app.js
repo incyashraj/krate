@@ -1047,7 +1047,13 @@ function openSession(s) {
       );
       $("prompt").placeholder = "Type your answer here…";
     } else {
-      showPlanning("Waiting on you", "the plan is on the left: change it, or hit Build it", "paused");
+      showPlanning(
+        "Waiting on you",
+        "the plan is on the left: change it, or start the work from here",
+        "paused",
+        null,
+        [{ label: "Build it", primary: true, run: finishPlanningAndBuild }],
+      );
       $("prompt").placeholder = "Anything to change? Or hit Build it";
     }
   } else if (s.failedRequest || msgs.some((m) => m.who === "YOU")) {
@@ -1269,7 +1275,7 @@ function show(phase) {
 ///
 /// `questions`, when given, puts the outstanding question ON this pane --
 /// see showPlanningAsk for why that is not optional.
-function showPlanning(title, line, tag, questions) {
+function showPlanning(title, line, tag, questions, actions) {
   const t = $("planTitle");
   if (t) t.textContent = title;
   const l = $("planLine");
@@ -1277,6 +1283,28 @@ function showPlanning(title, line, tag, questions) {
   const g = $("planTag");
   if (g) g.textContent = tag || "listening…";
   showPlanningAsk(questions || []);
+  // The card can carry the button it talks about.
+  //
+  // The plan card said "read it on the left, Build it starts the work" and
+  // showed no button, so the one thing standing between a person and their
+  // app was a line of text pointing somewhere else. Nothing was happening
+  // and nothing on the biggest surface on screen said what to do about it
+  // -- the founder read it as a build already running (K-824). The
+  // question card has had its own buttons since K-760; this is the plan
+  // card catching up.
+  const bar = $("planActions");
+  if (bar) {
+    bar.innerHTML = "";
+    const list = actions || [];
+    bar.classList.toggle("hidden", !list.length);
+    for (const act of list) {
+      const b = document.createElement("button");
+      b.className = act.primary ? "btn btn-primary" : "btn btn-ghost";
+      b.textContent = act.label;
+      b.addEventListener("click", act.run);
+      bar.appendChild(b);
+    }
+  }
   show("planning");
 }
 
@@ -2731,7 +2759,13 @@ async function runPlan() {
         if (rec) rec.kind = "ask";
       }
       $("prompt").placeholder = "Anything to change? Your next message starts the build";
-      showPlanning("The plan is ready", "read it on the left, Build it starts the work", "waiting on you");
+      showPlanning(
+        "The plan is ready",
+        "read it on the left, or start the work from here",
+        "waiting on you",
+        null,
+        [{ label: "Build it", primary: true, run: finishPlanningAndBuild }],
+      );
     } else {
       return finishPlanningAndBuild();
     }
