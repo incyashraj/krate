@@ -657,6 +657,33 @@ body.windows.light .titlebar .side-toggle:hover { color: #000; }
 }
 .msg.krate .body { color: var(--reply); }
 
+/* Krate does not say one kind of thing, so it should not look like it.
+ *
+ * Twenty-four places in the UI speak as KRATE, and until now every one of
+ * them rendered identically -- the plan a person agrees to looked exactly
+ * like "Noted, I'll do that when this finishes". Three weights instead of
+ * one (K-835):
+ *
+ *   plan  the thing being agreed to. The most substantial text on the
+ *         screen after the person's own request, because it is what they
+ *         read before pressing Build it.
+ *   (none) an ordinary answer -- the reading size set for the transcript.
+ *   note  running commentary: stopping, queueing, resuming. True, worth
+ *         keeping in the record, and not worth the same weight as a plan.
+ */
+.msg.plan .body {
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text);
+}
+.msg.note .body {
+  font-size: 13px;
+  color: var(--faint);
+}
+/* A note's rail dot recedes with it: the timeline should show at a glance
+   where the substance is. */
+.msg.note::before { background: var(--line); width: 6px; height: 6px; top: 6px; }
+
 /* Whose turn is whose, at a glance.
  *
  * The only thing telling a person's message from Krate's was the colour of

@@ -2799,7 +2799,11 @@ async function runPlan() {
       const needsLine = needs.length
         ? `\n\nFrom you it needs: ${needs.join("; ")}.`
         : "";
+      // The plan is the one KRATE message a person reads closely -- it is
+      // what they are agreeing to. Marked so it is set as substance rather
+      // than as another line of narration (K-835).
       say("KRATE", `Here's what I'll build: ${answer.plan}${needsLine}`, null, {
+        variant: "plan",
         actions: [
           { label: "Build it", primary: true, run: finishPlanningAndBuild },
         ],
@@ -3012,7 +3016,7 @@ async function resumeRunningBuild(request, reattach) {
   state.buildVersion = (state.session && state.session.builds ? state.session.builds : 0) + 1;
   state.buildChip = appendLiveChip(state.buildVersion);
   beginBuild(state.session ? state.session.title : "your app", "picking this back up\u2026");
-  say("KRATE", "Picking your build back up where it was.");
+  say("KRATE", "Picking your build back up where it was.", null, { variant: "note" });
   try {
     const result = await reattach;
     finishBuild(result);
@@ -3042,7 +3046,7 @@ async function buildNow(request, files, revising, planSession, starterShape) {
   // side showed one line and then nothing for six minutes while the right
   // side did all the talking.
   const version = (state.session.builds || 0) + 1;
-  if (revising) say("KRATE", "Reading your app, then making that change.");
+  if (revising) say("KRATE", "Reading your app, then making that change.", null, { variant: "note" });
   // Warn BEFORE the first flash, not after. While it works, the AI opens
   // the app to look at it and fix what it sees -- windows appear for a
   // second and sounds play. Unexplained, that reads as the machine
@@ -5238,7 +5242,7 @@ function queueMidBuild(text) {
   autoGrow($("prompt"));
   syncSendReady();
   say("YOU", text);
-  say("KRATE", "Noted. I'll do that as soon as this one is finished.");
+  say("KRATE", "Noted. I'll do that as soon as this one is finished.", null, { variant: "note" });
   $("composerHint").textContent = "queued · runs when this build finishes";
 }
 
@@ -5256,7 +5260,7 @@ async function replaceWithMidBuild(text) {
   // "Stopped. / Resume build" card for a build nobody wanted resumed --
   // one second before the replacement started and covered it.
   state.replacing = true;
-  say("KRATE", "Stopping that one. Building this instead.");
+  say("KRATE", "Stopping that one. Building this instead.", null, { variant: "note" });
   try {
     await stopBuild();
   } finally {
@@ -5340,7 +5344,7 @@ function submitInSession() {
       return make(s.failedRequest, { silent: true });
     }
     say("YOU", text);
-    say("KRATE", "Folding that in and building again.");
+    say("KRATE", "Folding that in and building again.", null, { variant: "note" });
     return make(`${s.failedRequest}\n\n(After the stopped build, they added: ${text})`, { silent: true });
   }
   make(text);
