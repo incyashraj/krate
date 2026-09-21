@@ -1141,13 +1141,40 @@ function appendMessage(who, body, files, extra) {
 function appendLiveChip(version) {
   const el = document.createElement("div");
   el.className = "msg krate vlive";
-  el.innerHTML = `<span class="who">KRATE</span><span class="vchip vlivec"><b>v${version}</b> building <span class="vbar"><i style="transform:scaleX(0.08)"></i></span> <span class="vm" data-phase>starting…</span></span>`;
+  // The work, where the conversation is.
+  //
+  // What the AI was doing lived only on the right, under Details, so the
+  // left side went quiet for ten minutes and the person had nothing to
+  // read where they were already looking. Every terminal agent shows its
+  // working inline and lets you open it; this is that, in the transcript
+  // (K-823). Collapsed it is one live line; open it is the recent steps.
+  el.innerHTML = `<span class="who">KRATE</span><span class="vchip vlivec"><b>v${version}</b> building <span class="vbar"><i style="transform:scaleX(0.08)"></i></span> <span class="vm" data-phase>starting…</span></span>`
+    + `<div class="vwork" data-work>`
+    +   `<button class="vwork-head" data-worktoggle aria-expanded="false">`
+    +     `<span class="vwork-caret">›</span>`
+    +     `<span class="vwork-now" data-worknow>starting…</span>`
+    +   `</button>`
+    +   `<div class="vwork-steps" data-worksteps hidden></div>`
+    + `</div>`;
   // Stop lives on the build itself, not only on the far side of the window.
   const stop = document.createElement("button");
   stop.className = "vact vg";
   stop.textContent = "Stop";
   stop.addEventListener("click", stopBuild);
   el.querySelector(".vchip").appendChild(stop);
+  const toggle = el.querySelector("[data-worktoggle]");
+  if (toggle) {
+    toggle.addEventListener("click", () => {
+      const steps = el.querySelector("[data-worksteps]");
+      if (!steps) return;
+      const open = steps.hasAttribute("hidden");
+      if (open) steps.removeAttribute("hidden"); else steps.setAttribute("hidden", "");
+      toggle.setAttribute("aria-expanded", open ? "true" : "false");
+      el.querySelector(".vwork").classList.toggle("open", open);
+      // Opening it should show the newest work, not the oldest.
+      if (open) steps.scrollTop = steps.scrollHeight;
+    });
+  }
   $("thread").appendChild(el);
   $("thread").scrollTop = $("thread").scrollHeight;
   return el;
@@ -1762,6 +1789,22 @@ function onEngineLineInner(line) {
     if (human && rec) rec.nowLine = clean;
     const now = $("nowLine");
     if (human && now) now.textContent = clean;
+    // The same human line, in the transcript's own panel (K-823). The
+    // steps list keeps the recent ones so opening it mid-build shows what
+    // has been happening, not just this instant.
+    if (human && state.buildChip) {
+      const face = state.buildChip.querySelector("[data-worknow]");
+      if (face) face.textContent = clean;
+      const steps = state.buildChip.querySelector("[data-worksteps]");
+      if (steps) {
+        const row = document.createElement("p");
+        row.className = "vwork-step";
+        row.textContent = clean;
+        steps.appendChild(row);
+        while (steps.childElementCount > 40) steps.removeChild(steps.firstElementChild);
+        if (!steps.hasAttribute("hidden")) steps.scrollTop = steps.scrollHeight;
+      }
+    }
     state.lastLineAt = Date.now();
     // A window is about to appear (or just did). Mark the card so the flash
     // and the sound have a visible explanation at the moment they happen.

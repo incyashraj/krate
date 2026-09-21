@@ -615,6 +615,33 @@ body.windows.light .titlebar .side-toggle:hover { color: #000; }
  *  - The YOU/KRATE label was ghost-grey at 36%, so the eye had to hunt
  *    for the start of each turn. Still quiet, just legible.
  */
+/* The live work panel in the transcript (K-823).
+ *
+ * Collapsed: a caret and the line the AI is on, quiet enough to sit under
+ * the build chip without competing with it. Open: the recent steps in the
+ * mono face the log uses, capped in height so a long build cannot push the
+ * composer off the screen. The caret turns, as every disclosure does. */
+.vwork { margin: 6px 0 0 0; }
+.vwork-head {
+  display: flex; align-items: center; gap: 7px;
+  background: none; border: 0; padding: 2px 0; width: 100%;
+  text-align: left; cursor: pointer; color: var(--faint);
+  font-size: 12px; font-family: inherit;
+}
+.vwork-head:hover { color: var(--muted); }
+.vwork-caret { display: inline-block; transition: transform 0.15s; font-size: 13px; line-height: 1; }
+.vwork.open .vwork-caret { transform: rotate(90deg); }
+.vwork-now { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vwork-steps {
+  margin-top: 6px; max-height: 190px; overflow-y: auto;
+  border-left: 1px solid var(--line); padding: 2px 0 2px 11px;
+}
+.vwork-step {
+  font: 11.5px/1.7 var(--mono); color: var(--faint);
+  margin: 0; white-space: pre-wrap; word-break: break-word;
+}
+.vwork-step:last-child { color: var(--muted); }
+
 .msg .who {
   font-size: 10.5px; font-weight: 560; letter-spacing: 0.1em;
   color: var(--faint); display: block; margin-bottom: 6px;
