@@ -40,6 +40,9 @@
   --muted: rgba(255, 255, 255, 0.62);
   --faint: rgba(255, 255, 255, 0.42);
   --ghost: rgba(255, 255, 255, 0.36);
+  /* Krate's own replies: the main content, so nearly full strength. A
+     hardcoded white here was invisible on the light theme (K-822). */
+  --reply: rgba(255, 255, 255, 0.92);
   /* Eight rules say `var(--quiet, rgba(255,255,255,0.35))` and the token was
      never actually defined, so all eight took the white fallback -- correct
      in the dark and invisible on paper. Defining it here and in the light
@@ -590,13 +593,55 @@ body.windows.light .titlebar .side-toggle:hover { color: #000; }
   border-right: 1px solid var(--line);
 }
 
+/* Where a message's text actually begins, measured rather than assumed.
+   `.thread` has padding 22px 18px AND padding-left: 30px, and the second
+   wins -- it is not 18+30. The composer below uses the same number so the
+   two edges line up; measured in a browser at 1440 wide, gap 0. */
+:root { --thread-gutter-left: 30px; --thread-gutter-right: 18px; }
 .thread { flex: 1; overflow-y: auto; padding: 22px 18px; display: flex; flex-direction: column; gap: 20px; }
-.msg .who { font-size: 10.5px; font-weight: 500; letter-spacing: 0.12em; color: var(--ghost); display: block; margin-bottom: 5px; }
-.msg .body { color: var(--text); font-size: 13.5px; line-height: 1.6; user-select: text; }
-.msg.krate .body { color: var(--muted); }
+/* The conversation is the product, so it is set to be read.
+ *
+ * Three things were wrong beside a terminal like Claude Code's, and the
+ * founder could see it without being able to name it (K-822):
+ *
+ *  - 13.5px is a caption size. Prose people actually read sits at 14-15;
+ *    this is 14.5 with a slightly looser line, which is where long
+ *    paragraphs stop feeling cramped.
+ *  - Krate's own replies were --muted, 62% white: the app's MAIN content
+ *    was the dimmest text on the screen, dimmer than the labels above it.
+ *    They are near-full strength now, and the distinction from the
+ *    person's own lines is carried by the label and the rail dot, which
+ *    is what those are for.
+ *  - The YOU/KRATE label was ghost-grey at 36%, so the eye had to hunt
+ *    for the start of each turn. Still quiet, just legible.
+ */
+.msg .who {
+  font-size: 10.5px; font-weight: 560; letter-spacing: 0.1em;
+  color: var(--faint); display: block; margin-bottom: 6px;
+}
+.msg .body {
+  color: var(--text); font-size: 14.5px; line-height: 1.65;
+  user-select: text; letter-spacing: -0.003em;
+}
+.msg.krate .body { color: var(--reply); }
 .msg .files { color: var(--faint); font-size: 11.5px; margin-top: 4px; display: block; }
 
-.composer { padding: 14px 16px 16px; border-top: 1px solid var(--line); }
+/* The composer lines up with the words above it.
+ *
+ * The thread indents its text by its own 18px plus the 30px the timeline
+ * rail takes, so messages start 48px in -- while this box started at 16px.
+ * A 32px step between the last line of the conversation and the box you
+ * answer it in, most visible on a wide window where there is nothing else
+ * to judge the edge against (K-820). One variable, so the two cannot drift
+ * apart again.
+ *
+ * The right side keeps the thread's own 18px: the rail is a left-hand
+ * thing, and matching it on both sides would push the box off-centre in
+ * the other direction. */
+.composer {
+  padding: 14px var(--thread-gutter-right) 16px var(--thread-gutter-left);
+  border-top: 1px solid var(--line);
+}
 .attach-row { display: flex; flex-wrap: wrap; gap: 6px; padding-bottom: 10px; }
 .attach-chip {
   display: flex; align-items: center; gap: 7px;
@@ -2958,6 +3003,7 @@ body.light .btn.btn-primary { color: #ffffff; }
  * borders are darker than a naive flip so cards keep their edges on a
  * light ground -- the thing that usually breaks when a dark UI is
  * inverted. */
+body.light { --reply: rgba(12, 16, 23, 0.92); }
 body.light {
   --bg: #eef1f6;
   --panel: #ffffff;
@@ -4637,7 +4683,11 @@ body.side-resizing .shelf { transition: none; }
    * idea instead of two, and the field's own radius is now tied to its
    * height so the two curves agree at any size.
    */
-  .composer { padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); }
+  /* Aligned with the phone thread's own gutter (26px), for the same
+     reason as the desktop one above (K-820). The thread sets that number
+     as --rail-gutter; repeated here because a custom property set on
+     .thread is not visible to a sibling. */
+  .composer { padding: 10px 14px calc(10px + env(safe-area-inset-bottom)) 26px; }
   .composer-box {
     align-items: center;
     gap: 8px;

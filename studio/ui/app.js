@@ -3334,7 +3334,27 @@ async function refreshAgents() {
   // named the agent that was found while the build still ran the one that was
   // configured, and the mismatch surfaced as an instant failure naming an
   // agent the user never picked. If it is worth painting, it is what runs.
+  //
+  // A switch is SAID OUT LOUD, once.
+  //
+  // This line quietly moved somebody from the AI they picked to whichever
+  // one happened to be working -- and refreshAgents runs on launch, on
+  // window focus and before every build, so it could happen in the middle
+  // of a session. The founder watched a build with Claude become a build
+  // with Grok and had no idea why (K-821). Switching is the right
+  // behaviour: the alternative is refusing to build at all. Doing it
+  // without a word is not.
+  const switchedFrom = state.agent && chosen.name !== state.agent
+    ? (state.agents.find((a) => a.name === state.agent) || {}).label || state.agent
+    : null;
   state.agent = chosen.name;
+  if (switchedFrom && chosen.state === "working" && state.session) {
+    say(
+      "KRATE",
+      `${switchedFrom} is not ready just now, so I am using ${chosen.label}. ` +
+      `You can pick a different one from the chip above.`,
+    );
+  }
   // `paused` is the web's word for a build service that is switched off:
   // nothing to install and nothing to fix from here, so it is neither
   // "needs a fix" nor "not installed" (K-780).
