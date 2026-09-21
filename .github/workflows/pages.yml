@@ -215,6 +215,13 @@ jobs:
           # needed the desktop app, and "it won't open" answered with
           # "the build failed, press Details" on a sheet with no Details.
           node docs/landing/studio/coverage-test.mjs
+          # And that the desktop never reaches a price. The allowance is a
+          # web rule -- a build on somebody's own machine costs us nothing
+          # -- and it has drifted from the decision three times. This is
+          # the deploy's copy of that check; the pre-push gate runs every
+          # *-test.mjs in this folder, but the list here is written out one
+          # by one, so a new test is not covered until it is named.
+          node docs/landing/studio/money-seam-test.mjs
 
           mkdir -p _site/app
           cp -R studio/ui/. _site/app/
