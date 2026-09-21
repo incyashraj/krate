@@ -305,9 +305,17 @@ jobs:
           # Without it, v4l2-sys-mit (nokhwa, the camera) searched the standard
           # directories itself, found Ubuntu 16.04's preinstalled libclang 3.8
           # before the libclang 8 beside it, and killed the arm64 Linux target of
-          # v0.5.0 with "loaded libclang instance = 3.8.x". Harmless on every
-          # other target, which has no such container.
-          LIBCLANG_PATH: /usr/lib/llvm-8/lib
+          # v0.5.0 with "loaded libclang instance = 3.8.x".
+          #
+          # Set for the cross command ONLY, below. It sat here in `env:` for the
+          # whole step, and the comment beside it said "harmless on every other
+          # target". It was not: when LIBCLANG_PATH is set, bindgen looks
+          # nowhere else, and /usr/lib/llvm-8/lib exists only inside the cross
+          # container. The first tag after that edit, v0.5.1, lost its macOS
+          # and x86_64 Linux builds to "Unable to find libclang" while the
+          # cross target it was for is optional. This workflow runs on tags
+          # only, so a tag was the first test.
+          CROSS_LIBCLANG_PATH: /usr/lib/llvm-8/lib
         run: |
           # Speech is opt-in at the crate level, so a RELEASE adds it back
           # rather than a broken platform subtracting it (K-149).
@@ -326,7 +334,8 @@ jobs:
             FEATURE_ARGS=(--features speech)
           fi
           if [[ "${{ matrix.cross }}" == "true" ]]; then
-            cross build --release --target "${{ matrix.target }}" -p krate-cli "${FEATURE_ARGS[@]}"
+            LIBCLANG_PATH="$CROSS_LIBCLANG_PATH" \
+              cross build --release --target "${{ matrix.target }}" -p krate-cli "${FEATURE_ARGS[@]}"
           else
             cargo build --release --target "${{ matrix.target }}" -p krate-cli "${FEATURE_ARGS[@]}"
           fi

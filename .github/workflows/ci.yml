@@ -1361,8 +1361,15 @@ jobs:
           # and the build dies with "loaded libclang instance = 3.8.x"
           # (K-717) -- so the lane would fail while the release passed, and
           # the name on this step would be a lie.
-          LIBCLANG_PATH: /usr/lib/llvm-8/lib
-        run: cross build --release --target aarch64-unknown-linux-gnu -p krate-cli
+          #
+          # Named CROSS_LIBCLANG_PATH and applied to the cross command alone,
+          # exactly as the release does since v0.5.1's first attempt: set as
+          # LIBCLANG_PATH for a whole step it makes bindgen look nowhere else,
+          # which is right inside the container and fatal on a native host.
+          CROSS_LIBCLANG_PATH: /usr/lib/llvm-8/lib
+        run: |
+          LIBCLANG_PATH="$CROSS_LIBCLANG_PATH" \
+            cross build --release --target aarch64-unknown-linux-gnu -p krate-cli
 
   port-regression:
     name: Re-port the proven programs
