@@ -1792,10 +1792,19 @@ function onEngineLineInner(line) {
     // The same human line, in the transcript's own panel (K-823). The
     // steps list keeps the recent ones so opening it mid-build shows what
     // has been happening, not just this instant.
-    if (human && state.buildChip) {
-      const face = state.buildChip.querySelector("[data-worknow]");
+    // Found in the DOM, not held in a variable.
+    //
+    // state.buildChip is set when a build STARTS and is null after a trip
+    // to Cloud and back -- the transcript is rebuilt from the session file
+    // and the live chip is not among the messages it stores. Keying the
+    // panel off that reference meant the work simply stopped updating for
+    // anyone who navigated away mid-build and came back, silently, which
+    // is the same shape as K-152.
+    const liveChip = state.buildChip || $("thread").querySelector(".msg.vlive");
+    if (human && liveChip) {
+      const face = liveChip.querySelector("[data-worknow]");
       if (face) face.textContent = clean;
-      const steps = state.buildChip.querySelector("[data-worksteps]");
+      const steps = liveChip.querySelector("[data-worksteps]");
       if (steps) {
         const row = document.createElement("p");
         row.className = "vwork-step";
