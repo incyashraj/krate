@@ -584,6 +584,9 @@ async function login() {
   $("loginBtn").disabled = true;
   $("gateError").classList.add("hidden");
   try {
+    // This IS the "Use a code instead" fallback, so the device code is
+    // right here. The primary button (loginBrowserBtn) opens the browser,
+    // where all three doors are.
     await invoke("account_login");
     // The "done" step handler flips us in; this resolves after it.
   } catch (err) {
@@ -2266,7 +2269,11 @@ const CHARGING = false;
 
 function renderFreeCount() {
   const n = makesThisMonth();
-  const left = Math.max(0, 3 - n);
+  // FREE_MAKES, not a literal 3. This said `3 - n` under a constant that
+  // is 1, so the day CHARGING flips the chip would read "2 of 1 free left"
+  // -- the same three-versus-one drift the rule has been corrected for
+  // more than once (K-216).
+  const left = Math.max(0, FREE_MAKES - n);
   const chip = $("freeCount");
   // Desktop has no allowance to report, so it gets no chip -- the same
   // seam as maybeWelcome and the limit gate. A "3 free apps" badge on a
@@ -2315,7 +2322,7 @@ function renderFreeCount() {
       : "Free";
     const hint = $("setPlanHint");
     if (hint) hint.textContent = !CHARGING
-      ? "Everything is free while we build Krate. Nothing is metered."
+      ? "One free app, and one free change to it. Krate Studio on your own machine is free and unlimited with your own AI."
       : active
         ? "Unlimited apps. Every one is a file that is yours forever."
         : "One free app, plus one free change to it. Failed builds never count.";
@@ -2326,6 +2333,31 @@ function limitAcked() {
 }
 
 async function make(request, opts) {
+  // No AI, no build. On the desktop the app is authored by a tool on this
+  // machine, so with none of them ready there is nothing to author with --
+  // and Studio used to start anyway: the progress display ran, the agent
+  // was never reachable, and the person watched a build fail for a reason
+  // the first screen already knew. The connect sheet IS the answer, so it
+  // opens instead of a failure arriving two minutes later (K-799).
+  //
+  // Desktop only. The web authors with Krate's own AI, which no chip on
+  // this machine can speak for.
+  if (tauri && !(opts && opts.pastAgentCheck)) {
+    // Ask rather than trust the cached list: a sign-in finished in a
+    // terminal thirty seconds ago must not be met with "connect an AI".
+    try { await refreshAgents(); } catch (e) { /* fall through to the list we have */ }
+    const ready = (state.agents || []).some((a) => a.state === "working");
+    if (!ready) {
+      state.pendingMake = { request, opts };
+      openAiSheet();
+      say(
+        "KRATE",
+        "Connect an AI first. None of the coding tools on this Mac are ready, "
+          + "and one of them is what writes the app."
+      );
+      return;
+    }
+  }
   // The gate: at the free limit, the sheet says what the deal is.
   // It never fires for revisions (the session already has a result).
   // CHARGING is false while Krate is free (see renderFreeCount): the
@@ -2690,6 +2722,18 @@ async function runPlan() {
             : [],
         },
       );
+      state.planning = null;
+      setIdleNote("");
+      show("idle");
+      $("send").disabled = false;
+      return;
+    }
+    // A refusal is an answer, not a failure to work around. The shell said
+    // no in its own words (a request too long, a mode that does not build),
+    // and building anyway would meet the same refusal one screen later
+    // with a cheerful "I'll skip the questions" printed before it (K-776).
+    if (err && err.refusal) {
+      say("KRATE", String(err.message || "That cannot be done here."), null, { variant: "ask" });
       state.planning = null;
       setIdleNote("");
       show("idle");
@@ -3275,10 +3319,16 @@ async function refreshAgents() {
   // configured, and the mismatch surfaced as an instant failure naming an
   // agent the user never picked. If it is worth painting, it is what runs.
   state.agent = chosen.name;
-  const dot = chosen.state === "working" ? "ok" : chosen.state === "not-ready" ? "warn" : "bad";
+  // `paused` is the web's word for a build service that is switched off:
+  // nothing to install and nothing to fix from here, so it is neither
+  // "needs a fix" nor "not installed" (K-780).
+  const dot = chosen.state === "working" ? "ok"
+    : chosen.state === "not-ready" || chosen.state === "paused" ? "warn"
+    : "bad";
   const text =
     chosen.state === "working" ? chosen.label
     : chosen.state === "not-ready" ? `${chosen.label} · needs a fix`
+    : chosen.state === "paused" ? `${chosen.label} · paused`
     : `${chosen.label} · not installed`;
   setChips(dot, text, chosen.detail || "");
   await checkEngineAge();
@@ -3394,7 +3444,7 @@ async function paintApiKeys() {
         // A key is a new way to author, so the picker has to know about it.
         await refreshAgents();
       } catch (err) {
-        if (note) note.textContent = String(err);
+        if (note) note.textContent = String((err && err.message) || err);
         button.disabled = false;
         button.textContent = "Save";
       }
@@ -3410,7 +3460,7 @@ async function paintApiKeys() {
         await paintApiKeys();
         await refreshAgents();
       } catch (err) {
-        if (note) note.textContent = String(err);
+        if (note) note.textContent = String((err && err.message) || err);
       }
     });
   });
@@ -3445,7 +3495,9 @@ function openAiSheet() {
     if (API_VENDORS.has(a.name)) continue;
     const row = document.createElement("div");
     row.className = "ai-row";
-    const dot = a.state === "working" ? "ok" : a.state === "not-ready" ? "warn" : "bad";
+    const dot = a.state === "working" ? "ok"
+      : a.state === "not-ready" || a.state === "paused" ? "warn"
+      : "bad";
     // Human words on the row; the raw command and any long engine output
     // live under a Terminal fold. A first-timer sees a state and a button,
     // never an npm line or a stack trace.
@@ -5084,7 +5136,13 @@ $("homeSend").addEventListener("click", startFromHome);
       const base = field.value.trim();
       let heard = "";
 
+      // Settles once. `onend` fires after `onerror`, and a second settle
+      // restored the hint over the refusal that had just been written
+      // there -- so a blocked microphone showed nothing at all (K-794).
+      let settled = false;
       const settle = () => {
+        if (settled) return;
+        settled = true;
         active = null;
         btn.classList.remove("listening");
         btn.title = "Say it out loud";
@@ -5140,6 +5198,11 @@ $("homeSend").addEventListener("click", startFromHome);
       };
 
       rec.onend = settle;
+
+      // One line before the browser's own prompt, so the permission
+      // dialog that appears next is expected rather than a surprise.
+      // `onstart` replaces it with "Listening" once the microphone is on.
+      if (!tauri) say(hint, "Your browser will ask to use the microphone. Allow it, then talk.");
 
       try {
         rec.start();
@@ -5847,9 +5910,21 @@ function rememberSupKey(ref) {
     localStorage.setItem("krateSupKeys", JSON.stringify(keys.slice(0, 20)));
   } catch (e) {}
 }
+/* Is there an account behind this sheet? Signed in, the hub already knows
+ * where to reply and the thread is enough. Signed out, an address is the
+ * only way an answer can reach anyone, so the field says it is needed
+ * before Send is pressed, not in a 400 after (K-785). */
+function supportSignedIn() {
+  return Boolean(state.account && state.account.signed_in);
+}
 async function openSupportSheet() {
   $("supNote").textContent = "";
-  $("supEmail").classList.toggle("hidden", Boolean(state.account && state.account.signed_in));
+  const signedIn = supportSignedIn();
+  $("supEmail").classList.toggle("hidden", signedIn);
+  $("supEmail").placeholder = "Your email, so the reply can reach you (required)";
+  $("supIntro").textContent = signedIn
+    ? "A real person answers, in this same thread. Replies show up right here."
+    : "A real person answers. Replies show up right here and go to your email as well.";
   const paid = planIsActiveSafe();
   $("supPriorityTag")?.classList.toggle("hidden", !paid);
   if (paid) {
@@ -5903,14 +5978,23 @@ $("supSend")?.addEventListener("click", async () => {
   const body = $("supBody").value.trim();
   const email = $("supEmail").value.trim();
   if (!subject || !body) { $("supNote").textContent = "Say what it is about, and what happened."; return; }
+  // Checked here, in a sentence, rather than by the hub's 400 shown with
+  // an "Error:" in front of it. The hub keeps its own check.
+  if (!supportSignedIn() && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+    $("supNote").textContent = "Add your email first, so the answer can reach you.";
+    $("supEmail").focus();
+    return;
+  }
   $("supSend").disabled = true;
   try {
     const out = await invoke("support_new", { subject, message: body, email });
     if (out && out.id) rememberSupKey({ id: out.id, key: out.key });
     $("supSubject").value = ""; $("supBody").value = "";
-    $("supNote").textContent = "Sent. The reply lands right here.";
+    $("supNote").textContent = supportSignedIn()
+      ? "Sent. The reply lands right here."
+      : "Sent. The reply lands right here, and in your email.";
     renderSupportTickets();
-  } catch (err) { $("supNote").textContent = String(err); }
+  } catch (err) { $("supNote").textContent = String((err && err.message) || err); }
   $("supSend").disabled = false;
 });
 {
@@ -6499,6 +6583,12 @@ function setShelfOpen(open) {
 
   function setOpen(open, remember = true) {
     side.dataset.open = open ? "true" : "false";
+    // Off-canvas is off-limits to the keyboard too. Closed, the drawer sits
+    // at -100% and stays in the tab order, so Tab walked seven invisible
+    // controls (toggle, mark, search, Home, Your apps, Gallery, a kebab)
+    // before anything on screen (K-784). `inert` removes it from focus and
+    // from the accessibility tree until it is open.
+    side.inert = !open;
     if (remember) {
       try { lsSet(OPEN_KEY, open ? "1" : "0"); } catch (e) {}
     }
@@ -6538,6 +6628,9 @@ function setShelfOpen(open) {
       });
     }
   } catch (e) {}
+  // The markup ships the drawer closed, and only an open drawer reaches the
+  // tab order; say so from the first paint, not the first toggle.
+  side.inert = side.dataset.open !== "true";
 
   for (const t of toggles) {
     t.addEventListener("click", () => setOpen(side.dataset.open !== "true"));
@@ -7020,8 +7113,28 @@ async function loadProfilePage() {
   // be a second owner of the same job -- and the scope it used to name
   // (#viewProfile) no longer exists, so it had quietly stopped doing
   // anything at all.
+  let account = null;
+  try { account = await invoke("account_status"); } catch (e) { /* signed out */ }
+  const signedIn = Boolean(account && account.signed_in);
+  // Signed out is a state with its own page, not a "Signed in" heading
+  // over zero apps and a Sign out button (K-779). No numbers: the counts
+  // below are the account's, and there is no account.
+  $("profStats")?.classList.toggle("hidden", !signedIn);
+  $("profSignOutRow")?.classList.toggle("hidden", !signedIn);
+  $("profSignInRow")?.classList.toggle("hidden", signedIn);
+  if (!signedIn) {
+    $("profName").textContent = "Not signed in";
+    $("profMail").textContent = "";
+    $("profInitial").textContent = "?";
+    const dockInitial = $("dockInitial");
+    if (dockInitial) dockInitial.textContent = "?";
+    setAvatar($("profAvImg"), $("profInitial"), null);
+    setAvatar($("dockAvImg"), dockInitial, null);
+    $("connGhSub").textContent = "Used when you publish a link";
+    $("connGhAct").innerHTML = '<button class="set-mini" data-connect="github">Connect</button>';
+    return;
+  }
   try {
-    const account = await invoke("account_status");
     const name = account?.name || account?.login || "Signed in";
     $("profName").textContent = name;
     $("profMail").textContent = account?.login ? `@${account.login}` : "";
@@ -7110,6 +7223,20 @@ $("profSignOut")?.addEventListener("click", async () => {
   state.account = null;
   loadProfilePage();
   paintGreeting();
+});
+
+/* The way in, from the same page that says "Not signed in". In a tab the
+ * shell goes to the site's sign-in page and comes back. On a desktop the
+ * sign-in is the gate's job: it shows the code and the waiting state, so
+ * the dialog gets out of the way and the gate takes over. */
+$("profSignIn")?.addEventListener("click", () => {
+  if (tauri) {
+    closeSettings();
+    showView("gate");
+    login();
+    return;
+  }
+  invoke("account_login").catch(() => {});
 });
 
 function escapeHtml(text) {

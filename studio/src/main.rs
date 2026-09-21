@@ -1077,13 +1077,13 @@ async fn agents() -> Result<Vec<AgentInfo>, String> {
 async fn pick_files(app: tauri::AppHandle) -> Result<Vec<String>, String> {
     let (tx, rx) = std::sync::mpsc::channel();
     app.run_on_main_thread(move || {
-        // Start in the person's Documents, never wherever macOS last was.
-        // Without a directory the picker can open in Photos or Downloads,
-        // and macOS then demands access to that library on the spot -- an
-        // alarming prompt from an app that only wanted a file they pick.
+        // Start in Krate's own folder. This comment used to say "the
+        // person's Documents" while the code passed the HOME folder, whose
+        // children are the very libraries macOS guards -- see
+        // picker_start_dir.
         let picked = rfd::FileDialog::new()
             .set_title("Attach files for the AI to read")
-            .set_directory(dirs_home())
+            .set_directory(picker_start_dir().unwrap_or_else(dirs_home))
             .pick_files()
             .unwrap_or_default();
         let _ = tx.send(picked);
@@ -1132,7 +1132,7 @@ async fn pick_image(app: tauri::AppHandle, title: String) -> Result<Option<Strin
     app.run_on_main_thread(move || {
         let picked = rfd::FileDialog::new()
             .set_title(&title)
-            .set_directory(dirs_home())
+            .set_directory(picker_start_dir().unwrap_or_else(dirs_home))
             .add_filter("PNG image", &["png"])
             .pick_file();
         let _ = tx.send(picked);
@@ -1150,7 +1150,7 @@ async fn pick_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
     app.run_on_main_thread(move || {
         let picked = rfd::FileDialog::new()
             .set_title("Where finished apps are saved")
-            .set_directory(dirs_home())
+            .set_directory(picker_start_dir().unwrap_or_else(dirs_home))
             .pick_folder();
         let _ = tx.send(picked);
     })
@@ -2621,7 +2621,7 @@ async fn open_krate(app: tauri::AppHandle) -> Result<(), String> {
         let picked = rfd::FileDialog::new()
             .set_title("Open a Krate app")
             .add_filter("Krate app", &["krate"])
-            .set_directory(dirs_home())
+            .set_directory(picker_start_dir().unwrap_or_else(dirs_home))
             .pick_file();
         let _ = tx.send(picked);
     })
@@ -3715,6 +3715,27 @@ fn append_line(path: &Path, line: &str) {
     {
         let _ = writeln!(f, "{line}");
     }
+}
+
+/// Where a file picker should open.
+///
+/// NOT the home folder. macOS guards Music, Photos, Documents, Downloads and
+/// Desktop with TCC, and they are all immediate children of home -- so a
+/// picker that opens there makes the system demand access to each one as it
+/// draws the list. The founder saw "Krate would like to access Music" while
+/// making an app, which is an alarming question from a tool that wanted a
+/// file the person was about to choose themselves (K-800).
+///
+/// `~/Krate Apps` is Krate's own folder: never protected, already where the
+/// person's apps are, and created here if this is the first time. If it
+/// cannot be made, the picker gets no directory at all and opens wherever
+/// the system last was -- still better than walking into the guarded ones.
+fn picker_start_dir() -> Option<PathBuf> {
+    let dir = dirs_home().join("Krate Apps");
+    if !dir.is_dir() {
+        std::fs::create_dir_all(&dir).ok()?;
+    }
+    Some(dir)
 }
 
 fn dirs_home() -> PathBuf {

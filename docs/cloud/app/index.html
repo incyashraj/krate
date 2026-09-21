@@ -108,6 +108,31 @@
     .run-row button:hover, .dl:hover { color: var(--text); border-color: var(--blue); }
     .hint { color: var(--quiet); font-size: .87rem; line-height: 1.65; margin: .6rem 0 0; }
 
+    /* What a person does, in order. The first thing on this page used to be
+       a terminal command; a person who has never opened a terminal read it
+       as "this is not for me" and left (K-786). */
+    .steps { list-style: none; counter-reset: step; display: grid; gap: .6rem; }
+    .steps li {
+      counter-increment: step; display: flex; gap: .9rem; align-items: flex-start;
+      padding: .85rem 1rem; border: 1px solid var(--line); border-radius: 12px;
+      background: var(--panel); line-height: 1.55;
+    }
+    .steps li::before {
+      content: counter(step); flex: none; width: 26px; height: 26px; border-radius: 50%;
+      display: grid; place-items: center; font-size: .8rem; font-weight: 600;
+      color: #0a0a0a; background: var(--blue-soft);
+    }
+    .steps b { display: block; font-weight: 500; }
+    .steps span { color: var(--muted); font-size: .92rem; }
+    .steps a { color: var(--blue-soft); }
+    .steps .get {
+      display: inline-flex; align-items: center; gap: .4rem; margin-top: .45rem;
+      padding: .5rem .9rem; border-radius: 999px; font-size: .9rem; font-weight: 500;
+      background: var(--text); color: #0a0a0a; min-height: 40px;
+    }
+    .steps .get:hover { background: rgba(255,255,255,0.86); }
+    .devnote { color: var(--quiet); font-size: .84rem; margin-top: .5rem; }
+
     /* The permission wall, written by the app itself. This is the part that
        makes opening a stranger's app a decision rather than a leap. */
     .perm { display: flex; gap: .8rem; align-items: baseline; padding: .55rem 0; border-bottom: 1px solid var(--line); }
@@ -244,8 +269,21 @@
       }
 
       const m = app.meta || {};
-      document.title = `${m.name || "App"} | Krate gallery`;
+      const name = m.name || "App";
+      const author = m.author || "anonymous";
+      document.title = `${name} | Krate gallery`;
       const cmd = "krate run " + app.url;
+      // Which computer they are on decides one word in step 3: on Linux
+      // the file is opened with Krate rather than double-clicked, because
+      // only the Studio AppImage registers the file type.
+      const ua = navigator.userAgent;
+      const linux = /Linux|X11/.test(ua) && !/Android|Mac/.test(ua);
+      const phone = /Android|iPhone|iPad|iPod/.test(ua);
+      const openStep = phone
+        ? `<b>Open it on a computer.</b><span>Krate runs on Mac, Windows and Linux, not on phones yet. Send yourself this page and open the file there.</span>`
+        : linux
+          ? `<b>Open the file with Krate.</b><span>It tells you what it wants first, then opens once you agree.</span>`
+          : `<b>Double-click the file.</b><span>It tells you what it wants first, then opens once you agree.</span>`;
       const issue = "https://github.com/incyashraj/krate/issues/new?title="
         + encodeURIComponent(`Report: ${m.name || "app"} in the Krate gallery`)
         + "&body=" + encodeURIComponent(
@@ -255,21 +293,21 @@
         <div class="head">
           <div class="shot">
             ${app.shot
-              ? `<img src="${esc(app.shot)}" alt="${esc(m.name || "App")} running" />`
+              ? `<img src="${esc(app.shot)}" alt="${esc(name)} running" />`
               : '<span class="none">no screenshot yet</span>'}
           </div>
           <div class="meta">
             <div class="name-row">
               ${app.icon
-                ? `<img class="app-icon" src="${esc(app.icon)}" alt="" onerror="this.remove()" style="object-fit:cover" />`
-                : tile(m.name || "App")}
+                ? `<img class="app-icon" src="${esc(app.icon)}" alt="${esc(name)} icon" onerror="this.remove()" style="object-fit:cover" />`
+                : tile(name)}
               <h1>${esc(m.name || "Untitled app")}</h1>
             </div>
             ${m.category ? `<p class="cat">${esc(CAT_LABELS[m.category] || m.category)}</p>` : ""}
             ${m.description ? `<p class="desc">${esc(m.description)}</p>` : ""}
             <div class="by">
-              ${m.avatar_url ? `<img src="${esc(m.avatar_url)}" alt="" />` : ""}
-              <span>by <a href="${esc(m.author_url || "#")}" rel="noopener">${esc(m.author || "anonymous")}</a></span>
+              ${m.avatar_url ? `<img src="${esc(m.avatar_url)}" alt="${esc(author)}" />` : ""}
+              <span>by <a href="${esc(m.author_url || "#")}" rel="noopener">${esc(author)}</a></span>
             </div>
             <div class="facts">
               <span>${kb(m.size || 0)}</span>
@@ -280,21 +318,24 @@
         </div>
 
         <h2>Open it</h2>
-        <div class="run-row">
-          <code>${esc(cmd)}</code>
-          <button id="copy">Copy</button>
-        </div>
-        <p class="hint">
-          Paste that into a terminal. Krate downloads the app, shows you what it
-          asks for, and opens it once you agree. No Krate yet?
-          <a href="/">Install it first</a> &mdash; one command.
-        </p>
+        <ol class="steps">
+          <li><div><b>Install Krate once.</b><span>Free, a minute, and every app after this one just opens. <a href="/open/">How to install it on your Mac, Windows or Linux computer.</a></span></div></li>
+          <li><div><b>Download the file.</b><span>${esc(name)} is one file, ${kb(m.size || 0)}.</span><br /><a class="get" href="${esc(app.url)}?dl=1">Download ${esc(name)}</a></div></li>
+          <li><div>${openStep}</div></li>
+        </ol>
 
         <h2>What it asks for</h2>
         <div id="perms"><p class="hint">Reading the app…</p></div>
 
+        <h2>For developers</h2>
+        <div class="run-row">
+          <code>${esc(cmd)}</code>
+          <button id="copy">Copy</button>
+        </div>
+        <p class="devnote">With Krate installed, that one line in a terminal downloads the app, shows what it asks for, and opens it once you agree.</p>
+
         <div class="foot">
-          <a class="dl" href="${esc(app.url)}">Download the file</a>
+          <a class="dl" href="${esc(app.url)}?dl=1">Download the file</a>
           <a href="/cloud/">All apps</a>
           <a class="report" href="${issue}" rel="noopener">Report this app</a>
         </div>`;

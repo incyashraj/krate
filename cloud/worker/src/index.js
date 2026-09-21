@@ -366,8 +366,14 @@ export default {
       if (request.method === "DELETE" && pathname.startsWith("/blob/")) {
         return cors(await purgeBundle(request, pathname.slice(6), env));
       }
-      if (request.method === "GET" && pathname.startsWith("/a/")) {
-        return cors(await fetchBundle(request, url, pathname.slice(3), env));
+      // HEAD answers exactly like GET, minus the body (K-798). Link
+      // checkers and chat unfurlers ask with HEAD first, and a 404 there
+      // made every shared app link read as dead.
+      if ((request.method === "GET" || request.method === "HEAD") && pathname.startsWith("/a/")) {
+        const res = await fetchBundle(request, url, pathname.slice(3), env);
+        return cors(request.method === "HEAD"
+          ? new Response(null, { status: res.status, headers: res.headers })
+          : res);
       }
       if (request.method === "GET" && pathname.startsWith("/c/")) {
         return cors(await resolveChannel(request, url, pathname.slice(3), env));
@@ -1296,7 +1302,9 @@ async function fetchBundle(request, url, hash, env) {
       : client === "desktop-browser"
         ? "desktop"
         : null;
-  if (env.USAGE) {
+  // A HEAD is a link checker or an unfurler looking, not a person or a
+  // runtime fetching; it is answered but not counted as a hit.
+  if (env.USAGE && request.method !== "HEAD") {
     env.USAGE.writeDataPoint({
       blobs: [
         "link",
@@ -1350,17 +1358,21 @@ async function fetchBundle(request, url, hash, env) {
     }
   }
 
-  return new Response(object.body, {
-    headers: {
-      "content-type": "application/octet-stream",
-      // Content-addressed, so a bundle at a given URL can never change and
-      // may be cached forever. Vary, because the same URL serves a phone a
-      // landing page instead.
-      "cache-control": "public, max-age=31536000, immutable",
-      vary: "accept, user-agent",
-      "content-disposition": `attachment; filename="${filename}"`,
-    },
-  });
+  const headers = {
+    "content-type": "application/octet-stream",
+    // Content-addressed, so a bundle at a given URL can never change and
+    // may be cached forever. Vary, because the same URL serves a phone a
+    // landing page instead.
+    "cache-control": "public, max-age=31536000, immutable",
+    vary: "accept, user-agent",
+    "content-disposition": `attachment; filename="${filename}"`,
+  };
+  if (request.method === "HEAD") {
+    // The size is the one thing a HEAD is usually asked for, and the
+    // object knows it without the body being read.
+    return new Response(null, { headers: { ...headers, "content-length": String(object.size) } });
+  }
+  return new Response(object.body, { headers });
 }
 
 /// The page a phone sees when it taps a shared app link. Honest about
@@ -4090,7 +4102,12 @@ async function billingStatus(request, env) {
 async function supportNew(request, env) {
   const body = await request.json().catch(() => ({}));
   const user = await authedUser(request, env);
-  const email = user ? user.email : String(body.email || "").trim().toLowerCase();
+  const typed = String(body.email || "").trim().toLowerCase();
+  // A signed-in person needs no address: the reply lands in their thread,
+  // and the account already knows how to reach them. An address they
+  // typed anyway is kept, because a GitHub account can carry no email at
+  // all. Only a signed-out sender must give one (K-785).
+  const email = user ? (user.email || typed) : typed;
   const subject = String(body.subject || "").trim().slice(0, 140);
   const first = String(body.text || "").trim().slice(0, 4000);
   if (!subject || !first) return text("Say what it is about, and what happened.", 400);

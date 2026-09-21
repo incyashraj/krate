@@ -270,6 +270,17 @@ h1 .soft { color: var(--faint); }
 .row small { color: var(--faint); font-size: 12px; }
 .row .val { margin-left: auto; color: var(--faint); font-size: 12px; white-space: nowrap; }
 .sheet .close { margin-top: 16px; color: var(--dim); font-size: 13px; }
+/* The email door of the sign-in sheet: the same shape as /login's. */
+.sheet .or { display: flex; align-items: center; gap: 12px; margin: 14px 0 12px; color: var(--faint); font-size: 11px; }
+.sheet .or::before, .sheet .or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.sheet form.email { display: flex; gap: 8px; }
+.sheet form.email input {
+  flex: 1; min-width: 0; padding: 11px 14px; border-radius: 11px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--text);
+  font: inherit; font-size: 13.5px;
+}
+.sheet form.email .row { width: auto; padding: 11px 16px; }
+.sheet form.email .row b { font-size: 13.5px; }
 
 /* Their apps, as a quiet shelf. */
 .shelf { margin-top: 16px; display: flex; flex-direction: column; gap: 2px; max-height: 46vh; overflow-y: auto; }

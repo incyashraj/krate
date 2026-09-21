@@ -2428,6 +2428,12 @@ body.scrolled .dock-solo {
  * simply gone, and the panel looked like it had lost its navigation. A
  * modal that something else can cover is not a modal. */
 #setSheet { z-index: 80; }
+/* Support is opened FROM Settings ("Contact support" is a settings row),
+ * so it has to stand above the settings overlay the way the AI sheet
+ * does. At 40 it opened underneath: the person pressed the button and saw
+ * nothing change, and the form only appeared once Settings was closed. Same
+ * z-index as the dialog and later in the markup, which is what wins. */
+#supportSheet { z-index: 80; }
 
 /* A text field inside a settings row. */
 .set-input {

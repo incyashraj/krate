@@ -141,6 +141,8 @@ h1.page { font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
 }
 .dlnote { margin-top: 9px; font-size: 12.5px; color: #a1a1aa; }
 .dlnote:empty { display: none; }
+.dlrow { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; }
+.dlrow [hidden] { display: none; }
 
   /* Touch, not width: a thumb needs 44px whatever the screen size, and
      these pages' nav and footer links were 19-20px tall. */
@@ -185,11 +187,13 @@ h1.page { font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
   <div class="stepn">1</div>
   <h2>Get Krate, once</h2>
   <p id="dlSize">Free and open source. This is the only setup there is: after it, every app anyone ever sends you is just a double-click.</p>
-  <p style="margin-top:14px"><a class="btn primary" id="dlBtn" href="https://github.com/incyashraj/krate/releases/latest">Download Krate</a></p>
+  <p class="dlrow"><a class="btn primary" id="dlBtn" href="https://github.com/incyashraj/krate/releases/latest">Download Krate</a><a class="btn" id="dlBtn2" href="https://github.com/incyashraj/krate/releases/latest" hidden>Download for Intel Macs</a></p>
   <p class="dlnote" id="dlNote"></p>
-  <p style="margin-top:12px; font-size:12.5px">Comfortable in a terminal instead?</p>
-  <div class="termbox"><code>curl -fsSL https://krate.tech/install.sh | sh</code><button data-copy="curl -fsSL https://krate.tech/install.sh | sh">Copy</button></div>
-  <div class="termbox"><code>irm https://krate.tech/install.ps1 | iex</code><button data-copy="irm https://krate.tech/install.ps1 | iex">Copy</button></div>
+  <div id="terminal">
+    <p style="margin-top:12px; font-size:12.5px">Comfortable in a terminal instead?</p>
+    <div class="termbox"><code>curl -fsSL https://krate.tech/install.sh | sh</code><button data-copy="curl -fsSL https://krate.tech/install.sh | sh">Copy</button></div>
+    <div class="termbox"><code>irm https://krate.tech/install.ps1 | iex</code><button data-copy="irm https://krate.tech/install.ps1 | iex">Copy</button></div>
+  </div>
 </div>
 <!-- The warning is going to happen. A receiver who was told about it clicks
      through; a receiver surprised by it closes the tab and tells the sender
@@ -201,8 +205,8 @@ h1.page { font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
 </div>
 <div class="card">
   <div class="stepn" id="stepOpen">2</div>
-  <h2>Double-click the file</h2>
-  <p>The same as a document or a photo. Nothing to unzip, nothing to install per app, no developer tools.</p>
+  <h2 id="openTitle">Double-click the file</h2>
+  <p id="openBody">The same as a document or a photo. Nothing to unzip, nothing to install per app, no developer tools.</p>
 </div>
 <div class="card">
   <div class="stepn" id="stepPerm">3</div>
@@ -260,19 +264,48 @@ document.querySelectorAll("[data-copy]").forEach(function (b) {
   var mobile = /Android/.test(ua) || /iPhone|iPad|iPod/.test(ua);
 
   var btn = document.getElementById("dlBtn");
+  var btn2 = document.getElementById("dlBtn2");
   var note = document.getElementById("dlNote");
   var LATEST = "https://github.com/incyashraj/krate/releases/latest";
 
   if (mobile) {
-    btn.textContent = "Krate runs on computers";
-    btn.href = LATEST;
-    note.textContent = "Open this page on your Mac, Windows or Linux computer "
-      + "and the file will open there. Phones are not supported yet.";
+    // Nothing on this page can happen on a phone: no download, no
+    // terminal, no double-click (K-790). Say so, and give them the two
+    // things that DO work here -- mail the link to themselves, or copy it.
+    var here = location.href;
+    btn.textContent = "Email me this link";
+    btn.href = "mailto:?subject=" + encodeURIComponent("Open this on your computer")
+      + "&body=" + encodeURIComponent("Krate runs on Mac, Windows and Linux. Open this on your computer:\n" + here);
+    btn2.textContent = "Copy the link";
+    btn2.href = here;
+    btn2.hidden = false;
+    btn2.addEventListener("click", function (ev) {
+      ev.preventDefault();
+      try { navigator.clipboard.writeText(here); } catch (e) {}
+      btn2.textContent = "Copied";
+      setTimeout(function () { btn2.textContent = "Copy the link"; }, 1500);
+    });
+    note.textContent = "Krate runs on Mac, Windows and Linux computers, not on phones yet. "
+      + "Open this page on your computer and the file will open there.";
+    document.getElementById("dlSize").textContent = "Free and open source. "
+      + "This is the only setup there is: after it, every app anyone ever sends you just opens.";
+    document.getElementById("terminal").hidden = true;
+    document.getElementById("openTitle").textContent = "Open the file on that computer";
+    document.getElementById("openBody").textContent = "Once Krate is there, the file opens "
+      + "like a document or a photo. Nothing to unzip, nothing to install per app.";
     return;
   }
   if (os === "mac") {
-    btn.textContent = "Download Krate for Mac";
-    note.textContent = "Works on both Apple Silicon and Intel Macs.";
+    // Two Macs, two files. This page used to link the Apple Silicon build
+    // and say it worked on Intel too (K-782); an Intel owner got a file
+    // that would not launch and no hint why. Both are offered now, with
+    // the one way to tell them apart that needs no jargon.
+    btn.textContent = "Download for Apple Silicon Macs";
+    btn2.textContent = "Download for Intel Macs";
+    btn2.hidden = false;
+    note.textContent = "Macs sold since 2020 are Apple Silicon (M1 and later). "
+      + "Not sure? Apple menu, About This Mac: a Chip line means Apple Silicon, "
+      + "a Processor line means Intel.";
   } else if (os === "win") {
     btn.textContent = "Download Krate for Windows";
   } else if (os === "linux") {
@@ -325,12 +358,19 @@ document.querySelectorAll("[data-copy]").forEach(function (b) {
       var pick = hits[0];
       // Both Mac and Windows ship per-architecture. navigator tells us almost
       // nothing trustworthy about Apple Silicon vs Intel, or about ARM
-      // Windows, so prefer the majority build and let the minority owner
-      // take the other from the releases page: arm64 on Mac (every one sold
-      // since 2020), x86_64 on Windows.
+      // Windows. On a Mac both files are offered side by side (the first
+      // button is Apple Silicon, every Mac sold since 2020); on Windows the
+      // x64 build is the one nearly everybody needs and the ARM owner
+      // takes theirs from the releases page.
       if (os === "mac") {
         var arm = hits.filter(function (a) { return /aarch64/.test(a.name); });
+        var intel = hits.filter(function (a) { return /x86_64/.test(a.name); });
         if (arm.length) pick = arm[0];
+        if (intel.length) {
+          btn2.href = intel[0].browser_download_url;
+        } else {
+          btn2.hidden = true;
+        }
       } else if (os === "win") {
         var x64 = hits.filter(function (a) { return /x86_64/.test(a.name); });
         if (x64.length) pick = x64[0];

@@ -120,6 +120,13 @@
       location.replace("/app/");
       return;
     }
+    // Make-in-the-browser. It reads the same krate_tok this page just
+    // stored, so it is signed in the moment it loads (K-777).
+    if (next === "make") {
+      doneWithNext();
+      location.replace("/make/");
+      return;
+    }
     // The publish page, which drives GitHub's device flow itself and so has
     // no Google path of its own. It reads the session token this page just
     // stored, the same one the gallery and the account page use.

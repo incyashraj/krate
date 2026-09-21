@@ -175,9 +175,12 @@ h1.page { font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
       // to it opened the Studio editor in the browser instead of the app's
       // page, which is what this comment is here to stop happening again.
       return '<a class="appc" style="animation-delay:' + (i * 0.05) + 's" href="/cloud/app/?id=' + esc(a.id) + '">'
-        + '<div class="shot"><img loading="lazy" src="' + esc(a.shot) + '" alt="" onerror="this.remove()" /></div>'
+        // The pictures say what they are (K-792): the shot is the app, the
+        // small round one is its author. An empty alt read as eighteen
+        // unnamed images to a screen reader.
+        + '<div class="shot"><img loading="lazy" src="' + esc(a.shot) + '" alt="' + esc(m.name) + '" onerror="this.remove()" /></div>'
         + '<div class="b"><div class="nm">' + esc(m.name) + '</div>'
-        + '<div class="by">' + (m.avatar_url ? '<img src="' + esc(m.avatar_url) + '" alt="" />' : '')
+        + '<div class="by">' + (m.avatar_url ? '<img src="' + esc(m.avatar_url) + '" alt="' + esc(m.author || m.author_login || "author") + '" />' : '')
         + esc(m.author || m.author_login || "") + '<span class="kb">' + Math.round((m.size || 0) / 1024) + ' KB</span></div>'
         + '</div></a>';
     }).join("");

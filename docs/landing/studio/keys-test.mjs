@@ -24,6 +24,20 @@ async function hub(path, opts = {}) {
 }
 const refuse = (m) => Promise.reject(new Error(m));
 
+// The signed-out half. Signed in, a key must never touch browser storage,
+// so these stubs THROW when there is a token; signed out, a key waits here
+// until the sign-in every build needs anyway, and account_status moves it
+// to the hub (K-781).
+let stash = null;
+const stashedKey = () => stash;
+const stashKey = (vendor, key) => {
+  if (bridge.token) throw new Error("a key was written to browser storage while signed in");
+  stash = { vendor, key };
+};
+const clearStash = () => { stash = null; };
+const API_VENDOR_LABEL = { anthropic: "Anthropic (Claude)", openai: "OpenAI" };
+const builderHealth = async () => ({ ok: true, authoring: "off", agent: "anthropic" });
+
 // The command bodies, lifted verbatim from the file.
 function grab(name) {
   const at = src.indexOf(`  async ${name}(`);
@@ -52,9 +66,10 @@ assert.equal(put.body.key, "sk-ant-secret");
 await COMMANDS.api_key_forget({ vendor: "anthropic" });
 assert.ok(calls.some((c) => c.path === "/keys/forget"), "forget reaches the hub");
 
-// Nothing is stored in the browser at any point.
-assert.ok(!src.slice(src.indexOf("async api_key_set")).slice(0, 400).includes("localStorage"),
-  "a key is never written to browser storage");
+// Nothing was stored in the browser at any point while signed in (the
+// stub above throws if it is), and the key itself never went anywhere but
+// the hub.
+assert.equal(stash, null, "signed in, a key is never written to browser storage");
 
 // Spend comes back with both pockets separated.
 const spend = await COMMANDS.spend_report();
@@ -62,9 +77,28 @@ assert.equal(spend.total.own, 1.28);
 assert.equal(spend.total.krate, 0.76);
 
 // Signed out, nothing is asked of the hub and nothing pretends to be zero
-// spend that was really unknown.
+// spend that was really unknown. The pane still gets its ONE row -- the
+// vendor the build service runs on -- so there is a field to paste into.
 bridge.token = null;
-assert.deepEqual(await COMMANDS.api_keys(), [], "signed out shows no keys");
+const before = calls.length;
+const out = await COMMANDS.api_keys();
+assert.equal(calls.length, before, "signed out asks the hub for nothing");
+assert.equal(out.length, 1, "signed out still shows the build service's vendor");
+assert.equal(out[0].vendor, "anthropic");
+assert.equal(out[0].set, false, "no key yet");
+// A key pasted signed out waits in this browser, is recognisable by its
+// tail and never shown, and can be removed again -- all without the hub.
+await COMMANDS.api_key_set({ vendor: "anthropic", key: "sk-ant-later-9z8y" });
+assert.deepEqual(stash, { vendor: "anthropic", key: "sk-ant-later-9z8y" }, "held until sign-in");
+const held = await COMMANDS.api_keys();
+assert.equal(held[0].set, true);
+assert.match(held[0].where_kept, /until you sign in, ends 9z8y$/);
+assert.ok(!JSON.stringify(held).includes("sk-"), "no key material reaches the page");
+await COMMANDS.api_key_forget({ vendor: "anthropic" });
+assert.equal(stash, null, "forgotten from the browser");
+assert.equal(calls.length, before, "none of that touched the hub");
+const signedOut = await COMMANDS.spend_report();
+assert.equal(signedOut.builds, 0, "signed out, spend is not asked of the hub");
 
 // The spending panel must land in the PANE, not the nav button that opens
 // it. Both carry data-ai="keys" and the button comes first in the document,
@@ -75,5 +109,5 @@ assert.match(paint.slice(0, 400), /querySelector\('\.ai-pane\[data-ai="keys"\]'\
   "paintSpend targets the pane, not the nav button that shares its attribute");
 
 console.log("ok  the spending panel targets the pane, not the nav button");
-console.log("ok  keys are stored server-side, never in the browser");
+console.log("ok  keys go to the hub when signed in, and wait in the browser only until then");
 console.log("ok  spend separates your key from Krate's");

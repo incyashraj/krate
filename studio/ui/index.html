@@ -7,6 +7,9 @@
        iPhone's status bar, so the app's title sat on top of the clock. -->
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Krate</title>
+  <!-- Declared, or the browser asks for /favicon.ico and gets a 404 on
+       every load. The same picture the sidebar's mark uses. -->
+  <link rel="icon" href="krate-logo.png" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -635,9 +638,9 @@
         </div>
         <div class="set-group">
           <h2>Privacy</h2>
-          <div class="set-row soon">
-            <div><div class="lab">Anonymous usage counting</div><div class="hint">A random id and which action happened. No prompts, no code, no file names.</div></div>
-            <div class="ctl"><span class="soon-tag">soon</span><button class="sw on" id="swUsage" data-soon aria-label="Usage counting" disabled></button></div>
+          <div class="set-row">
+            <div><div class="lab">Anonymous usage counting</div><div class="hint">Counted today: a view when a Krate page is opened, sent with the page path and nothing else, and which action happened. No account, no prompts, no code, no file names.</div></div>
+            <div class="ctl"><button class="sw on" id="swUsage" data-soon aria-label="Usage counting, always on" title="Always on today. Nothing personal is sent." disabled></button></div>
           </div>
         </div>
 
@@ -656,7 +659,7 @@
             <div class="prof-name" id="profName">Signed in</div>
             <div class="prof-mail" id="profMail"></div>
           </div>
-          <div class="prof-stat">
+          <div class="prof-stat" id="profStats">
             <div><div class="n" id="profMade">0</div><div class="l">apps made</div></div>
             <!-- "this computer", not "this Mac": the same string ships on
                  Windows and Linux, where it is simply wrong. -->
@@ -677,9 +680,17 @@
               <div><div class="lab">Where your apps are</div><div class="hint">Every .krate you have made lands here</div></div>
               <div class="ctl"><span class="set-val" id="profOutDir">…</span><button class="set-mini" id="profOutBtn">Open</button></div>
             </div>
-            <div class="set-row">
+            <div class="set-row" id="profSignOutRow">
               <div><div class="lab">Sign out</div><div class="hint">Your apps stay on this computer</div></div>
               <div class="ctl"><button class="set-mini" id="profSignOut">Sign out</button></div>
+            </div>
+            <!-- Shown instead of Sign out when there is no account. A
+                 signed-out profile used to say "Signed in" over a Sign out
+                 button and three zeros; now it says so and offers the way
+                 in. -->
+            <div class="set-row hidden" id="profSignInRow">
+              <div><div class="lab">Sign in</div><div class="hint">To publish a link, and to keep your work in your account</div></div>
+              <div class="ctl"><button class="set-mini" id="profSignIn">Sign in</button></div>
             </div>
           </div>
         </div>
@@ -874,14 +885,15 @@
 
   <div class="sheet-wrap hidden" id="planSheet">
     <div class="sheet">
-      <h2>Everything is free</h2>
-      <p class="sheet-sub" id="planSub">While we are building this, nothing
-      costs anything and nothing is metered. Every app you make is a file
-      that is yours forever, whatever we do later.</p>
+      <h2>What is free</h2>
+      <p class="sheet-sub" id="planSub">One app, and one change to it, on us.
+      Every app you make is a file that is yours forever, whatever we do
+      later.</p>
       <div class="plan-list">
         <div class="plan-row current" id="planRowFree">
-          <div><b>Everything</b><span>Make as many apps as you want. Publish
-          them. Send them to anyone.</span></div>
+          <div><b>One free app</b><span>Make one app and change it once.
+          Publish it. Send it to anyone. After that, Krate Studio on your own
+          machine is free and unlimited with your own AI.</span></div>
           <span class="plan-tag" id="planUsed">free</span>
         </div>
       </div>
@@ -923,12 +935,13 @@
   <div class="sheet-wrap hidden" id="limitSheet">
     <div class="sheet">
       <h2 id="limitTitle">Making is paused</h2>
-      <p class="sheet-sub" id="limitSub">Krate is free and unmetered while we
-      build it. If you are seeing this, something went wrong on our side
-      rather than with your account.</p>
+      <p class="sheet-sub" id="limitSub">Making apps in the browser is
+      switched off right now. This is on our side, not your account: your
+      one free app and one free change to it are untouched. Krate Studio on
+      your own machine is free and unlimited with your own AI.</p>
       <p class="sheet-sub hidden" id="limitSub2" style="margin-top:8px"></p>
       <div class="detail-actions" id="limitActions">
-        <button class="btn btn-primary" id="limitGo">Keep making</button>
+        <button class="btn btn-primary" id="limitGo">Try again</button>
       </div>
       <p class="detail-note" id="limitNote"></p>
     </div>
@@ -943,7 +956,7 @@
       <div id="supNewWrap">
         <input class="makeit-email" id="supSubject" placeholder="What is it about?" maxlength="140" />
         <textarea class="makeit-email" id="supBody" rows="3" placeholder="What happened, in your own words"></textarea>
-        <input class="makeit-email hidden" id="supEmail" type="email" placeholder="you@example.com (for the reply)" />
+        <input class="makeit-email hidden" id="supEmail" type="email" autocomplete="email" placeholder="Your email, so the reply can reach you (required)" />
       </div>
       <div class="detail-actions">
         <button class="btn btn-primary" id="supSend">Send to support</button>

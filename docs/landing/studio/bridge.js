@@ -38,6 +38,56 @@ const PENDING_KEY = "krate_pending_request";
 
 try { bridge.token = localStorage.getItem(TOKEN_KEY); } catch (e) {}
 
+/* Leave for the sign-in page, once.
+ *
+ * Every door that needs an account ends here: Make, Plan, a dead token
+ * found at boot. Three of them used to navigate on their own, so an
+ * expired session pressed Make and the page went to /app, /app, /app and
+ * then /login (K-793). One flag, one navigation; whatever was typed rides
+ * along in PENDING_KEY and is put back in the box on the way back.
+ *
+ * Returns a promise that never settles, because the page is leaving and
+ * a caller that carried on would paint a screen nobody will see. */
+function goSignIn(request) {
+  if (bridge.leaving) return new Promise(() => {});
+  bridge.leaving = true;
+  const typed = String(request || composerText() || "").trim();
+  try {
+    if (typed) localStorage.setItem(PENDING_KEY, typed);
+  } catch (e) {}
+  location.href = "/login/?next=studio";
+  return new Promise(() => {});
+}
+
+/* Whatever is in the Home box right now, so a sign-in hop never costs a
+ * sentence somebody was in the middle of. */
+function composerText() {
+  const box = document.getElementById("homePrompt");
+  return box ? box.value : "";
+}
+
+/* A request that never built is a draft, not an app.
+ *
+ * Studio saves the session the moment a request is typed, before anything
+ * is sent, so a signed-out Make left a row under Your apps ("Finish a tiny
+ * timer...") and under Recent for an app that was never started (K-797).
+ * The sentence itself is kept in PENDING_KEY and restored to the box after
+ * sign-in, which is where a draft belongs. Only sessions with no result
+ * are touched: an app that was made is never dropped from here. */
+function dropUnbuilt(request, sessionId) {
+  const want = String(request || "").trim();
+  const list = localSessions();
+  const keep = list.filter((s) => {
+    if (s.result) return true;
+    if (sessionId && s.id === sessionId) return false;
+    const typed = (s.messages || []).some(
+      (m) => m && m.who === "YOU" && String(m.body || "").trim() === want,
+    );
+    return !(want && typed);
+  });
+  if (keep.length !== list.length) saveLocalSessions(keep);
+}
+
 /* A browser has no traffic lights, so the drawer's two-row header is one
  * row of wasted space.
  *
@@ -211,6 +261,67 @@ async function builder(path, opts = {}) {
   const res = await fetch(BUILDER + path, { ...opts, headers });
   if (!res.ok) throw withStatus(new Error((await res.text().catch(() => "")) || res.statusText), res.status);
   return (res.headers.get("content-type") || "").includes("json") ? res.json() : res.text();
+}
+
+/* Is the build service switched on?
+ *
+ * Its /health answers `authoring: "on" | "off"` and names the agent it
+ * runs. Before this the provider row said "ready" from a constant, and a
+ * person read "ready", pressed Make, signed in, and met "Making is paused"
+ * (K-780). Read once every half minute rather than on every paint: a
+ * status is not a thing to poll on each click, and a stale half minute is
+ * still truer than a constant. */
+const HEALTH_TTL_MS = 30_000;
+async function builderHealth() {
+  const now = Date.now();
+  if (bridge.health && now - (bridge.healthAt || 0) < HEALTH_TTL_MS) return bridge.health;
+  try {
+    bridge.health = await builder("/health");
+  } catch (e) {
+    bridge.health = { ok: false };
+  }
+  bridge.healthAt = now;
+  return bridge.health;
+}
+
+/* The labels the hub uses for the two API vendors, for the row shown to
+ * somebody who is not signed in yet (the hub's own list needs a token). */
+const API_VENDOR_LABEL = { anthropic: "Anthropic (Claude)", openai: "OpenAI" };
+
+/* A key pasted before signing in.
+ *
+ * The pane's field must work whether or not there is an account yet, or
+ * the one-app wall's own advice ("add your own API key in Settings") is a
+ * door with nothing behind it (K-781). The hub holds keys for an account,
+ * so a key pasted signed out waits in this browser until the sign-in that
+ * every build needs anyway, then moves to the hub and leaves storage. It
+ * is never sent anywhere but the hub, and never while signed in. */
+const KEY_STASH = "krate_key_pending";
+function stashedKey() {
+  try {
+    const rec = JSON.parse(localStorage.getItem(KEY_STASH) || "null");
+    return rec && typeof rec.vendor === "string" && typeof rec.key === "string" && rec.key ? rec : null;
+  } catch (e) {
+    return null;
+  }
+}
+function stashKey(vendor, key) {
+  try { localStorage.setItem(KEY_STASH, JSON.stringify({ vendor, key })); } catch (e) {}
+}
+function clearStash() {
+  try { localStorage.removeItem(KEY_STASH); } catch (e) {}
+}
+/* Move a waiting key to the account it now belongs to. Called once the hub
+ * has confirmed the sign-in; a failure leaves the key where it was so the
+ * next visit tries again. */
+async function flushStash() {
+  const rec = stashedKey();
+  if (!rec || !bridge.token) return;
+  try {
+    await hub("/keys", { method: "POST", body: JSON.stringify({ vendor: rec.vendor, key: rec.key }) });
+    clearStash();
+    bridge.ownKey = true;
+  } catch (e) {}
 }
 
 /* The browser's half of the second key.
@@ -900,13 +1011,26 @@ const COMMANDS = {
     if (!bridge.token) return { signed_in: false };
     try {
       bridge.me = await hub("/me");
-      const u = bridge.me.user || {};
-      return { signed_in: true, login: u.login, name: u.name, avatar_url: u.avatar_url, email: u.email };
     } catch (e) {
-      bridge.token = null;
-      try { localStorage.removeItem(TOKEN_KEY); } catch (e2) {}
-      return { signed_in: false };
+      // Only a refusal means the session is over. A hub that did not
+      // answer at all used to sign the person out too, so a slow
+      // connection cost them their account for no reason.
+      if (e && (e.status === 401 || e.status === 403)) {
+        bridge.token = null;
+        try { localStorage.removeItem(TOKEN_KEY); } catch (e2) {}
+        // An expired session goes to sign in once, here, instead of
+        // running the whole Studio signed out and bouncing on the first
+        // Make (K-793). ?stay keeps the look-around door open.
+        const params = new URLSearchParams(location.search);
+        if (!params.has("stay")) goSignIn();
+        return { signed_in: false };
+      }
+      return { signed_in: false, offline: true };
     }
+    // A key pasted before signing in now has an account to live in.
+    await flushStash();
+    const u = bridge.me.user || {};
+    return { signed_in: true, login: u.login, name: u.name, avatar_url: u.avatar_url, email: u.email };
   },
 
   /* ---- your own AI ------------------------------------------------------
@@ -922,9 +1046,27 @@ const COMMANDS = {
    * already installed.
    */
   async api_keys() {
-    if (!bridge.token) return [];
+    if (!bridge.token) {
+      // No account yet, so no list from the hub -- but the pane still
+      // needs a field, or "Paste a key" is a heading over nothing (K-781).
+      // The row is the vendor the build service runs on.
+      const h = await builderHealth();
+      const vendor = API_VENDOR_LABEL[h && h.agent] ? h.agent : "anthropic";
+      const stash = stashedKey();
+      const kept = Boolean(stash && stash.vendor === vendor);
+      bridge.ownKey = kept;
+      return [{
+        vendor,
+        label: API_VENDOR_LABEL[vendor],
+        set: kept,
+        where_kept: kept
+          ? `kept in this browser until you sign in, ends ${stash.key.slice(-4)}`
+          : "",
+        from_env: false,
+      }];
+    }
     const out = await hub("/keys");
-    return (out.keys || []).map((k) => ({
+    const keys = (out.keys || []).map((k) => ({
       vendor: k.vendor,
       label: k.label,
       set: Boolean(k.set),
@@ -932,17 +1074,31 @@ const COMMANDS = {
       where_kept: k.set ? `saved to your account${k.tail ? `, ends ${k.tail}` : ""}` : "",
       from_env: false,
     }));
+    bridge.ownKey = keys.some((k) => k.set);
+    return keys;
   },
 
   async api_key_set({ vendor, key } = {}) {
-    if (!bridge.token) return refuse("Sign in first.");
+    if (!bridge.token) {
+      // Held here until the sign-in every build needs; account_status
+      // moves it to the hub then. Never sent anywhere else.
+      stashKey(vendor, key);
+      bridge.ownKey = true;
+      return "Kept in this browser. Sign in, and your builds here run on your key.";
+    }
     await hub("/keys", { method: "POST", body: JSON.stringify({ vendor, key }) });
+    bridge.ownKey = true;
     return "Saved. Your builds here now run on your key.";
   },
 
   async api_key_forget({ vendor } = {}) {
-    if (!bridge.token) return refuse("Sign in first.");
+    if (!bridge.token) {
+      clearStash();
+      bridge.ownKey = false;
+      return "Removed.";
+    }
     await hub("/keys/forget", { method: "POST", body: JSON.stringify({ vendor }) });
+    bridge.ownKey = false;
     return "Removed.";
   },
 
@@ -961,9 +1117,9 @@ const COMMANDS = {
 
   login_browser() {
     // The site's own sign-in, which knows how to come back here: /login
-    // remembers `next` and /login/done honours it.
-    location.href = "/login/?next=studio";
-    return Promise.resolve();
+    // remembers `next` and /login/done honours it. Whatever is in the box
+    // goes along and comes back.
+    return goSignIn();
   },
 
   account_login() {
@@ -1044,9 +1200,10 @@ const COMMANDS = {
     // to remember and retype it is the moment a person decides the
     // product is careless.
     if (!bridge.token) {
-      try { localStorage.setItem(PENDING_KEY, request || ""); } catch (e) {}
-      await COMMANDS.login_browser();
-      return new Promise(() => {});  // the page is navigating away
+      // The sentence travels as a draft, so the session Studio already
+      // saved for it must not stay behind as an app to "finish" (K-797).
+      dropUnbuilt(request, session);
+      return goSignIn(request);  // the page is navigating away
     }
     // The session is saved BEFORE the build starts, so the wall below has
     // something true to point at. Being told "your session is waiting in
@@ -1151,7 +1308,16 @@ const COMMANDS = {
    * them: the questions can then be about the file rather than only the
    * sentence. */
   async plan_request({ request, attachments } = {}) {
-    if (!bridge.token) return refuse("Sign in first.");
+    // Signed out, a plan is the same door as a build: keep the sentence
+    // and go to sign in. This used to refuse with "Sign in first.", which
+    // Studio's plan step reads as a broken planner -- so it said "I'll
+    // skip the questions this time and build right away", tried to build,
+    // and was told it was in Plan mode. Four lines, nothing done, and no
+    // sign-in ever offered (K-776).
+    if (!bridge.token) {
+      dropUnbuilt(request);
+      return goSignIn(request);  // the page is navigating away
+    }
     const overPlan = tooLong(request, "request");
     if (overPlan) return overPlan;
     // A refusal from the plan step must arrive as a refusal, not as a raw
@@ -1404,7 +1570,21 @@ const COMMANDS = {
    */
 
   async agents() {
-    // One AI, ours, always ready. The chip says so and the picker is moot.
+    // One AI, ours. Whether it is READY is the build service's to say,
+    // not a constant here (K-780): "paused" when authoring is switched off
+    // and the person has no key of their own, "not answering" when the
+    // service cannot be reached, "ready" otherwise. Studio paints the
+    // `paused` state as a warning with these words and no fix button,
+    // because there is nothing a person can do about it from here.
+    const h = await builderHealth();
+    const paused = {
+      name: "krate", label: "Krate AI", state: "paused", remedy: null,
+      detail: "paused right now: making apps in the browser is switched off, so nothing can be made here until it is back on",
+    };
+    if (!h || !h.ok) {
+      return [{ ...paused, detail: "not answering right now. Try again in a minute." }];
+    }
+    if (h.authoring === "off" && !bridge.ownKey) return [paused];
     return [{ name: "krate", label: "Krate AI", state: "working", detail: "", remedy: null }];
   },
   async refresh_agents() { return COMMANDS.agents(); },
@@ -1709,11 +1889,18 @@ async function paintSpend() {
   }).join("");
   const t = report.total || { own: 0, krate: 0 };
   const m = report.month || { own: 0, krate: 0 };
+  // Nothing spent, nothing to show. Four "$0.00" cards and "Krate paid for
+  // your first app" were shown to somebody who had made nothing (K-781).
+  const spent = (Number(report.builds) || 0) > 0 || t.own > 0 || t.krate > 0 || rows.length > 0;
+  if (!spent) {
+    box.remove();
+    return;
+  }
   box.innerHTML = `
     <h3>What you have spent</h3>
     <p class="set-sub">Priced from the model's own token counts, per build.
-    Krate paid for your first app; anything on your key is billed by your
-    provider, not by us.</p>
+    ${t.krate > 0 ? "Krate paid for your first app. " : ""}Anything on your key
+    is billed by your provider, not by us.</p>
     <div class="web-spend-cards">
       <div class="web-spend-card"><div class="n">${money(t.own)}</div><div class="k">your key, all time</div></div>
       <div class="web-spend-card"><div class="n">${money(m.own)}</div><div class="k">your key, 30 days</div></div>

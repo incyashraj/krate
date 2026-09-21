@@ -707,6 +707,41 @@ picture source { display: none; }
 .ctaSec.in .ctaActs { opacity: 1; filter: blur(0); transform: none;
   transition: opacity 0.9s ease 0.55s, filter 0.9s ease 0.55s, transform 0.9s cubic-bezier(0.2,0.8,0.2,1.2) 0.55s; }
 
+/* --------------------------------------------------- every download */
+/* The brand bar is fixed over the top of the page, so a link that lands
+   here needs the heading pushed below it, not under it. */
+.dlAll { width: 100%; max-width: 1024px; margin-top: 8px; scroll-margin-top: 96px; }
+.dlAll h2 {
+  font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
+  font-size: clamp(22px, 3vw, 30px); color: #fff;
+}
+.dlAllLead { margin-top: 10px; font-size: 13.5px; line-height: 1.7; color: #a1a1aa; max-width: 620px; }
+.dlAllLead b { color: #d4d4d8; font-weight: 500; }
+.dlAll .dlGroup {
+  margin-top: 22px; padding: 20px 22px; border-radius: 18px;
+  background: rgba(24, 24, 27, 0.5); box-shadow: 0 0 0 1px rgba(255,255,255,0.08);
+}
+.dlAll h3 { font-size: 15px; font-weight: 500; color: #fff; }
+.dlAll .dlGroup > p { margin-top: 4px; font-size: 13px; color: #a1a1aa; }
+.dlAll .dlGroup > p a { color: #d4d4d8; text-decoration: underline; }
+.dlAll ul { list-style: none; margin-top: 12px; display: grid; gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+.dlAll li {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 14px; border-radius: 12px; font-size: 13.5px;
+  background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+  min-height: 44px;
+}
+.dlAll li a { color: #f4f4f5; flex: 1; }
+.dlAll li a:hover { color: var(--purple); }
+.dlAll .dlSize { font-size: 12px; color: #71717a; white-space: nowrap; }
+.dlAll .dlSize:empty { display: none; }
+.dlAllFoot { margin-top: 18px; font-size: 12.5px; line-height: 1.8; color: #71717a; }
+.dlAllFoot code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #d4d4d8;
+  background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 6px; }
+.dlAllFoot a { color: #a1a1aa; text-decoration: underline; }
+.dlAllFoot a:hover { color: #fff; }
+
 /* -------------------------------------------------------------- footer */
 .foot {
   width: 100%; max-width: 1024px; margin-top: 64px;
@@ -1443,7 +1478,7 @@ picture source { display: none; }
                 <a data-dl="krate-studio|windows-x64-setup|exe" href="https://github.com/incyashraj/krate/releases/latest"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.55 10.5 4.5v7H3v-5.95zM3 18.45V12.5h7.5v7L3 18.45zM11.5 4.36 21 3v8.5h-9.5v-7.14zM21 12.5V21l-9.5-1.36V12.5H21z"/></svg>Windows -- x64</a>
                 <a data-dl="krate-studio|linux-x86_64|AppImage" href="https://github.com/incyashraj/krate/releases/latest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 15c.5-2.5.5-4.5 2-6m6 6c-.5-2.5-.5-4.5-2-6"/></svg>Linux -- x86_64</a>
                 <div class="sep"></div>
-                <a href="/studio/#get">All downloads &rarr;</a>
+                <a href="#downloads">All downloads &rarr;</a>
               </div>
             </div>
         </div>
@@ -1711,7 +1746,7 @@ picture source { display: none; }
               <a data-dl="krate-studio|windows-x64-setup|exe" href="https://github.com/incyashraj/krate/releases/latest"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.55 10.5 4.5v7H3v-5.95zM3 18.45V12.5h7.5v7L3 18.45zM11.5 4.36 21 3v8.5h-9.5v-7.14zM21 12.5V21l-9.5-1.36V12.5H21z"/></svg>Windows -- x64</a>
               <a data-dl="krate-studio|linux-x86_64|AppImage" href="https://github.com/incyashraj/krate/releases/latest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 15c.5-2.5.5-4.5 2-6m6 6c-.5-2.5-.5-4.5-2-6"/></svg>Linux -- x86_64</a>
               <div class="sep"></div>
-              <a href="/studio/#get">All downloads &rarr;</a>
+              <a href="#downloads">All downloads &rarr;</a>
             </div>
           </div>
           <a class="btn btn-ghost" href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">
@@ -1722,6 +1757,59 @@ picture source { display: none; }
       </div>
     </div>
   </div>
+  <!-- Every file a release ships, in one place (K-783). The download menus
+       above link here, and /studio/ links to this section, so nothing on
+       the site sends a person round in a circle any more: "All downloads"
+       used to point at an anchor that did not exist. The rows are written
+       out so the list stands without JavaScript; the script below fills in
+       the exact file and its size from the latest release, hides a row
+       that release did not ship, and adds a row for anything it shipped
+       that is not named here. -->
+  <section class="dlAll" id="downloads" aria-labelledby="dlAllH">
+    <h2 id="dlAllH">All downloads</h2>
+    <p class="dlAllLead">Every file in the latest release, for every computer it runs on.
+    Not sure which Mac you have? Apple menu, About This Mac: a <b>Chip</b> line
+    means Apple Silicon, a <b>Processor</b> line means Intel.</p>
+    <div class="dlGroup">
+      <h3>Krate Studio</h3>
+      <p>Make apps with your AI, open apps, share them. The whole thing.</p>
+      <ul>
+        <li data-asset="^krate-studio-.*-universal\.dmg$"><a href="https://github.com/incyashraj/krate/releases/latest">macOS, Apple Silicon and Intel</a><span class="dlSize"></span></li>
+        <li data-asset="^krate-studio-.*-windows-x64-setup\.exe$"><a href="https://github.com/incyashraj/krate/releases/latest">Windows, x64 installer</a><span class="dlSize"></span></li>
+        <li data-asset="^krate-studio-.*-linux-x86_64\.AppImage$"><a href="https://github.com/incyashraj/krate/releases/latest">Linux, x86_64 AppImage</a><span class="dlSize"></span></li>
+      </ul>
+    </div>
+    <div class="dlGroup">
+      <h3>Krate Player</h3>
+      <p>Only opens .krate files somebody sent you. Smaller. <a href="/open/">How opening works.</a></p>
+      <ul>
+        <li data-asset="^krate-app-.*-aarch64-apple-darwin\.zip$"><a href="https://github.com/incyashraj/krate/releases/latest">macOS, Apple Silicon</a><span class="dlSize"></span></li>
+        <li data-asset="^krate-app-.*-x86_64-apple-darwin\.zip$"><a href="https://github.com/incyashraj/krate/releases/latest">macOS, Intel</a><span class="dlSize"></span></li>
+        <li data-asset="^krate-player-.*-x86_64-pc-windows-msvc-setup\.exe$"><a href="https://github.com/incyashraj/krate/releases/latest">Windows, x64 installer</a><span class="dlSize"></span></li>
+        <li data-asset="^krate-player-.*-aarch64-pc-windows-msvc-setup\.exe$"><a href="https://github.com/incyashraj/krate/releases/latest">Windows, ARM installer</a><span class="dlSize"></span></li>
+      </ul>
+    </div>
+    <div class="dlGroup">
+      <h3>Command line</h3>
+      <p>The <code>krate</code> tool on its own, for developers and scripts.</p>
+      <ul>
+        <li data-asset="^krate-\d[^-]*-aarch64-apple-darwin\.tar\.gz$"><a href="https://github.com/incyashraj/krate/releases/latest">macOS, Apple Silicon</a><span class="dlSize"></span></li>
+        <li data-asset="^krate-\d[^-]*-x86_64-apple-darwin\.tar\.gz$"><a href="https://github.com/incyashraj/krate/releases/latest">macOS, Intel</a><span class="dlSize"></span></li>
+        <li data-asset="^krate-\d[^-]*-x86_64-pc-windows-msvc\.zip$"><a href="https://github.com/incyashraj/krate/releases/latest">Windows, x64</a><span class="dlSize"></span></li>
+        <li data-asset="^krate-\d[^-]*-aarch64-pc-windows-msvc\.zip$"><a href="https://github.com/incyashraj/krate/releases/latest">Windows, ARM</a><span class="dlSize"></span></li>
+        <li data-asset="^krate-\d[^-]*-x86_64-unknown-linux-gnu\.tar\.gz$"><a href="https://github.com/incyashraj/krate/releases/latest">Linux, x86_64</a><span class="dlSize"></span></li>
+        <li data-asset="^krate-\d[^-]*-aarch64-unknown-linux-gnu\.tar\.gz$"><a href="https://github.com/incyashraj/krate/releases/latest">Linux, arm64</a><span class="dlSize"></span></li>
+        <li data-asset="^SHA256SUMS$"><a href="https://github.com/incyashraj/krate/releases/latest">Checksums (SHA256SUMS)</a><span class="dlSize"></span></li>
+      </ul>
+    </div>
+    <div class="dlGroup" id="dlExtra" hidden>
+      <h3>Also in this release</h3>
+      <ul></ul>
+    </div>
+    <p class="dlAllFoot">Or in a terminal: <code>curl -fsSL https://krate.tech/install.sh | sh</code> on Mac and Linux,
+    <code>irm https://krate.tech/install.ps1 | iex</code> on Windows.
+    <a href="https://github.com/incyashraj/krate/releases" target="_blank" rel="noopener">Every release, on GitHub &rarr;</a></p>
+  </section>
   <footer class="foot">
     <div class="who">
       <picture><source srcset="/krate-logo.webp" type="image/webp" /><img src="/krate-logo.png" width="415" height="410" alt="" /></picture>
@@ -1961,7 +2049,10 @@ var cardHTML = STATS.map(function (s) {
   return '<div class="stat"><div class="head"><span class="ic">' + IC[s[0]] +
     '</span><span class="val">' + s[1] + '</span></div><p class="note">' + s[2] + '</p></div>';
 }).join("");
-trackEl.innerHTML = cardHTML + cardHTML;
+// The second copy only exists so the band can loop without a gap. A
+// screen reader was given both -- fourteen cards for seven facts -- so
+// the duplicate is hidden from it (K-791).
+trackEl.innerHTML = cardHTML + cardHTML.replace(/<div class="stat">/g, '<div class="stat" aria-hidden="true">');
 
 /* The same seven facts, as a list, for the phone section above. Built
    from STATS rather than written out again in the markup: two copies of
@@ -2004,14 +2095,43 @@ var OSMETA = {
     icon: '<g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 15c.5-2.5.5-4.5 2-6m6 6c-.5-2.5-.5-4.5-2-6"/></g>' }
 };
 var meta = OSMETA[os];
+// A phone cannot run any of this. The sniff above mapped an iPhone to
+// "Download for macOS" and Android to "Download for Linux" (K-790), so a
+// person tapped, got a file the phone cannot open, and never learned why.
+// Say what is true and give them the two things a phone CAN do: mail the
+// link to themselves, or copy it for later.
+var phone = /Android|iPhone|iPad|iPod/.test(ua);
+var SITE = "https://krate.tech/";
+var MAIL_ICON = '<g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m4 7 8 6 8-6"/></g>';
+var mainHref = "https://github.com/incyashraj/krate/releases/latest";
+function goMain() { location.href = mainHref; }
+if (phone) {
+  meta = { label: "Email me the link", dl: "", icon: MAIL_ICON };
+  mainHref = "mailto:?subject=" + encodeURIComponent("Krate")
+    + "&body=" + encodeURIComponent("Krate runs on Mac, Windows and Linux. Open this on your computer:\n" + SITE);
+  document.querySelectorAll(".dlLine > span").forEach(function (s) {
+    s.innerHTML = 'Krate runs on Mac, Windows and Linux computers, not on phones. <a href="/studio/">Meet Studio</a>';
+  });
+  document.querySelectorAll(".dlmenu").forEach(function (menu) {
+    menu.querySelectorAll("[data-dl]").forEach(function (a) { a.remove(); });
+    var copy = document.createElement("a");
+    copy.href = SITE;
+    copy.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>Copy the link';
+    copy.addEventListener("click", function (ev) {
+      ev.preventDefault();
+      try { navigator.clipboard.writeText(SITE); } catch (e) {}
+      copy.lastChild.textContent = "Copied";
+      setTimeout(function () { copy.lastChild.textContent = "Copy the link"; }, 1500);
+    });
+    menu.insertBefore(copy, menu.firstChild);
+  });
+}
 $("dlLabel").textContent = meta.label;
 document.querySelectorAll(".dl2label").forEach(function (e) { e.textContent = meta.label; });
 if (meta.icon) {
   $("dlOsIcon").innerHTML = meta.icon;
   document.querySelectorAll(".dl2icon").forEach(function (e) { e.innerHTML = meta.icon; });
 }
-var mainHref = "https://github.com/incyashraj/krate/releases/latest";
-function goMain() { location.href = mainHref; }
 $("dlMain").addEventListener("click", goMain);
 document.querySelectorAll(".dl2main").forEach(function (b) { b.addEventListener("click", goMain); });
 document.querySelectorAll(".split .more").forEach(function (more) {
@@ -2046,8 +2166,51 @@ fetch("https://api.github.com/repos/incyashraj/krate/releases/latest")
       var h = assetHref(a.dataset.dl);
       if (h) a.href = h;
     });
-    var mh = assetHref(meta.dl);
+    var mh = meta.dl ? assetHref(meta.dl) : null;
     if (mh) mainHref = mh;
+
+    // The all-downloads section: every asset the release shipped gets a
+    // row. Named rows take their file and size; a named row the release
+    // did not ship is hidden rather than left pointing at the releases
+    // page as if it were a download; anything shipped that no row names
+    // is listed by its file name, so the list is complete by construction.
+    function mb(bytes) {
+      var m = bytes / (1024 * 1024);
+      return m < 1 ? Math.round(bytes / 1024) + " KB" : (m < 10 ? m.toFixed(1) : Math.round(m)) + " MB";
+    }
+    var taken = {};
+    document.querySelectorAll("#downloads [data-asset]").forEach(function (li) {
+      var re = new RegExp(li.dataset.asset);
+      var hit = null;
+      rel.assets.forEach(function (a) { if (!hit && re.test(a.name)) hit = a; });
+      if (!hit) { li.hidden = true; return; }
+      taken[hit.name] = true;
+      var a = li.querySelector("a");
+      a.href = hit.browser_download_url;
+      a.title = hit.name;
+      li.querySelector(".dlSize").textContent = mb(hit.size);
+    });
+    var extra = rel.assets.filter(function (a) { return !taken[a.name]; });
+    if (extra.length) {
+      var box = $("dlExtra");
+      var ul = box.querySelector("ul");
+      extra.forEach(function (a) {
+        var li = document.createElement("li");
+        var link = document.createElement("a");
+        link.href = a.browser_download_url;
+        link.textContent = a.name;
+        var size = document.createElement("span");
+        size.className = "dlSize";
+        size.textContent = mb(a.size);
+        li.appendChild(link);
+        li.appendChild(size);
+        ul.appendChild(li);
+      });
+      box.hidden = false;
+    }
+    var vtag = document.createElement("span");
+    vtag.textContent = " These are from " + rel.tag_name + ".";
+    document.querySelector(".dlAllLead").appendChild(vtag);
   }).catch(function () {});
 
 /* -------------------------------------------------- section reveals */

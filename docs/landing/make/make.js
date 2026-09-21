@@ -107,8 +107,34 @@ async function builder(path, opts = {}) {
   return type.includes("json") ? res.json() : res.text();
 }
 
+/* One session for the whole site. The Studio, the account page and the
+ * publish page all keep it at "krate_tok"; this page kept its own key,
+ * "krate-token", so a person signed in on the Studio was asked to sign in
+ * again here, and vice versa (K-777). Read the old key once, move it over,
+ * and delete it, so nothing is ever read from two places again. */
+const TOKEN_KEY = "krate_tok";
+const OLD_TOKEN_KEY = "krate-token";
+
 function loadToken() {
-  try { state.token = localStorage.getItem("krate-token"); } catch (e) {}
+  try {
+    state.token = localStorage.getItem(TOKEN_KEY);
+    const old = localStorage.getItem(OLD_TOKEN_KEY);
+    if (old) {
+      if (!state.token) {
+        localStorage.setItem(TOKEN_KEY, old);
+        state.token = old;
+      }
+      localStorage.removeItem(OLD_TOKEN_KEY);
+    }
+  } catch (e) {}
+}
+
+function forgetToken() {
+  state.token = null;
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(OLD_TOKEN_KEY);
+  } catch (e) {}
 }
 
 async function loadMe() {
@@ -118,8 +144,7 @@ async function loadMe() {
   } catch (e) {
     // An expired token is not an error worth showing: the page works
     // signed out, and the wall asks for a sign-in when it needs one.
-    state.token = null;
-    try { localStorage.removeItem("krate-token"); } catch (e2) {}
+    forgetToken();
   }
 }
 
@@ -360,25 +385,68 @@ function sheet(html) {
   return wrap;
 }
 
+/* The same sign-in as /login: the same three doors, the same words, so a
+ * person who saw one is not surprised by the other (K-789). The footnote
+ * is true of every door it names: GitHub and Google ask for the password
+ * themselves, and the email link has no password at all. */
 function askToSignIn() {
   const wrap = sheet(`
-    <h3>One quick sign-in</h3>
-    <p>So your apps are yours, and so your first one is on us.</p>
+    <h3>Sign in to Krate</h3>
+    <p>One account for the apps you make and publish.</p>
     <div class="rows">
       <button class="row" id="signGh"><b>Continue with GitHub</b></button>
       <button class="row" id="signGoogle"><b>Continue with Google</b></button>
     </div>
-    <p class="note">Krate never sees your password.</p>
+    <div class="or"><span>or</span></div>
+    <form class="email" id="signEmail">
+      <input type="email" id="signEmailInput" placeholder="you@example.com" required autocomplete="email" />
+      <button class="row" type="submit" id="signEmailGo"><b>Continue</b></button>
+    </form>
+    <p class="note hidden" id="signEmailNote"></p>
+    <p class="note">Krate never sees your password. GitHub or Google ask you
+    directly, and the email link needs no password at all.</p>
     <button class="close" data-close>Not now</button>`);
   wrap.querySelector("#signGh").onclick = () => signIn("/login/start");
   wrap.querySelector("#signGoogle").onclick = () => signIn("/login/google/start");
+  wrap.querySelector("#signEmail").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const go = wrap.querySelector("#signEmailGo");
+    const note = wrap.querySelector("#signEmailNote");
+    const email = wrap.querySelector("#signEmailInput").value.trim();
+    go.disabled = true;
+    rememberWhereToComeBack();
+    fetch(`${HUB}/login/email`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, from: "web" }),
+    })
+      .then((r) => r.text().then((t) => ({ ok: r.ok, t })))
+      .then((res) => {
+        note.textContent = res.ok
+          ? "Check your inbox: the sign-in link works once and expires in 15 minutes."
+          : res.t;
+        note.classList.remove("hidden");
+      })
+      .catch(() => {
+        note.textContent = "The hub could not be reached. Check your connection.";
+        note.classList.remove("hidden");
+      })
+      .finally(() => { go.disabled = false; });
+  });
   wrap.querySelector("[data-close]").onclick = () => wrap.remove();
+}
+
+/* Every sign-in ends at /login/done, which stores the session for the
+ * whole site and then reads this note to know where to go. The hub itself
+ * never looks at a return address, so this is the only way back here. */
+function rememberWhereToComeBack() {
+  try { localStorage.setItem("krate_next", "make"); } catch (e) {}
 }
 
 function signIn(path) {
   // The browser hand-off, not a code to retype: they come back signed in.
-  const back = encodeURIComponent(location.origin + location.pathname);
-  location.href = `${HUB}${path}?return=${back}`;
+  rememberWhereToComeBack();
+  location.href = `${HUB}${path}`;
 }
 
 /* We are switched off, and that is OUR fault, not the person's.
@@ -474,7 +542,7 @@ async function openAccount() {
     } catch (err) { alert(String(err.message || err)); }
   };
   wrap.querySelector("#signOut").onclick = () => {
-    try { localStorage.removeItem("krate-token"); } catch (e) {}
+    forgetToken();
     location.reload();
   };
 }
@@ -545,7 +613,7 @@ function boot() {
   const handed = params.get("token");
   if (handed) {
     state.token = handed;
-    try { localStorage.setItem("krate-token", handed); } catch (e) {}
+    try { localStorage.setItem(TOKEN_KEY, handed); } catch (e) {}
     history.replaceState({}, "", location.pathname);
   }
 
