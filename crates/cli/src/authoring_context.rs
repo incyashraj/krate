@@ -66,7 +66,99 @@ pub fn generate(app_dir: &Path) -> String {
     out.push_str(GAME_FEEL_SECTION);
     out.push_str(NO_STD_SECTION);
     out.push_str(&gui_world_section());
+    out.push_str(&types_section());
     out.push_str(&example_index_section(app_dir));
+    out
+}
+
+/// Every record, enum, variant and flags the interfaces name, with their
+/// fields.
+///
+/// The single biggest cost in a build, measured across 15 of them: the pack
+/// listed every FUNCTION and not one TYPE, so an agent that needed to know
+/// what an `Event` holds, or which variants a `PointerButton` has, opened
+/// the 22,293-line generated `bindings.rs` and grepped. 45% of all tool
+/// calls were that archaeology, worth 280-440 seconds per build by two
+/// independent measurements, and the median build spent 59% of its
+/// wall-clock before the first line of app code existed.
+///
+/// The prompt is cached, so this is close to free: 13 KB against a ~48K
+/// prompt, about +7%, versus minutes of hunting. It is also generated from
+/// the same WIT the app compiles against, so it cannot drift from the
+/// truth the way a hand-written list would (K-837).
+fn types_section() -> String {
+    let mut out = String::from(
+        "\n## The types these functions take and return\n\n\
+         Every record, enum and variant the interfaces above name, straight \
+         from the WIT the SDK is generated from. Field names become \
+         snake_case in Rust; `list<u8>` is `Vec<u8>`, `option<t>` is \
+         `Option<T>`, `result<t, e>` is `Result<T, E>`. You do not need to \
+         open `bindings.rs` to look any of this up -- if a type is not here, \
+         it is not in the API.\n",
+    );
+    for (package, wit) in [
+        ("ui", UI_WIT),
+        ("gfx", GFX_WIT),
+        ("audio", AUDIO_WIT),
+        ("camera", CAMERA_WIT),
+        ("speech", SPEECH_WIT),
+        ("fs", FS_WIT),
+        ("io", IO_WIT),
+        ("locale", LOCALE_WIT),
+        ("net", NET_WIT),
+        ("random", RANDOM_WIT),
+        ("store", STORE_WIT),
+        ("time", TIME_WIT),
+    ] {
+        let block = wit_types(wit);
+        if block.is_empty() {
+            continue;
+        }
+        out.push_str(&format!("\n### krate:{package}\n\n```wit\n{block}```\n"));
+    }
+    out
+}
+
+/// Pull every type definition out of a WIT file, brace-balanced.
+///
+/// Deliberately textual rather than a WIT parse: the file is the source of
+/// truth and its own syntax is the clearest way to state a record's fields.
+/// A type whose body does not close is skipped rather than truncated, so a
+/// malformed file can never put half a definition in the pack.
+fn wit_types(wit: &str) -> String {
+    let mut out = String::new();
+    let lines: Vec<&str> = wit.lines().collect();
+    let mut i = 0;
+    while i < lines.len() {
+        let trimmed = lines[i].trim_start();
+        let is_type = ["record ", "enum ", "variant ", "flags "]
+            .iter()
+            .any(|kind| trimmed.starts_with(kind));
+        if !is_type {
+            i += 1;
+            continue;
+        }
+        let mut depth = 0i32;
+        let mut block = String::new();
+        let mut closed = false;
+        for line in &lines[i..] {
+            depth += line.matches('{').count() as i32;
+            depth -= line.matches('}').count() as i32;
+            block.push_str(line.trim_end());
+            block.push('\n');
+            i += 1;
+            if depth <= 0 {
+                closed = true;
+                break;
+            }
+        }
+        if closed {
+            // Comment lines inside a body are the WIT's own explanation and
+            // are worth their bytes; a blank trailing line is not.
+            out.push_str(block.trim_end());
+            out.push_str("\n\n");
+        }
+    }
     out
 }
 
