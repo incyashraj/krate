@@ -59,10 +59,31 @@ assert.equal(keys[1].set, false);
 assert.ok(!JSON.stringify(keys).includes("sk-"), "no key material reaches the page");
 
 // Saving and forgetting go to the hub, not to the browser.
-await COMMANDS.api_key_set({ vendor: "anthropic", key: "sk-ant-secret" });
+await COMMANDS.api_key_set({ vendor: "anthropic", key: "sk-ant-secret-key-material-0001" });
 const put = calls.find((c) => c.path === "/keys" && c.method === "POST");
 assert.ok(put, "the key is sent to the hub");
-assert.equal(put.body.key, "sk-ant-secret");
+assert.equal(put.body.key, "sk-ant-secret-key-material-0001");
+
+// A key must LOOK like one before it is kept. Any string at all was
+// accepted -- "not-a-real-key-123" was stored and reported as saved -- and
+// the person found out when a build failed on the paid path minutes later
+// (K-812). Shape only: the vendor is the judge of whether a key is real.
+for (const [bad, why] of [
+  ["", "empty"],
+  ["not-a-real-key-123", "wrong prefix"],
+  ["sk-ant-x", "too short"],
+]) {
+  await assert.rejects(
+    () => COMMANDS.api_key_set({ vendor: "anthropic", key: bad }),
+    "a " + why + " key is refused before it is kept anywhere",
+  );
+}
+assert.ok(
+  !calls.some((c) => c.path === "/keys" && c.method === "POST"
+    && String((c.body || {}).key || "").startsWith("not-a-real")),
+  "a refused key never reaches the hub",
+);
+
 await COMMANDS.api_key_forget({ vendor: "anthropic" });
 assert.ok(calls.some((c) => c.path === "/keys/forget"), "forget reaches the hub");
 
@@ -88,11 +109,11 @@ assert.equal(out[0].vendor, "anthropic");
 assert.equal(out[0].set, false, "no key yet");
 // A key pasted signed out waits in this browser, is recognisable by its
 // tail and never shown, and can be removed again -- all without the hub.
-await COMMANDS.api_key_set({ vendor: "anthropic", key: "sk-ant-later-9z8y" });
-assert.deepEqual(stash, { vendor: "anthropic", key: "sk-ant-later-9z8y" }, "held until sign-in");
+await COMMANDS.api_key_set({ vendor: "anthropic", key: "sk-ant-later-9z8y-material-0002" });
+assert.deepEqual(stash, { vendor: "anthropic", key: "sk-ant-later-9z8y-material-0002" }, "held until sign-in");
 const held = await COMMANDS.api_keys();
 assert.equal(held[0].set, true);
-assert.match(held[0].where_kept, /until you sign in, ends 9z8y$/);
+assert.match(held[0].where_kept, /until you sign in, ends 0002$/);
 assert.ok(!JSON.stringify(held).includes("sk-"), "no key material reaches the page");
 await COMMANDS.api_key_forget({ vendor: "anthropic" });
 assert.equal(stash, null, "forgotten from the browser");

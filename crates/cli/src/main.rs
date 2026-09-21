@@ -9442,8 +9442,27 @@ fn seed_agent_home(real_home: &Path, agent_home: &Path) -> bool {
     // all. Two things keep it honest: this only happens when there is no
     // file to link, and the file is refreshed from the keychain on every
     // seed, so the agent's copy cannot drift far behind the real one.
+    //
+    // EVERY seed, not only when the file is missing.
+    //
+    // This was `if !dest.exists()`, which contradicted the sentence above
+    // it: the copy was written once and then never touched again. Claude
+    // Code rotates its OAuth token every few hours and saves the new one to
+    // the KEYCHAIN, so the copy went stale within a day and the agent read
+    // a dead token from then on -- "is installed but not signed in", while
+    // `claude` in the founder's own terminal worked perfectly. Signing in
+    // again did not help: it refreshed the keychain, which this code was no
+    // longer reading. Measured on his Mac 2026-09-21: the sandbox keychain
+    // held no credential at all, the copied file was the only store, and it
+    // was hours old. That is the "it has been ages since Krate saw Claude
+    // ready, and I log in five times a day" report (K-809).
+    //
+    // A symlink is still preferred and still wins: this runs only when
+    // `dest` is not one, so a machine whose Claude keeps a real
+    // ~/.claude/.credentials.json is untouched and keeps the single-token
+    // guarantee K-206 asked for.
     #[cfg(target_os = "macos")]
-    if !dest.exists() {
+    if !dest.is_symlink() {
         if let Ok(out) = ProcessCommand::new("/usr/bin/security")
             .args([
                 "find-generic-password",

@@ -2422,7 +2422,11 @@ async function make(request, opts) {
   renderAttachments();
   // A resume or an amend already spoke in the person's own words; echoing
   // the stitched request would print machinery at them.
-  if (!(opts && opts.silent)) say("YOU", request, files);
+  // `spokenAs` is what the PERSON typed, when the brief sent to the agent
+  // carries more than that. A mid-build addition sends the original
+  // request plus the change (K-816); the transcript must still show the
+  // sentence they wrote, not our assembled version of it.
+  if (!(opts && opts.silent)) say("YOU", (opts && opts.spokenAs) || request, files);
   persist();
   $("prompt").value = "";
 
@@ -2780,6 +2784,18 @@ function setIdleNote(text) {
 
 function finishPlanningAndBuild() {
   const p = state.planning;
+  // The question has already been dealt with.
+  //
+  // The "Build it" button stays in the transcript after the question is
+  // answered -- it has to, because reopening a session puts it back -- so
+  // a person who typed their answer and then noticed the old button could
+  // still press it. `state.planning` is null by then and this read
+  // `p.request` straight off it: a TypeError, caught by nothing, and the
+  // button did nothing at all. Silence is not an answer either (K-818).
+  if (!p) {
+    say("KRATE", "That question is already answered. I am building what you asked for.");
+    return;
+  }
   state.planning = null;
   $("prompt").placeholder = "Describe the app you want…";
   let enriched = p.request;
@@ -3491,8 +3507,29 @@ function openAiSheet() {
    * it is the pane next door. They appear there, with a field to paste the
    * key into, which is the only place a key can actually be given. */
   const API_VENDORS = new Set(["anthropic", "openai"]);
-  for (const a of state.agents) {
-    if (API_VENDORS.has(a.name)) continue;
+  // Ready ones first, under a heading that says so.
+  //
+  // The list came back in the engine's own order, so a working tool could
+  // sit fourth under three that need fixing -- and the one question this
+  // screen answers is "which of these can I use right now?". Someone
+  // scanning it had to read every row and compare states to find out
+  // (K-819). Two groups, each announced, and inside a group the engine's
+  // order is kept so the list does not reshuffle between refreshes.
+  const shown = state.agents.filter((a) => !API_VENDORS.has(a.name));
+  const ready = shown.filter((a) => a.state === "working");
+  const rest = shown.filter((a) => a.state !== "working");
+  let headed = null;
+  for (const a of [...ready, ...rest]) {
+    const group = a.state === "working" ? "ready" : "rest";
+    if (group !== headed && (group === "rest" ? ready.length : true) && shown.length) {
+      headed = group;
+      const head = document.createElement("p");
+      head.className = "ai-group";
+      head.textContent = group === "ready"
+        ? (ready.length === 1 ? "Ready to use" : "Ready to use")
+        : (ready.length ? "Needs a one-time fix" : "None are ready yet");
+      list.appendChild(head);
+    }
     const row = document.createElement("div");
     row.className = "ai-row";
     const dot = a.state === "working" ? "ok"
@@ -5040,12 +5077,46 @@ async function replaceWithMidBuild(text) {
   try {
     await stopBuild();
   } finally {
-    state.replacing = false;
+    // Cleared on a TIMER, not the moment stop returns.
+    //
+    // stopBuild settles the build itself, but the engine's own exit event
+    // can still be in flight and arrives after this line -- and the guard
+    // that keeps a redirect from painting the red "v1 stopped / Try again"
+    // card reads this flag. So the card appeared anyway, telling somebody
+    // who had just redirected the build that it had failed, above the very
+    // line saying what was being built instead (K-817). Three seconds is
+    // far longer than the exit takes and costs nothing: the only thing
+    // this flag suppresses is a failure notice for a build we ended on
+    // purpose.
+    setTimeout(() => { state.replacing = false; }, 3000);
   }
   syncSendReady();
+  // The ORIGINAL request travels with the new words.
+  //
+  // This sent `text` alone, so "add a little nicer UI in that" arrived at
+  // the agent as the whole brief -- no paint app, no canvas, no tools --
+  // and it answered, reasonably, "there is no prior app here for me to
+  // restyle; what should this desktop app actually do?" A person who had
+  // just described a paint program in detail was asked what they wanted,
+  // and their addition had silently replaced their request instead of
+  // joining it (K-816).
+  //
+  // A mid-build comment is an ADDITION to what is being built, which is
+  // exactly what the person means by typing it while they watch. So the
+  // brief is both: what they asked for, and the change they just made to
+  // it. Only when there IS an original -- a redirect in an empty session
+  // is its own first request.
+  const original = String((state.session && state.session.title) || "").trim();
+  const first = state.session && state.session.messages
+    ? (state.session.messages.find((m) => m.who === "YOU") || {}).text
+    : "";
+  const brief = String(first || original || "").trim();
+  const combined = brief && brief !== text
+    ? `${brief}\n\nAlso, and this is part of the same app, not a separate one: ${text}`
+    : text;
   // silent: the YOU line is said by make itself, and saying it here too put
   // the request in the transcript twice.
-  make(text);
+  make(combined, { pastAgentCheck: true, spokenAs: text });
 }
 
 function submitInSession() {
@@ -7176,8 +7247,19 @@ async function loadProfilePage() {
     if (dockInitial) dockInitial.textContent = "?";
     setAvatar($("profAvImg"), $("profInitial"), null);
     setAvatar($("dockAvImg"), dockInitial, null);
-    $("connGhSub").textContent = "Used when you publish a link";
-    $("connGhAct").innerHTML = '<button class="set-mini" data-connect="github">Connect</button>';
+    // Optional, like every other lookup on this path. These two rows are
+    // desktop-only and absent from the web build, so a bare $() threw on
+    // EVERY page load in a tab -- the signed-in branch below is wrapped in
+    // a try and survived, the signed-out one was not. The pane rendered
+    // correctly either way, so nothing looked wrong while an unhandled
+    // rejection was logged on every load, ready to bury a real error the
+    // day somebody debugs the paid path (K-813).
+    const ghSub = $("connGhSub");
+    if (ghSub) ghSub.textContent = "Used when you publish a link";
+    const ghAct = $("connGhAct");
+    if (ghAct) {
+      ghAct.innerHTML = '<button class="set-mini" data-connect="github">Connect</button>';
+    }
     return;
   }
   try {

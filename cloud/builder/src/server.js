@@ -47,6 +47,61 @@ const PLAN_TIMEOUT_MS = Number(process.env.KRATE_PLAN_TIMEOUT_MS || 90 * 1000);
 const jobs = new Map();          // id -> job
 const activeByAccount = new Map(); // account -> job id
 
+/* What one account may ask the model for, per hour, without building.
+ *
+ * `/plan` calls the model on OUR key and consumes no allowance, on the
+ * principle that asking is not making -- which is right, and was also the
+ * only path into the paid account with no ceiling of any kind: no ledger,
+ * no budget, no concurrency guard, no rate limit. One Opus call at 16k
+ * max_tokens is about $0.43, so ten thousand calls is about $4,300, and
+ * none of it appears as spend anywhere (K-814).
+ *
+ * Twelve an hour is far past what a person planning an app does and far
+ * short of what a script costs. The window is a plain timestamp list per
+ * account, trimmed as it is read; the process holds at most one entry per
+ * recent caller, which is the same shape as activeByAccount above.
+ *
+ * Honest limit: this is per PROCESS, so a second builder machine would
+ * have its own count. That is the same caveat the one-build-per-account
+ * guard carries, and the fix for both is the hub, not this file. */
+const PLAN_PER_HOUR = Number(process.env.KRATE_PLAN_PER_HOUR || 12);
+const PLAN_WINDOW_MS = 60 * 60 * 1000;
+const plansByAccount = new Map(); // account -> [timestamps]
+
+/* Claim the one-build-at-a-time slot, atomically.
+ *
+ * `if (activeByAccount.has(x)) ... ; await startBuild(x)` is a
+ * check-then-act, and the gap is real: startBuild's first statement is
+ * `await mkdtemp`, so every request that arrived in that tick sailed
+ * through the check before any of them set the key. Measured 5 to 7 of 10
+ * simultaneous requests accepted, each spawning an engine and opening a
+ * funded case, while the ledger still read one (K-815).
+ *
+ * Node runs one turn at a time, so a has()+set() with no await between
+ * them cannot be interleaved. The slot is claimed HERE, before the first
+ * await, and released by the same paths that released it before -- plus
+ * the error path below, or a failed start would wedge the account out of
+ * building until the process restarted.
+ */
+function claimBuildSlot(account) {
+  if (activeByAccount.has(account)) return false;
+  activeByAccount.set(account, "claimed");
+  return true;
+}
+
+function planAllowance(account) {
+  const now = Date.now();
+  const recent = (plansByAccount.get(account) || []).filter((at) => now - at < PLAN_WINDOW_MS);
+  if (recent.length >= PLAN_PER_HOUR) {
+    const next = recent[0] + PLAN_WINDOW_MS - now;
+    plansByAccount.set(account, recent);
+    return { ok: false, minutes: Math.max(1, Math.ceil(next / 60000)) };
+  }
+  recent.push(now);
+  plansByAccount.set(account, recent);
+  return { ok: true };
+}
+
 /* ---- durable state -------------------------------------------------------
  * The machine stops when nobody is building and starts on the next request.
  * Jobs used to live only in this process, so every one of those restarts
@@ -353,10 +408,15 @@ async function allowedToBuild(token, device) {
     // taken and recorded, so the day KRATE_CHARGING is set the numbers are
     // already right and any future wall works on real history rather than
     // starting everyone at zero.
-    if (process.env.KRATE_CHARGING === "1" && made >= 3) {
+    // ONE free app, not three (IC-639). This still said three, so the day
+    // KRATE_CHARGING is set the server would have handed out three funded
+    // apps while every screen in Studio promised one -- the same drift the
+    // client was corrected for twice, surviving here because this branch
+    // has never run.
+    if (process.env.KRATE_CHARGING === "1" && made >= 1) {
       return {
         ok: false,
-        message: "You have made your three free apps. Studio is unlimited, $12 a month.",
+        message: "You have made your free app. Studio is unlimited, $12 a month.",
         wall: true,
       };
     }
@@ -931,11 +991,18 @@ const server = createServer(async (req, res) => {
         return send(res, 401, allowed.message);
       }
 
-      if (activeByAccount.has(allowed.account)) {
+      if (!claimBuildSlot(allowed.account)) {
         return send(res, 429, "One app is already being made. It will be a few minutes.");
       }
-
-      const job = await startBuild({ request, token, account: allowed.account, device, shape, attachments: body.attachments });
+      let job;
+      try {
+        job = await startBuild({ request, token, account: allowed.account, device, shape, attachments: body.attachments });
+      } catch (err) {
+        // The slot is ours until a job owns it; a start that threw must
+        // not lock the account out of building.
+        activeByAccount.delete(allowed.account);
+        throw err;
+      }
       return json(res, 200, { id: job.id });
     }
 
@@ -953,6 +1020,19 @@ const server = createServer(async (req, res) => {
       const theirs = API_AGENTS[AGENT] ? await ownKey(token, AGENT) : null;
       const off = authoringOff();
       if (off && !theirs) return json(res, 503, { wall: true, download: true, message: off });
+      // Somebody on their own key is spending their own money, so the
+      // ceiling is ours to apply only when the bill is ours.
+      if (!theirs) {
+        const room = planAllowance(account);
+        if (!room.ok) {
+          return send(
+            res,
+            429,
+            `That is a lot of planning in one hour. Try again in ${room.minutes} ` +
+            `minute${room.minutes === 1 ? "" : "s"}, or start building what you have.`,
+          );
+        }
+      }
       const answer = await planRequest(request, theirs, body.attachments);
       if (!answer.ok) return send(res, 502, answer.message);
       res.statusCode = 200;
@@ -982,7 +1062,9 @@ const server = createServer(async (req, res) => {
       if (job.state !== "done" || !job.result) return send(res, 409, "Make the app first; a change starts from a finished one.");
       const bytes = await resultBytes(job);
       if (!bytes) return send(res, 404, "not ready");
-      if (activeByAccount.has(account)) {
+      // Claimed, not just checked -- the same race as /build (K-815), and
+      // this route has MORE awaits between the check and the start.
+      if (!claimBuildSlot(account)) {
         return send(res, 429, "One app is already being made. It will be a few minutes.");
       }
       // One free change, like one free app. Asked before any work starts,
@@ -994,6 +1076,10 @@ const server = createServer(async (req, res) => {
       // practice however the hub was configured.
       const mayRevise = await allowedToRevise(token, device, change);
       if (!mayRevise.ok) {
+        // Release the slot claimed above: a refusal is not a build, and an
+        // unreleased claim locks this account out of building for the life
+        // of the process.
+        activeByAccount.delete(account);
         return json(res, 402, {
           wall: true,
           download: Boolean(mayRevise.download),
@@ -1006,11 +1092,17 @@ const server = createServer(async (req, res) => {
       const sourceDir = await mkdtemp(join(tmpdir(), "krate-revise-"));
       const source = join(sourceDir, "app.krate");
       await writeFile(source, bytes);
-      const next = await startBuild({
-        request: job.request, token, account, device,
-        attachments: body.attachments,
-        revise: { parentId: id, source, change, caseId: mayRevise.caseId, name: job.result.name },
-      });
+      let next;
+      try {
+        next = await startBuild({
+          request: job.request, token, account, device,
+          attachments: body.attachments,
+          revise: { parentId: id, source, change, caseId: mayRevise.caseId, name: job.result.name },
+        });
+      } catch (err) {
+        activeByAccount.delete(account);
+        throw err;
+      }
       return json(res, 200, { id: next.id, parent: id });
     }
 

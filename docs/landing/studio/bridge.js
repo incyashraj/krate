@@ -408,20 +408,40 @@ function pickLocalFiles({ accept, multiple }) {
       const names = [];
       for (const file of files) {
         if (file.size > MAX_ATTACH_BYTES) {
-          return done(reject, new Error(
+          // A REFUSAL, not a failure. Unflagged, Studio's wording called
+          // this "The build failed. Press Details for the engine output"
+          // -- on a page where no build had started and there is no
+          // Details to press. refuse() exists for exactly this and its own
+          // comment says so; these two sites were the ones still bypassing
+          // it (K-810).
+          return done(reject, refusal(
             `${file.name} is ${Math.round(file.size / 1024 / 1024)} MB. ` +
             `Attachments are up to ${MAX_ATTACH_BYTES / 1024 / 1024} MB each.`,
           ));
         }
+        // Two files with the SAME NAME are two files. `attached` is keyed
+        // by name, so attaching report.txt twice silently kept only the
+        // second: the person saw one chip, and the app was built without
+        // the file they attached first. Silent loss on work they pay for
+        // (K-811). Numbered the way a download folder numbers them.
+        let key = file.name;
+        if (attached.has(key)) {
+          const dot = file.name.lastIndexOf(".");
+          const stem = dot > 0 ? file.name.slice(0, dot) : file.name;
+          const ext = dot > 0 ? file.name.slice(dot) : "";
+          let n = 2;
+          while (attached.has(`${stem} (${n})${ext}`)) n += 1;
+          key = `${stem} (${n})${ext}`;
+        }
         try {
-          attached.set(file.name, {
-            name: file.name,
+          attached.set(key, {
+            name: key,
             type: file.type || "application/octet-stream",
             bytes: await fileToBase64(file),
           });
-          names.push(file.name);
+          names.push(key);
         } catch (err) {
-          return done(reject, new Error(`${file.name} could not be read.`));
+          return done(reject, refusal(`${file.name} could not be read.`));
         }
       }
       done(resolve, names);
@@ -518,6 +538,15 @@ function bytesOfPretty(size) {
   const n = parseFloat(m[1]);
   if (!isFinite(n)) return 0;
   return Math.round(n * (m[2].toUpperCase() === "MB" ? 1024 * 1024 : 1024));
+}
+
+/* The error refuse() rejects with, for callers that must hand the error
+ * to something else (the file picker's `done(reject, err)`) rather than
+ * return a rejected promise. One flag, one meaning, two shapes. */
+function refusal(message) {
+  const err = new Error(message);
+  err.refusal = true;
+  return err;
 }
 
 function refuse(message) {
@@ -1079,6 +1108,27 @@ const COMMANDS = {
   },
 
   async api_key_set({ vendor, key } = {}) {
+    // Shaped like a key, before it is kept anywhere.
+    //
+    // Any string at all was accepted -- "not-a-real-key-123" was stored
+    // and reported as saved -- and the person only found out when a build
+    // failed on the paid path, minutes later, with the vendor's own error.
+    // A typo caught here costs a sentence; caught there it costs a build
+    // (K-812). Only the prefix and a plausible length are checked: the
+    // vendor is the judge of whether a key is real, and a client that
+    // guesses harder than this would reject good keys on the day a vendor
+    // changes its format.
+    const raw = String(key || "").trim();
+    const shape = { anthropic: "sk-ant-", openai: "sk-" }[vendor];
+    if (!raw) return refuse("Paste the key first.");
+    if (shape && !raw.startsWith(shape)) {
+      return refuse(
+        `An ${vendor === "anthropic" ? "Anthropic" : "OpenAI"} key starts with ` +
+        `"${shape}". Check you copied the whole thing.`,
+      );
+    }
+    if (raw.length < 20) return refuse("That looks too short to be a key. Copy the whole thing.");
+    key = raw;
     if (!bridge.token) {
       // Held here until the sign-in every build needs; account_status
       // moves it to the hub then. Never sent anywhere else.

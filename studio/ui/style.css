@@ -1020,6 +1020,15 @@ body.light .share-row { background: rgba(0, 0, 0, 0.04); }
 .sheet-foot code { font: 11px var(--mono); color: var(--muted); }
 .sheet-close { align-self: flex-end; }
 
+/* The heading over each group of tools (K-819). Quiet and small: it is a
+   label for the rows under it, not a section of its own, so it sits closer
+   to what it names than to what came before. The first one needs no top
+   margin -- the sheet's own heading is right above it. */
+.ai-group {
+  font-size: 11px; font-weight: 560; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--faint); margin: 18px 0 2px;
+}
+.ai-group:first-of-type { margin-top: 6px; }
 .ai-row { display: flex; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--line); }
 .ai-row:last-of-type { border-bottom: none; }
 .ai-name { font-size: 13.5px; font-weight: 500; }
