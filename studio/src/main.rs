@@ -3351,6 +3351,9 @@ fn first_run_setup() {
         return;
     }
 
+    // Set only when the PATH link is really in place; see below.
+    let mut linked = false;
+
     if let Ok(engine) = engine() {
         // The engine registers its own document types; running it once with
         // a no-op subcommand is enough for Launch Services to see the bundle
@@ -3380,10 +3383,21 @@ fn first_run_setup() {
         // "command not found" after a normal drag-to-Applications install,
         // which is also the first step of every support instruction we
         // give (K-188).
-        let _ = link_krate_onto_path(&engine);
+        //
+        // And the RESULT is kept, which is the other half of that story.
+        // The comment above describes a silent failure followed by
+        // `setup-done` being written anyway so it never tried again -- and
+        // the code still discarded the answer with `let _ =`, so the bug
+        // it describes was only half fixed. A first run that could not make
+        // the link now leaves no marker and tries once more next launch,
+        // which is free: every step here is idempotent (K-806).
+        linked = link_krate_onto_path(&engine);
     }
 
-    let _ = std::fs::write(&marker, "1");
+    // Only a setup that actually finished is remembered as finished.
+    if linked {
+        let _ = std::fs::write(&marker, "1");
+    }
 }
 
 /// Linux: register the .krate type and the studio's launcher entry, so

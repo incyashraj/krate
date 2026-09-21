@@ -1940,7 +1940,15 @@ body.light .bigbar:focus-within {
   transition: border-color 0.15s, color 0.15s;
 }
 .aichip:hover { border-color: var(--line-strong); color: var(--text); }
-.aichip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--good, #4ade80); }
+/* Size only. The COLOUR is the general .dot rule above, which defaults to
+   neutral and takes .ok / .warn / .bad from setChips.
+   This said `background: var(--good, #4ade80)` with no state variants, so
+   the "Built by" chip was green whatever the truth was: green beside
+   "Built by Claude" on a machine whose Claude sign-in had expired, and
+   green before the first probe had even answered, next to a name still
+   showing its literal placeholder. A dot whose only job is to report a
+   state must not hardcode one (K-804, the desktop twin of K-780). */
+.aichip .dot { width: 6px; height: 6px; border-radius: 50%; }
 .aichip b { font-weight: 560; color: var(--text); }
 .aichip .chev { color: var(--ghost); }
 

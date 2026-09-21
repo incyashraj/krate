@@ -4943,7 +4943,7 @@ function isJustAGreeting(text) {
   return /^(hi|hey|hello|yo|hiya|howdy|sup|hi there|hey there|hello there|good morning|good afternoon|good evening|test|testing)$/.test(t);
 }
 
-function startFromHome() {
+async function startFromHome() {
   const text = $("homePrompt").value.trim();
   if (!text) return;
   if (isJustAGreeting(text)) {
@@ -4958,13 +4958,42 @@ function startFromHome() {
     syncSendReady();
     return;
   }
+  // Ask about the AI BEFORE leaving the home screen.
+  //
+  // This opened the session view and then called make(), whose first act
+  // is to re-probe the tools -- seventeen seconds cold on a machine where
+  // codex times out. So pressing Make with nothing signed in gave a blank
+  // silent session screen for those seventeen seconds, with no spinner and
+  // no session file, and only then the connect sheet. The guard was right
+  // and the person still saw a product that had hung (K-803).
+  //
+  // Staying on home while we ask means the typed words are still in the
+  // box, the screen still makes sense, and the sheet arrives over
+  // something rather than over nothing.
+  if (tauri) {
+    const send = $("homeSend");
+    const was = send ? send.textContent : "";
+    if (send) { send.disabled = true; send.textContent = "Checking your AI…"; }
+    try { await refreshAgents(); } catch (e) { /* use the list we have */ }
+    if (send) { send.disabled = false; send.textContent = was; }
+    if (!(state.agents || []).some((a) => a.state === "working")) {
+      openAiSheet();
+      say(
+        "KRATE",
+        "Connect an AI first. None of the coding tools on this Mac are ready, "
+          + "and one of them is what writes the app."
+      );
+      return;
+    }
+  }
   newSession(text);
   $("railTitle").textContent = state.session.title;
   $("thread").innerHTML = "";
   show("idle");
   showView("session");
   $("homePrompt").value = "";
-  make(text);
+  // The probe just ran, so make() must not repeat it.
+  make(text, { pastAgentCheck: true });
 }
 
 /* Something was typed while a build was running. Two honest answers, and
@@ -7644,10 +7673,18 @@ async function obLoadAgents() {
     });
     if (!usable.length) {
       // Honest, and actionable: name the tool and how to get it.
+      //
+      // The name was the missing half. `detail` is a fragment written to
+      // follow a tool's name -- "is installed but not signed in" -- and
+      // this printed it alone, so the onboarding screen read "No AI tool
+      // found yet. is installed but not signed in": a broken sentence on
+      // the second screen a new person ever sees (K-805). The comment
+      // above has always said to name the tool.
       const help = (agents || [])[0];
-      box.innerHTML += `<p class="ob-none">No AI tool found yet. ${
-        help && help.detail ? help.detail : "Install one, then come back. Krate will notice it."
-      }</p>`;
+      const detail = help && help.detail
+        ? `${help.label || help.name} ${help.detail}`
+        : "Install one, then come back. Krate will notice it.";
+      box.innerHTML += `<p class="ob-none">No AI tool found yet. ${detail}</p>`;
       if (next) next.disabled = false;
     }
   } catch (e) {
