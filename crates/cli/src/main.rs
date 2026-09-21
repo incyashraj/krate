@@ -9894,9 +9894,23 @@ fn run_provider_author(
                                 break;
                             }
                         }
+                        // A word that is a PATH shows its last segment.
+                        //
+                        // Taking two words verbatim put whole absolute
+                        // paths on the rail -- "ran /Users/yashraj.../
+                        // bundle/macos/Krate.ap..." truncated mid-word,
+                        // which tells a person nothing and leaks their
+                        // home directory into a screenshot (K-843).
                         useful
                             .split_whitespace()
                             .take(2)
+                            .map(|word| {
+                                if word.len() > 24 && word.contains('/') {
+                                    word.rsplit('/').next().unwrap_or(word)
+                                } else {
+                                    word
+                                }
+                            })
                             .collect::<Vec<_>>()
                             .join(" ")
                     } else {
@@ -9919,11 +9933,33 @@ fn run_provider_author(
                         // of the real repo or the SDK cache is dev-machine
                         // material a fresh user would not have, and it inflates
                         // how well a build goes here versus for a real person.
+                        // What counts as leaving the workspace, and what
+                        // does not.
+                        //
+                        // This flagged the SDK cache -- reading the WIT the
+                        // app compiles against, which is exactly what the
+                        // pack tells the agent to do -- and matched the
+                        // product checkout only by the literal string
+                        // "layer6x6", which is this machine's directory
+                        // name. So the 9 flagged steps in a real build were
+                        // the legitimate ones and the 14 steps reading
+                        // crates/runtime and crates/adapter-macos were
+                        // recorded as ordinary Bash (K-844).
+                        //
+                        // The thing worth catching is the agent reading
+                        // KRATE'S OWN SOURCE: a developer machine has it,
+                        // a user's machine does not, so a build that
+                        // depends on it works here and fails there. Named
+                        // by what it IS -- our crate tree and the apps we
+                        // ship as examples -- rather than by one checkout's
+                        // path. The SDK cache is not an escape.
+                        let reads_product_source = ["/crates/", "/apps/", "/wit/krate/"]
+                            .iter()
+                            .any(|marker| target.contains(marker))
+                            && !target.contains("/.cache/krate/");
                         let outside = !target.is_empty()
                             && !target.contains(app_dir_for_thread.as_str())
-                            && (target.contains("/apps/")
-                                || target.contains("/.cache/krate/")
-                                || target.contains("/layer6x6/"));
+                            && reads_product_source;
                         let step = if outside {
                             format!("OUTSIDE-WORKSPACE {tool}")
                         } else {

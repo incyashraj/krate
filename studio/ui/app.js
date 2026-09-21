@@ -1919,6 +1919,20 @@ function onEngineLine(line) {
 }
 
 function onEngineLineInner(line) {
+  // The tool marker is STRUCTURE, not a line to show anywhere raw.
+  //
+  // It was handled further down -- after the log pane had already appended
+  // it -- so Details showed the marker verbatim, tabs and all, followed by
+  // the agent's entire shell command:
+  //   ==>tool Bash  ls -la   ls -la && echo "---MANIFEST---" && cat ...
+  // That is the plumbing of my own K-836 change leaking into the one pane
+  // a person opens when something has gone wrong (K-843). Intercepted
+  // first now: it feeds the work rail and reaches no text surface.
+  if (line.startsWith("==>tool ")) {
+    const [tool, file, path] = line.slice(8).split("\t");
+    if (tool) addWorkTool(tool, file || "", path || "");
+    return;
+  }
   // Keep the line in state as well as on screen, so re-entering the session
   // can rebuild the whole log rather than showing an empty pane (K-152).
   const rec = liveRecord();
@@ -1934,18 +1948,6 @@ function onEngineLineInner(line) {
   if (log) {
     log.textContent += line + "\n";
     log.scrollTop = log.scrollHeight;
-  }
-  // A tool call: what the AI is doing to which file, right now.
-  //
-  // The engine emits `==>tool <tool>\t<file>\t<path>` per read, write and
-  // command (K-836). Rendered as a row with the action and the file, so a
-  // developer watching sees the actual work -- "Write src/lib.rs", "Bash
-  // cargo build" -- instead of one sentence a minute. Handled before the
-  // prose path and returns, so it never reaches the human line display.
-  if (line.startsWith("==>tool ")) {
-    const [tool, file, path] = line.slice(8).split("\t");
-    if (tool) addWorkTool(tool, file || "", path || "");
-    return;
   }
   const clean = line.replace(/^=+>\s*/, "").trim();
   if (clean) {
@@ -5267,7 +5269,33 @@ function isJustAGreeting(text) {
   return /^(hi|hey|hello|yo|hiya|howdy|sup|hi there|hey there|hello there|good morning|good afternoon|good evening|test|testing)$/.test(t);
 }
 
+/* One request per press, however fast the presses come.
+ *
+ * startFromHome is async -- it awaits the AI check before creating a
+ * session -- so two Enters 141 ms apart both got past the top and each
+ * made a session. The founder's double-tap produced two session files,
+ * two "Here's what I'll build" paragraphs each with its own Build it, and
+ * three identical rows in Recent; the orphan then leaked into the build
+ * output as "the earlier session could not be continued". K-803 disabled
+ * the BUTTON during the check, which is why the button was safe and the
+ * keyboard was not (K-842).
+ *
+ * A plain flag, cleared in a finally, because the window between the two
+ * presses is milliseconds and anything that outlives the call would
+ * strand the composer. */
+let startingFromHome = false;
+
 async function startFromHome() {
+  if (startingFromHome) return;
+  startingFromHome = true;
+  try {
+    await startFromHomeInner();
+  } finally {
+    startingFromHome = false;
+  }
+}
+
+async function startFromHomeInner() {
   const text = $("homePrompt").value.trim();
   if (!text) return;
   if (isJustAGreeting(text)) {
@@ -7443,10 +7471,23 @@ async function checkForUpdate() {
     // Release notes, trimmed to the lines a person can act on.
     const list = $("updList");
     if (list) {
+      // A release body is a CHANGELOG for developers: PR titles, "by
+      // @someone", bare GitHub URLs, a full-changelog link. Printed
+      // straight into "What changed" it showed the founder four raw PR
+      // titles every one of which ended "by @incyashraj" -- our internal
+      // commit log, in the one pane meant to tell a person what they are
+      // about to install (K-845).
+      //
+      // Keep sentences, drop the machinery. What survives is a line that
+      // reads like prose; what does not is anything carrying a URL, an
+      // @handle, a (#123), or the changelog footer.
+      const MACHINERY = /https?:\/\/|@[\w-]+|\(#\d+\)|#\d+\b|full changelog|^v?\d+\.\d+/i;
       const lines = (rel.body || "")
         .split("\n")
         .map((l) => l.replace(/^[-*]\s*/, "").trim())
+        .map((l) => l.replace(/\s+by\s+@[\w-]+.*$/i, "").trim())
         .filter((l) => l && !l.startsWith("#") && l.length < 120)
+        .filter((l) => !MACHINERY.test(l))
         .slice(0, 4);
       list.innerHTML = lines.length
         ? lines.map((l) => `<li>${escapeHtml(l)}</li>`).join("")

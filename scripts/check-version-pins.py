@@ -58,6 +58,25 @@ def pins(root: pathlib.Path, want: str) -> list[str]:
         if hit and hit.group(1) != want:
             problems.append(f"studio/Cargo.toml says {hit.group(1)}, workspace says {want}")
 
+    # The Tauri bundle's own version, which is what a SHIPPED Studio
+    # reports about itself and what its update check compares against.
+    #
+    # It sat at 0.4.0 while the crate said 0.5.1, so a bundle built from
+    # current source told the founder "Version 0.5.1 is ready / You have
+    # 0.4.0" and offered him an update he already had. The release
+    # workflow patches this file before bundling, so shipped builds were
+    # right and only local ones lied -- which is worse, because local is
+    # where it gets tested (K-846).
+    tauri = root / "studio/tauri.conf.json"
+    if tauri.exists():
+        hit = re.search(r'"version"\s*:\s*"([^"]+)"', tauri.read_text())
+        if hit and hit.group(1) != want:
+            problems.append(
+                f"studio/tauri.conf.json says {hit.group(1)}, workspace says {want} "
+                f"-- a bundle built from here reports the wrong version to its own "
+                f"update check"
+            )
+
     # The builder image pins the release it downloads. A stale pin ships an
     # image that names a version predating the work in it -- which is K-715,
     # already paid for once.
