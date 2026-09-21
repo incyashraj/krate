@@ -1555,9 +1555,13 @@ fn write_bundle_into(
             }
         }
     }
+    // What shipped as an asset, by its bytes, so the source pass below can
+    // recognise the same file and ship it once (K-851).
+    let mut asset_digests: BTreeSet<String> = BTreeSet::new();
     if let Some(assets_dir) = assets_dir.filter(|path| path.is_dir()) {
         for (entry_name, source) in collect_assets(assets_dir)? {
             let bytes = fs::read(&source).map_err(|err| io_err(&source, err))?;
+            asset_digests.insert(sha256_hex(&bytes));
             add(&mut zip, &entry_name, &bytes)?;
         }
     }
@@ -1578,6 +1582,23 @@ fn write_bundle_into(
                 continue;
             }
             let bytes = fs::read(&source).map_err(|err| io_err(&source, err))?;
+            // Already shipped as an asset: one copy serves both readers.
+            //
+            // `assets/` lives inside the source tree, so every asset was
+            // written twice -- once as the asset the app loads, once as
+            // source for a later change. A 12-asset game packed 2,262,993
+            // bytes with the duplicate and 1,272,551 without; a user's
+            // weather app was 849 KB of which 797 KB was one icon counted
+            // twice, against 69 KB of program (K-851).
+            //
+            // Safe because `open` now places assets into the edit tree
+            // when source does not carry them, so `revise` still sees the
+            // whole project. Matched on BYTES, not path: a file that
+            // differs between the two trees still ships both, because then
+            // they are genuinely two files.
+            if asset_digests.contains(&sha256_hex(&bytes)) {
+                continue;
+            }
             source_entries.insert(entry_name, bytes);
         }
     }
@@ -2802,6 +2823,57 @@ pub fn open_reader<R: Read + io::Seek>(reader: R) -> Result<OpenBundle> {
         None
     };
 
+    // An asset the source tree does not carry is placed beside it.
+    //
+    // `revise` edits the tree written from `source/` alone, so an app whose
+    // images live only under `assets/` was handed to the AI without them --
+    // it would edit code that loads files it cannot see. Until now that
+    // never bit, because every asset was ALSO shipped inside source, at
+    // double the bytes: a 12-asset game packs 2,262,993 bytes with the
+    // duplicate and 1,272,551 without, 44% of the bundle (K-851).
+    //
+    // Placing them is what makes dropping the duplicate safe, and it is the
+    // right behaviour on its own: the edit tree should look like the project
+    // the app was built from, whichever records carried the bytes.
+    //
+    // It runs AFTER the closure check on purpose. That check re-derives
+    // the source digest by walking the unpacked directory, so an asset
+    // placed before it counts as source the record never covered and every
+    // such bundle is refused as damaged. Written first, this was caught by
+    // the test below rather than by a user whose app would not open.
+    if !source_names.is_empty() {
+        let asset_names: Vec<String> = {
+            let mut names = Vec::new();
+            for index in 0..archive.len() {
+                let name = archive.by_index(index)?.name().to_string();
+                if name.starts_with(ASSETS_PREFIX) && !name.ends_with('/') {
+                    names.push(name);
+                }
+            }
+            names
+        };
+        for name in &asset_names {
+            let relative = safe_prefixed_relative_path(name, ASSETS_PREFIX)?;
+            // `assets/icon.png` belongs at `<source>/assets/icon.png`, which
+            // is where the manifest and the code name it.
+            let destination = source_path.join(ASSETS_PREFIX).join(relative);
+            // Never overwrite what source itself shipped: if both exist the
+            // source copy is the one the rebuild compiled against.
+            if destination.exists() {
+                continue;
+            }
+            if let Some(parent) = destination.parent() {
+                fs::create_dir_all(parent).map_err(|err| io_err(parent, err))?;
+            }
+            total_source_bytes = total_source_bytes
+                .checked_add(extract_asset_entry(&mut archive, name, &destination)?)
+                .ok_or(BundleError::SourceTooLarge)?;
+            if total_source_bytes > MAX_TOTAL_SOURCE_BYTES {
+                return Err(BundleError::SourceTooLarge);
+            }
+        }
+    }
+
     let manifest_text =
         fs::read_to_string(&manifest_path).map_err(|err| io_err(&manifest_path, err))?;
     let manifest =
@@ -3798,6 +3870,62 @@ pub fn fetch_resolved(url: &str, allow_insecure_http: bool) -> Result<Fetched> {
 
 #[cfg(test)]
 mod tests {
+    /// A change to an app must see the app's own files (K-851).
+    ///
+    /// `revise` edits the tree `open` writes from `source/`. Assets used to
+    /// reach that tree only because every asset was ALSO stored inside
+    /// source -- the duplicate that cost `apps/krate-nova2` 990 KB. With the
+    /// duplicate gone, `open` has to complete the tree from the asset
+    /// records, or the AI edits code that loads images it cannot see.
+    #[test]
+    fn an_asset_ships_once_and_still_reaches_the_edit_tree() {
+        let dir = TempDir::new().expect("tempdir");
+        let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
+        let component = write_temp(dir.path(), "code.wasm", MINIMAL_COMPONENT);
+
+        // The shape a real app has: the assets directory sits inside the
+        // source tree, so packing sees the same bytes down both paths.
+        let src = dir.path().join("src");
+        let assets = src.join("assets");
+        fs::create_dir_all(&assets).expect("assets dir");
+        fs::write(src.join("lib.rs"), b"// loads assets/icon.png").expect("lib");
+        fs::write(assets.join("icon.png"), b"PNG-BYTES-HERE").expect("icon");
+
+        let bundle = dir.path().join("app.krate");
+        pack_with_source(&manifest, &component, Some(&assets), Some(&src), &bundle).expect("pack");
+
+        let names: Vec<String> = {
+            let file = File::open(&bundle).expect("open zip");
+            let mut archive = ZipArchive::new(file).expect("zip");
+            (0..archive.len())
+                .map(|i| archive.by_index(i).expect("entry").name().to_string())
+                .collect()
+        };
+        assert!(
+            names.iter().any(|n| n == "assets/icon.png"),
+            "the asset ships, as an asset: {names:?}",
+        );
+        assert!(
+            !names.iter().any(|n| n == "source/assets/icon.png"),
+            "and not a second time inside source: {names:?}",
+        );
+
+        // The edit tree still holds everything a change needs.
+        let opened = open(&bundle).expect("open bundle");
+        let source = opened.source_path().expect("source path");
+        assert!(source.join("lib.rs").is_file(), "the code is there");
+        let placed = source.join("assets/icon.png");
+        assert!(
+            placed.is_file(),
+            "the asset is placed beside the source it belongs to",
+        );
+        assert_eq!(
+            fs::read(&placed).expect("read"),
+            b"PNG-BYTES-HERE",
+            "and it is the bytes the app loads",
+        );
+    }
+
     use super::*;
     use std::io::Cursor;
     use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
