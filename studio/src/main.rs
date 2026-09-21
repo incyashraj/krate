@@ -1626,7 +1626,33 @@ fn watch_build_shots(
 /// cargo and rustup resolve them from `$HOME` and the agent builds the app
 /// it writes -- rebasing HOME without this costs the agent its compiler.
 fn agent_home_env(agent_home: &Path, real_home: &Path) -> Vec<(&'static str, PathBuf)> {
-    let mut env: Vec<(&'static str, PathBuf)> = vec![("HOME", agent_home.to_path_buf())];
+    // HOME stays the person's own on macOS, and the ENGINE decides the rest.
+    //
+    // Measured on the founder's Mac, one variable at a time:
+    //
+    //   CLAUDE_CONFIG_DIR alone            -> "ok"
+    //   HOME=agent-home alone              -> "ok"
+    //   BOTH, which is what this set       -> "Failed to authenticate:
+    //                                          OAuth session expired and
+    //                                          could not be refreshed"
+    //
+    // With CLAUDE_CONFIG_DIR set, claude reads its credential from that
+    // directory and refreshes it there; with HOME also moved, the refresh
+    // has nowhere real to land and the session dies on first use. Every
+    // build failed in about a second, on a machine where `claude` worked
+    // perfectly in a terminal and Krate's own chip said "ready" -- because
+    // the probe and the engine had already agreed on this rule and Studio
+    // overrode it from outside (K-825, K-829).
+    //
+    // The engine already carries the rule (`keeps_real_home()` on the
+    // provider) and applies it to the agent it spawns. Studio's job is to
+    // not get in the way: on macOS it sets CLAUDE_CONFIG_DIR, which is what
+    // isolates the history, and leaves HOME alone.
+    let mut env: Vec<(&'static str, PathBuf)> = Vec::new();
+    if !cfg!(target_os = "macos") {
+        env.push(("HOME", agent_home.to_path_buf()));
+    }
+    let _ = agent_home;
     if std::env::var_os("CARGO_HOME").is_none() {
         env.push(("CARGO_HOME", real_home.join(".cargo")));
     }
@@ -4964,6 +4990,51 @@ mod tests {
         agent_home_env, copy_dir_shallow, probe_speaks_plan, slugify, write_private_atomic,
     };
     use std::path::{Path, PathBuf};
+
+    /// On macOS, Studio must not move HOME for the engine.
+    ///
+    /// Studio sets CLAUDE_CONFIG_DIR to isolate the agent's history. With
+    /// HOME ALSO moved, claude reads its credential from the config dir,
+    /// refreshes it somewhere that is not the keychain, and dies on the
+    /// first API call with "OAuth session expired and could not be
+    /// refreshed". Measured one variable at a time on 2026-09-21: either
+    /// alone answers "ok", both together fail. Every Studio build on that
+    /// machine failed in about a second while `claude` worked perfectly in
+    /// a terminal and Krate's own chip said ready (K-829).
+    ///
+    /// The engine owns this rule -- `keeps_real_home()` on the provider --
+    /// and applies it to the agent it spawns. This test is the other half:
+    /// Studio must not override it from outside.
+    #[test]
+    fn the_engine_keeps_the_real_home_on_macos() {
+        let agent_home = PathBuf::from("/tmp/krate-agent-home");
+        let real_home = PathBuf::from("/Users/someone");
+        let env = agent_home_env(&agent_home, &real_home);
+        let home = env.iter().find(|(key, _)| *key == "HOME");
+        if cfg!(target_os = "macos") {
+            assert!(
+                home.is_none(),
+                "macOS: HOME must be left alone so claude's keychain \
+                 credential still resolves -- found {home:?}"
+            );
+        } else {
+            assert_eq!(
+                home.map(|(_, value)| value.as_path()),
+                Some(agent_home.as_path()),
+                "elsewhere the agent home is the confinement (K-179)"
+            );
+        }
+        // The compiler homes travel either way, or confining the agent
+        // costs it its compiler.
+        for key in ["CARGO_HOME", "RUSTUP_HOME"] {
+            if std::env::var_os(key).is_none() {
+                assert!(
+                    env.iter().any(|(k, _)| *k == key),
+                    "{key} must be pinned to the real home"
+                );
+            }
+        }
+    }
 
     /// Studio's own state is written whole, or not at all, and only the
     /// owner can read it (IC-311).

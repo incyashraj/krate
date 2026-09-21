@@ -9768,6 +9768,19 @@ fn run_provider_author(
         "    the AI is writing your app and checking it as it goes -- this can take \
          several minutes"
     );
+    // What we are about to run, when asked. The founder's builds failed in
+    // one second with "OAuth session expired" while the same command by
+    // hand worked, and nothing recorded what differed -- so this prints the
+    // exact argv and the environment we changed, behind a flag so it costs
+    // an ordinary run nothing.
+    if std::env::var_os("KRATE_DEBUG_AGENT").is_some() {
+        eprintln!("[agent] program: {:?}", command.get_program());
+        eprintln!("[agent] args: {:?}", command.get_args().collect::<Vec<_>>());
+        for (key, value) in command.get_envs() {
+            eprintln!("[agent] env {:?} = {:?}", key, value);
+        }
+        eprintln!("[agent] cwd: {:?}", command.get_current_dir());
+    }
     let mut child = command.spawn().with_context(|| {
         // Availability was checked before authoring began, so reaching here
         // means something else went wrong -- but still name the provider and the
