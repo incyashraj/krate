@@ -5697,6 +5697,23 @@ function dressPlanSheet() {
   }
 }
 async function openPlanSheet() {
+  // Never a checkout on the desktop. Builds here run on the person's own
+  // machine with their own AI and cost us nothing, so there is nothing to
+  // sell -- the allowance and its wall are a web rule (see maybeWelcome
+  // and the cap in make()). Today dressPlanSheet returns early because
+  // CHARGING is false, which means this sheet is harmless by accident
+  // rather than by decision; the day that flag flips, two sidebar buttons
+  // would put "$12/month" in front of someone who already has it all for
+  // free. Guarding at the seam instead of relying on the flag.
+  //
+  // The referral block is the part worth keeping, so on desktop the sheet
+  // still opens -- with the prices structurally unreachable.
+  if (tauri) {
+    $("planNote").textContent = "";
+    $("planSheet").classList.remove("hidden");
+    fillReferral();
+    return;
+  }
   renderFreeCount();
   $("planNote").textContent = "";
   dressPlanSheet();
