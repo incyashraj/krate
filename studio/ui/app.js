@@ -514,8 +514,40 @@ function revealIn(root) {
       el.style.transform = "none";
     });
   // A safety net, because the failure mode here is a blank screen.
+  //
+  // It has to be a TIMER, and it must not depend on a frame ever
+  // arriving. macOS throttles requestAnimationFrame to nothing for a
+  // window that is occluded or on a background display -- so the two
+  // nested rAFs below never ran, the inline `opacity: 0` set above was
+  // never undone, and the whole page stayed invisible while the
+  // accessibility tree reported every element present at normal
+  // coordinates. Measured by walking away from a live build and back: the
+  // window painted only its background glow and did not recover until the
+  // build finished minutes later (K-838).
+  //
+  // The old guard could not save it. `clearTimeout(root._revealGuard)`
+  // ran on EVERY call, so each navigation disarmed the previous net, and
+  // the replacement was itself waiting on the same starved timeline. Now
+  // the timer is the floor: whatever happens to the frames, everything is
+  // visible by then.
   clearTimeout(root._revealGuard);
   root._revealGuard = setTimeout(showAll, items.length * 60 + 900);
+  // If the document is already hidden there is no animation to play and
+  // no frame coming. Show it now rather than animating into a void.
+  if (document.hidden) {
+    showAll();
+    return;
+  }
+  // And if the window is hidden BETWEEN now and the frames arriving, show
+  // everything the moment it comes back rather than leaving the person
+  // looking at a blank page until the timer expires. One-shot.
+  const onVisible = () => {
+    if (document.hidden) return;
+    document.removeEventListener("visibilitychange", onVisible);
+    showAll();
+  };
+  document.addEventListener("visibilitychange", onVisible);
+  setTimeout(() => document.removeEventListener("visibilitychange", onVisible), 4000);
   // Two frames: the first paints the from-state, the second starts the
   // transition. One frame is not enough and the element simply appears.
   requestAnimationFrame(() =>
@@ -752,7 +784,14 @@ function renderBuilding() {
   const live = Boolean(state.buildingSession);
   const shelfShowing = !$("viewHome")?.classList.contains("hidden");
   bar.classList.toggle("hidden", !live || shelfShowing);
-  if (live) renderShelf();
+  // Redraw the shelf whichever way the fact changed.
+  //
+  // `if (live)` refreshed it while a build was running and never when one
+  // ENDED -- so the tile kept saying "making..." after build.end, after
+  // the .krate was on disk, and after the session file had its result. It
+  // only corrected itself when an unrelated click forced a re-render
+  // (K-840). The end of a build is exactly the moment that tile is wrong.
+  renderShelf();
   if (live) {
     $("buildingNowTitle").textContent = state.buildingSession.title;
     // Clear any reveal from-state left on this bar.
@@ -1750,6 +1789,19 @@ function advanceStage(key) {
   // Remembered per session, so re-entering restores the lit step (K-152).
   const rec = liveRecord();
   if (rec) rec.stageIndex = idx;
+  // The chip's own word, which is the one a person reads.
+  //
+  // This updated the bar, the card's track, the terminal header and the
+  // dock progress -- four places -- and never the single word on the
+  // build chip in the transcript. So the chip said "starting..." at 0:52,
+  // 1:26, 2:06 and 2:34 while the right-hand pane had moved four times,
+  // and the only thing most people look at was the one thing frozen
+  // (K-839). The stage's own label, lower-cased to sit in the sentence.
+  {
+    const liveChip = state.buildChip || $("thread")?.querySelector(".msg.vlive");
+    const phase = liveChip && liveChip.querySelector("[data-phase]");
+    if (phase && STAGES[idx]) phase.textContent = STAGES[idx].label.toLowerCase();
+  }
   // Two milestones worth saying out loud. Not five -- a chat that narrates
   // every step is noise, and the stage list already shows all of them.
   if (state.buildChip) {

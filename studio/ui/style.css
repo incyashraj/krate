@@ -4271,8 +4271,16 @@ body.light .side-key { background: rgba(12, 16, 23, 0.05); border-color: rgba(12
 .shelf.shut .shelf-grip .chev { transform: rotate(-90deg); }
 
 .shelf .shelf-body {
-  /* 115px of card plus the 12px top margin the body already carries. */
-  max-height: 140px;
+  /* 115px of card plus the 12px top margin the body already carries --
+     but never more than the window can show.
+     The shelf is fixed to the floor and its body grows upward, so in a
+     short window the cards climbed out of the top: measured at an 800px
+     window, a card's box started 22px ABOVE the window and ended 97px
+     below its bottom, so "My apps" opened into space that does not exist
+     and read as a dead control (K-841). 38vh keeps the tray to about a
+     third of the window on any size, and the strip inside it already
+     scrolls horizontally. */
+  max-height: min(140px, 38vh);
   transition: max-height 0.24s cubic-bezier(0.2, 0.8, 0.2, 1),
               opacity 0.18s ease, margin-top 0.24s ease;
 }
