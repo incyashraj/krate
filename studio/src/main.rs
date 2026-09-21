@@ -1218,10 +1218,26 @@ fn off_request_detail(lines: &[String]) -> Option<String> {
         }
     }
     if out.is_empty() {
-        None
-    } else {
-        Some(out.join("\n"))
+        return None;
     }
+    // Bounded, whatever the engine said.
+    //
+    // This joined every "asked for:/but" line it found, and the judge emits
+    // one pair per unserved clause -- so a long brief produced a paragraph
+    // that filled the card and read as gibberish (K-833). The engine side
+    // now judges only the person's own request, which is the real fix; this
+    // is the guard that keeps the CARD honest no matter what arrives, since
+    // a box that can grow without limit will one day be filled.
+    const MOST: usize = 3;
+    let extra = out.len().saturating_sub(MOST);
+    out.truncate(MOST);
+    if extra > 0 {
+        out.push(format!(
+            "and {extra} other thing{}. Details has the rest.",
+            if extra == 1 { "" } else { "s" }
+        ));
+    }
+    Some(out.join("\n"))
 }
 
 #[tauri::command]

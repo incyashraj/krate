@@ -8488,7 +8488,27 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     // source that was actually built and looks for evidence of what the
     // request named. A missing verdict is not a pass.
     let app_source = read_app_source(&app_dir);
-    let mut acceptance = krate_author::acceptance::judge(&req.request, &name, &app_source);
+    // Judge the REQUEST, not everything the brief carries.
+    //
+    // The brief handed to the agent can hold more than the person's
+    // sentence: Studio appends "(The agreed plan: ...)" so the build keeps
+    // the plan it agreed to, and a mid-build addition carries the original
+    // request with it. The judge splits what it is given into clauses and
+    // names every unserved one -- so with the plan attached it produced a
+    // paragraph of word salad ("asked for: deletions marked... but the app
+    // has nothing about deletions, cannot, network, agreed, plan asked
+    // for:...") on an app that was fine (K-833).
+    //
+    // A plan is Krate's own words, not a promise the person made, and it
+    // must not become a list of things the app is accused of missing.
+    let judged_request = req
+        .request
+        .split("\n\n(The agreed plan:")
+        .next()
+        .unwrap_or(&req.request)
+        .trim()
+        .to_string();
+    let mut acceptance = krate_author::acceptance::judge(&judged_request, &name, &app_source);
     // The manifest can make an app impossible while every word check passes.
     //
     // `judge` reads the SOURCE. A sandbox app reaches only what its manifest
@@ -13359,7 +13379,26 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
             }
         }
 
-        let missing = policy.missing_required_for_manifest(manifest)?;
+        // A picture is not a run, so a withheld capability must not stop it.
+        //
+        // --for-screenshot deliberately grants only what painting needs, and
+        // withholds the clipboard, the microphone, the network and the rest
+        // (IC-841). But an app that DECLARES one of those as required was
+        // then refused before it opened -- so Studio's thumbnail came back
+        // empty and the finished-app card said "no preview for this one"
+        // for every app that touches the clipboard. The founder's diff
+        // viewer, which reads the clipboard by design, could never show a
+        // picture (K-834).
+        //
+        // The withholding stands: the app runs for the photograph WITHOUT
+        // the capability, and whatever it does when refused is what the
+        // picture shows -- which is honest, and is what a person would see
+        // if they declined it themselves. A real run is unchanged.
+        let missing = if request.for_screenshot {
+            Vec::new()
+        } else {
+            policy.missing_required_for_manifest(manifest)?
+        };
         if !missing.is_empty() {
             if request.json {
                 print_run_json(
