@@ -1462,6 +1462,35 @@ function startBuildWatchdog() {
 function restoreBuild(sessionId) {
   const rec = state.builds.get(sessionId);
   if (!rec) return;
+  // The TRANSCRIPT's live chip comes back too.
+  //
+  // This restored the right-hand pane and nothing else, so walking out of
+  // a running build and back left the conversation with no sign that
+  // anything was happening -- the chip, its progress bar, its Stop and the
+  // work panel are all created when a build STARTS and are not among the
+  // messages a session file stores (K-831). Rebuilt here from the same
+  // record the pane uses, with the steps seen so far put back so opening
+  // the panel shows the work rather than an empty list.
+  try {
+    const thread = $("thread");
+    if (thread && state.buildingSession && state.buildingSession.id === sessionId
+        && !thread.querySelector(".msg.vlive")) {
+      state.buildChip = appendLiveChip(state.buildVersion || 1);
+      const face = state.buildChip.querySelector("[data-worknow]");
+      if (face && rec.nowLine) face.textContent = rec.nowLine;
+      const phase = state.buildChip.querySelector("[data-phase]");
+      if (phase && rec.nowLine) phase.textContent = rec.nowLine;
+      const steps = state.buildChip.querySelector("[data-worksteps]");
+      if (steps && Array.isArray(rec.steps)) {
+        for (const line of rec.steps.slice(-40)) {
+          const row = document.createElement("p");
+          row.className = "vwork-step";
+          row.textContent = line;
+          steps.appendChild(row);
+        }
+      }
+    }
+  } catch (e) { /* the pane below still restores */ }
   try {
     if (rec.title) $("buildTitle").textContent = rec.title;
     if (rec.expect) $("buildExpect").textContent = rec.expect;
@@ -1828,8 +1857,28 @@ function onEngineLineInner(line) {
     // panel off that reference meant the work simply stopped updating for
     // anyone who navigated away mid-build and came back, silently, which
     // is the same shape as K-152.
+    // The WORK panel is a different audience from the one-line peek.
+    //
+    // `human` above is deliberately narrow -- it feeds a single line on the
+    // stage, where a file path reads as compiler noise. Reusing it here
+    // left the panel stuck on "starting..." for whole builds, because the
+    // step a person most wants to see, "writing src/lib.rs", is exactly
+    // what that filter throws away. This panel exists to show the working,
+    // the way a terminal agent does, so it takes every step the engine
+    // narrates and only drops the true machine noise: compiler progress,
+    // crate lists, and anything that is not a sentence (K-830).
+    const STEP = /^(reading|writing|checking|opening|looking|packing|building|running|testing|fixing|planning|thinking|adding|removing|trying)\b/i;
+    const NOISE = /^(compiling|finished|downloaded|updating|blocking|warning|error\[|\s*-->|\s*\||note:)/i;
+    const step = STEP.test(clean) && !NOISE.test(clean) && clean.length < 160;
+    // Kept on the record, so re-entering the session can put them back
+    // (K-831). Bounded like the visible list.
+    if (step && rec) {
+      if (!Array.isArray(rec.steps)) rec.steps = [];
+      rec.steps.push(clean);
+      if (rec.steps.length > 40) rec.steps.splice(0, rec.steps.length - 40);
+    }
     const liveChip = state.buildChip || $("thread").querySelector(".msg.vlive");
-    if (human && liveChip) {
+    if (step && liveChip) {
       const face = liveChip.querySelector("[data-worknow]");
       if (face) face.textContent = clean;
       const steps = liveChip.querySelector("[data-worksteps]");

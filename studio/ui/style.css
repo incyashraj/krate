@@ -656,6 +656,35 @@ body.windows.light .titlebar .side-toggle:hover { color: #000; }
   user-select: text; letter-spacing: -0.003em;
 }
 .msg.krate .body { color: var(--reply); }
+
+/* Whose turn is whose, at a glance.
+ *
+ * The only thing telling a person's message from Krate's was the colour of
+ * a 8px dot on the rail. Everything else -- size, weight, colour, indent --
+ * was identical, so a long session read as one undifferentiated column and
+ * the founder could see it was wrong beside a terminal agent without being
+ * able to name it (K-832).
+ *
+ * What a person WROTE is the anchor: slightly larger, full strength, and
+ * carrying a quiet tint so the eye lands on it while scrolling back for
+ * "what did I ask for". Krate's replies stay the reading size they were
+ * set to. No bubbles: this is a transcript, not a chat app, and a box
+ * around every line would fight the timeline rail. */
+.msg.you .body {
+  font-size: 15px;
+  font-weight: 450;
+  color: var(--text);
+}
+.msg.you .who { color: var(--blue); }
+/* A hairline on the person's turn, in the accent the rail dot uses. It
+   reads as "this is where you spoke" without drawing a container. */
+.msg.you {
+  border-left: 2px solid color-mix(in srgb, var(--blue) 45%, transparent);
+  padding-left: 12px;
+  /* No negative margin: it pulled the rule past the thread's gutter and
+     clipped the first character of every line the person wrote. The rule
+     sits inside the text column, which is where the eye expects it. */
+}
 .msg .files { color: var(--faint); font-size: 11.5px; margin-top: 4px; display: block; }
 
 /* The composer lines up with the words above it.
