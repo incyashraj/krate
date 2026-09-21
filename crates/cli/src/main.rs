@@ -9850,6 +9850,69 @@ fn run_provider_author(
                 // where did it go outside its workspace" answerable. The gap
                 // before each event is its think/act time. Guarded so it costs
                 // nothing when tracing is off.
+                // The work itself, for anyone watching.
+                //
+                // Every read, write and command the agent makes was already
+                // extracted here -- and only ever written to the trace file,
+                // so a person watching a ten-minute build saw a sentence a
+                // minute while the machine knew exactly which file was being
+                // edited at that second. Krate's users are developers; this
+                // is the thing they most want to see, and it costs nothing
+                // to say (K-836).
+                //
+                // Emitted on its own marker line so a display can render it
+                // as structure (a file being written, a command being run)
+                // rather than guessing from prose. Human progress lines
+                // continue below, unchanged.
+                if let Some((tool, target)) = provider.raw_tool_call(&line) {
+                    // A Bash target is a COMMAND, not a path: taking the
+                    // last path-ish segment of `ls -la && cat manifest.toml`
+                    // produced "lib.rs && ls src" as a file name. A command
+                    // shows its first word or two; everything else shows the
+                    // file's own name.
+                    let short = if tool == "Bash" {
+                        // The command a developer would recognise, not the
+                        // shell scaffolding around it. A `cd ... && cargo
+                        // build` is a cargo build; `SDK=...; grep -n foo`
+                        // is a grep. So: drop leading assignments and `cd`
+                        // segments, then take the first real command and
+                        // its first argument.
+                        let mut useful = target.as_str();
+                        for sep in ["&&", ";", "|"] {
+                            for part in target.split(sep) {
+                                let p = part.trim();
+                                let head = p.split_whitespace().next().unwrap_or("");
+                                let is_setup = head == "cd"
+                                    || head.is_empty()
+                                    || (head.contains('=') && !head.starts_with('-'));
+                                if !is_setup {
+                                    useful = p;
+                                    break;
+                                }
+                            }
+                            if useful != target.as_str() {
+                                break;
+                            }
+                        }
+                        useful
+                            .split_whitespace()
+                            .take(2)
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    } else {
+                        target
+                            .rsplit(['/', '\\'])
+                            .next()
+                            .unwrap_or(&target)
+                            .to_string()
+                    };
+                    // Tabs and newlines are the record separators here.
+                    let short = short.replace(['\t', '\n', '\r'], " ");
+                    let flat = target.replace(['\t', '\n', '\r'], " ");
+                    println!("==>tool {tool}\t{short}\t{flat}");
+                    use std::io::Write as _;
+                    let _ = std::io::stdout().flush();
+                }
                 if trace::enabled() {
                     if let Some((tool, target)) = provider.raw_tool_call(&line) {
                         // Flag a target outside the app's own workspace: a read

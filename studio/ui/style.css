@@ -647,6 +647,21 @@ body.windows.light .titlebar .side-toggle:hover { color: #000; }
 }
 .vwork-step:last-child { color: var(--muted); }
 
+/* A tool row: the action, the file, and a count when it repeats (K-836).
+   The verb is quiet and fixed-width-ish so the file names line up and can
+   be scanned; the file is the thing a developer is reading for. */
+.vwork-tool { display: flex; align-items: baseline; gap: 8px; }
+.vwork-verb {
+  color: var(--ghost); flex: none;
+  min-width: 52px;
+}
+.vwork-file {
+  color: var(--muted); overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vwork-step:last-child .vwork-file { color: var(--text); }
+.vwork-count { color: var(--ghost); flex: none; margin-left: auto; }
+
 .msg .who {
   font-size: 10.5px; font-weight: 560; letter-spacing: 0.1em;
   color: var(--faint); display: block; margin-bottom: 6px;

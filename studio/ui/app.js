@@ -1459,6 +1459,53 @@ function startBuildWatchdog() {
  *
  * Defensive throughout, for the same reason beginBuild is: this runs while a
  * build is in flight, and a throw here must never be able to disturb it. */
+/* One row in the live work panel: an action and the file it acts on.
+ *
+ * Krate's users are developers, and this is the view they asked for --
+ * the files being edited as it happens, the way a terminal agent shows
+ * its tool calls. Collapsed, the chip still shows the one-line summary;
+ * expanded, this is the real work (K-836).
+ *
+ * Repeats collapse: an agent editing one file five times in a row is one
+ * row with a count, not five identical lines. */
+function addWorkTool(tool, file, path) {
+  const rec = liveRecord();
+  const verb = {
+    Read: "read", Write: "wrote", Edit: "edited", Bash: "ran",
+    Glob: "looked for", Grep: "searched", WebFetch: "fetched",
+  }[tool] || tool.toLowerCase();
+  const label = file || path || "";
+  if (rec) {
+    if (!Array.isArray(rec.tools)) rec.tools = [];
+    rec.tools.push({ verb, label });
+    if (rec.tools.length > 60) rec.tools.splice(0, rec.tools.length - 60);
+  }
+  const liveChip = state.buildChip || $("thread").querySelector(".msg.vlive");
+  if (!liveChip) return;
+  const steps = liveChip.querySelector("[data-worksteps]");
+  if (!steps) return;
+  const last = steps.lastElementChild;
+  if (last && last.dataset.verb === verb && last.dataset.label === label) {
+    const n = Number(last.dataset.count || "1") + 1;
+    last.dataset.count = String(n);
+    last.querySelector(".vwork-count").textContent = `x${n}`;
+    return;
+  }
+  const row = document.createElement("p");
+  row.className = "vwork-step vwork-tool";
+  row.dataset.verb = verb;
+  row.dataset.label = label;
+  row.innerHTML = '<span class="vwork-verb"></span><span class="vwork-file"></span><span class="vwork-count"></span>';
+  row.querySelector(".vwork-verb").textContent = verb;
+  row.querySelector(".vwork-file").textContent = label;
+  steps.appendChild(row);
+  while (steps.childElementCount > 60) steps.removeChild(steps.firstElementChild);
+  if (!steps.hasAttribute("hidden")) steps.scrollTop = steps.scrollHeight;
+  // The collapsed face follows the work too, so the chip is never stale.
+  const face = liveChip.querySelector("[data-worknow]");
+  if (face && label) face.textContent = `${verb} ${label}`;
+}
+
 function restoreBuild(sessionId) {
   const rec = state.builds.get(sessionId);
   if (!rec) return;
@@ -1835,6 +1882,18 @@ function onEngineLineInner(line) {
   if (log) {
     log.textContent += line + "\n";
     log.scrollTop = log.scrollHeight;
+  }
+  // A tool call: what the AI is doing to which file, right now.
+  //
+  // The engine emits `==>tool <tool>\t<file>\t<path>` per read, write and
+  // command (K-836). Rendered as a row with the action and the file, so a
+  // developer watching sees the actual work -- "Write src/lib.rs", "Bash
+  // cargo build" -- instead of one sentence a minute. Handled before the
+  // prose path and returns, so it never reaches the human line display.
+  if (line.startsWith("==>tool ")) {
+    const [tool, file, path] = line.slice(8).split("\t");
+    if (tool) addWorkTool(tool, file || "", path || "");
+    return;
   }
   const clean = line.replace(/^=+>\s*/, "").trim();
   if (clean) {
