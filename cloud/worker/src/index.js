@@ -19,6 +19,12 @@
 /// money before anyone notices.
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
+/// A support report over this is refused, and refused on its declared
+/// length before a byte of it is read (K-767). Larger than a bundle
+/// because a report carries the session log and a screenshot beside the
+/// app, and those are the parts that make it worth reading.
+const MAX_REPORT_BYTES = 12 * 1024 * 1024;
+
 // The bundle validator, compiled from crates/bundle (IC-833, K-309). In
 // the Worker the import is a WebAssembly.Module (wrangler's CompiledWasm
 // rule); under Node's ESM integration it is the instantiated exports.
@@ -67,6 +73,109 @@ const MAX_PATH_BYTES = 180;
 /// again. Long enough that publishing several apps costs one round trip,
 /// short enough that a revoked token stops working the same day.
 const IDENTITY_TTL_SECONDS = 6 * 60 * 60;
+
+// ------------------------------------------------------- the anonymous wall
+//
+// Every write endpoint that takes no sign-in gets a ceiling per caller per
+// minute (K-767). Before this there was none anywhere: six rapid POST
+// /share/new and five rapid anonymous POST /report all returned 200, never
+// 429, and each one makes a KV row or an R2 object. That is an unbounded
+// hosting bill and an unbounded pile of junk, reachable by anyone.
+//
+// Counted in KV rather than with Cloudflare's rate-limit binding, for one
+// reason: the binding only exists inside the Workers runtime, so nothing
+// outside a deploy can exercise it. A wall nobody can test is a wall
+// nobody knows is standing -- and this one was not standing for months
+// precisely because no test asked. KV `get` is strongly consistent (KV
+// `list` is not, which is why nothing here lists), so the count a caller
+// reads is the count they wrote.
+//
+// The trade this accepts: a KV counter is per-colo-ish under real load and
+// a determined flood spread across the planet gets a multiple of the
+// ceiling. That is fine. This is not a security boundary -- it is a cost
+// ceiling, and turning "unbounded" into "bounded by a smallish number" is
+// the whole win. Cloudflare's own Rate Limiting rules sit in front of the
+// worker for anything harsher.
+
+/// How long one counting window lasts. A minute is short enough that an
+/// ordinary person never notices and long enough that a flood cannot
+/// outrun it by waiting.
+const RATE_WINDOW_SECONDS = 60;
+
+/// How many of each kind of anonymous write one caller gets per window.
+///
+/// Set from what real use looks like, with room to spare. A person sending
+/// a bug report sends one; a person making a shared store makes one. The
+/// telemetry beacon is the busiest of them because the CLI sends one per
+/// action, so it gets the loosest ceiling.
+const RATE_LIMITS = {
+  report: 5,
+  "share/new": 10,
+  usage: 60,
+  founding: 5,
+  makeit: 5,
+  "support/new": 5,
+};
+
+/// Who is asking, as far as the edge can tell.
+///
+/// `CF-Connecting-IP` is set by Cloudflare itself and cannot be forged by
+/// the client -- Cloudflare overwrites whatever the caller sent. A request
+/// that somehow carries none is counted under one shared bucket rather
+/// than let through: an unattributable anonymous write is exactly what
+/// this is here to bound.
+function rateCaller(request) {
+  return request.headers.get("cf-connecting-ip") || "unattributed";
+}
+
+/// Has this caller used up `bucket` for this window?
+///
+/// Returns a 429 Response to send back, or null to carry on. The window is
+/// the clock divided into fixed minutes, so the key changes on its own and
+/// the KV TTL sweeps the old one -- no cleanup pass, no listing.
+///
+/// A KV failure lets the request through. The alternative is a KV blip
+/// taking down every anonymous write on the hub, and the thing being
+/// protected is a bill, not a secret. K-082's lesson twice over: a cache
+/// or a counter must never be able to break the product it guards.
+async function rateLimited(request, env, bucket) {
+  const limit = RATE_LIMITS[bucket];
+  if (!limit) return null;
+  const window = Math.floor(Date.now() / 1000 / RATE_WINDOW_SECONDS);
+  const key = `rate:${bucket}:${rateCaller(request)}:${window}`;
+  let used = 0;
+  try {
+    used = Number(await env.APPS.get(key)) || 0;
+  } catch (_) {
+    return null;
+  }
+  if (used >= limit) {
+    return new Response(
+      `too many requests -- wait a minute and try again`,
+      {
+        status: 429,
+        headers: {
+          "content-type": "text/plain; charset=utf-8",
+          // How long until the window rolls over. A client that honours
+          // this backs off exactly far enough and no further.
+          "retry-after": String(
+            RATE_WINDOW_SECONDS - (Math.floor(Date.now() / 1000) % RATE_WINDOW_SECONDS),
+          ),
+        },
+      },
+    );
+  }
+  try {
+    // Two windows of TTL, because a write landing at the very end of a
+    // window must still outlive that window. KV's own floor is 60s.
+    await env.APPS.put(key, String(used + 1), {
+      expirationTtl: RATE_WINDOW_SECONDS * 2,
+    });
+  } catch (_) {
+    // Counting failed; the request still goes through. See above.
+  }
+  return null;
+}
 
 export default {
   /// The nightly scrub (wrangler `[triggers] crons`): inventory and
@@ -152,6 +261,8 @@ export default {
         // The founding 200: an email and a timestamp, nothing else. No
         // checkout here -- this is the list that gets the $79/yr lock when
         // Studio leaves preview.
+        const over = await rateLimited(request, env, "founding");
+        if (over) return cors(over);
         return cors(await founding(request, env));
       }
       if (request.method === "POST" && pathname === "/makeit") {
@@ -162,9 +273,13 @@ export default {
         // is unchanged and still useful: it records the request that
         // failed, the answers given, and an email, so one person can read
         // it and the tool can improve. Nothing here promises delivery.
+        const over = await rateLimited(request, env, "makeit");
+        if (over) return cors(over);
         return cors(await makeit(request, env));
       }
       if (request.method === "POST" && pathname === "/usage") {
+        const over = await rateLimited(request, env, "usage");
+        if (over) return cors(over);
         return cors(await usage(request, env));
       }
       // Shared stores: a key-value bucket shared between the machines that
@@ -175,6 +290,8 @@ export default {
       // the runtime tells the person that plainly before granting
       // `store.shared`.
       if (request.method === "POST" && pathname === "/share/new") {
+        const over = await rateLimited(request, env, "share/new");
+        if (over) return cors(over);
         return cors(await shareNew(env));
       }
       if (request.method === "GET" && pathname.startsWith("/play/")) {
@@ -243,6 +360,8 @@ export default {
         return cors(await getIcon(pathname.slice(6), env));
       }
       if (request.method === "POST" && pathname === "/report") {
+        const over = await rateLimited(request, env, "report");
+        if (over) return cors(over);
         return cors(await putReport(request, env));
       }
       // Registry takedown with notice, reason, scope and appeal (IC-669,
@@ -356,6 +475,8 @@ export default {
       }
       // ---- support: tickets with real conversations -------------------
       if (request.method === "POST" && pathname === "/support/new") {
+        const over = await rateLimited(request, env, "support/new");
+        if (over) return cors(over);
         return cors(await supportNew(request, env));
       }
       if (request.method === "POST" && pathname === "/support/list") {
@@ -757,9 +878,37 @@ async function putReport(request, env) {
   //
   // Still recorded when it happens to be there, because a report we can reply
   // to is better than an anonymous one. Optional, never a gate.
+
+  // Refuse a declared length before reading a byte, the same way /publish
+  // does (K-767). This used to be `new Uint8Array(await
+  // request.arrayBuffer())` with the 12 MiB check after it, so a client
+  // announcing 500 MB was allocated 500 MB before being told the ceiling.
+  // The ceiling was real and enforced after the cost it exists to prevent,
+  // and this endpoint is anonymous on purpose (K-757), so it is the
+  // cheapest one to point a flood at.
+  //
+  // Content-Length is the client's claim, not a fact -- it can lie, be
+  // absent, or arrive chunked. So this is a fast refusal for the honest
+  // oversized report and the cheap half of an attack, and the bounded read
+  // below still stands for everything else. Two checks, not one moved.
+  const declared = request.headers.get("content-length");
+  if (declared !== null) {
+    const n = Number(declared);
+    if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
+      return text("content-length is not a length", 400);
+    }
+    if (n > MAX_REPORT_BYTES) {
+      return text("a report must be a zip under 12 MiB", 413);
+    }
+  }
+
   const identity = await verifyGitHub(request, env).catch(() => null);
-  const body = new Uint8Array(await request.arrayBuffer());
-  if (body.length === 0 || body.length > 12 * 1024 * 1024) {
+  const read = await readBounded(request, MAX_REPORT_BYTES);
+  if (read.tooLarge) {
+    return text("a report must be a zip under 12 MiB", 413);
+  }
+  const body = read.body;
+  if (body.length === 0) {
     return text("a report must be a zip under 12 MiB", 413);
   }
   // PK\x03\x04: a zip and nothing else. The studio builds these; anything
@@ -3125,6 +3274,10 @@ function cors(response) {
     "access-control-allow-headers",
     "authorization, content-type, x-krate-name, x-krate-description, x-krate-category, x-krate-session, x-krate-version, x-krate-os, x-krate-note, x-krate-unlisted",
   );
+  // A page script cannot read a response header it was not shown. The 429
+  // from the anonymous wall (K-767) carries `retry-after`, and without this
+  // the browser hides it and the page can only guess how long to wait.
+  headers.set("access-control-expose-headers", "retry-after");
   return new Response(response.body, { status: response.status, headers });
 }
 
