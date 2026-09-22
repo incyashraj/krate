@@ -3086,7 +3086,19 @@ async function developerRoute(request, url, login, env) {
     }
     return wantsPage
       ? developerPage(login, apps, env)
-      : json({ login, apps: apps.map((a) => a.slug) });
+      : json({
+          login,
+          // Names a tool can ask this host for: `<login>.krate.tech/<slug>`
+          // only resolves through a channel. An app with no channel is
+          // still listed, at the content address that does answer, rather
+          // than under a slug that would 404.
+          apps: apps.filter((a) => !a.href).map((a) => a.slug),
+          published: apps.map((a) => ({
+            name: a.name,
+            id: a.current,
+            url: a.href || `/${a.slug}`,
+          })),
+        });
   }
   if (parts.length !== 1) return text("not found", 404);
 
@@ -3124,8 +3136,69 @@ async function developerRoute(request, url, login, env) {
   return appPage(login, channel, meta, env);
 }
 
-/// Every app this developer has a channel for, newest move first.
+/// Every app this developer has published, newest first.
+///
+/// Channels first, then the apps themselves. A channel is the moving name
+/// -- `channel:<login>/<slug>`, rollback, history -- and it is what the
+/// page prefers, because its URL survives a new version. But a channel is
+/// only written when a LISTED publish happens (IC-389), and it was added
+/// long after publishing was, so every app published before it has none.
+///
+/// Reading channels alone was wrong and shipped: of 20 published apps
+/// across four people, exactly ONE had a channel, so three of the four
+/// developers' pages were empty -- and once K-856 turned an empty page
+/// into a 404, three real developers' names stopped resolving. The app
+/// records are the ground truth about who published what; the channel is
+/// a nicer name on top of it.
 async function developerApps(env, login) {
+  const channelRows = await developerChannelApps(env, login);
+  const seen = new Set(channelRows.map((row) => row.current));
+  const direct = await developerDirectApps(env, login, seen);
+  return [...channelRows, ...direct].sort(
+    (a, b) => (b.moved_at || 0) - (a.moved_at || 0),
+  );
+}
+
+/// The apps this developer published that no channel covers.
+///
+/// Keyed on `author_login`, which the publish door writes from the
+/// session -- so it is the publisher's own login, not anything a caller
+/// can set. Unlisted apps are left out for the same reason they never
+/// move a channel: an unlisted publish is deliberately not the app's
+/// public face.
+async function developerDirectApps(env, login, seen) {
+  const listing = await env.APPS.list({ prefix: "app:", limit: 1000 });
+  const rows = await Promise.all(
+    listing.keys.map(async (key) => {
+      const hash = key.name.slice("app:".length);
+      if (seen.has(hash)) return null;
+      let meta;
+      try {
+        meta = JSON.parse((await env.APPS.get(key.name)) || "null");
+      } catch (_) {
+        return null;
+      }
+      if (!meta || meta.author_login !== login) return null;
+      if (meta.unlisted) return null;
+      if (await env.APPS.get(`takedown:${hash}`)) return null;
+      return {
+        // No channel, so the app answers at its content address. The
+        // page's own links go through /<slug>, which only a channel can
+        // serve, so these carry an absolute URL instead.
+        slug: hash,
+        href: `${(env.PUBLIC_BASE || "").replace(/\/$/, "")}/a/${hash}`,
+        name: meta.name || hash.slice(0, 12),
+        current: hash,
+        moved_at: (meta.published || 0) * 1000,
+        meta,
+      };
+    }),
+  );
+  return rows.filter(Boolean);
+}
+
+/// Every app this developer has a channel for, newest move first.
+async function developerChannelApps(env, login) {
   const listing = await env.APPS.list({ prefix: `channel:${login}/`, limit: 200 });
   const rows = await Promise.all(
     listing.keys.map(async (key) => {
@@ -3270,7 +3343,7 @@ function developerPage(login, apps, env) {
             ? `<img class="shot" src="${base}/shot/${escapeForHtml(app.current)}" alt="" loading="lazy" />`
             : `<div class="shot"></div>`;
           return `<div class="app">${shot}<div>
-            <h2><a href="/${escapeForHtml(app.slug)}">${escapeForHtml(app.name)}</a></h2>
+            <h2><a href="${escapeForHtml(app.href || `/${app.slug}`)}">${escapeForHtml(app.name)}</a></h2>
             ${desc ? `<p>${desc}</p>` : ""}
             <div class="meta">${size}${size ? " &middot; " : ""}runs on Mac, Windows and Linux</div>
           </div></div>`;

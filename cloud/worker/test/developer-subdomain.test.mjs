@@ -226,4 +226,77 @@ async function publish(e, name, bytes) {
   console.log("ok  publishing one app is what turns a name into a developer");
 }
 
+// ---- an app published before channels existed ----------------------------
+//
+// THE BUG THAT REACHED PEOPLE. A channel is only written on a LISTED
+// publish, and channels were added long after publishing was (IC-389), so
+// most published apps have none: of 20 real apps across four people on the
+// live hub, exactly ONE had a channel. developerApps read channels alone,
+// so three of the four developers' pages were empty -- and once K-856 made
+// an empty page a 404, three real developers' names stopped resolving.
+// Reported by the founder, whose own page worked, which is exactly why
+// nobody saw it.
+//
+// Seeded as an `app:` record with no channel, which is what those 20 apps
+// actually look like in KV.
+{
+  const e = env();
+  const hash = "c".repeat(64);
+  e._kv.set(
+    `app:${hash}`,
+    JSON.stringify({
+      name: "Weather",
+      description: "what it does outside",
+      author_login: "aanchalabhongade",
+      published: 1788339400,
+      size: 109247,
+    }),
+  );
+
+  const page = await hit(e, "https://aanchalabhongade.krate.tech/", BROWSER);
+  assert.strictEqual(page.status, 200, "a real publisher has a page, channel or not");
+  assert.match(page.body, /Weather/, "and their app is on it");
+  assert.match(
+    page.body,
+    new RegExp(`/a/${hash}`),
+    "linked at the content address, since no channel can serve /<slug>",
+  );
+
+  const api = await hit(e, "https://aanchalabhongade.krate.tech/");
+  assert.strictEqual(api.status, 200, "a tool is told the same");
+  const body = JSON.parse(api.body);
+  assert.deepStrictEqual(
+    body.apps,
+    [],
+    "`apps` holds only names this host can resolve -- a hash is not one",
+  );
+  assert.strictEqual(body.published.length, 1, "but the app is still reported");
+  assert.strictEqual(body.published[0].url, `https://hub.krate.tech/a/${hash}`);
+  console.log("ok  an app published before channels still reaches its author's page");
+}
+
+// ---- what must NOT appear on that page -----------------------------------
+{
+  const e = env();
+  const mine = "d".repeat(64);
+  const theirs = "e".repeat(64);
+  const hidden = "f".repeat(64);
+  e._kv.set(`app:${mine}`, JSON.stringify({ name: "Mine", author_login: "alice", published: 2 }));
+  e._kv.set(`app:${theirs}`, JSON.stringify({ name: "Theirs", author_login: "bob", published: 3 }));
+  e._kv.set(
+    `app:${hidden}`,
+    JSON.stringify({ name: "Hidden", author_login: "alice", published: 4, unlisted: true }),
+  );
+
+  const page = await hit(e, "https://alice.krate.tech/", BROWSER);
+  assert.strictEqual(page.status, 200);
+  assert.match(page.body, /Mine/, "her own app is there");
+  assert.ok(!page.body.includes("Theirs"), "somebody else's is not");
+  assert.ok(
+    !page.body.includes("Hidden"),
+    "and an unlisted one is not -- it is deliberately not the public face",
+  );
+  console.log("ok  a page shows this author's listed apps and nobody else's");
+}
+
 console.log("ok  a developer's own name works end to end");
