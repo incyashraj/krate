@@ -228,9 +228,13 @@ try {
 
 /* A tab has no onboarding. Every question it asks is already answered here:
  * the agent is ours and the only one, there is nothing to install, and the
- * name comes from the account they signed in with. Studio reads this flag
- * during boot, so it is written now -- before its script runs -- and the
- * onboarding view is never shown rather than shown and dismissed. */
+ * name comes from the account they signed in with.
+ *
+ * Studio now asks `onboarded_get` during boot and this bridge answers it
+ * true (see COMMANDS below), so the onboarding view is never shown rather
+ * than shown and dismissed. The flag is still written here as well: a
+ * browser holding an older cached app.js reads localStorage directly, and
+ * that copy must keep working until the cache turns over. */
 try { localStorage.setItem("krate-onboarded", "1"); } catch (e) {}
 
 async function hub(path, opts = {}) {
@@ -1191,8 +1195,18 @@ const COMMANDS = {
         method: "POST",
         body: JSON.stringify({ device: deviceId() }),
       });
-      return out.n || 0;
-    } catch (e) { return 0; }
+      // A record, not a bare number. This returned `out.n || 0`, and the
+      // desktop returned {month, n} -- two shells answering one command in
+      // two shapes, which has already cost one bug (the UI read `rec.n` on
+      // a number, got undefined, and wrote a zero over a real count).
+      //
+      // The record is what carries `machine`: how much of the count belongs
+      // to this device rather than this person, which is the only thing
+      // that can explain a free app spent before they made anything
+      // (K-807). A bare number cannot say it, and this is the web path,
+      // where the device wall actually bites.
+      return { n: Number(out && out.n) || 0, machine: Number(out && out.machine) || 0 };
+    } catch (e) { return { n: 0, machine: 0 }; }
   },
 
   async plan_count_make() {
@@ -1640,6 +1654,11 @@ const COMMANDS = {
   async refresh_agents() { return COMMANDS.agents(); },
   async settings_get() { return { out_dir: "", agent: "krate" }; },
   async settings_set() {},
+  // A tab has no ~/.krate and no first run to remember: there is nothing
+  // to install, no agent to choose, and the name comes from the account.
+  // So the answer is a constant, and marking it is a no-op.
+  async onboarded_get() { return true; },
+  async onboarded_set() {},
   async studio_version() { return "web"; },
   // The engine is the build service's, and the service is never older than
   // the page that was deployed with it.

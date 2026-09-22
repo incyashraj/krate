@@ -58,6 +58,14 @@ run "clippy" cargo clippy --workspace --all-targets
 # four minutes here is the cheap side of that trade.
 run "workspace tests (CI quick lane)" cargo test --workspace --all-features
 
+# The studio crate is OUTSIDE the workspace, so `cargo test --workspace`
+# never compiles it and CI has no lane for it either. Nothing anywhere ran
+# these tests, and one of them sat red in main long enough that the fix it
+# contradicted (K-829, macOS keeps the real HOME) had already shipped -- a
+# test nobody runs is not a guard, it is a comment that takes time to
+# compile. Seconds here, and the only thing that watches Studio's shell.
+run "studio tests" sh -c 'cd studio && cargo test'
+
 # The studio web tests. These read studio/ui directly, run in about a second,
 # and are exactly what failed the pages deploy -- including the rule that
 # there are no dashes in text a person reads.

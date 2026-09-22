@@ -222,6 +222,13 @@ jobs:
           # *-test.mjs in this folder, but the list here is written out one
           # by one, so a new test is not covered until it is named.
           node docs/landing/studio/money-seam-test.mjs
+          # And that a wall the person did not walk into says why. The free
+          # app is bound to the machine as well as the account, so somebody
+          # on a second-hand or shared Mac can meet it having made nothing;
+          # without the reason on screen that refusal reads as a bug. The
+          # opposite mistake matters as much -- telling a person who spent
+          # their own app that a machine did it -- so both are checked.
+          node docs/landing/studio/machine-share-test.mjs
 
           mkdir -p _site/app
           cp -R studio/ui/. _site/app/

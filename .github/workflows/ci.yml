@@ -188,6 +188,14 @@ jobs:
           cargo fetch --manifest-path "$tmp/Cargo.toml" --target wasm32-wasip1
       - name: Run workspace tests
         run: cargo test --workspace --all-features
+      # Studio's shell is OUTSIDE the workspace, so the line above never
+      # compiles it and nothing else here did either. Its tests went
+      # unrun long enough that one sat red in main contradicting a fix
+      # that had already shipped (K-829, macOS keeps the real HOME) --
+      # nobody was told, because no lane was watching. Seconds to run.
+      - name: Run studio tests
+        working-directory: studio
+        run: cargo test
       # The half of the stranger's path that MAKES an app.
       #
       # `test-cold-install.sh` walks install/refuse/grant/run and stops there,

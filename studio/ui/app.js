@@ -572,7 +572,7 @@ async function boot() {
       // Signed in, but possibly never onboarded -- somebody who signed in
       // on an older build has an account and has still never been told
       // what a .krate is.
-      if (needsOnboarding()) {
+      if (await needsOnboarding()) {
         showView("onboard");
         obGo(1);
         return;
@@ -584,7 +584,7 @@ async function boot() {
     // needs an account, so a first run goes to onboarding and everyone
     // else goes straight to the prompt box. The sign-in door is inside
     // onboarding (skippable) and on the profile page.
-    if (needsOnboarding()) {
+    if (await needsOnboarding()) {
       showView("onboard");
       obGo(1);
       return;
@@ -2524,6 +2524,49 @@ function planIsActiveSafe() {
  */
 const CHARGING = false;
 
+/* Was the allowance spent by this MACHINE rather than by this person?
+ *
+ * A fresh account on a second-hand or shared Mac starts with its free app
+ * already gone, because the free app is bound to the device -- that is
+ * deliberate, and it is what stops a new email minting another one. What
+ * was missing is that nothing said so, so the person met a wall with no
+ * explanation and no reason to believe it was not a bug (K-807).
+ *
+ * True only when the machine's own share is what spends it. Someone who
+ * used their app on this machine sees the ordinary words: their count and
+ * the machine's are the same makes, and telling them the machine did it
+ * would be false. */
+function machineSpentIt() {
+  const p = state.planMakes;
+  // A NUMBER, not something that coerces to one. `Number("1")` is 1, so a
+  // coercing check would explain a wall on the strength of whatever the
+  // wire happened to carry -- and this decides what a person reads on the
+  // screen where they choose whether to pay.
+  const machine = p && p.machine;
+  if (typeof machine !== "number" || !Number.isFinite(machine) || machine <= 0) {
+    return false;
+  }
+  return machine >= FREE_MAKES && makesOwn() === 0;
+}
+/* What this person has made under their own account, as far as the screen
+ * can tell: the count that is NOT explained by the machine. */
+function makesOwn() {
+  return Math.max(0, makesThisMonth() - machineShare());
+}
+/* The machine's share, or 0 when the hub did not say. Not coerced: see
+ * machineSpentIt. */
+function machineShare() {
+  const machine = state.planMakes && state.planMakes.machine;
+  return typeof machine === "number" && Number.isFinite(machine) && machine > 0
+    ? machine
+    : 0;
+}
+function machineNote() {
+  const machine = machineShare();
+  return machine === 1
+    ? "This machine has already made its free app."
+    : `This machine has already made ${machine} apps.`;
+}
 function renderFreeCount() {
   const n = makesThisMonth();
   // FREE_MAKES, not a literal 3. This said `3 - n` under a constant that
@@ -2582,7 +2625,9 @@ function renderFreeCount() {
       ? "One free app, and one free change to it. Krate Studio on your own machine is free and unlimited with your own AI."
       : active
         ? "Unlimited apps. Every one is a file that is yours forever."
-        : "One free app, plus one free change to it. Failed builds never count.";
+        : machineSpentIt()
+          ? `${machineNote()} The free app belongs to the machine, so a new account does not bring another one.`
+          : "One free app, plus one free change to it. Failed builds never count.";
   }
 }
 function limitAcked() {
@@ -6389,7 +6434,14 @@ function openLimitSheet() {
     }
   });
   const live = state.billing && state.billing.live;
-  $("limitNote").textContent = "";
+  // A wall the person did not walk into has to say so (K-807). On a
+  // second-hand or shared machine the free app is already spent before
+  // they have made anything, because it belongs to the device -- and
+  // without this line the refusal reads as a bug, on the screen where
+  // somebody decides whether to trust us with money.
+  $("limitNote").textContent = machineSpentIt()
+    ? `${machineNote()} The free app belongs to the machine rather than the account, so signing in with a new address does not bring another one.`
+    : "";
   // Only dress this as a paywall once we actually charge. Until then the
   // markup's own copy stands: nothing is metered, so reaching here is a
   // bug on our side rather than a limit the person hit.
@@ -6760,6 +6812,9 @@ if (tauri) {
 
 /* ---- mock backend: design-review mode only ---------------------------- */
 
+/// First-run state for the no-backend mock, kept for the life of the page.
+let mockOnboarded = false;
+
 async function mockInvoke(cmd, args) {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   switch (cmd) {
@@ -6773,6 +6828,14 @@ async function mockInvoke(cmd, args) {
     case "settings_get":
       return { out_dir: "~/Documents/Krate Apps", agent: "claude" };
     case "settings_set":
+      return;
+    // With no backend there is nowhere to keep this, so the mock holds it
+    // in memory: the interface can be worked on without the welcome
+    // reappearing on every reload, and replaying it still works.
+    case "onboarded_get":
+      return mockOnboarded;
+    case "onboarded_set":
+      mockOnboarded = args && args.done !== false;
       return;
     case "sessions_list":
       return [
@@ -8027,14 +8090,74 @@ function paintGreeting() {
 }
 
 /* ---- onboarding -------------------------------------------------------- */
+
+/* The old home of this answer, kept for one reason only: migration.
+ *
+ * "Have I been set up" used to live here alone. On macOS WebKit keeps
+ * localStorage under the REAL ~/Library/WebKit/dev.krate.studio whatever
+ * $HOME says, so the answer sat outside the home the rest of Studio's state
+ * lives in and the two could disagree -- a fresh HOME had no sessions and
+ * no settings and still skipped onboarding (K-808). It now lives beside
+ * them in ~/.krate/studio/, read through invoke.
+ *
+ * Nothing writes this key any more, and the one read that remains CONSUMES
+ * it: see needsOnboarding. */
 const ONBOARD_KEY = "krate-onboarded";
 
 /// The step showing, so a skipped step can be stepped over in the direction
 /// the person was already going rather than bouncing them forwards.
 let obLastStep = 0;
 
-function needsOnboarding() {
-  return !lsGet(ONBOARD_KEY);
+/* Ask the shell whether this person has been through the welcome.
+ *
+ * The engine is the authority. The old browser key gets exactly one say,
+ * and is then thrown away.
+ *
+ * Migration for anyone mid-flight: somebody who onboarded on an older
+ * build has the key and an engine that has never heard of them. Marching
+ * them through the welcome again would be a regression, so the key is
+ * believed once, written to the engine, and REMOVED. From the next launch
+ * the engine answers alone.
+ *
+ * Consuming it is the point. A key that survived would keep the outside
+ * store able to speak forever, and on macOS that store sits in the real
+ * ~/Library/WebKit/dev.krate.studio whatever $HOME says -- which is K-808
+ * itself. Deleting it on the way past bounds the disagreement to a single
+ * launch of a single install rather than leaving it live.
+ *
+ * Honest limit, stated rather than hidden: during that one launch a fresh
+ * HOME on a machine that has run Studio before still reads as onboarded.
+ * There is no way around it -- the two facts are indistinguishable from
+ * here, and the alternative silently re-onboards every existing user. The
+ * trap closes after that launch, and a test HOME stays fresh from then on.
+ *
+ * If the shell cannot answer at all, fall back to the old key rather than
+ * restarting the welcome for somebody whose engine is momentarily unwell,
+ * and leave the key alone -- consuming it on a failed read would lose the
+ * only record they ever onboarded. */
+async function needsOnboarding() {
+  try {
+    if (await invoke("onboarded_get")) return false;
+  } catch (err) {
+    return !lsGet(ONBOARD_KEY);
+  }
+  if (lsGet(ONBOARD_KEY)) {
+    await markOnboarded();
+    lsRemove(ONBOARD_KEY);
+    return false;
+  }
+  return true;
+}
+
+/// Record that the welcome is behind them. One place, so every exit from
+/// onboarding writes the same thing to the same store.
+async function markOnboarded(done = true) {
+  try {
+    await invoke("onboarded_set", { done });
+  } catch (err) {
+    // Nothing better to do: the welcome comes back next launch, which is
+    // annoying but honest, and is not worth blocking the person here.
+  }
 }
 
 function obGo(step) {
@@ -8206,7 +8329,7 @@ async function obLoadAgents() {
 function finishOnboarding() {
   const name = ($("obName") && $("obName").value.trim()) || "";
   if (name) lsSet("krate-name", name);
-  lsSet(ONBOARD_KEY, "1");
+  markOnboarded();
   showView("home");
   paintGreeting();
   paintExamples();
@@ -8223,7 +8346,7 @@ document.querySelectorAll("[data-go]").forEach((button) => {
 });
 $("obFinish")?.addEventListener("click", finishOnboarding);
 $("obSkipAll")?.addEventListener("click", () => {
-  lsSet(ONBOARD_KEY, "1");
+  markOnboarded();
   showView("home");
   paintGreeting();
   paintExamples();
@@ -8242,7 +8365,7 @@ paintGreeting();
  * gate offered no way past, so anyone who reached it signed out was stuck
  * behind an account wall guarding nothing. */
 $("gateSkip")?.addEventListener("click", () => {
-  lsSet(ONBOARD_KEY, "1");
+  markOnboarded();
   enterHome();
 });
 
@@ -8251,7 +8374,11 @@ $("gateSkip")?.addEventListener("click", () => {
  * it. This is the honest way to see it, and it belongs in Settings rather
  * than in a console command only we would know. */
 $("replayOnboard")?.addEventListener("click", () => {
+  // Both stores. Clearing only the engine's would let the old browser key
+  // migrate "done" straight back in on the next launch, and the welcome
+  // they asked to see again would flash past once and never return.
   lsRemove(ONBOARD_KEY);
+  markOnboarded(false);
   showView("onboard");
   obGo(1);
 });

@@ -401,7 +401,17 @@ fn open_url(url: &str) -> Result<(), String> {
 }
 
 fn studio_dir() -> PathBuf {
-    let dir = dirs_home().join(".krate").join("studio");
+    studio_dir_in(&dirs_home())
+}
+
+/// Studio's state folder under a given home, made if it is not there yet.
+///
+/// Split out from `studio_dir()` so the home is an argument rather than a
+/// read of the process environment: a test can ask what a fresh home says
+/// without setting HOME on the whole process, which is racy once tests run
+/// side by side.
+fn studio_dir_in(home: &Path) -> PathBuf {
+    let dir = home.join(".krate").join("studio");
     let _ = std::fs::create_dir_all(dir.join("sessions"));
     private_dir(&dir);
     private_dir(&dir.join("sessions"));
@@ -536,6 +546,57 @@ fn settings_get() -> Settings {
 fn settings_set(settings: Settings) -> Result<(), String> {
     let body = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
     write_private_atomic(&studio_dir().join("settings.json"), body.as_bytes())
+}
+
+/* ---- first run: have we said hello yet? -------------------------------
+ *
+ * "Has this person been through onboarding" used to live in localStorage,
+ * and on macOS WebKit keeps localStorage under the REAL
+ * ~/Library/WebKit/dev.krate.studio whatever $HOME says. So the answer was
+ * recorded somewhere that has nothing to do with the home the rest of
+ * Studio's state lives in, and the two could disagree: a fresh HOME gave a
+ * brand new ~/.krate with no sessions and no settings, and still skipped
+ * onboarding because the browser store remembered. An agent driving Studio
+ * as a new person never saw the first-run screens at all (K-808).
+ *
+ * It now sits beside settings.json and the sessions, under
+ * ~/.krate/studio/, read through the same invoke seam as everything else.
+ * One home, one answer. */
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Default)]
+struct FirstRun {
+    /// True once the person has finished or skipped the welcome.
+    onboarded: bool,
+}
+
+fn first_run_path(dir: &Path) -> PathBuf {
+    dir.join("first-run.json")
+}
+
+/// What the file in `dir` says. A missing or unreadable file reads as "not
+/// yet" -- the welcome shown a second time is a small annoyance, and the
+/// alternative is skipping it for someone who has never seen it.
+fn first_run_read(dir: &Path) -> bool {
+    std::fs::read_to_string(first_run_path(dir))
+        .ok()
+        .and_then(|text| serde_json::from_str::<FirstRun>(&text).ok())
+        .map(|state| state.onboarded)
+        .unwrap_or(false)
+}
+
+fn first_run_write(dir: &Path, onboarded: bool) -> Result<(), String> {
+    let body = serde_json::to_string_pretty(&FirstRun { onboarded }).map_err(|e| e.to_string())?;
+    write_private_atomic(&first_run_path(dir), body.as_bytes())
+}
+
+#[tauri::command]
+fn onboarded_get() -> bool {
+    first_run_read(&studio_dir())
+}
+
+#[tauri::command]
+fn onboarded_set(done: bool) -> Result<(), String> {
+    first_run_write(&studio_dir(), done)
 }
 
 /* ---- sessions: the development history -------------------------------- */
@@ -3930,9 +3991,12 @@ fn plan_makes(seed_month: Option<String>, seed_n: Option<u64>) -> serde_json::Va
     // The hub keeps a mirror keyed by the device hash, so a deleted
     // plan.json or a wiped cache does not mint three fresh makes. Best
     // effort: offline, the local count stands alone.
-    n = n.max(plan_hub_sync(&device, &now, n, false));
+    let (hub_n, machine) = plan_hub_sync_full(&device, &now, n, false);
+    n = n.max(hub_n);
     plan_write(&device, &now, n);
-    serde_json::json!({ "month": now, "n": n })
+    // `machine` travels so the screen can explain a count the person did
+    // not make (K-807). It is reported, never enforced -- the wall is `n`.
+    serde_json::json!({ "month": now, "n": n, "machine": machine })
 }
 
 #[tauri::command]
@@ -3958,18 +4022,41 @@ fn plan_count_make() -> serde_json::Value {
 /// (reporting the local number so the mirror can catch up after offline
 /// makes). Returns 0 on any failure so offline behaves exactly as before.
 fn plan_hub_sync(device: &str, month: &str, local_n: u64, count: bool) -> u64 {
+    plan_hub_sync_full(device, month, local_n, count).0
+}
+
+/// The hub's count AND how much of it belongs to this machine (K-807).
+///
+/// The second number is what makes a wall explicable. A fresh account on a
+/// second-hand or shared Mac starts with its free app already spent, because
+/// the device hash is the second key against a new-email reset -- and
+/// nothing ever said so, so the person met the wall with no explanation.
+/// Returns (0, 0) on any failure, so offline behaves exactly as before.
+fn plan_hub_sync_full(device: &str, month: &str, local_n: u64, count: bool) -> (u64, u64) {
     if device.is_empty() {
-        return 0;
+        return (0, 0);
     }
     let path = if count { "/plan/count" } else { "/plan/get" };
     let body = serde_json::json!({ "device": device, "month": month, "n": local_n });
-    ureq::post(&format!("{}{}", hub_url(), path))
+    let answer = ureq::post(&format!("{}{}", hub_url(), path))
         .timeout(std::time::Duration::from_secs(4))
         .send_json(body)
         .ok()
-        .and_then(|r| r.into_json::<serde_json::Value>().ok())
-        .and_then(|v| v["n"].as_u64())
-        .unwrap_or(0)
+        .and_then(|r| r.into_json::<serde_json::Value>().ok());
+    answer.map(|value| plan_answer(&value)).unwrap_or((0, 0))
+}
+
+/// Read the hub's `{n, machine}` answer.
+///
+/// Split out so it can be tested without a hub. An older hub has no
+/// `machine` field, and absent reads as zero -- "nothing to explain" --
+/// so the screen says what it always said rather than inventing a reason
+/// to show somebody.
+fn plan_answer(value: &serde_json::Value) -> (u64, u64) {
+    (
+        value["n"].as_u64().unwrap_or(0),
+        value["machine"].as_u64().unwrap_or(0),
+    )
 }
 
 /// A path that is not already taken, by adding ` 2`, ` 3` and so on.
@@ -4814,6 +4901,8 @@ fn main() {
             settings_get,
             dbg_log,
             settings_set,
+            onboarded_get,
+            onboarded_set,
             plan_makes,
             plan_count_make,
             make_for_me,
@@ -5003,9 +5092,93 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        agent_home_env, copy_dir_shallow, probe_speaks_plan, slugify, write_private_atomic,
+        agent_home_env, copy_dir_shallow, first_run_read, first_run_write, plan_answer,
+        probe_speaks_plan, slugify, studio_dir_in, write_private_atomic,
     };
     use std::path::{Path, PathBuf};
+
+    /// A count the person did not spend has to be explainable (K-807).
+    ///
+    /// The free app is bound to the MACHINE as well as the account, because
+    /// an account is free to create and an account-only limit is an
+    /// invitation to make another email. That stays. What was missing is
+    /// that the hub answered with a bare number, so nothing on screen could
+    /// tell somebody on a second-hand or shared Mac why their free app was
+    /// gone before they made anything.
+    ///
+    /// The shell's job is only to carry `machine` through without losing
+    /// it. Enforcing stays with the hub -- `n` is the wall.
+    #[test]
+    fn the_shell_carries_the_machines_share_of_the_count() {
+        let full = serde_json::json!({ "n": 1, "machine": 1 });
+        assert_eq!(
+            plan_answer(&full),
+            (1, 1),
+            "the machine's share travels, or no screen can explain the wall",
+        );
+
+        // A person who spent it themselves: the count is theirs, and
+        // saying a machine did it would be a lie.
+        let own = serde_json::json!({ "n": 1, "machine": 0 });
+        assert_eq!(plan_answer(&own), (1, 0));
+
+        // An older hub, which has no such field. Absent reads as zero --
+        // nothing to explain -- so the screen says what it always said
+        // rather than inventing a reason.
+        let old = serde_json::json!({ "n": 2 });
+        assert_eq!(
+            plan_answer(&old),
+            (2, 0),
+            "an older hub must not make the client invent an explanation",
+        );
+
+        // Junk in either field must not panic or invent a number.
+        let junk = serde_json::json!({ "n": "two", "machine": true });
+        assert_eq!(plan_answer(&junk), (0, 0));
+    }
+
+    /// First-run state follows HOME, so one home gives one answer (K-808).
+    ///
+    /// It used to live in localStorage, which WebKit keeps under the REAL
+    /// ~/Library/WebKit/dev.krate.studio no matter what $HOME says. So
+    /// "have I been set up" was recorded in a place the rest of Studio's
+    /// state knew nothing about, the two could disagree, and a fresh HOME
+    /// did not give a fresh first run: an agent driving Studio as a new
+    /// person was silently walked past onboarding it had never seen.
+    ///
+    /// The rule this holds: a fresh home needs onboarding, marking it done
+    /// sticks in THAT home, and a different fresh home is still fresh.
+    #[test]
+    fn first_run_state_follows_the_home() {
+        let one = tempfile::tempdir().expect("home one");
+        let two = tempfile::tempdir().expect("home two");
+        let dir_one = studio_dir_in(one.path());
+        let dir_two = studio_dir_in(two.path());
+
+        assert!(
+            !first_run_read(&dir_one),
+            "a home with no Krate state has never been onboarded"
+        );
+
+        first_run_write(&dir_one, true).expect("mark done");
+        assert!(
+            first_run_read(&dir_one),
+            "the home that was marked done reads as done"
+        );
+
+        assert!(
+            !first_run_read(&dir_two),
+            "a DIFFERENT fresh home is still a first run -- the answer must \
+             live under the home, not in a store outside it"
+        );
+
+        // And the file is under that home, not somewhere shared.
+        assert!(
+            dir_one.starts_with(one.path()),
+            "state folder must sit under its own home, got {}",
+            dir_one.display()
+        );
+    }
 
     /// On macOS, Studio must not move HOME for the engine.
     ///
@@ -5497,6 +5670,20 @@ mod tests {
         assert!(text.contains("not-a-path"), "non-path values must survive");
     }
 
+    /// Confinement applies where it works, and macOS is the exception.
+    ///
+    /// This asserted `HOME` was ALWAYS the agent home, which stopped being
+    /// true when K-829 landed: on macOS, `claude` resolves its credential
+    /// through the login keychain, and moving HOME breaks that -- measured
+    /// one variable at a time, HOME or CLAUDE_CONFIG_DIR alone answers
+    /// "ok", both together fail. So on macOS HOME is deliberately left
+    /// alone, and this test contradicted the fix and has been red in main
+    /// ever since, with no lane running the studio crate's tests to say so
+    /// (K-854).
+    ///
+    /// Kept rather than deleted: everywhere else the confinement is real
+    /// and worth guarding, and the toolchain must resolve from the real
+    /// home on every platform or the agent cannot build what it writes.
     #[test]
     fn the_agent_never_inherits_the_persons_home() {
         let agent = Path::new("/Users/someone/.krate/studio/agent");
@@ -5506,10 +5693,17 @@ mod tests {
         let home = env
             .iter()
             .find(|(key, _)| *key == "HOME")
-            .map(|(_, value)| value.clone())
-            .expect("HOME is always set");
-        assert_eq!(home, PathBuf::from(agent));
-        assert_ne!(home, PathBuf::from(real));
+            .map(|(_, value)| value.clone());
+        if cfg!(target_os = "macos") {
+            assert!(
+                home.is_none(),
+                "macOS keeps the real HOME so claude's keychain credential \
+                 still resolves (K-829) -- found {home:?}",
+            );
+        } else {
+            assert_eq!(home, Some(PathBuf::from(agent)));
+            assert_ne!(home, Some(PathBuf::from(real)));
+        }
 
         // And the toolchain still points at the real one, or the agent
         // cannot build what it writes.

@@ -3719,6 +3719,30 @@ async function consumedCount(env, user, device, byId) {
   return Math.max(counter, madeCount(byId));
 }
 
+/// How much of the count belongs to the MACHINE rather than to the person
+/// (K-807).
+///
+/// A fresh account on a second-hand or shared Mac starts with its free app
+/// already spent, because the device hash is the second key against a
+/// new-email reset. The mechanism is right and stays; what was missing is
+/// that nothing ever said so, so the person met a wall with no explanation.
+///
+/// This answers the only question that makes the wall explicable: would the
+/// count be lower if this were a different machine? It reads the device's
+/// own counter and its own cases, and says nothing about the account.
+async function deviceOnlyCount(env, device) {
+  if (!/^[0-9a-f]{64}$/.test(device)) return 0;
+  // The counter first, because `get` is read-your-writes and `list` is not.
+  // Same reasoning as consumedCount: a listing that has not caught up must
+  // never argue the number down.
+  const counter = parseInt((env.APPS.get ? await env.APPS.get(`mkdev:${device}`) : null) || "0", 10) || 0;
+  // A case record carries no device field -- the identity is the KV PREFIX
+  // it is stored under. Filtering on `record.device` matches nothing and
+  // silently reports the counter alone, which is why this loads by prefix.
+  const owned = await loadCases(env, [`case:dev:${device}:`]);
+  return Math.max(counter, madeCount(owned));
+}
+
 async function writeCase(env, prefixes, record) {
   await Promise.all(
     prefixes.map((prefix) => env.APPS.put(`${prefix}${record.id}`, JSON.stringify(record))),
@@ -4051,7 +4075,15 @@ async function planCount(request, env, increment) {
   if (increment) {
     await Promise.all(keys.map((k) => env.APPS.put(k, String(n))));
   }
-  return json({ n, keys: keys.length });
+  // Say where the count came from, so a wall can be explained (K-807).
+  //
+  // `machine` is how much of `n` this DEVICE already carried. When a person
+  // signs in on a second-hand or shared Mac their free app can be spent
+  // before they have made anything, and the number alone cannot tell them
+  // why. Reported, not enforced: the wall is still `n`, and a client that
+  // ignores this field behaves exactly as before.
+  const machine = await deviceOnlyCount(env, device);
+  return json({ n, keys: keys.length, machine });
 }
 
 // ================================================================ account
