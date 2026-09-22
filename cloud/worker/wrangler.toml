@@ -39,18 +39,28 @@ id = "184313bf18694dff800e580de42b2cda"
 # here so a deploy keeps it rather than dropping it:
 #   *.krate.tech/* -> krate-hub   (route id a4245035fe5440d9886aa8f3b3e43c25)
 #
-# The DNS half is NOT done and cannot be done from here. Wrangler's OAuth
-# offers no DNS-write scope at all -- `wrangler login --scopes-list` lists
-# `zone:read` and nothing more -- so the wildcard record is the founder's
-# to add, once, in the dashboard:
+# The DNS half is DONE, confirmed live 2026-09-22: a name nobody has ever
+# used resolves to the proxy and is served by this worker over a valid
+# certificate. It cannot be done from here -- wrangler's OAuth offers no
+# DNS-write scope at all, `wrangler login --scopes-list` lists `zone:read`
+# and nothing more -- so it was added in the dashboard as:
 #
 #   Type CNAME, Name `*`, Target `hub.krate.tech`, Proxy status PROXIED
 #
-# Until that record exists the route matches nothing: `alice.krate.tech`
-# does not resolve, so no request ever reaches it. The hub is unaffected
-# either way -- `hub.krate.tech` is a Worker CUSTOM DOMAIN, which carries
-# its own record, and a custom domain cannot be a wildcard, which is why
-# this is a route plus a record rather than a second custom domain.
+# Proxied matters: the record resolves straight to A records with no CNAME
+# in the answer, which is the flattening that only happens at the edge. An
+# unproxied record would never reach this worker at all.
+#
+# The hub is unaffected either way -- `hub.krate.tech` is a Worker CUSTOM
+# DOMAIN, which carries its own record, and a custom domain cannot be a
+# wildcard, which is why this is a route plus a record rather than a second
+# custom domain.
+#
+# What the wildcard exposes, and is NOT yet handled: every made-up name
+# gets a page. `nobody-here.krate.tech` answers 200 with "Apps by
+# nobody-here", because developerRoute never asks whether the login
+# exists -- "no apps yet" and "no such person" are the same answer. See
+# K-856.
 [[routes]]
 pattern = "*.krate.tech/*"
 zone_name = "krate.tech"
