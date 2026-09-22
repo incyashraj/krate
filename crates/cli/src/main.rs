@@ -5603,8 +5603,101 @@ fn pack_bundle(
     }
     if let Some(assets) = assets {
         println!("included portable assets from {}", assets.display());
+        report_heavy_assets(output, &assets);
     }
     Ok(0)
+}
+
+/// An asset big enough to dominate the app it belongs to is worth a word
+/// (K-852).
+///
+/// A user's Weather app published at 848,626 bytes against a 35-85 KB norm,
+/// because its icon was a 1024x1024 photograph: 398 KB of a 849 KB bundle
+/// for a picture that renders at 128px, around 69 KB of actual program. The
+/// number is public -- it is on the gallery card and the download page --
+/// and nothing told them.
+///
+/// This says it and stops. A cap would be the wrong shape: refusing
+/// somebody's app at pack time over an icon is worse than the icon, and
+/// only they know whether the detail matters. An oversized asset is a
+/// missed saving, not a defect.
+fn report_heavy_assets(bundle: &Path, assets_dir: &Path) {
+    /// A share of the shipped bundle large enough that the app is mostly
+    /// this one file. Measured against real bundles: the Weather app's icon
+    /// is 99.9%, while the largest asset in a real game (apps/krate-nova2,
+    /// a 2.7 MB background) is 39.2% and says nothing -- a game is allowed
+    /// to be mostly its art.
+    const DOMINATING_SHARE: f64 = 0.6;
+    /// Below this there is nothing worth giving back, whatever the share:
+    /// a 20 KB app that is 80% one file is fine.
+    const WORTH_MENTIONING: u64 = 96 * 1024;
+    /// Widest an icon is ever drawn at, across every adapter.
+    const ICON_RENDER_WIDTH: u32 = 256;
+
+    // Read what SHIPPED, not what was collected. An asset's cost to the
+    // person downloading the app is its compressed size in the bundle, and
+    // comparing an uncompressed file against a compressed bundle prints
+    // percentages over 100 -- the first version of this told a real game
+    // an asset was "217% of this app".
+    let Ok(file) = fs::File::open(bundle) else {
+        return;
+    };
+    let Ok(mut archive) = zip::ZipArchive::new(std::io::BufReader::new(file)) else {
+        return;
+    };
+    let mut entries: Vec<(String, u64)> = Vec::new();
+    let mut shipped: u64 = 0;
+    for index in 0..archive.len() {
+        let Ok(entry) = archive.by_index(index) else {
+            return;
+        };
+        let packed = entry.compressed_size();
+        shipped = shipped.saturating_add(packed);
+        if entry.name().starts_with("assets/") && !entry.name().ends_with('/') {
+            entries.push((entry.name().to_string(), packed));
+        }
+    }
+    if shipped == 0 {
+        return;
+    }
+
+    entries.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    for (entry_name, packed) in &entries {
+        if *packed < WORTH_MENTIONING || (*packed as f64) < shipped as f64 * DOMINATING_SHARE {
+            continue;
+        }
+        let relative = entry_name.trim_start_matches("assets/");
+        let share = (*packed as f64 / shipped as f64 * 100.0).round() as u64;
+        // The icon advice goes only to something that is plausibly an icon.
+        // A 960x720 PNG in a game is a background, and telling its author to
+        // shrink it to 256px is wrong -- the first version of this did.
+        // Nothing in the manifest names an icon, so the filename is all
+        // there is to go on, and it had better be sure rather than clever.
+        let looks_like_an_icon = relative.to_ascii_lowercase().contains("icon");
+        match png_dimensions(&assets_dir.join(relative)) {
+            Some((width, height)) if looks_like_an_icon && width > ICON_RENDER_WIDTH => println!(
+                "note: {relative} is {packed} bytes of this app, {share}% of it, at \
+                 {width}x{height}; an icon is drawn at {ICON_RENDER_WIDTH}px at most, so \
+                 resizing it would give most of that back"
+            ),
+            Some((width, height)) => println!(
+                "note: {relative} is {packed} bytes of this app, {share}% of it, at \
+                 {width}x{height}"
+            ),
+            None => println!("note: {relative} is {packed} bytes of this app, {share}% of it"),
+        }
+    }
+}
+
+/// A PNG's width and height from its header, without decoding any pixels.
+/// `None` for anything that is not a readable PNG -- an asset may be a font,
+/// a sound, or an image format we do not read, and none of that is an error
+/// here.
+fn png_dimensions(path: &Path) -> Option<(u32, u32)> {
+    let file = fs::File::open(path).ok()?;
+    let mut decoder = png::Decoder::new(std::io::BufReader::new(file));
+    let info = decoder.read_header_info().ok()?;
+    Some((info.width, info.height))
 }
 
 /// Default hub used when neither `--hub` nor `KRATE_HUB_URL` is set. A local

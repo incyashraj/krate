@@ -8769,3 +8769,95 @@ fn a_second_app_reuses_the_first_apps_compiled_dependencies() {
         "the second app's own crate must still be compiled: {second_text}"
     );
 }
+
+/// A picture big enough to BE the app gets a word, and an ordinary one does
+/// not (K-852).
+///
+/// A user's Weather app published at 848,626 bytes against a 35-85 KB norm,
+/// because its icon was a 1024x1024 photograph. The number is public -- it
+/// is on the gallery card and the download page -- and nothing told them.
+///
+/// Both halves are asserted together because the danger is a warning that
+/// fires on everything: an author who sees a note on every ordinary app
+/// stops reading notes, and the one that mattered is lost with the rest.
+/// The silent case is the half that keeps it worth printing.
+#[test]
+fn pack_says_when_one_picture_is_most_of_the_app() {
+    fn pack_with_icon(label: &str, icon: &[u8]) -> String {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let assets = dir.path().join("assets");
+        std::fs::create_dir_all(&assets).expect("assets dir");
+        std::fs::write(assets.join("icon.png"), icon).expect("icon");
+        let manifest = dir.path().join("manifest.toml");
+        std::fs::write(
+            &manifest,
+            "[app]\nid = \"dev.krate.icons\"\nname = \"Icons\"\nversion = \"1.0.0\"\n\
+             entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n",
+        )
+        .expect("write manifest");
+        let component = dir.path().join("code.wasm");
+        std::fs::write(
+            &component,
+            include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm"),
+        )
+        .expect("component");
+
+        let packed = krate()
+            .args(["pack"])
+            .arg(&component)
+            .arg("--manifest")
+            .arg(&manifest)
+            .arg("--output")
+            .arg(dir.path().join("app.krate"))
+            .output()
+            .expect("run pack");
+        assert!(
+            packed.status.success(),
+            "{label} pack: {}",
+            String::from_utf8_lossy(&packed.stderr)
+        );
+        String::from_utf8_lossy(&packed.stdout).into_owned()
+    }
+
+    // A photograph used as an icon: big, and far larger than it is ever
+    // drawn. This is the real shape, not a synthetic one -- a 960x720 PNG
+    // whose IDAT barely compresses, like the user's did.
+    let photo = std::fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../apps/krate-nova2/assets/nebula.png"),
+    )
+    .expect("a real large PNG to stand in for the user's icon");
+    assert!(
+        photo.len() > 300 * 1024,
+        "the fixture has to actually be heavy, or this proves nothing: {} bytes",
+        photo.len(),
+    );
+
+    let loud = pack_with_icon("photo", &photo);
+    assert!(
+        loud.contains("icon.png") && loud.contains("% of it"),
+        "an icon that is nearly the whole app has to be mentioned: {loud}",
+    );
+    assert!(
+        loud.contains("960x720") && loud.contains("256px"),
+        "and the note has to be actionable -- the size it is against the size \
+         it is drawn at: {loud}",
+    );
+
+    // An ordinary icon, small and near the size it is drawn at.
+    let mut ordinary = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut ordinary, 128, 128);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().expect("png header");
+        writer
+            .write_image_data(&vec![0x40u8; 128 * 128 * 4])
+            .expect("png body");
+    }
+    let quiet = pack_with_icon("ordinary", &ordinary);
+    assert!(
+        !quiet.contains("note:"),
+        "an ordinary icon must say nothing, or the note stops being read: {quiet}",
+    );
+}
