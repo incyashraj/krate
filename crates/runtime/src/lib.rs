@@ -1065,7 +1065,10 @@ impl Runtime {
             UapiGuard::new(config.session_policy.clone()),
             config.phase3_ui_mode,
         )
-        .map_err(|err| RuntimeError::Instantiate(err.to_string()))?
+        // The host adapter refusing is a sentence written for a person -- "no
+        // display to open a window on", and what to do instead. Carry that
+        // sentence, not the type names wrapped around it (K-775).
+        .map_err(|err| RuntimeError::Instantiate(phase3_ui::plain_reason(&err)))?
         .with_asset_root(config.bundle_assets_root.clone())
         .with_screenshot(
             config
@@ -1109,7 +1112,8 @@ impl Runtime {
             UapiGuard::new(config.session_policy.clone()),
             config.phase3_ui_mode,
         )
-        .map_err(|err| RuntimeError::Instantiate(err.to_string()))?
+        // See the Phase 3 twin above: carry the adapter's own sentence.
+        .map_err(|err| RuntimeError::Instantiate(phase3_ui::plain_reason(&err)))?
         .with_asset_root(config.bundle_assets_root.clone())
         .with_screenshot(
             config

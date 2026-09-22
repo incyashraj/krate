@@ -16,6 +16,7 @@ use krate_adapter_common::{
     },
 };
 use std::collections::BTreeMap;
+use std::ffi::OsStr;
 use std::fs::OpenOptions;
 use std::net::ToSocketAddrs;
 use std::net::{SocketAddr, TcpStream};
@@ -630,7 +631,40 @@ pub fn discover_ui_adapter() -> LinuxUiAdapter {
     LinuxUiAdapter::new()
 }
 
+/// The sentence a person sees when this machine has no display session.
+///
+/// Kept here rather than at the call site because two callers need the same
+/// words: the CLI prints it when somebody asked for a window outright, and the
+/// telemetry classifier matches "no display" to sort the failure (K-100).
+pub const NO_DISPLAY_MESSAGE: &str =
+    "no display to open a window on -- run with --headless, or from a desktop session";
+
+/// `Some(message)` when neither display server is reachable from here.
+///
+/// Split from the discovery call so it can be tested without touching the
+/// process environment, and so the wording lives in one place.
+///
+/// Takes the two variables rather than reading them, because a test that sets
+/// real environment variables races every other test in the binary.
+fn no_display_session(display: Option<&OsStr>, wayland: Option<&OsStr>) -> Option<&'static str> {
+    // Set-but-empty is unset. A shell that exports DISPLAY= leaves the
+    // variable present with nothing in it, and winit cannot connect to "".
+    let usable = |value: Option<&OsStr>| value.is_some_and(|value| !value.is_empty());
+    if usable(display) || usable(wayland) {
+        return None;
+    }
+    Some(NO_DISPLAY_MESSAGE)
+}
+
 /// Build the opt-in Linux winit prototype UI adapter when it is ready.
+///
+/// **Asks whether a window is possible, not only whether the code exists.**
+/// `native_windows_enabled()` is a compile-time `cfg!(target_os = "linux")`, so
+/// it is true on every Linux machine including one with no display at all --
+/// which meant this returned an adapter that could never make a window. The
+/// caller's headless fallback is written to catch exactly that case and never
+/// fired, and the refusal surfaced far later, inside the guest, as a UI error
+/// the app discarded: a non-zero exit with nothing printed (K-775).
 pub fn discover_winit_prototype_ui_adapter() -> Result<LinuxWinitPrototypeUiAdapter, UiAdapterError>
 {
     let adapter = LinuxWinitPrototypeUiAdapter::new();
@@ -638,6 +672,12 @@ pub fn discover_winit_prototype_ui_adapter() -> Result<LinuxWinitPrototypeUiAdap
         return Err(UiAdapterError::Unsupported(
             "Linux winit prototype UI adapter is not enabled yet".to_string(),
         ));
+    }
+    if let Some(message) = no_display_session(
+        std::env::var_os("DISPLAY").as_deref(),
+        std::env::var_os("WAYLAND_DISPLAY").as_deref(),
+    ) {
+        return Err(UiAdapterError::Unsupported(message.to_string()));
     }
     Ok(adapter)
 }
@@ -982,14 +1022,62 @@ mod tests {
         );
         assert_eq!(prototype_info.native_windows, cfg!(target_os = "linux"));
         assert_eq!(prototype_info.native_event_loop, cfg!(target_os = "linux"));
-        if cfg!(target_os = "linux") {
-            assert!(discover_winit_prototype_ui_adapter().is_ok());
+        // Discovery now asks whether a window is actually possible, so on
+        // Linux the answer depends on this machine: a desktop session gets an
+        // adapter, a CI runner or an SSH session gets the no-display refusal.
+        // Both are correct, and asserting only the first would make this test
+        // pass on a laptop and fail on the runner. Off Linux it is always the
+        // refusal, because the prototype is not enabled there at all.
+        let discovered = discover_winit_prototype_ui_adapter();
+        if cfg!(target_os = "linux")
+            && no_display_session(
+                std::env::var_os("DISPLAY").as_deref(),
+                std::env::var_os("WAYLAND_DISPLAY").as_deref(),
+            )
+            .is_none()
+        {
+            assert!(discovered.is_ok());
         } else {
-            assert!(matches!(
-                discover_winit_prototype_ui_adapter(),
-                Err(UiAdapterError::Unsupported(_))
-            ));
+            assert!(matches!(discovered, Err(UiAdapterError::Unsupported(_))));
         }
+    }
+
+    #[test]
+    fn a_machine_with_neither_display_variable_is_refused_by_name() {
+        // The whole point of K-775: this refusal must carry words a person can
+        // act on, not just an error kind. Tested through the pure helper so it
+        // runs the same on every platform -- the caller is Linux-only, but the
+        // decision and the sentence are not.
+        let message = no_display_session(None, None).expect("no display means no window");
+        assert_eq!(message, NO_DISPLAY_MESSAGE);
+        assert!(
+            message.contains("--headless"),
+            "the refusal must name the flag that works instead: {message}"
+        );
+        assert!(
+            message.contains("no display"),
+            "usage::OpenFailure::classify sorts this run by matching \
+             \"no display\"; changing the wording silently reclassifies it: {message}"
+        );
+    }
+
+    #[test]
+    fn either_display_variable_alone_is_enough_for_a_window() {
+        assert!(no_display_session(Some(OsStr::new(":0")), None).is_none());
+        assert!(no_display_session(None, Some(OsStr::new("wayland-0"))).is_none());
+        assert!(
+            no_display_session(Some(OsStr::new(":0")), Some(OsStr::new("wayland-0"))).is_none()
+        );
+    }
+
+    #[test]
+    fn a_variable_exported_empty_is_not_a_display() {
+        // `export DISPLAY=` leaves the name present and the value empty, and
+        // winit cannot connect to "". Treating present-as-set would send that
+        // machine straight back to the silent failure.
+        assert!(no_display_session(Some(OsStr::new("")), Some(OsStr::new(""))).is_some());
+        assert!(no_display_session(Some(OsStr::new("")), None).is_some());
+        assert!(no_display_session(None, Some(OsStr::new(""))).is_some());
     }
 
     #[test]

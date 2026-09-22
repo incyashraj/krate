@@ -645,6 +645,19 @@ fn discover_host_ui_adapter() -> Box<dyn UiAdapter> {
     }
 }
 
+/// The sentence inside a dispatch error, without the layers of type names
+/// wrapped around it.
+///
+/// An adapter's `Unsupported` already reads as a whole sentence written for a
+/// person. Printing the error itself would put "UI adapter error: unsupported
+/// UI feature:" in front of it, which is the stack talking about itself.
+pub fn plain_reason(error: &UiDispatchError) -> String {
+    match error {
+        UiDispatchError::Adapter(UiAdapterError::Unsupported(message)) => message.clone(),
+        other => other.to_string(),
+    }
+}
+
 fn discover_host_ui_adapter_for_mode(
     host_mode: Phase3HostUiMode,
 ) -> UiDispatchResult<Box<dyn UiAdapter>> {
@@ -655,10 +668,20 @@ fn discover_host_ui_adapter_for_mode(
             match discover_native_prototype_ui_adapter() {
                 Ok(adapter) => Ok(adapter),
                 // No display is an ordinary situation, not an error: a server,
-                // an SSH session, a CI runner. Say so once at debug level and
-                // carry on headless rather than refusing to run.
+                // an SSH session, a CI runner. Carry on headless rather than
+                // refusing to run -- but say so where the person can read it.
+                //
+                // It used to be debug-level only, which nobody has on, so a
+                // person who typed `krate run` and expected a window got a run
+                // with no window and no word about why. One line on stderr, so
+                // `run --json` keeps its one object on stdout, and silenced by
+                // the same variable that silences the "opened window" line so
+                // an embedding caller stays quiet (K-775).
                 Err(error) => {
                     tracing::debug!(?error, "no native window on this machine; running headless");
+                    if std::env::var_os("KRATE_QUIET_LAUNCH").is_none() {
+                        eprintln!("krate: {}; running without a window", plain_reason(&error));
+                    }
                     Ok(discover_host_ui_adapter())
                 }
             }
@@ -748,6 +771,63 @@ mod tests {
     use krate_policy::SessionPolicy;
 
     use super::*;
+
+    /// K-775: the adapter's refusal has to arrive as the sentence it was
+    /// written as.
+    ///
+    /// This is the step that decides what a person reads. `--native-window`
+    /// turns this string into `RuntimeError::Instantiate`, which the CLI
+    /// prints to stderr, and the default mode prints it beside "running
+    /// without a window". Formatting the error itself instead would put two
+    /// layers of type names in front of it -- "UI adapter error: unsupported
+    /// UI feature: no display to open a window on" -- which is the stack
+    /// describing itself to somebody who only wanted to open an app.
+    #[test]
+    fn a_no_display_refusal_reaches_the_person_as_its_own_sentence() {
+        let refusal = UiDispatchError::Adapter(UiAdapterError::Unsupported(
+            "no display to open a window on -- run with --headless, or from a desktop session"
+                .to_string(),
+        ));
+
+        let shown = plain_reason(&refusal);
+
+        assert_eq!(
+            shown,
+            "no display to open a window on -- run with --headless, or from a desktop session"
+        );
+        assert!(
+            !shown.contains("UI adapter error"),
+            "the type names must not travel with the sentence: {shown}"
+        );
+        assert!(
+            !shown.contains("unsupported UI feature"),
+            "the type names must not travel with the sentence: {shown}"
+        );
+        // The failure this replaced printed nothing at all, so an empty or
+        // whitespace-only message is the exact regression to catch.
+        assert!(
+            !shown.trim().is_empty(),
+            "a refusal that says nothing is the bug being fixed"
+        );
+    }
+
+    /// Everything that is not a hand-written adapter sentence still has to
+    /// say something. `plain_reason` unwraps one specific case; it must not
+    /// swallow the rest.
+    #[test]
+    fn other_dispatch_errors_still_carry_their_own_words() {
+        for error in [
+            UiDispatchError::PermissionDenied,
+            UiDispatchError::Layout("a row cannot fit".to_string()),
+            UiDispatchError::Adapter(UiAdapterError::InvalidWindow { id: 7 }),
+        ] {
+            let shown = plain_reason(&error);
+            assert!(
+                !shown.trim().is_empty(),
+                "{error:?} reached a person with nothing to read"
+            );
+        }
+    }
 
     #[test]
     fn default_window_grant_creates_and_tracks_draft_window() {
@@ -975,15 +1055,34 @@ mod tests {
 
         #[cfg(target_os = "linux")]
         {
-            let runtime = runtime.expect("Linux winit prototype runtime");
-            let info = runtime.adapter_info();
+            // Linux discovery asks whether a window is possible, not only
+            // whether the code is compiled in (K-775), so this depends on the
+            // machine: a desktop session gets the adapter, a CI runner or an
+            // SSH session gets the refusal. Both are right, and asserting only
+            // the first would pass on a workstation and fail on the runner --
+            // which is how this test would have found CI instead of the other
+            // way round.
+            let has_display = ["DISPLAY", "WAYLAND_DISPLAY"]
+                .iter()
+                .any(|name| std::env::var_os(name).is_some_and(|value| !value.is_empty()));
+            if has_display {
+                let runtime = runtime.expect("Linux winit prototype runtime");
+                let info = runtime.adapter_info();
 
-            assert_eq!(runtime.host_mode(), Phase3HostUiMode::NativePrototype);
-            assert_eq!(info.host_family, "linux");
-            assert_eq!(info.backend, "linux-winit-prototype");
-            assert_eq!(info.planned_window_backend, WindowBackendKind::Winit);
-            assert!(info.native_windows);
-            assert!(info.native_event_loop);
+                assert_eq!(runtime.host_mode(), Phase3HostUiMode::NativePrototype);
+                assert_eq!(info.host_family, "linux");
+                assert_eq!(info.backend, "linux-winit-prototype");
+                assert_eq!(info.planned_window_backend, WindowBackendKind::Winit);
+                assert!(info.native_windows);
+                assert!(info.native_event_loop);
+            } else {
+                let error = runtime.err().expect("no display means no native window");
+                let shown = plain_reason(&error);
+                assert!(
+                    shown.contains("no display"),
+                    "a display-less machine must be told why, in words: {shown}"
+                );
+            }
         }
 
         #[cfg(target_os = "windows")]

@@ -590,6 +590,25 @@ mod tests {
         );
     }
 
+    /// K-775: a machine with no display session lands in the same category.
+    ///
+    /// The sentence here is the one the Linux adapter actually produces
+    /// (`krate_adapter_linux::NO_DISPLAY_MESSAGE`), copied rather than
+    /// imported because this crate does not depend on that adapter off Linux.
+    /// If the wording there changes without this changing, the run silently
+    /// falls into `Other` and the counter stops meaning anything -- which is
+    /// the failure K-100 was about.
+    #[test]
+    fn a_machine_with_no_display_is_counted_as_no_window() {
+        let err = anyhow::anyhow!(
+            "no display to open a window on -- run with --headless, or from a desktop session"
+        );
+        assert_eq!(
+            OpenFailure::classify(&Err(err)),
+            Some(OpenFailure::NoWindow)
+        );
+    }
+
     /// K-110: every app after the first opened as a process macOS did not
     /// treat as a GUI app, so its window never appeared. The fix relaunches
     /// through the .app bundle, which means correctly recognising when we are
