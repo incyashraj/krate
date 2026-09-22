@@ -164,4 +164,66 @@ async function publish(e, name, bytes) {
   console.log("ok  publisher text is escaped on the way out");
 }
 
+// ---- a name nobody has published under ----------------------------------
+//
+// The wildcard record means EVERY name reaches the worker, so this is the
+// common case, not an edge one. It used to render the empty developer page
+// at 200 -- "Apps by nobody-here" for somebody who had never signed in --
+// which made a real developer's page indistinguishable from a stranger's
+// and, with robots.txt allowing everything, minted an unbounded set of
+// indexable pages asserting people are on Krate (K-856).
+{
+  const e = env();
+  const page = await hit(e, "https://nobody-here.krate.tech/", BROWSER);
+  assert.strictEqual(page.status, 404, "an unpublished name is not a developer");
+  assert.ok(
+    !page.body.includes("Apps by nobody-here"),
+    "and must not be described as one: " + page.body.slice(0, 200),
+  );
+  assert.match(page.body, /Nothing published here/, "it says so in words");
+  assert.match(
+    page.body,
+    /<meta name="robots" content="noindex/,
+    "and tells crawlers not to index a page about a person who may not exist",
+  );
+  // The words have to be true. The hub cannot tell a real login from a
+  // made-up one -- there is no login index -- so the page must not claim
+  // the person does not exist, only that nothing is published.
+  assert.ok(
+    !/no such (person|user|developer)/i.test(page.body),
+    "it must not assert a fact the hub cannot know: " + page.body.slice(0, 200),
+  );
+
+  // A tool gets the same answer, in its own shape.
+  const api = await hit(e, "https://nobody-here.krate.tech/");
+  assert.strictEqual(api.status, 404, "a tool is told the same thing");
+  assert.match(api.headers.get("content-type") || "", /application\/json/);
+
+  // And the links on that page have to go somewhere real. /apps answers
+  // JSON to a browser, so pointing a person at it would hand them raw
+  // JSON from a page written to help them.
+  assert.ok(
+    !/href="[^"]*hub\.krate\.tech\/apps"/.test(page.body),
+    "the gallery link must not be the hub's JSON route: " + page.body.slice(0, 400),
+  );
+  console.log("ok  a name nobody published under is not served as a developer");
+}
+
+// ---- a real developer is untouched ---------------------------------------
+//
+// The half that keeps the fix honest: a 404 for everyone would also pass
+// every assertion above.
+{
+  const e = env();
+  await publish(e, "Notes", V1);
+  const page = await hit(e, "https://alice.krate.tech/", BROWSER);
+  assert.strictEqual(page.status, 200, "somebody who published still has a page");
+  assert.match(page.body, /Notes/, "with their app on it");
+  assert.ok(
+    !/noindex/.test(page.body),
+    "and it stays indexable -- this page is the point of the feature",
+  );
+  console.log("ok  publishing one app is what turns a name into a developer");
+}
+
 console.log("ok  a developer's own name works end to end");

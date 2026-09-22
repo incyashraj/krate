@@ -3062,9 +3062,31 @@ async function developerRoute(request, url, login, env) {
   const wantsPage = classifyClient(request) !== "tool";
 
   if (parts.length === 0) {
+    const apps = await developerApps(env, login);
+    // A name nobody has published under is not a developer (K-856).
+    //
+    // The wildcard record means EVERY name reaches this worker, and this
+    // used to render the empty state for all of them: nobody-here.krate.tech
+    // answered 200 with "Apps by nobody-here" for a person who had never
+    // signed in. "No apps yet" and "no such person" were the same answer,
+    // so a real developer's page was indistinguishable from a stranger's --
+    // and with robots.txt allowing everything, the set of indexable pages
+    // asserting somebody is on Krate was infinite.
+    //
+    // Publishing is what creates a `channel:<login>/` key, so an empty
+    // listing means nothing has ever been published under this name. That
+    // is the test, because it needs no index: users are stored under an
+    // internal id and there is no login -> user record to ask. The cost is
+    // that somebody signed in who has not published yet has no page, which
+    // is the right answer anyway -- there is nothing to show.
+    if (!apps.length) {
+      return wantsPage
+        ? unknownDeveloperPage(login)
+        : json({ error: "no such developer", login }, 404);
+    }
     return wantsPage
-      ? developerPage(login, await developerApps(env, login), env)
-      : json({ login, apps: (await developerApps(env, login)).map((a) => a.slug) });
+      ? developerPage(login, apps, env)
+      : json({ login, apps: apps.map((a) => a.slug) });
   }
   if (parts.length !== 1) return text("not found", 404);
 
@@ -3156,9 +3178,21 @@ function escapeForHtml(value) {
 /// that breaks when that host does, and this one has to work when
 /// somebody has pasted the URL into a README and a stranger clicked it.
 function htmlPage(title, body, status = 200) {
+  // A page that says "there is nothing here" must not be indexed as if
+  // there were (K-856). krate.tech/robots.txt is `Allow: /` with a
+  // sitemap, and the wildcard record means every made-up name reaches
+  // this worker, so without this a crawler can mint an unbounded set of
+  // Krate pages for people and apps that do not exist.
+  //
+  // Keyed on the STATUS rather than passed in by each caller: a refusal is
+  // exactly the thing not to index, and a caller that forgets the flag is
+  // how this comes back. A 200 is untouched, so a real developer's page
+  // is never hidden by it.
+  const robots =
+    status === 200 ? "" : '\n<meta name="robots" content="noindex, follow" />';
   return new Response(
     `<!doctype html><html lang="en"><head><meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />${robots}
 <title>${escapeForHtml(title)}</title>
 <link rel="icon" href="https://krate.tech/krate-logo.png" />
 <style>
@@ -3197,6 +3231,33 @@ footer { margin-top:44px; color:var(--faint); font-size:12.5px; }
 }
 
 /// A developer's own page: who they are, and everything they have made.
+/// A name nobody has published under (K-856).
+///
+/// Worded for the two people who actually land here: somebody who
+/// mistyped a developer's name, and somebody who guessed at a name to see
+/// what happens. It says plainly that there is nothing under this one,
+/// without asserting that the person does or does not exist -- the hub
+/// cannot tell, and claiming either would be inventing a fact.
+function unknownDeveloperPage(login) {
+  // The site's gallery, NOT the hub's /apps -- that one answers JSON to a
+  // browser (checked live: content-type application/json on an Accept:
+  // text/html request), so linking a person there would hand them raw
+  // JSON from a page written to help them.
+  // Written out, the way the other pages in this file link to the site
+  // (see the takedown and share pages). KRATE_ORIGIN is the BUILDER's
+  // variable and does not exist here, so reading it would have silently
+  // fallen through to this same default for ever.
+  return htmlPage(
+    "Nothing published here",
+    `<h1>Nothing published here</h1>
+     <p class="sub">No apps have been published under
+       <b>${escapeForHtml(login)}</b>.</p>
+     <p><a href="https://krate.tech/cloud">See what people have made</a>
+       &middot; <a href="https://krate.tech">What is Krate?</a></p>`,
+    404,
+  );
+}
+
 function developerPage(login, apps, env) {
   const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
   const host = `${login}.${((env.PUBLIC_BASE || "").replace(/^https?:\/\//, "").split(".").slice(-2).join(".")) || "krate.tech"}`;
