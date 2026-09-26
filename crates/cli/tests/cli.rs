@@ -5065,6 +5065,218 @@ fn every_adversarial_archive_is_refused_by_the_binary_people_run() {
         );
     }
 
+    // 1471-1474 and 1478: two records for one canonical path, built by
+    // hand because no ordinary writer will emit them. Each pair is refused
+    // for what it is, whichever copy comes first -- a reader that keeps the
+    // last and a reviewer that shows the first must never disagree.
+    let manifest_b = "[app]\nid = \"com.example.other\"\nname = \"Other\"\n\
+                      version = \"9.9.9\"\nentry = \"code.wasm\"\n\
+                      world = \"krate:app/cli@0.1.0\"\n";
+    type Entries = Vec<(String, Vec<u8>)>;
+    let twins: [(&str, Entries, &str); 7] = [
+        (
+            "a second manifest (1471)",
+            vec![("manifest.toml".into(), manifest_b.as_bytes().to_vec())],
+            "names the same file twice",
+        ),
+        (
+            "a second component (1472)",
+            vec![("code.wasm".into(), minimal.to_vec())],
+            "names the same file twice",
+        ),
+        (
+            "the same asset twice (1473)",
+            vec![
+                ("assets/logo.png".into(), b"first".to_vec()),
+                ("assets/logo.png".into(), b"second".to_vec()),
+            ],
+            "names the same file twice",
+        ),
+        (
+            "the same SDK file twice (1474)",
+            vec![
+                ("sdk/wit/world.wit".into(), b"first".to_vec()),
+                ("sdk/wit/world.wit".into(), b"second".to_vec()),
+            ],
+            "names the same file twice",
+        ),
+        (
+            "two spellings that differ only in case (1478)",
+            vec![
+                ("assets/Logo.png".into(), b"first".to_vec()),
+                ("assets/logo.png".into(), b"second".to_vec()),
+            ],
+            "names the same file twice",
+        ),
+        (
+            "a composed Unicode name (1478)",
+            vec![("source/caf\u{e9}.rs".into(), b"nfc".to_vec())],
+            "",
+        ),
+        (
+            "a decomposed Unicode name beside the composed one (1478)",
+            vec![
+                ("source/caf\u{e9}.rs".into(), b"nfc".to_vec()),
+                ("source/cafe\u{301}.rs".into(), b"nfd".to_vec()),
+            ],
+            "",
+        ),
+    ];
+    for (what, extra, expected) in &twins {
+        let path = dir.path().join(format!("{}.krate", what.replace(' ', "-")));
+        std::fs::write(&path, archive_with_component(minimal, extra)).expect("write");
+        let output = krate()
+            .arg("run")
+            .arg(&path)
+            .args(["--headless", "--auto-grant"])
+            .output()
+            .expect("run");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_ne!(
+            output.status.code(),
+            Some(0),
+            "{what} must be refused by the binary: {stderr}"
+        );
+        if !expected.is_empty() {
+            assert!(
+                stderr.contains(expected),
+                "{what} must be refused for what it IS ({expected:?}): {stderr}"
+            );
+        }
+    }
+
+    // 1485: names that point outside the extraction on some filesystem
+    // family. A Unix reader sees `C:` and `\\server` as ordinary
+    // characters; a recipient on Windows does not.
+    //
+    // Two rules meet here, and the test holds both. Profile 2 -- what every
+    // Krate since 2026-09-14 writes -- refuses a top-level record it does
+    // not name, so each of these is refused outright. Profile 1 ignores
+    // unknown top-level records by its recorded rules (the library's
+    // `open_ignores_extra_entries_including_traversal_attempts`), and old
+    // bundles must keep opening; there the guarantee is that the record is
+    // never written anywhere, which is checked, not assumed.
+    let escapes: [(&str, &str); 4] = [
+        ("an absolute path", "/tmp/krate-test-escape"),
+        ("a drive-letter path", "C:/krate-test-escape"),
+        (
+            "a drive-letter path with a backslash",
+            r"C:\krate-test-escape",
+        ),
+        ("a UNC path", r"\\server\share\krate-test-escape"),
+    ];
+    for (what, entry) in escapes {
+        for profile in [1u32, 2] {
+            let mut extra = vec![(entry.to_string(), b"payload".to_vec())];
+            if profile == 2 {
+                extra.insert(0, ("krate-profile".to_string(), b"2".to_vec()));
+            }
+            let path = dir
+                .path()
+                .join(format!("{}-profile{profile}.krate", what.replace(' ', "-")));
+            std::fs::write(&path, archive_with_component(minimal, &extra)).expect("write");
+            let output = krate()
+                .arg("run")
+                .arg(&path)
+                .args(["--headless", "--auto-grant"])
+                .current_dir(dir.path())
+                .output()
+                .expect("run");
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if profile == 2 {
+                assert_ne!(
+                    output.status.code(),
+                    Some(0),
+                    "{what} ({entry}) must be refused under profile 2: {stderr}"
+                );
+                assert!(
+                    stderr.contains("krate-test-escape"),
+                    "and the refusal must name the record: {stderr}"
+                );
+            }
+        }
+    }
+    // Wherever a profile 1 reader might have put them: nowhere. On Unix the
+    // names are literal file names in the working directory; on Windows
+    // they are what they say, a drive root. (Joining `C:` onto a Windows
+    // path means "the current directory on drive C", which always exists,
+    // so the Unix check would be wrong there.)
+    #[cfg(not(windows))]
+    {
+        assert!(!std::path::Path::new("/tmp/krate-test-escape").exists());
+        for stray in [
+            "C:",
+            r"C:\krate-test-escape",
+            r"\\server\share\krate-test-escape",
+        ] {
+            assert!(
+                !dir.path().join(stray).exists(),
+                "an ignored record must not be written, even under the working directory: {stray}"
+            );
+        }
+    }
+    #[cfg(windows)]
+    assert!(
+        !std::path::Path::new(r"C:\krate-test-escape").exists(),
+        "an ignored drive-letter record must not be written to the drive root"
+    );
+
+    // Inside a namespace the name is judged whatever the profile: a
+    // drive-relative segment would be an alternate data stream on NTFS.
+    for profile in [1u32, 2] {
+        let mut extra = vec![(
+            "assets/C:krate-test-escape".to_string(),
+            b"payload".to_vec(),
+        )];
+        if profile == 2 {
+            extra.insert(0, ("krate-profile".to_string(), b"2".to_vec()));
+        }
+        let path = dir
+            .path()
+            .join(format!("drive-in-assets-profile{profile}.krate"));
+        std::fs::write(&path, archive_with_component(minimal, &extra)).expect("write");
+        let output = krate()
+            .arg("run")
+            .arg(&path)
+            .args(["--headless", "--auto-grant"])
+            .output()
+            .expect("run");
+        assert_ne!(
+            output.status.code(),
+            Some(0),
+            "a drive-relative asset name must be refused under profile {profile}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    // 1484: more records than the container allows is refused before the
+    // guest is launched. One over the limit, each record a few bytes.
+    let crowd: Vec<(String, Vec<u8>)> = (0..=krate_bundle::MAX_ENTRY_COUNT)
+        .map(|i| (format!("assets/f{i}.txt"), b"x".to_vec()))
+        .collect();
+    let crowded = dir.path().join("too-many-records.krate");
+    std::fs::write(&crowded, archive_with_component(minimal, &crowd)).expect("write");
+    let output = krate()
+        .arg("run")
+        .arg(&crowded)
+        .args(["--headless", "--auto-grant"])
+        .output()
+        .expect("run");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "{} records must be refused: {stderr}",
+        crowd.len() + 2,
+    );
+    assert!(
+        stderr.contains(&format!(
+            "more than {} files",
+            krate_bundle::MAX_ENTRY_COUNT
+        )),
+        "and refused for the count, not for something else in the archive: {stderr}"
+    );
+
     // 1486: a rejection leaves nothing behind.
     //
     // Measured in a temp directory of this test's own, handed to the child

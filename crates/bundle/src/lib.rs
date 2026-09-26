@@ -843,8 +843,11 @@ pub enum BundleError {
     EntryMismatch { declared: String },
     #[error("bundle is {size} bytes, larger than the {MAX_BUNDLE_BYTES} byte limit")]
     TooLarge { size: u64 },
-    #[error("bundle entry `{entry}` expands to more than {MAX_ENTRY_BYTES} bytes")]
-    EntryTooLarge { entry: String },
+    /// `limit` is the ceiling that was actually applied: an asset is held to
+    /// [`MAX_ASSET_BYTES`], other entries to [`MAX_ENTRY_BYTES`], and the
+    /// message must name the one that refused it (IC-714, tests 1479-1480).
+    #[error("bundle entry `{entry}` expands to more than {limit} bytes")]
+    EntryTooLarge { entry: String, limit: u64 },
     #[error("asset path `{path}` is not a safe relative path")]
     UnsafeAssetPath { path: String },
     #[error("asset `{path}` is a symbolic link; bundle assets must be regular files")]
@@ -893,6 +896,14 @@ pub enum BundleError {
          substituted one. Rename it to ASCII and pack again."
     )]
     NonAsciiPath { path: String },
+    #[error(
+        "{path} is not a name every system can store.\n\n  \
+         Windows refuses `:`, `<`, `>`, `\"`, `|`, `?`, `*`, control \
+         characters, a trailing dot or space, and device names such as CON \
+         or NUL -- so this app would open on one computer and be refused on \
+         another. Rename it and pack again."
+    )]
+    NotPortablePath { path: String },
     #[error(
         "{path} nests deeper than {MAX_PATH_DEPTH} directories.\n\n  \
          A path this deep does not survive being unpacked on every system \
@@ -2445,7 +2456,10 @@ pub fn judge_bytes(bytes: &[u8], max_expanded: u64) -> Result<Judgement> {
         };
         let mut entry = archive.by_name(&name)?;
         if entry.size() > ceiling {
-            return Err(BundleError::EntryTooLarge { entry: name });
+            return Err(BundleError::EntryTooLarge {
+                entry: name,
+                limit: ceiling,
+            });
         }
         let mut body = Vec::new();
         entry
@@ -2458,7 +2472,10 @@ pub fn judge_bytes(bytes: &[u8], max_expanded: u64) -> Result<Judgement> {
             })?;
         let len = body.len() as u64;
         if len > ceiling {
-            return Err(BundleError::EntryTooLarge { entry: name });
+            return Err(BundleError::EntryTooLarge {
+                entry: name,
+                limit: ceiling,
+            });
         }
         match class {
             'a' => {
@@ -3105,6 +3122,11 @@ fn collect_files(root: &Path, skip: &dyn Fn(&str) -> bool) -> Result<Vec<(String
                 .map_err(|_| BundleError::Manifest("source path escaped its root".into()))?;
             let mut entry_name = String::from(SOURCE_PREFIX);
             entry_name.push_str(&relative.to_string_lossy().replace('\\', "/"));
+            // The same portable-name rule open applies (IC-714), said here
+            // where the developer can still rename the file.
+            if !entry_name.split('/').all(is_portable_segment) {
+                return Err(BundleError::NotPortablePath { path: entry_name });
+            }
             out.push((entry_name, path));
         }
         Ok(())
@@ -3143,6 +3165,7 @@ fn collect_assets(root: &Path) -> Result<Vec<(String, PathBuf)>> {
             if metadata.len() > MAX_ASSET_BYTES {
                 return Err(BundleError::EntryTooLarge {
                     entry: path.display().to_string(),
+                    limit: MAX_ASSET_BYTES,
                 });
             }
             *total = total
@@ -3182,6 +3205,13 @@ fn asset_entry_name(relative: &Path) -> Result<String> {
                 if part.is_empty() || part.contains('\\') {
                     return Err(BundleError::UnsafeAssetPath {
                         path: relative.display().to_string(),
+                    });
+                }
+                // Refused at pack as well as at open, so a Mac never writes
+                // a file a Windows recipient will be refused (IC-714).
+                if !is_portable_segment(part) {
+                    return Err(BundleError::NotPortablePath {
+                        path: format!("{ASSETS_PREFIX}{}", relative.display()),
                     });
                 }
                 parts.push(part);
@@ -3398,6 +3428,45 @@ fn manifest_bytes_for_digest(raw: &[u8]) -> Vec<u8> {
     out
 }
 
+/// Entries Krate writes to disk when it opens a bundle.
+fn is_extracted_namespace(name: &str) -> bool {
+    name.starts_with(ASSETS_PREFIX)
+        || name.starts_with(SOURCE_PREFIX)
+        || name.starts_with(SDK_PREFIX)
+        || name.starts_with(EXTENSION_PREFIX)
+}
+
+/// A path segment every supported filesystem stores as the same one file.
+///
+/// The same rule the runtime applies to an app's own file paths
+/// (`adapter-common` `path.rs`): no Windows-reserved character, no control
+/// character, no trailing dot or space (Windows strips them, so `a.` and
+/// `a` would be one file), and no device name with or without an
+/// extension (`NUL.txt` is the null device). Kept as a copy rather than a
+/// dependency: this crate opens untrusted files and stays self-contained.
+fn is_portable_segment(segment: &str) -> bool {
+    if segment
+        .chars()
+        .any(|ch| ch.is_control() || matches!(ch, ':' | '<' | '>' | '"' | '|' | '?' | '*'))
+    {
+        return false;
+    }
+    if segment.ends_with(' ') || segment.ends_with('.') {
+        // `.` and `..` are judged by the containment guards, which refuse them.
+        return segment == "." || segment == "..";
+    }
+    let stem = segment
+        .split('.')
+        .next()
+        .unwrap_or(segment)
+        .to_ascii_uppercase();
+    let device = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (stem.len() == 4
+            && (stem.starts_with("COM") || stem.starts_with("LPT"))
+            && matches!(stem.as_bytes()[3], b'1'..=b'9'));
+    !device
+}
+
 fn preflight_entries<R: Read + io::Seek>(archive: &mut ZipArchive<R>) -> Result<()> {
     let mut seen: BTreeSet<String> = BTreeSet::new();
     let mut files = 0usize;
@@ -3435,6 +3504,22 @@ fn preflight_entries<R: Read + io::Seek>(archive: &mut ZipArchive<R>) -> Result<
         if !raw.is_ascii() {
             return Err(BundleError::NonAsciiPath {
                 path: String::from_utf8_lossy(&raw).into_owned(),
+            });
+        }
+
+        // One verdict on every system (IC-714, test 1485).
+        //
+        // `Path::new("C:logo.png")` is a drive prefix on Windows and an
+        // ordinary name everywhere else, so the per-namespace containment
+        // guards below refused `assets/C:logo.png` on Windows and extracted
+        // it on a Mac: the same bytes opened on one computer and not on the
+        // other. The name is now judged by the strictest filesystem a
+        // recipient might have, before any platform parses it. Only the
+        // namespaces Krate extracts are judged; an unknown top-level record
+        // is never written, and profile 1's rule for it stands.
+        if is_extracted_namespace(&name) && !name.split('/').all(is_portable_segment) {
+            return Err(BundleError::NotPortablePath {
+                path: shorten_path(&name),
             });
         }
 
@@ -3603,6 +3688,7 @@ fn extract_asset_entry<R: Read + io::Seek>(
     if entry.size() > MAX_ASSET_BYTES {
         return Err(BundleError::EntryTooLarge {
             entry: name.to_string(),
+            limit: MAX_ASSET_BYTES,
         });
     }
     let mut out = File::create(destination).map_err(|err| io_err(destination, err))?;
@@ -3611,6 +3697,7 @@ fn extract_asset_entry<R: Read + io::Seek>(
     if written > MAX_ASSET_BYTES {
         return Err(BundleError::EntryTooLarge {
             entry: name.to_string(),
+            limit: MAX_ASSET_BYTES,
         });
     }
     Ok(written)
@@ -3632,6 +3719,7 @@ fn extract_entry<R: Read + io::Seek>(
     if entry.size() > MAX_ENTRY_BYTES {
         return Err(BundleError::EntryTooLarge {
             entry: name.to_string(),
+            limit: MAX_ENTRY_BYTES,
         });
     }
 
@@ -3643,6 +3731,7 @@ fn extract_entry<R: Read + io::Seek>(
     if written > MAX_ENTRY_BYTES {
         return Err(BundleError::EntryTooLarge {
             entry: name.to_string(),
+            limit: MAX_ENTRY_BYTES,
         });
     }
     Ok(())
@@ -6858,6 +6947,59 @@ required = true
         }
     }
 
+    /// An overrun names the ceiling that refused it (IC-714, tests 1479 and
+    /// 1480). An asset is held to 96 MiB, but the error used to quote the
+    /// general 512 MiB entry limit, so a person with a 100 MiB picture was
+    /// told their file was over a limit it was nowhere near.
+    #[test]
+    fn an_oversize_entry_is_told_the_limit_that_actually_applied() {
+        // Zeros deflate to almost nothing, written a mebibyte at a time so
+        // the test never holds the whole body.
+        fn archive_with_zeros(name: &str, bytes: u64) -> Vec<u8> {
+            let mut buf = Vec::new();
+            {
+                let mut writer = ZipWriter::new(io::Cursor::new(&mut buf));
+                let opts = SimpleFileOptions::default()
+                    .compression_method(CompressionMethod::Deflated)
+                    .large_file(bytes > u32::MAX as u64);
+                writer.start_file(MANIFEST_ENTRY, opts).expect("manifest");
+                writer.write_all(MANIFEST.as_bytes()).expect("write");
+                if name != COMPONENT_ENTRY {
+                    writer.start_file(COMPONENT_ENTRY, opts).expect("component");
+                    writer.write_all(MINIMAL_COMPONENT).expect("write");
+                }
+                writer.start_file(name, opts).expect("entry");
+                let chunk = vec![0u8; 1024 * 1024];
+                let mut left = bytes;
+                while left > 0 {
+                    let n = left.min(chunk.len() as u64) as usize;
+                    writer.write_all(&chunk[..n]).expect("write");
+                    left -= n as u64;
+                }
+                writer.finish().expect("finish");
+            }
+            buf
+        }
+        let dir = TempDir::new().expect("tempdir");
+        for (name, limit) in [
+            ("assets/huge.png", MAX_ASSET_BYTES),
+            (COMPONENT_ENTRY, MAX_ENTRY_BYTES),
+        ] {
+            let bundle = dir.path().join("over.krate");
+            fs::write(&bundle, archive_with_zeros(name, limit + 1)).expect("write");
+            match open(&bundle) {
+                Err(err @ BundleError::EntryTooLarge { limit: applied, .. }) => {
+                    assert_eq!(applied, limit, "{name}: the applied ceiling");
+                    assert!(
+                        err.to_string().contains(&limit.to_string()),
+                        "{name}: the message must quote {limit}: {err}"
+                    );
+                }
+                other => panic!("{name} one byte over {limit} must be refused for size: {other:?}"),
+            }
+        }
+    }
+
     #[test]
     fn a_forged_size_cannot_get_past_the_source_limit() {
         // K-255. The limit used to be checked against the size in the zip
@@ -7966,6 +8108,64 @@ required = true
 
         let err = open_reader(buffer).expect_err("asset traversal must fail");
         assert!(matches!(err, BundleError::UnsafeAssetPath { .. }));
+    }
+
+    /// A name one filesystem stores and another refuses gets one verdict
+    /// everywhere (IC-714, test 1485). `assets/C:logo.png` used to open on
+    /// a Mac and be refused on Windows, because only Windows parses `C:` as
+    /// a drive.
+    #[test]
+    fn a_name_some_system_cannot_store_is_refused_on_every_system() {
+        let open_with = |name: &str| {
+            let mut buffer = Cursor::new(Vec::new());
+            {
+                let mut zip = ZipWriter::new(&mut buffer);
+                let opts = SimpleFileOptions::default();
+                zip.start_file(MANIFEST_ENTRY, opts).expect("manifest");
+                zip.write_all(MANIFEST.as_bytes()).expect("manifest");
+                zip.start_file(COMPONENT_ENTRY, opts).expect("wasm");
+                zip.write_all(MINIMAL_COMPONENT).expect("wasm");
+                zip.start_file(name, opts).expect("entry");
+                zip.write_all(b"x").expect("entry");
+                zip.finish().expect("finish");
+            }
+            buffer.set_position(0);
+            open_reader(buffer)
+        };
+        for name in [
+            "assets/C:logo.png",
+            "assets/a<b.png",
+            "assets/a>b.png",
+            "assets/a\"b.png",
+            "assets/a|b.png",
+            "assets/a?b.png",
+            "assets/a*b.png",
+            "assets/tab\there.png",
+            "assets/trailing.",
+            "assets/trailing ",
+            "assets/CON",
+            "assets/nul.txt",
+            "assets/Com1.log",
+            "assets/lpt9",
+            "source/src/aux.rs",
+            "sdk/wit/prn.wit",
+        ] {
+            let err = open_with(name).expect_err(name);
+            assert!(
+                matches!(err, BundleError::NotPortablePath { .. }),
+                "{name} must be refused as non-portable, got {err:?}"
+            );
+        }
+        // Near misses are ordinary names and must keep opening.
+        for name in [
+            "assets/console.png",
+            "assets/com10.txt",
+            "assets/lpt0.bin",
+            "assets/a.b.png",
+            "assets/nullable.json",
+        ] {
+            assert!(open_with(name).is_ok(), "{name} is a portable name");
+        }
     }
 
     /// Mark one central-directory entry as a unix symlink, in finished zip
