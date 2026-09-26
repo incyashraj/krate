@@ -999,8 +999,7 @@ fn canonicalize_connect_resource(resource: &str) -> Option<String> {
 ///
 /// It is also shown to a person on the permission wall, so it must read as
 /// itself: no control characters, no leading or trailing punctuation.
-#[cfg_attr(not(test), allow(dead_code))]
-fn validate_group_name(name: &str) -> std::result::Result<(), String> {
+pub fn validate_group_name(name: &str) -> std::result::Result<(), String> {
     if name.is_empty() {
         return Err("a shared group needs a name".to_string());
     }

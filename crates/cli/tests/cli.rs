@@ -5323,6 +5323,208 @@ fn every_adversarial_archive_is_refused_by_the_binary_people_run() {
     );
 }
 
+/// A shared group admits the apps its publisher named, and removing one
+/// sticks (IC-738, test 1518, plus the revoked-member case).
+///
+/// Walked through the binary a publisher and a recipient use: the root
+/// signs a list, `krate sign --group` carries it, opening the app teaches
+/// this machine the list, a newer list without an app replaces it, and the
+/// old list arriving again inside an old bundle is refused rather than
+/// re-admitting the app.
+#[test]
+fn a_shared_group_admits_named_apps_and_a_removal_sticks() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let home = tempfile::tempdir().expect("home");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(
+        &wasm,
+        include_bytes!("../../bundle/tests/fixtures/minimal-run.wasm"),
+    )
+    .expect("component");
+    let root = dir.path().join("root.key");
+    let run = |args: &[&std::ffi::OsStr]| {
+        krate()
+            .args(args)
+            .env("HOME", home.path())
+            .output()
+            .expect("krate")
+    };
+    let os = |s: &str| std::ffi::OsString::from(s);
+
+    // Two apps from one publisher, each packed and signed with the root.
+    let pack = |id: &str| {
+        let manifest = dir.path().join(format!("{id}.toml"));
+        std::fs::write(
+            &manifest,
+            format!(
+                "[app]\nid = \"{id}\"\nname = \"{id}\"\nversion = \"1.0.0\"\n\
+                 entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n"
+            ),
+        )
+        .expect("manifest");
+        let bundle = dir.path().join(format!("{id}.krate"));
+        let out = run(&[
+            &os("pack"),
+            wasm.as_os_str(),
+            &os("--manifest"),
+            manifest.as_os_str(),
+            &os("-o"),
+            bundle.as_os_str(),
+        ]);
+        assert!(
+            out.status.success(),
+            "pack: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        bundle
+    };
+    let budget = pack("com.acme.budget");
+    let reports = pack("com.acme.reports");
+    let old_reports = dir.path().join("old-reports.krate");
+
+    let sign_list = |members: &[&str], out: &std::path::Path| {
+        let mut args = vec![
+            os("group"),
+            os("sign"),
+            os("--root"),
+            root.as_os_str().to_owned(),
+            os("--group"),
+            os("family-budget"),
+            os("-o"),
+            out.as_os_str().to_owned(),
+        ];
+        for member in members {
+            args.push(os("--member"));
+            args.push(os(member));
+        }
+        let refs: Vec<&std::ffi::OsStr> = args.iter().map(|a| a.as_os_str()).collect();
+        let result = run(&refs);
+        assert!(
+            result.status.success(),
+            "group sign: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+    };
+    let sign_app = |bundle: &std::path::Path, list: &std::path::Path, first: bool| {
+        let mut args = vec![
+            os("sign"),
+            bundle.as_os_str().to_owned(),
+            os("--key"),
+            root.as_os_str().to_owned(),
+            os("--namespace"),
+            os("acme/apps"),
+            os("--group"),
+            list.as_os_str().to_owned(),
+        ];
+        if first {
+            args.push(os("--generate-key"));
+        }
+        let refs: Vec<&std::ffi::OsStr> = args.iter().map(|a| a.as_os_str()).collect();
+        let result = run(&refs);
+        assert!(
+            result.status.success(),
+            "sign: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+    };
+    let known = || String::from_utf8_lossy(&run(&[&os("group"), &os("list")]).stdout).to_string();
+
+    // The root key is made by the first sign; the list needs it, so the
+    // first app is signed once without a list to create the key.
+    let bootstrap = run(&[
+        &os("sign"),
+        budget.as_os_str(),
+        &os("--key"),
+        root.as_os_str(),
+        &os("--namespace"),
+        &os("acme/apps"),
+        &os("--generate-key"),
+    ]);
+    assert!(
+        bootstrap.status.success(),
+        "{}",
+        String::from_utf8_lossy(&bootstrap.stderr)
+    );
+
+    // List 1 admits both apps; each carries it.
+    let first = dir.path().join("family-v1.json");
+    sign_list(&["com.acme.budget", "com.acme.reports"], &first);
+    sign_app(&budget, &first, false);
+    sign_app(&reports, &first, false);
+    std::fs::copy(&reports, &old_reports).expect("keep the old reports bundle");
+    let _ = run(&[
+        &os("run"),
+        budget.as_os_str(),
+        &os("--headless"),
+        &os("--auto-grant"),
+    ]);
+    let listed = known();
+    assert!(
+        listed.contains("family-budget") && listed.contains("com.acme.reports"),
+        "opening a signed app teaches this machine its group list: {listed}"
+    );
+
+    // List 2, a second later, removes reports; budget carries it.
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    let second = dir.path().join("family-v2.json");
+    sign_list(&["com.acme.budget"], &second);
+    sign_app(&budget, &second, false);
+    let _ = run(&[
+        &os("run"),
+        budget.as_os_str(),
+        &os("--headless"),
+        &os("--auto-grant"),
+    ]);
+    let listed = known();
+    assert!(
+        listed.contains("com.acme.budget") && !listed.contains("com.acme.reports"),
+        "the newer list replaces the older one: {listed}"
+    );
+
+    // The old reports bundle, carrying list 1, is opened again. The removal
+    // must stick.
+    let replay = run(&[
+        &os("run"),
+        old_reports.as_os_str(),
+        &os("--headless"),
+        &os("--auto-grant"),
+    ]);
+    let stderr = String::from_utf8_lossy(&replay.stderr);
+    assert!(
+        stderr.contains("older list for shared group family-budget"),
+        "an old list turning up again is refused, and said so: {stderr}"
+    );
+    let listed = known();
+    assert!(
+        !listed.contains("com.acme.reports"),
+        "and the removed app stays removed: {listed}"
+    );
+
+    // A list signed by somebody else cannot be carried at all.
+    let stranger = dir.path().join("stranger.key");
+    let other = pack("com.acme.other");
+    let made = run(&[
+        &os("sign"),
+        other.as_os_str(),
+        &os("--key"),
+        stranger.as_os_str(),
+        &os("--namespace"),
+        &os("acme/apps"),
+        &os("--generate-key"),
+        &os("--group"),
+        second.as_os_str(),
+    ]);
+    assert!(
+        !made.status.success(),
+        "a list from another publisher is refused at sign"
+    );
+    assert!(
+        String::from_utf8_lossy(&made.stderr).contains("different publisher"),
+        "{}",
+        String::from_utf8_lossy(&made.stderr)
+    );
+}
+
 /// Uninstalling removes the app and keeps what the person wrote in it,
 /// unless they ask otherwise (IC-278, IC-396).
 ///

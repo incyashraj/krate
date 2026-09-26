@@ -49,6 +49,8 @@ use zip::ZipArchive;
 
 /// Release keys delegated by a publisher root (IC-015).
 pub mod delegation;
+/// Shared storage groups, named by their publisher (IC-738).
+pub mod groups;
 /// The manifest entry name inside a bundle.
 pub mod provenance;
 /// Publisher signatures over that statement (IC-015).
@@ -2117,6 +2119,49 @@ pub fn sign_bundle_delegated(
     envelope.delegation = Some(delegation);
     let json = serde_json::to_vec_pretty(&envelope)
         .map_err(|err| BundleError::Manifest(err.to_string()))?;
+    replace_entry(bundle_path, SIGNATURE_ENTRY, &json)?;
+    Ok(envelope)
+}
+
+/// Carry the publisher's shared-group lists in a signed bundle (IC-738).
+///
+/// Each list must verify and be signed by this bundle's publisher root --
+/// the delegation's root when a release key signed, the signing key
+/// otherwise. A list from anyone else could never grant this app anything,
+/// so attaching one is refused here, where the publisher can see why,
+/// rather than silently carried. The lists live in the signature envelope,
+/// which the release signature does not cover; each is signed on its own.
+pub fn attach_group_lists(
+    bundle_path: &Path,
+    lists: Vec<groups::SignedGroupMembership>,
+) -> Result<signing::SignatureEnvelope> {
+    let opened = open(bundle_path)?;
+    let mut envelope = opened.signature_envelope()?.ok_or_else(|| {
+        BundleError::Manifest(
+            "sign the app first: a group list names signed apps, and this one is unsigned"
+                .to_string(),
+        )
+    })?;
+    let publisher = match envelope.delegation.as_ref() {
+        Some(delegation) => delegation.delegation.root.clone(),
+        None => envelope.public_key.clone(),
+    };
+    for list in &lists {
+        let membership = list
+            .verify()
+            .map_err(|err| BundleError::Manifest(format!("group list: {err}")))?;
+        if membership.root != publisher {
+            return Err(BundleError::Manifest(format!(
+                "the list for group {:?} is signed by a different publisher than this app, \
+                 so it could never admit it; sign it with this app's publisher root",
+                membership.group
+            )));
+        }
+    }
+    envelope.groups = lists;
+    let json = serde_json::to_vec_pretty(&envelope)
+        .map_err(|err| BundleError::Manifest(err.to_string()))?;
+    drop(opened);
     replace_entry(bundle_path, SIGNATURE_ENTRY, &json)?;
     Ok(envelope)
 }

@@ -116,6 +116,33 @@ struct Cli {
     command: Option<Command>,
 }
 
+/// `krate group`.
+#[derive(Subcommand, Debug)]
+enum GroupCommand {
+    /// Name the apps that may share a group, with your publisher root key.
+    ///
+    /// Writes a signed list to attach with `krate sign --group`. A newer
+    /// list replaces an older one on every machine that sees it, so leaving
+    /// an app out of the next list removes it, and an old copy turning up
+    /// later cannot put it back.
+    Sign {
+        /// PKCS#8 Ed25519 publisher root key.
+        #[arg(long)]
+        root: PathBuf,
+        /// The group, as the apps declare it: `store.group:<name>`.
+        #[arg(long)]
+        group: String,
+        /// An app id that may use the group. Repeat for each app.
+        #[arg(long = "member", value_name = "APP_ID", required = true)]
+        members: Vec<String>,
+        /// Where to write the signed list.
+        #[arg(short, long)]
+        output: PathBuf,
+    },
+    /// The group lists this machine knows, and which apps each admits.
+    List,
+}
+
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Send any spooled usage events, then exit. Spawned detached by the
@@ -578,6 +605,18 @@ enum Command {
         /// It travels inside the bundle so the chain checks offline.
         #[arg(long, value_name = "FILE")]
         delegation: Option<PathBuf>,
+
+        /// A shared-group list written by `krate group sign`, carried in the
+        /// bundle so recipients learn which of your apps share the group.
+        /// Repeat for several groups.
+        #[arg(long = "group", value_name = "FILE")]
+        groups: Vec<PathBuf>,
+    },
+
+    /// Shared storage groups: which of your signed apps may share data.
+    Group {
+        #[command(subcommand)]
+        command: GroupCommand,
     },
 
     /// Authorise a release key to sign for a namespace, with the publisher
@@ -1800,7 +1839,24 @@ fn run() -> Result<u8> {
             generate_key,
             namespace,
             delegation,
-        } => sign_bundle_command(&file, &key, generate_key, &namespace, delegation.as_deref()),
+            groups,
+        } => {
+            let code =
+                sign_bundle_command(&file, &key, generate_key, &namespace, delegation.as_deref())?;
+            if code == 0 && !groups.is_empty() {
+                attach_group_lists_command(&file, &groups)?;
+            }
+            Ok(code)
+        }
+        Command::Group { command } => match command {
+            GroupCommand::Sign {
+                root,
+                group,
+                members,
+                output,
+            } => group_sign_command(&root, &group, &members, &output),
+            GroupCommand::List => group_list_command(),
+        },
         Command::Delegate {
             root,
             key,
@@ -13520,7 +13576,11 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
                     .ok()
             })
             .flatten();
-        storage_principal(manifest, envelope.as_ref(), verdict.as_ref())
+        let principal = storage_principal(manifest, envelope.as_ref(), verdict.as_ref());
+        // Only a verified app's lists are learned: the principal is
+        // Verified only when the signature and its chain held.
+        learn_group_lists(&principal, envelope.as_ref());
+        principal
     });
 
     if let Some(manifest) = manifest {
@@ -20034,6 +20094,199 @@ fn group_store_path(principal: &StoragePrincipal, group: &str) -> PathBuf {
         .join(format!("{}.kv", sanitize_storage_name(group)))
 }
 
+/// Where this machine keeps the newest accepted membership list for one
+/// publisher's group (IC-738): beside the group's data, in the same
+/// publisher-scoped directory.
+fn group_list_path(root: &str, group: &str) -> PathBuf {
+    krate_home()
+        .join("groups")
+        .join(format!("pub-{}", &root[..root.len().min(16)]))
+        .join(format!("{}.members.json", sanitize_storage_name(group)))
+}
+
+/// The list this machine holds for `(root, group)`, if any. A file that
+/// does not parse is treated as no list, never as a grant: `groups::access`
+/// re-verifies whatever is returned.
+fn known_group_list(
+    root: &str,
+    group: &str,
+) -> Option<krate_bundle::groups::SignedGroupMembership> {
+    let text = fs::read_to_string(group_list_path(root, group)).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+/// Learn the group lists a verified app carries (IC-738).
+///
+/// Each is judged against the list already held for its group: a newer
+/// one replaces it, the same one changes nothing, and an older one -- the
+/// shape of an old bundle re-admitting an app the publisher has since
+/// removed -- is refused and said so. Only lists from the app's own
+/// publisher root are considered; the envelope is attacker-supplied, and
+/// `groups::accept` checks each signature before anything is written.
+fn learn_group_lists(
+    principal: &StoragePrincipal,
+    envelope: Option<&krate_bundle::signing::SignatureEnvelope>,
+) {
+    use krate_bundle::groups::{accept, Accepted};
+    let (StoragePrincipal::Verified { publisher, .. }, Some(envelope)) = (principal, envelope)
+    else {
+        return;
+    };
+    for offered in &envelope.groups {
+        let group = offered.membership.group.clone();
+        if krate_manifest::validate_group_name(&group).is_err() {
+            continue;
+        }
+        let known = known_group_list(publisher, &group);
+        match accept(known.as_ref(), offered, publisher, &group) {
+            Ok(Accepted::Replace) => {
+                let path = group_list_path(publisher, &group);
+                let written = path
+                    .parent()
+                    .map(fs::create_dir_all)
+                    .transpose()
+                    .ok()
+                    .and_then(|_| serde_json::to_vec_pretty(offered).ok())
+                    .map(|bytes| fs::write(&path, bytes).is_ok())
+                    .unwrap_or(false);
+                if !written {
+                    eprintln!("krate: could not record the list for shared group {group}");
+                }
+            }
+            Ok(Accepted::Unchanged) => {}
+            Err(krate_bundle::groups::GroupError::Rollback { known, offered }) => eprintln!(
+                "krate: this app carries an older list for shared group {group} \
+                 (issued {offered}) than this machine already holds (issued {known}); \
+                 keeping the newer one"
+            ),
+            Err(err) => eprintln!("krate: ignored the list for shared group {group}: {err}"),
+        }
+    }
+}
+
+/// Whether this app may use a shared group, from the newest list this
+/// machine holds for its publisher (IC-738). The guest interface that asks
+/// this lands with the `store.group` capability.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn group_access_for(
+    principal: &StoragePrincipal,
+    group: &str,
+) -> krate_bundle::groups::Access {
+    use krate_bundle::groups::access;
+    match principal {
+        StoragePrincipal::Verified { publisher, app_id } => access(
+            Some(publisher),
+            app_id,
+            group,
+            known_group_list(publisher, group).as_ref(),
+        ),
+        StoragePrincipal::Unverified { app_id } | StoragePrincipal::Development { app_id, .. } => {
+            access(None, app_id, group, None)
+        }
+    }
+}
+
+/// `krate group sign`: the publisher root names a group's members.
+fn group_sign_command(root: &Path, group: &str, members: &[String], output: &Path) -> Result<u8> {
+    use krate_bundle::groups::{GroupMembership, SignedGroupMembership};
+    krate_manifest::validate_group_name(group).map_err(|err| anyhow::anyhow!(err))?;
+    let root_key = load_pkcs8_key(root, "publisher root key")?;
+    let list = SignedGroupMembership::create(
+        &root_key,
+        GroupMembership {
+            schema: String::new(),
+            root: String::new(),
+            group: group.to_string(),
+            issued_at: unix_now(),
+            members: members.to_vec(),
+        },
+    );
+    fs::write(output, serde_json::to_vec_pretty(&list)?)
+        .with_context(|| format!("could not write {}", output.display()))?;
+    println!("group {} admits:", list.membership.group);
+    for member in &list.membership.members {
+        println!("  {member}");
+    }
+    println!("  publisher {}", &list.membership.root[..16]);
+    println!("  written   {}", output.display());
+    println!(
+        "Carry it in each member app: krate sign <file> --key <key> --namespace <ns> --group {}",
+        output.display()
+    );
+    println!("To remove an app later, sign a new list without it and ship it in any member app.");
+    Ok(0)
+}
+
+/// `krate sign --group`: carry the lists in the bundle just signed.
+fn attach_group_lists_command(file: &Path, lists: &[PathBuf]) -> Result<()> {
+    let mut parsed = Vec::new();
+    for path in lists {
+        let text = fs::read_to_string(path)
+            .with_context(|| format!("could not read the group list at {}", path.display()))?;
+        let list: krate_bundle::groups::SignedGroupMembership = serde_json::from_str(&text)
+            .with_context(|| {
+                format!(
+                    "{} is not a list written by `krate group sign`",
+                    path.display()
+                )
+            })?;
+        parsed.push(list);
+    }
+    let envelope =
+        krate_bundle::attach_group_lists(file, parsed).map_err(|err| anyhow::anyhow!("{err}"))?;
+    for list in &envelope.groups {
+        println!(
+            "  group     {} ({} member(s))",
+            list.membership.group,
+            list.membership.members.len()
+        );
+    }
+    Ok(())
+}
+
+/// `krate group list`: every list this machine holds.
+fn group_list_command() -> Result<u8> {
+    let base = krate_home().join("groups");
+    let mut found = 0;
+    if let Ok(publishers) = fs::read_dir(&base) {
+        for publisher in publishers.flatten() {
+            let Ok(files) = fs::read_dir(publisher.path()) else {
+                continue;
+            };
+            for file in files.flatten() {
+                let path = file.path();
+                if !path.to_string_lossy().ends_with(".members.json") {
+                    continue;
+                }
+                let Some(list) = fs::read_to_string(&path).ok().and_then(|text| {
+                    serde_json::from_str::<krate_bundle::groups::SignedGroupMembership>(&text).ok()
+                }) else {
+                    continue;
+                };
+                let state = if list.verify().is_ok() {
+                    ""
+                } else {
+                    "  (does not verify -- admits nobody)"
+                };
+                println!(
+                    "{}  publisher {}  issued {}{state}",
+                    list.membership.group,
+                    &list.membership.root[..16.min(list.membership.root.len())],
+                    list.membership.issued_at
+                );
+                for member in &list.membership.members {
+                    println!("  {member}");
+                }
+                found += 1;
+            }
+        }
+    }
+    if found == 0 {
+        println!("No shared groups known on this machine.");
+    }
+    Ok(0)
+}
+
 /// Where a principal's storage lives.
 ///
 /// A verified app gets its own directory named for the publisher, so it can
@@ -23404,6 +23657,35 @@ mod storage_identity_tests {
         assert_ne!(mine, group_store_path(&publisher_app, "holiday-fund"));
     }
 
+    /// Group access is refused unless a list names the app (IC-738): an
+    /// unsigned or development app can never be named, and a signed app
+    /// whose publisher has no list on this machine is not a member by
+    /// default. The admitted and revoked cases run through the binary in
+    /// `a_shared_group_admits_named_apps_and_a_removal_sticks`.
+    #[test]
+    fn a_group_is_closed_until_its_publisher_names_the_app() {
+        use krate_bundle::groups::Access;
+        let unsigned = StoragePrincipal::Unverified {
+            app_id: "com.acme.budget".to_string(),
+        };
+        let local = StoragePrincipal::Development {
+            developer: "3333333333333333".to_string(),
+            app_id: "com.acme.budget".to_string(),
+        };
+        let signed = StoragePrincipal::Verified {
+            // A publisher no list on any machine could name.
+            publisher: "f".repeat(64),
+            app_id: "com.acme.budget".to_string(),
+        };
+        assert_eq!(
+            group_access_for(&unsigned, "family-budget"),
+            Access::Unsigned
+        );
+        assert_eq!(group_access_for(&local, "family-budget"), Access::Unsigned);
+        assert_eq!(group_access_for(&signed, "family-budget"), Access::NoList);
+        assert!(!group_access_for(&signed, "family-budget").allowed());
+    }
+
     /// A group's data never sits where an app's private store could be
     /// reached by guessing a filename, and private storage stays private.
     #[test]
@@ -23597,6 +23879,7 @@ mod storage_identity_tests {
             statement_digest: String::new(),
             signed_entries: Default::default(),
             delegation: None,
+            groups: Vec::new(),
         };
         let revoked = FullVerdict {
             signature: Verdict::Valid {
@@ -23764,6 +24047,7 @@ mod storage_identity_tests {
             signature: "bb".repeat(64),
             statement_digest: String::new(),
             signed_entries: Default::default(),
+            groups: Vec::new(),
             delegation: Some(SignedDelegation {
                 delegation: Delegation {
                     schema: "krate.delegation.v1".to_string(),

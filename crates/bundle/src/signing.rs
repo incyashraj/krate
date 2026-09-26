@@ -328,6 +328,17 @@ pub struct SignatureEnvelope {
     /// whole hierarchy is built to make hard.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delegation: Option<crate::delegation::SignedDelegation>,
+    /// The publisher's shared-group membership lists (IC-738), each signed
+    /// by the publisher root.
+    ///
+    /// Carried here, like the delegation, so a recipient learns which of
+    /// this publisher's apps share a group from the app itself, offline.
+    /// Carrying one grants nothing: each list is verified against the root
+    /// on its own, and an older list than the one a machine already holds is
+    /// refused (see `groups::accept`). Absent from bundles that use no
+    /// group, and ignored by a Krate that predates it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub groups: Vec<crate::groups::SignedGroupMembership>,
 }
 
 impl SignatureEnvelope {
@@ -342,6 +353,7 @@ impl SignatureEnvelope {
             signature: hex(&signature.bytes),
             statement_digest: statement.digest(),
             delegation: None,
+            groups: Vec::new(),
             signed_entries: statement
                 .entries
                 .iter()
