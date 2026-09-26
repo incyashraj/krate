@@ -40,7 +40,13 @@ echo "==> the app"
 # Anchored to the whole word, not the start of the line: flyctl prints its
 # table with a leading space and a box-drawing separator, so "^krate-builder"
 # never matched and every rerun tried to create an app that already existed.
-if flyctl apps list 2>/dev/null | grep -qE "(^|[[:space:]])${APP}([[:space:]]|$)"; then
+#
+# And captured before it is searched: under `set -o pipefail`, `grep -q`
+# exits on its first match, flyctl dies of SIGPIPE writing the rest of the
+# table, and the pipeline reports failure -- so an app that WAS listed read
+# as missing, and the redeploy stopped at "Name has already been taken".
+apps="$(flyctl apps list 2>/dev/null || true)"
+if printf '%s\n' "$apps" | grep -qE "(^|[[:space:]])${APP}([[:space:]]|$)"; then
   echo "    ${APP} is already there"
 else
   flyctl apps create "$APP" --yes
@@ -50,7 +56,8 @@ echo "==> the build cache volume"
 # The volume is what makes a second build faster than a first: the cargo
 # registry and the compiled dependency cache live on it and survive the
 # machine stopping. Without it every wake re-downloads crates.io.
-if flyctl volumes list --app "$APP" 2>/dev/null | grep -q "$VOLUME"; then
+volumes="$(flyctl volumes list --app "$APP" 2>/dev/null || true)"
+if printf '%s\n' "$volumes" | grep -q "$VOLUME"; then
   echo "    ${VOLUME} is already there"
 else
   flyctl volumes create "$VOLUME" --app "$APP" --region "$REGION" --size 20 --yes
