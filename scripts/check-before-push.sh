@@ -90,6 +90,13 @@ for t in cloud/builder/test/*.test.mjs; do
   run "builder: $(basename "$t" .test.mjs)" node --experimental-wasm-modules "$t"
 done
 
+# The fuzz crate has its own lockfile, outside the workspace, and the fuzz
+# nightly fetches with --locked. The 0.5.1 bump moved the workspace crates
+# and left fuzz/Cargo.lock naming 0.4.0, so every nightly since failed at
+# "cannot update the lock file" before fuzzing a byte. `cargo metadata
+# --locked` resolves the graph and writes nothing.
+run "fuzz lockfile is current" cargo metadata --manifest-path fuzz/Cargo.toml --locked --format-version 1
+
 # The checkers that exist precisely so a bump or a drift is learned here.
 for c in scripts/check-version-pins.py scripts/check-cross-parity.py; do
   [ -f "$c" ] || continue

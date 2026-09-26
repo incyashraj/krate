@@ -364,14 +364,14 @@ dependencies = [
 
 [[package]]
 name = "krate-adapter-common"
-version = "0.4.0"
+version = "0.5.1"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "krate-bundle"
-version = "0.4.0"
+version = "0.5.1"
 dependencies = [
  "crc32fast",
  "krate-manifest",
@@ -400,7 +400,7 @@ dependencies = [
 
 [[package]]
 name = "krate-manifest"
-version = "0.4.0"
+version = "0.5.1"
 dependencies = [
  "krate-adapter-common",
  "serde",
@@ -410,7 +410,7 @@ dependencies = [
 
 [[package]]
 name = "krate-policy"
-version = "0.4.0"
+version = "0.5.1"
 dependencies = [
  "krate-adapter-common",
  "krate-manifest",
