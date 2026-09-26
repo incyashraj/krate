@@ -566,6 +566,27 @@ export default {
 
 // ---------------------------------------------------------------- publishing
 
+/// Whether `hash` is already published by an author other than `login`:
+/// by its listing, or -- when the listing write failed -- by the ownership
+/// record written before the bytes were stored (IC-387, IC-833 test 1838).
+/// A read hiccup answers "no", which is the pre-fix behaviour for that one
+/// request rather than a failed publish.
+async function publishedBySomeoneElse(env, hash, login) {
+  try {
+    const listing = await env.APPS.get(`app:${hash}`);
+    if (listing) {
+      const prior = JSON.parse(listing);
+      if (prior.author_login) return prior.author_login !== login;
+    }
+    const owner = await env.APPS.get(`owner:${hash}`);
+    if (owner) {
+      const record = JSON.parse(owner);
+      return Boolean(record.login) && record.login !== login;
+    }
+  } catch (_) {}
+  return false;
+}
+
 async function publish(request, env) {
   const identity = await verifyGitHub(request, env);
   if (!identity) {
@@ -649,12 +670,59 @@ async function publish(request, env) {
 
   const hash = await sha256Hex(body);
 
+  // Identical bytes are idempotent, and authorship does not transfer
+  // (IC-387). Content addressing means anyone can re-POST bytes they
+  // downloaded, and this write used to replace the listing's author with
+  // theirs -- one authenticated request took over any app's public
+  // identity. If these bytes are already published by someone else, the
+  // existing listing stands and they get the same URLs back. Asked BEFORE
+  // the store is touched: those bytes are already there, and nothing about
+  // this request should write anything.
+  if (await publishedBySomeoneElse(env, hash, identity.login)) {
+    const base2 = (env.PUBLIC_BASE || "").replace(/\/$/, "");
+    return json({
+      url: `${base2}/a/${hash}`,
+      full_url: `${base2}/a/${hash}`,
+      id: hash,
+      note:
+        "these exact bytes are already published; the existing listing " +
+        "and its author stand",
+    });
+  }
+
+  // Who published it, written BEFORE the bytes become public (IC-833,
+  // test 1838). The bundle is served at /a/<hash> the moment the store
+  // holds it, and the listing written after it was the only other record
+  // of an author -- so a KV write that failed, a client that disconnected
+  // or an isolate that died in between left an app anyone could download
+  // and nobody could remove, its author included. This is the one write a
+  // publish cannot do without: if it fails, nothing is stored and the
+  // person is told to try again, which costs them a retry rather than
+  // leaving an ownerless app on the internet.
+  const ownerKey = `owner:${hash}`;
+  try {
+    await env.APPS.put(
+      ownerKey,
+      JSON.stringify({ login: identity.login, at: Math.floor(Date.now() / 1000) }),
+    );
+  } catch (_) {
+    return text(
+      "could not record who is publishing this, so nothing was stored -- try again in a few minutes",
+      503,
+    );
+  }
+
   // Content-addressed: republishing the same bytes is a no-op that returns the
   // same URL, so a person who publishes twice does not get two entries. The
   // store is told the digest and read back before anything is listed
   // (IC-833, tests 1837 and 1840).
   const stored = await storeBundle(env, hash, body);
   if (stored.problem) {
+    // Nothing public was created, so the ownership record owns nothing.
+    // Best effort: a stray one names no bytes and is harmless.
+    try {
+      if (!(await env.BUNDLES.head(hash))) await env.APPS.delete(ownerKey);
+    } catch (_) {}
     return text(stored.problem, 500);
   }
 
@@ -705,33 +773,6 @@ async function publish(request, env) {
     validator: { version: judgement.validator, wit: judgement.wit },
   };
 
-  // Identical bytes are idempotent, and authorship does not transfer
-  // (IC-387). Content addressing means anyone can re-POST bytes they
-  // downloaded, and this write used to replace the listing's author with
-  // theirs -- one authenticated request took over any app's public
-  // identity. If these bytes are already listed by someone else, the
-  // existing listing stands and they get the same URLs back.
-  try {
-    const priorRaw = await env.APPS.get(`app:${hash}`);
-    if (priorRaw) {
-      const prior = JSON.parse(priorRaw);
-      if (prior.author_login && prior.author_login !== identity.login) {
-        const base2 = (env.PUBLIC_BASE || "").replace(/\/$/, "");
-        return json({
-          url: `${base2}/a/${hash}`,
-          full_url: `${base2}/a/${hash}`,
-          id: hash,
-          note:
-            "these exact bytes are already published; the existing listing " +
-            "and its author stand",
-        });
-      }
-    }
-  } catch (e) {
-    // A KV read hiccup must not fail a publish; the worst case is the
-    // pre-fix behaviour for this one request.
-  }
-
   // Keyed so KV's own lexicographic listing comes back newest-first when
   // reversed, which saves sorting the whole set on every page load.
   let listed = true;
@@ -758,6 +799,11 @@ async function publish(request, env) {
       const other = JSON.parse(raw);
       if (other.author_login === meta.author_login && other.name === meta.name) {
         await env.APPS.delete(key.name);
+        // A retired release's bytes are anyone's to re-publish (see
+        // `namable`), so its ownership record retires with its listing. The
+        // record exists for one window -- a publish that never got its
+        // listing -- and must not outlive the listing it stood in for.
+        await env.APPS.delete(`owner:${otherHash}`);
       }
     }
   } catch (e) {
@@ -981,10 +1027,16 @@ async function unpublish(request, hash, env) {
   const identity = await verifyGitHub(request, env);
   if (!identity) return text("sign in first", 401);
   if (!/^[0-9a-f]{64}$/.test(hash)) return text("not found", 404);
+  // The listing names the author. When the listing write failed at
+  // publish, the ownership record written before the bytes were stored
+  // still does (IC-833, test 1838), so an author can always remove what
+  // they published.
   const raw = await env.APPS.get(`app:${hash}`);
-  if (!raw) return text("not listed", 404);
-  const meta = JSON.parse(raw);
-  if (meta.author_login !== identity.login) {
+  const ownerRaw = raw ? null : await env.APPS.get(`owner:${hash}`);
+  if (!raw && !ownerRaw) return text("not listed", 404);
+  const meta = raw ? JSON.parse(raw) : null;
+  const author = meta ? meta.author_login : JSON.parse(ownerRaw).login;
+  if (author !== identity.login) {
     return text("only the app's author can remove it", 403);
   }
   // Delisting is not deleting. The listing is one of four places an app
@@ -993,6 +1045,7 @@ async function unpublish(request, hash, env) {
   // listing left the app downloadable by anyone holding the URL -- which is
   // the opposite of what "remove it" means to the person clicking it.
   await env.APPS.delete(`app:${hash}`);
+  await env.APPS.delete(`owner:${hash}`);
   await env.BUNDLES.delete(hash);
   await env.BUNDLES.delete(`shot:${hash}`);
   await env.BUNDLES.delete(`icon:${hash}`);
@@ -1004,7 +1057,9 @@ async function unpublish(request, hash, env) {
   // A channel pointing at the removed release falls back to the newest
   // earlier release of the same name that is still listed, and is removed
   // when there is none: a name must never resolve to bytes that are gone.
-  await retreatChannel(env, identity.login, meta.name, hash);
+  // Only a listed publish ever moved a channel, so an app that never got
+  // its listing has none to retreat.
+  if (meta) await retreatChannel(env, identity.login, meta.name, hash);
   return json({ ok: true });
 }
 
@@ -1353,6 +1408,7 @@ async function purgeBundle(request, hash, env) {
   if (!admins.includes(identity.login)) return text("not found", 404);
   if (!/^[0-9a-f]{64}$/.test(hash)) return text("not found", 404);
   await env.APPS.delete(`app:${hash}`);
+  await env.APPS.delete(`owner:${hash}`);
   await env.BUNDLES.delete(hash);
   await env.BUNDLES.delete(`shot:${hash}`);
   await env.BUNDLES.delete(`icon:${hash}`);
