@@ -635,8 +635,16 @@ async function startBuild({ request, token, account, device, revise = null, shap
       // Only a build that produced a file the engine accepted counts
       // against the allowance: "made" is the one outcome that consumes the
       // case's funding. An app that is not what was asked is recorded as
-      // "off-request" and the case stays open for the change that fixes it.
-      await caseAttempt(token, device, job.caseId, offRequest ? "off-request" : "made", verdict || "");
+      // "not-as-asked" and the case stays open for the change that fixes it.
+      //
+      // The WORD matters: the hub's CASE_OUTCOMES knows this one as
+      // "not-as-asked", and it answered 400 to the "off-request" that used
+      // to be sent here. caseAttempt is fire-and-forget, so the refusal was
+      // invisible: the case stayed open for ever with no attempts on it,
+      // and the person's ledger showed a build that never happened. It
+      // failed safe on money -- an unrecorded attempt cannot consume an
+      // allowance -- which is exactly why nothing caught it.
+      await caseAttempt(token, device, job.caseId, offRequest ? "not-as-asked" : "made", verdict || "");
       // What it cost, against the right money: their key or ours.
       await noteSpend(token, job.spend && {
         ...job.spend,
@@ -868,11 +876,29 @@ async function allowedToRevise(token, device, change) {
 
 async function caseAttempt(token, device, caseId, outcome, note) {
   if (!caseId) return;
-  await fetch(`${HUB}/case/attempt`, {
+  // Fire-and-forget on the NETWORK, loud about a REFUSAL.
+  //
+  // This swallowed everything, and that hid a real bug for as long as it
+  // existed: the builder sent "off-request" where the hub's vocabulary
+  // says "not-as-asked", the hub answered 400, and nothing anywhere said
+  // so. The case stayed open for ever with no attempts on it.
+  //
+  // A network failure still must not break a build -- the person's app
+  // matters more than the ledger entry. But a 4xx is us disagreeing with
+  // ourselves about our own wire format, and that belongs in the log where
+  // somebody will see it.
+  const res = await fetch(`${HUB}/case/attempt`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
     body: JSON.stringify({ device: device || "", id: caseId, outcome, note }),
-  }).catch(() => {});
+  }).catch(() => null);
+  if (res && !res.ok) {
+    const why = await res.text().catch(() => "");
+    console.error(
+      `[case] the hub refused outcome ${JSON.stringify(outcome)} for ${caseId}: ` +
+        `${res.status} ${why.slice(0, 200)}`,
+    );
+  }
 }
 
 async function cleanup(job, opts = {}) {
@@ -888,8 +914,42 @@ function plainFailure(tail) {
   // not work, it was not their fault, and trying again is reasonable. An
   // expired OAuth token is our problem, and it must never appear on a page
   // where a stranger is deciding whether this product is real.
-  if (/oauth|session expired|not signed in|no api key|unauthor|rate limit|quota|could not write the app/i.test(tail)) {
+  //
+  // Matched against what the ENGINE actually emits (crates/cli/src/
+  // api_author.rs), not against what a vendor error might plausibly look
+  // like. Only the 429 branch used to match, so on the day the key goes on
+  // a rejected key, an exhausted credit balance, a retired model or an
+  // Anthropic outage would all have read to a stranger as "this product
+  // does not work" -- when every one of them is ours to fix.
+  //
+  //   "<vendor> rejected the API key. Check it in Settings..."   (401/403)
+  //   "<vendor> is rate limiting this key right now."            (429)
+  //   "<vendor> does not serve the model `x` (it may have been retired)."
+  //   "<vendor> returned 529: ..."   overloaded, and 500s generally
+  //   "<vendor> returned 400: ... credit balance is too low ..."
+  //   "could not reach <vendor>: ..."                            (network)
+  //
+  // The key-and-billing wording is deliberately separate from the
+  // try-again-in-a-minute wording: telling somebody to retry in a minute
+  // when our key is dead sends them round a loop that cannot end.
+  if (
+    /rejected the api key|credit balance|does not serve the model|billing|payment/i.test(tail)
+  ) {
+    return "Making apps here is having a problem on our side. It is not something you did, and it is not something you can fix -- we have been told.";
+  }
+  if (
+    /oauth|session expired|not signed in|no api key|unauthor|rate limit|quota|could not write the app|could not reach|returned 4\d\d|returned 5\d\d|overloaded|no reply|usage counts/i.test(
+      tail,
+    )
+  ) {
     return "Our AI could not be reached just now. This one is on us -- try again in a minute.";
+  }
+  // The model tried and did not get there. Not a refusal, not an outage,
+  // and not the person's fault either -- it is worth its own sentence
+  // rather than the catch-all, because the useful next move is different:
+  // a smaller ask, not a retry of the same one.
+  if (/stopped before the app passed|did not pass check-app within/i.test(tail)) {
+    return "That one did not come together in the time we allow. A smaller first version usually does -- you can add to it afterwards.";
   }
   // The spend ceiling stopped a build that was not converging. Not a fault
   // and not a refusal: the request was simply bigger than one build can
@@ -906,7 +966,14 @@ function plainFailure(tail) {
   // "cannot do" meant a real refusal fell through to the generic sentence,
   // so the one failure that HAS an actionable next step was the one that
   // did not offer it.
-  if (/refus|cannot build|cannot do|will not/i.test(tail)) {
+  // Ordered AFTER the vendor cases on purpose. "will not" alone matched
+  // any API body containing those two words, so an Anthropic outage could
+  // be reported to a stranger as "you asked for something Krate cannot
+  // do" -- blaming the person for our failure, which is the one thing this
+  // function exists to prevent. The vendor branches now claim those
+  // strings first, and the wording here is narrowed to what the wall and
+  // the engine actually say.
+  if (/refus|cannot build|krate cannot|not something krate can/i.test(tail)) {
     return "That asks for something Krate cannot do yet. Try describing it another way.";
   }
   if (/timed out|timeout/i.test(tail)) {

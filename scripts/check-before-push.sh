@@ -80,6 +80,16 @@ for t in cloud/worker/test/*.test.mjs; do
   run "worker: $(basename "$t" .test.mjs)" node --experimental-wasm-modules "$t"
 done
 
+# The build service's own tests. CI has run these for a while and this
+# gate never did, so a builder change was pushed on faith -- and the
+# builder is where the money is spent. They spawn the real server from a
+# repo-relative path, so they must run from the repo root, which is where
+# this script already is.
+for t in cloud/builder/test/*.test.mjs; do
+  [ -f "$t" ] || continue
+  run "builder: $(basename "$t" .test.mjs)" node --experimental-wasm-modules "$t"
+done
+
 # The checkers that exist precisely so a bump or a drift is learned here.
 for c in scripts/check-version-pins.py scripts/check-cross-parity.py; do
   [ -f "$c" ] || continue

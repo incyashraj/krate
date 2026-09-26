@@ -12,6 +12,7 @@ import assert from "node:assert";
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -371,7 +372,37 @@ assert.strictEqual(offStatus.result.verdict, "off-request");
 assert.match(offStatus.result.verdict_detail, /asked for a timer/, "the engine's reason reaches the page");
 assert.strictEqual((await get(`/build/${offId}/file`, asAlice)).status, 200, "and the file is still theirs");
 const offAttempts = caseCalls.filter((c) => c.path === "/case/attempt").slice(casesBeforeOff);
-assert.deepStrictEqual(offAttempts.map((c) => c.body.outcome), ["off-request"], "recorded as off-request, never as made");
+// "not-as-asked", which is the word the HUB knows (its CASE_OUTCOMES set).
+//
+// This asserted "off-request" and so locked the bug in place: the builder
+// sent a word the hub answers 400 to, caseAttempt swallowed the refusal,
+// and the case stayed open for ever with no attempts on it. The stub here
+// accepts any outcome, which is why the assertion agreed with the builder
+// instead of with the hub -- a mirror of the caller cannot catch a
+// disagreement between two sides.
+assert.deepStrictEqual(
+  offAttempts.map((c) => c.body.outcome),
+  ["not-as-asked"],
+  "recorded in the hub's own vocabulary, never as made",
+);
+// The verdict the PERSON sees keeps the engine's word; only the wire word
+// had to change.
+assert.strictEqual(offStatus.result.verdict, "off-request");
+// And the wire word has to be one the hub actually accepts. Checked
+// against the hub's own list rather than repeated here, so this cannot
+// drift into agreeing with a typo a second time.
+{
+  const hub = readFileSync("cloud/worker/src/index.js", "utf8");
+  const set = /const CASE_OUTCOMES = new Set\(\[([\s\S]*?)\]\)/.exec(hub);
+  assert.ok(set, "the hub declares CASE_OUTCOMES");
+  const known = [...set[1].matchAll(/"([a-z-]+)"/g)].map((m) => m[1]);
+  for (const call of caseCalls.filter((c) => c.path === "/case/attempt")) {
+    assert.ok(
+      known.includes(call.body.outcome),
+      `the builder sent ${JSON.stringify(call.body.outcome)}, which the hub refuses -- it knows ${known.join(", ")}`,
+    );
+  }
+}
 
 /* ---- the plan, and a change -------------------------------------------- */
 // Planning is a conversation, not a build: it answers, and it consumes nothing.
