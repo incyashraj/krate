@@ -197,9 +197,20 @@ jobs:
       # unrun long enough that one sat red in main contradicting a fix
       # that had already shipped (K-829, macOS keeps the real HOME) --
       # nobody was told, because no lane was watching. Seconds to run.
+      #
+      # tauri.conf.json bundles `bin/*`, the engine Studio ships beside
+      # itself, and Studio's build script refuses to run when that glob
+      # matches nothing. The release build copies the engine in first; this
+      # step never did, so it failed on a clean runner and passed on every
+      # machine that had ever packaged Studio. The workspace test above has
+      # already built the engine, so stage that one.
       - name: Run studio tests
-        working-directory: studio
-        run: cargo test
+        shell: bash
+        run: |
+          cargo build -p krate-cli --bin krate
+          mkdir -p studio/bin
+          cp target/debug/krate studio/bin/krate
+          cd studio && cargo test
       # The half of the stranger's path that MAKES an app.
       #
       # `test-cold-install.sh` walks install/refuse/grant/run and stops there,
