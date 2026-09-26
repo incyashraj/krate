@@ -61,6 +61,11 @@ pub struct AppStore {
     /// file on disk, and without it a delete would be undone by whatever
     /// was still written there (IC-247).
     deleted: BTreeSet<String>,
+    /// Keys this handle has SET since it last wrote (K-871). Only these go
+    /// over the file on flush. `entries` is everything this handle has read,
+    /// and writing all of it back re-asserted values this handle merely
+    /// loaded, erasing another writer's newer ones.
+    changed: BTreeSet<String>,
 }
 
 impl AppStore {
@@ -96,6 +101,7 @@ impl AppStore {
             granted,
             unreadable,
             deleted: BTreeSet::new(),
+            changed: BTreeSet::new(),
         }
     }
 
@@ -142,6 +148,8 @@ impl AppStore {
             return Err(StoreError::TooLarge);
         }
         self.entries.insert(key.to_string(), value);
+        self.deleted.remove(key);
+        self.changed.insert(key.to_string());
         self.flush()
     }
 
@@ -151,6 +159,7 @@ impl AppStore {
         validate_key(key)?;
         // Deleting something absent is a success: the caller wanted it gone.
         if self.entries.remove(key).is_some() {
+            self.changed.remove(key);
             self.deleted.insert(key.to_string());
             self.flush()?;
         }
@@ -168,7 +177,17 @@ impl AppStore {
     pub fn clear(&mut self) -> Result<(), StoreError> {
         self.require_grant()?;
         self.require_readable()?;
-        self.entries.clear();
+        // Every key, including ones another writer added since this handle
+        // opened: `clear` means empty. It used to empty only the map, and the
+        // merge on flush brought every key back from disk.
+        let on_disk = match load(&self.path) {
+            Ok(Some(existing)) => existing.into_keys().collect(),
+            _ => Vec::new(),
+        };
+        self.deleted.extend(on_disk);
+        self.deleted
+            .extend(std::mem::take(&mut self.entries).into_keys());
+        self.changed.clear();
         self.flush()
     }
 
@@ -201,7 +220,7 @@ impl AppStore {
     /// general concurrency story: real ordering needs the versioned,
     /// transactional store CP2 specifies, and pretending otherwise here
     /// would be a worse lie than the one being fixed.
-    fn flush(&self) -> Result<(), StoreError> {
+    fn flush(&mut self) -> Result<(), StoreError> {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| StoreError::Io(e.to_string()))?;
         }
@@ -213,10 +232,13 @@ impl AppStore {
             Ok(Some(existing)) => existing,
             _ => BTreeMap::new(),
         };
-        // Keys this handle deleted must not come back from disk.
+        // Keys this handle deleted must not come back from disk, and only
+        // the keys it set go over what is there (K-871).
         merged.retain(|key, _| !self.deleted.contains(key));
-        for (key, value) in &self.entries {
-            merged.insert(key.clone(), value.clone());
+        for key in &self.changed {
+            if let Some(value) = self.entries.get(key) {
+                merged.insert(key.clone(), value.clone());
+            }
         }
 
         let encoded = encode(&merged);
@@ -225,6 +247,12 @@ impl AppStore {
             .with_extension(format!("{}.tmp", std::process::id()));
         std::fs::write(&temp, &encoded).map_err(|e| StoreError::Io(e.to_string()))?;
         std::fs::rename(&temp, &self.path).map_err(|e| StoreError::Io(e.to_string()))?;
+
+        // Written: this handle now sees what the file holds, other writers'
+        // keys included, and has nothing pending.
+        self.entries = merged;
+        self.changed.clear();
+        self.deleted.clear();
         Ok(())
     }
 }
@@ -415,6 +443,86 @@ mod tests {
             reopened.get("remove").expect("read"),
             None,
             "the merge brought a deleted key back"
+        );
+    }
+
+    /// K-871. A handle wrote back every value it had merely READ, so a key
+    /// it never touched erased another writer's newer value -- the case the
+    /// IC-247 merge was written to protect, and the one its test did not
+    /// cover (that test used disjoint keys).
+    #[test]
+    fn a_key_this_handle_only_read_is_not_written_back() {
+        let dir = tempfile::tempdir().expect("dir");
+        let path = dir.path().join("store.kv");
+        AppStore::open(path.clone(), true)
+            .set("theme", b"light".to_vec())
+            .expect("seed");
+
+        let mut a = AppStore::open(path.clone(), true);
+        let mut b = AppStore::open(path.clone(), true);
+        b.set("theme", b"dark".to_vec()).expect("b sets theme");
+        a.set("draft", b"hello".to_vec())
+            .expect("a saves something else");
+
+        let reopened = AppStore::open(path, true);
+        assert_eq!(
+            reopened.get("theme").expect("read"),
+            Some(b"dark".to_vec()),
+            "a never touched theme, so its save must not put back the value it loaded"
+        );
+        assert_eq!(
+            reopened.get("draft").expect("read"),
+            Some(b"hello".to_vec())
+        );
+    }
+
+    /// Per key, the last write wins -- by when it was written, not by which
+    /// handle saved last for some other reason.
+    #[test]
+    fn the_last_write_of_a_key_wins_whoever_saves_next() {
+        let dir = tempfile::tempdir().expect("dir");
+        let path = dir.path().join("store.kv");
+        let mut a = AppStore::open(path.clone(), true);
+        let mut b = AppStore::open(path.clone(), true);
+        a.set("same", b"from-a".to_vec()).expect("a");
+        b.set("same", b"from-b".to_vec()).expect("b, later");
+        a.set("unrelated", b"x".to_vec()).expect("a saves again");
+
+        let reopened = AppStore::open(path, true);
+        assert_eq!(
+            reopened.get("same").expect("read"),
+            Some(b"from-b".to_vec()),
+            "b's later write of `same` stands"
+        );
+        assert_eq!(
+            a.get("same").expect("a's view"),
+            Some(b"from-b".to_vec()),
+            "and a sees it after its own save"
+        );
+    }
+
+    /// `clear` empties the store, including keys another writer added, and
+    /// they stay gone. It used to empty only the in-memory map, and the merge
+    /// on flush brought every key back from disk.
+    #[test]
+    fn clear_empties_the_store_and_it_stays_empty() {
+        let dir = tempfile::tempdir().expect("dir");
+        let path = dir.path().join("store.kv");
+        let mut a = AppStore::open(path.clone(), true);
+        a.set("mine", b"1".to_vec()).expect("a");
+        let mut b = AppStore::open(path.clone(), true);
+        b.set("theirs", b"2".to_vec()).expect("b");
+
+        a.clear().expect("clear");
+        let reopened = AppStore::open(path.clone(), true);
+        assert_eq!(reopened.keys().expect("keys"), Vec::<String>::new());
+
+        a.set("after", b"3".to_vec()).expect("a writes again");
+        let reopened = AppStore::open(path, true);
+        assert_eq!(
+            reopened.keys().expect("keys"),
+            vec!["after".to_string()],
+            "the cleared keys do not come back on the next write"
         );
     }
 
