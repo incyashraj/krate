@@ -2035,24 +2035,18 @@ fn run() -> Result<u8> {
             json,
             force,
         } => {
+            // Attachments go through the ordinary create, with every flag
+            // the caller gave: the separate path they used ignored
+            // --work-dir, --json and --transcript and turned the request
+            // verdict (exit 6) into an error (K-893).
             if !attachments.is_empty() {
-                // Attachments ride the same path the interactive menu uses:
-                // staged beside the code, named in the prompt, and the stable
-                // builds workspace so a retry resumes rather than restarts.
-                let Some(agent) = agent else {
+                if agent.is_none() && author_cmd.is_none() {
                     anyhow::bail!(
                         "--attach needs --agent: the built-in templates cannot \
                          read files. Try again with --agent claude."
                     );
-                };
-                for file in &attachments {
-                    if !file.exists() {
-                        anyhow::bail!("attached file {} does not exist", file.display());
-                    }
                 }
-                let provider = resolve_agent(&agent)?;
-                author_app_for_tui(&request, provider, &output, &attachments)?;
-                return Ok(0);
+                check_attachments(&attachments)?;
             }
             create_krate(CreateRequest {
                 request,
@@ -2080,6 +2074,7 @@ fn run() -> Result<u8> {
                 json,
                 force,
                 derived_from: None,
+                attachments,
             })
         }
         Command::Report { report, show } => run_report_command(&report, show),
@@ -4082,62 +4077,9 @@ pub(crate) fn author_app_for_tui(
     let builds = krate_home().join("builds");
     fs::create_dir_all(&builds).context("make the builds directory")?;
 
-    let mut request = request.to_string();
-    if !attachments.is_empty() {
-        let inbox = builds.join("attached");
-        fs::create_dir_all(&inbox).context("make the attachments directory")?;
-        let mut named = Vec::new();
-        for source in attachments {
-            let Some(name) = source.file_name() else {
-                continue;
-            };
-            let destination = inbox.join(name);
-            // A failed copy used to be discarded by this `is_ok()` with no
-            // else. A directory passed to --attach cannot be copied, so
-            // nothing was staged -- and the prompt still told the agent
-            // "The person attached these files, in this directory. Read
-            // them", pointing at an empty folder. A whole agent session
-            // spent on files that were never there, with no diagnostic.
-            //
-            // `plan` now refuses a directory outright, and this is the
-            // second door: whatever else fails here is said rather than
-            // swallowed.
-            if let Err(err) = fs::copy(source, &destination) {
-                eprintln!("note: could not attach {}: {err}", source.display());
-                continue;
-            }
-            {
-                named.push(format!("attached/{}", name.to_string_lossy()));
-                // A spreadsheet is a binary blob to a text-reading agent.
-                // Convert each sheet to CSV beside the original so the data
-                // is actually readable -- and embeddable in the app
-                // (K-123 S3: the friend's Excel was the whole request, and
-                // the agent could not open it).
-                for sheet_csv in spreadsheet_to_csvs(&destination) {
-                    named.push(format!("attached/{sheet_csv}"));
-                }
-            }
-        }
-        if !named.is_empty() {
-            request.push_str(
-                "\n\nThe person attached these files, in this directory. Read them \
-                 before you write any code -- they are part of the request, and \
-                 usually say more about what is wanted than the sentence above:\n",
-            );
-            for name in &named {
-                request.push_str(&format!("  {name}\n"));
-            }
-            request.push_str(
-                "\nIf one is a screenshot or a design, build something that looks like \
-                 it. If one is the source of an app they already have, build the same \
-                 thing as a Krate app -- keeping what it does, not how it was written, \
-                 since it was written against a different system. Spreadsheets have \
-                 each sheet converted to a .csv beside the original: read the CSVs, \
-                 never the binary. If the app is ABOUT that data, embed the data (or \
-                 the relevant parts) in the app so it opens already useful.",
-            );
-        }
-    }
+    // Attachments are staged by create itself, inside the app's own
+    // workspace (K-893).
+    let request = request.to_string();
 
     // Derived before `request` moves: the name create will derive, for
     // clearing exactly this app's build dir on success.
@@ -4163,6 +4105,7 @@ pub(crate) fn author_app_for_tui(
         json: false,
         force: false,
         derived_from: None,
+        attachments: attachments.to_vec(),
     })?;
     usage::record_with(
         usage::Action::Make,
@@ -4183,7 +4126,6 @@ pub(crate) fn author_app_for_tui(
         if let Some(name) = cleanup_name {
             let _ = fs::remove_dir_all(krate_home().join("builds").join(name));
         }
-        let _ = fs::remove_dir_all(krate_home().join("builds").join("attached"));
         Ok(())
     } else {
         Err(anyhow::anyhow!("the app could not be built"))
@@ -4505,6 +4447,7 @@ fn revise_cli(
                 json: false,
                 force: true,
                 derived_from,
+                attachments: Vec::new(),
             })?;
             if code != 0 {
                 anyhow::bail!("the change could not be applied");
@@ -4611,6 +4554,7 @@ pub(crate) fn revise_app_for_tui(
         // The output already exists; that is the point.
         force: true,
         derived_from,
+        attachments: Vec::new(),
     })?;
     if code == 0 {
         remember_app(output);
@@ -7056,6 +7000,100 @@ struct CreateRequest {
     /// The app this one is being changed from, recorded in the result
     /// (IC-397, test 494). None for an original.
     derived_from: Option<krate_bundle::DerivedFrom>,
+    /// Files the person attached, staged into the app's own workspace.
+    attachments: Vec<PathBuf>,
+}
+
+/// Largest file one attachment may be.
+const MAX_ATTACH_BYTES: u64 = 10 * 1024 * 1024;
+
+/// Refuse what cannot be attached, before any AI time is spent: a file that
+/// is not there, a folder, anything over 10 MB. One check for plan and
+/// create alike -- create had no size cap at all, so a 28.6 MB file that
+/// plan refused went straight through create (K-893).
+fn check_attachments(attachments: &[PathBuf]) -> Result<()> {
+    for file in attachments {
+        if !file.exists() {
+            anyhow::bail!("attached file {} does not exist", file.display());
+        }
+        if file.is_dir() {
+            // A directory silently became an empty staging folder further
+            // down the create path, and the agent was told to read files
+            // that were never copied. Named here instead.
+            anyhow::bail!(
+                "{} is a folder, and a folder cannot be attached. Attach the \
+                 files inside it.",
+                file.display()
+            );
+        }
+        // `support-send` caps at 12 MB and this is the same kind of door.
+        if let Ok(meta) = fs::metadata(file) {
+            if meta.len() > MAX_ATTACH_BYTES {
+                anyhow::bail!(
+                    "{} is {:.1} MB, over the 10 MB attachment limit.",
+                    file.display(),
+                    meta.len() as f64 / (1024.0 * 1024.0)
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Where a new app's attachments begin in the text the agent reads. The
+/// person's request is everything before it; the judge reads only that.
+const ATTACHED_PREAMBLE: &str = "\n\nThe person attached these files";
+
+/// Copy the person's attachments into THIS app's workspace, under
+/// `attached/`, and say what the agent should do with them (K-893).
+///
+/// They used to go to one inbox shared by every app, `~/.krate/builds/
+/// attached`, beside the app's directory rather than in it -- so the
+/// prompt's `attached/<name>` did not resolve from where the agent stood,
+/// a failed build left its files for the next app to find, and the whole
+/// path bypassed --work-dir, --json and --transcript. Staged fresh here,
+/// inside the workspace, on every build.
+fn stage_attachments(app_dir: &Path, attachments: &[PathBuf]) -> Result<String> {
+    let inbox = app_dir.join("attached");
+    let _ = fs::remove_dir_all(&inbox);
+    fs::create_dir_all(&inbox).context("make the attachments directory")?;
+    let mut named = Vec::new();
+    for source in attachments {
+        let Some(name) = source.file_name() else {
+            continue;
+        };
+        let destination = inbox.join(name);
+        fs::copy(source, &destination)
+            .with_context(|| format!("could not attach {}", source.display()))?;
+        named.push(format!("attached/{}", name.to_string_lossy()));
+        // A spreadsheet is a binary blob to a text-reading agent. Convert
+        // each sheet to CSV beside the original so the data is actually
+        // readable -- and embeddable in the app (K-123 S3).
+        for sheet_csv in spreadsheet_to_csvs(&destination) {
+            named.push(format!("attached/{sheet_csv}"));
+        }
+    }
+    if named.is_empty() {
+        return Ok(String::new());
+    }
+    let mut text = format!(
+        "{ATTACHED_PREAMBLE}, in this directory. Read them before you write any \
+         code -- they are part of the request, and usually say more about what is \
+         wanted than the sentence above:\n"
+    );
+    for name in &named {
+        text.push_str(&format!("  {name}\n"));
+    }
+    text.push_str(
+        "\nIf one is a screenshot or a design, build something that looks like \
+         it. If one is the source of an app they already have, build the same \
+         thing as a Krate app -- keeping what it does, not how it was written, \
+         since it was written against a different system. Spreadsheets have \
+         each sheet converted to a .csv beside the original: read the CSVs, \
+         never the binary. If the app is ABOUT that data, embed the data (or \
+         the relevant parts) in the app so it opens already useful.",
+    );
+    Ok(text)
 }
 
 /// Fewest characters a create request must have to be worth authoring from.
@@ -7705,34 +7743,7 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
     //
     // `create` (main.rs, the --attach arm) and `revise` both check. This
     // was the one door that did not.
-    const MAX_ATTACH_BYTES: u64 = 10 * 1024 * 1024;
-    for file in attachments {
-        if !file.exists() {
-            anyhow::bail!("attached file {} does not exist", file.display());
-        }
-        if file.is_dir() {
-            // A directory silently became an empty staging folder further
-            // down the create path, and the agent was told to read files
-            // that were never copied. Named here instead.
-            anyhow::bail!(
-                "{} is a folder, and a folder cannot be attached. Attach the \
-                 files inside it.",
-                file.display()
-            );
-        }
-        // No cap existed anywhere on this path: a 60 MB text file was
-        // accepted without comment. `support-send` caps at 12 MB and this
-        // is the same kind of door.
-        if let Ok(meta) = fs::metadata(file) {
-            if meta.len() > MAX_ATTACH_BYTES {
-                anyhow::bail!(
-                    "{} is {:.1} MB, over the 10 MB attachment limit.",
-                    file.display(),
-                    meta.len() as f64 / (1024.0 * 1024.0)
-                );
-            }
-        }
-    }
+    check_attachments(attachments)?;
     let attached: Vec<String> = attachments
         .iter()
         .map(|p| {
@@ -8336,7 +8347,7 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     // strip it once, here, rather than in each of those places.
     let mut req = req;
     let is_change = req.request.starts_with(CHANGE_MARKER);
-    let marked_request = req.request.clone();
+    let mut marked_request = req.request.clone();
     if is_change {
         req.request = req.request[CHANGE_MARKER.len()..].to_string();
     }
@@ -8496,6 +8507,13 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
         let _ = fs::remove_dir_all(&app_dir);
     }
     fs::create_dir_all(&app_dir).with_context(|| format!("create {}", app_dir.display()))?;
+    // The attachments, in this workspace, named only in what the agent
+    // reads: req.request stays the person's own words for the name, the
+    // history and the judge (K-893).
+    if !req.attachments.is_empty() {
+        check_attachments(&req.attachments)?;
+        marked_request.push_str(&stage_attachments(&app_dir, &req.attachments)?);
+    }
 
     let mut steps: Vec<serde_json::Value> = Vec::new();
 
@@ -8706,9 +8724,15 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     //
     // A plan is Krate's own words, not a promise the person made, and it
     // must not become a list of things the app is accused of missing.
+    // And not the attachment instructions either: "The person attached
+    // these files, in this directory. Read them..." is Krate's prose, and
+    // judging it failed every build with an attachment (K-893).
     let judged_request = req
         .request
         .split("\n\n(The agreed plan:")
+        .next()
+        .unwrap_or(&req.request)
+        .split(ATTACHED_PREAMBLE)
         .next()
         .unwrap_or(&req.request)
         .trim()
@@ -9130,7 +9154,9 @@ pub(crate) fn claude_author_prompt_with(
     if let Some(change) = request.strip_prefix(CHANGE_MARKER) {
         return change_prompt(app_dir, change, krate_bin);
     }
-    let example = authoring_context::closest_example(request);
+    let example = authoring_context::closest_example(
+        request.split(ATTACHED_PREAMBLE).next().unwrap_or(request),
+    );
     let example_name = example.name;
     let example_shows = example.shows;
     // The model-starter seed (K-205): when run_author_command placed a
@@ -11508,7 +11534,16 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
     // request, because that sets the WIT wiring the agent should not have to
     // redo; everything else it writes. The agent overwrites src/lib.rs and
     // tunes manifest.toml.
-    let world = krate_author::AppKind::wants_gui(ctx.request);
+    // Shapes are chosen from the person's words only. The attachment
+    // instructions Krate appends ("source", "screenshot", "data"...) pulled
+    // a dashboard request to the network example, whose unchanged starter
+    // then failed the import check (K-893).
+    let shape_request = ctx
+        .request
+        .split(ATTACHED_PREAMBLE)
+        .next()
+        .unwrap_or(ctx.request);
+    let world = krate_author::AppKind::wants_gui(shape_request);
     // The model-starter seed (K-205): when the request confidently matches
     // an embedded example and wants a GUI, that example becomes the
     // STARTING src/lib.rs and manifest -- a complete app that builds, runs
@@ -11530,14 +11565,14 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
         Some(shape) if shape.eq_ignore_ascii_case("none") => None,
         Some(shape) => authoring_context::example_by_name(&shape).or_else(|| {
             if matches!(world, krate_author::Skeleton::Gui) {
-                authoring_context::closest_example_matched(ctx.request)
+                authoring_context::closest_example_matched(shape_request)
             } else {
                 None
             }
         }),
         None => {
             if matches!(world, krate_author::Skeleton::Gui) {
-                authoring_context::closest_example_matched(ctx.request)
+                authoring_context::closest_example_matched(shape_request)
             } else {
                 None
             }
@@ -11613,7 +11648,7 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
     // Skipped in model-starter mode: the starter IS the example, and a
     // duplicate EXAMPLE.rs would cost the agent a 30KB read for nothing.
     if model_starter.is_none() {
-        let example = authoring_context::closest_example(ctx.request);
+        let example = authoring_context::closest_example(shape_request);
         let _ = fs::write(ctx.app_dir.join("EXAMPLE.rs"), example.lib);
         let _ = fs::write(ctx.app_dir.join("EXAMPLE.manifest.toml"), example.manifest);
     }
@@ -22473,6 +22508,7 @@ again: {} -> {}",
             json: true,
             force: false,
             derived_from: None,
+            attachments: Vec::new(),
         };
         let verdict = krate_author::feasibility::screen(&req.request);
         let krate_author::feasibility::Verdict::Refuse(refusal) = verdict else {

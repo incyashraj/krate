@@ -3609,6 +3609,64 @@ fn concurrent_builds_of_one_app_name_do_not_spoil_each_other() {
     }
 }
 
+/// An attachment rides the ordinary create (K-893).
+///
+/// Attached files went down a separate path that staged them in one inbox
+/// shared by every app, outside the workspace the agent works in, ignored
+/// --work-dir, and turned the request verdict into "the app could not be
+/// built" (exit 1) -- while the judge read Krate's own "The person attached
+/// these files..." as things the person asked for. A no-op author leaves
+/// the starter unchanged, whose honest verdict is exit 6: that, with the
+/// file inside this app's workspace and no attachment prose in the verdict.
+#[test]
+fn an_attachment_goes_into_the_apps_own_workspace_and_is_not_judged() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let work = tempfile::tempdir().expect("temp dir");
+    let items = work.path().join("items.csv");
+    std::fs::write(&items, "milk\neggs\n").expect("write attachment");
+    let out = work.path().join("out.krate");
+    let inspect = work.path().join("inspect");
+    let done = krate()
+        .arg("create")
+        .args(["--author-cmd", "true"])
+        .arg("--output")
+        .arg(&out)
+        .arg("--work-dir")
+        .arg(&inspect)
+        .arg("--attach")
+        .arg(&items)
+        .arg("--")
+        .arg("a small dashboard")
+        .output()
+        .expect("run create");
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&done.stdout),
+        String::from_utf8_lossy(&done.stderr)
+    );
+    assert_eq!(
+        done.status.code(),
+        Some(6),
+        "the starter verdict, not an error: {text}"
+    );
+    assert!(
+        inspect
+            .join("dashboard")
+            .join("attached")
+            .join("items.csv")
+            .is_file(),
+        "the file is staged inside this app's workspace: {text}"
+    );
+    assert!(
+        !text.contains("attached, these") && !text.contains("person, attached"),
+        "Krate's attachment prose is not judged as the request: {text}"
+    );
+}
+
 #[test]
 fn create_with_an_agent_seam_builds_the_skeleton_and_refuses_to_call_it_authored() {
     // The agent path drops a minimal skeleton + KRATE_AUTHORING.md, then builds
