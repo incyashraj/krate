@@ -57,3 +57,31 @@ console.log("ok  sign-in, toolchain, quota and a missing engine are still recogn
 assert.match(says("error: the `claude` command is not installed, so Krate cannot use claude to write your app."),
   /No AI is connected/);
 console.log("ok  a missing AI and a missing toolchain are told apart");
+
+// K-897: text is cut by characters, never through the middle of an emoji.
+{
+  const clipSrc = app.slice(app.indexOf("function clip("), app.indexOf("\n}\n", app.indexOf("function clip(")) + 3);
+  const clip = new Function(`${clipSrc}; return clip;`)();
+  const request = "I want a habit tracker for my morning routine with streaks 🔥 and badges";
+  const title = clip(request, 60);
+  assert.doesNotThrow(() => JSON.parse(JSON.stringify(title)));
+  assert.ok(!/[\uD800-\uDBFF]$/.test(title), "no lone high surrogate at the end");
+  assert.ok(title.endsWith("🔥"), `the emoji is kept whole: ${title}`);
+  assert.doesNotMatch(app, /title: firstRequest\.slice\(0, 60\)/, "the session title is not cut by UTF-16 units");
+  console.log("ok  a title is cut by characters, never through an emoji");
+}
+
+// K-898: a malformed session is read as data, not trusted.
+{
+  const at = app.indexOf("function normalSession(");
+  const src = app.slice(at, app.indexOf("\n}\n", at) + 3);
+  const normalSession = new Function(`${src}; return normalSession;`)();
+  const s = normalSession({ id: "s1", messages: [null, 3, { who: "YOU", body: "hi" }, { body: 5 }] });
+  assert.equal(s.messages.length, 2, "null and non-objects are dropped");
+  assert.equal(s.messages[0].who, "YOU");
+  assert.equal(s.messages[1].who, "KRATE");
+  assert.equal(s.messages[1].body, "5");
+  assert.equal(normalSession(null), null);
+  assert.deepEqual(normalSession({ id: "s2" }).messages, []);
+  console.log("ok  one malformed session cannot blank Home");
+}

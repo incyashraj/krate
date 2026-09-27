@@ -125,12 +125,35 @@ function lsRemove(key) {
  * the interface can be worked on with no backend at all.
  *
  * Nothing else in this file knows or cares which. */
-const invoke = (cmd, args) =>
+const rawInvoke = (cmd, args) =>
   tauri
     ? tauri.core.invoke(cmd, args)
     : window.__KRATE_BRIDGE__
       ? window.__KRATE_BRIDGE__(cmd, args)
       : mockInvoke(cmd, args);
+
+/* A session is data from disk and from the account's sync, so it is read
+ * the way data is read: every message an object with text, and anything
+ * else dropped. One `null` in one session's messages threw inside the Home
+ * render and blanked all of Home -- the app list, the shelf, the AI row
+ * (K-898). Normalised here, where sessions come in, so no reader has to. */
+function normalSession(s) {
+  if (!s || typeof s !== "object" || Array.isArray(s)) return null;
+  const messages = Array.isArray(s.messages)
+    ? s.messages
+      .filter((m) => m && typeof m === "object" && !Array.isArray(m))
+      .map((m) => ({ ...m, who: typeof m.who === "string" ? m.who : "KRATE", body: typeof m.body === "string" ? m.body : String(m.body ?? "") }))
+    : [];
+  return { ...s, messages };
+}
+const SESSION_LISTS = new Set(["sessions_list", "sessions_local"]);
+const invoke = async (cmd, args) => {
+  const out = await rawInvoke(cmd, args);
+  if (SESSION_LISTS.has(cmd) && Array.isArray(out)) {
+    return out.map(normalSession).filter(Boolean);
+  }
+  return out;
+};
 
 /* One update check per session: newer release -> a quiet chip that opens
  * this machine's installer. No auto-download, no nagging; the person
@@ -596,9 +619,9 @@ async function boot() {
     // and a person facing a broken install needs the real reason rather
     // than a sign-in button that can never work. Never the build words
     // here: nothing was being built, and the raw reason goes to the log.
-    invoke("dbg_log", { line: "boot failed: " + String(err).slice(0, 400) }).catch(() => {});
+    invoke("dbg_log", { line: "boot failed: " + clip(err, 400) }).catch(() => {});
     $("gateError").textContent =
-      "Krate's engine did not answer" + (String(err || "").trim() ? ": " + String(err).slice(0, 200) : ".") +
+      "Krate's engine did not answer" + (String(err || "").trim() ? ": " + clip(err, 200) : ".") +
       " Reinstalling Krate usually fixes this.";
     $("gateError").classList.remove("hidden");
     $("loginBtn").disabled = true;
@@ -671,6 +694,12 @@ function onLoginStep(step) {
 /* ---- home ------------------------------------------------------------- */
 
 async function enterHome() {
+  // Home shows no conversation, so none is current. The last one opened
+  // stayed current, and whatever Studio said on Home -- "Connect an AI
+  // first", "X is not ready, so I am using Y" -- was written into that
+  // unrelated session and saved there (K-899). A running build is tracked
+  // by state.buildingSession, not this.
+  state.session = null;
   paintGreeting();
   showView("home");
   renderAccount();
@@ -914,7 +943,7 @@ function renderSessions(sessions) {
       .replace(/\b\w/g, (c) => c.toUpperCase());
     card.querySelector(".name").textContent = fileName || s.title;
     card.querySelector(".meta").textContent =
-      `${(s.title || "").slice(0, 60)} · ${timeAgo(s.updated)}${size}`;
+      `${clip(s.title || "", 60)} · ${timeAgo(s.updated)}${size}`;
     card.addEventListener("click", () => openSession(s));
 
     const x = document.createElement("button");
@@ -953,7 +982,7 @@ function newSession(firstRequest) {
   const now = Math.floor(Date.now() / 1000);
   state.session = {
     id: `s-${Date.now()}`,
-    title: firstRequest.slice(0, 60),
+    title: clip(firstRequest, 60),
     created: now,
     updated: now,
     messages: [],
@@ -965,6 +994,9 @@ function newSession(firstRequest) {
 }
 
 function openSession(s) {
+  // Every door in reads a normal session (K-898).
+  s = normalSession(s);
+  if (!s) return;
   // A build can finish on disk after the window is gone. The shell records
   // the target path before it starts, so a session with no result but a
   // pending path may have a finished app waiting -- adopt it rather than
@@ -1131,7 +1163,9 @@ async function persistSession(s) {
   try {
     await invoke("session_save", { session: s });
   } catch (e) {
-    /* history is a convenience; never let saving break making */
+    // History is a convenience; never let saving break making. But say so
+    // somewhere: a save that failed silently lost whole sessions (K-897).
+    invoke("dbg_log", { line: "session save failed: " + clip(e, 300) }).catch(() => {});
   }
 }
 
@@ -3550,6 +3584,14 @@ function publishWords(err) {
   return "It could not be published just now. Your app is still here, so nothing was lost.";
 }
 
+/* Cut text to `n` characters -- characters, not UTF-16 units. `slice`
+ * splits an emoji in half, and a lone half is not valid JSON to the Rust
+ * side: a request with an emoji near character 60 made a session title
+ * that Tauri refused, and the session was silently never saved (K-897). */
+function clip(text, n) {
+  return Array.from(String(text == null ? "" : text)).slice(0, n).join("");
+}
+
 /* The engine's own last word on a failure.
  *
  * The engine ends every failed run with one `error: ...` line, after
@@ -4358,7 +4400,7 @@ function appTile(name) {
   const words = name.trim().split(/\s+/);
   tile.textContent = words.length > 1
     ? (words[0][0] + words[1][0]).toUpperCase()
-    : name.slice(0, 2).replace(/^./, (c) => c.toUpperCase());
+    : clip(name, 2).replace(/^./, (c) => c.toUpperCase());
   return tile;
 }
 
@@ -5049,7 +5091,7 @@ function openPublishSheet() {
     : "";
   // One sentence, not the whole plan: this is a card in a gallery.
   const firstSentence = fromPlan.split(/(?<=[.!?])\s+/)[0] || fromPlan;
-  $("pubDesc").value = (firstSentence || firstAsk).slice(0, 140);
+  $("pubDesc").value = clip(firstSentence || firstAsk, 140);
   const shotImg = $("pubShotImg");
   const noShot = () => {
     shotImg.classList.add("hidden");
@@ -5206,7 +5248,7 @@ async function publishFromSheet() {
   } catch (err) {
     // The raw engine words go to the log even when the sheet shows plainer
     // ones -- a failure nobody can read back is a failure twice. (K-210)
-    invoke("dbg_log", { line: "publish failed: " + String(err).slice(0, 600) }).catch(() => {});
+    invoke("dbg_log", { line: "publish failed: " + clip(err, 600) }).catch(() => {});
     // A revoked or expired sign-in comes back as words about signing in.
     // That is one click away from fixed, so offer the click, not prose.
     if (/sign.?in|signed in|not signed/i.test(String(err))) {
@@ -5517,7 +5559,7 @@ function askMidBuild(text) {
     // dropping what was typed.
     return queueMidBuild(text);
   }
-  const short = text.length > 90 ? text.slice(0, 90) + "…" : text;
+  const short = Array.from(text).length > 90 ? clip(text, 90) + "…" : text;
   $("midSub").textContent = `"${short}"`;
   sheet.classList.remove("hidden");
   state.midText = text;
@@ -6660,7 +6702,7 @@ function openMakeitSheet() {
     .join("\n");
   state.makeit = { request: req, answers, why: $("failWhy").textContent || "" };
   $("makeitRecap").textContent =
-    "“" + req.slice(0, 160) + (req.length > 160 ? "…" : "") + "”";
+    "“" + clip(req, 160) + (Array.from(req).length > 160 ? "…" : "") + "”";
   $("makeitNote").textContent = "";
   // Ask for the email once, ever: the GitHub sign-in deliberately never
   // gives us one (minimum scope), so the first send remembers it.
@@ -6835,7 +6877,7 @@ if (tauri) {
   // that something is happening.
   tauri.event.listen("agent-install", (e) => {
     const row = document.querySelector(".ai-row .ai-detail.installing");
-    if (row) row.textContent = String(e.payload).slice(0, 90);
+    if (row) row.textContent = clip(e.payload, 90);
   }).catch(() => {});
 }
 

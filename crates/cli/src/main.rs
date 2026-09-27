@@ -4404,14 +4404,20 @@ fn revise_cli(
     match bundle_source_dir(bundle)? {
         Some(source) => {
             println!("==> changing the app in its own source");
-            revise_app_for_tui(
+            if let Err(err) = revise_app_for_tui(
                 &source,
                 change,
                 provider,
                 out,
                 attachments,
                 derived_from.clone(),
-            )?;
+            ) {
+                // The verdict, already printed: exit 6, not an error (K-896).
+                if err.downcast_ref::<ChangeNotApplied>().is_some() {
+                    return Ok(6);
+                }
+                return Err(err);
+            }
         }
         None => {
             // An older bundle with no source inside: restate the whole app.
@@ -4449,6 +4455,9 @@ fn revise_cli(
                 derived_from,
                 attachments: Vec::new(),
             })?;
+            if code == 6 {
+                return Ok(6);
+            }
             if code != 0 {
                 anyhow::bail!("the change could not be applied");
             }
@@ -4562,10 +4571,27 @@ pub(crate) fn revise_app_for_tui(
         // error's path still leads somewhere (K-313).
         discard_working_copy(source);
         Ok(())
+    } else if code == 6 {
+        Err(ChangeNotApplied.into())
     } else {
         Err(anyhow::anyhow!("the change could not be applied"))
     }
 }
+
+/// A change the request judge refused: it built, it did not do what was
+/// asked, and the app was left as it was. Its own type so `krate revise`
+/// can exit 6 -- the verdict Studio shows as "not what you asked for" --
+/// rather than 1, which Studio shows as "the build failed" (K-896).
+#[derive(Debug)]
+struct ChangeNotApplied;
+
+impl std::fmt::Display for ChangeNotApplied {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("the change did not do what was asked, so it was not applied")
+    }
+}
+
+impl std::error::Error for ChangeNotApplied {}
 
 /// `krate account`: who is signed in; `login` and `logout` change it.
 fn account_command(action: Option<AccountAction>, json: bool) -> Result<u8> {
@@ -8124,6 +8150,16 @@ fn name_from_request(request: &str) -> Option<String> {
             }
             break;
         }
+        // A pasted token is one "word" hundreds of characters long, and it
+        // became the app's folder name: "File name too long (os error 63)"
+        // after the whole AI build had run (K-895). A word that long is not
+        // a subject; it ends the name, or is skipped before one starts.
+        if word.len() > MAX_NAME_WORD_CHARS {
+            if words.is_empty() {
+                continue;
+            }
+            break;
+        }
         words.push(word);
         if words.len() == MAX_DERIVED_NAME_WORDS {
             break;
@@ -8135,6 +8171,9 @@ fn name_from_request(request: &str) -> Option<String> {
     }
     Some(words.join("-"))
 }
+
+/// Longest word a derived app name may take (K-895).
+const MAX_NAME_WORD_CHARS: usize = 24;
 
 /// Check that a create request has enough to author from. Returns a plain,
 /// user-facing message on failure.
@@ -23980,6 +24019,20 @@ mod storage_identity_tests {
     /// whose publisher has no list on this machine is not a member by
     /// default. The admitted and revoked cases run through the binary in
     /// `a_shared_group_admits_named_apps_and_a_removal_sticks`.
+    #[test]
+    fn a_pasted_token_does_not_become_a_folder_name() {
+        let jwt = format!("eyJ{}", "a".repeat(480));
+        assert_eq!(
+            name_from_request(&format!("{jwt} decode tokens like this one")).as_deref(),
+            Some("decode-tokens")
+        );
+        assert_eq!(
+            name_from_request(&format!("a jwt {jwt} decoder")).as_deref(),
+            Some("jwt"),
+            "a long word ends the name once one has started"
+        );
+    }
+
     #[test]
     fn header_text_is_encoded_exactly_as_a_browser_encodes_it() {
         // encodeURIComponent("Mom’s 番茄钟 100% (v2)!") in node.

@@ -4139,6 +4139,11 @@ fn slugify(request: &str) -> String {
             continue;
         }
         let cleaned: String = w.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+        // A pasted token is one enormous "word"; as a file name it failed
+        // with "File name too long" after the whole build (K-895).
+        if cleaned.len() > 24 {
+            continue;
+        }
         if !cleaned.is_empty() {
             words.push(cleaned);
         }
