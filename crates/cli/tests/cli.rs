@@ -5679,6 +5679,233 @@ fn a_group_is_shared_by_its_members_and_closed_to_everyone_else() {
         "error=not-a-member",
         "a removed member is refused, even opening its own bundle that carries the old list"
     );
+
+    // Test 1520: a group's data through export, import and uninstall. It is
+    // the group's, not one app's, so it travels in a member's export, goes
+    // back only to a member of the same publisher's group, and is never
+    // deleted with one app.
+    let data = |args: &[std::ffi::OsString]| {
+        let out = krate_in_home(args);
+        (
+            out.status.code(),
+            format!(
+                "{}{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            ),
+        )
+    };
+    let copy = dir.path().join("budget.krate-data");
+    let (code, said) = data(&[
+        os("data"),
+        os("export"),
+        budget.clone().into(),
+        os("-o"),
+        copy.clone().into(),
+    ]);
+    assert_eq!(code, Some(0), "{said}");
+    assert!(
+        said.contains("group") && said.contains("groups/family-budget.kv"),
+        "the export carries the group: {said}"
+    );
+    let group_file = std::fs::read_dir(home.path().join(".krate/groups"))
+        .expect("groups dir")
+        .map(|e| e.expect("entry").path().join("family-budget.kv"))
+        .find(|p| p.is_file())
+        .expect("the group's store on disk");
+    std::fs::remove_file(&group_file).expect("lose the group's data");
+    assert_eq!(call(&budget, &["get", "total"]), "get=none");
+
+    let import = |into: &std::path::Path, extra: &[&str]| {
+        let mut args = vec![
+            os("data"),
+            os("import"),
+            copy.clone().into(),
+            os("--into"),
+            into.into(),
+        ];
+        args.extend(extra.iter().map(|a| os(a)));
+        data(&args)
+    };
+    let (code, said) = import(&reports, &["--accept-different-app"]);
+    assert_eq!(code, Some(1), "{said}");
+    assert!(said.contains("not a member"), "{said}");
+    assert!(
+        !group_file.exists(),
+        "a removed member cannot restore its way back into the group"
+    );
+
+    // Another publisher with its own family-budget group, naming its app: a
+    // member, but of a different group that happens to share the name.
+    let other_root = dir.path().join("other-root.key");
+    let rival = pack("com.rival.budget", true);
+    let rival_list = dir.path().join("rival.json");
+    for args in [
+        vec![
+            os("sign"),
+            rival.clone().into(),
+            os("--key"),
+            other_root.clone().into(),
+            os("--namespace"),
+            os("rival/apps"),
+            os("--generate-key"),
+        ],
+        vec![
+            os("group"),
+            os("sign"),
+            os("--root"),
+            other_root.clone().into(),
+            os("--group"),
+            os("family-budget"),
+            os("-o"),
+            rival_list.clone().into(),
+            os("--member"),
+            os("com.rival.budget"),
+        ],
+        vec![
+            os("sign"),
+            rival.clone().into(),
+            os("--key"),
+            other_root.clone().into(),
+            os("--namespace"),
+            os("rival/apps"),
+            os("--group"),
+            rival_list.clone().into(),
+        ],
+    ] {
+        let out = krate_in_home(&args);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    assert_eq!(call(&rival, &["get", "total"]), "get=none");
+    let (code, said) = import(&rival, &["--accept-different-app"]);
+    assert_eq!(code, Some(1), "{said}");
+    assert!(said.contains("another publisher"), "{said}");
+    assert_eq!(
+        call(&rival, &["get", "total"]),
+        "get=none",
+        "a same-named group under another publisher gets nothing"
+    );
+
+    let (code, said) = import(&budget, &[]);
+    assert_eq!(code, Some(0), "{said}");
+    assert_eq!(
+        call(&budget, &["get", "total"]),
+        "get=1250",
+        "the member gets its group back"
+    );
+    let (code, said) = import(&budget, &[]);
+    assert_eq!(
+        code,
+        Some(1),
+        "existing group data is not overwritten unasked: {said}"
+    );
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        let prefix = tempfile::tempdir().expect("prefix");
+        let out = krate_in_home(&[
+            os("install"),
+            budget.clone().into(),
+            os("--prefix"),
+            prefix.path().into(),
+        ]);
+        if out.status.success() {
+            let (code, said) = data(&[
+                os("uninstall"),
+                os("com.acme.budget"),
+                os("--prefix"),
+                prefix.path().into(),
+                os("--delete-data"),
+            ]);
+            assert_eq!(code, Some(0), "{said}");
+            assert!(
+                said.contains("Kept the shared group family-budget"),
+                "{said}"
+            );
+            assert!(
+                group_file.is_file(),
+                "deleting one app's data never deletes the group other apps share"
+            );
+        } else {
+            eprintln!("skipping the uninstall check: this platform has no installer");
+        }
+    }
+
+    // Test 1519: data two apps shared by reusing one id comes into the
+    // group -- atomically, reversibly, and never by Krate choosing between
+    // claimants.
+    std::fs::remove_file(&group_file).expect("start the group empty");
+    let legacy = |id: &str| home.path().join(format!(".krate/store/{id}.kv"));
+    std::fs::create_dir_all(legacy("x").parent().unwrap()).expect("store dir");
+    std::fs::write(legacy("com.acme.budget"), "total\tOTAw\n").expect("legacy budget"); // 900
+    std::fs::write(legacy("com.acme.reports"), "total\tNDI=\n").expect("legacy reports"); // 42
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    let third = list("v3.json", &["com.acme.budget", "com.acme.reports"]);
+    sign(&budget, Some(&third), false);
+    let adopt = |app: &std::path::Path, extra: &[&str]| {
+        let mut args = vec![
+            os("group"),
+            os("adopt"),
+            app.into(),
+            os("--group"),
+            os("family-budget"),
+        ];
+        args.extend(extra.iter().map(|a| os(a)));
+        data(&args)
+    };
+
+    let (code, said) = adopt(&game, &[]);
+    assert_eq!(code, Some(1), "{said}");
+    assert!(said.contains("not a member"), "{said}");
+
+    let (code, said) = adopt(&budget, &[]);
+    assert_eq!(code, Some(1), "two claimants: {said}");
+    assert!(
+        said.contains("will not choose")
+            && said.contains("com.acme.budget")
+            && said.contains("com.acme.reports"),
+        "{said}"
+    );
+    assert!(!group_file.exists(), "a refusal changes nothing");
+
+    let (code, said) = adopt(&budget, &["--from", "com.acme.budget"]);
+    assert_eq!(code, Some(0), "{said}");
+    assert_eq!(call(&budget, &["get", "total"]), "get=900");
+    assert_eq!(call(&reports, &["get", "total"]), "get=900");
+    assert_eq!(
+        std::fs::read_to_string(legacy("com.acme.budget")).expect("legacy"),
+        "total\tOTAw\n",
+        "the old store is left exactly as it was"
+    );
+
+    let (code, said) = adopt(&budget, &["--from", "com.acme.reports"]);
+    assert_eq!(
+        code,
+        Some(1),
+        "a group with data is a second claimant: {said}"
+    );
+    assert_eq!(call(&budget, &["get", "total"]), "get=900");
+
+    let (code, said) = adopt(&budget, &["--undo"]);
+    assert_eq!(code, Some(0), "{said}");
+    assert!(!group_file.exists(), "undo takes the copy back out");
+    assert!(legacy("com.acme.budget").is_file());
+
+    let (code, said) = adopt(&budget, &["--from", "com.acme.reports"]);
+    assert_eq!(code, Some(0), "{said}");
+    assert_eq!(call(&budget, &["set", "total", "43"]), "set=ok");
+    let (code, said) = adopt(&budget, &["--undo"]);
+    assert_eq!(
+        code,
+        Some(1),
+        "undo after an app wrote would lose the writing: {said}"
+    );
+    assert!(said.contains("changed since"), "{said}");
+    assert_eq!(call(&budget, &["get", "total"]), "get=43");
 }
 
 /// An app can ask for more memory, and gets it only when granted (K-416;

@@ -790,7 +790,9 @@ sign --root <key> --group <name> --member <app id> ...`, carried in each app \
 by `krate sign --group <file>`. An app the list does not name gets \
 `not-a-member`, whatever the person granted -- show that as \"this app is \
 not part of <name>\" rather than as a failure. Nothing leaves the \
-computer.\n\n";
+computer, and it does not sync between machines. Apps that used to share by \
+reusing one app id move that data in with `krate group adopt <member.krate> \
+--group <name>`.\n\n";
 
 /// Section 2e: capabilities the runtime has had all along that no app ever
 /// used, because nothing taught them. The coverage matrix

@@ -141,6 +141,26 @@ enum GroupCommand {
     },
     /// The group lists this machine knows, and which apps each admits.
     List,
+    /// Bring data apps shared by reusing one app id into a named group.
+    ///
+    /// Before shared groups, the only way two apps shared storage was to
+    /// claim the same id. This copies that store into the group a member
+    /// app declares. The old store is left exactly where it was, so
+    /// `--undo` puts things back while nothing has written to the group.
+    Adopt {
+        /// A member of the group: a signed .krate its publisher's list names.
+        app: PathBuf,
+        /// The group, as the app declares it: `store.group:<name>`.
+        #[arg(long)]
+        group: String,
+        /// The app id whose store to bring in. Needed when more than one of
+        /// the group's members has one.
+        #[arg(long, value_name = "APP_ID")]
+        from: Option<String>,
+        /// Take the adopted copy back out of the group.
+        #[arg(long, conflicts_with = "from")]
+        undo: bool,
+    },
 }
 
 // Parsed once per process and matched once, so the size gap between `Run`
@@ -1861,6 +1881,12 @@ fn run() -> Result<u8> {
                 output,
             } => group_sign_command(&root, &group, &members, &output),
             GroupCommand::List => group_list_command(),
+            GroupCommand::Adopt {
+                app,
+                group,
+                from,
+                undo,
+            } => group_adopt_command(&app, &group, from.as_deref(), undo),
         },
         Command::Delegate {
             root,
@@ -14746,6 +14772,10 @@ fn uninstall_app(
         // separate from an impostor's.
         let mut data_paths = Vec::new();
         let mut owners = Vec::new();
+        // Shared groups the app belongs to. Never deleted with it: other
+        // apps of the same publisher read and write the same data (IC-738,
+        // test 1520). An export still carries them.
+        let mut kept_groups: Vec<String> = Vec::new();
         if delete_data {
             for (_, _, path) in &matches {
                 let payload = installed_payload_path(path);
@@ -14756,6 +14786,11 @@ fn uninstall_app(
                 for (_, candidate) in store_files_for(&principal) {
                     data_paths.push(candidate);
                 }
+                kept_groups.extend(
+                    member_group_files(opened.manifest(), &principal)
+                        .into_iter()
+                        .map(|(group, _)| group),
+                );
                 owners.push((opened.manifest().clone(), principal));
             }
         }
@@ -14768,11 +14803,12 @@ fn uninstall_app(
                 return Ok(1);
             };
             let files = store_files_for(principal);
-            if files.is_empty() {
+            let groups = member_group_files(manifest, principal);
+            if files.is_empty() && groups.is_empty() {
                 eprintln!("no saved data to export for {app_id}; nothing was deleted.");
                 return Ok(1);
             }
-            write_data_export(manifest, principal, &files, export).with_context(|| {
+            write_data_export(manifest, principal, &files, &groups, export).with_context(|| {
                 format!("could not write {}; nothing was deleted", export.display())
             })?;
             println!("Copied the saved data to {} first.", export.display());
@@ -14784,6 +14820,9 @@ fn uninstall_app(
             }
             for path in &data_paths {
                 println!("{}", path.display());
+            }
+            for group in &kept_groups {
+                println!("kept: shared group {group}");
             }
             return Ok(0);
         }
@@ -14797,6 +14836,11 @@ fn uninstall_app(
                 let _ = fs::remove_file(path);
             }
             println!("Its saved data is deleted too.");
+            for group in &kept_groups {
+                println!(
+                    "Kept the shared group {group}: other apps from the same publisher use it."
+                );
+            }
         } else {
             // Said out loud, because the opposite assumption is the one
             // that loses somebody's work: an uninstall that silently took
@@ -14849,6 +14893,40 @@ fn store_files_for(principal: &StoragePrincipal) -> Vec<(&'static str, PathBuf)>
         .map(|kind| (*kind, base.with_extension(kind)))
         .filter(|(_, path)| path.is_file())
         .collect()
+}
+
+/// The shared groups an app is a member of on this machine: declared with
+/// `store.group`, and named by its publisher's newest list here (IC-738).
+/// The person's own tools ask this, not the app, so no grant is involved.
+fn member_groups(manifest: &Manifest, principal: &StoragePrincipal) -> Vec<String> {
+    let Ok(declared) = manifest.declared_capabilities() else {
+        return Vec::new();
+    };
+    declared
+        .into_iter()
+        .filter(|cap| cap.module() == "store" && cap.action() == "group")
+        .filter_map(|cap| cap.resource().map(str::to_string))
+        .filter(|group| group_access_for(principal, group).allowed())
+        .collect()
+}
+
+/// The member groups that hold data, with where it is.
+fn member_group_files(manifest: &Manifest, principal: &StoragePrincipal) -> Vec<(String, PathBuf)> {
+    member_groups(manifest, principal)
+        .into_iter()
+        .map(|group| {
+            let path = group_store_path(principal, &group);
+            (group, path)
+        })
+        .filter(|(_, path)| path.is_file())
+        .collect()
+}
+
+/// Which publisher a group store belongs to: its directory, `pub-<root>`.
+fn group_owner_of(path: &Path) -> Option<String> {
+    path.parent()?
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
 }
 
 /// Resolve what a person names -- a .krate file, or an installed app's id
@@ -14926,6 +15004,14 @@ struct DataExportFile {
     /// The secrets store is encrypted with this machine's key: it travels,
     /// and it only opens on the machine that wrote it.
     machine_bound: bool,
+    /// For a shared group's data (kind `group`): the group's name, and the
+    /// publisher it belongs to as the group directory names it. A group is
+    /// not the app's, so it goes back only to a member of the same
+    /// publisher's group (IC-738, test 1520).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    group: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    owner: Option<String>,
 }
 
 fn principal_kind(principal: &StoragePrincipal) -> &'static str {
@@ -14950,10 +15036,25 @@ fn write_data_export(
     manifest: &Manifest,
     principal: &StoragePrincipal,
     files: &[(&'static str, PathBuf)],
+    groups: &[(String, PathBuf)],
     output: &Path,
 ) -> Result<DataExport> {
     let mut bodies = Vec::new();
     let mut records = Vec::new();
+    for (group, path) in groups {
+        let body = fs::read(path).with_context(|| format!("read {}", path.display()))?;
+        let name = format!("groups/{}.kv", sanitize_storage_name(group));
+        records.push(DataExportFile {
+            kind: "group".to_string(),
+            name: name.clone(),
+            bytes: body.len() as u64,
+            sha256: sha256_hex_of(&body),
+            machine_bound: false,
+            group: Some(group.clone()),
+            owner: group_owner_of(path),
+        });
+        bodies.push((name, body));
+    }
     for (kind, path) in files {
         let body = fs::read(path).with_context(|| format!("read {}", path.display()))?;
         let name = format!(
@@ -14968,6 +15069,8 @@ fn write_data_export(
             bytes: body.len() as u64,
             sha256: sha256_hex_of(&body),
             machine_bound: *kind == "secrets",
+            group: None,
+            owner: None,
         });
         bodies.push((name, body));
     }
@@ -15028,7 +15131,8 @@ fn write_data_export(
 fn export_data(app: &str, output: &Path, prefix: Option<&Path>) -> Result<u8> {
     let (manifest, principal) = resolve_app_storage(app, prefix)?;
     let files = store_files_for(&principal);
-    if files.is_empty() {
+    let groups = member_group_files(&manifest, &principal);
+    if files.is_empty() && groups.is_empty() {
         let base = principal_store_path_in(&krate_home(), &principal);
         eprintln!(
             "{} ({}) has no saved data on this machine: nothing at {}.{{{}}}",
@@ -15039,7 +15143,7 @@ fn export_data(app: &str, output: &Path, prefix: Option<&Path>) -> Result<u8> {
         );
         return Ok(1);
     }
-    let record = write_data_export(&manifest, &principal, &files, output)?;
+    let record = write_data_export(&manifest, &principal, &files, &groups, output)?;
     let total: u64 = record.files.iter().map(|f| f.bytes).sum();
     println!(
         "Wrote {} for {} ({}): {} file{}, {} bytes.",
@@ -15113,8 +15217,9 @@ fn import_data(
     // a damaged copy is refused whole, not restored by halves.
     let base = principal_store_path_in(&krate_home(), &principal);
     let mut ready = Vec::new();
+    let member_of = member_groups(&manifest, &principal);
     for entry in &record.files {
-        if !STORE_KINDS.contains(&entry.kind.as_str()) {
+        if entry.kind != "group" && !STORE_KINDS.contains(&entry.kind.as_str()) {
             bail!("{}: unknown data kind {:?}", file.display(), entry.kind);
         }
         let mut body = Vec::new();
@@ -15134,7 +15239,41 @@ fn import_data(
                 entry.name
             );
         }
-        let destination = base.with_extension(&entry.kind);
+        let destination = if entry.kind == "group" {
+            // A group's data goes back only where the app is a member now,
+            // under the same publisher: restoring it anywhere else would be
+            // a way into a group its list does not name (IC-738).
+            let Some(group) = entry
+                .group
+                .as_deref()
+                .filter(|g| krate_manifest::validate_group_name(g).is_ok())
+            else {
+                bail!("{}: {} names no valid group", file.display(), entry.name);
+            };
+            if !member_of.iter().any(|g| g == group) {
+                eprintln!(
+                    "this copy carries the shared group {group}, and {} ({}) is not a member \
+                     of it here -- it does not declare it, or its publisher's list does not \
+                     name it.\nNothing was restored.",
+                    manifest.app.name, manifest.app.id
+                );
+                return Ok(1);
+            }
+            let destination = group_store_path(&principal, group);
+            if entry.owner != group_owner_of(&destination) {
+                eprintln!(
+                    "the shared group {group} in this copy belongs to another publisher \
+                     ({}), not {} ({}).\nNothing was restored.",
+                    entry.owner.as_deref().unwrap_or("unknown"),
+                    manifest.app.name,
+                    manifest.app.id
+                );
+                return Ok(1);
+            }
+            destination
+        } else {
+            base.with_extension(&entry.kind)
+        };
         if destination.is_file() && !replace {
             eprintln!(
                 "{} ({}) already has data here: {}\n\
@@ -15147,7 +15286,10 @@ fn import_data(
         }
         ready.push((entry, destination, body));
     }
-    if let Some(parent) = base.parent() {
+    for parent in std::iter::once(base.as_path())
+        .chain(ready.iter().map(|(_, d, _)| d.as_path()))
+        .filter_map(Path::parent)
+    {
         fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
     }
     for (_, destination, body) in &ready {
@@ -20110,20 +20252,9 @@ pub(crate) fn development_identity() -> Option<String> {
     Some(id)
 }
 
-/// Where a named shared group's store lives (IC-738).
-///
-/// NOT YET REACHABLE FROM AN APP. The `store.group:<name>` capability
-/// parses, validates and walls, and this decides where such a group's data
-/// would live -- but no guest interface exposes it, because adding one to
-/// the WIT world would stop all 53 existing apps from starting: the runtime
-/// hosts exactly the current worlds and multi-version linking is IC-016,
-/// unbuilt. Verified rather than assumed -- a bundle naming an older world
-/// today fails with "built against different versions of the app
-/// interface".
-///
-/// Landing the path rule now means the authorization question is settled
-/// before an interface exists to get it wrong, which is the order the
-/// register asks for.
+/// Where a named shared group's store lives (IC-738). Apps reach it
+/// through `krate:store/group`, in the Phase 2 and Phase 4 worlds only
+/// (Phase 3 is frozen as shipped).
 ///
 /// Scoped by LINEAGE, not by the name alone. If any app declaring
 /// `store.group:family-budget` joined, a downloaded archive declaring the
@@ -20140,7 +20271,6 @@ pub(crate) fn development_identity() -> Option<String> {
 /// so nothing can reach a group's data by guessing an app-shaped filename --
 /// and `store.kv`, `store.sql` and `store.secret` stay private by default,
 /// which the requirement asks for in those words.
-#[cfg_attr(not(test), allow(dead_code))]
 fn group_store_path(principal: &StoragePrincipal, group: &str) -> PathBuf {
     let owner = match principal {
         StoragePrincipal::Verified { publisher, .. } => {
@@ -20231,9 +20361,8 @@ fn learn_group_lists(
 }
 
 /// Whether this app may use a shared group, from the newest list this
-/// machine holds for its publisher (IC-738). The guest interface that asks
-/// this lands with the `store.group` capability.
-#[cfg_attr(not(test), allow(dead_code))]
+/// machine holds for its publisher (IC-738). A run asks it before handing
+/// the runtime a group; export, import and uninstall ask it too.
 pub(crate) fn group_access_for(
     principal: &StoragePrincipal,
     group: &str,
@@ -20351,6 +20480,180 @@ fn group_list_command() -> Result<u8> {
         println!("No shared groups known on this machine.");
     }
     Ok(0)
+}
+
+/// `krate group adopt`: a store shared by app id, copied into a group
+/// (IC-738, test 1519).
+///
+/// Atomic: the copy is written beside the group and renamed into place, so
+/// the group either has all of it or none. Reversible: the old store is
+/// never touched, and a record of what was adopted lets `--undo` remove
+/// the copy -- only while it is still byte-for-byte what was adopted, since
+/// removing it after an app has written would lose that writing. And it
+/// refuses to choose: two members with old stores, or a group that already
+/// has data, is a question only the person can answer.
+fn group_adopt_command(app: &Path, group: &str, from: Option<&str>, undo: bool) -> Result<u8> {
+    krate_manifest::validate_group_name(group).map_err(|err| anyhow::anyhow!(err))?;
+    let opened =
+        krate_bundle::open(app).with_context(|| format!("could not open {}", app.display()))?;
+    let manifest = opened.manifest().clone();
+    let principal = principal_of(&opened);
+    learn_group_lists(
+        &principal,
+        opened.signature_envelope().ok().flatten().as_ref(),
+    );
+    if !member_groups(&manifest, &principal)
+        .iter()
+        .any(|g| g == group)
+    {
+        eprintln!(
+            "{} ({}) is not a member of the shared group {group} on this machine: it must \
+             declare store.group:{group}, be signed, and be named in its publisher's list \
+             (krate group list shows the lists this machine knows). Nothing was changed.",
+            manifest.app.name, manifest.app.id
+        );
+        return Ok(1);
+    }
+    let destination = group_store_path(&principal, group);
+    let record_path = destination.with_extension("adopted.json");
+
+    if undo {
+        let Some(record) = fs::read_to_string(&record_path)
+            .ok()
+            .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        else {
+            eprintln!(
+                "nothing was adopted into {group} on this machine, so there is nothing to undo."
+            );
+            return Ok(1);
+        };
+        let adopted = record["sha256"].as_str().unwrap_or_default();
+        match fs::read(&destination) {
+            Ok(now) if sha256_hex_of(&now) == adopted => {
+                fs::remove_file(&destination)
+                    .with_context(|| format!("remove {}", destination.display()))?;
+                let _ = fs::remove_file(&record_path);
+                println!(
+                    "Took the adopted copy back out of {group}. The store it came from is \
+                     untouched: {}",
+                    record["source"].as_str().unwrap_or("(unrecorded)")
+                );
+                Ok(0)
+            }
+            Ok(_) => {
+                eprintln!(
+                    "{group} has changed since it was adopted -- an app has written to it -- \
+                     so taking it out now would lose that. Nothing was changed.\n\
+                     Keep a copy first with `krate data export {}`, then remove {} yourself \
+                     if that is what you mean.",
+                    app.display(),
+                    destination.display()
+                );
+                Ok(1)
+            }
+            Err(_) => {
+                let _ = fs::remove_file(&record_path);
+                println!("{group} holds no data any more; there was nothing left to undo.");
+                Ok(0)
+            }
+        }
+    } else {
+        let candidates: Vec<(String, PathBuf)> = match from {
+            Some(id) => vec![(id.to_string(), app_store_path(id))],
+            None => {
+                let mut ids = vec![manifest.app.id.clone()];
+                if let StoragePrincipal::Verified { publisher, .. } = &principal {
+                    if let Some(list) = known_group_list(publisher, group) {
+                        ids.extend(list.membership.members);
+                    }
+                }
+                ids.sort();
+                ids.dedup();
+                ids.into_iter()
+                    .map(|id| {
+                        let path = app_store_path(&id);
+                        (id, path)
+                    })
+                    .collect()
+            }
+        };
+        let found: Vec<&(String, PathBuf)> = candidates
+            .iter()
+            .filter(|(_, path)| path.is_file())
+            .collect();
+        let (id, source) = match found.as_slice() {
+            [one] => (one.0.clone(), one.1.clone()),
+            [] => {
+                eprintln!(
+                    "no store shared by app id to bring into {group}: none at {}. Nothing was \
+                     changed.",
+                    candidates
+                        .iter()
+                        .map(|(_, path)| path.display().to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+                return Ok(1);
+            }
+            many => {
+                eprintln!("more than one of {group}'s members has a store shared by app id:");
+                for (id, path) in many {
+                    eprintln!("  {id}  {}", path.display());
+                }
+                eprintln!(
+                    "Krate will not choose between them. Name one with --from <APP_ID>. \
+                     Nothing was changed."
+                );
+                return Ok(1);
+            }
+        };
+        if destination.exists() {
+            eprintln!(
+                "{group} already has data:\n  {}\nand {id} has its own at\n  {}\n\
+                 Krate will not merge them or pick one. Export or remove one, then run this \
+                 again. Nothing was changed.",
+                destination.display(),
+                source.display()
+            );
+            return Ok(1);
+        }
+        let body = fs::read(&source).with_context(|| format!("read {}", source.display()))?;
+        let parent = destination
+            .parent()
+            .context("a group store always has a directory")?;
+        fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+        // The record first: once the copy is in place, --undo must be able
+        // to recognise it.
+        let record = serde_json::json!({
+            "schema": "krate.group-adoption.v1",
+            "group": group,
+            "from": id,
+            "source": source.display().to_string(),
+            "bytes": body.len(),
+            "sha256": sha256_hex_of(&body),
+            "adopted_at": unix_now(),
+        });
+        fs::write(&record_path, serde_json::to_vec_pretty(&record)?)
+            .with_context(|| format!("write {}", record_path.display()))?;
+        let staging = destination.with_extension("adopting");
+        let placed = fs::write(&staging, &body).and_then(|_| fs::rename(&staging, &destination));
+        if let Err(err) = placed {
+            let _ = fs::remove_file(&staging);
+            let _ = fs::remove_file(&record_path);
+            return Err(err).with_context(|| format!("write {}", destination.display()));
+        }
+        println!(
+            "Brought {id}'s store into the shared group {group} ({} bytes).",
+            body.len()
+        );
+        println!(
+            "The old store is untouched at {}. While nothing has written to the group, \
+             `krate group adopt {} --group {group} --undo` takes the copy back out.",
+            source.display(),
+            app.display()
+        );
+        Ok(0)
+    }
 }
 
 /// Where a principal's storage lives.
