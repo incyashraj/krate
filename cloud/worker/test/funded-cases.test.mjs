@@ -114,6 +114,11 @@ assert.ok(
   second.body.message.includes("own machine"),
   "the wall names the free unlimited path, not only the paid one: " + second.body.message,
 );
+// Krate quotes no price anywhere while it is free to build with, and this
+// wall is the one place a stranger met one: "Studio is $12 a month"
+// (K-867, K-907).
+const PRICE = /\$\s?\d|\ba month\b|\bper month\b|\/month\b/i;
+assert.doesNotMatch(second.body.message, PRICE, "the wall quotes no price");
 
 /* ---- and ONE free edit of it --------------------------------------------- */
 // Making an app and never being able to change it is not a trial of
@@ -126,6 +131,7 @@ await call("/case/attempt", { device: DEV_A, id: edit.body.id, outcome: "made" }
 const edit2 = await call("/case/open", { device: DEV_A, request: "again", edit: true }, "krs_alice");
 assert.strictEqual(edit2.status, 402, "the second change is refused");
 assert.strictEqual(edit2.body.edit, true, "and the refusal says it was an edit");
+assert.doesNotMatch(edit2.body.message, PRICE, "the change wall quotes no price either");
 
 /* ---- an edit with nothing to edit is not a free app ----------------------- */
 // Otherwise `edit: true` on a fresh account is a way to get an app out of
