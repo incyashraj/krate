@@ -459,12 +459,22 @@ fn silent_cmd(program: impl AsRef<std::ffi::OsStr>) -> Command {
 /// is macOS-only; calling it on Windows was "The system cannot find the path
 /// specified" on the sign-in button.
 fn open_url(url: &str) -> Result<(), String> {
+    // Only web links. Everything that reaches here is a URL Studio built,
+    // but some parts come from the network (an update version, a checkout
+    // link), and an opener is no place to find out one of them was a path.
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err("that is not a web link".to_string());
+    }
     #[cfg(target_os = "macos")]
     let mut cmd = Command::new("/usr/bin/open");
+    // Not `cmd /C start "" <url>`: cmd reads `&` as "and then run", so a
+    // link with two query parameters was cut at the first `&` and whatever
+    // followed it ran as a command. url.dll hands the URL straight to the
+    // default browser, untouched.
     #[cfg(target_os = "windows")]
     let mut cmd = {
-        let mut c = silent_cmd("cmd");
-        c.args(["/C", "start", ""]);
+        let mut c = silent_cmd("rundll32.exe");
+        c.arg("url.dll,FileProtocolHandler");
         c
     };
     #[cfg(all(unix, not(target_os = "macos")))]

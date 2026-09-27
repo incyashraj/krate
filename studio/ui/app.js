@@ -3515,7 +3515,9 @@ async function buildNow(request, files, revising, planSession, starterShape) {
     state.queued = null;
     if (queued) {
       setRevisePlaceholders();
-      setTimeout(() => make(queued), 400);
+      // Silent: queueMidBuild already put the person's words in the
+      // thread, and running it posted them a second time.
+      setTimeout(() => make(queued, { silent: true }), 400);
     }
   }
 }
@@ -7950,15 +7952,15 @@ async function loadProfilePage() {
   } catch (e) {}
 }
 
-document.querySelectorAll("button[data-connect]").forEach((button) => {
-  button.addEventListener("click", () => {
-    // Google and Apple sign-in ride the same browser hop GitHub uses; the
-    // hub owns the flow, so the app only has to open the door.
-    const provider = button.dataset.connect;
-    invoke("open_external", {
-      url: `https://hub.krate.tech/login/${provider}/start`,
-    }).catch(() => {});
-  });
+// Delegated, because the Connect buttons are drawn after this runs: the
+// Settings rows are rebuilt each time the account is painted, and a
+// listener bound once at load never reached them -- Connect did nothing.
+// It also opened hub.krate.tech/login/<provider>/start, which does not
+// exist (404). Connect is the same sign-in every other door uses.
+document.addEventListener("click", (event) => {
+  const button = event.target.closest && event.target.closest("button[data-connect]");
+  if (!button) return;
+  invoke("login_browser").catch(() => {});
 });
 
 /* Sign out, bound ONCE.
