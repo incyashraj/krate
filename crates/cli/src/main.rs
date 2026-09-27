@@ -8845,6 +8845,39 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
         .trim()
         .to_string();
     let mut acceptance = krate_author::acceptance::judge(&judged_request, &name, &app_source);
+    // A CHANGE is judged by whether it happened, not by its words (K-915).
+    //
+    // The word check asks "is this the app that was described?", which is
+    // the right question for a new app and the wrong one for "make the Add
+    // button green, and add a Clear all button that asks before deleting".
+    // Green is an RGB value in the code and "asks before" is a confirm
+    // dialog, so a real Claude revision that did both was refused with
+    // "the app has nothing about button, green", and the finished change
+    // was thrown away. What a revision must prove is that the app's own
+    // source changed and that it still builds, runs and stays behind its
+    // wall -- the steps above. A revision that changed nothing is refused.
+    if let Some(before) = source_fingerprint_of_bundle(&req.output) {
+        let changed = before != source_fingerprint(&app_dir);
+        let detail = if changed {
+            "the app's code changed, and it still builds and runs".to_string()
+        } else {
+            "the app's code is the same as before -- nothing was changed".to_string()
+        };
+        acceptance = krate_author::acceptance::Acceptance {
+            requirements: vec![krate_author::acceptance::Verdict {
+                id: "req-change".to_string(),
+                text: judged_request.clone(),
+                outcome: if changed {
+                    krate_author::acceptance::Outcome::Pass
+                } else {
+                    krate_author::acceptance::Outcome::Fail
+                },
+                detail: detail.clone(),
+            }],
+            accepted: changed,
+            summary: detail,
+        };
+    }
     // The manifest can make an app impossible while every word check passes.
     //
     // `judge` reads the SOURCE. A sandbox app reaches only what its manifest
@@ -9049,6 +9082,63 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
 /// not its bindings and not its manifest. `bindings.rs` is generated from the
 /// WIT and is identical in every app, so including it would let any app match
 /// terms it never implements.
+/// What a revision is compared by: the app's own files, with Rust comments
+/// removed so a comment-only edit is not a change. Generated bindings and
+/// build output are left out -- they change on every build.
+fn source_fingerprint(app_dir: &Path) -> Vec<(String, Vec<u8>)> {
+    fn walk(root: &Path, dir: &Path, out: &mut Vec<(String, Vec<u8>)>) {
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let rel = path
+                .strip_prefix(root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .replace('\\', "/");
+            if path.is_dir() {
+                if rel == "target" || rel.starts_with('.') {
+                    continue;
+                }
+                walk(root, &path, out);
+                continue;
+            }
+            let keep = rel == "manifest.toml"
+                || rel.starts_with("assets/")
+                || (rel.starts_with("src/") && !rel.ends_with("bindings.rs"));
+            if !keep {
+                continue;
+            }
+            let Ok(bytes) = fs::read(&path) else {
+                continue;
+            };
+            let bytes = if rel.ends_with(".rs") {
+                krate_author::acceptance::code_without_comments(&String::from_utf8_lossy(&bytes))
+                    .into_bytes()
+            } else {
+                bytes
+            };
+            out.push((rel, bytes));
+        }
+    }
+    let mut out = Vec::new();
+    walk(app_dir, app_dir, &mut out);
+    out.sort();
+    out
+}
+
+/// The fingerprint of the source an existing bundle carries, or None when
+/// there is no bundle there (a new app) or it carries no source.
+fn source_fingerprint_of_bundle(bundle: &Path) -> Option<Vec<(String, Vec<u8>)>> {
+    if !bundle.is_file() {
+        return None;
+    }
+    let opened = krate_bundle::open(bundle).ok()?;
+    let source = opened.source_path()?;
+    Some(source_fingerprint(source))
+}
+
 fn read_app_source(app_dir: &Path) -> String {
     let mut source = String::new();
     let src = app_dir.join("src");
@@ -20994,6 +21084,51 @@ fn run() -> i32 {
     fn an_unbounded_loop_is_correct() {
         let lib = "fn run() -> i32 { loop { match events::wait(None) { _ => {} } } }";
         assert!(bounded_interactive_loop(lib).is_none());
+    }
+}
+
+#[cfg(test)]
+mod revision_change_tests {
+    use super::source_fingerprint;
+    use std::fs;
+
+    /// A revision is judged by whether the app's own files changed (K-915):
+    /// a real code change counts, a comment-only edit does not, and files
+    /// every build rewrites (bindings, target/) are not the app.
+    #[test]
+    fn a_revision_counts_code_not_comments_or_build_output() {
+        let dir = tempfile::tempdir().expect("dir");
+        let app = dir.path();
+        fs::create_dir_all(app.join("src")).expect("src");
+        fs::write(app.join("manifest.toml"), "[app]\nname = \"Budget\"\n").expect("manifest");
+        fs::write(app.join("src/lib.rs"), "fn add() -> u32 { 1 }\n").expect("lib");
+        let before = source_fingerprint(app);
+
+        fs::write(
+            app.join("src/lib.rs"),
+            "// make it green\nfn add() -> u32 {\n    1\n}\n",
+        )
+        .expect("comment edit");
+        fs::write(app.join("src/bindings.rs"), "generated").expect("bindings");
+        fs::create_dir_all(app.join("target")).expect("target");
+        fs::write(app.join("target/out.wasm"), "bytes").expect("target");
+        assert_eq!(
+            before,
+            source_fingerprint(app),
+            "a comment, reformatting, bindings or build output is not a change"
+        );
+
+        fs::write(
+            app.join("src/lib.rs"),
+            "const ADD_GREEN: u32 = 0x22c55e;\nfn add() -> u32 { 1 }\n",
+        )
+        .expect("real edit");
+        assert_ne!(before, source_fingerprint(app), "a code change is a change");
+
+        fs::write(app.join("src/lib.rs"), "fn add() -> u32 { 1 }\n").expect("revert");
+        fs::create_dir_all(app.join("assets")).expect("assets");
+        fs::write(app.join("assets/logo.png"), "png").expect("asset");
+        assert_ne!(before, source_fingerprint(app), "a new asset is a change");
     }
 }
 

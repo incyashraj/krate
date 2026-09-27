@@ -362,10 +362,32 @@ pub fn judge(request: &str, _name: &str, source: &str) -> Acceptance {
         .iter()
         .filter(|v| v.outcome != Outcome::Skip)
         .collect();
-    let accepted = !judged.is_empty() && judged.iter().all(|v| v.outcome == Outcome::Pass);
+    // Most of the request, not every word of it (K-916). Requiring every
+    // clause failed three real builds in a row on 2026-09-28, each over a
+    // clause of ordinary words the code never spells: "see all the others
+    // at once" (a converter that shows every unit together), "my attached
+    // CSV", "asks before deleting everything". What this check exists to
+    // stop -- a checklist handed over for a chess request, an untouched
+    // starter -- misses nearly every clause, not one. So an app is accepted
+    // when it serves at least two thirds of the clauses, and at least two
+    // of them; a request of one or two clauses must be served whole.
+    let passed = judged.iter().filter(|v| v.outcome == Outcome::Pass).count();
+    let all_pass = !judged.is_empty() && passed == judged.len();
+    let most_pass = judged.len() >= 3 && passed >= 2 && passed * 3 >= judged.len() * 2;
+    let accepted = all_pass || most_pass;
 
-    let summary = if accepted {
+    let summary = if all_pass {
         "the app serves everything the request asked for".to_string()
+    } else if accepted {
+        let unsure: Vec<&str> = verdicts
+            .iter()
+            .filter(|v| v.outcome == Outcome::Fail)
+            .map(|v| v.text.as_str())
+            .collect();
+        format!(
+            "the app serves most of the request; check this part by using it: {}",
+            unsure.join("; ")
+        )
     } else if judged.is_empty() {
         "the request named nothing specific enough to check".to_string()
     } else {
@@ -523,6 +545,16 @@ pub fn manifest_cannot_serve(request: &str, manifest: &str) -> Option<String> {
 /// String literals are kept: an app whose UI says "Checkmate!" really does
 /// mention checkmate to the person using it, which is evidence. A comment is
 /// only a note to the next reader, and the no-op edit E4 caught hid in one.
+/// Rust source with its comments removed and whitespace collapsed: what the
+/// code does, without what anyone wrote about it. A revision is compared by
+/// this, so a comment-only edit is not a change (K-915).
+pub fn code_without_comments(source: &str) -> String {
+    strip_comments(source)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn strip_comments(source: &str) -> String {
     let mut out = String::with_capacity(source.len());
     let bytes: Vec<char> = source.chars().collect();
@@ -947,6 +979,36 @@ mod tests {
             !export.accepted,
             "an export request with no CSV anywhere in the app must still fail: {export:?}"
         );
+    }
+
+    /// K-916, from a real Codex build: a converter that shows every unit
+    /// together, judged "the app has nothing about others, once".
+    #[test]
+    fn one_clause_of_ordinary_words_does_not_sink_a_correct_app() {
+        let request = "a cooking converter: type an amount, pick from cups, tablespoons, \
+                       teaspoons, grams and millilitres, and see all the others at once, with \
+                       flour, sugar and butter as ingredient choices";
+        let source = r#"
+            enum Unit { Cups, Tablespoons, Teaspoons, Grams, Millilitres }
+            enum Ingredient { Flour, Sugar, Butter }
+            struct Converter { amount: f64, unit: Unit, ingredient: Ingredient }
+            fn convert(c: &Converter, to: Unit) -> f64 { .. }
+            fn cooking_amount_typed(text: &str) -> Option<f64> { .. }
+        "#;
+        let verdict = judge(request, "converter", source);
+        assert!(verdict.accepted, "{verdict:?}");
+        assert!(
+            verdict.summary.contains("others at once"),
+            "the unconfirmed part is still named, so the person knows what to try: {}",
+            verdict.summary
+        );
+        // And a checklist is still not a cooking converter.
+        let checklist = r#"
+            struct Item { text: String, done: bool }
+            fn toggle(items: &mut Vec<Item>, index: usize) { items[index].done = !items[index].done; }
+            fn save(items: &[Item]) { store_kv_set("items", &encode(items)); }
+        "#;
+        assert!(!judge(request, "converter", checklist).accepted);
     }
 
     #[test]
