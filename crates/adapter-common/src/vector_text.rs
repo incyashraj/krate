@@ -198,9 +198,9 @@ struct GlyphKey {
     index: u32,
     glyph: u32,
     size_bits: u32,
-    /// Sub-pixel position: `fx` in sixteenths, `fy` in quarters.
+    /// Horizontal sub-pixel position, in sixteenths. There is no vertical
+    /// one: hinting puts every glyph on a whole-pixel baseline.
     fx: u8,
-    fy: u8,
 }
 
 /// A glyph's coverage, cropped to its ink, and where that crop sits
@@ -321,9 +321,9 @@ impl TextEngine {
     ///
     /// Walks the layout's glyphs exactly as [`draw_layout`] does, and for each
     /// one adds the cached coverage of that glyph -- at its size and
-    /// sub-pixel offset -- into `out` at its integer position. Overlap
-    /// between neighbouring glyphs' antialiased edges adds and saturates,
-    /// the usual glyph-atlas composition. Returns how many glyphs the layout
+    /// sub-pixel offset -- into `out` at its integer position. Where
+    /// neighbouring glyphs' antialiased edges overlap they composite
+    /// source-over, as the renderer does. Returns how many glyphs the layout
     /// carried, as `draw_layout` does, so "no glyphs" still means fall back.
     fn compose_run_coverage(
         &mut self,
@@ -351,17 +351,16 @@ impl TextEngine {
                     run_x += g.advance;
                     drawn += 1;
                     let (ix, fx) = sub_pixel(gx, X_STEPS);
-                    let (iy, fy) = sub_pixel(gy, Y_STEPS);
+                    let iy = hinted_baseline(gy);
                     let key = GlyphKey {
                         font: font.data.id(),
                         index: font.index,
                         glyph: g.id,
                         size_bits: font_size.to_bits(),
                         fx,
-                        fy,
                     };
                     let glyph = self.glyph_coverage(key, &font, font_size);
-                    blit_add(out, out_w, out_h, &glyph, ix, iy);
+                    blit_over(out, out_w, out_h, &glyph, ix, iy);
                 }
             }
         }
@@ -999,9 +998,16 @@ fn draw_layout_styled(
 /// positions along a line are where text shimmers when they are rounded, so
 /// they get the fine grid.
 const X_STEPS: f32 = 16.0;
-/// Vertical steps. A line's glyphs share one baseline, so this multiplies
-/// the cache without buying much.
-const Y_STEPS: f32 = 4.0;
+
+/// The whole-pixel row a hinted glyph's baseline lands on: the renderer's
+/// own rule (glifo's outline transform rounds the y translation when a
+/// hinting instance exists, which it does for every run drawn here -- an
+/// unscaled run with `hint(true)`). Caching at quarter-pixel steps instead
+/// rounded twice, and a baseline at .375 to .5 drew a whole row below
+/// the uncached text (K-879).
+fn hinted_baseline(y: f32) -> i64 {
+    (y as f64).round() as i64
+}
 
 /// Split a coordinate into its integer pixel and its sub-pixel step.
 fn sub_pixel(v: f32, steps: f32) -> (i64, u8) {
@@ -1041,7 +1047,7 @@ fn rasterise_glyph(key: GlyphKey, font: &parley::FontData, font_size: f32) -> Gl
         .fill_glyphs(std::iter::once(Glyph {
             id: key.glyph,
             x: ox as f32 + key.fx as f32 / X_STEPS,
-            y: oy as f32 + key.fy as f32 / Y_STEPS,
+            y: oy as f32,
         }));
     ctx.flush();
     let mut pixmap = Pixmap::new(side, side);
@@ -1076,8 +1082,17 @@ fn rasterise_glyph(key: GlyphKey, font: &parley::FontData, font_size: f32) -> Gl
     }
 }
 
-/// Add a glyph's coverage into a run's, at the glyph's integer origin.
-fn blit_add(out: &mut [u8], out_w: u32, out_h: u32, glyph: &GlyphCoverage, ix: i64, iy: i64) {
+/// Source-over for coverage: `a + c(1 - a)`, what the renderer does where
+/// two glyphs' antialiased edges overlap. Adding them instead drew italic
+/// and tightly set pairs visibly darker where they touch (45/255 on a serif
+/// italic, K-879).
+fn over(a: u8, c: u8) -> u8 {
+    let (a, c) = (a as u32, c as u32);
+    (a + (c * (255 - a) + 127) / 255) as u8
+}
+
+/// Composite a glyph's coverage into a run's, at the glyph's integer origin.
+fn blit_over(out: &mut [u8], out_w: u32, out_h: u32, glyph: &GlyphCoverage, ix: i64, iy: i64) {
     let (ow, oh) = (out_w as i64, out_h as i64);
     for row in 0..glyph.height as i64 {
         let dy = iy + glyph.top as i64 + row;
@@ -1092,7 +1107,7 @@ fn blit_add(out: &mut [u8], out_w: u32, out_h: u32, glyph: &GlyphCoverage, ix: i
                 continue;
             }
             let at = (dy * ow + dx) as usize;
-            out[at] = out[at].saturating_add(c);
+            out[at] = over(out[at], c);
         }
     }
 }
@@ -1682,10 +1697,10 @@ pub fn try_paint_placements(
 mod glyph_cache_tests {
     use super::*;
 
-    fn whole_run(layout: &Layout<()>, w: u32, h: u32) -> Vec<u8> {
+    fn whole_run(layout: &Layout<()>, w: u32, h: u32, x: f32, y: f32) -> Vec<u8> {
         let mut ctx = RenderContext::new(w as u16, h as u16);
         let mut resources = Resources::new();
-        draw_layout(&mut ctx, &mut resources, layout, 0xFFFF_FFFF, 2.0, 2.0);
+        draw_layout(&mut ctx, &mut resources, layout, 0xFFFF_FFFF, x, y);
         ctx.flush();
         let mut pixmap = Pixmap::new(w as u16, h as u16);
         ctx.render_to_pixmap(&mut resources, &mut pixmap);
@@ -1694,36 +1709,61 @@ mod glyph_cache_tests {
 
     /// K-417. A run composed from cached glyphs looks like the run rendered
     /// whole -- the renderer it replaced -- within the sub-pixel grid's
-    /// rounding. Measured when written: mean 0.41/255, worst 11/255, 0.9%
-    /// of the ink; a 4-step grid measured worst 39, which this bound fails.
+    /// rounding: across every family, bold and italic, and origins that are
+    /// not whole pixels. The origins matter: K-879 drew a whole row off only
+    /// for baselines at .375 to .5, which an origin of 2.0 never reached on
+    /// macOS and Windows' face did.
     #[test]
     fn a_run_composed_from_glyphs_matches_the_whole_run_render() {
         warm_text_engine();
-        let style = CanvasTextStyle::default();
         let (mut worst, mut diff, mut ink) = (0u8, 0u64, 0u64);
-        for size in [11.0f32, 14.0, 17.5, 24.0, 40.0] {
-            for i in 0..12 {
-                let text = format!(
-                    "Row {} -- value {}.{:02} WAVy fij",
-                    40_000 + i * 37,
-                    i * 7,
-                    i % 100
-                );
-                let layout =
-                    TEXT_ENGINE.with(|e| e.borrow_mut().layout_canvas_styled(&text, size, style));
-                let w = (layout.width() + 4.0).ceil() as u32;
-                let h = (layout.height() + 4.0).ceil() as u32;
-                let reference = whole_run(&layout, w, h);
-                let mut composed = vec![0u8; (w * h) as usize];
-                let glyphs = TEXT_ENGINE.with(|e| {
-                    e.borrow_mut()
-                        .compose_run_coverage(&layout, &mut composed, w, h, 2.0, 2.0)
-                });
-                assert!(glyphs > 0, "the fixture must draw glyphs");
-                for (a, b) in reference.iter().zip(&composed) {
-                    worst = worst.max(a.abs_diff(*b));
-                    diff += a.abs_diff(*b) as u64;
-                    ink += *a as u64;
+        let mut worst_at = String::new();
+        for family in [
+            CanvasFontFamily::Sans,
+            CanvasFontFamily::Serif,
+            CanvasFontFamily::Mono,
+        ] {
+            for (weight, italic) in [(400, false), (700, false), (400, true)] {
+                let style = CanvasTextStyle {
+                    weight,
+                    italic,
+                    family,
+                    ..CanvasTextStyle::default()
+                };
+                for size in [11.0f32, 14.0, 17.5, 24.0, 40.0] {
+                    for (i, (x, y)) in [(2.0f32, 2.0f32), (2.3, 2.375), (2.77, 2.45), (2.5, 2.62)]
+                        .into_iter()
+                        .enumerate()
+                    {
+                        let text = format!(
+                            "Row {} -- value {}.{:02} WAVy fij",
+                            40_000 + i * 37,
+                            i * 7,
+                            i
+                        );
+                        let layout = TEXT_ENGINE
+                            .with(|e| e.borrow_mut().layout_canvas_styled(&text, size, style));
+                        let w = (layout.width() + 5.0).ceil() as u32;
+                        let h = (layout.height() + 5.0).ceil() as u32;
+                        let reference = whole_run(&layout, w, h, x, y);
+                        let mut composed = vec![0u8; (w * h) as usize];
+                        let glyphs = TEXT_ENGINE.with(|e| {
+                            e.borrow_mut()
+                                .compose_run_coverage(&layout, &mut composed, w, h, x, y)
+                        });
+                        assert!(glyphs > 0, "the fixture must draw glyphs");
+                        for (a, b) in reference.iter().zip(&composed) {
+                            let d = a.abs_diff(*b);
+                            if d > worst {
+                                worst = d;
+                                worst_at = format!(
+                                    "{family:?} {weight} italic={italic} {size}px at ({x}, {y})"
+                                );
+                            }
+                            diff += d as u64;
+                            ink += *a as u64;
+                        }
+                    }
                 }
             }
         }
@@ -1731,7 +1771,14 @@ mod glyph_cache_tests {
             ink > 0,
             "the reference must carry ink, or this compares nothing"
         );
-        assert!(worst <= 16, "worst pixel differs by {worst}/255");
+        eprintln!(
+            "glyph cache vs whole run: worst {worst}/255 ({worst_at}), {:.2}% of the ink",
+            100.0 * diff as f64 / ink as f64
+        );
+        assert!(
+            worst <= 16,
+            "worst pixel differs by {worst}/255: {worst_at}"
+        );
         assert!(
             diff * 100 <= ink * 2,
             "difference is {:.2}% of the ink",
