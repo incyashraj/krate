@@ -183,6 +183,19 @@ fn krate_dir() -> Option<PathBuf> {
     Some(home.join(".krate"))
 }
 
+/// Whether this binary sends usage to the live hub at all.
+///
+/// Only a released binary does (K-912). A build from source -- every
+/// `cargo test`, every dev build -- is a developer, not a user, and on
+/// 2026-09-27 one day of test runs sent 36,246 beacons from one machine.
+/// Each cost the hub a KV write, the free plan allows 1,000 a day, and
+/// publishing failed for everyone once they were spent. A source build
+/// still reports when KRATE_USAGE_URL names somewhere on purpose, which is
+/// how the reporting itself is tested.
+fn reports_from_this_build(release_version: Option<&str>, url_named: bool) -> bool {
+    release_version.is_some() || url_named
+}
+
 fn opted_out() -> bool {
     if std::env::var_os("KRATE_NO_USAGE").is_some() {
         return true;
@@ -314,6 +327,12 @@ pub fn record_install_once() {
 /// Record that something happened, with what is known about it.
 pub fn record_with(action: Action, facts: Facts) {
     if opted_out() {
+        return;
+    }
+    if !reports_from_this_build(
+        option_env!("KRATE_RELEASE_VERSION"),
+        std::env::var_os("KRATE_USAGE_URL").is_some(),
+    ) {
         return;
     }
     // The flush helper is not a user session; it must never record its own
@@ -506,7 +525,10 @@ pub fn telemetry_command(state: &str) -> anyhow::Result<u8> {
             println!("           version-too-old, no-window, app-failed, other.");
             println!("Not sent:  app names, prompts, file paths, your name, your machine.");
             println!();
-            if opted_out() {
+            if !reports_from_this_build(option_env!("KRATE_RELEASE_VERSION"), false) {
+                println!("Right now: off -- this Krate was built from source, and only");
+                println!("           a released Krate ever sends.");
+            } else if opted_out() {
                 println!("Right now: off.");
                 println!("Turn it on with: krate telemetry on");
             } else {
@@ -520,6 +542,18 @@ pub fn telemetry_command(state: &str) -> anyhow::Result<u8> {
 
 #[cfg(test)]
 mod tests {
+    use super::reports_from_this_build;
+
+    #[test]
+    fn only_a_released_binary_reports_unless_a_url_is_named() {
+        // A source build (tests, dev) never reaches the live hub (K-912).
+        assert!(!reports_from_this_build(None, false));
+        // Unless someone points it somewhere on purpose.
+        assert!(reports_from_this_build(None, true));
+        // A release always may (the person's own opt-out is checked apart).
+        assert!(reports_from_this_build(Some("0.5.2"), false));
+    }
+
     use super::*;
 
     #[test]

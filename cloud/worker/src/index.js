@@ -82,20 +82,26 @@ const IDENTITY_TTL_SECONDS = 6 * 60 * 60;
 // 429, and each one makes a KV row or an R2 object. That is an unbounded
 // hosting bill and an unbounded pile of junk, reachable by anyone.
 //
-// Counted in KV rather than with Cloudflare's rate-limit binding, for one
-// reason: the binding only exists inside the Workers runtime, so nothing
-// outside a deploy can exercise it. A wall nobody can test is a wall
-// nobody knows is standing -- and this one was not standing for months
-// precisely because no test asked. KV `get` is strongly consistent (KV
-// `list` is not, which is why nothing here lists), so the count a caller
-// reads is the count they wrote.
+// Counted in a Durable Object's memory, never in KV (K-912). The
+// first cut counted in KV so a test could see it, and that cost one KV
+// write per allowed request. The free plan allows 1,000 KV writes a day
+// for the whole account, so the busiest bucket -- the CLI's usage beacon,
+// 60 a minute per caller -- let ONE machine spend the day's writes in
+// seventeen minutes. On 2026-09-27 a day of test runs did exactly that
+// (36,246 beacons from one address), and every publish, sign-in and build
+// record after it failed with "could not record who is publishing this".
+// A counter took down the product it guards: the K-082 disease again.
 //
-// The trade this accepts: a KV counter is per-colo-ish under real load and
-// a determined flood spread across the planet gets a multiple of the
-// ceiling. That is fine. This is not a security boundary -- it is a cost
-// ceiling, and turning "unbounded" into "bounded by a smallish number" is
-// the whole win. Cloudflare's own Rate Limiting rules sit in front of the
-// worker for anything harsher.
+// The count lives in a Durable Object per caller (RateGate), in memory, so
+// it costs no KV and no storage and is exact. The tests drive the real
+// RateGate class through a stand-in for the namespace.
+//
+// The trade this accepts: the count is per address, so a flood spread
+// across many addresses gets a multiple of the ceiling, and each counted
+// request is one Durable Object request (the free plan allows 100,000 a
+// day; past that the gate errors and the wall opens). That is fine. This is not a security boundary -- it is a cost ceiling,
+// and turning "unbounded" into "bounded by a smallish number" is the
+// whole win.
 
 /// How long one counting window lasts. A minute is short enough that an
 /// ordinary person never notices and long enough that a flood cannot
@@ -141,40 +147,87 @@ function rateCaller(request) {
 async function rateLimited(request, env, bucket) {
   const limit = RATE_LIMITS[bucket];
   if (!limit) return null;
-  const window = Math.floor(Date.now() / 1000 / RATE_WINDOW_SECONDS);
-  const key = `rate:${bucket}:${rateCaller(request)}:${window}`;
-  let used = 0;
+  const key = `${bucket}:${rateCaller(request)}`;
+  let allowed = true;
   try {
-    used = Number(await env.APPS.get(key)) || 0;
-  } catch (_) {
-    return null;
-  }
-  if (used >= limit) {
-    return new Response(
-      `too many requests -- wait a minute and try again`,
-      {
-        status: 429,
-        headers: {
-          "content-type": "text/plain; charset=utf-8",
-          // How long until the window rolls over. A client that honours
-          // this backs off exactly far enough and no further.
-          "retry-after": String(
-            RATE_WINDOW_SECONDS - (Math.floor(Date.now() / 1000) % RATE_WINDOW_SECONDS),
-          ),
-        },
-      },
-    );
-  }
-  try {
-    // Two windows of TTL, because a write landing at the very end of a
-    // window must still outlive that window. KV's own floor is 60s.
-    await env.APPS.put(key, String(used + 1), {
-      expirationTtl: RATE_WINDOW_SECONDS * 2,
-    });
+    // One Durable Object per caller holds that caller's counts in memory:
+    // exact, because every request from one address meets the same
+    // object, and free of KV. Measured live on 2026-09-28, the two cheaper
+    // counters are no wall: 40 requests from one address landed on about
+    // fifteen isolates, so an isolate's own count never passed 4, and the
+    // rate-limit binding answered success to 200 of 200 a minute against
+    // a ceiling of 60 ("permissive, eventually consistent" by its own
+    // documentation). A worker with no gate -- wrangler dev, an older
+    // config -- counts in this isolate's memory, which is better than
+    // nothing and still never KV.
+    if (env.RATE_GATE) {
+      const gate = env.RATE_GATE.get(env.RATE_GATE.idFromName(rateCaller(request)));
+      const res = await gate.fetch("https://rate-gate/count", {
+        method: "POST",
+        body: JSON.stringify({ bucket, limit }),
+      });
+      allowed = (await res.json()).allowed !== false;
+    } else {
+      allowed = countInMemory(env, key, limit);
+    }
   } catch (_) {
     // Counting failed; the request still goes through. See above.
+    return null;
   }
-  return null;
+  if (allowed) return null;
+  return new Response(
+    `too many requests -- wait a minute and try again`,
+    {
+      status: 429,
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+        // How long until the window rolls over. A client that honours
+        // this backs off exactly far enough and no further.
+        "retry-after": String(
+          RATE_WINDOW_SECONDS - (Math.floor(Date.now() / 1000) % RATE_WINDOW_SECONDS),
+        ),
+      },
+    },
+  );
+}
+
+/// A per-minute count kept in memory: the gate's store, and the fallback
+/// for a worker with no gate. One fixed window per minute, forgotten when
+/// the object or isolate goes. Keyed by `owner` so two workers in one
+/// process -- two tests -- do not share a count.
+const memoryCounts = new WeakMap();
+function countInMemory(owner, key, limit) {
+  let counts = memoryCounts.get(owner);
+  if (!counts) {
+    counts = new Map();
+    memoryCounts.set(owner, counts);
+  }
+  const window = Math.floor(Date.now() / 1000 / RATE_WINDOW_SECONDS);
+  const slot = `${key}:${window}`;
+  const used = counts.get(slot) || 0;
+  if (used >= limit) return false;
+  // Old windows are dropped as they pass, so the map stays one minute big.
+  for (const k of counts.keys()) if (!k.endsWith(`:${window}`)) counts.delete(k);
+  counts.set(slot, used + 1);
+  return true;
+}
+
+/// The anonymous wall's counter for one caller (K-912). Nothing is
+/// written to storage: the counts only need to outlive a minute, and a
+/// Durable Object that goes idle and is evicted forgets them, which at
+/// worst lets a caller start a minute early.
+export class RateGate {
+  constructor(state) {
+    this.state = state;
+  }
+
+  async fetch(request) {
+    const { bucket, limit } = await request.json();
+    const allowed = countInMemory(this, String(bucket), Number(limit) || 0);
+    return new Response(JSON.stringify({ allowed }), {
+      headers: { "content-type": "application/json" },
+    });
+  }
 }
 
 export default {

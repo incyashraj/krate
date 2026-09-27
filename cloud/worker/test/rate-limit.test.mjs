@@ -22,7 +22,7 @@
  *   node --experimental-wasm-modules cloud/worker/test/rate-limit.test.mjs
  */
 import assert from "node:assert";
-import worker from "../src/index.js";
+import worker, { RateGate } from "../src/index.js";
 import { r2Mock } from "./r2-mock.mjs";
 
 /* The KV the worker counts in, with the two rows a signed-in session needs
@@ -41,8 +41,29 @@ function env() {
       list: async () => ({ keys: [], list_complete: true }),
     },
     BUNDLES: r2Mock(),
+    RATE_GATE: gateNamespace(),
     _kv: kv,
   };
+}
+
+/* A stand-in for the RATE_GATE namespace that runs the REAL RateGate
+ * class: one object per name, reached through fetch, as Cloudflare does.
+ * `requests` counts what reached a gate, so a test can tell the gate
+ * counted and not something else. */
+function gateNamespace() {
+  const objects = new Map();
+  const ns = {
+    requests: 0,
+    idFromName: (name) => name,
+    get(id) {
+      if (!objects.has(id)) objects.set(id, new RateGate({}));
+      const gate = objects.get(id);
+      return {
+        fetch: (url, init) => { ns.requests++; return gate.fetch(new Request(url, init)); },
+      };
+    },
+  };
+  return ns;
 }
 
 /* One caller, as Cloudflare names them. The client cannot forge this --
@@ -242,27 +263,48 @@ async function run() {
    * it guards. */
   {
     const e = env();
-    // Only the limiter's own rows fail. Breaking the whole of KV would
-    // break the handlers too and prove nothing about the limiter -- the
-    // first cut of this did exactly that and reported a 500 from
-    // shareNew's own put as if the wall had caused it.
+    // The limiter must never spend a KV write (K-912). Counting in KV
+    // spent the free plan's 1,000 daily writes in minutes on 2026-09-27
+    // and every publish after it failed. So a flood of the busiest bucket
+    // makes no KV call at all, and it is the gate that counts.
     const get = e.APPS.get, put = e.APPS.put;
-    let touched = 0;
-    e.APPS.get = async (k) => {
-      if (k.startsWith("rate:")) { touched++; throw new Error("KV get() limit exceeded"); }
-      return get(k);
-    };
-    e.APPS.put = async (k, v, o) => {
-      if (k.startsWith("rate:")) { touched++; throw new Error("KV put() limit exceeded"); }
-      return put(k, v, o);
-    };
+    let kvCalls = 0;
+    e.APPS.get = async (k) => { kvCalls++; return get(k); };
+    e.APPS.put = async (k, v, o) => { kvCalls++; return put(k, v, o); };
+    const usage = ENDPOINTS.find((ep) => ep.name === "/usage");
+    const seen = [];
+    for (let i = 0; i < usage.limit + 3; i++) {
+      seen.push((await worker.fetch(usage.make(ALICE), e)).status);
+    }
+    assert.ok(seen.includes(429), `the /usage flood was never refused: ${seen.join(",")}`);
+    assert.strictEqual(kvCalls, 0, `the /usage wall touched KV ${kvCalls} times -- every write is one of the day's 1,000`);
+    assert.ok(e.RATE_GATE.requests > 0, "the rate gate was never asked, so something else counted");
+  }
+  {
+    // A gate that fails lets the request through. A limiter that turned
+    // every anonymous write into a 429 would be a worse outage than the
+    // problem it bounds -- and past the free plan's daily Durable Object
+    // requests, failing is exactly what the gate will do.
+    const e = env();
+    e.RATE_GATE = { idFromName: (n) => n, get: () => ({ fetch: async () => { throw new Error("Durable Object request limit exceeded"); } }) };
     const res = await worker.fetch(ENDPOINTS[0].make(ALICE), e);
-    assert.ok(touched > 0, "the limiter never touched KV, so this case tested nothing");
-    assert.notStrictEqual(
-      res.status, 429,
-      "a KV failure must let the request through, not refuse it",
-    );
-    assert.notStrictEqual(res.status, 500, `a KV failure must not surface as an error: ${await res.text()}`);
+    assert.notStrictEqual(res.status, 429, "a failing limiter must let the request through, not refuse it");
+    assert.notStrictEqual(res.status, 500, `a failing limiter must not surface as an error: ${await res.text()}`);
+  }
+  {
+    // No gate at all (wrangler dev, an older config): the wall still
+    // stands, counted in memory, and still never in KV.
+    const e = env();
+    delete e.RATE_GATE;
+    let kvPuts = 0;
+    const put = e.APPS.put;
+    e.APPS.put = async (k, v, o) => { if (k.startsWith("rate")) kvPuts++; return put(k, v, o); };
+    const ep = ENDPOINTS[0];
+    const seen = [];
+    for (let i = 0; i < ep.limit + 3; i++) seen.push((await worker.fetch(ep.make(ALICE), e)).status);
+    assert.ok(seen.includes(429), `with no gate a flood of ${ep.name} was never refused: ${seen.join(",")}`);
+    assert.ok(seen.filter((x) => x < 400).length >= ep.limit, `with no gate ${ep.name} refused before its ceiling`);
+    assert.strictEqual(kvPuts, 0, "with no gate the limiter wrote its count to KV");
   }
 
   /* ---- 7. AN OVERSIZE REPORT IS REFUSED WITHOUT BEING READ -------------
@@ -382,7 +424,7 @@ async function run() {
 
   console.log(
     "ok -- every anonymous write endpoint refuses a flood with 429 and retry-after, ordinary single " +
-      "requests still go through, the ceiling is per caller and per endpoint, a KV failure opens rather " +
+      "requests still go through, the ceiling is per caller and per endpoint, a failing limiter opens rather " +
       "than closes, and an oversize report is refused before its body is read",
   );
 }

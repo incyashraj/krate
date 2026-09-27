@@ -101,3 +101,14 @@ class_name = "Room"
 [[migrations]]
 tag = "v1-rooms"
 new_sqlite_classes = ["Room"]
+
+# The anonymous wall's counter, one object per caller, counting in memory
+# (K-912). Counting in KV spent the free plan's 1,000 daily writes in
+# minutes and took publishing down.
+[[durable_objects.bindings]]
+name = "RATE_GATE"
+class_name = "RateGate"
+
+[[migrations]]
+tag = "v2-rate-gate"
+new_sqlite_classes = ["RateGate"]
