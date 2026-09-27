@@ -229,6 +229,10 @@ jobs:
           # opposite mistake matters as much -- telling a person who spent
           # their own app that a machine did it -- so both are checked.
           node docs/landing/studio/machine-share-test.mjs
+          # And the pages a stranger meets first, run from their own
+          # scripts: a shared link opened on a desktop gets the app itself,
+          # not just its name (K-858).
+          node docs/landing/studio/first-contact-test.mjs
 
           mkdir -p _site/app
           cp -R studio/ui/. _site/app/

@@ -179,6 +179,7 @@ h1.page { font-family: var(--disp); font-weight: 700; letter-spacing: -0.01em;
     <p class="ta-kicker">Waiting for you</p>
     <h2 id="taName">Your app</h2>
     <p class="ta-sub" id="taSize"></p>
+    <p class="dlrow" id="taRow" hidden><a class="btn" id="taGet" href="#">Download the app</a></p>
   </div>
 </div>
 <h1 class="page" id="pageHead">Someone sent you an app.</h1>
@@ -463,6 +464,22 @@ document.querySelectorAll("[data-copy]").forEach(function (b) {
         img.src = d.shot;
         img.alt = name;
         img.hidden = false;
+      }
+      // The app itself. This card used to name the app and give its size
+      // and nothing else, so a desktop browser -- which the hub sends here
+      // instead of handing over the bytes -- had no way to get the file it
+      // was sent (K-858). `?dl=1` is the hub's "the bytes, please", so this
+      // link can never come back to this page. A phone cannot open the
+      // file, and the steps above already tell it to use a computer.
+      if (!/Android|iPhone|iPad|iPod/.test(navigator.userAgent)) {
+        var get = document.getElementById("taGet");
+        get.href = "https://hub.krate.tech/a/" + hash + "?dl=1";
+        get.textContent = "Download " + name;
+        document.getElementById("taRow").hidden = false;
+        document.getElementById("openTitle").textContent = "Double-click " + name;
+        document.getElementById("openBody").textContent = "Find it in your downloads and "
+          + "double-click it, the same as a document or a photo. Nothing to unzip, nothing to "
+          + "install per app.";
       }
       document.getElementById("theirApp").hidden = false;
       document.getElementById("pageHead").textContent = "Someone sent you " + name + ".";
