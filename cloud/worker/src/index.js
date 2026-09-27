@@ -728,8 +728,8 @@ async function publish(request, env) {
 
   const meta = {
     unlisted: header(request, "x-krate-unlisted") === "1",
-    name: header(request, "x-krate-name") || "Untitled app",
-    description: header(request, "x-krate-description") || "",
+    name: textHeader(request, "x-krate-name") || "Untitled app",
+    description: textHeader(request, "x-krate-description") || "",
     // A small fixed shelf list: free-text categories fragment a gallery.
     category: (() => {
       const c = (header(request, "x-krate-category") || "").toLowerCase();
@@ -973,7 +973,7 @@ async function putReport(request, env) {
     session: header(request, "x-krate-session") || "",
     krate: header(request, "x-krate-version") || "",
     os: header(request, "x-krate-os") || "",
-    note: (header(request, "x-krate-note") || "").slice(0, 400),
+    note: (textHeader(request, "x-krate-note") || "").slice(0, 400),
     size: body.length,
     received: Math.floor(Date.now() / 1000),
     state: "new",
@@ -3054,6 +3054,22 @@ function header(request, name) {
   return value ? value.trim() : "";
 }
 
+/* Free text a person typed -- an app's name, its description, a support
+ * note -- in a header. A header carries ISO-8859-1 at most: a browser
+ * refuses to send anything else ("String contains non ISO-8859-1 code
+ * point"), and a CLI's raw UTF-8 arrives garbled. So a name like "Mom’s"
+ * or "番茄钟" could not be published from the web at all (K-891). Senders
+ * now percent-encode the value and say so with `x-krate-encoding: uri`;
+ * without that header the value is taken as sent, which is what every
+ * older client does. */
+function textHeader(request, name) {
+  const value = header(request, name);
+  if (value && (request.headers.get("x-krate-encoding") || "").trim() === "uri") {
+    try { return decodeURIComponent(value).trim(); } catch (e) { return value; }
+  }
+  return value;
+}
+
 /* ================= a developer's own name: alice.krate.tech ==============
  *
  * The hub has always kept a channel per published app --
@@ -3462,7 +3478,7 @@ function cors(response) {
   headers.set("access-control-allow-methods", "GET, POST, DELETE, OPTIONS");
   headers.set(
     "access-control-allow-headers",
-    "authorization, content-type, x-krate-name, x-krate-description, x-krate-category, x-krate-session, x-krate-version, x-krate-os, x-krate-note, x-krate-unlisted",
+    "authorization, content-type, x-krate-name, x-krate-description, x-krate-category, x-krate-session, x-krate-version, x-krate-os, x-krate-note, x-krate-unlisted, x-krate-encoding",
   );
   // A page script cannot read a response header it was not shown. The 429
   // from the anonymous wall (K-767) carries `retry-after`, and without this

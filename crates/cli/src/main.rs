@@ -6820,16 +6820,21 @@ fn publish_bundle(
             }
         }
     };
-    let mut request = ureq::post(&endpoint).set("Content-Type", "application/octet-stream");
+    // Free text goes percent-encoded, and the hub is told so: a header
+    // cannot carry UTF-8, and a name like "Mom’s" or "番茄钟" arrived garbled
+    // (K-891).
+    let mut request = ureq::post(&endpoint)
+        .set("Content-Type", "application/octet-stream")
+        .set("X-Krate-Encoding", "uri");
     if unlisted {
         // The link works; the gallery never lists it.
         request = request.set("X-Krate-Unlisted", "1");
     }
     if !app_name.is_empty() {
-        request = request.set("X-Krate-Name", &app_name);
+        request = request.set("X-Krate-Name", &percent_encode_text(&app_name));
     }
     if let Some(description) = description {
-        request = request.set("X-Krate-Description", description);
+        request = request.set("X-Krate-Description", &percent_encode_text(description));
     }
     request = request.set(
         "X-Krate-Category",
@@ -7362,7 +7367,11 @@ fn report_send_command(
         .set("X-Krate-Session", session)
         .set("X-Krate-Version", krate_version())
         .set("X-Krate-Os", std::env::consts::OS)
-        .set("X-Krate-Note", &note.replace('\n', " "));
+        .set("X-Krate-Encoding", "uri")
+        .set(
+            "X-Krate-Note",
+            &percent_encode_text(&note.replace('\n', " ")),
+        );
     // Sent when we have it, absent when we do not. The header is the only
     // difference between a named report and an anonymous one; both go.
     if let Some(identity) = &identity {
@@ -20076,6 +20085,25 @@ pub(crate) fn storage_principal(
     StoragePrincipal::Verified { publisher, app_id }
 }
 
+/// The same bytes JavaScript's `encodeURIComponent` produces, so the hub
+/// decodes a CLI's header exactly as it decodes a browser's (K-891).
+fn percent_encode_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for byte in text.bytes() {
+        let keep = byte.is_ascii_alphanumeric()
+            || matches!(
+                byte,
+                b'-' | b'_' | b'.' | b'!' | b'~' | b'*' | b'\'' | b'(' | b')'
+            );
+        if keep {
+            out.push(byte as char);
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    out
+}
+
 /// Reduce a name to something safe to put in a path.
 fn sanitize_storage_name(name: &str) -> String {
     let safe: String = name
@@ -23916,6 +23944,16 @@ mod storage_identity_tests {
     /// whose publisher has no list on this machine is not a member by
     /// default. The admitted and revoked cases run through the binary in
     /// `a_shared_group_admits_named_apps_and_a_removal_sticks`.
+    #[test]
+    fn header_text_is_encoded_exactly_as_a_browser_encodes_it() {
+        // encodeURIComponent("Mom’s 番茄钟 100% (v2)!") in node.
+        assert_eq!(
+            percent_encode_text("Mom’s 番茄钟 100% (v2)!"),
+            "Mom%E2%80%99s%20%E7%95%AA%E8%8C%84%E9%92%9F%20100%25%20(v2)!"
+        );
+        assert_eq!(percent_encode_text("plain-name_1.0~"), "plain-name_1.0~");
+    }
+
     #[test]
     fn a_group_is_closed_until_its_publisher_names_the_app() {
         use krate_bundle::groups::Access;
