@@ -54,12 +54,16 @@ pub enum AudioCall {
 /// The app's own key-value store. One capability covers reading and writing:
 /// an app that may remember a setting may also read it back, and splitting the
 /// two would ask the person a question with only one sensible answer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StoreCall {
     Kv,
     Sql,
     Secret,
     Shared,
+    /// A named group shared between one publisher's apps (IC-738).
+    Group {
+        group: String,
+    },
 }
 
 impl fmt::Display for StoreCall {
@@ -69,6 +73,7 @@ impl fmt::Display for StoreCall {
             Self::Sql => "sql",
             Self::Secret => "secret",
             Self::Shared => "shared",
+            Self::Group { group } => return write!(f, "group:{group}"),
         })
     }
 }
@@ -700,6 +705,9 @@ mod tests {
             UapiCall::Store(StoreCall::Sql),
             UapiCall::Store(StoreCall::Secret),
             UapiCall::Store(StoreCall::Shared),
+            UapiCall::Store(StoreCall::Group {
+                group: "family-budget".to_string(),
+            }),
             UapiCall::Random(RandomCall::Bytes),
             UapiCall::Fs(FsCall::Read {
                 path: "./data/input.txt".to_string(),

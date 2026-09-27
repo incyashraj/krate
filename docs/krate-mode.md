@@ -340,6 +340,15 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 - `fs::stat(path: &str) -> Result<FileStat, FsError>`
 - `fs::write(path: &str, bytes: &[u8]) -> Result<(), FsError>`
 
+### `group`
+
+- `group::delete(group: &str, key: &str) -> Result<(), GroupError>`
+- `group::get(group: &str, key: &str) -> Result<Option<Vec<u8>>, GroupError>`
+- `group::get_text(group: &str, key: &str) -> Result<Option<String>, GroupError>`
+- `group::keys(group: &str) -> Result<Vec<String>, GroupError>`
+- `group::set(group: &str, key: &str, value: &[u8]) -> Result<(), GroupError>`
+- `group::set_text(group: &str, key: &str, value: &str) -> Result<(), GroupError>`
+
 ### `io::args`
 
 - `io::args::all() -> Vec<String>`
@@ -504,6 +513,7 @@ to exactly what the app needs, e.g. `fs.read:notes/**`.
 | `store.sql` | no | the app's own SQL database |
 | `store.secret` | no | secrets encrypted at rest (passwords, tokens); not the OS keychain |
 | `store.shared` | no | share a key-value bucket with everyone holding its invite code |
+| `store.group:<group-name>` | no | share a key-value store with the same publisher's other apps, in a named group its signed list admits |
 | `random.bytes` | no | entropy (also what getrandom/rand need) |
 | `fs.remove:<path-glob>` | no | delete under a folder |
 | `fs.mkdir:<path-glob>` | no | make folders |
@@ -753,6 +763,10 @@ The same modules earlier sections describe in prose, but as the exact interfaces
 - `shared::delete: func(key: string) -> result<_, shared-error>`
 - `shared::keys: func() -> result<list<string>, shared-error>`
 - `shared::sync: func() -> result<bool, shared-error>`
+- `group::get: func(group: string, key: string) -> result<option<list<u8>>, group-error>`
+- `group::set: func(group: string, key: string, value: list<u8>) -> result<_, group-error>`
+- `group::delete: func(group: string, key: string) -> result<_, group-error>`
+- `group::keys: func(group: string) -> result<list<string>, group-error>`
 
 ## `time`
 

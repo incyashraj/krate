@@ -13785,6 +13785,30 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
     // Computed once so all four stores -- kv, sql, secrets, shared -- agree:
     // a principal that differed between them would isolate an app's notes
     // while leaving its passwords reachable.
+    // The shared groups this run may reach (IC-738): every group the app
+    // declared and was granted, and within those, the ones its publisher's
+    // newest list on this machine names. Decided here because only the CLI
+    // knows the verified publisher; the runtime enforces what this says.
+    let app_groups = match (manifest, storage.as_ref()) {
+        (Some(manifest), Some(principal)) => manifest
+            .declared_capabilities()?
+            .into_iter()
+            .filter(|cap| cap.module() == "store" && cap.action() == "group")
+            .filter(|cap| policy.allows(cap))
+            .filter_map(|cap| cap.resource().map(str::to_string))
+            .map(|group| {
+                let grant = if group_access_for(principal, &group).allowed() {
+                    krate_runtime::store_host::GroupGrant::Member(group_store_path(
+                        principal, &group,
+                    ))
+                } else {
+                    krate_runtime::store_host::GroupGrant::NotMember
+                };
+                (group, grant)
+            })
+            .collect(),
+        _ => std::collections::BTreeMap::new(),
+    };
     let config = Config {
         fuel: request.fuel,
         memory_bytes: request
@@ -13852,6 +13876,7 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
                 shared_hub_url(),
             )
         }),
+        app_groups,
         phase3_ui_mode: request.ui_mode,
         screenshot_path: request.screenshot_path.clone(),
         screenshot_scale: request.screenshot_scale,
@@ -16101,6 +16126,10 @@ fn human_label(cap: &Capability) -> String {
         ("store", "kv") => "save its own settings and data".to_string(),
         ("store", "sql") => "keep its own database".to_string(),
         ("store", "secret") => "save sign-in details for itself".to_string(),
+        ("store", "group") => match cap.resource() {
+            Some(group) => format!("share data in \"{group}\" with other apps its maker names"),
+            None => "share data with other apps its maker names".to_string(),
+        },
         // Says what the app does with it, not where the bytes come from.
         // Someone reading a permission list wants to know an app rolls dice or
         // generates a key, not that it reads an entropy pool.

@@ -26,6 +26,7 @@ The current world imports these interfaces:
 - `krate:store/sql@0.1.0`
 - `krate:store/secret@0.1.0`
 - `krate:store/shared@0.1.0`
+- `krate:store/group@0.1.0`
 - `krate:random/bytes@0.1.0`
 
 The app exports:
@@ -900,6 +901,47 @@ Accepted capability strings for this module, generated from the runtime manifest
 
 - `too-large`
 > The host could not read the asset.
+
+- `io`: `string`
+
+
+## `krate:store/group@0.1.0`
+
+### Functions
+
+> Read one value from the group.
+
+- `get(group: string, key: string) -> result<option<list<u8>>, group-error>`
+> Store one value in the group.
+
+- `set(group: string, key: string, value: list<u8>) -> result<_, group-error>`
+> Remove one value. Removing something absent succeeds.
+
+- `delete(group: string, key: string) -> result<_, group-error>`
+> Every key in the group, sorted.
+
+- `keys(group: string) -> result<list<string>, group-error>`
+
+### Types
+
+#### `group-error` variant
+
+> Error returned by a group operation.
+
+> The app did not receive `store.group` for this group.
+
+- `denied`
+> The publisher's newest list on this machine does not name this app,
+> or no list for the group is known here yet, or the app is unsigned.
+
+- `not-a-member`
+> The key was empty, too long, or used unsupported syntax.
+
+- `invalid-key`
+> The value is larger than the runtime's bounded write limit.
+
+- `too-large`
+> The store could not be read or written.
 
 - `io`: `string`
 

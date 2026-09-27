@@ -1,0 +1,21 @@
+[app]
+id = "com.acme.group-probe"
+name = "group-probe"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_group_probe.wasm"
+world = "krate:app/cli@0.1.0"
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Print what the group answered"
+required = true
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read which key to set or get"
+required = true
+
+[[capabilities]]
+cap = "store.group:family-budget"
+rationale = "Share the household numbers with the other family-budget apps"
+required = false

@@ -574,6 +574,52 @@ pub mod io {
     }
 }
 
+/// Storage shared between the same publisher's apps, in a named group
+/// (IC-738).
+///
+/// Requires `store.group:<name>` for each group, and more than that: the
+/// publisher's signed list must name this app, or every call answers
+/// `NotAMember`. Reads see what the other member apps wrote; the last write
+/// of a key wins.
+pub mod group {
+    pub use crate::bindings::krate::store::group::GroupError;
+    use alloc::string::String;
+    use alloc::vec::Vec;
+
+    /// Read one value from `group`. A key never set reads as `None`.
+    pub fn get(group: &str, key: &str) -> Result<Option<Vec<u8>>, GroupError> {
+        crate::bindings::krate::store::group::get(group, key)
+    }
+
+    /// Read one value as UTF-8 text.
+    pub fn get_text(group: &str, key: &str) -> Result<Option<String>, GroupError> {
+        match get(group, key)? {
+            Some(bytes) => Ok(String::from_utf8(bytes).ok()),
+            None => Ok(None),
+        }
+    }
+
+    /// Write one value, replacing whatever was there.
+    pub fn set(group: &str, key: &str, value: &[u8]) -> Result<(), GroupError> {
+        crate::bindings::krate::store::group::set(group, key, value)
+    }
+
+    /// Write one value as UTF-8 text.
+    pub fn set_text(group: &str, key: &str, value: &str) -> Result<(), GroupError> {
+        set(group, key, value.as_bytes())
+    }
+
+    /// Remove one key. Removing a key that is not there succeeds.
+    pub fn delete(group: &str, key: &str) -> Result<(), GroupError> {
+        crate::bindings::krate::store::group::delete(group, key)
+    }
+
+    /// Every key in the group, sorted.
+    pub fn keys(group: &str) -> Result<Vec<String>, GroupError> {
+        crate::bindings::krate::store::group::keys(group)
+    }
+}
+
 /// The app's own durable key-value store.
 ///
 /// Keys, not paths: an app cannot name a location, so this can never widen into

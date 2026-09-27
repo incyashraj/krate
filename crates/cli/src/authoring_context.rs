@@ -698,6 +698,7 @@ fn capability_note(pattern: &str) -> &'static str {
         "audio.playback" => "play sound",
         "audio.capture" => "record from the microphone",
         "store.shared" => "share a key-value bucket with everyone holding its invite code",
+        "store.group" => "share a key-value store with the same publisher's other apps, in a named group its signed list admits",
         "camera.capture" => "see through the camera",
         _ => "",
     }
@@ -778,7 +779,17 @@ and queues; never show an error for being offline, show a quiet \
 \"last synced\" note if anything.\n\n\
 4. **Deletes are real.** `shared::delete(key)` removes the item everywhere; \
 the runtime keeps the tombstone so it cannot come back. Do not implement \
-soft-delete flags on top.\n\n";
+soft-delete flags on top.\n\n\
+**Sharing between one maker's own apps, on one computer** -- a budget app \
+and a reports app that keep one set of numbers -- is a different thing: \
+declare `store.group:<name>` and use `krate::group::{get_text, set_text, \
+delete, keys}(group, key, ...)`. Every app in the group must be signed by \
+the same publisher, and that publisher names the members with `krate group \
+sign --root <key> --group <name> --member <app id> ...`, carried in each app \
+by `krate sign --group <file>`. An app the list does not name gets \
+`not-a-member`, whatever the person granted -- show that as \"this app is \
+not part of <name>\" rather than as a failure. Nothing leaves the \
+computer.\n\n";
 
 /// Section 2e: capabilities the runtime has had all along that no app ever
 /// used, because nothing taught them. The coverage matrix

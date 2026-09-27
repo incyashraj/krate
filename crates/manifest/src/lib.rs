@@ -80,6 +80,19 @@ const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
     // exactly what a person must be asked about, and the consent wording
     // says who can see it (anyone with the code).
     CapabilitySpec::resource_free(CapabilityPhase::Phase2, "store", "shared", false),
+    // Storage shared between apps from one publisher, in a named group
+    // (IC-738). Scoped to the group's name, because that is what a person
+    // is told they are agreeing to share. Never default-granted: sharing
+    // data between apps is a question for the person. Declaring it is not
+    // membership -- the publisher's signed list decides that, and an app it
+    // does not name is refused whatever the person granted.
+    CapabilitySpec::resource_scoped(
+        CapabilityPhase::Phase2,
+        "store",
+        "group",
+        "<group-name>",
+        false,
+    ),
     // Random bytes from the OS. Resource-free because there is nothing to
     // scope -- entropy has no location and reveals nothing about the machine.
     //
@@ -883,9 +896,11 @@ fn validate_capability_resource(
         return Ok(());
     }
 
-    // `store.group` is not declarable yet -- see the test on
-    // validate_group_name. The dispatch stays out until the capability
-    // exists, so nothing suggests a grant that does nothing.
+    // A group name is refused rather than flattened: two names reducing to
+    // one directory would share a store nobody meant to share.
+    if module == "store" && action == "group" {
+        return validate_group_name(resource);
+    }
 
     if module == "ui" {
         validate_ui_resource(action, resource)?;

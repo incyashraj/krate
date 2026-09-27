@@ -42,6 +42,21 @@ pub enum StoreError {
     Io(String),
 }
 
+/// Whether this run may use a shared group, and where it lives (IC-738).
+///
+/// Decided by the caller before the run -- the CLI knows the app's verified
+/// publisher and the membership lists this machine holds; the runtime does
+/// not -- and enforced by the host. A group the app did not declare, or was
+/// not granted, is absent: the host answers `denied`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GroupGrant {
+    /// Declared, granted, and named by the publisher's newest list.
+    Member(PathBuf),
+    /// Declared and granted, but the publisher's list does not name this
+    /// app (or none is known here, or the app is unsigned).
+    NotMember,
+}
+
 /// A single application's key-value store.
 ///
 /// Held open for the run and flushed on every write, so an app that is closed

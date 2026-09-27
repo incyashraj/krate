@@ -39,6 +39,8 @@ pub struct Phase2Host<'a> {
     /// The app's shared store: a bucket synced between the machines that
     /// hold its invite code. `None` unless the run granted `store.shared`.
     shared: Option<crate::shared_host::AppShared>,
+    /// The shared groups this run may reach (IC-738), decided by the caller.
+    groups: std::collections::BTreeMap<String, crate::store_host::GroupGrant>,
     /// Files the person chose in a dialog this run.
     ///
     /// Shared with the GUI host, which is what shows the dialog: the picker
@@ -78,6 +80,7 @@ impl<'a> Phase2Host<'a> {
             database: None,
             secrets: None,
             shared: None,
+            groups: std::collections::BTreeMap::new(),
             chosen_files: Default::default(),
             random_granted: false,
             async_fetches: crate::async_fetch::AsyncFetches::new(),
@@ -166,6 +169,35 @@ impl<'a> Phase2Host<'a> {
             _ => None,
         };
         self
+    }
+
+    /// The groups this run may reach, as the caller decided (IC-738).
+    pub fn with_groups(
+        mut self,
+        groups: std::collections::BTreeMap<String, crate::store_host::GroupGrant>,
+    ) -> Self {
+        self.groups = groups;
+        self
+    }
+
+    /// Open a group for one call.
+    ///
+    /// Fresh every call, so a read sees what another member app wrote a
+    /// moment ago; a group is shared between running apps, which is the
+    /// point of it. Writes merge per key (K-871), so two members saving at
+    /// once keep each other's values.
+    fn group_store(
+        &self,
+        group: &str,
+    ) -> Result<crate::store_host::AppStore, store::group::GroupError> {
+        use crate::store_host::GroupGrant;
+        match self.groups.get(group) {
+            None => Err(store::group::GroupError::Denied),
+            Some(GroupGrant::NotMember) => Err(store::group::GroupError::NotAMember),
+            Some(GroupGrant::Member(path)) => {
+                Ok(crate::store_host::AppStore::open(path.clone(), true))
+            }
+        }
     }
 
     fn dispatcher(&self) -> UapiDispatcher<'_> {
@@ -477,6 +509,60 @@ impl store::shared::Host for Phase2Host<'_> {
             Some(shared) => shared.sync().map_err(shared_error_to_wit),
             None => Err(store::shared::SharedError::Denied),
         })
+    }
+}
+
+fn group_error_to_wit(error: crate::store_host::StoreError) -> store::group::GroupError {
+    use crate::store_host::StoreError;
+    match error {
+        // A group is opened only when the caller decided it may be, so a
+        // refusal from the store itself means the grant was withdrawn.
+        StoreError::Denied => store::group::GroupError::Denied,
+        StoreError::InvalidKey => store::group::GroupError::InvalidKey,
+        StoreError::TooLarge => store::group::GroupError::TooLarge,
+        StoreError::Io(message) => store::group::GroupError::Io(message),
+    }
+}
+
+impl store::group::Host for Phase2Host<'_> {
+    fn get(
+        &mut self,
+        group: String,
+        key: String,
+    ) -> wasmtime::Result<Result<Option<Vec<u8>>, store::group::GroupError>> {
+        Ok(self
+            .group_store(&group)
+            .and_then(|store| store.get(&key).map_err(group_error_to_wit)))
+    }
+
+    fn set(
+        &mut self,
+        group: String,
+        key: String,
+        value: Vec<u8>,
+    ) -> wasmtime::Result<Result<(), store::group::GroupError>> {
+        Ok(self
+            .group_store(&group)
+            .and_then(|mut store| store.set(&key, value).map_err(group_error_to_wit)))
+    }
+
+    fn delete(
+        &mut self,
+        group: String,
+        key: String,
+    ) -> wasmtime::Result<Result<(), store::group::GroupError>> {
+        Ok(self
+            .group_store(&group)
+            .and_then(|mut store| store.delete(&key).map_err(group_error_to_wit)))
+    }
+
+    fn keys(
+        &mut self,
+        group: String,
+    ) -> wasmtime::Result<Result<Vec<String>, store::group::GroupError>> {
+        Ok(self
+            .group_store(&group)
+            .and_then(|store| store.keys().map_err(group_error_to_wit)))
     }
 }
 

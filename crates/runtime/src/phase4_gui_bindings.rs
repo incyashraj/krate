@@ -47,6 +47,7 @@ wasmtime::component::bindgen!({
         "krate:store/sql@0.1.0": crate::phase3_gui_bindings::krate::store::sql,
         "krate:store/secret@0.1.0": crate::phase3_gui_bindings::krate::store::secret,
         "krate:store/shared@0.1.0": crate::phase3_gui_bindings::krate::store::shared,
+        "krate:store/group@0.1.0": crate::phase2_bindings::krate::store::group,
         "krate:random/bytes@0.1.0": crate::phase3_gui_bindings::krate::random::bytes,
 
         // The ui interfaces that do NOT mention widget-kind, reused whole.

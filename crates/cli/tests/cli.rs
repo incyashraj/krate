@@ -5525,6 +5525,162 @@ fn a_shared_group_admits_named_apps_and_a_removal_sticks() {
     );
 }
 
+/// A real app uses a shared group through the binary (IC-738, test 1518 and
+/// the unauthorized and revoked-member cases).
+///
+/// `group-probe.wasm` is apps/krate-group-probe built: it calls
+/// `krate:store/group` for `family-budget` and prints one line naming the
+/// outcome. Packed under several ids, it is every kind of caller: named
+/// members that share a value, an unsigned app, an app that never declared
+/// the group, a signed app its publisher did not name, and a member the
+/// publisher later removed.
+#[test]
+fn a_group_is_shared_by_its_members_and_closed_to_everyone_else() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let home = tempfile::tempdir().expect("home");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/group-probe.wasm")).expect("probe");
+    let root = dir.path().join("root.key");
+    let os = |s: &str| std::ffi::OsString::from(s);
+    let krate_in_home = |args: &[std::ffi::OsString]| {
+        krate()
+            .args(args)
+            .env("HOME", home.path())
+            .output()
+            .expect("krate")
+    };
+
+    let pack = |id: &str, declares_group: bool| {
+        let manifest = dir.path().join(format!("{id}.toml"));
+        let mut text = format!(
+            "[app]\nid = \"{id}\"\nname = \"{id}\"\nversion = \"1.0.0\"\n\
+             entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+             [[capabilities]]\ncap = \"io.stdout\"\nrationale = \"print\"\nrequired = true\n\n\
+             [[capabilities]]\ncap = \"io.args\"\nrationale = \"args\"\nrequired = true\n"
+        );
+        if declares_group {
+            text.push_str(
+                "\n[[capabilities]]\ncap = \"store.group:family-budget\"\nrationale = \"share\"\nrequired = false\n",
+            );
+        }
+        std::fs::write(&manifest, text).expect("manifest");
+        let bundle = dir.path().join(format!("{id}.krate"));
+        let out = krate_in_home(&[
+            os("pack"),
+            wasm.clone().into(),
+            os("--manifest"),
+            manifest.into(),
+            os("-o"),
+            bundle.clone().into(),
+        ]);
+        assert!(
+            out.status.success(),
+            "pack: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        bundle
+    };
+    let sign = |bundle: &std::path::Path, list: Option<&std::path::Path>, generate: bool| {
+        let mut args = vec![
+            os("sign"),
+            bundle.into(),
+            os("--key"),
+            root.clone().into(),
+            os("--namespace"),
+            os("acme/apps"),
+        ];
+        if generate {
+            args.push(os("--generate-key"));
+        }
+        if let Some(list) = list {
+            args.push(os("--group"));
+            args.push(list.into());
+        }
+        let out = krate_in_home(&args);
+        assert!(
+            out.status.success(),
+            "sign: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    let list = |name: &str, members: &[&str]| {
+        let path = dir.path().join(name);
+        let mut args = vec![
+            os("group"),
+            os("sign"),
+            os("--root"),
+            root.clone().into(),
+            os("--group"),
+            os("family-budget"),
+            os("-o"),
+            path.clone().into(),
+        ];
+        for member in members {
+            args.push(os("--member"));
+            args.push(os(member));
+        }
+        let out = krate_in_home(&args);
+        assert!(
+            out.status.success(),
+            "group sign: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        path
+    };
+    let call = |bundle: &std::path::Path, words: &[&str]| {
+        let mut args = vec![os("run"), bundle.into(), os("--auto-grant"), os("--")];
+        args.extend(words.iter().map(|w| os(w)));
+        let out = krate_in_home(&args);
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+
+    let budget = pack("com.acme.budget", true);
+    let reports = pack("com.acme.reports", true);
+    let game = pack("com.acme.game", true);
+    let quiet = pack("com.acme.quiet", false);
+    let unsigned = pack("com.acme.unsigned", true);
+
+    // Before anything is signed: an unsigned app declaring the group, and an
+    // app that never declared it.
+    assert_eq!(
+        call(&unsigned, &["set", "total", "1"]),
+        "error=not-a-member"
+    );
+    assert_eq!(call(&quiet, &["get", "total"]), "error=denied");
+
+    // The publisher names budget and reports.
+    sign(&budget, None, true);
+    let first = list("v1.json", &["com.acme.budget", "com.acme.reports"]);
+    sign(&budget, Some(&first), false);
+    sign(&reports, Some(&first), false);
+    sign(&game, Some(&first), false);
+
+    assert_eq!(call(&budget, &["set", "total", "1250"]), "set=ok");
+    assert_eq!(
+        call(&reports, &["get", "total"]),
+        "get=1250",
+        "a second named app reads what the first wrote -- the group is shared"
+    );
+    assert_eq!(
+        call(&game, &["get", "total"]),
+        "error=not-a-member",
+        "the same publisher's app is refused when the list does not name it"
+    );
+    assert_eq!(call(&unsigned, &["get", "total"]), "error=not-a-member");
+
+    // The publisher removes reports. A newer list reaches this machine
+    // inside budget; reports' own bundle still carries the old one.
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    let second = list("v2.json", &["com.acme.budget"]);
+    sign(&budget, Some(&second), false);
+    assert_eq!(call(&budget, &["get", "total"]), "get=1250");
+    assert_eq!(
+        call(&reports, &["get", "total"]),
+        "error=not-a-member",
+        "a removed member is refused, even opening its own bundle that carries the old list"
+    );
+}
+
 /// Uninstalling removes the app and keeps what the person wrote in it,
 /// unless they ask otherwise (IC-278, IC-396).
 ///

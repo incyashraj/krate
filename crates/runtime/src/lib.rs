@@ -170,6 +170,9 @@ pub struct Config {
     /// Where this app's shared-store mirror lives, and the hub it syncs
     /// against, on the same terms as the key-value store.
     pub app_shared: Option<(PathBuf, String)>,
+    /// The shared groups this run may reach, as the caller decided them
+    /// (IC-738). A group missing here is refused as `denied`.
+    pub app_groups: std::collections::BTreeMap<String, store_host::GroupGrant>,
     /// The name the person consented to -- the manifest's `app.name` -- for
     /// anything the OS shows outside the app's own window (IC-271). A
     /// notification carries it as the sender. It is optional because the
@@ -208,6 +211,7 @@ impl Default for Config {
             sandbox_root: PathBuf::from("."),
             bundle_assets_root: None,
             app_store_path: None,
+            app_groups: std::collections::BTreeMap::new(),
             app_database_path: None,
             app_secrets: None,
             app_shared: None,
@@ -1285,6 +1289,7 @@ impl Runtime {
         link_phase2!(store::sql);
         link_phase2!(store::secret);
         link_phase2!(store::shared);
+        link_phase2!(store::group);
         link_phase2!(random::bytes);
 
         // The two that differ.
@@ -1467,7 +1472,8 @@ impl HostState {
                     &krate_manifest::Capability::new("store", "shared", None)
                         .expect("store.shared"),
                 ),
-            ),
+            )
+            .with_groups(config.app_groups.clone()),
             #[cfg(feature = "phase2-bindings")]
             phase3_gui: None,
             #[cfg(feature = "phase2-bindings")]

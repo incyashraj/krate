@@ -1349,6 +1349,27 @@ fn inspect_content(path: &str, text: &str, analysis: &mut Analysis) {
         "Krate's `store.shared` capability is a key-value bucket synced between every machine holding its invite code, through krate.tech -- no accounts, no backend to run. Ports that lean on a realtime service map their shared documents onto per-item keys there.",
         Some("store.shared"),
     );
+    // Data shared between one maker's own apps on one device (IC-738):
+    // Apple app groups, Android's shared user id, a common settings suite.
+    // Krate's answer is a named group the publisher signs the members of.
+    detect_pattern(
+        analysis,
+        "app-group",
+        &[
+            "app group",
+            "applicationgroupidentifier",
+            "group.com.",
+            "suitename",
+            "shareduserid",
+            "shared container",
+        ],
+        path,
+        text,
+        Severity::Change,
+        "Data shared between the same maker's apps",
+        "Krate's `store.group:<name>` capability is a key-value store shared between apps its publisher names in a signed list -- the same idea as an app group, decided by the publisher and shown to the person. Sign the apps and the list with `krate group sign`.",
+        Some("store.group"),
+    );
     detect_pattern(
         analysis,
         "notifications",

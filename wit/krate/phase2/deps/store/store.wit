@@ -223,3 +223,45 @@ interface shared {
   /// timer of ten seconds or more; the host rate-limits anything faster.
   sync: func() -> result<bool, shared-error>;
 }
+
+/// Storage shared between one publisher's apps, in a named group.
+///
+/// A budget app and a reports app from the same publisher can keep one set
+/// of numbers without either running a server. Sharing is the publisher's
+/// decision, not an accident of two apps choosing the same id: the
+/// publisher signs a list naming the apps that may use the group, and an
+/// app the newest list does not name is refused -- `not-a-member` -- even
+/// when the person granted `store.group:<name>`. Leaving an app out of the
+/// next list removes it.
+///
+/// Like `kv`, the app names keys and never a location, and the same limits
+/// apply. Reads see what the other members wrote; the last write of a key
+/// wins.
+interface group {
+  /// Error returned by a group operation.
+  variant group-error {
+    /// The app did not receive `store.group` for this group.
+    denied,
+    /// The publisher's newest list on this machine does not name this app,
+    /// or no list for the group is known here yet, or the app is unsigned.
+    not-a-member,
+    /// The key was empty, too long, or used unsupported syntax.
+    invalid-key,
+    /// The value is larger than the runtime's bounded write limit.
+    too-large,
+    /// The store could not be read or written.
+    io(string),
+  }
+
+  /// Read one value from the group.
+  get: func(group: string, key: string) -> result<option<list<u8>>, group-error>;
+
+  /// Store one value in the group.
+  set: func(group: string, key: string, value: list<u8>) -> result<_, group-error>;
+
+  /// Remove one value. Removing something absent succeeds.
+  delete: func(group: string, key: string) -> result<_, group-error>;
+
+  /// Every key in the group, sorted.
+  keys: func(group: string) -> result<list<string>, group-error>;
+}

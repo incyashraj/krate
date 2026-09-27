@@ -1316,6 +1316,16 @@ fn plain_capability(cap: &str) -> Option<String> {
         "store.kv" | "store.sql" => "remember things between runs",
         "store.secret" => "use your keychain for passwords",
         "store.shared" => "share its data with anyone who has its invite code, through krate.tech",
+        // Scoped to the group's name, and honest that the maker, not the
+        // person, decides which apps are in it (IC-738).
+        "store.group" => {
+            return Some(match scope {
+                Some(group) => format!(
+                    "share data in \"{group}\" with other apps its maker names -- on this computer only"
+                ),
+                None => "share data with other apps its maker names -- on this computer only".to_string(),
+            })
+        }
         "random.bytes" => "use random numbers",
         "net.connect" => {
             return Some(match scope {
