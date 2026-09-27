@@ -2701,6 +2701,28 @@ mod platform {
         unsafe {
             let main_menu = NSMenu::new(mtm);
 
+            // The FIRST item of a main menu is the application menu, whatever
+            // it is called. With Edit first, Edit became the app menu and
+            // nothing anywhere offered Quit: Cmd+Q and Cmd+W did nothing in
+            // every Krate app on a Mac, and the app's own menu held Undo and
+            // Paste (K-918). The app menu comes first now, with Close Window
+            // and Quit where a Mac person reaches for them.
+            let app_item = NSMenuItem::new(mtm);
+            let app_menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), &NSString::from_str("App"));
+            app_menu.addItemWithTitle_action_keyEquivalent(
+                &NSString::from_str("Close Window"),
+                Some(sel!(performClose:)),
+                &NSString::from_str("w"),
+            );
+            app_menu.addItem(&NSMenuItem::separatorItem(mtm));
+            app_menu.addItemWithTitle_action_keyEquivalent(
+                &NSString::from_str("Quit"),
+                Some(sel!(terminate:)),
+                &NSString::from_str("q"),
+            );
+            main_menu.addItem(&app_item);
+            main_menu.setSubmenu_forItem(Some(&app_menu), &app_item);
+
             let edit_item = NSMenuItem::new(mtm);
             let edit_menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), &NSString::from_str("Edit"));
 
