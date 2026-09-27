@@ -6575,6 +6575,32 @@ fn compose_card_face(
     Ok(out)
 }
 
+/// The bundle behind a card's picture, or None when `bytes` is not a card.
+///
+/// A card is a PNG with the bundle appended (see `card_bundle`), so the
+/// bundle starts right after the PNG's IEND chunk. Walked chunk by chunk
+/// rather than searched for, so an "IEND" inside image data cannot fool it.
+fn card_bundle_bytes(bytes: &[u8]) -> Option<&[u8]> {
+    const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
+    if !bytes.starts_with(PNG_SIGNATURE) {
+        return None;
+    }
+    let mut at = PNG_SIGNATURE.len();
+    loop {
+        let header = bytes.get(at..at + 8)?;
+        let len = u32::from_be_bytes(header[..4].try_into().ok()?) as usize;
+        let end = at.checked_add(12)?.checked_add(len)?;
+        if end > bytes.len() {
+            return None;
+        }
+        if &header[4..8] == b"IEND" {
+            let rest = &bytes[end..];
+            return rest.starts_with(b"PK").then_some(rest);
+        }
+        at = end;
+    }
+}
+
 fn card_bundle(
     bundle: &Path,
     output: Option<&Path>,
@@ -6732,6 +6758,14 @@ fn publish_bundle(
     if bytes.is_empty() {
         anyhow::bail!("bundle is empty: {}", bundle.display());
     }
+    // A card is a picture with the bundle behind it. Krate opens one as the
+    // app, and the hub wants the app: sending the whole file was refused as
+    // "not a zip archive" (K-913). The bytes behind the picture are the
+    // bundle exactly as packed, so the link is the one the bundle has.
+    let bytes = match card_bundle_bytes(&bytes) {
+        Some(inner) => inner.to_vec(),
+        None => bytes,
+    };
 
     // Open it properly, here, before anything leaves the machine (K-273).
     //
@@ -20941,7 +20975,7 @@ fn run() -> i32 {
 
 #[cfg(test)]
 mod card_tests {
-    use super::{card_file_stem, card_trust_line, compose_card_face};
+    use super::{card_bundle_bytes, card_file_stem, card_trust_line, compose_card_face};
     use std::io::{Cursor, Write};
 
     fn manifest_with(caps: &[&str]) -> krate_manifest::Manifest {
@@ -21013,6 +21047,23 @@ mod card_tests {
 
         let mut card = face.clone();
         card.extend_from_slice(&bundle_bytes);
+
+        // What publish sends: the bundle exactly, not the picture (K-913).
+        assert_eq!(
+            card_bundle_bytes(&card),
+            Some(bundle_bytes.as_slice()),
+            "the bytes behind a card's picture are the bundle as packed"
+        );
+        assert_eq!(
+            card_bundle_bytes(&bundle_bytes),
+            None,
+            "a bare bundle is not a card"
+        );
+        assert_eq!(
+            card_bundle_bytes(&face),
+            None,
+            "a picture with nothing behind it is not a card"
+        );
 
         // Reading from the front: a picture, shot plus caption strip.
         let decoder = png::Decoder::new(Cursor::new(card.as_slice()));
