@@ -76,6 +76,18 @@ run "UAPI freeze pages are current" sh -c 'd=$(mktemp -d); for f in lock evidenc
 # with the working tree, as above.
 run "parity tables are current (CI UAPI lane)" sh -c 'd=$(mktemp -d); for f in widget-parity interface-parity; do cp docs/book/src/reference/$f.md "$d/$f"; done; cargo run -q -p krate-tools --bin check-widget-parity -- --write >/dev/null 2>&1 && cargo run -q -p krate-tools --bin check-interface-parity -- --write >/dev/null 2>&1 && cmp -s "$d/widget-parity" docs/book/src/reference/widget-parity.md && cmp -s "$d/interface-parity" docs/book/src/reference/interface-parity.md; r=$?; rm -rf "$d"; exit $r'
 
+# Code behind a cfg for one OS is only type-checked on that OS. Three times
+# on 2026-09-27 a macOS-only block broke the Linux and Windows lanes (an
+# inferred type, a dead variant, a lint) that this Mac never compiled. A
+# type-check for both costs no linker and catches all three.
+for target in x86_64-unknown-linux-gnu x86_64-pc-windows-msvc; do
+  if rustup target list --installed 2>/dev/null | grep -qx "$target"; then
+    run "type-check for $target" cargo check -q -p krate-cli -p krate-runtime --all-targets --target "$target"
+  else
+    note "type-check for $target" "skipped: rustup target add $target"
+  fi
+done
+
 # The exact command CI's quick lane runs ("Run workspace tests"), four
 # minutes on this machine. Until 2026-09-20 this gate ran no cargo tests at
 # all, and every quick-lane failure that day -- five runs, all of them tests

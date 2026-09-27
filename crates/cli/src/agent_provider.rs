@@ -431,7 +431,10 @@ fn real_home_from(home: std::path::PathBuf) -> Option<std::path::PathBuf> {
 /// The access token and its expiry (ms since the epoch), from wherever
 /// Claude itself keeps them: the keychain on macOS, else the file.
 fn claude_credential(home: &std::path::Path) -> Option<(String, u64)> {
-    let mut text = None;
+    // Typed here: only the macOS block below assigns it, and without the
+    // annotation Linux and Windows cannot infer it (CI caught that).
+    #[allow(unused_mut)]
+    let mut text: Option<String> = None;
     #[cfg(target_os = "macos")]
     {
         if let Ok(out) = ProcessCommand::new("/usr/bin/security")
