@@ -59,7 +59,13 @@ pub struct AppSecrets {
     path: PathBuf,
     /// Decrypted in memory for the run. The file on disk is never plaintext.
     entries: BTreeMap<String, Vec<u8>>,
+    /// Names this handle set or deleted since it last saved: the only ones
+    /// its save may change on disk (K-878, the K-871 fix for secrets).
+    changed: std::collections::BTreeSet<String>,
+    deleted: std::collections::BTreeSet<String>,
     key: [u8; 32],
+    /// Kept to re-read a pre-HKDF file at save time; never used to seal.
+    key_v1: [u8; 32],
     granted: bool,
     /// Set when a store file exists but could not be read or decrypted.
     unreadable: Option<String>,
@@ -93,7 +99,10 @@ impl AppSecrets {
         Self {
             path,
             entries,
+            changed: Default::default(),
+            deleted: Default::default(),
             key,
+            key_v1,
             granted,
             unreadable,
         }
@@ -134,6 +143,8 @@ impl AppSecrets {
             return Err(SecretError::TooLarge);
         }
         self.entries.insert(name.to_string(), secret);
+        self.changed.insert(name.to_string());
+        self.deleted.remove(name);
         self.flush()
     }
 
@@ -142,6 +153,8 @@ impl AppSecrets {
         self.require_readable()?;
         validate_name(name)?;
         if self.entries.remove(name).is_some() {
+            self.deleted.insert(name.to_string());
+            self.changed.remove(name);
             self.flush()?;
         }
         Ok(())
@@ -157,23 +170,48 @@ impl AppSecrets {
         Ok(self.entries.keys().cloned().collect())
     }
 
-    fn flush(&self) -> Result<(), SecretError> {
+    /// Save this handle's changes without erasing anyone else's (K-878).
+    ///
+    /// The whole map used to be sealed and renamed over the file, so of two
+    /// open handles the second save erased a secret the first had been told
+    /// was stored -- and both wrote one fixed `.tmp`. Now the file is read
+    /// and decrypted again, only the names this handle set or deleted change,
+    /// and the scratch file carries the process id: the store_host fix
+    /// (K-871), per name rather than per file, and no more than that.
+    fn flush(&mut self) -> Result<(), SecretError> {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| SecretError::Io(e.to_string()))?;
+        }
+        // A file that does not decrypt under this app's key reads as empty,
+        // as it does at open: it was never this app's to keep.
+        let mut merged = match load(&self.path, &self.key, &self.key_v1) {
+            Ok(Some(existing)) => existing,
+            _ => BTreeMap::new(),
+        };
+        merged.retain(|name, _| !self.deleted.contains(name));
+        for name in &self.changed {
+            if let Some(secret) = self.entries.get(name) {
+                merged.insert(name.clone(), secret.clone());
+            }
         }
         // No entropy means no nonce, and a stream cipher reusing or exposing a
         // predictable nonce is a real break. Refuse the write and say so: the
         // caller keeps its secret and knows it was not saved.
-        let encoded = encrypt_all(&self.entries, &self.key).ok_or_else(|| {
+        let encoded = encrypt_all(&merged, &self.key).ok_or_else(|| {
             SecretError::Io("no random source available to encrypt the store".to_string())
         })?;
         // Temp file and rename, so an interrupted write cannot leave the store
         // truncated -- losing a sign-in because a write was cut short is the
         // kind of failure that makes software feel unreliable.
-        let temp = self.path.with_extension("tmp");
+        let temp = self
+            .path
+            .with_extension(format!("{}.tmp", std::process::id()));
         std::fs::write(&temp, &encoded).map_err(|e| SecretError::Io(e.to_string()))?;
         restrict_permissions(&temp);
         std::fs::rename(&temp, &self.path).map_err(|e| SecretError::Io(e.to_string()))?;
+        self.entries = merged;
+        self.changed.clear();
+        self.deleted.clear();
         Ok(())
     }
 }
@@ -503,6 +541,43 @@ mod tests {
         assert_eq!(s.get("token"), Err(SecretError::Denied));
         assert_eq!(s.names(), Err(SecretError::Denied));
         assert_eq!(s.delete("token"), Err(SecretError::Denied));
+    }
+
+    /// K-878. Two handles open on one store: each save keeps the other's
+    /// secret, and a deletion is not undone by the other's later save.
+    #[test]
+    fn a_second_writer_does_not_erase_the_first_writers_secret() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("app.secrets");
+        let mut app = AppSecrets::open(path.clone(), "dev.krate.test", MACHINE, true);
+        let mut tool = AppSecrets::open(path.clone(), "dev.krate.test", MACHINE, true);
+        app.set("session", b"s-1".to_vec()).expect("app set");
+        tool.set("api.key", b"k-1".to_vec()).expect("tool set");
+        let fresh = AppSecrets::open(path.clone(), "dev.krate.test", MACHINE, true);
+        assert_eq!(
+            fresh.get("session").expect("get").as_deref(),
+            Some(&b"s-1"[..]),
+            "the tool's save must not erase the app's accepted secret"
+        );
+        assert_eq!(
+            fresh.get("api.key").expect("get").as_deref(),
+            Some(&b"k-1"[..])
+        );
+
+        let mut app = AppSecrets::open(path.clone(), "dev.krate.test", MACHINE, true);
+        let mut tool = AppSecrets::open(path.clone(), "dev.krate.test", MACHINE, true);
+        app.delete("session").expect("delete");
+        tool.set("api.key", b"k-2".to_vec()).expect("tool set");
+        let fresh = AppSecrets::open(path, "dev.krate.test", MACHINE, true);
+        assert_eq!(
+            fresh.get("session").expect("get"),
+            None,
+            "a deleted secret stays deleted after another handle saves"
+        );
+        assert_eq!(
+            fresh.get("api.key").expect("get").as_deref(),
+            Some(&b"k-2"[..])
+        );
     }
 
     #[test]
