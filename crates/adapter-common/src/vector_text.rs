@@ -176,6 +176,41 @@ struct TextEngine {
     /// the bound stays correct as the map grows, but it bought no measurable
     /// speed and nothing here should claim it did.
     canvas_raster_bytes: usize,
+    /// Rasterised GLYPHS, keyed by font, glyph, size and sub-pixel
+    /// position (K-417).
+    ///
+    /// The run cache above only helps a string drawn before. A string that
+    /// is new -- the next row of a log, a changed cell, a line being typed --
+    /// re-rendered every outline in it: measured 124 us of a 139 us fresh
+    /// 30-character run, against 8 us to shape it. Almost every glyph in a
+    /// new string has been drawn before in some other string, so a new run
+    /// is now composed from cached glyph coverage.
+    glyphs: std::collections::HashMap<GlyphKey, std::rc::Rc<GlyphCoverage>>,
+    /// Bytes of coverage held in `glyphs`.
+    glyph_bytes: usize,
+}
+
+/// One glyph as it rasterises at one size and sub-pixel offset.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct GlyphKey {
+    /// `Blob::id()` of the font file, and the face's index within it.
+    font: u64,
+    index: u32,
+    glyph: u32,
+    size_bits: u32,
+    /// Sub-pixel position: `fx` in sixteenths, `fy` in quarters.
+    fx: u8,
+    fy: u8,
+}
+
+/// A glyph's coverage, cropped to its ink, and where that crop sits
+/// relative to the glyph's integer origin.
+struct GlyphCoverage {
+    left: i32,
+    top: i32,
+    width: u32,
+    height: u32,
+    coverage: Vec<u8>,
 }
 
 /// A rendered text run's COVERAGE -- alpha only, one byte per pixel --
@@ -210,6 +245,8 @@ impl TextEngine {
             canvas_layouts: std::collections::HashMap::new(),
             canvas_rasters: std::collections::HashMap::new(),
             canvas_raster_bytes: 0,
+            glyphs: std::collections::HashMap::new(),
+            glyph_bytes: 0,
         }
     }
 
@@ -278,6 +315,80 @@ impl TextEngine {
     fn line_height(&mut self, scale: f32) -> f32 {
         // "Xg" spans an ascender and descender, a stable line-box proxy.
         self.layout_text("Xg", scale, None).height()
+    }
+
+    /// Build a run's coverage from cached glyphs (K-417).
+    ///
+    /// Walks the layout's glyphs exactly as [`draw_layout`] does, and for each
+    /// one adds the cached coverage of that glyph -- at its size and
+    /// sub-pixel offset -- into `out` at its integer position. Overlap
+    /// between neighbouring glyphs' antialiased edges adds and saturates,
+    /// the usual glyph-atlas composition. Returns how many glyphs the layout
+    /// carried, as `draw_layout` does, so "no glyphs" still means fall back.
+    fn compose_run_coverage(
+        &mut self,
+        layout: &Layout<()>,
+        out: &mut [u8],
+        out_w: u32,
+        out_h: u32,
+        x: f32,
+        y: f32,
+    ) -> usize {
+        let mut drawn = 0usize;
+        for line in layout.lines() {
+            for item in line.items() {
+                let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
+                    continue;
+                };
+                let run = glyph_run.run();
+                let font = run.font().clone();
+                let font_size = run.font_size();
+                let mut run_x = glyph_run.offset();
+                let run_y = glyph_run.baseline();
+                for g in glyph_run.glyphs() {
+                    let gx = x + run_x + g.x;
+                    let gy = y + run_y - g.y;
+                    run_x += g.advance;
+                    drawn += 1;
+                    let (ix, fx) = sub_pixel(gx, X_STEPS);
+                    let (iy, fy) = sub_pixel(gy, Y_STEPS);
+                    let key = GlyphKey {
+                        font: font.data.id(),
+                        index: font.index,
+                        glyph: g.id,
+                        size_bits: font_size.to_bits(),
+                        fx,
+                        fy,
+                    };
+                    let glyph = self.glyph_coverage(key, &font, font_size);
+                    blit_add(out, out_w, out_h, &glyph, ix, iy);
+                }
+            }
+        }
+        drawn
+    }
+
+    /// One glyph's coverage, rasterised once and then served from the cache.
+    fn glyph_coverage(
+        &mut self,
+        key: GlyphKey,
+        font: &parley::FontData,
+        font_size: f32,
+    ) -> std::rc::Rc<GlyphCoverage> {
+        if let Some(hit) = self.glyphs.get(&key) {
+            return hit.clone();
+        }
+        let glyph = std::rc::Rc::new(rasterise_glyph(key, font, font_size));
+        // Bounded like the run cache: a guest sweeping every size of every
+        // glyph must not grow the host without limit. Clearing costs one
+        // frame of re-rasterising the glyphs actually on screen.
+        if self.glyph_bytes > 16 * 1024 * 1024 {
+            self.glyphs.clear();
+            self.glyph_bytes = 0;
+        }
+        self.glyph_bytes += glyph.coverage.len();
+        self.glyphs.insert(key, glyph.clone());
+        glyph
     }
 
     /// Lay out canvas text at an explicit font size (display scale 1).
@@ -525,18 +636,15 @@ pub fn draw_canvas_text_clipped(
                 if w16 == 0 || h16 == 0 {
                     return true;
                 }
-                let mut ctx = RenderContext::new(w16, h16);
-                let mut resources = Resources::new();
-                // Rendered fully opaque white: what gets kept is coverage
-                // alone, and the requested ink is applied at blend time.
+                // Composed from cached glyphs (K-417); only glyphs never
+                // drawn before at this size and offset are rasterised.
+                let _ = (w16, h16);
+                let mut coverage = vec![0u8; pm_w as usize * pm_h as usize];
                 let drew =
-                    draw_layout(&mut ctx, &mut resources, &layout, 0xFFFF_FFFF, PAD, PAD) != 0;
+                    engine.compose_run_coverage(&layout, &mut coverage, pm_w, pm_h, PAD, PAD) != 0;
                 let run = if drew {
-                    ctx.flush();
-                    let mut pixmap = Pixmap::new(w16, h16);
-                    ctx.render_to_pixmap(&mut resources, &mut pixmap);
                     CanvasRasterRun {
-                        coverage: pixmap.data().iter().map(|px| px.a).collect(),
+                        coverage,
                         width: pm_w,
                         height: pm_h,
                         first_baseline,
@@ -883,6 +991,110 @@ fn draw_layout_styled(
         }
     }
     draw_layout(ctx, resources, layout, color, x, y)
+}
+
+/// Horizontal sub-pixel steps a glyph is cached at. Measured against the
+/// whole-run render over 2M pixels: 4 steps left a mean 1.8/255 difference
+/// (worst 39), 8 steps 0.76 (worst 31), 16 steps 0.41 (worst 11). Glyph
+/// positions along a line are where text shimmers when they are rounded, so
+/// they get the fine grid.
+const X_STEPS: f32 = 16.0;
+/// Vertical steps. A line's glyphs share one baseline, so this multiplies
+/// the cache without buying much.
+const Y_STEPS: f32 = 4.0;
+
+/// Split a coordinate into its integer pixel and its sub-pixel step.
+fn sub_pixel(v: f32, steps: f32) -> (i64, u8) {
+    let whole = v.floor();
+    let q = ((v - whole) * steps).round() as i64;
+    if q >= steps as i64 {
+        (whole as i64 + 1, 0)
+    } else {
+        (whole as i64, q as u8)
+    }
+}
+
+/// Rasterise one glyph alone, with the same renderer, hinting and ink the
+/// whole-run path uses, then crop to its ink.
+///
+/// Drawn into a box three em square with the origin a third of the way in,
+/// room for every outline a text face draws: descenders, accents above
+/// capitals, and glyphs wider than their advance. The origin's integer part
+/// is what `left`/`top` are measured from.
+fn rasterise_glyph(key: GlyphKey, font: &parley::FontData, font_size: f32) -> GlyphCoverage {
+    let empty = GlyphCoverage {
+        left: 0,
+        top: 0,
+        width: 0,
+        height: 0,
+        coverage: Vec::new(),
+    };
+    let em = font_size.ceil() as i64;
+    let side = (em * 3 + 8).clamp(8, u16::MAX as i64) as u16;
+    let (ox, oy) = (em + 4, em * 2 + 4);
+    let mut ctx = RenderContext::new(side, side);
+    let mut resources = Resources::new();
+    ctx.set_paint(argb(0xFFFF_FFFF));
+    ctx.glyph_run(&mut resources, font)
+        .font_size(font_size)
+        .hint(true)
+        .fill_glyphs(std::iter::once(Glyph {
+            id: key.glyph,
+            x: ox as f32 + key.fx as f32 / X_STEPS,
+            y: oy as f32 + key.fy as f32 / Y_STEPS,
+        }));
+    ctx.flush();
+    let mut pixmap = Pixmap::new(side, side);
+    ctx.render_to_pixmap(&mut resources, &mut pixmap);
+    let (w, h) = (side as usize, side as usize);
+    let data = pixmap.data();
+    let (mut x0, mut y0, mut x1, mut y1) = (w, h, 0usize, 0usize);
+    for row in 0..h {
+        for col in 0..w {
+            if data[row * w + col].a != 0 {
+                x0 = x0.min(col);
+                y0 = y0.min(row);
+                x1 = x1.max(col + 1);
+                y1 = y1.max(row + 1);
+            }
+        }
+    }
+    if x0 >= x1 {
+        return empty; // a space, or a glyph with no ink
+    }
+    let (cw, ch) = (x1 - x0, y1 - y0);
+    let mut coverage = Vec::with_capacity(cw * ch);
+    for row in y0..y1 {
+        coverage.extend(data[row * w + x0..row * w + x1].iter().map(|px| px.a));
+    }
+    GlyphCoverage {
+        left: x0 as i32 - ox as i32,
+        top: y0 as i32 - oy as i32,
+        width: cw as u32,
+        height: ch as u32,
+        coverage,
+    }
+}
+
+/// Add a glyph's coverage into a run's, at the glyph's integer origin.
+fn blit_add(out: &mut [u8], out_w: u32, out_h: u32, glyph: &GlyphCoverage, ix: i64, iy: i64) {
+    let (ow, oh) = (out_w as i64, out_h as i64);
+    for row in 0..glyph.height as i64 {
+        let dy = iy + glyph.top as i64 + row;
+        if dy < 0 || dy >= oh {
+            continue;
+        }
+        let src_row =
+            &glyph.coverage[(row * glyph.width as i64) as usize..][..glyph.width as usize];
+        for (col, &c) in src_row.iter().enumerate() {
+            let dx = ix + glyph.left as i64 + col as i64;
+            if c == 0 || dx < 0 || dx >= ow {
+                continue;
+            }
+            let at = (dy * ow + dx) as usize;
+            out[at] = out[at].saturating_add(c);
+        }
+    }
 }
 
 fn draw_layout(
@@ -1464,6 +1676,112 @@ pub fn try_paint_placements(
         }
         true
     })
+}
+
+#[cfg(test)]
+mod glyph_cache_tests {
+    use super::*;
+
+    fn whole_run(layout: &Layout<()>, w: u32, h: u32) -> Vec<u8> {
+        let mut ctx = RenderContext::new(w as u16, h as u16);
+        let mut resources = Resources::new();
+        draw_layout(&mut ctx, &mut resources, layout, 0xFFFF_FFFF, 2.0, 2.0);
+        ctx.flush();
+        let mut pixmap = Pixmap::new(w as u16, h as u16);
+        ctx.render_to_pixmap(&mut resources, &mut pixmap);
+        pixmap.data().iter().map(|px| px.a).collect()
+    }
+
+    /// K-417. A run composed from cached glyphs looks like the run rendered
+    /// whole -- the renderer it replaced -- within the sub-pixel grid's
+    /// rounding. Measured when written: mean 0.41/255, worst 11/255, 0.9%
+    /// of the ink; a 4-step grid measured worst 39, which this bound fails.
+    #[test]
+    fn a_run_composed_from_glyphs_matches_the_whole_run_render() {
+        warm_text_engine();
+        let style = CanvasTextStyle::default();
+        let (mut worst, mut diff, mut ink) = (0u8, 0u64, 0u64);
+        for size in [11.0f32, 14.0, 17.5, 24.0, 40.0] {
+            for i in 0..12 {
+                let text = format!(
+                    "Row {} -- value {}.{:02} WAVy fij",
+                    40_000 + i * 37,
+                    i * 7,
+                    i % 100
+                );
+                let layout =
+                    TEXT_ENGINE.with(|e| e.borrow_mut().layout_canvas_styled(&text, size, style));
+                let w = (layout.width() + 4.0).ceil() as u32;
+                let h = (layout.height() + 4.0).ceil() as u32;
+                let reference = whole_run(&layout, w, h);
+                let mut composed = vec![0u8; (w * h) as usize];
+                let glyphs = TEXT_ENGINE.with(|e| {
+                    e.borrow_mut()
+                        .compose_run_coverage(&layout, &mut composed, w, h, 2.0, 2.0)
+                });
+                assert!(glyphs > 0, "the fixture must draw glyphs");
+                for (a, b) in reference.iter().zip(&composed) {
+                    worst = worst.max(a.abs_diff(*b));
+                    diff += a.abs_diff(*b) as u64;
+                    ink += *a as u64;
+                }
+            }
+        }
+        assert!(
+            ink > 0,
+            "the reference must carry ink, or this compares nothing"
+        );
+        assert!(worst <= 16, "worst pixel differs by {worst}/255");
+        assert!(
+            diff * 100 <= ink * 2,
+            "difference is {:.2}% of the ink",
+            100.0 * diff as f64 / ink as f64
+        );
+    }
+
+    /// The cache is keyed tightly enough that two glyphs never share an
+    /// entry: the same glyph at two sizes, or two sub-pixel offsets, are
+    /// different coverage.
+    #[test]
+    fn a_glyph_is_cached_per_size_and_sub_pixel_offset() {
+        warm_text_engine();
+        let style = CanvasTextStyle::default();
+        let mut buf = vec![0u32; 400 * 100];
+        TEXT_ENGINE.with(|e| {
+            let mut e = e.borrow_mut();
+            e.glyphs.clear();
+            e.glyph_bytes = 0;
+        });
+        for (x, size) in [(10.0, 14.0), (10.0, 14.0), (10.5, 14.0), (10.0, 20.0)] {
+            let target = CanvasTarget {
+                buffer: &mut buf,
+                width: 400,
+                height: 100,
+            };
+            draw_canvas_text_clipped(target, "A", x, 40.0, size, 0xFF00_0000, style, None);
+            // A different string each time so the RUN cache cannot answer.
+            let target = CanvasTarget {
+                buffer: &mut buf,
+                width: 400,
+                height: 100,
+            };
+            draw_canvas_text_clipped(
+                target,
+                &format!("A{x}{size}"),
+                x,
+                60.0,
+                size,
+                0xFF00_0000,
+                style,
+                None,
+            );
+        }
+        let entries = TEXT_ENGINE.with(|e| e.borrow().glyphs.len());
+        assert!(
+            entries >= 3,
+            "size and offset must key the cache, found {entries} entries"
+        );
+    }
 }
 
 #[cfg(test)]

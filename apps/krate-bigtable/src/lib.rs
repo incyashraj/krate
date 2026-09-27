@@ -33,12 +33,10 @@
 
 extern crate alloc;
 
-
-
 use alloc::string::String;
-use krate::gfx::{canvas2d, types as gfx};
 use krate::bindings::krate::io::{args, stdio};
 use krate::bindings::krate::time::clock;
+use krate::gfx::{canvas2d, types as gfx};
 use krate::ui::{events, tree, types, window};
 
 const ROOT_ID: u64 = 1;
@@ -69,7 +67,12 @@ const ACCENT: gfx::Color = rgb(0.486, 0.424, 1.0);
 const GOOD: gfx::Color = rgb(0.424, 0.957, 0.843);
 const WARN: gfx::Color = rgb(0.976, 0.694, 0.267);
 const BAD: gfx::Color = rgb(0.965, 0.353, 0.373);
-const HAIRLINE: gfx::Color = gfx::Color { r: 1.0, g: 1.0, b: 1.0, a: 0.05 };
+const HAIRLINE: gfx::Color = gfx::Color {
+    r: 1.0,
+    g: 1.0,
+    b: 1.0,
+    a: 0.05,
+};
 
 const fn rgb(r: f32, g: f32, b: f32) -> gfx::Color {
     gfx::Color { r, g, b, a: 1.0 }
@@ -82,7 +85,14 @@ const fn rgb(r: f32, g: f32, b: f32) -> gfx::Color {
 /// drawing cost, not the storage. Each row's values come from its index, so
 /// the table is deterministic and the memory is a handful of bytes.
 const HOSTS: [&str; 8] = [
-    "api-gateway", "orders", "payments", "auth", "search", "mailer", "images", "reports",
+    "api-gateway",
+    "orders",
+    "payments",
+    "auth",
+    "search",
+    "mailer",
+    "images",
+    "reports",
 ];
 const STATUSES: [(&str, gfx::Color); 4] =
     [("200", GOOD), ("201", GOOD), ("404", WARN), ("500", BAD)];
@@ -91,7 +101,16 @@ const METHODS: [&str; 4] = ["GET", "POST", "PATCH", "DELETE"];
 // ---- helpers ----------------------------------------------------------------
 
 fn fill(canvas: u64, x: f32, y: f32, w: f32, h: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
-    canvas2d::fill_rect(canvas, gfx::Rect { x, y, width: w, height: h }, c)
+    canvas2d::fill_rect(
+        canvas,
+        gfx::Rect {
+            x,
+            y,
+            width: w,
+            height: h,
+        },
+        c,
+    )
 }
 
 fn rounded(
@@ -105,8 +124,18 @@ fn rounded(
 ) -> Result<(), gfx::GfxError> {
     canvas2d::fill_round_rect(
         canvas,
-        gfx::Rect { x, y, width: w, height: h },
-        gfx::CornerRadii { top_left: r, top_right: r, bottom_right: r, bottom_left: r },
+        gfx::Rect {
+            x,
+            y,
+            width: w,
+            height: h,
+        },
+        gfx::CornerRadii {
+            top_left: r,
+            top_right: r,
+            bottom_right: r,
+            bottom_left: r,
+        },
         c,
     )
 }
@@ -214,7 +243,12 @@ fn draw(canvas: u64, first_row: u32) -> (u32, u32) {
 
     let _ = canvas2d::linear_gradient(
         canvas,
-        gfx::Rect { x: 0.0, y: 0.0, width: WIDTH, height: HEIGHT },
+        gfx::Rect {
+            x: 0.0,
+            y: 0.0,
+            width: WIDTH,
+            height: HEIGHT,
+        },
         BG_TOP,
         BG_BOT,
     );
@@ -224,7 +258,14 @@ fn draw(canvas: u64, first_row: u32) -> (u32, u32) {
     text(canvas, "Request log", MARGIN, 42.0, 18.0, INK);
     let total = commas(&mut cb, TOTAL_ROWS);
     let tw = width_of(canvas, total, 18.0);
-    text(canvas, total, MARGIN + width_of(canvas, "Request log", 18.0) + 14.0, 42.0, 18.0, ACCENT);
+    text(
+        canvas,
+        total,
+        MARGIN + width_of(canvas, "Request log", 18.0) + 14.0,
+        42.0,
+        18.0,
+        ACCENT,
+    );
     text(
         canvas,
         "rows",
@@ -237,11 +278,30 @@ fn draw(canvas: u64, first_row: u32) -> (u32, u32) {
     // ---- the table ----------------------------------------------------------
     let top = 70.0;
     let table_h = HEIGHT - top - MARGIN - 44.0;
-    rounded(canvas, MARGIN, top, WIDTH - MARGIN * 2.0, table_h, 14.0, CARD).ok();
+    rounded(
+        canvas,
+        MARGIN,
+        top,
+        WIDTH - MARGIN * 2.0,
+        table_h,
+        14.0,
+        CARD,
+    )
+    .ok();
     let _ = canvas2d::stroke_round_rect(
         canvas,
-        gfx::Rect { x: MARGIN, y: top, width: WIDTH - MARGIN * 2.0, height: table_h },
-        gfx::CornerRadii { top_left: 14.0, top_right: 14.0, bottom_right: 14.0, bottom_left: 14.0 },
+        gfx::Rect {
+            x: MARGIN,
+            y: top,
+            width: WIDTH - MARGIN * 2.0,
+            height: table_h,
+        },
+        gfx::CornerRadii {
+            top_left: 14.0,
+            top_right: 14.0,
+            bottom_right: 14.0,
+            bottom_left: 14.0,
+        },
         1.0,
         CARD_EDGE,
     );
@@ -263,7 +323,14 @@ fn draw(canvas: u64, first_row: u32) -> (u32, u32) {
     text(canvas, "PATH", x_path, top + 25.0, 10.5, INK_QUIET);
     text_right(canvas, "STATUS", r_status, top + 25.0, 10.5, INK_QUIET);
     text_right(canvas, "MS", r_ms, top + 25.0, 10.5, INK_QUIET);
-    let _ = fill(canvas, MARGIN + 1.0, top + HEAD_H, WIDTH - MARGIN * 2.0 - 2.0, 1.0, HAIRLINE);
+    let _ = fill(
+        canvas,
+        MARGIN + 1.0,
+        top + HEAD_H,
+        WIDTH - MARGIN * 2.0 - 2.0,
+        1.0,
+        HAIRLINE,
+    );
 
     // Only the rows that fit. This is the whole technique: the table is a
     // hundred thousand rows and the frame costs the same as thirty.
@@ -278,12 +345,26 @@ fn draw(canvas: u64, first_row: u32) -> (u32, u32) {
         }
         let y = body_top + i as f32 * ROW_H;
         if i % 2 == 1 {
-            let _ = fill(canvas, MARGIN + 1.0, y, WIDTH - MARGIN * 2.0 - 2.0, ROW_H, ZEBRA);
+            let _ = fill(
+                canvas,
+                MARGIN + 1.0,
+                y,
+                WIDTH - MARGIN * 2.0 - 2.0,
+                ROW_H,
+                ZEBRA,
+            );
         }
         let base = y + 17.0;
 
         let mut nb = [0u8; 16];
-        text_right(canvas, commas(&mut nb, n + 1), x_id + 52.0, base, 11.0, INK_QUIET);
+        text_right(
+            canvas,
+            commas(&mut nb, n + 1),
+            x_id + 52.0,
+            base,
+            11.0,
+            INK_QUIET,
+        );
 
         // A clock derived from the row, so the column is monotonic and looks
         // like a log rather than random noise.
@@ -329,7 +410,14 @@ fn draw(canvas: u64, first_row: u32) -> (u32, u32) {
         let idn = uint(&mut pb, n * 7 % 99991);
         let px = x_path;
         text(canvas, "/v1/orders/", px, base, 12.0, INK);
-        text(canvas, idn, px + width_of(canvas, "/v1/orders/", 12.0), base, 12.0, INK);
+        text(
+            canvas,
+            idn,
+            px + width_of(canvas, "/v1/orders/", 12.0),
+            base,
+            12.0,
+            INK,
+        );
 
         let (code, col) = STATUSES[(n % 4) as usize];
         text_right(canvas, code, r_status, base, 11.5, col);
@@ -348,7 +436,14 @@ fn draw(canvas: u64, first_row: u32) -> (u32, u32) {
 /// is bad.
 fn verdict(canvas: u64, micros: u32, visible: u32) {
     let y = HEIGHT - MARGIN - 8.0;
-    let _ = fill(canvas, MARGIN, y - 26.0, WIDTH - MARGIN * 2.0, 1.0, HAIRLINE);
+    let _ = fill(
+        canvas,
+        MARGIN,
+        y - 26.0,
+        WIDTH - MARGIN * 2.0,
+        1.0,
+        HAIRLINE,
+    );
 
     let mut vb = [0u8; 16];
     let mut x = MARGIN;
@@ -444,7 +539,10 @@ struct Component;
 
 impl krate::Guest for Component {
     fn run() -> i32 {
-        let size = types::WindowSize { width: WIDTH as u32, height: HEIGHT as u32 };
+        let size = types::WindowSize {
+            width: WIDTH as u32,
+            height: HEIGHT as u32,
+        };
         let Ok(win) = window::create("Bigtable", size) else {
             return 30;
         };
@@ -464,7 +562,13 @@ impl krate::Guest for Component {
                 return 33;
             }
         };
-        let _ = canvas2d::set_design_size(canvas, gfx::Size { width: WIDTH, height: HEIGHT });
+        let _ = canvas2d::set_design_size(
+            canvas,
+            gfx::Size {
+                width: WIDTH,
+                height: HEIGHT,
+            },
+        );
 
         let raw = args::raw();
         let quick = raw
@@ -482,6 +586,26 @@ impl krate::Guest for Component {
 
         if quick {
             let out = stdio::stdout();
+            // Scroll a screenful at a time through rows never drawn before,
+            // so every frame is new text (K-417), and report the frame times
+            // the table already measures on its own face.
+            let mut times = [0u32; 60];
+            for slot in times.iter_mut() {
+                first_row = (first_row + visible.max(1)) % TOTAL_ROWS;
+                let (m, _) = draw(canvas, first_row);
+                let _ = canvas2d::present(canvas);
+                *slot = m;
+            }
+            times.sort_unstable();
+            let mut line = String::from("bigtable:frames 60 p50_us ");
+            let mut buf = [0u8; 16];
+            line.push_str(uint(&mut buf, times[30]));
+            line.push_str(" p95_us ");
+            line.push_str(uint(&mut buf, times[57]));
+            line.push_str(" rows ");
+            line.push_str(uint(&mut buf, visible));
+            line.push('\n');
+            let _ = out.write(line.as_bytes());
             let _ = out.write(b"bigtable:ok\n");
             let _ = out.flush();
             let _ = window::close(win);
@@ -506,7 +630,13 @@ impl krate::Guest for Component {
                     }
                     let rows = (w.dy / ROW_H) as i64;
                     let step = if rows == 0 {
-                        if w.dy > 0.0 { 1 } else if w.dy < 0.0 { -1 } else { 0 }
+                        if w.dy > 0.0 {
+                            1
+                        } else if w.dy < 0.0 {
+                            -1
+                        } else {
+                            0
+                        }
                     } else {
                         rows
                     };
