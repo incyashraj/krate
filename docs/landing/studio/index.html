@@ -370,7 +370,7 @@ p.sub { color: #a1a1aa; margin-top: 12px; max-width: 62ch; line-height: 1.65; }
   <p class="freeline">The runtime is free and
   <a href="https://github.com/incyashraj/krate">MIT or Apache-2.0 licensed</a>.
   Your AI provider and optional hosted services have separate terms.</p>
-  <p class="freeline">Not ready to install? <a href="/login/?next=studio">Sign
+  <p class="freeline" id="webLine">Not ready to install? <a href="/login/?next=studio">Sign
   in to use Studio in your browser</a>, or
   <a href="/docs/quickstart.html">build directly with the developer tools</a>.</p>
 
@@ -574,6 +574,28 @@ p.sub { color: #a1a1aa; margin-top: 12px; max-width: 62ch; line-height: 1.65; }
     : "Download Studio";
   var btn = $("dlBtn");
   if (btn) btn.textContent = label;
+
+  // Say it before the sign-in, not after. This line invited a stranger to
+  // "use Studio in your browser" while the build service had making
+  // switched off, so they handed over a GitHub or Google account and only
+  // then met "Making apps in the browser is not switched on yet" (K-860).
+  // The build service says whether it is on; if it cannot be reached the
+  // invitation stands, because sign-in still works and the paused sheet
+  // after it is honest.
+  var line = $("webLine");
+  var builder = window.KRATE_BUILDER || "https://build.krate.tech";
+  if (line && window.fetch) {
+    fetch(builder + "/health")
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (h) {
+        if (!h || h.authoring !== "off") return;
+        line.innerHTML = "Making apps in the browser is paused for now, so nothing "
+          + "can be made here until it is back on. Studio on your computer makes "
+          + "them with the AI you already use, or "
+          + '<a href="/docs/quickstart.html">build directly with the developer tools</a>.';
+      })
+      .catch(function () {});
+  }
 })();
 </script>
 <script>

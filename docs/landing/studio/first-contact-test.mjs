@@ -19,10 +19,10 @@ function stubDocument(ids) {
 
 /* The script block that starts at `marker`, from its `(function () {` to
  * the `})();` that closes it. */
-function lift(src, marker) {
+function lift(src, marker, opener = "(function () {") {
   const at = src.indexOf(marker);
   assert.ok(at > 0, `the page still has ${JSON.stringify(marker)}`);
-  const start = src.lastIndexOf("(function () {", at);
+  const start = src.lastIndexOf(opener, at);
   const end = src.indexOf("\n})();", at);
   assert.ok(start > 0 && end > at, `the block around ${JSON.stringify(marker)} is whole`);
   return src.slice(start, end + "\n})();".length);
@@ -121,4 +121,43 @@ const settle = () => new Promise((r) => setTimeout(r, 0));
   const page = readFileSync("docs/cloud/app/index.html", "utf8");
   assert.doesNotMatch(page, /esc\(m\.description\)/, "the app page never prints the raw description");
   console.log("ok  an app is not described by the request that made it (K-865)");
+}
+
+/* ---- K-860: /studio does not promise browser making while it is off ---
+ *
+ * "Sign in to use Studio in your browser" stood while the build service
+ * had making switched off, so a stranger signed in and only then was told
+ * it was paused. The page asks the build service first. */
+{
+  const page = readFileSync("docs/landing/studio/index.html", "utf8");
+  const code = lift(page, 'var line = $("webLine")', '(function () {\n  "use strict";');
+  const INVITE = "Not ready to install? Sign in to use Studio in your browser";
+
+  async function visit(health) {
+    const doc = stubDocument(["brandbar", "dlBtn", "webLine"]);
+    doc.els.webLine.innerHTML = INVITE;
+    const asked = [];
+    const fetch = async (url) => {
+      asked.push(url);
+      if (health === "unreachable") throw new Error("offline");
+      return { ok: true, json: async () => health };
+    };
+    const win = { fetch };
+    new Function("document", "window", "fetch", "navigator", "addEventListener", code)(
+      doc, win, fetch, { userAgent: "Mozilla/5.0 (Macintosh)" }, () => {},
+    );
+    await settle(); await settle(); await settle();
+    return { line: doc.els.webLine.innerHTML, asked };
+  }
+
+  const off = await visit({ ok: true, authoring: "off", agent: "anthropic" });
+  assert.deepEqual(off.asked, ["https://build.krate.tech/health"], "the page asks the build service");
+  assert.doesNotMatch(off.line, /Sign in to use Studio in your browser/, "no invitation while making is off");
+  assert.match(off.line, /paused/, "it says making is paused, before anyone signs in");
+
+  const on = await visit({ ok: true, authoring: "on", agent: "anthropic" });
+  assert.equal(on.line, INVITE, "switched on, the invitation stands");
+  const down = await visit("unreachable");
+  assert.equal(down.line, INVITE, "unreachable, the invitation stands: sign-in still works");
+  console.log("ok  /studio says browser making is paused before asking anyone to sign in (K-860)");
 }
