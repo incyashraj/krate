@@ -30,6 +30,7 @@ name = "krate"
 version = "0.5.1"
 dependencies = [
  "dlmalloc",
+ "libm",
  "wit-bindgen-rt",
 ]
 
