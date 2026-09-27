@@ -58,6 +58,9 @@ const DESKTOP_ONLY = {
   // The AI is ours on the web and always ready, so there is no per-agent
   // sign-in and no installed-tool state to report.
   sign_in_agent: "signs into a locally installed AI; the web AI is ours",
+  // Only called when a desktop shell is present: a tab stops a long paste
+  // and says so instead (K-902).
+  stash_pasted_text: "writes a pasted file to local disk; a tab stops the paste instead",
   terminal_status: "reports on a local terminal install",
   // Tags the local session directory the desktop keeps beside the app.
   agent_session_tag: "tags a local session directory",

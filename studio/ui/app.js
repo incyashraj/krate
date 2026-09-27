@@ -4177,6 +4177,41 @@ async function attach() {
   renderAttachments();
 }
 
+/* A paste longer than the box holds (K-902).
+ *
+ * `maxlength` cut a long paste to 2,000 characters without a word, under a
+ * placeholder that invites pasting code to port. On a desktop the paste
+ * becomes an attached file; in a tab, where a request is refused past that
+ * length anyway, it is stopped and said, not cut. */
+const REQUEST_BOX_CHARS = 2000;
+function guardLongPaste(box, hintId) {
+  if (!box) return;
+  box.addEventListener("paste", async (e) => {
+    const pasted = (e.clipboardData && e.clipboardData.getData("text")) || "";
+    const room = REQUEST_BOX_CHARS - (box.value.length - (box.selectionEnd - box.selectionStart));
+    if (pasted.length <= room) return;
+    e.preventDefault();
+    const hint = $(hintId);
+    const say = (text) => { if (hint) hint.textContent = text; };
+    if (!tauri) {
+      say(`That paste is ${pasted.length.toLocaleString()} characters; a request holds 2,000. `
+        + "Paste the part that matters, or attach it as a file with the paperclip.");
+      return;
+    }
+    try {
+      const path = await invoke("stash_pasted_text", { text: pasted });
+      if (!state.attachments.includes(path)) state.attachments.push(path);
+      renderAttachments();
+      say(`Your paste (${pasted.length.toLocaleString()} characters) is attached as a file. `
+        + "Say what to make from it.");
+    } catch (err) {
+      say(String(err && err.message ? err.message : err));
+    }
+  });
+}
+guardLongPaste($("homePrompt"), "homeHint");
+guardLongPaste($("prompt"), "composerHint");
+
 /* ---- app details ------------------------------------------------------- */
 
 /* A capability string is precise and unreadable. These are the same facts in
@@ -5498,6 +5533,20 @@ async function startFromHomeInner() {
     }
     $("homePrompt").value = "";
     syncSendReady();
+    return;
+  }
+  // One app at a time, said at the door. This used to open a new, empty
+  // session, clear the box, and then have make() bail silently because a
+  // build was running -- the request lost, and the only button on screen,
+  // "Stop this build", stopped the OTHER app (K-901). The words stay in
+  // the box, and the hint names what is being made.
+  if (state.buildingSession && !state.buildSettled) {
+    const hint = $("homeHint");
+    const busy = clip(state.buildingSession.title || "your other app", 60);
+    if (hint) {
+      hint.textContent = `One app at a time: "${busy}" is still being made. `
+        + "Your words are kept here. Press Make again once it is done.";
+    }
     return;
   }
   // Ask about the AI BEFORE leaving the home screen.

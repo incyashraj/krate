@@ -1134,6 +1134,28 @@ async fn agents() -> Result<Vec<AgentInfo>, String> {
 
 /// A native file picker for attachments. `rfd` is the same crate the
 /// runtime's own host dialogs use; macOS requires it on the main thread.
+/// A paste too long for the request box, kept as a file to attach (K-902).
+///
+/// The box holds 2,000 characters and its own placeholder invites pasting
+/// code to port -- which is routinely longer -- and `maxlength` cut the
+/// paste without a word. It is written here, under the same 10 MB limit as
+/// any attachment, and attached instead.
+#[tauri::command]
+fn stash_pasted_text(text: String) -> Result<String, String> {
+    if text.len() > 10 * 1024 * 1024 {
+        return Err("That paste is over the 10 MB attachment limit.".to_string());
+    }
+    let dir = studio_dir().join("pasted");
+    std::fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let path = dir.join(format!("pasted-{stamp}.txt"));
+    std::fs::write(&path, text).map_err(|err| err.to_string())?;
+    Ok(path.to_string_lossy().to_string())
+}
+
 #[tauri::command]
 async fn pick_files(app: tauri::AppHandle) -> Result<Vec<String>, String> {
     let (tx, rx) = std::sync::mpsc::channel();
@@ -5006,6 +5028,7 @@ fn main() {
             cloud_apps,
             cloud_run,
             pick_files,
+            stash_pasted_text,
             pick_image,
             read_image,
             pick_folder,
