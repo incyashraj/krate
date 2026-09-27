@@ -1,0 +1,13 @@
+#!/bin/sh
+# A C compiler for x86_64 Linux on any host, for type-checking C-backed
+# crates (ring, zstd-sys) from a Mac. zig carries its own Linux sysroot.
+# cc-rs adds --target=x86_64-unknown-linux-gnu, a triple zig cannot parse,
+# so that one argument is dropped and zig's own spelling used instead.
+for arg in "$@"; do
+  shift
+  case "$arg" in
+    --target=*) ;;
+    *) set -- "$@" "$arg" ;;
+  esac
+done
+exec zig cc -target x86_64-linux-gnu "$@"

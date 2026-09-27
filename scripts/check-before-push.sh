@@ -80,9 +80,12 @@ run "parity tables are current (CI UAPI lane)" sh -c 'd=$(mktemp -d); for f in w
 # on 2026-09-27 a macOS-only block broke the Linux and Windows lanes (an
 # inferred type, a dead variant, a lint) that this Mac never compiled. A
 # type-check for both costs no linker and catches all three.
+# C-backed crates need a cross compiler; scripts/cross-cc uses zig for both.
 for target in x86_64-unknown-linux-gnu x86_64-pc-windows-msvc; do
-  if rustup target list --installed 2>/dev/null | grep -qx "$target"; then
-    run "type-check for $target" cargo check -q -p krate-cli -p krate-runtime --all-targets --target "$target"
+  if ! command -v zig >/dev/null 2>&1; then
+    note "type-check for $target" "skipped: brew install zig"
+  elif rustup target list --installed 2>/dev/null | grep -qx "$target"; then
+    run "type-check for $target" sh scripts/cross-cc/check.sh "$target"
   else
     note "type-check for $target" "skipped: rustup target add $target"
   fi

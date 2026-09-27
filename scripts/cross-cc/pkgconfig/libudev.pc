@@ -1,0 +1,5 @@
+Name: libudev
+Description: type-check stub
+Version: 999
+Libs:
+Cflags:

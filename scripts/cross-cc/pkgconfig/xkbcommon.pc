@@ -1,0 +1,5 @@
+Name: xkbcommon
+Description: type-check stub
+Version: 999
+Libs:
+Cflags:

@@ -1,0 +1,3 @@
+#!/bin/sh
+# cc-rs drives an MSVC-target archiver with lib.exe arguments (/OUT:...).
+exec zig lib "$@"

@@ -1,0 +1,5 @@
+Name: wayland-cursor
+Description: type-check stub
+Version: 999
+Libs:
+Cflags:
