@@ -130,6 +130,13 @@
   }
   .login-note { margin-top: 14px; color: var(--muted); font-size: 12.5px; }
   .login-foot { margin-top: 22px; color: var(--quiet); font-size: 12px; }
+  .login-card > .login-home { display: inline-block; border-radius: 8px; }
+  .login-card > .login-home img { display: block; }
+  .login-skip {
+    display: inline-block; margin-top: 16px; padding: 8px 14px; border-radius: 10px;
+    color: var(--muted); font-size: 13.5px;
+  }
+  .login-skip:hover, .login-skip:focus-visible { color: var(--text); background: var(--panel-raised); }
   </style>
 </head>
 <body>
@@ -145,7 +152,7 @@
   </div>
 
   <div class="login-card">
-    <img src="/krate-logo.png" alt="" width="34" height="34" />
+    <a href="/" class="login-home" aria-label="Krate home"><img src="/krate-logo.png" alt="" width="34" height="34" /></a>
     <h1 id="loginH">Sign in to Krate</h1>
     <p class="login-sub" id="loginSub">One account for the apps you make and publish.</p>
     <p class="login-note hidden" id="refBadge" style="margin:0 0 18px;border:1px solid #2e323a;border-radius:10px;padding:9px 13px;color:rgba(255,255,255,0.7)"></p>
@@ -169,6 +176,10 @@
          The same sentence is on /make's sign-in sheet; change both. -->
     <p class="login-foot">Krate never sees your password. GitHub or Google ask you
     directly, and the email link needs no password at all.</p>
+    <!-- A way out for somebody who wants to look first (K-859): the same
+         "Not now" the /make sheet has. It goes back to where they came
+         from -- the script below points it there -- and home otherwise. -->
+    <a class="login-skip" id="notNow" href="/">Not now</a>
   </div>
 </main>
 <script src="/login/signin.js"></script>
@@ -197,6 +208,16 @@
   // origin's, written by /login/done; if it has expired the Studio's own
   // check sends them back here, and `stay` stops that becoming a loop.
   if (document.documentElement.classList.contains("krate-booting")) { return; }
+  // "Not now" goes back to what they were looking at (K-859). The Studio
+  // needs `?stay`, or its own sign-in check sends them straight back here.
+  // Leaving drops the continuation too: a later sign-in from somewhere
+  // else must not land them on a page they chose not to wait for.
+  var back = { studio: "/app/?stay", make: "/make/", publish: "/publish/" }[next] || "/";
+  var notNow = document.getElementById("notNow");
+  notNow.href = back;
+  notNow.addEventListener("click", function () {
+    try { localStorage.removeItem("krate_next"); } catch (e) {}
+  });
   // A referral link lands here directly. The code is noted NOW -- before
   // any provider round trip -- and claimed automatically on the first
   // sign-in, whichever button they pick. Nothing for them to type.

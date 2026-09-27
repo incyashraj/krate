@@ -36,13 +36,15 @@ function storage(seed = {}) {
 
 function element() {
   const classes = new Set(["hidden"]);
+  const on = {};
   return {
     textContent: "", href: "", disabled: false,
     classList: {
       add: (c) => classes.add(c), remove: (c) => classes.delete(c),
       contains: (c) => classes.has(c),
     },
-    addEventListener() {},
+    addEventListener(type, fn) { (on[type] ||= []).push(fn); },
+    click() { for (const fn of on.click || []) fn({ preventDefault() {} }); },
     get shown() { return !classes.has("hidden"); },
   };
 }
@@ -150,6 +152,21 @@ const fragment = (fields) => "#" + new URLSearchParams(fields).toString();
   check(hop.protocol === "krate:" && hop.searchParams.get("token") === "krs_mine", "and the desktop hop happens (control)");
   check(hop.searchParams.get("app_nonce") === "a".repeat(32), "carrying the desktop's nonce for its own check");
   check(b.localStorage.getItem("krate_tok") === null, "a desktop sign-in is not stored as the website's session");
+}
+
+/* ---- /login has a way out (K-859) --------------------------------------- */
+{
+  const where = (search) => (browser().visit("https://krate.tech/login/" + search, loginHtml).els.notNow || {}).href;
+  check(where("?next=studio") === "/app/?stay", "Not now from the Studio goes back to it, without bouncing here again");
+  check(where("?next=make") === "/make/", "Not now from /make goes back to /make");
+  check(where("?next=publish") === "/publish/", "Not now from publishing goes back there");
+  check(where("") === "/", "Not now from nowhere goes home");
+  const b = browser();
+  const page = b.visit("https://krate.tech/login/?next=studio", loginHtml);
+  check(b.localStorage.getItem("krate_next") === "studio", "the continuation is kept while they decide");
+  if (page.els.notNow) page.els.notNow.click();
+  check(b.localStorage.getItem("krate_next") === null, "and dropped when they say Not now");
+  check(/<a href="\/"[^>]*><img src="\/krate-logo\.png"/.test(loginHtml), "the logo is a link home");
 }
 
 /* ---- /make takes no token from its URL ---------------------------------- */
