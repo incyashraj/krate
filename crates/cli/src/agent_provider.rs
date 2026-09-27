@@ -373,6 +373,39 @@ pub fn with_claude_sign_in(command: &mut ProcessCommand) {
     }
 }
 
+/// Each AI's sign-in for one run, without a second copy of it (K-882).
+///
+/// - Claude: its current access token only ([`with_claude_sign_in`]).
+/// - Codex and Grok: their own `CODEX_HOME` / `GROK_HOME`. A ChatGPT sign-in keeps a rotating
+///   refresh token in `auth.json`, and Krate used to copy that file into the
+///   confined home -- the same two-owner fork that killed Claude sign-ins.
+///   Pointed at the person's own directory, Codex refreshes the one file in
+///   place. Measured: `codex exec` in an empty HOME with CODEX_HOME set
+///   answers "ok". A CODEX_HOME the person set themselves is left alone.
+pub fn with_sign_in(provider: &str, command: &mut ProcessCommand) {
+    match provider {
+        "claude" => with_claude_sign_in(command),
+        "codex" if std::env::var_os("CODEX_HOME").is_none() => {
+            if let Some(home) = real_home() {
+                let dir = home.join(".codex");
+                if dir.join("auth.json").is_file() {
+                    command.env("CODEX_HOME", dir);
+                }
+            }
+        }
+        // Grok the same way: its own GROK_HOME, one auth.json.
+        "grok" if std::env::var_os("GROK_HOME").is_none() => {
+            if let Some(home) = real_home() {
+                let dir = home.join(".grok");
+                if dir.is_dir() {
+                    command.env("GROK_HOME", dir);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Refresh when less than this is left: a long build or a revise loop must
 /// not outlive its token halfway through.
 const CLAUDE_REFRESH_MARGIN: Duration = Duration::from_secs(45 * 60);
@@ -506,9 +539,7 @@ pub fn probe(provider: &dyn AgentProvider, timeout: Duration) -> Readiness {
     }
     // The same sign-in the build will use (K-882), or "ready" means
     // something different here than there.
-    if provider.name() == "claude" {
-        with_claude_sign_in(&mut command);
-    }
+    with_sign_in(provider.name(), &mut command);
     for arg in provider.probe_args() {
         command.arg(arg);
     }
@@ -1848,7 +1879,14 @@ impl AgentProvider for GrokProvider {
     }
 
     fn install_hint(&self) -> &'static str {
-        "install the Grok CLI from xAI (docs.x.ai), then run `agent login` once to sign in"
+        "install the Grok CLI from xAI (docs.x.ai), then run `grok login` once to sign in"
+    }
+
+    /// The installer puts `grok` beside `agent`, and `grok login` is what
+    /// Grok's own refusal tells people to run. The default would say
+    /// `agent login`, which is not a command anyone has heard of.
+    fn login_hint(&self) -> String {
+        "grok login".to_string()
     }
 
     fn author_args(&self, prompt: &str) -> Vec<String> {

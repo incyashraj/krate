@@ -7801,9 +7801,7 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
     let wants_session = session_capable.is_some();
     command.args(session_capable.unwrap_or_else(|| provider.plan_args(&prompt)));
     provider.configure(&mut command);
-    if provider.name() == "claude" {
-        agent_provider::with_claude_sign_in(&mut command);
-    }
+    agent_provider::with_sign_in(provider.name(), &mut command);
     let scratch = std::env::temp_dir().join(format!("krate-plan-{}", std::process::id()));
     let _ = fs::create_dir_all(&scratch);
     command.current_dir(&scratch);
@@ -9591,7 +9589,14 @@ fn seed_agent_home(real_home: &Path, agent_home: &Path) -> bool {
     // Copied, never moved or symlinked: the confined copy is the agent's to
     // read, and a symlink would put the real file back inside the sandbox
     // this confinement exists to draw.
-    for dir in [".grok", ".codex", ".gemini", ".copilot"] {
+    // Not .codex or .grok: each runs with its own CODEX_HOME / GROK_HOME
+    // (K-882), and a copy of its auth.json is a second owner of a rotating
+    // refresh token. Remove the copies older versions left.
+    if agent_home != real_home {
+        let _ = fs::remove_file(agent_home.join(".codex").join("auth.json"));
+        let _ = fs::remove_file(agent_home.join(".grok").join("auth.json"));
+    }
+    for dir in [".gemini", ".copilot"] {
         let from = real_home.join(dir);
         if from.is_dir() {
             let _ = copy_dir_shallow(&from, &agent_home.join(dir));
@@ -9823,9 +9828,7 @@ fn run_provider_author(
     // refresh, so no copy can race the person's own sign-in (K-882). After
     // `configure`, which strips every CLAUDE_CODE_* variable this process
     // inherited and would take the token with them.
-    if provider.name() == "claude" {
-        agent_provider::with_claude_sign_in(&mut command);
-    }
+    agent_provider::with_sign_in(provider.name(), &mut command);
     // The stdin route re-opens what configure just closed: the prompt is
     // written down the pipe and the pipe is dropped, so the agent still
     // sees EOF and can never hang waiting for more.

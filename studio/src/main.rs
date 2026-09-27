@@ -303,7 +303,14 @@ fn seed_agent_config(agent_home: &Path) {
     // tool's config directory; the subdirectories are session history and
     // caches -- exactly the material the confined home exists to keep out
     // of the agent's reach.
-    for dir in [".grok", ".codex", ".gemini", ".copilot"] {
+    // Not .codex or .grok: the engine runs each with its own CODEX_HOME /
+    // GROK_HOME (K-882); a copied auth.json is a second owner of a rotating
+    // refresh token.
+    if agent_home != home {
+        let _ = std::fs::remove_file(agent_home.join(".codex").join("auth.json"));
+        let _ = std::fs::remove_file(agent_home.join(".grok").join("auth.json"));
+    }
+    for dir in [".gemini", ".copilot"] {
         let from = home.join(dir);
         if from.is_dir() {
             let _ = copy_dir_shallow(&from, &agent_home.join(dir));
