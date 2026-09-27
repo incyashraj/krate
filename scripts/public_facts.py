@@ -82,6 +82,25 @@ def bundle_inventory(root=ROOT):
     return sorted(rows, key=lambda row: (-row["bundle_bytes"], row["path"]))
 
 
+# The statuses the Benchmark Register uses. A current figure is quoted with
+# its status or not at all; Superseded and Retired figures are never quoted.
+QUOTABLE_STATUSES = ("Current", "Current, n=1", "Current, n=9", "Current (E6)", "Not measured")
+
+
+def current_measurements(facts=None):
+    """Current Register rows, each with its status and Register section (K-722)."""
+    facts = facts or load_facts()
+    rows = facts["current_measurements"]
+    for row in rows:
+        if row["status"] not in QUOTABLE_STATUSES:
+            raise ValueError(f"Not a quotable Register status: {row['status']}")
+        if re.search(r"105\s*(to|-|\u2013)\s*118", row["text"]):
+            # The Register's own bundle range disagrees with its 100,744 B
+            # example; quote the examples until the Register is corrected.
+            raise ValueError("Quote the bundle examples, not the 105 to 118 KB range")
+    return rows
+
+
 def render_llms():
     facts = load_facts()
     claims = benchmark_claims()
@@ -90,13 +109,21 @@ def render_llms():
         raise ValueError("The payload comparison must account for its shared runtime")
     lines = ["# Krate", "", facts["description"], "", facts["prerequisite"], "",
              "The Krate runtime is free and open source (MIT OR Apache-2.0). Studio has separate licensing; see the repository license details. " + facts["studio"], "", facts["bundle_accounting"],
-             "", facts["security"], "", "## Scoped benchmark", "",
-             "The following is the recorded 2026-08-25 notes comparison, not a measurement of the latest release or all Krate apps.",
-             claims[0]["scope"] + ".", ""]
+             "", facts["security"], "", "## Current measurements", "",
+             f"From the {facts['current_register']}. Each figure is shown with the status the Register gives it.", ""]
+    for row in current_measurements(facts):
+        line = f"- {row['label']} [{row['status']}; Register \u00a7{row['register']}]: {row['text']}"
+        if row.get("link"):
+            line += f" CI run: {row['link']}"
+        lines.append(line)
+    lines += ["", "## Historical (2026-08-25)", "",
+              "The following is the recorded 2026-08-25 notes comparison, not a measurement of the latest release or all Krate apps.",
+              claims[0]["scope"] + ".", ""]
     for claim in claims:
         label = "Historical app bundle versus installed application" if claim["id"] == "app-file-size" else claim["metric"]
         lines.append(f"- {label}: Krate {claim['us']}; MarkText {claim['them']}.")
     lines += ["", f"The historical Krate runtime was installed separately at {runtime_size[1]}. The {claims[0]['us']} app bundle is not the total first-install cost. Warm open is the median of ten runs per app; memory includes the whole process tree.",
+              "", "The 178.5 MiB memory reading caught a short GPU memory spike after the first frame, so use the current memory figures above instead.",
               "", "Energy was not measured. Source-bearing bundles can also include SDK interfaces and assets; the historical analysis does not establish the current full-bundle install ratio.",
               "", f"Analysis: {source_url(claims[0]['source'])}",
               "The public benchmark kit contains the protocol, analysis and seal. Retained raw run data is not all distributed in the public checkout.",

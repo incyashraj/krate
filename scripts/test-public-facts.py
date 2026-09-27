@@ -68,6 +68,20 @@ class PublicFactsTests(unittest.TestCase):
         self.assertIn("Historical app bundle versus installed application", rendered)
         self.assertNotIn("Historical code payload", rendered)
 
+    def test_llms_leads_with_current_register_rows(self):
+        # K-722: current figures first, the 2026-08-25 run under its date.
+        rendered = facts.render_llms()
+        self.assertLess(rendered.index("## Current measurements"),
+                        rendered.index("## Historical (2026-08-25)"))
+        for row in facts.current_measurements():
+            self.assertIn(f"[{row['status']}; Register", rendered)
+            self.assertIn(row["text"], rendered)
+        # The Register's 105 to 118 KB bundle range contradicts its own
+        # 100,744 B example; never faster than native; no energy claim.
+        self.assertNotRegex(rendered, r"105\s*(to|-)\s*118")
+        self.assertNotIn("faster than native", rendered.replace("not faster than native", ""))
+        self.assertIn("Energy [Not measured", rendered)
+
     def test_three_claims_use_same_audited_run(self):
         claims = facts.benchmark_claims()
         self.assertEqual(len(claims), 3)
@@ -133,6 +147,8 @@ class PublicFactsTests(unittest.TestCase):
                     self.assertIn("237.1 ms median", html)
                     self.assertIn("2,299.4 MiB across four processes", html)
                     self.assertIn("does not run a new benchmark", html)
+                    self.assertLess(html.index("Where Krate stands today"),
+                                    html.index("Historical (2026-08-25)"))
                 else:
                     self.assertIn("not a fresh cross-platform test run", html)
 

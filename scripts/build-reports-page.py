@@ -10,7 +10,7 @@ import pathlib
 import re
 import subprocess
 
-from public_facts import ROOT, benchmark_claims, bundle_inventory, load_facts, source_url
+from public_facts import ROOT, benchmark_claims, bundle_inventory, current_measurements, load_facts, source_url
 
 def add_contents(page):
     """Give every <h2> an id and put a contents list under the lede.
@@ -109,6 +109,13 @@ def main():
     benchmark_rows = "\n".join(
         f'<tr><td>{labels[c["id"]]}</td><td>{html_escape(c["us"])}</td>'
         f'<td>{html_escape(c["them"])}</td></tr>' for c in claims)
+    # Current Register rows lead the page (K-722); the 2026-08-25 run sits
+    # below them under its own dated heading.
+    current_rows = "\n".join(
+        f'<tr><td>{html_escape(r["label"])}</td><td>{html_escape(r["text"])}'
+        + (f' <a href="{r["link"]}">CI run</a>' if r.get("link") else "")
+        + f'</td><td>{html_escape(r["status"])}</td><td>&sect;{html_escape(r["register"])}</td></tr>'
+        for r in current_measurements(facts))
     inventory_rows = "\n".join(
         f'<tr><td><a href="{source_url(r["path"])}"><code>{html_escape(r["path"])}</code></a></td>'
         f'<td class="num">{r["bundle_bytes"]:,}</td><td class="num">{r["code_bytes"]:,}</td>'
@@ -126,7 +133,7 @@ def main():
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0a0a0a" />
-  <meta name="description" content="Krate benchmark methodology: a scoped MarkText notes comparison, complete bundle sizes, code payload and shared runtime costs." />
+  <meta name="description" content="Krate measurements with their status: current size, cross-OS and memory figures, a dated 2026-08-25 MarkText notes comparison, and complete bundle sizes." />
   <link rel="canonical" href="https://krate.tech/reports/" />
   <meta property="og:title" content="Krate: the measurements" />
   <meta property="og:description" content="A measured notes workload, with methods and limitations. Full application bundles and shared runtime costs are shown separately." />
@@ -235,17 +242,36 @@ def main():
   <main class="report">
     <p class="eyebrow">Reports</p>
     <h1>Measurements you can inspect.</h1>
-    <p class="lede">A notes workload compared on the same machine, plus an
-      inventory of application files in this checkout. These are different
-      kinds of evidence: neither establishes a performance result for every
-      Krate app or for the latest release.</p>
+    <p class="lede">Current figures first, each with its status. Then an
+      older notes comparison, kept under its date, and an inventory of
+      application files in this checkout. None of these is a performance
+      result for every Krate app.</p>
     <p class="method">Page generated {today} from commit <code>{revision}</code>.
-      Benchmark measured {html_escape(claims[0]["measured_on"])}.
+      Current figures come from the {html_escape(facts["current_register"])}.
+      The historical notes comparison was measured {html_escape(claims[0]["measured_on"])}.
       Building this page does not run a new benchmark.</p>
 
     <section>
-      <p class="eyebrow">One matched workload</p>
-      <h2>Krate notes and MarkText.</h2>
+      <p class="eyebrow">Current</p>
+      <h2>Where Krate stands today.</h2>
+      <p>Each row carries the status the Benchmark Register gives it, and the
+        Register section it comes from. A figure marked Not measured has no
+        evidence behind it yet.</p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Measurement</th><th>Result</th><th>Status</th><th>Register</th></tr></thead>
+          <tbody>{current_rows}</tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <p class="eyebrow">Historical (2026-08-25)</p>
+      <h2>Krate notes and MarkText, 25 August 2026.</h2>
+      <p>These numbers were true for the build and date shown (runtime
+        v0.1.58); the code has changed since. The current figures are above.
+        The 178.5 MiB memory reading also caught a short GPU memory spike
+        after the first frame.</p>
       <p>{html_escape(claims[0]["scope"])}. This does not establish full editor
         feature parity. Warm-open and memory rows refer to the same
         50,000-line document, not different document sizes.</p>

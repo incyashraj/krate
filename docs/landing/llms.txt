@@ -10,7 +10,20 @@ A .krate bundle contains a WebAssembly component and manifest, and can also carr
 
 Applications begin without file or network access and receive approved capabilities through the runtime. This boundary is not a guarantee of bug-free or harmless software; review the threat model and only run apps you trust.
 
-## Scoped benchmark
+## Current measurements
+
+From the Krate Benchmark Register, compiled 2026-09-26 for runtime and CLI 0.5.1 (commit 774ec7f35). Each figure is shown with the status the Register gives it.
+
+- Same file on three systems [Current; Register §9]: Ten ported apps, the same bundle bytes on each system, ran on macOS, Ubuntu and Windows GitHub CI runners with runtime 0.5.1: 10 of 10 pass on all three. One app has no replay check. CI run: https://github.com/incyashraj/krate/actions/runs/35552275372
+- App size [Current; Register §1.1]: The compiled app component (code.wasm) of ten shipped apps is 18 to 31 KB, for example krate-clock 18,042 B, board 28,210 B and streak 30,512 B (packed 2026-08-26).
+- Full shareable bundle [Current; Register §1.1]: The full .krate bundle also carries the app's source and SDK so a shared app can be edited. Examples: clock 100,744 B, board 108,974 B, streak 110,742 B.
+- First-time download [Current (E6); Register §1.2, E6]: A first-time recipient downloads the Krate Player zip plus the 37,489-byte benchmark notes app: 11,553,801 B, against 111,418,578 B for the MarkText 0.17.1 zip. That is 9.64x smaller. A returning recipient downloads only the app, 37,489 B. MarkText does far more; this compares packaging, not features.
+- First-time install [Current (E6); Register §1.2, E6]: Installed, Krate Player v0.3.0 plus the app take 25,592 KiB, against 291,468 KiB for MarkText 0.17.1 ARM64: 11.39x smaller.
+- Memory [Current; Register §3.1, E6.1]: Notes app against MarkText 0.17.1 on an Apple M4 MacBook Air, runtime 0.5.1, window on a 1x display, settled after 30 s, n=10: Krate 73.5 MiB at 5,000 lines and 95.7 MiB at 50,000 lines; MarkText 358.5 MiB and 2,093.9 MiB. With Krate's window on a 2x display, Krate measured 147.9 and 175.0 MiB (n=8 to 10). Memory is macOS footprint, not RSS.
+- Speed against native code [Current, n=9; Register §2.2]: Krate is not faster than native code. A Krate hex viewer ran 2.7x to 21.0x slower than native hexyl across 8 workloads. The gap is widest on tiny inputs, where a fixed cost of about 90 to 100 ms to start and set up dominates, and shrinks as the work grows.
+- Energy [Not measured; Register §4]: Energy and battery use have not been measured, so no energy or battery claim is made.
+
+## Historical (2026-08-25)
 
 The following is the recorded 2026-08-25 notes comparison, not a measurement of the latest release or all Krate apps.
 MarkText 0.17.1 ARM64 vs the Krate notes replica, Apple M4, macOS 27 (build 26A5388g), on AC power; equivalent-workload comparison, not feature parity.
@@ -20,6 +33,8 @@ MarkText 0.17.1 ARM64 vs the Krate notes replica, Apple M4, macOS 27 (build 26A5
 - warm start to a visible window, 50,000-line document: Krate 237.1 ms median; MarkText 611.5 ms median.
 
 The historical Krate runtime was installed separately at 88.6 MiB. The 36.6 KiB app bundle is not the total first-install cost. Warm open is the median of ten runs per app; memory includes the whole process tree.
+
+The 178.5 MiB memory reading caught a short GPU memory spike after the first frame, so use the current memory figures above instead.
 
 Energy was not measured. Source-bearing bundles can also include SDK interfaces and assets; the historical analysis does not establish the current full-bundle install ratio.
 
