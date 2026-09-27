@@ -85,3 +85,12 @@ console.log("ok  a missing AI and a missing toolchain are told apart");
   assert.deepEqual(normalSession({ id: "s2" }).messages, []);
   console.log("ok  one malformed session cannot blank Home");
 }
+// K-904: failures no retry can fix say what they are.
+assert.match(says("error: this is not a Krate app, or the file is damaged"), /not a Krate app/);
+assert.match(says("error: attached file /tmp/a.csv does not exist"), /no longer there/);
+assert.match(says("error: /x/big.csv is 28.6 MB, over the 10 MB attachment limit."), /10 MB/);
+assert.match(says("error: could not write /Volumes/ro/app.krate: Read-only file system (os error 30)"), /cannot save into that folder/);
+assert.match(says("error: No space left on device (os error 28)"), /disk is full/);
+// K-903: a healthy app with a behaviour complaint gets the change built.
+assert.match(app, /return buildNow\(request, files \|\| \[\], true\);/, "diagnosis leads into the change");
+console.log("ok  failures a retry cannot fix are named, and a behaviour complaint is built");

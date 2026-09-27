@@ -7030,6 +7030,19 @@ struct CreateRequest {
     attachments: Vec<PathBuf>,
 }
 
+/// Fail now, in plain words, if nothing can be written beside `output`.
+fn check_output_writable(output: &Path) -> Result<()> {
+    let dir = match output.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
+        _ => PathBuf::from("."),
+    };
+    fs::create_dir_all(&dir).with_context(|| format!("cannot write to {}", dir.display()))?;
+    let probe = dir.join(format!(".krate-write-check-{}", std::process::id()));
+    fs::write(&probe, b"").with_context(|| format!("cannot write to {}", dir.display()))?;
+    let _ = fs::remove_file(&probe);
+    Ok(())
+}
+
 /// Largest file one attachment may be.
 const MAX_ATTACH_BYTES: u64 = 10 * 1024 * 1024;
 
@@ -8406,6 +8419,12 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
         }
         anyhow::bail!("{message}");
     }
+
+    // Can the app be saved where it was asked to go? Checked before any AI
+    // time is spent: a read-only or full folder used to fail only at the
+    // pack step, after the whole build, and Studio offered a retry that
+    // could never succeed (K-904).
+    check_output_writable(&req.output)?;
 
     // Screen the request against what Krate can actually do, before spending
     // three to five minutes and an AI budget. Nothing downstream compares the

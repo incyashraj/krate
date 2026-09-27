@@ -2782,7 +2782,7 @@ async function make(request, opts) {
   // On the web the honest answer is to treat it as what it is: a change
   // request we cannot pre-check, and say so before building.
   if (currentApp() && /\b(can'?t|cannot|unable|won'?t|doesn'?t|not)\s+(open|start|launch|run|work)|crash|nothing happens|not working|no window/i.test(request)) {
-    if (tauri) return diagnoseCurrent();
+    if (tauri) return diagnoseCurrent(request, files);
     say(
       "KRATE",
       "I cannot open it from the browser to see for myself, so tell me what " +
@@ -2865,11 +2865,19 @@ async function sendReport() {
 }
 
 /* When someone says the app will not open, run it and read the answer. */
-async function diagnoseCurrent() {
+async function diagnoseCurrent(request, files) {
   const app = currentApp();
   say("KRATE", "Let me try opening it myself and see what happens…");
   try {
     const verdict = await invoke("diagnose_app", { path: app.path });
+    if (verdict === "ok" && !/\b(can'?t|cannot|unable|won'?t|doesn'?t|not)\s+(open|start|launch)\b|no window/i.test(request || "")) {
+      // It opens, and the words were about what it DOES -- "the add button
+      // does not work, make it add the item". That is a change to make, not
+      // a launch problem: it used to end here with "the app is healthy, try
+      // updating Krate" and the change was never made (K-903).
+      say("KRATE", "It opens fine, so I'll change what you described.");
+      return buildNow(request, files || [], true);
+    }
     if (verdict === "ok") {
       say("KRATE", "It starts and draws its first screen when I run it here, so the app itself is healthy. Try updating Krate (the Update chip at the top if one is showing), then open it again. If it still won't open on a double-click, tell me what you see and I'll dig further.", null, { variant: "ask" });
     } else {
@@ -3142,6 +3150,17 @@ async function runPlanInner() {
         + "One sentence is enough to start.");
       $("prompt").placeholder = "Describe the app you want\u2026";
       setIdleNote("Tell me what to make and I'll start.");
+      show("idle");
+      $("send").disabled = false;
+      return;
+    }
+    // A reason the BUILD would refuse too -- an attachment that is gone,
+    // too big or a folder -- is not a planning hiccup to skip past: said
+    // plainly, and nothing is built (K-904).
+    if (/over the 10 MB attachment limit|a folder cannot be attached|attached file .* does not exist/i.test(String(err && err.message ? err.message : err))) {
+      say("KRATE", plainWords(err));
+      state.planning = null;
+      setIdleNote("");
       show("idle");
       $("send").disabled = false;
       return;
@@ -3631,6 +3650,18 @@ function plainWords(err) {
   // message told people to "try again" when nothing could ever work.
   if (/could not run the Krate engine|could not start the Krate engine|KRATE_STUDIO_ENGINE/i.test(text))
     return "Krate's engine is missing from this install. Reinstall Krate from krate.tech.";
+  // Failures no retry can fix, said as what they are (K-904). Each used to
+  // fall through to "The build failed ... a retry resumes from it", and
+  // Try again repeated the same failure.
+  if (/not a Krate app, or the file is damaged|is not a \.krate/i.test(judged))
+    return "This file is not a Krate app, or it is damaged. Open a different one.";
+  if (/attached file .* does not exist/i.test(judged))
+    return "A file you attached is no longer there. Remove it from the message and try again.";
+  if (/over the 10 MB attachment limit|a folder cannot be attached/i.test(judged)) return judged;
+  if (/no space left on device|disk (is )?full/i.test(judged))
+    return "The disk is full. Free some space, then try again.";
+  if (/read-only file system|permission denied|cannot write to|could not write/i.test(judged))
+    return "Krate cannot save into that folder. Pick another folder in Settings, then try again.";
   if (/is not there any more/i.test(judged)) return judged;
   if (/already being made/i.test(judged)) return judged;
   // The engine's own words for a missing AI, not any "not installed": a

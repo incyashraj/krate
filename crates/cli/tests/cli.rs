@@ -3609,6 +3609,36 @@ fn concurrent_builds_of_one_app_name_do_not_spoil_each_other() {
     }
 }
 
+/// A folder nothing can be saved into is refused before any AI time is
+/// spent (K-904). It used to fail at the pack step, after the whole build.
+#[cfg(unix)]
+#[test]
+fn an_unwritable_output_folder_is_refused_before_authoring() {
+    use std::os::unix::fs::PermissionsExt;
+    let work = tempfile::tempdir().expect("temp dir");
+    let locked = work.path().join("locked");
+    std::fs::create_dir(&locked).expect("dir");
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o555)).expect("lock");
+    let marker = work.path().join("authored");
+    let done = krate()
+        .arg("create")
+        .args(["--author-cmd", &format!("touch {}", marker.display())])
+        .arg("--output")
+        .arg(locked.join("app.krate"))
+        .arg("--")
+        .arg("a small dashboard")
+        .output()
+        .expect("run create");
+    let _ = std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755));
+    let stderr = String::from_utf8_lossy(&done.stderr);
+    assert!(!done.status.success());
+    assert!(stderr.contains("cannot write to"), "{stderr}");
+    assert!(
+        !marker.exists(),
+        "no authoring started for an app that could not be saved"
+    );
+}
+
 /// An attachment rides the ordinary create (K-893).
 ///
 /// Attached files went down a separate path that staged them in one inbox
