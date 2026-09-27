@@ -1761,9 +1761,26 @@ fn run_author(
     // unjustifiable.
     let work = studio_dir().join("work");
     let _ = std::fs::create_dir_all(&work);
+    // The engine writes to FILES that Studio follows, not to pipes Studio
+    // holds. "Keep building in the background" promised the app would be
+    // waiting next time -- but quitting closed the pipes, the engine's next
+    // line hit a broken pipe and it died, and no app was ever written
+    // (K-900). A file outlives the window.
+    let logs = studio_dir().join("logs");
+    let _ = std::fs::create_dir_all(&logs);
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let out_log = logs.join(format!("{stamp}-{}-out.log", std::process::id()));
+    let err_log = logs.join(format!("{stamp}-{}-err.log", std::process::id()));
+    let out_file = std::fs::File::create(&out_log)
+        .map_err(|err| format!("could not start the build log: {err}"))?;
+    let err_file = std::fs::File::create(&err_log)
+        .map_err(|err| format!("could not start the build log: {err}"))?;
     cmd.current_dir(&work)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stdout(Stdio::from(out_file))
+        .stderr(Stdio::from(err_file))
         .stdin(Stdio::null());
 
     // The agent gets an isolated config dir that carries the person's
@@ -1907,56 +1924,62 @@ fn run_author(
         watch_build_shots(app.clone(), dir, shots_stop.clone());
     }
 
-    // Stream both pipes as one story. Order between the two is best-effort,
+    // Follow both logs as one story. Order between the two is best-effort,
     // which is fine: the UI folds these into a details log and a coarse
     // stage indicator, not a transcript that must be exact.
-    let mut tail: Vec<String> = Vec::new();
-    let stdout = child.stdout.take().ok_or("no stdout")?;
-    let stderr = child.stderr.take().ok_or("no stderr")?;
     let debug_log = std::env::var("KRATE_STUDIO_DEBUG").ok().map(PathBuf::from);
+    let finished = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let app2 = app.clone();
     let debug2 = debug_log.clone();
+    let done2 = finished.clone();
+    let err_path = err_log.clone();
     let err_thread = std::thread::spawn(move || {
         let mut lines = Vec::new();
-        for line in std::io::BufReader::new(stderr)
-            .lines()
-            .map_while(Result::ok)
-        {
+        follow_lines(&err_path, &done2, |line| {
             let _ = app2.emit("engine-line", &line);
             if let Some(path) = &debug2 {
                 append_line(path, &line);
             }
             lines.push(line);
-        }
+        });
         lines
     });
-    let mut asks: Vec<String> = Vec::new();
-    let mut in_asks = false;
-    for line in std::io::BufReader::new(stdout)
-        .lines()
-        .map_while(Result::ok)
-    {
-        let _ = app.emit("engine-line", &line);
-        if let Some(path) = &debug_log {
-            append_line(path, &line);
-        }
-        if line.trim_start().starts_with("requested access") {
-            in_asks = true;
-        } else if in_asks {
-            let t = line.trim();
-            if let Some(cap) = t.strip_prefix("- ") {
-                asks.push(cap.to_string());
-            } else if !t.is_empty() {
-                in_asks = false;
+    let app3 = app.clone();
+    let done3 = finished.clone();
+    let out_path_log = out_log.clone();
+    let out_thread = std::thread::spawn(move || {
+        let mut tail: Vec<String> = Vec::new();
+        let mut asks: Vec<String> = Vec::new();
+        let mut in_asks = false;
+        follow_lines(&out_path_log, &done3, |line| {
+            let _ = app3.emit("engine-line", &line);
+            if let Some(path) = &debug_log {
+                append_line(path, &line);
             }
-        }
-        tail.push(line);
-        if tail.len() > 40 {
-            tail.remove(0);
-        }
-    }
+            if line.trim_start().starts_with("requested access") {
+                in_asks = true;
+            } else if in_asks {
+                let t = line.trim();
+                if let Some(cap) = t.strip_prefix("- ") {
+                    asks.push(cap.to_string());
+                } else if !t.is_empty() {
+                    in_asks = false;
+                }
+            }
+            tail.push(line);
+            if tail.len() > 40 {
+                tail.remove(0);
+            }
+        });
+        (tail, asks)
+    });
+    let status = child.wait().map_err(|err| err.to_string());
+    finished.store(true, std::sync::atomic::Ordering::SeqCst);
     let err_lines = err_thread.join().unwrap_or_default();
-    let status = child.wait().map_err(|err| err.to_string())?;
+    let (tail, asks) = out_thread.join().unwrap_or_default();
+    let _ = std::fs::remove_file(&out_log);
+    let _ = std::fs::remove_file(&err_log);
+    let status = status?;
     shots_stop.store(true, std::sync::atomic::Ordering::Relaxed);
     // Stop takes the pid out before killing; an empty slot on a failed exit
     // means the person asked for this outcome.
@@ -3827,6 +3850,51 @@ fn studio_debug(line: &str) {
     }
 }
 
+/// Read `path` as the engine appends to it, one line at a time, until
+/// `finished` is set and everything written has been read (K-900).
+fn follow_lines(
+    path: &Path,
+    finished: &std::sync::atomic::AtomicBool,
+    mut on_line: impl FnMut(String),
+) {
+    use std::io::Read;
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return;
+    };
+    let mut pending: Vec<u8> = Vec::new();
+    let mut chunk = [0u8; 8192];
+    let mut draining = false;
+    loop {
+        let read = file.read(&mut chunk).unwrap_or(0);
+        if read > 0 {
+            pending.extend_from_slice(&chunk[..read]);
+            while let Some(at) = pending.iter().position(|b| *b == b'\n') {
+                let line: Vec<u8> = pending.drain(..=at).collect();
+                let text = String::from_utf8_lossy(&line[..line.len() - 1])
+                    .trim_end_matches('\r')
+                    .to_string();
+                on_line(text);
+            }
+            continue;
+        }
+        // Nothing new. The story is over only once the engine has exited
+        // AND a full pass after that found the file read to its end:
+        // stopping at the first empty read after the flag would lose the
+        // last lines written between the two.
+        if draining {
+            if !pending.is_empty() {
+                on_line(String::from_utf8_lossy(&pending).to_string());
+            }
+            return;
+        }
+        if finished.load(std::sync::atomic::Ordering::SeqCst) {
+            draining = true;
+            continue;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(80));
+    }
+}
+
 fn append_line(path: &Path, line: &str) {
     use std::io::Write as _;
     if let Ok(mut f) = std::fs::OpenOptions::new()
@@ -5100,6 +5168,39 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    /// K-900: the build's output is followed from a file, every line of
+    /// it, including what arrives just before the engine exits and a last
+    /// line with no newline.
+    #[cfg(unix)]
+    #[test]
+    fn a_followed_log_yields_every_line_the_engine_wrote() {
+        let dir = std::env::temp_dir().join(format!("krate-follow-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let log = dir.join("out.log");
+        let file = std::fs::File::create(&log).expect("log");
+        let mut child = std::process::Command::new("sh")
+            .args([
+                "-c",
+                "for i in 1 2 3; do echo line$i; sleep 0.1; done; printf last",
+            ])
+            .stdout(std::process::Stdio::from(file))
+            .spawn()
+            .expect("spawn");
+        let finished = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let done = finished.clone();
+        let path = log.clone();
+        let reader = std::thread::spawn(move || {
+            let mut lines = Vec::new();
+            super::follow_lines(&path, &done, |line| lines.push(line));
+            lines
+        });
+        child.wait().expect("wait");
+        finished.store(true, std::sync::atomic::Ordering::SeqCst);
+        let lines = reader.join().expect("join");
+        assert_eq!(lines, vec!["line1", "line2", "line3", "last"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     use super::{
         agent_home_env, copy_dir_shallow, first_run_read, first_run_write, plan_answer,
         probe_speaks_plan, slugify, studio_dir_in, write_private_atomic,
