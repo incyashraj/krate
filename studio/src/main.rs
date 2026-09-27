@@ -1335,8 +1335,11 @@ async fn create_app(
         eprintln!("[create_app] target ready: {}", out_path.display());
 
         let mut cmd = silent_cmd(&engine);
+        // The request goes LAST, after `--` (added below): a request that
+        // starts with "-" -- a pasted bullet list -- was read as an option,
+        // refused by plan and create alike, and Try again repeated it
+        // (K-889).
         cmd.arg("create")
-            .arg(&request)
             .args(["--agent", &agent, "--yes", "--output"])
             .arg(&out_path);
         // One stable workspace per session, so a retry RESUMES from the code
@@ -1369,6 +1372,7 @@ async fn create_app(
         for file in &attachments {
             cmd.args(["--attach", file]);
         }
+        cmd.arg("--").arg(&request);
         run_author(&app, cmd, &engine, &out_path, Some(session_work))
     })
     .await
@@ -1403,13 +1407,13 @@ async fn revise_app(
         // Fail before spending anyone's AI quota on a file that is gone.
         let out_path = existing(&path)?;
         let mut cmd = silent_cmd(&engine);
-        cmd.arg("revise")
-            .arg(&out_path)
-            .arg(&change)
-            .args(["--agent", &agent]);
+        cmd.arg("revise").args(["--agent", &agent]);
         for file in &attachments {
             cmd.args(["--attach", file]);
         }
+        // Positionals after `--`, so a change that starts with "-" is text
+        // (K-889).
+        cmd.arg("--").arg(&out_path).arg(&change);
         run_author(&app, cmd, &engine, &out_path, None)
     })
     .await
@@ -2345,13 +2349,14 @@ async fn plan_request(
             ));
         }
         let mut cmd = silent_cmd(&engine);
-        cmd.arg("plan").arg(&request);
+        cmd.arg("plan");
         for file in &attachments {
             cmd.args(["--attach", file]);
         }
         if let Some(agent) = agent.as_deref().filter(|a| !a.is_empty()) {
             cmd.args(["--agent", agent]);
         }
+        cmd.arg("--").arg(&request);
         let out = cmd.output().map_err(|err| err.to_string())?;
         let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
         if !out.status.success() || stdout.is_empty() {

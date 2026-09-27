@@ -116,7 +116,12 @@ let stateWritable = false;
 /* A finished bundle is handed over and then expires. We are not the file's
  * host: the download exists so the person can save their app, not so a URL
  * can serve it forever. */
-const RESULT_TTL_MS = Number(process.env.KRATE_RESULT_TTL_MS || 60 * 60 * 1000);
+//
+// Thirty days, not one hour. An hour deleted the person's one free app
+// before many of them came back for it: open, change and publish then said
+// "this finished a while ago" and a new build said "you have made your
+// app" -- made, counted and gone (K-887). A finished app is tens of KB.
+const RESULT_TTL_MS = Number(process.env.KRATE_RESULT_TTL_MS || 30 * 24 * 60 * 60 * 1000);
 
 async function initState() {
   try {
@@ -357,7 +362,16 @@ async function allowedToBuild(token, device) {
       headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
       body: JSON.stringify({ device: device || "" }),
     });
-    const made = count.ok ? (await count.json()).n || 0 : 0;
+    // Closed, not open, when the count cannot be read: a hub error used to
+    // read as "made nothing yet" and hand out another funded build (K-888).
+    if (!count.ok) {
+      return {
+        ok: false,
+        upstream: true,
+        message: "We could not check your free app just now. Nothing was counted. Try again in a minute.",
+      };
+    }
+    const made = (await count.json()).n || 0;
 
     // ONE app in the browser, then the desktop.
     //
@@ -424,11 +438,30 @@ async function allowedToBuild(token, device) {
   } catch (err) {
     // A hub we cannot reach is our fault, not theirs -- but we still do
     // not spend money on an account we could not check.
-    return { ok: false, message: "We could not check your plan just now. Try again in a moment." };
+    return {
+      ok: false,
+      upstream: true,
+      message: "We could not check your plan just now. Nothing was counted. Try again in a moment.",
+    };
   }
 }
 
 /* ---- running one build --------------------------------------------------- */
+
+/* The engine runs the AI agent, cargo and rustc as its children. Killing
+ * only `krate` left them running with no parent: after Stop or a timeout
+ * the agent carried on writing code and spending the account's -- or our
+ * -- API credit, and the orphan's exit later freed a slot it did not own
+ * (K-888). So each engine run leads its own process group, and a stop
+ * ends the group. */
+const GROUP = process.platform !== "win32";
+function killTree(proc, signal) {
+  if (!proc) return;
+  if (GROUP && proc.pid) {
+    try { process.kill(-proc.pid, signal); return; } catch (e) { /* fall through */ }
+  }
+  try { proc.kill(signal); } catch (e) {}
+}
 
 /* A revision continues the case the app was made in: same funding, the
  * app's own source as the starting point, `krate revise` doing the edit --
@@ -475,6 +508,14 @@ async function startBuild({ request, token, account, device, revise = null, shap
   // which had to ask the hub anyway to learn whether the change was
   // allowed at all. Opening a second one here would count it twice.
   job.caseId = revise ? revise.caseId : await caseOpen(token, device, request);
+  // No case, no build: an unrecorded build is a funded build nobody counts
+  // (K-888). The dev builder has no ledger and is exempt.
+  if (!revise && !job.caseId && process.env.KRATE_BUILDER_DEV !== "1") {
+    jobs.delete(id);
+    const err = new Error("We could not start that just now. Nothing was counted. Try again in a minute.");
+    err.status = 502;
+    throw err;
+  }
   await persistJob(job);
   await audit({ action: revise ? "revise" : "start", account, job: id, parent: job.parent });
 
@@ -500,9 +541,12 @@ async function startBuild({ request, token, account, device, revise = null, shap
   } catch (e) {
     console.warn(`[build] could not write attachments: ${e.message}`);
   }
+  // Options first and `--` before the person's words, so a request that
+  // starts with "-" -- any pasted bullet list -- is text, not an option
+  // the engine refuses (K-889).
   const args = revise
-    ? ["revise", revise.source, revise.change, "--agent", AGENT, "--output", output, ...attachArgs]
-    : ["create", request, "--output", output, "--agent", AGENT, "--transcript", transcript, ...attachArgs];
+    ? ["revise", "--agent", AGENT, "--output", output, ...attachArgs, "--", revise.source, revise.change]
+    : ["create", "--output", output, "--agent", AGENT, "--transcript", transcript, ...attachArgs, "--", request];
   const runEnv = { ...process.env };
   if (theirKey) runEnv[API_AGENTS[AGENT]] = theirKey;
   // The shape the plan picked: the engine seeds that working example as
@@ -510,8 +554,22 @@ async function startBuild({ request, token, account, device, revise = null, shap
   // nothing. This is the single biggest lever on how long a build takes,
   // and the browser was not using it.
   if (shape && /^[a-z0-9-]{1,40}$/i.test(shape)) runEnv.KRATE_STARTER_SHAPE = shape;
-  const proc = spawn(KRATE, args, { cwd: dir, env: runEnv });
+  const proc = spawn(KRATE, args, { cwd: dir, env: runEnv, detached: GROUP });
   job.proc = proc;
+  // A child that cannot start emits "error", and an unhandled "error" event
+  // took the whole service down with every build in flight (K-890). It is
+  // this build's failure, nobody else's.
+  proc.on("error", async (e) => {
+    if (job.state !== "working") return;
+    job.state = "failed";
+    job.error = "The build could not start on our side. Nothing was counted. Try again in a minute.";
+    job.finished = Date.now();
+    if (activeByAccount.get(account) === job.id) activeByAccount.delete(account);
+    console.error(`[build] could not start the engine: ${e.message}`);
+    await persistJob(job);
+    await audit({ action: "spawn-failed", account, job: job.id });
+    await caseAttempt(token, device, job.caseId, "failed");
+  });
 
   let tail = "";
   const onChunk = (buf) => {
@@ -542,12 +600,16 @@ async function startBuild({ request, token, account, device, revise = null, shap
 
   const killer = setTimeout(() => {
     job.error = "This one took too long and was stopped.";
-    try { proc.kill("SIGKILL"); } catch (e) {}
+    killTree(proc, "SIGKILL");
   }, BUILD_TIMEOUT_MS);
 
   proc.on("close", async (code) => {
     clearTimeout(killer);
-    activeByAccount.delete(account);
+    // Only this job's own slot. After Stop and a new build, the OLD process
+    // closing later deleted the NEW build's slot, and the account could run
+    // builds in parallel -- each able to end as a funded "made" (K-888).
+    if (activeByAccount.get(account) === job.id) activeByAccount.delete(account);
+    if (job.state === "failed" && job.finished) return; // settled by "error"
 
     if (job.state === "stopped") {
       await persistJob(job);
@@ -726,8 +788,8 @@ async function planRequest(request, theirKey = null, attachments = []) {
     let err = "";
     const env = { ...process.env };
     if (theirKey) env[API_AGENTS[AGENT]] = theirKey;
-    const proc = spawn(KRATE, ["plan", request, "--agent", AGENT, ...attachArgs], { env });
-    const killer = setTimeout(() => { try { proc.kill("SIGKILL"); } catch (e) {} }, PLAN_TIMEOUT_MS);
+    const proc = spawn(KRATE, ["plan", "--agent", AGENT, ...attachArgs, "--", request], { env, detached: GROUP });
+    const killer = setTimeout(() => killTree(proc, "SIGKILL"), PLAN_TIMEOUT_MS);
     proc.stdout.on("data", (b) => { out += b.toString(); });
     proc.stderr.on("data", (b) => { err = (err + b.toString()).slice(-2000); });
     proc.on("error", (e) => { clearTimeout(killer); finish({ ok: false, message: `could not run the engine: ${e.message}` }); });
@@ -1055,6 +1117,9 @@ const server = createServer(async (req, res) => {
             message: allowed.message,
           });
         }
+        // Our side could not reach the hub: not a sign-in problem, so not
+        // a 401 (which a client reads as "sign in again") (K-888).
+        if (allowed.upstream) return send(res, 502, allowed.message);
         return send(res, 401, allowed.message);
       }
 
@@ -1068,6 +1133,7 @@ const server = createServer(async (req, res) => {
         // The slot is ours until a job owns it; a start that threw must
         // not lock the account out of building.
         activeByAccount.delete(allowed.account);
+        if (err && err.status) return send(res, err.status, err.message);
         throw err;
       }
       return json(res, 200, { id: job.id });
@@ -1248,7 +1314,7 @@ const server = createServer(async (req, res) => {
       // build already finished, changes nothing and says what is true.
       if (job.state === "working" && job.proc) {
         job.state = "stopped";
-        try { job.proc.kill("SIGTERM"); } catch (e) {}
+        killTree(job.proc, "SIGTERM");
         activeByAccount.delete(job.account);
         await persistJob(job);
         await audit({ action: "stop", account, job: id });
@@ -1317,7 +1383,7 @@ for (const signal of ["SIGTERM", "SIGINT"]) {
     for (const job of jobs.values()) {
       if (job.proc && job.state === "working") {
         job.state = "stopped";
-        try { job.proc.kill("SIGTERM"); } catch (e) {}
+        killTree(job.proc, "SIGTERM");
       }
     }
     // A moment for the children to go, then leave regardless. Waiting on

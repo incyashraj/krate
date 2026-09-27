@@ -104,19 +104,34 @@ async function fakeKrate(dir) {
   await writeFile(
     bin,
     `#!/bin/sh
-# create <request> --output <path> --agent <agent> | run <bundle> --shoot ...
-# plan <request> --agent <agent> | revise <bundle> <change> --agent <agent> --output <path>
+# create [options] -- <request> | run <bundle> --shoot ...
+# plan [options] -- <request> | revise [options] -- <bundle> <change>
+# Like the real engine (clap), an argument that starts with "-" before "--"
+# and is not a known option is refused -- which is what a request starting
+# with "-" used to be (K-889).
+seen_dd=""
+for a in "$@"; do
+  if [ -n "$seen_dd" ]; then continue; fi
+  case "$a" in
+    --) seen_dd=1;;
+    --output|--agent|--transcript|--attach|--shoot|--auto-grant|--yes) ;;
+    -*) echo "error: unexpected argument '$a' found" >&2; exit 2;;
+  esac
+done
 if [ "$1" = "plan" ]; then
   case "$*" in *FAIL*) echo "no plan today" >&2; exit 1;; esac
   echo '{"plan":"a small notes app that saves locally","needs":["store.kv"]}'
   exit 0
 fi
 if [ "$1" = "revise" ]; then
-  src="$2"
+  src=""
   out=""
   prev=""
+  after=""
   for a in "$@"; do
     if [ "$prev" = "--output" ]; then out="$a"; fi
+    if [ "$after" = "1" ] && [ -z "$src" ]; then src="$a"; fi
+    if [ "$a" = "--" ]; then after=1; fi
     prev="$a"
   done
   echo "reading the app"
@@ -289,7 +304,9 @@ let builder = startBuilder(stateDir, krateBin, { KRATE_ATTACH_LOG: attachLog });
 await until(async () => (await get("/health")).status === 200);
 
 // Alice starts a build.
-const started = await post("/build", { request: "a tiny notes app" }, asAlice);
+// Starts with "-", like any pasted bullet list: it is the request, not an
+// option the engine refuses (K-889).
+const started = await post("/build", { request: "- a tiny notes app" }, asAlice);
 assert.strictEqual(started.status, 200, `start: ${started.body}`);
 const jobId = JSON.parse(started.body).id;
 
