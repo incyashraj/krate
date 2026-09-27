@@ -3456,6 +3456,25 @@ function unknownDeveloperPage(login) {
   );
 }
 
+/// What a stranger reads about an app, or nothing.
+///
+/// Studio's publish sheet used to prefill the description with the first
+/// thing the person typed, so apps published before 7dfbd7714 carry the
+/// request that made them: "make a weather app", "make a calculator app
+/// for me for simple calculations". That is an instruction to a builder,
+/// not a description of the thing built, and a developer's own page showed
+/// it under their name (K-865). A request reads as nothing; no line is
+/// better than that line. docs/cloud/app/index.html keeps a copy of this
+/// rule, and first-contact-test.mjs runs both on the same sentences.
+function plainDescription(text) {
+  const s = String(text || "").replace(/\s+/g, " ").trim();
+  if (!s) return "";
+  if (/^(?:(?:hey|hi|hello)\b[,!]?\s*)?(?:please\s+)?(?:can|could|would|will)\s+you\b/i.test(s)) return "";
+  if (/^(?:please\s+)?(?:i\s+(?:want|need|would like)|i'd like|help me|give me|let'?s)\b/i.test(s)) return "";
+  if (/^(?:please\s+)?(?:make|build|create|write|generate|code|design|develop)\s+(?:me\s+|us\s+)?(?:a|an|the|my|some|simple|small|basic)\b/i.test(s)) return "";
+  return s;
+}
+
 function developerPage(login, apps, env) {
   const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
   const host = `${login}.${((env.PUBLIC_BASE || "").replace(/^https?:\/\//, "").split(".").slice(-2).join(".")) || "krate.tech"}`;
@@ -3463,9 +3482,9 @@ function developerPage(login, apps, env) {
     ? apps
         .map((app) => {
           const size = app.meta && app.meta.size ? `${Math.round(app.meta.size / 1024)} KB` : "";
-          const desc = app.meta && app.meta.description ? escapeForHtml(app.meta.description) : "";
+          const desc = escapeForHtml(plainDescription(app.meta && app.meta.description));
           const shot = app.meta && app.meta.shot
-            ? `<img class="shot" src="${base}/shot/${escapeForHtml(app.current)}" alt="" loading="lazy" />`
+            ? `<img class="shot" src="${base}/shot/${escapeForHtml(app.current)}" alt="${escapeForHtml(app.name)}" loading="lazy" />`
             : `<div class="shot"></div>`;
           return `<div class="app">${shot}<div>
             <h2><a href="${escapeForHtml(app.href || `/${app.slug}`)}">${escapeForHtml(app.name)}</a></h2>
@@ -3495,14 +3514,15 @@ function appPage(login, channel, meta, env) {
     ? `<p class="asks">Asks for: ${meta.asks.map((a) => escapeForHtml(a)).join(", ")}</p>`
     : "";
   const shot = meta && meta.shot
-    ? `<img class="shot" style="width:100%;height:auto;max-height:360px" src="${base}/shot/${escapeForHtml(channel.current)}" alt="" />`
+    ? `<img class="shot" style="width:100%;height:auto;max-height:360px" src="${base}/shot/${escapeForHtml(channel.current)}" alt="${escapeForHtml(channel.name || channel.slug)}" />`
     : "";
+  const desc = plainDescription(meta && meta.description);
   return htmlPage(
     `${channel.name || channel.slug} by ${login}`,
     `<h1>${escapeForHtml(channel.name || channel.slug)}</h1>
      <p class="sub">by <a href="/">${escapeForHtml(login)}</a>${size ? ` &middot; ${size}` : ""} &middot; runs on Mac, Windows and Linux</p>
      ${shot}
-     ${meta && meta.description ? `<p>${escapeForHtml(meta.description)}</p>` : ""}
+     ${desc ? `<p>${escapeForHtml(desc)}</p>` : ""}
      ${asks}
      <a class="btn" href="${base}/a/${escapeForHtml(channel.current)}?dl=1">Download the app</a>
      <p class="run">krate run ${escapeForHtml(host)}/${escapeForHtml(channel.slug)}</p>

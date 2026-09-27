@@ -275,6 +275,29 @@ async function publish(e, name, bytes) {
   console.log("ok  an app published before channels still reaches its author's page");
 }
 
+// ---- the request that made an app is not its description -----------------
+//
+// The publish sheet once prefilled the description with the first thing
+// the person typed, so the live page read "Weather -- make a weather app"
+// and "Calculator -- make a calculator app for me for simple calculations"
+// under a real developer's name (K-865). A request is shown as nothing; a
+// description that says what the app does is shown as it is.
+{
+  const e = env();
+  const seed = (hash, name, description) => e._kv.set(`app:${hash}`, JSON.stringify({
+    name, description, author_login: "aanchalabhongade", published: 1788339400, size: 1024,
+  }));
+  seed("d".repeat(64), "Calculator", "make a calculator app for me for simple calculations");
+  seed("e".repeat(64), "Weather", "Shows the weather where you are, hour by hour");
+
+  const page = await hit(e, "https://aanchalabhongade.krate.tech/", BROWSER);
+  assert.strictEqual(page.status, 200);
+  assert.match(page.body, /Calculator/, "the app is still listed");
+  assert.doesNotMatch(page.body, /make a calculator app/, "its request is not shown as what it is");
+  assert.match(page.body, /Shows the weather where you are/, "a real description is kept");
+  console.log("ok  a developer's page does not describe apps with the requests that made them");
+}
+
 // ---- what must NOT appear on that page -----------------------------------
 {
   const e = env();

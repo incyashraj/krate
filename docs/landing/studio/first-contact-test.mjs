@@ -73,3 +73,52 @@ const settle = () => new Promise((r) => setTimeout(r, 0));
   assert.equal(phone.doc.taRow.hidden, true, "a phone is not handed a file it cannot open");
   console.log("ok  a shared link on a desktop browser offers the app itself (K-858)");
 }
+
+/* ---- K-865: the request that made an app is not its description ------
+ *
+ * Apps published before the publish sheet learned to describe them carry
+ * the person's first request: "make a weather app". The hub's developer
+ * pages and the gallery's app page each keep a copy of one rule; both are
+ * run here on the live gallery's own sentences, so they cannot drift. */
+{
+  function liftRule(file) {
+    const src = readFileSync(file, "utf8");
+    const at = src.indexOf("function plainDescription(");
+    assert.ok(at >= 0, `${file} has plainDescription`);
+    const ret = src.indexOf("return s;", at);
+    const end = src.indexOf("}", ret);
+    return new Function(`${src.slice(at, end + 1)}; return plainDescription;`)();
+  }
+  const rules = {
+    hub: liftRule("cloud/worker/src/index.js"),
+    gallery: liftRule("docs/cloud/app/index.html"),
+  };
+  // Requests, from the live gallery (2026-09-28) and the usual shapes.
+  const requests = [
+    "make a weather app",
+    "make a calculator app for me for simple calculations",
+    "make a app which plays like a chess ame",
+    "Make a NES game like contra 2d with each and everything just like original game",
+    "can you make any app?",
+    "Please build me a timer",
+    "I want a todo list",
+  ];
+  // Descriptions, from the same gallery.
+  const descriptions = [
+    "A music player made with Krate",
+    "What a 2.4 second request does to a window, blocking versus polled.",
+    "A living northern-lights scene over a mirrored lake, live Kp index in the corner",
+    "100,000 rows, only the visible window drawn",
+    "Shows the weather where you are",
+  ];
+  for (const [where, rule] of Object.entries(rules)) {
+    for (const r of requests) assert.equal(rule(r), "", `${where} hides the request ${JSON.stringify(r)}`);
+    for (const d of descriptions) assert.equal(rule(d), d, `${where} keeps ${JSON.stringify(d)}`);
+    assert.equal(rule(""), "");
+    assert.equal(rule(undefined), "");
+  }
+  // And the gallery's app page uses it where it prints one.
+  const page = readFileSync("docs/cloud/app/index.html", "utf8");
+  assert.doesNotMatch(page, /esc\(m\.description\)/, "the app page never prints the raw description");
+  console.log("ok  an app is not described by the request that made it (K-865)");
+}

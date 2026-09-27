@@ -191,6 +191,21 @@
     const when = (s) => s ? new Date(s * 1000).toLocaleDateString(undefined,
       { year: "numeric", month: "long", day: "numeric" }) : "";
 
+    /* What a stranger reads about the app, or nothing. Apps published
+       before the publish sheet learned to write a description carry the
+       request that made them ("make a weather app"), which describes
+       nothing (K-865). The hub's developer pages use the same rule
+       (plainDescription in cloud/worker/src/index.js), and
+       first-contact-test.mjs runs both copies on the same sentences. */
+    function plainDescription(text) {
+      const s = String(text || "").replace(/\s+/g, " ").trim();
+      if (!s) return "";
+      if (/^(?:(?:hey|hi|hello)\b[,!]?\s*)?(?:please\s+)?(?:can|could|would|will)\s+you\b/i.test(s)) return "";
+      if (/^(?:please\s+)?(?:i\s+(?:want|need|would like)|i'd like|help me|give me|let'?s)\b/i.test(s)) return "";
+      if (/^(?:please\s+)?(?:make|build|create|write|generate|code|design|develop)\s+(?:me\s+|us\s+)?(?:a|an|the|my|some|simple|small|basic)\b/i.test(s)) return "";
+      return s;
+    }
+
     const CAT_LABELS = { games: "Games", productivity: "Productivity", tools: "Tools",
       media: "Media", learning: "Learning", apps: "More" };
 
@@ -304,7 +319,7 @@
               <h1>${esc(m.name || "Untitled app")}</h1>
             </div>
             ${m.category ? `<p class="cat">${esc(CAT_LABELS[m.category] || m.category)}</p>` : ""}
-            ${m.description ? `<p class="desc">${esc(m.description)}</p>` : ""}
+            ${plainDescription(m.description) ? `<p class="desc">${esc(plainDescription(m.description))}</p>` : ""}
             <div class="by">
               ${m.avatar_url ? `<img src="${esc(m.avatar_url)}" alt="${esc(author)}" />` : ""}
               <span>by <a href="${esc(m.author_url || "#")}" rel="noopener">${esc(author)}</a></span>
