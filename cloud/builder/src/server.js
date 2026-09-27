@@ -29,7 +29,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 const PORT = Number(process.env.PORT || 8787);
 const KRATE = process.env.KRATE_BIN || "krate";
@@ -491,6 +491,9 @@ async function startBuild({ request, token, account, device, revise = null, shap
     started: Date.now(),
     finished: null,
     proc: null,
+    // A change's copy of the app it starts from, removed with the job:
+    // every change used to leave a whole app in $TMPDIR forever (K-911).
+    sourceDir: revise ? dirname(revise.source) : null,
   };
   jobs.set(id, job);
   activeByAccount.set(account, id);
@@ -966,6 +969,9 @@ async function caseAttempt(token, device, caseId, outcome, note) {
 async function cleanup(job, opts = {}) {
   // The bytes are already in memory by now; the directory is scratch.
   try { await rm(job.dir, { recursive: true, force: true }); } catch (e) {}
+  if (job.sourceDir && /krate-revise-/.test(job.sourceDir)) {
+    try { await rm(job.sourceDir, { recursive: true, force: true }); } catch (e) {}
+  }
   if (!opts.keepFile) job.result = null;
 }
 
@@ -997,7 +1003,9 @@ function plainFailure(tail) {
   if (
     /rejected the api key|credit balance|does not serve the model|billing|payment/i.test(tail)
   ) {
-    return "Making apps here is having a problem on our side. It is not something you did, and it is not something you can fix -- we have been told.";
+    // Nothing alerts anyone when this happens, so it does not say "we have
+    // been told" (K-911).
+    return "Making apps here is having a problem on our side. It is not something you did. Trying again in a few minutes usually works.";
   }
   if (
     /oauth|session expired|not signed in|no api key|unauthor|rate limit|quota|could not write the app|could not reach|returned 4\d\d|returned 5\d\d|overloaded|no reply|usage counts/i.test(
@@ -1070,7 +1078,8 @@ const server = createServer(async (req, res) => {
   if (req.method === "OPTIONS") return send(res, 204, "");
 
   try {
-    if (req.method === "GET" && url.pathname === "/health") {
+    // HEAD too: uptime checks ask with HEAD, and 404 read as "down" (K-911).
+    if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/health") {
       // `authoring` is the answer to "is this box switched on", which is
       // otherwise only discoverable by starting a build. It reports whether
       // a key is present, never anything about the key itself.
@@ -1330,6 +1339,7 @@ const server = createServer(async (req, res) => {
 
     return send(res, 404, "not found");
   } catch (err) {
+    if (err && err.status === 413) return send(res, 413, err.message);
     return send(res, 500, "Something broke on our side.");
   }
 });
@@ -1342,7 +1352,12 @@ function readBody(req) {
       // Attachments ride in the body as base64, which is about a third
       // larger than the file. Six files at 10 MB each is the ceiling the
       // browser enforces, so this is that plus room for the request.
-      if (data.length > 90_000_000) reject(new Error("too big"));
+      if (data.length > 90_000_000) {
+        // A 413 the person can read, not the 500 this became (K-911).
+        const err = new Error("That is too big to send. Attach smaller files.");
+        err.status = 413;
+        reject(err);
+      }
     });
     req.on("end", () => {
       try { resolve(data ? JSON.parse(data) : {}); } catch (e) { resolve({}); }
