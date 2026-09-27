@@ -122,18 +122,17 @@ krate run regex.krate --prompt
 need to use the app, test its behavior and test the same artifact on each OS
 you intend to support. A passing build is not a functional or security audit.
 
-## Nothing installed? Start in the browser
+## Rather not use a terminal? Get Krate Studio
 
-[krate.tech/app](https://krate.tech/app/) is Krate Studio in a tab. Describe
-the app you want and **Krate AI** writes it, builds it on our machines and
-hands back a `.krate` you can download and run. No install, no toolchain, no
-API key of your own.
+<!-- The browser Studio link (krate.tech/app) returns once hub sign-in works
+     again (hub.krate.tech/login/start returned Cloudflare 1101 on 2026-09-27). -->
+Download Krate Studio for Mac, Windows or Linux:
+[krate.tech/#downloads](https://krate.tech/#downloads). Describe the app you
+want, and Studio writes it with your AI, builds it and hands back a `.krate`
+you can run and share.
 
-Your first app is on us, and so is your first change to it. After that,
 Krate Studio on your own machine is free and unlimited when you point it at
-an AI you already have (Claude, Codex, Gemini, or an API key you hold). The
-session follows your account, so anything you start in the browser opens on
-the desktop ready to edit.
+an AI you already have (Claude, Codex, Gemini, or an API key you hold).
 
 ## A measured notes workload
 
@@ -199,19 +198,14 @@ way if you would rather write the code yourself. Every `.krate` carries its
 own source, so a build you shipped a year ago opens as a project you can
 edit.
 
-It runs in two places, and they are the same interface rather than two
-lookalikes:
-
-- **In a browser**, at [krate.tech/app](https://krate.tech/app/). Krate AI
-  does the writing and the build happens on our machines. Nothing to
-  install, and your first app and first change are free.
-- **On your machine**, from [krate.tech/studio](https://krate.tech/studio/).
-  Signed `.dmg` on macOS, installer on Windows (unsigned for now, so
-  SmartScreen asks once), AppImage on Linux. Free and unlimited with your
-  own AI.
-
-Sessions live on your account, so an app you start in the browser opens on
-the desktop with its conversation intact and editable.
+<!-- Studio in a browser (krate.tech/app) is listed here again once hub
+     sign-in works again (hub.krate.tech/login/start returned Cloudflare 1101
+     on 2026-09-27). -->
+Download Krate Studio for Mac, Windows or Linux from
+[krate.tech/#downloads](https://krate.tech/#downloads), or read more at
+[krate.tech/studio](https://krate.tech/studio/). Signed `.dmg` on macOS,
+installer on Windows (unsigned for now, so SmartScreen asks once), AppImage
+on Linux. Free and unlimited with your own AI.
 
 ## What it costs
 
