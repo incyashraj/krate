@@ -1610,11 +1610,21 @@ fn main() -> ExitCode {
     #[cfg(windows)]
     raise_timer_resolution();
 
+    // Logs go to STDERR. The default writer is stdout, which is the app's:
+    // on a Windows runner wgpu's "Returned GL context is 1.1" warning came
+    // out in the middle of what the app printed, so anything reading the
+    // app's output -- a script, a test, the Studio -- read Krate's log as
+    // the app's words (K-884). The GPU stack's own driver chatter is quiet
+    // unless KRATE_LOG asks for it: it is about the machine, not the app,
+    // and nothing a person running an app can act on.
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_env("KRATE_LOG")
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn")),
+            tracing_subscriber::EnvFilter::try_from_env("KRATE_LOG").unwrap_or_else(|_| {
+                tracing_subscriber::EnvFilter::new("warn,wgpu_hal=error,wgpu_core=error,naga=error")
+            }),
         )
+        .with_writer(std::io::stderr)
+        .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stderr()))
         .without_time()
         .init();
 

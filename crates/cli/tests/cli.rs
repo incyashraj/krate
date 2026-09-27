@@ -6068,6 +6068,56 @@ fn a_watch_reports_what_changed_in_a_folder_and_nothing_outside_its_grant() {
     );
 }
 
+/// Krate's own logs never land in an app's output (K-884).
+///
+/// The log writer defaulted to stdout, so on a Windows runner a wgpu driver
+/// warning appeared in the middle of what an app printed. With every log
+/// level on, stdout must still be exactly the app's line.
+#[test]
+fn krate_logs_go_to_stderr_never_into_what_the_app_prints() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/say-probe.wasm")).expect("probe");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        "[app]\nid = \"com.acme.say-probe\"\nname = \"say-probe\"\nversion = \"1.0.0\"\n\
+         entry = \"code.wasm\"\nworld = \"krate:app/gui@0.2.0\"\n\n\
+         [[capabilities]]\ncap = \"io.stdout\"\nrationale = \"print\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"io.args\"\nrationale = \"args\"\nrequired = true\n",
+    )
+    .expect("manifest");
+    let bundle = dir.path().join("say.krate");
+    assert!(krate()
+        .arg("pack")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .status()
+        .expect("pack")
+        .success());
+    let out = krate()
+        .env("KRATE_LOG", "debug")
+        .arg("run")
+        .arg(&bundle)
+        .arg("--auto-grant")
+        .args(["--", "rate", "3"])
+        .output()
+        .expect("run");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("DEBUG"),
+        "the fixture must really produce logs, or this proves nothing"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "error=invalid-request rate 3 is outside 0.5 to 2",
+        "stdout is the app's and only the app's"
+    );
+}
+
 /// An app speaks through the binary a person runs (krate:speech/synthesis,
 /// the capability roadmap's first Tier 1 item).
 ///
