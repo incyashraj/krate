@@ -1240,7 +1240,10 @@ mod tests {
         let window = dispatcher
             .create_window(WindowOptions::new("Notes", size).expect("options"))
             .expect("create window");
-        let orphan = WidgetNode::new(WidgetId::new(3).expect("orphan"), WidgetKind::Text);
+        // A child whose parent is not there. (A PARENTLESS node on an empty
+        // window is its root since K-392, so it is no longer the example.)
+        let orphan = WidgetNode::new(WidgetId::new(3).expect("orphan"), WidgetKind::Text)
+            .with_parent(WidgetId::new(9).expect("absent parent"));
 
         let err = dispatcher
             .upsert_node(window, orphan)

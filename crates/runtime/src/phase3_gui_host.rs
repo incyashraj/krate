@@ -3463,11 +3463,48 @@ impl Phase3GuiHost {
     ) -> Result<(), ui::types::UiError> {
         let id = self.window_id(window)?;
         if let Err(err) = self.dispatcher().upsert_node(id, node) {
+            if let UiDispatchError::Adapter(adapter) = &err {
+                if let Some(hint) = tree_mistake_hint(adapter) {
+                    eprintln!("krate: {hint}");
+                }
+            }
             return Err(dispatch_error_to_ui_error(err));
         }
         self.sync_native_widgets(id)
             .map_err(dispatch_error_to_ui_error)
     }
+}
+
+/// What went wrong building a widget tree, in words (K-392).
+///
+/// The guest receives the error, but almost every app answers it with a bare
+/// `return 1`, and the only tool that runs the app then reports "exit 1" with
+/// nothing on stdout -- which of the setup calls failed was unrecoverable. The
+/// host knows exactly which shape was wrong, so it says so on stderr, where
+/// `check-app` and a developer's terminal both show it.
+fn tree_mistake_hint(err: &UiAdapterError) -> Option<String> {
+    Some(match err {
+        UiAdapterError::MissingWidgetTree { .. } => {
+            "a widget was added before the window had a root -- add the root first: \
+             a node with no parent, or tree::set_root"
+                .to_string()
+        }
+        UiAdapterError::MissingWidgetParent { id, parent: 0 } => format!(
+            "widget {id} has no parent, but this window already has a root -- give it a \
+             parent (usually the root's id)"
+        ),
+        UiAdapterError::MissingWidgetParent { id, parent } => format!(
+            "widget {id} names parent {parent}, which is not in the tree yet -- add a \
+             parent before its children"
+        ),
+        UiAdapterError::WidgetParentCycle { id } => {
+            format!("widget {id} would be its own ancestor -- check its parent id")
+        }
+        UiAdapterError::DuplicateWidget { id } => {
+            format!("widget {id} is the window's root and cannot be given a parent")
+        }
+        _ => return None,
+    })
 }
 
 impl ui::tree::Host for Phase3GuiHost {

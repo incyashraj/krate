@@ -798,10 +798,22 @@ impl WidgetTree {
         self.root
     }
 
-    /// Insert or replace a non-root widget.
+    /// Insert or replace a widget.
+    ///
+    /// The root may be updated in place -- its label, style or kind -- and
+    /// keeps its children (K-392). It used to be refused as a duplicate, so
+    /// an app restyling its own root had to call `set_root`, which throws the
+    /// whole tree away.
     pub fn upsert(&mut self, node: WidgetNode) -> Result<(), UiAdapterError> {
         if node.id == self.root {
-            return Err(UiAdapterError::DuplicateWidget { id: node.id.get() });
+            if node.parent.is_some() {
+                // The root cannot be moved under another node.
+                return Err(UiAdapterError::DuplicateWidget { id: node.id.get() });
+            }
+            let mut node = node;
+            node.style = node.style.validate()?;
+            self.nodes.insert(node.id, node);
+            return Ok(());
         }
 
         let parent = node.parent.ok_or(UiAdapterError::MissingWidgetParent {
@@ -2023,6 +2035,14 @@ impl DraftWindowRegistry {
     ) -> Result<(), UiAdapterError> {
         self.open_window(window)?;
         let widget = node.id;
+        // The first node of a window, with no parent, IS the root (K-392).
+        // Building the tree with upsert_node alone used to fail on its first
+        // call -- a bare error and an app that exited 1 with nothing said --
+        // because only set_root could create a tree. There is one sensible
+        // reading of "add this parentless node to an empty window".
+        if node.parent.is_none() && !self.widget_trees.contains_key(&window) {
+            return self.set_root(window, node);
+        }
         let tree = self
             .widget_trees
             .get_mut(&window)
@@ -2432,6 +2452,63 @@ fn validate_f32(field: &str, value: f32) -> Result<(), UiAdapterError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// K-392: a tree built with upsert_node alone works. The first
+    /// parentless node of an empty window is its root; the root can be
+    /// updated in place and keeps its children; a SECOND parentless node is
+    /// still refused, because it has nowhere to go.
+    #[test]
+    fn a_tree_can_be_built_with_upsert_alone_and_the_root_restyled() {
+        let mut registry = DraftWindowRegistry::default();
+        let size = WindowSize::new(800, 600).expect("size");
+        let window =
+            registry.create_window(WindowOptions::new("Relay", size).expect("window options"));
+        let id = |n| WidgetId::new(n).expect("id");
+
+        let root = WidgetNode::new(id(1), WidgetKind::Stack);
+        registry
+            .upsert_node(window, root)
+            .expect("the first parentless node of an empty window becomes its root");
+        let child = WidgetNode::new(id(2), WidgetKind::Button)
+            .with_parent(id(1))
+            .with_label("Go")
+            .expect("label");
+        registry
+            .upsert_node(window, child)
+            .expect("child of the root");
+
+        let restyled = WidgetNode::new(id(1), WidgetKind::Stack)
+            .with_label("Main")
+            .expect("label");
+        registry
+            .upsert_node(window, restyled)
+            .expect("the root can be updated in place");
+        let tree = registry.widget_tree(window).expect("tree");
+        assert_eq!(tree.root(), id(1));
+        assert_eq!(
+            tree.node(id(1)).and_then(|n| n.label.clone()).as_deref(),
+            Some("Main")
+        );
+        assert!(tree.node(id(2)).is_some(), "and keeps its children");
+
+        let second = WidgetNode::new(id(3), WidgetKind::Stack);
+        assert!(
+            matches!(
+                registry.upsert_node(window, second),
+                Err(UiAdapterError::MissingWidgetParent { parent: 0, .. })
+            ),
+            "a second parentless node is still a mistake"
+        );
+
+        let moved = WidgetNode::new(id(1), WidgetKind::Stack).with_parent(id(2));
+        assert!(
+            matches!(
+                registry.upsert_node(window, moved),
+                Err(UiAdapterError::DuplicateWidget { .. })
+            ),
+            "the root cannot be moved under another node"
+        );
+    }
 
     #[test]
     fn draft_registry_allocates_stable_window_ids() {
