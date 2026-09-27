@@ -129,6 +129,30 @@ const paint = src.slice(src.indexOf("async function paintSpend"));
 assert.match(paint.slice(0, 400), /querySelector\('\.ai-pane\[data-ai="keys"\]'\)/,
   "paintSpend targets the pane, not the nav button that shares its attribute");
 
+// The provider row says what the build service says, not a constant
+// (K-780). "Krate AI -- ready" sat beside a service that had making
+// switched off, and the person found out after signing in.
+{
+  const agentsSrc = grab("agents");
+  const row = async (health, ownKey = false) => {
+    const bridgeLocal = { ownKey };
+    const fn = new Function("builderHealth", "bridge", `return ({\n${agentsSrc}\n});`)(
+      async () => health, bridgeLocal,
+    );
+    return (await fn.agents())[0];
+  };
+  const off = await row({ ok: true, authoring: "off" });
+  assert.equal(off.state, "paused", "switched off reads as paused, not ready");
+  assert.match(off.detail, /paused/);
+  assert.equal((await row({ ok: true, authoring: "off" }, true)).state, "working",
+    "somebody with their own key is not paused by ours being off");
+  assert.equal((await row({ ok: true, authoring: "on" })).state, "working", "on reads as ready");
+  const down = await row({ ok: false });
+  assert.notEqual(down.state, "working", "an unreachable service is never shown as ready");
+  assert.match(down.detail, /not answering/);
+  console.log("ok  the provider row reports the build service's real state (K-780)");
+}
+
 console.log("ok  the spending panel targets the pane, not the nav button");
 console.log("ok  keys go to the hub when signed in, and wait in the browser only until then");
 console.log("ok  spend separates your key from Krate's");
