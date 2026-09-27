@@ -161,3 +161,67 @@ const settle = () => new Promise((r) => setTimeout(r, 0));
   assert.equal(down.line, INVITE, "unreachable, the invitation stands: sign-in still works");
   console.log("ok  /studio says browser making is paused before asking anyone to sign in (K-860)");
 }
+
+/* ---- K-866: the /make box, its arrow and its ideas ---------------------
+ *
+ * An idea clicked after typing replaced every word with no way back, and
+ * the arrow looked pressable on an empty box and did nothing. */
+{
+  const src = readFileSync("docs/landing/make/make.js", "utf8");
+  const piece = (start, end) => {
+    const at = src.indexOf(start);
+    assert.ok(at >= 0, `make.js has ${start}`);
+    return src.slice(at, src.indexOf(end, at) + end.length);
+  };
+  const code = [
+    piece("const IDEAS = [", "\n];"),
+    piece("function ownWords(", "\n}\n"),
+    piece("function syncComposer(", "\n}\n"),
+    piece("function paintIdeas(", "\n}\n"),
+  ].join("\n");
+
+  const cls = () => {
+    const set = new Set();
+    return {
+      toggle: (c, on) => (on ? set.add(c) : set.delete(c)),
+      contains: (c) => set.has(c),
+      add: (c) => set.add(c),
+      remove: (c) => set.delete(c),
+    };
+  };
+  const els = {
+    prompt: { value: "", focus() {}, dispatchEvent() { run.syncComposer(); } },
+    send: { disabled: false, classList: cls() },
+    ideas: { classList: cls(), innerHTML: "" },
+  };
+  const chips = [0, 1, 2].map((i) => ({
+    dataset: { i: String(i) },
+    click() { this.onclick(); },
+    addEventListener(_, fn) { this.onclick = fn; },
+  }));
+  const document = { querySelectorAll: () => chips };
+  const run = new Function("$", "document", "escapeHtml", "Event",
+    `${code}; return { IDEAS, ownWords, syncComposer, paintIdeas };`)(
+    (id) => els[id], document, (s) => s, class { constructor(t) { this.type = t; } },
+  );
+  run.paintIdeas();
+  run.syncComposer();
+  assert.equal(els.send.disabled, true, "an empty box cannot be sent");
+
+  els.prompt.value = "a habit tracker for my runs";
+  run.syncComposer();
+  assert.equal(els.send.disabled, false, "words can be sent");
+  assert.equal(els.ideas.classList.contains("hidden"), true, "the ideas step aside for the person's own words");
+  chips[0].click();
+  assert.equal(els.prompt.value, "a habit tracker for my runs", "an idea never replaces what somebody wrote");
+
+  els.prompt.value = "";
+  run.syncComposer();
+  assert.equal(els.ideas.classList.contains("hidden"), false, "an empty box shows the ideas again");
+  chips[1].click();
+  assert.equal(els.prompt.value, run.IDEAS[1].full, "an idea fills an empty box");
+  chips[2].click();
+  assert.equal(els.prompt.value, run.IDEAS[2].full, "and another idea can replace an idea");
+  assert.equal(els.send.disabled, false);
+  console.log("ok  /make never overwrites typed words, and its arrow is off on an empty box (K-866)");
+}

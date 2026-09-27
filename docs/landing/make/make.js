@@ -211,11 +211,35 @@ function paintIdeas() {
   document.querySelectorAll(".idea").forEach((b) => {
     b.addEventListener("click", () => {
       const box = $("prompt");
+      // Never over somebody's own words: the ideas are hidden while the box
+      // holds them (syncComposer), and this is the same rule at the door.
+      if (ownWords(box.value)) return;
       box.value = IDEAS[b.dataset.i].full;
       box.focus();
       box.dispatchEvent(new Event("input"));
     });
   });
+}
+
+/* Is what is in the box the person's own words? An idea's text is not:
+ * that was put there by a click and can be swapped for another idea. */
+function ownWords(text) {
+  const t = String(text || "").trim();
+  return Boolean(t) && !IDEAS.some((idea) => idea.full === t);
+}
+
+/* The box, the arrow and the ideas agree about what is in the box.
+ *
+ * The arrow looked pressable on an empty box and did nothing when pressed,
+ * and an idea clicked after typing replaced every word with no way back
+ * (K-866). Empty, the arrow is disabled. Holding the person's own words,
+ * the ideas step aside until the box is empty again. */
+function syncComposer() {
+  const box = $("prompt");
+  const has = Boolean(box.value.trim());
+  $("send").classList.toggle("ready", has);
+  $("send").disabled = !has;
+  $("ideas").classList.toggle("hidden", ownWords(box.value));
 }
 
 /* ---- making ------------------------------------------------------------- */
@@ -706,8 +730,9 @@ function boot() {
   const box = $("prompt");
   box.addEventListener("input", () => {
     grow(box);
-    $("send").classList.toggle("ready", Boolean(box.value.trim()));
+    syncComposer();
   });
+  syncComposer();
   box.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); startMake(); }
   });
@@ -723,7 +748,7 @@ function boot() {
 
   $("again").onclick = () => {
     $("prompt").value = "";
-    $("send").classList.remove("ready");
+    syncComposer();
     show("viewAsk");
     $("prompt").focus();
   };
