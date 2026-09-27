@@ -71,6 +71,11 @@ run "app bindings are fresh (CI lane)" sh -c 'git diff --quiet -- "*/src/binding
 # made and not yet committed passes; a stale page is left regenerated.
 run "UAPI freeze pages are current" sh -c 'd=$(mktemp -d); for f in lock evidence; do cp docs/book/src/phase2/uapi-freeze-$f.md "$d/$f"; done; sh scripts/generate-uapi-freeze-lock.sh >/dev/null 2>&1 && sh scripts/generate-uapi-freeze-evidence.sh >/dev/null 2>&1 && cmp -s "$d/lock" docs/book/src/phase2/uapi-freeze-lock.md && cmp -s "$d/evidence" docs/book/src/phase2/uapi-freeze-evidence.md; r=$?; rm -rf "$d"; exit $r'
 
+# The UAPI lane also regenerates the widget and interface parity tables:
+# a new GUI interface without its row failed CI on 2026-09-27. Compared
+# with the working tree, as above.
+run "parity tables are current (CI UAPI lane)" sh -c 'd=$(mktemp -d); for f in widget-parity interface-parity; do cp docs/book/src/reference/$f.md "$d/$f"; done; cargo run -q -p krate-tools --bin check-widget-parity -- --write >/dev/null 2>&1 && cargo run -q -p krate-tools --bin check-interface-parity -- --write >/dev/null 2>&1 && cmp -s "$d/widget-parity" docs/book/src/reference/widget-parity.md && cmp -s "$d/interface-parity" docs/book/src/reference/interface-parity.md; r=$?; rm -rf "$d"; exit $r'
+
 # The exact command CI's quick lane runs ("Run workspace tests"), four
 # minutes on this machine. Until 2026-09-20 this gate ran no cargo tests at
 # all, and every quick-lane failure that day -- five runs, all of them tests
