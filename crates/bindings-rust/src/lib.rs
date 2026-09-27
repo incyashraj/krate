@@ -388,11 +388,137 @@ pub mod mem {
     }
 }
 
+/// Floating-point maths that works in a `no_std` app.
+///
+/// `floor`, `sin`, `sqrt` and friends are `std` methods, so a guest built
+/// without `std` -- every Krate app -- cannot call `x.floor()`. With
+/// `use krate::prelude::*;` it can: these traits give `f32` and `f64` the
+/// same methods, computed by `libm`, with the same names and meanings as
+/// `std`'s. In a build that does have `std`, the inherent methods win and
+/// these are never reached.
+pub mod math {
+    macro_rules! float_ext {
+        (
+            $(#[$doc:meta])* $name:ident for $t:ty;
+            unary { $($f:ident => $lib:ident),* $(,)? }
+            binary { $($bf:ident => $blib:ident),* $(,)? }
+            trunc = $trunc:ident, pow = $pow:ident, fma = $fma:ident, fabs = $fabs:ident,
+            sin = $sin:ident, cos = $cos:ident
+        ) => {
+            $(#[$doc])*
+            pub trait $name: Sized {
+                $(
+                    #[doc = concat!("As `std`'s `", stringify!($t), "::", stringify!($f), "`.")]
+                    fn $f(self) -> $t;
+                )*
+                $(
+                    #[doc = concat!("As `std`'s `", stringify!($t), "::", stringify!($bf), "`.")]
+                    fn $bf(self, other: $t) -> $t;
+                )*
+                /// The fractional part: `x - x.trunc()`.
+                fn fract(self) -> $t;
+                /// `self` raised to an integer power.
+                fn powi(self, n: i32) -> $t;
+                /// `(self.sin(), self.cos())`.
+                fn sin_cos(self) -> ($t, $t);
+                /// The least non-negative remainder of `self / rhs`.
+                fn rem_euclid(self, rhs: $t) -> $t;
+                /// `self * a + b`, rounded once.
+                fn mul_add(self, a: $t, b: $t) -> $t;
+            }
+
+            impl $name for $t {
+                $(#[inline] fn $f(self) -> $t { libm::$lib(self) })*
+                $(#[inline] fn $bf(self, other: $t) -> $t { libm::$blib(self, other) })*
+                #[inline]
+                fn fract(self) -> $t {
+                    self - libm::$trunc(self)
+                }
+                #[inline]
+                fn powi(self, n: i32) -> $t {
+                    libm::$pow(self, n as $t)
+                }
+                #[inline]
+                fn sin_cos(self) -> ($t, $t) {
+                    (libm::$sin(self), libm::$cos(self))
+                }
+                #[inline]
+                fn rem_euclid(self, rhs: $t) -> $t {
+                    let r = self % rhs;
+                    if r < 0.0 {
+                        r + libm::$fabs(rhs)
+                    } else {
+                        r
+                    }
+                }
+                #[inline]
+                fn mul_add(self, a: $t, b: $t) -> $t {
+                    libm::$fma(self, a, b)
+                }
+            }
+        };
+    }
+
+    float_ext! {
+        /// `std`'s `f32` maths, for a `no_std` app: `x.floor()`, `a.atan2(b)`.
+        F32Ext for f32;
+        unary {
+            floor => floorf, ceil => ceilf, round => roundf, trunc => truncf,
+            abs => fabsf, sqrt => sqrtf, cbrt => cbrtf, exp => expf, exp2 => exp2f,
+            ln => logf, log2 => log2f, log10 => log10f, sin => sinf, cos => cosf,
+            tan => tanf, asin => asinf, acos => acosf, atan => atanf,
+            sinh => sinhf, cosh => coshf, tanh => tanhf,
+        }
+        binary { powf => powf, atan2 => atan2f, hypot => hypotf, copysign => copysignf }
+        trunc = truncf, pow = powf, fma = fmaf, fabs = fabsf, sin = sinf, cos = cosf
+    }
+
+    float_ext! {
+        /// `std`'s `f64` maths, for a `no_std` app.
+        F64Ext for f64;
+        unary {
+            floor => floor, ceil => ceil, round => round, trunc => trunc,
+            abs => fabs, sqrt => sqrt, cbrt => cbrt, exp => exp, exp2 => exp2,
+            ln => log, log2 => log2, log10 => log10, sin => sin, cos => cos,
+            tan => tan, asin => asin, acos => acos, atan => atan,
+            sinh => sinh, cosh => cosh, tanh => tanh,
+        }
+        binary { powf => pow, atan2 => atan2, hypot => hypot, copysign => copysign }
+        trunc = trunc, pow = pow, fma = fma, fabs = fabs, sin = sin, cos = cos
+    }
+}
+
+#[cfg(test)]
+mod math_tests {
+    use super::math::{F32Ext, F64Ext};
+
+    /// Called through the trait: in this host build `f32` has `std`'s own
+    /// methods, and `x.floor()` would test those instead.
+    #[test]
+    fn the_no_std_maths_answers_as_std_does() {
+        // CP-E's terrain: truncation toward zero put half the map in the sky.
+        assert_eq!(F32Ext::floor(-0.7f32), -1.0);
+        assert_eq!(F32Ext::ceil(-0.7f32), -0.0);
+        assert_eq!(F32Ext::round(2.5f32), 3.0);
+        assert_eq!(F32Ext::fract(-1.25f32), -0.25);
+        assert_eq!(F32Ext::rem_euclid(-1.0f32, 3.0), 2.0);
+        assert_eq!(F32Ext::powi(2.0f32, 10), 1024.0);
+        assert_eq!(F32Ext::sqrt(2.0f32), 2.0f32.sqrt());
+        let (s, c) = F32Ext::sin_cos(1.0f32);
+        assert!((s - 1.0f32.sin()).abs() < 1e-6 && (c - 1.0f32.cos()).abs() < 1e-6);
+        assert!((F32Ext::atan2(1.0f32, -1.0) - 1.0f32.atan2(-1.0)).abs() < 1e-6);
+        assert_eq!(F64Ext::floor(-2.5f64), -3.0);
+        assert!((F64Ext::ln(core::f64::consts::E) - 1.0).abs() < 1e-12);
+        assert_eq!(F64Ext::mul_add(2.0f64, 3.0, 1.0), 7.0);
+    }
+}
+
 pub mod prelude {
     pub use crate::export;
     pub use crate::fs::{self, FileExt, OpenMode};
     pub use crate::io::{self, streams::OutputStreamExt, Guest};
     pub use crate::locale;
+    pub use crate::math::{F32Ext as _, F64Ext as _};
     pub use crate::mem;
     pub use crate::motion::{ease_in_out, ease_out, smoothstep, Spring};
     pub use crate::net;

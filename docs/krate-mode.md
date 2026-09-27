@@ -474,6 +474,11 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 These are not paths. Get the value first -- `io::stdio::stdout()`,
 `fs::open(..)` -- then call the method on it.
 
+- `<>.fract() -> $t`
+- `<>.mul_add(a: $t, b: $t) -> $t`
+- `<>.powi(n: i32) -> $t`
+- `<>.rem_euclid(rhs: $t) -> $t`
+- `<>.sin_cos() -> ($t, $t)`
 
 `File`
 

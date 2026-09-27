@@ -1147,6 +1147,14 @@ function required\", and a std guest that drops `\"std\"` fails with \
 avoid `format!`, `.unwrap()`, and `a[i]` indexing.\n\n\
 `apps/krate-contacts` is a shipped `no_std` GUI app to copy this wiring \
 from.\n\n\
+**Maths in `no_std`.** `x.floor()`, `sin`, `cos`, `sqrt`, `powf`, `atan2`, \
+`rem_euclid` and the rest are `std` methods, so a `no_std` guest reports \
+\"no method named `floor` found for type `f32`\". Do not write your own: \
+`use krate::math::F32Ext;` (and `F64Ext`, or just `use krate::prelude::*;`) \
+gives `f32` and `f64` the same methods with the same meanings. A \
+hand-written floor that casts to an integer rounds toward zero, which is \
+wrong for every negative number -- it put half of one game's terrain in \
+the sky.\n\n\
 ## Memory: 256 MiB unless the app asks\n\n\
 An app gets 256 MiB. A growing `Vec` or `String` briefly holds its old and \
 new buffer together, so plan on about half of that for live data. An app \

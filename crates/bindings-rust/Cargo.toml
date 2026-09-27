@@ -41,6 +41,11 @@ gui = []
 
 [dependencies]
 wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }
+# Floating-point maths for a `no_std` guest: `f32::floor`, `sin`, `sqrt` and
+# the rest live in `std`, so without this every game and chart hand-rolled
+# them (thirteen apps did; two proof checkpoints lost time to it). Pure Rust,
+# no imports of any kind, and already in the workspace's lockfile.
+libm = "0.2.16"
 # Only pulled in when an app opts into the getrandom backend. `custom` is the
 # feature that lets a downstream register its own source; the `--cfg
 # getrandom_backend="custom"` flag (set by the app's build) is what activates it.
