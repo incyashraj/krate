@@ -116,6 +116,25 @@ const NOISE: &[&str] = &[
     "prints", "output", "outputs", "give", "gives",
 ];
 
+/// Words that point at a file the person attached rather than at anything the
+/// app does (K-914).
+const ATTACHMENT_WORDS: &[&str] = &[
+    "attached",
+    "attachment",
+    "attachments",
+    "uploaded",
+    "enclosed",
+];
+
+/// Kinds of file, dropped only right after an attachment word: "my attached
+/// CSV" is the input, while "exports a CSV" is still a real requirement.
+#[rustfmt::skip]
+const ATTACHED_FILE_KINDS: &[&str] = &[
+    "file", "files", "csv", "pdf", "png", "jpg", "jpeg", "gif", "image", "images", "photo",
+    "photos", "picture", "pictures", "screenshot", "screenshots", "spreadsheet", "document",
+    "documents", "doc", "docx", "txt", "json", "xlsx", "data", "list", "sketch", "mockup",
+];
+
 /// Pull the concrete things a request asks for.
 ///
 /// This is deliberately shallow. It takes the content words -- the nouns and
@@ -189,12 +208,26 @@ fn split_clauses(request: &str) -> Vec<String> {
 /// The words in a clause that carry meaning worth looking for.
 fn content_terms(clause: &str) -> Vec<String> {
     let mut terms: Vec<String> = Vec::new();
+    let mut after_attachment_word = false;
     for word in clause.split_whitespace() {
         let bare: String = word
             .chars()
             .filter(|c| c.is_alphanumeric() || *c == '-')
             .collect::<String>()
             .to_lowercase();
+        // "my attached CSV" names what the person handed over, not something
+        // the app must contain. A correct budget app built FROM the attached
+        // CSV has the categories in its code and never the word "csv", and
+        // it was judged "not what you asked for" (K-914). The pointer word is
+        // dropped, and so is the kind of file right after it; a noun after
+        // it that the app should show ("the attached logo") stays.
+        let points_at_attachment = ATTACHMENT_WORDS.contains(&bare.as_str());
+        let names_the_file_kind =
+            after_attachment_word && ATTACHED_FILE_KINDS.contains(&bare.as_str());
+        after_attachment_word = points_at_attachment;
+        if points_at_attachment || names_the_file_kind {
+            continue;
+        }
         // Two-letter words are almost all function words, and the few that
         // are not ("3d", "ai") survive because they contain a digit.
         if bare.len() < 3 && !bare.chars().any(|c| c.is_ascii_digit()) {
@@ -883,6 +916,39 @@ mod tests {
 
     /// A request with nothing concrete in it is not accepted by default --
     /// absence of evidence must not read as evidence.
+    /// K-914, from a real Claude build: the app starts from the attached
+    /// CSV's categories (baked into its code) and shows the attached logo.
+    /// It was judged "the app has nothing about attached, csv".
+    #[test]
+    fn words_that_point_at_an_attachment_are_not_features() {
+        let request = "a budget tracker that starts with the categories and budgets in my \
+                       attached CSV, shows the attached logo at the top, lets me add expenses \
+                       and shows how much is left in each category";
+        let source = r#"
+            const CATEGORIES: &[(&str, u32)] = &[("Rent", 1200), ("Groceries", 400)];
+            struct Budget { category: String, limit: u32, spent: u32 }
+            fn draw_logo(image: &Image) { .. }
+            fn add_expense(budgets: &mut [Budget], category: usize, amount: u32) { .. }
+            fn left(b: &Budget) -> i64 { b.limit as i64 - b.spent as i64 }
+            fn start_tracker() { .. }
+        "#;
+        let verdict = judge(request, "budget-tracker", source);
+        assert!(
+            verdict.accepted,
+            "a correct app built from the attachments failed: {verdict:?}"
+        );
+        // "CSV" as a feature, with no attachment word before it, is still asked for.
+        let export = judge(
+            "an expense list that exports a CSV",
+            "x",
+            "fn add_expense() {} fn list() {}",
+        );
+        assert!(
+            !export.accepted,
+            "an export request with no CSV anywhere in the app must still fail: {export:?}"
+        );
+    }
+
     #[test]
     fn a_contentless_request_is_not_accepted() {
         let verdict = judge("make me an app", "thing", "fn main() {}");
