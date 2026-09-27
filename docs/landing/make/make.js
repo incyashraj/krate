@@ -155,6 +155,21 @@ async function loadMe() {
 
 /* ---- what the page is showing ------------------------------------------- */
 
+/* A line under the box on the ask view, for answers that need no screen
+ * change: too long, or a control that does not work in a browser yet. */
+function showAskNote(text) {
+  let note = document.getElementById("askNote");
+  if (!note) {
+    note = document.createElement("p");
+    note.id = "askNote";
+    note.className = "ask-note";
+    note.setAttribute("role", "status");
+    const box = $("box");
+    box.parentNode.insertBefore(note, box.nextSibling);
+  }
+  note.textContent = text;
+}
+
 function show(view) {
   for (const id of ["viewAsk", "viewWork", "viewDone"]) {
     $(id).classList.toggle("hidden", id !== view);
@@ -208,6 +223,16 @@ function paintIdeas() {
 async function startMake() {
   const request = $("prompt").value.trim();
   if (!request) return;
+  // Refused here, where the words can be edited. The service refuses past
+  // 2,000 characters, and the work screen's "Try again" resent the same
+  // text forever while saying "your words are still here" (K-910).
+  if (request.length > 2000) {
+    const box = $("prompt");
+    box.setCustomValidity && box.setCustomValidity("");
+    box.placeholder = "";
+    showAskNote(`That is ${request.length.toLocaleString()} characters; a request holds 2,000. Shorten it and press Make again.`);
+    return;
+  }
   state.request = request;
 
   // The wall is the hub's to enforce -- a counter the page owns is a
@@ -689,6 +714,10 @@ function boot() {
   setTimeout(() => box.focus(), 220);
 
   $("send").onclick = startMake;
+  // The paperclip had no handler at all: a button that did nothing (K-910).
+  // Attaching happens in the Studio page; say so rather than stay silent.
+  $("attach").onclick = () =>
+    showAskNote("Attaching files is in Krate Studio at krate.tech/app. Here, describe the app in words.");
   $("stop").onclick = stopBuild;
   $("accountBtn").onclick = openAccount;
 
@@ -719,13 +748,22 @@ function boot() {
       const blob = await res.blob();
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
-      link.download = `${(state.result.name || "app").replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.krate`;
+      // Letters in any language survive; only characters a file name
+      // cannot hold become "-". An ASCII-only rule named a Chinese app
+      // "-when.krate" (K-910).
+      const base = String(state.result.name || "app")
+        .replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "-")
+        .replace(/^[-.\s]+|[-.\s]+$/g, "")
+        .slice(0, 80) || "app";
+      link.download = `${base}.krate`;
       document.body.appendChild(link);
       link.click();
       link.remove();
       setTimeout(() => URL.revokeObjectURL(link.href), 60_000);
     } catch (err) {
+      // Said, not only logged: a failed download did nothing visible (K-910).
       console.warn("download failed:", err);
+      $("doneNote").textContent = "The download did not come through. Try again in a moment.";
     }
   };
   $("sendLink").onclick = async () => {
