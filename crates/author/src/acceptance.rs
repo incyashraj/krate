@@ -154,9 +154,14 @@ fn split_clauses(request: &str) -> Vec<String> {
             .filter(|c| c.is_alphanumeric() || *c == '-')
             .collect::<String>()
             .to_lowercase();
+        // A sentence end is a clause end: "...at the end. Show the countdown"
+        // is two requests, and read as one it needed six of eight words
+        // from two different things (K-880).
         let is_joiner = matches!(bare.as_str(), "and" | "that" | "which" | "then" | "plus")
             || word.ends_with(',')
-            || word.ends_with(';');
+            || word.ends_with(';')
+            || ((word.ends_with('.') || word.ends_with('!') || word.ends_with('?'))
+                && bare.len() > 1);
         if is_joiner && !content_terms(&current).is_empty() {
             if !bare.is_empty()
                 && !matches!(bare.as_str(), "and" | "that" | "which" | "then" | "plus")
@@ -286,6 +291,37 @@ pub fn judge(request: &str, _name: &str, source: &str) -> Acceptance {
         }
     }
 
+    // A clause about presentation -- "show the countdown big on screen" --
+    // is set aside on the same terms: only when every other clause passed.
+    // How a thing is shown is what the look step checks, from the pixels;
+    // the code rarely spells it, and a correct timer was called "not what you
+    // asked for" over it (K-880). An app that fails any other clause is never
+    // rescued, so a checklist built for a chess request still fails.
+    let others_pass = |skip: usize| {
+        let mut any = false;
+        for (i, v) in verdicts.iter().enumerate() {
+            if i == skip || is_presentation_clause(&reqs[i].text) {
+                continue;
+            }
+            if v.outcome == Outcome::Fail {
+                return false;
+            }
+            any |= v.outcome == Outcome::Pass;
+        }
+        any
+    };
+    let set_aside: Vec<usize> = (0..verdicts.len())
+        .filter(|&i| {
+            is_presentation_clause(&reqs[i].text)
+                && verdicts[i].outcome == Outcome::Fail
+                && others_pass(i)
+        })
+        .collect();
+    for i in set_aside {
+        verdicts[i].outcome = Outcome::Skip;
+        verdicts[i].detail = "how it is shown is checked by looking, not by reading".to_string();
+    }
+
     // An empty requirement list means the request had no content words to go
     // on. That is not evidence of success, so it is not accepted -- but the
     // caller decides whether such a request should have been built at all.
@@ -313,6 +349,26 @@ pub fn judge(request: &str, _name: &str, source: &str) -> Acceptance {
         accepted,
         summary,
     }
+}
+
+/// Is this clause about how something is shown rather than what the app does?
+/// It leads with a presentation verb: "show the countdown big", "display the
+/// total in large type".
+fn is_presentation_clause(text: &str) -> bool {
+    let first = text
+        .split_whitespace()
+        .next()
+        .map(|w| {
+            w.chars()
+                .filter(|c| c.is_alphanumeric())
+                .collect::<String>()
+                .to_lowercase()
+        })
+        .unwrap_or_default();
+    matches!(
+        first.as_str(),
+        "show" | "shows" | "showing" | "display" | "displays" | "displaying"
+    )
 }
 
 /// How many of a clause's terms must appear for the clause to count as served.
@@ -562,6 +618,31 @@ mod tests {
             "summary must say what is missing, got: {}",
             verdict.summary
         );
+    }
+
+    /// K-880: a correct talking timer, written first-try by an agent, was
+    /// called "not what you asked for" because a period did not end a clause
+    /// and "show the countdown big on screen too" was judged as code. The
+    /// fixture is that app's real source. A checklist answering the same
+    /// request must still fail: the fix sets aside presentation, never
+    /// behaviour.
+    #[test]
+    fn a_correct_timer_passes_and_a_checklist_still_fails_the_timer_request() {
+        let request = "A kitchen timer that talks. Pick the minutes with plus and minus \
+                       buttons, press Start, and it says out loud how many minutes are left \
+                       each minute, then says Time is up at the end. Show the countdown big \
+                       on screen too.";
+        let timer = include_str!("../tests/fixtures/k880-talking-timer.rs");
+        let verdict = judge(request, "kitchen-timer", timer);
+        assert!(verdict.accepted, "the real timer: {verdict:?}");
+
+        let checklist = r#"
+            struct Item { text: String, done: bool }
+            fn toggle(items: &mut Vec<Item>, index: usize) { items[index].done = !items[index].done; }
+            fn save(items: &[Item]) { store_kv_set("items", &encode(items)); }
+        "#;
+        let verdict = judge(request, "kitchen-timer", checklist);
+        assert!(!verdict.accepted, "a checklist is not a timer: {verdict:?}");
     }
 
     /// The starter that prints `replace me` cannot pass a dashboard request.
