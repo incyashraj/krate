@@ -169,6 +169,37 @@ const fragment = (fields) => "#" + new URLSearchParams(fields).toString();
   check(/<a href="\/"[^>]*><img src="\/krate-logo\.png"/.test(loginHtml), "the logo is a link home");
 }
 
+/* ---- the publish page uses the site's one sign-in (K-789) ---------------- */
+{
+  const publishHtml = readFileSync("docs/landing/publish/index.html", "utf8");
+  check(/href="\/login\/\?next=publish"[^>]*>Sign in</.test(publishHtml), "publishing signs in through /login, like everything else");
+  check(!publishHtml.includes("/auth/start"), "and no longer runs a GitHub-only device flow of its own");
+  // A person signed in on the old page kept their session under
+  // "krate-identity": moved to the one key once, so they are not asked again.
+  const localStorage = storage({ "krate-identity": JSON.stringify({ login: "me", token: "krs_old" }) });
+  const els = {};
+  const asked = [];
+  const ctx = {
+    localStorage, URLSearchParams, JSON, Date, setTimeout, console,
+    document: { getElementById: (id) => (els[id] ||= element()), createElement: () => element() },
+    fetch: async (url, init) => {
+      asked.push([url, init && init.headers && init.headers.authorization]);
+      return { ok: true, json: async () => ({ user: { login: "me", name: "Me" } }) };
+    },
+    location: { search: "", hash: "", pathname: "/publish/" },
+  };
+  ctx.window = ctx;
+  vm.createContext(ctx);
+  vm.runInContext(inlineScript(publishHtml), ctx);
+  await new Promise((r) => setTimeout(r, 20));
+  check(localStorage.getItem("krate_tok") === "krs_old" && localStorage.getItem("krate-identity") === null,
+    "an old publish-page sign-in moves to the site's one key, once");
+  check(asked.some(([u, a]) => String(u).endsWith("/me") && a === "Bearer krs_old"), "and is checked with the hub, not trusted");
+  check((els.whoami || {}).textContent === "Me", "and the person is shown as signed in");
+  els.signout.click();
+  check(localStorage.getItem("krate_tok") === null, "signing out here signs out of the site");
+}
+
 /* ---- /make takes no token from its URL ---------------------------------- */
 check(!/\.get\(\s*["']token["']\s*\)/.test(makeJs), "/make has no ?token= door");
 check(/signIn\(path\)[\s\S]{0,200}nonce=/.test(makeJs), "/make's sign-in sheet sends a nonce");

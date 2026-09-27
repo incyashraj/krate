@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Publish an app | Krate</title>
-  <meta name="description" content="Sign in with GitHub, choose a .krate file, and publish it so anyone can run it." />
+  <meta name="description" content="Sign in, choose a .krate file, and publish it so anyone can run it." />
   <meta name="theme-color" content="#0a0a0a" />
   <style>
   /* The ring shell, inlined: tokens and chrome this page used to borrow
@@ -117,11 +117,8 @@
       height: 46px; padding: 0 1.15rem; border-radius: 10px;
       font: inherit; font-weight: 600; cursor: pointer; text-decoration: none;
     }
-    .signin-row #signin-google {
-      color: var(--text); font-weight: 500;
-      background: transparent;
-      box-shadow: inset 0 0 0 1px var(--line-strong);
-    }
+    /* The one sign-in is a link to /login, dressed as the primary button. */
+    .signin-row a.primary { background: var(--blue); color: #071018; border: 0; }
     @media (max-width: 560px) {
       .signin-row { flex-direction: column; align-items: stretch; }
       .signin-row > * { width: 100%; }
@@ -229,29 +226,17 @@
     <section class="step active" id="step-auth">
       <h2><span class="n">1</span>Sign in</h2>
       <div id="auth-idle">
+        <!-- The site's one sign-in (K-789). This page used to run its own:
+             GitHub's device flow with a code to type on github.com, beside a
+             Google button that went to /login anyway. Three surfaces that
+             disagreed about which doors exist. /login has all of them --
+             GitHub, Google, email -- and comes back here signed in. -->
         <div class="signin-row">
-        <button class="primary" id="signin">Sign in with GitHub</button>
-        <!-- Google goes through /login/, not GitHub's device flow.
-             This page was GitHub-only because it drives that flow directly:
-             a code you type on github.com. Google has no equivalent, so the
-             second button hands off to the site's own sign-in page and comes
-             back with a session -- the same one the gallery and account page
-             already use. -->
-        <!-- Same size and shape as the GitHub button, one step quieter.
-             Two sign-in options should read as two options, not a button
-             and an afterthought; a link beside a solid button says the
-             second one is somehow lesser. -->
-        <a id="signin-google" href="/login/?next=publish">Sign in with Google</a>
+        <a class="primary" id="signin" href="/login/?next=publish">Sign in</a>
         </div>
         <p class="note" style="margin-top:.8rem">
-          So the app carries your name. Krate asks for read-only access to your
-          public profile and nothing else.
+          With GitHub, Google or your email, so the app carries your name.
         </p>
-      </div>
-      <div id="auth-waiting" hidden>
-        <p class="note">Open <a href="https://github.com/login/device" target="_blank" rel="noopener">github.com/login/device</a> and enter:</p>
-        <div class="code" id="usercode">····-····</div>
-        <p class="note" id="auth-status">Waiting for you to approve it…</p>
       </div>
       <div id="auth-done" hidden>
         <div class="who">
@@ -311,12 +296,9 @@
     // The hub. Same origin would be neater, but the hub is a Worker on its own
     // subdomain so the page has to name it.
     const HUB = "https://hub.krate.tech";
-    const CLIENT_ID = "Ov23liV2n8Dxi0okyv0F";
 
-    // The same device flow the CLI uses, for the same reason: no callback URL
-    // to register, and nothing secret has to live in this page. A browser
-    // cannot call GitHub's token endpoint directly (no CORS), so the hub
-    // proxies those two calls.
+    // Signed in means the site's one session, "krate_tok" -- the one
+    // /login/done stores and the Studio, /make and the account page read.
     let identity = null;
     let file = null;
 
@@ -332,27 +314,30 @@
 
     function showIdentity() {
       $("auth-idle").hidden = true;
-      $("auth-waiting").hidden = true;
       $("auth-done").hidden = false;
       $("whoami").textContent = identity.name || identity.login;
       $("avatar").src = identity.avatar_url || "";
       refresh();
     }
 
-    // Restore a previous sign-in so publishing a second app costs nothing.
-    try {
-      const saved = localStorage.getItem("krate-identity");
-      if (saved) { identity = JSON.parse(saved); showIdentity(); }
-    } catch (_) {}
-
-    // Or a session from /login/ -- which is how anyone signing in with
-    // Google arrives here, since GitHub's device flow above has no Google
-    // equivalent. The hub answers /me for either kind of token, so the rest
-    // of this page does not care which door was used.
+    // The session, asked of the hub rather than trusted from storage: an
+    // expired one shows the sign-in, not a name that cannot publish.
+    //
+    // This page used to keep its own sign-in under "krate-identity", from
+    // its own GitHub device flow -- a second copy the rest of the site never
+    // read (the K-777 mistake again). A copy left from then is moved over
+    // once, so nobody who signed in here is asked again, and then removed.
     (async () => {
-      if (identity) return;
       let tok = null;
-      try { tok = localStorage.getItem("krate_tok"); } catch (_) {}
+      try {
+        tok = localStorage.getItem("krate_tok");
+        const old = JSON.parse(localStorage.getItem("krate-identity") || "null");
+        if (!tok && old && old.token) {
+          tok = old.token;
+          localStorage.setItem("krate_tok", tok);
+        }
+        localStorage.removeItem("krate-identity");
+      } catch (_) {}
       if (!tok) return;
       try {
         const me = await fetch(HUB + "/me", {
@@ -365,52 +350,16 @@
           avatar_url: me.user.avatar_url || "",
           token: tok,
         };
-        localStorage.setItem("krate-identity", JSON.stringify(identity));
         showIdentity();
       } catch (_) {
-        // No session, or the hub is unreachable: the GitHub button still works.
+        // No session, or the hub is unreachable: Sign in still works.
       }
     })();
 
-    $("signin").addEventListener("click", async () => {
-      $("auth-idle").hidden = true;
-      $("auth-waiting").hidden = false;
-      try {
-        const start = await fetch(HUB + "/auth/start", { method: "POST" }).then((r) => r.json());
-        $("usercode").textContent = start.user_code;
-        window.open(start.verification_uri, "_blank", "noopener");
-
-        // Poll on the interval GitHub named; polling faster is refused.
-        const deadline = Date.now() + start.expires_in * 1000;
-        while (Date.now() < deadline) {
-          await new Promise((r) => setTimeout(r, start.interval * 1000));
-          const poll = await fetch(HUB + "/auth/poll", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ device_code: start.device_code }),
-          }).then((r) => r.json());
-          if (poll.identity) {
-            identity = poll.identity;
-            localStorage.setItem("krate-identity", JSON.stringify(identity));
-            showIdentity();
-            return;
-          }
-          if (poll.error && poll.error !== "authorization_pending" && poll.error !== "slow_down") {
-            throw new Error(poll.error);
-          }
-        }
-        throw new Error("that code expired -- try again");
-      } catch (err) {
-        $("auth-waiting").hidden = true;
-        $("auth-idle").hidden = false;
-        $("error").hidden = false;
-        $("error").textContent = String(err.message || err);
-      }
-    });
-
+    // Signing out here signs out of the site, because there is one sign-in.
     $("signout").addEventListener("click", () => {
       identity = null;
-      localStorage.removeItem("krate-identity");
+      try { localStorage.removeItem("krate_tok"); } catch (_) {}
       $("auth-done").hidden = true;
       $("auth-idle").hidden = false;
       refresh();
