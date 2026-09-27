@@ -7685,10 +7685,20 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
     // Deterministic thin gate. name_from_request already knows which words
     // carry meaning; a request it cannot name and that has no sentence
     // structure to speak of is not buildable as typed.
-    let meaningful = request
+    // Words in any script, not only ASCII: a detailed request in Chinese,
+    // Russian or Japanese counted as zero words and was asked "What should
+    // this app do?" (K-906). Scripts written without spaces count about
+    // one word per two characters.
+    let words = request
         .split_whitespace()
-        .filter(|w| w.chars().any(|c| c.is_ascii_alphanumeric()))
+        .filter(|w| w.chars().any(char::is_alphanumeric))
         .count();
+    let unspaced = request
+        .chars()
+        .filter(|c| c.is_alphanumeric() && !c.is_ascii())
+        .count()
+        / 2;
+    let meaningful = words.max(unspaced);
     if name_from_request(request).is_none() && meaningful < 4 {
         println!(
             "{}",
@@ -7845,7 +7855,12 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
     // fallbacks, same words -- rather than growing a second plan path that
     // drifts from this one.
     if let Some(vendor) = api_vendor {
-        let answer = api_author::ask_once(vendor, &prompt).unwrap_or_default();
+        // The provider's refusal is the answer, not an empty plan. This was
+        // unwrap_or_default: a rejected key, a rate limit or an overloaded
+        // API exited 0 with no plan, and the web built straight away --
+        // skipping the questions and the not-an-app guard -- into the same
+        // refusal (K-905). A plan that fails says why; the caller decides.
+        let answer = api_author::ask_once(vendor, &prompt)?;
         return finish_plan(&answer, provider, false);
     }
 

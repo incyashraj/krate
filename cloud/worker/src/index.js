@@ -4039,9 +4039,12 @@ async function caseOpen(request, env) {
   if (spent >= limit) {
     const ent = user ? JSON.parse((await env.APPS.get(`ent:${user.id}`)) || "null") : null;
     if (!entitlementActive(ent)) {
+      // No price: Krate quotes none anywhere (the pricing decision), and
+      // this said "Studio is $12 a month" and "Studio is free" in one
+      // sentence (K-907). The two ways on are both free.
       const message = isEdit
-        ? "The free change is used. Studio is $12 a month, unlimited -- and Krate Studio on your own machine is free and unlimited with your own AI."
-        : "The free app is used. Studio is $12 a month, unlimited -- and Krate Studio on your own machine is free and unlimited with your own AI.";
+        ? "The free change is used. Krate Studio on your own machine is free and unlimited with your own AI, and this session is waiting there -- or add your own API key in Settings and keep going here."
+        : "The free app is used. Krate Studio on your own machine is free and unlimited with your own AI, and this session is waiting there -- or add your own API key in Settings and keep going here.";
       return json({ wall: true, n: spent, limit, edit: isEdit, message }, 402);
     }
   }

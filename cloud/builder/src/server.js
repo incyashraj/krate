@@ -430,7 +430,7 @@ async function allowedToBuild(token, device) {
     if (process.env.KRATE_CHARGING === "1" && made >= 1) {
       return {
         ok: false,
-        message: "You have made your free app. Studio is unlimited, $12 a month.",
+        message: "You have made your free app. Krate Studio on your own machine is free and unlimited with your own AI.",
         wall: true,
       };
     }
@@ -901,14 +901,14 @@ async function caseOpen(token, device, request, edit = false) {
  * way. The hub owns the decision; a browser-side count is a count anyone
  * can edit, and this one costs us money to be wrong about.
  */
-async function allowedToRevise(token, device, change) {
+async function allowedToRevise(token, device, change, edit = true) {
   if (process.env.KRATE_BUILDER_DEV === "1") return { ok: true, caseId: null };
   let res;
   try {
     res = await fetch(`${HUB}/case/open`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-      body: JSON.stringify({ device: device || "", request: change || "", edit: true }),
+      body: JSON.stringify({ device: device || "", request: change || "", edit }),
     });
   } catch (e) {
     // The hub is unreachable. A change is cheap next to telling somebody
@@ -1207,7 +1207,13 @@ const server = createServer(async (req, res) => {
       // parent's case, so `/case/open` -- the only place the hub decides an
       // edit -- was never reached, and the free change was unlimited in
       // practice however the hub was configured.
-      const mayRevise = await allowedToRevise(token, device, change);
+      // A change to an app the engine judged "not what you asked for" is a
+      // make, not an edit: nothing was counted as made, so the hub refused
+      // it as an edit ("There is no app to change yet") while the card
+      // invited it (K-908). As a make it spends the free app only if it
+      // succeeds -- the same terms as any first build.
+      const offRequestParent = Boolean(job.result && job.result.verdict === "off-request");
+      const mayRevise = await allowedToRevise(token, device, change, !offRequestParent);
       if (!mayRevise.ok) {
         // Release the slot claimed above: a refusal is not a build, and an
         // unreleased claim locks this account out of building for the life
