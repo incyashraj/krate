@@ -1209,17 +1209,29 @@ impl AgentProvider for ClaudeProvider {
         // Copy the transcript into this workspace's project directory so the
         // resume can see it. Every step is best effort: on any miss the
         // resume fails and the caller falls back to a fresh run.
+        //
+        // The destination is the config directory the BUILD's claude reads:
+        // CLAUDE_CONFIG_DIR when set (the Studio sets it to the agent home),
+        // else ~/.claude. The plan ran without it, so its transcript sits in
+        // ~/.claude; copying it within ~/.claude left every Studio build
+        // saying "the earlier session could not be continued" and paying a
+        // cold start (K-883). Both places are searched for the source.
         let Some(home) = crate::home_dir() else {
             return;
         };
-        let projects = home.join(".claude/projects");
+        let config = std::env::var_os("CLAUDE_CONFIG_DIR")
+            .filter(|c| !c.is_empty())
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| home.join(".claude"));
+        let projects = config.join("projects");
         let file_name = format!("{session_id}.jsonl");
-        let Some(source) = std::fs::read_dir(&projects).ok().and_then(|entries| {
-            entries
-                .filter_map(|e| e.ok())
-                .map(|e| e.path().join(&file_name))
-                .find(|p| p.is_file())
-        }) else {
+        let Some(source) = [projects.clone(), home.join(".claude/projects")]
+            .iter()
+            .filter_map(|root| std::fs::read_dir(root).ok())
+            .flat_map(|entries| entries.filter_map(|e| e.ok()))
+            .map(|e| e.path().join(&file_name))
+            .find(|p| p.is_file())
+        else {
             return;
         };
         let canonical =

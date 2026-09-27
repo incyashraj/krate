@@ -9750,11 +9750,6 @@ fn run_provider_author(
             }
         }
     }
-    // Claude signs in with its current access token and nothing that can
-    // refresh, so no copy can race the person's own sign-in (K-882).
-    if provider.name() == "claude" {
-        agent_provider::with_claude_sign_in(&mut command);
-    }
     // Hot sessions (the last piece of the speed study): a repair round or a
     // revise RESUMES the session that wrote the app instead of cold-starting
     // one that must re-read everything -- measured cold, the reading alone
@@ -9814,6 +9809,13 @@ fn run_provider_author(
     // Provider-specific spawn setup: closing stdin so a headless run never
     // blocks on input, plus anything else that provider needs.
     provider.configure(&mut command);
+    // Claude signs in with its current access token and nothing that can
+    // refresh, so no copy can race the person's own sign-in (K-882). After
+    // `configure`, which strips every CLAUDE_CODE_* variable this process
+    // inherited and would take the token with them.
+    if provider.name() == "claude" {
+        agent_provider::with_claude_sign_in(&mut command);
+    }
     // The stdin route re-opens what configure just closed: the prompt is
     // written down the pipe and the pipe is dropped, so the agent still
     // sees EOF and can never hang waiting for more.
