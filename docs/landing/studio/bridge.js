@@ -704,8 +704,13 @@ async function publishWebApp({ path, name, description, shot, unlisted } = {}, t
   const bytes = await got.arrayBuffer();
   const publishHeaders = { ...headers, "content-type": "application/octet-stream" };
   const title = String(name || app.name.replace(/\.krate$/, "") || "").trim();
-  if (title) publishHeaders["x-krate-name"] = title;
-  if (description) publishHeaders["x-krate-description"] = String(description).slice(0, 500);
+  // Percent-encoded, and said so: a header cannot carry "Mom’s" or "番茄钟"
+  // as typed, and the browser refused to send the request at all (K-891).
+  publishHeaders["x-krate-encoding"] = "uri";
+  if (title) publishHeaders["x-krate-name"] = encodeURIComponent(title);
+  if (description) {
+    publishHeaders["x-krate-description"] = encodeURIComponent(Array.from(String(description)).slice(0, 500).join(""));
+  }
   if (unlisted) publishHeaders["x-krate-unlisted"] = "1";
   const res = await fetch(`${HUB}/publish`, { method: "POST", headers: publishHeaders, body: bytes });
   if (!res.ok) throw new Error((await res.text().catch(() => "")) || res.statusText);

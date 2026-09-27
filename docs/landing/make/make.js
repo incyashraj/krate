@@ -786,7 +786,14 @@ function boot() {
       const bytes = await got.arrayBuffer();
       const res = await fetch(HUB + "/publish", {
         method: "POST",
-        headers: { ...headers, "content-type": "application/octet-stream", "x-krate-name": state.result.name || "Untitled app" },
+        // Percent-encoded and said so (K-891): a header cannot carry a name
+        // outside ISO-8859-1, and the browser refused to send it.
+        headers: {
+          ...headers,
+          "content-type": "application/octet-stream",
+          "x-krate-encoding": "uri",
+          "x-krate-name": encodeURIComponent(state.result.name || "Untitled app"),
+        },
         body: bytes,
       });
       if (!res.ok) throw new Error((await res.text()) || res.statusText);
