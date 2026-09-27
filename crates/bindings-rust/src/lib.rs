@@ -988,6 +988,32 @@ pub mod fs {
             self.write_all(value.as_bytes())
         }
     }
+
+    /// Noticing when the files in a folder change.
+    ///
+    /// Allowed wherever listing the folder is. `changes` looks at most four
+    /// times a second, so it is fine to ask every frame.
+    pub mod watch {
+        pub use crate::bindings::krate::fs::watch::{Change, ChangeKind};
+        use alloc::vec::Vec;
+
+        use super::FsError;
+
+        /// Start watching a folder and everything under it.
+        pub fn start(path: &str) -> Result<u64, FsError> {
+            crate::bindings::krate::fs::watch::start(path)
+        }
+
+        /// What changed since `start` or the last call, sorted by path.
+        pub fn changes(watch: u64) -> Result<Vec<Change>, FsError> {
+            crate::bindings::krate::fs::watch::changes(watch)
+        }
+
+        /// Stop watching.
+        pub fn stop(watch: u64) {
+            crate::bindings::krate::fs::watch::stop(watch)
+        }
+    }
 }
 
 /// Capability-checked HTTP client access.

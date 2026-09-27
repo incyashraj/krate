@@ -88,3 +88,49 @@ interface files {
   /// Rename or move a path.
   rename: func(%from: string, to: string) -> result<_, fs-error>;
 }
+
+/// Noticing when the files in a folder change: a folder of photos to shrink,
+/// a notes folder another editor also writes, an inbox a scanner fills.
+///
+/// A watch sees what listing the folder would see and nothing more, so it
+/// needs what listing needs: `fs.list` on the folder, or a folder the
+/// person picked (`picked/<token>/...`). Changes are found by looking, not
+/// pushed, which is the same on every system and cannot fall behind.
+interface watch {
+  use types.{fs-error};
+
+  /// What happened to one path.
+  enum change-kind {
+    /// It appeared.
+    created,
+    /// Its size or modified time changed.
+    modified,
+    /// It went away. A rename is a removal and a creation.
+    removed,
+  }
+
+  /// One change: the watched folder's path joined with the entry's path
+  /// inside it, `/`-separated -- a path the app can pass straight back to
+  /// `files.open` or `files.stat`.
+  record change {
+    /// Where it happened, as the app would name it.
+    path: string,
+    /// What happened to it.
+    kind: change-kind,
+    /// True when the path is a folder.
+    is-dir: bool,
+  }
+
+  /// Start watching a folder and everything under it, and return an id for
+  /// `changes`. At most 8 watches at once, and 20,000 entries each: a
+  /// bigger tree is refused rather than watched in part.
+  start: func(path: string) -> result<u64, fs-error>;
+
+  /// What changed since `start` or the last call, sorted by path. Looks at
+  /// most four times a second: calling sooner returns an empty list, not an
+  /// error, so an app may simply ask every frame.
+  changes: func(watch-id: u64) -> result<list<change>, fs-error>;
+
+  /// Stop watching. An id that is not watching is ignored.
+  stop: func(watch-id: u64);
+}

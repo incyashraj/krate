@@ -35,6 +35,7 @@ wasmtime::component::bindgen!({
         "krate:io/log@0.1.0": crate::phase2_bindings::krate::io::log,
         "krate:fs/types@0.1.0": crate::phase2_bindings::krate::fs::types,
         "krate:fs/files@0.1.0": crate::phase2_bindings::krate::fs::files,
+        "krate:fs/watch@0.1.0": crate::phase2_bindings::krate::fs::watch,
         "krate:net/types@0.1.0": crate::phase2_bindings::krate::net::types,
         "krate:net/http-client@0.1.0": crate::phase2_bindings::krate::net::http_client,
         "krate:time/clock@0.1.0": crate::phase2_bindings::krate::time::clock,

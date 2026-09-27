@@ -5908,6 +5908,78 @@ fn a_group_is_shared_by_its_members_and_closed_to_everyone_else() {
     assert_eq!(call(&budget, &["get", "total"]), "get=43");
 }
 
+/// An app notices files change in a folder it may list (krate:fs/watch,
+/// the capability roadmap's `fs.watch`).
+///
+/// `watch-probe.wasm` is apps/krate-watch-probe built: it starts a watch,
+/// then creates, changes and removes one file itself, printing what each
+/// look reported -- and that a look sooner than a quarter second is empty.
+#[test]
+fn a_watch_reports_what_changed_in_a_folder_and_nothing_outside_its_grant() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/watch-probe.wasm")).expect("probe");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        "[app]\nid = \"com.acme.watch-probe\"\nname = \"watch-probe\"\nversion = \"1.0.0\"\n\
+         entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+         [[capabilities]]\ncap = \"io.stdout\"\nrationale = \"print\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"io.args\"\nrationale = \"args\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"fs.list:./inbox/**\"\nrationale = \"watch\"\nrequired = false\n\n\
+         [[capabilities]]\ncap = \"fs.write:./inbox/**\"\nrationale = \"drop\"\nrequired = false\n\n\
+         [[capabilities]]\ncap = \"fs.remove:./inbox/**\"\nrationale = \"take\"\nrequired = false\n",
+    )
+    .expect("manifest");
+    let bundle = dir.path().join("watch.krate");
+    assert!(krate()
+        .arg("pack")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .status()
+        .expect("pack")
+        .success());
+    std::fs::create_dir_all(dir.path().join("inbox")).expect("inbox");
+    std::fs::create_dir_all(dir.path().join("other")).expect("other");
+    let run = |grants: &[&str], folder: &str| {
+        let out = krate()
+            .current_dir(dir.path())
+            .arg("run")
+            .arg(&bundle)
+            .args(grants)
+            .args(["--", folder])
+            .output()
+            .expect("run");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+
+    assert_eq!(
+        run(&["--auto-grant"], "inbox"),
+        "created: soon=empty then created inbox/note.txt\n\
+         modified: soon=empty then modified inbox/note.txt\n\
+         removed: soon=empty then removed inbox/note.txt\n\
+         stopped=gone"
+    );
+    assert_eq!(
+        run(&["--grant", "io.stdout", "--grant", "io.args"], "inbox"),
+        "start=permission-denied",
+        "a watch needs what listing needs"
+    );
+    assert_eq!(
+        run(&["--auto-grant"], "other"),
+        "start=permission-denied",
+        "a folder outside the list grant cannot be watched"
+    );
+}
+
 /// An app speaks through the binary a person runs (krate:speech/synthesis,
 /// the capability roadmap's first Tier 1 item).
 ///

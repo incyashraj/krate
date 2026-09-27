@@ -13,6 +13,7 @@ The current world imports these interfaces:
 - `krate:io/log@0.1.0`
 - `krate:fs/types@0.1.0`
 - `krate:fs/files@0.1.0`
+- `krate:fs/watch@0.1.0`
 - `krate:net/types@0.1.0`
 - `krate:net/http-client@0.1.0`
 - `krate:net/ws@0.1.0`
@@ -204,6 +205,67 @@ Shared filesystem records, modes, and error shapes.
 > Host-specific filesystem error text.
 
 - `io`: `string`
+
+
+## `krate:fs/watch@0.1.0`
+
+### Capability Notes
+
+Accepted capability strings for this module, generated from the runtime manifest table:
+
+- `fs.read:<path-glob>` - manifest or session grant
+- `fs.write:<path-glob>` - manifest or session grant
+- `fs.list:<path-glob>` - manifest or session grant
+- `fs.remove:<path-glob>` - manifest or session grant
+- `fs.mkdir:<path-glob>` - manifest or session grant
+
+### Functions
+
+> Start watching a folder and everything under it, and return an id for
+> `changes`. At most 8 watches at once, and 20,000 entries each: a
+> bigger tree is refused rather than watched in part.
+
+- `start(path: string) -> result<u64, fs-error>`
+> What changed since `start` or the last call, sorted by path. Looks at
+> most four times a second: calling sooner returns an empty list, not an
+> error, so an app may simply ask every frame.
+
+- `changes(watch-id: u64) -> result<list<change>, fs-error>`
+> Stop watching. An id that is not watching is ignored.
+
+- `stop(watch-id: u64)`
+
+### Types
+
+#### `change-kind` enum
+
+> What happened to one path.
+
+> It appeared.
+
+- `created`
+> Its size or modified time changed.
+
+- `modified`
+> It went away. A rename is a removal and a creation.
+
+- `removed`
+
+#### `change` record
+
+> One change: the watched folder's path joined with the entry's path
+> inside it, `/`-separated -- a path the app can pass straight back to
+> `files.open` or `files.stat`.
+
+> Where it happened, as the app would name it.
+
+- `path`: `string`
+> What happened to it.
+
+- `kind`: `change-kind`
+> True when the path is a folder.
+
+- `is-dir`: `bool`
 
 
 ## `krate:io/args@0.1.0`

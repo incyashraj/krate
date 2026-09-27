@@ -7,6 +7,7 @@ use wit_parser::{Function, Interface, Resolve, Type, TypeDefKind, WorldItem};
 
 const EXPECTED_IMPORTS: &[&str] = &[
     "krate:fs/files@0.1.0",
+    "krate:fs/watch@0.1.0",
     "krate:fs/types@0.1.0",
     "krate:io/args@0.1.0",
     "krate:io/log@0.1.0",

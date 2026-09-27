@@ -170,6 +170,16 @@ pub enum NumberStyle {
     Currency,
 }
 
+/// One entry a folder scan found, for `krate:fs/watch`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScanEntry {
+    /// The entry's path inside the scanned folder, `/`-separated.
+    pub path: String,
+    pub is_dir: bool,
+    pub size: u64,
+    pub modified_millis: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum AdapterError {
     #[error("operation is not supported by this host adapter yet")]
@@ -299,6 +309,12 @@ pub trait FsAdapter {
     fn stat_handle(&self, handle: &FileHandle) -> std::result::Result<FileStat, AdapterError>;
     fn stat(&self, path: &str) -> std::result::Result<FileStat, AdapterError>;
     fn list(&self, path: &str) -> std::result::Result<Vec<String>, AdapterError>;
+    /// Every entry under a folder, folders included, without following a
+    /// link out of it. More than `limit` entries is an error, never a part.
+    fn scan(&self, path: &str, limit: usize) -> std::result::Result<Vec<ScanEntry>, AdapterError> {
+        let _ = (path, limit);
+        Err(AdapterError::Unsupported)
+    }
     fn remove_file(&self, path: &str) -> std::result::Result<(), AdapterError>;
     fn remove_dir(&self, path: &str) -> std::result::Result<(), AdapterError>;
     fn mkdir(&self, path: &str) -> std::result::Result<(), AdapterError>;
@@ -494,6 +510,19 @@ impl<'a> UapiDispatcher<'a> {
             path: path.to_string(),
         }))?;
         self.adapter.fs().list(path).map_err(Into::into)
+    }
+
+    /// A folder's whole tree, for a watch. Allowed exactly when listing the
+    /// folder is: a watch sees what `list` would, and nothing else.
+    pub fn fs_scan(
+        &self,
+        path: &str,
+        limit: usize,
+    ) -> std::result::Result<Vec<ScanEntry>, FsDispatchError> {
+        self.check_fs(UapiCall::Fs(FsCall::List {
+            path: path.to_string(),
+        }))?;
+        self.adapter.fs().scan(path, limit).map_err(Into::into)
     }
 
     pub fn fs_remove_file(&self, path: &str) -> std::result::Result<(), FsDispatchError> {

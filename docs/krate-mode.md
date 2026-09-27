@@ -340,6 +340,12 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 - `fs::stat(path: &str) -> Result<FileStat, FsError>`
 - `fs::write(path: &str, bytes: &[u8]) -> Result<(), FsError>`
 
+### `fs::watch`
+
+- `fs::watch::changes(watch: u64) -> Result<Vec<Change>, FsError>`
+- `fs::watch::start(path: &str) -> Result<u64, FsError>`
+- `fs::watch::stop(watch: u64) -> ()`
+
 ### `group`
 
 - `group::delete(group: &str, key: &str) -> Result<(), GroupError>`
@@ -711,6 +717,9 @@ The same modules earlier sections describe in prose, but as the exact interfaces
 - `files::remove-dir: func(path: string) -> result<_, fs-error>`
 - `files::mkdir: func(path: string) -> result<_, fs-error>`
 - `files::rename: func(%from: string, to: string) -> result<_, fs-error>`
+- `watch::start: func(path: string) -> result<u64, fs-error>`
+- `watch::changes: func(watch-id: u64) -> result<list<change>, fs-error>`
+- `watch::stop: func(watch-id: u64)`
 
 ## `io`
 

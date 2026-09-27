@@ -15,8 +15,8 @@ Developer ownership and control is the default (IC-175, IC-176). Krate enforces 
 
 ## Summary
 
-- 52 boundaries reviewed, 43 of them WIT interfaces (43 declared under wit/krate).
-- 31 compulsory, each with a justification or a recorded gap; 21 optional.
+- 53 boundaries reviewed, 44 of them WIT interfaces (44 declared under wit/krate).
+- 31 compulsory, each with a justification or a recorded gap; 22 optional.
 - 7 recorded gaps where the escape hatch does not yet exist or the boundary is narrower than a developer would want.
 
 ## Every boundary
@@ -30,6 +30,7 @@ Developer ownership and control is the default (IC-175, IC-176). Krate enforces 
 | `krate:camera@0.1.0/types` | wit | frame and error shapes every host lowers to | what the app does with a frame | none needed: a type carries no authority | yes | portability |
 | `krate:fs@0.1.0/files` | wit | the filesystem boundary: paths are sandbox-relative, reachable only under a grant the person gave, and never resolve outside it | file formats, parsers, layouts on disk, any library over the bytes | the file picker (ui/dialog) for a path outside the grants, chosen by the person; store.* for the app's own data with no grant at all | yes | recipient-permission |
 | `krate:fs@0.1.0/types` | wit | path, mode and error shapes every host lowers to | what the app does with a file | none needed: a type carries no authority | yes | portability |
+| `krate:fs@0.1.0/watch` | wit | that a watch sees only what listing the folder could: same path rules, same grant check on every look, a bounded tree and at most four looks a second | which folders, how often to ask, and what a change means | list and stat the folder itself on the app's own schedule | no | -- |
 | `krate:gfx@0.1.0/canvas2d` | wit | the handoff of drawn pixels and draw operations to the host painter, which is the only way onto the screen | any rasterizer, layout engine, text shaper or scene graph the app brings; Krate's draw calls are a convenience, not a requirement | set-pixels on a canvas or an image widget: the app renders with anything and hands over the pixels | yes | os-safety |
 | `krate:gfx@0.1.0/scene3d` | wit | nothing: an optional software 3D helper | any 3D approach; the app may ignore this entirely | canvas pixels from the app's own renderer | no | -- |
 | `krate:gfx@0.1.0/types` | wit | colour, rectangle and error shapes every host lowers to | everything drawn with them | none needed: a type carries no authority | yes | portability |

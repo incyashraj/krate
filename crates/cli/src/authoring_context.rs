@@ -267,6 +267,13 @@ make subfolders. No fs capability at all. `apps/krate-tidy` is the worked \
 example: a folder tidier whose manifest has zero fs lines. For output the \
 app keeps between runs, use its own folder with a narrow scope like \
 `fs.write:./exports/**`.\n\n\
+To react when files arrive or change in that folder -- a drop folder, an \
+inbox a scanner fills -- `let w = krate::fs::watch::start(\"picked/<token>\")?` \
+once, then `krate::fs::watch::changes(w)?` from the event loop: a list of \
+`{ path, kind: Created | Modified | Removed, is_dir }` since the last call, \
+with `path` ready to pass to `fs::read`. It looks at most four times a \
+second (asking sooner returns an empty list), so calling it every frame is \
+fine. Allowed wherever listing the folder is; no extra capability.\n\n\
 ## Filling the window, whatever size it is\n\n\
 A person resizes windows, and every screen is a different shape. An app \
 that draws from constants gets scaled up by the host to fit -- blurry \

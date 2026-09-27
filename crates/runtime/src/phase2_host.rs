@@ -53,6 +53,8 @@ pub struct Phase2Host<'a> {
     /// the OS on every call, so there is nothing to open, nothing to keep, and
     /// nothing to close.
     random_granted: bool,
+    /// Folders this run is watching (`krate:fs/watch`).
+    watches: crate::fs_watch::Watches,
     /// Requests started with `http-client.begin` and not yet answered.
     ///
     /// Lives here so it dies with the run: a handle cannot outlive the app
@@ -83,6 +85,7 @@ impl<'a> Phase2Host<'a> {
             groups: std::collections::BTreeMap::new(),
             chosen_files: Default::default(),
             random_granted: false,
+            watches: Default::default(),
             async_fetches: crate::async_fetch::AsyncFetches::new(),
             async_ws: crate::async_ws::AsyncWs::new(),
             default_http_timeout_millis,
@@ -774,6 +777,74 @@ impl fs::files::Host for Phase2Host<'_> {
             .dispatcher()
             .fs_rename(&from, &to)
             .map_err(bridge::fs_error_to_wit))
+    }
+}
+
+/// Watching a folder: allowed exactly where listing it is, because every
+/// look is a scan through the same dispatcher check as `files.list`.
+impl fs::watch::Host for Phase2Host<'_> {
+    fn start(&mut self, path: String) -> wasmtime::Result<Result<u64, fs::types::FsError>> {
+        if self.watches.is_full() {
+            return Ok(Err(fs::types::FsError::Io(format!(
+                "already watching {} folders; stop one first",
+                crate::fs_watch::MAX_WATCHES
+            ))));
+        }
+        let entries = match self
+            .dispatcher()
+            .fs_scan(&path, crate::fs_watch::MAX_ENTRIES)
+        {
+            Ok(entries) => entries,
+            Err(err) => return Ok(Err(bridge::fs_error_to_wit(err))),
+        };
+        Ok(Ok(self.watches.start(&path, entries)))
+    }
+
+    fn changes(
+        &mut self,
+        watch_id: u64,
+    ) -> wasmtime::Result<Result<Vec<fs::watch::Change>, fs::types::FsError>> {
+        use crate::fs_watch::{ChangeKind, Due};
+        let path = match self.watches.due(watch_id) {
+            Due::Unknown => return Ok(Err(fs::types::FsError::NotFound)),
+            Due::Later => return Ok(Ok(Vec::new())),
+            Due::Now(path) => path.to_string(),
+        };
+        let entries = match self
+            .dispatcher()
+            .fs_scan(&path, crate::fs_watch::MAX_ENTRIES)
+        {
+            Ok(entries) => entries,
+            // The folder itself went away: everything in it did too.
+            Err(err)
+                if matches!(
+                    bridge::fs_error_to_wit(err.clone()),
+                    fs::types::FsError::NotFound
+                ) =>
+            {
+                Vec::new()
+            }
+            Err(err) => return Ok(Err(bridge::fs_error_to_wit(err))),
+        };
+        Ok(Ok(self
+            .watches
+            .apply(watch_id, entries)
+            .into_iter()
+            .map(|change| fs::watch::Change {
+                path: change.path,
+                kind: match change.kind {
+                    ChangeKind::Created => fs::watch::ChangeKind::Created,
+                    ChangeKind::Modified => fs::watch::ChangeKind::Modified,
+                    ChangeKind::Removed => fs::watch::ChangeKind::Removed,
+                },
+                is_dir: change.is_dir,
+            })
+            .collect()))
+    }
+
+    fn stop(&mut self, watch_id: u64) -> wasmtime::Result<()> {
+        self.watches.stop(watch_id);
+        Ok(())
     }
 }
 

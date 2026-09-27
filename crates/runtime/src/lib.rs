@@ -47,6 +47,7 @@ pub mod chosen_files;
 pub mod dead_space;
 pub mod desktop_host;
 pub mod embed;
+mod fs_watch;
 mod gamepad;
 #[cfg(feature = "phase2-bindings")]
 pub mod phase2_bindings;
@@ -1278,6 +1279,7 @@ impl Runtime {
         link_phase2!(io::log);
         link_phase2!(fs::types);
         link_phase2!(fs::files);
+        link_phase2!(fs::watch);
         link_phase2!(net::types);
         link_phase2!(net::http_client);
         link_phase2!(net::ws);
@@ -2352,6 +2354,53 @@ impl FsAdapter for LocalPhase2Adapter {
         }
         entries.sort();
         Ok(entries)
+    }
+
+    fn scan(
+        &self,
+        path: &str,
+        limit: usize,
+    ) -> std::result::Result<Vec<crate::uapi_dispatch::ScanEntry>, AdapterError> {
+        let root = self.resolve_fs_path(path, FsOperation::Existing)?;
+        let mut found = Vec::new();
+        let mut pending = vec![(root, String::new())];
+        while let Some((dir, prefix)) = pending.pop() {
+            for entry in read_dir_on_host(dir.as_path()).map_err(map_io_error)? {
+                let entry = entry.map_err(map_io_error)?;
+                let name = entry
+                    .file_name()
+                    .into_string()
+                    .map_err(|_| AdapterError::InvalidPath)?;
+                let host_path = dir.join(&name);
+                // Not followed and not reported: a link is a way out of the
+                // folder, and the path rules refuse it everywhere else.
+                let metadata = symlink_metadata_on_host(&host_path).map_err(map_io_error)?;
+                if metadata.file_type().is_symlink() {
+                    continue;
+                }
+                let rel = if prefix.is_empty() {
+                    name
+                } else {
+                    format!("{prefix}/{name}")
+                };
+                let stat = file_stat_from_metadata(metadata);
+                if stat.is_dir {
+                    pending.push((host_path, rel.clone()));
+                }
+                found.push(crate::uapi_dispatch::ScanEntry {
+                    path: rel,
+                    is_dir: stat.is_dir,
+                    size: if stat.is_dir { 0 } else { stat.size },
+                    modified_millis: stat.modified_millis,
+                });
+                if found.len() > limit {
+                    return Err(AdapterError::Io(format!(
+                        "more than {limit} files and folders under {path}; watch a smaller folder"
+                    )));
+                }
+            }
+        }
+        Ok(found)
     }
 
     fn remove_file(&self, path: &str) -> std::result::Result<(), AdapterError> {
