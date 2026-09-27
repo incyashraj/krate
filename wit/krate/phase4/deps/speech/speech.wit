@@ -73,3 +73,50 @@ interface transcription {
     finish: bool,
   ) -> result<option<u8>, match-error>;
 }
+
+/// Speaking text aloud with the voices the computer already has.
+///
+/// Speech is sound, so it is allowed wherever sound is: `audio.playback`,
+/// which every app has unless the person takes it away. Nothing is
+/// downloaded and nothing leaves the computer.
+interface synthesis {
+  /// One voice the computer offers.
+  record voice {
+    /// Pass this to `say` to use the voice.
+    id: string,
+    /// The name a person would recognise, such as "Daniel".
+    name: string,
+    /// BCP 47 language tag, such as "en-GB".
+    language: string,
+  }
+
+  /// Error returned by a speech call.
+  variant say-error {
+    /// The app may not make sound: `audio.playback` was taken away.
+    permission-denied,
+    /// Empty text, text over 4,000 characters, an unknown voice id, or a
+    /// rate outside 0.5 to 2.0.
+    invalid-request(string),
+    /// This computer has no speech voices Krate can use.
+    unsupported(string),
+    /// The system's speech service failed.
+    platform(string),
+  }
+
+  /// The voices this computer offers, in the order it lists them.
+  voices: func() -> result<list<voice>, say-error>;
+
+  /// Start saying `text` and return at once; the speech plays on its own.
+  ///
+  /// Anything this app was still saying stops first, so a new line replaces
+  /// the old one rather than queueing behind it. `voice` is an id from
+  /// `voices`; none means the system's default. `rate` is a multiple of the
+  /// normal speed, 0.5 to 2.0; none means normal.
+  say: func(text: string, voice: option<string>, rate: option<f32>) -> result<_, say-error>;
+
+  /// Stop speaking now. Stopping when nothing is being said is not an error.
+  stop: func() -> result<_, say-error>;
+
+  /// Whether this app's speech is still sounding.
+  speaking: func() -> result<bool, say-error>;
+}

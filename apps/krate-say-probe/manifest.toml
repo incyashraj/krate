@@ -1,0 +1,21 @@
+[app]
+id = "com.acme.say-probe"
+name = "say-probe"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_say_probe.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Print what the speech service answered"
+required = true
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read what to say"
+required = true
+
+[[capabilities]]
+cap = "audio.playback"
+rationale = "Speak a line aloud"
+required = false

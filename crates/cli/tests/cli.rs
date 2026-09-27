@@ -5908,6 +5908,87 @@ fn a_group_is_shared_by_its_members_and_closed_to_everyone_else() {
     assert_eq!(call(&budget, &["get", "total"]), "get=43");
 }
 
+/// An app speaks through the binary a person runs (krate:speech/synthesis,
+/// the capability roadmap's first Tier 1 item).
+///
+/// `say-probe.wasm` is apps/krate-say-probe built. `say` starts a line,
+/// waits to hear it start, stops it, and reports -- so the whole contract
+/// runs in a fraction of a second of sound. A computer with no voice
+/// (Linux without espeak-ng) answers `unsupported`, never a crash, and a
+/// line never keeps sounding after `stop`.
+#[test]
+fn an_app_speaks_a_line_and_stops_when_told() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/say-probe.wasm")).expect("probe");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        "[app]\nid = \"com.acme.say-probe\"\nname = \"say-probe\"\nversion = \"1.0.0\"\n\
+         entry = \"code.wasm\"\nworld = \"krate:app/gui@0.2.0\"\n\n\
+         [[capabilities]]\ncap = \"io.stdout\"\nrationale = \"print\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"io.args\"\nrationale = \"args\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"audio.playback\"\nrationale = \"speak\"\nrequired = false\n",
+    )
+    .expect("manifest");
+    let bundle = dir.path().join("say.krate");
+    assert!(krate()
+        .arg("pack")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .status()
+        .expect("pack")
+        .success());
+    let ask = |words: &[&str]| {
+        let out = krate()
+            .arg("run")
+            .arg(&bundle)
+            .arg("--auto-grant")
+            .arg("--")
+            .args(words)
+            .output()
+            .expect("run");
+        assert!(
+            out.status.success(),
+            "every answer is an answer, not a crash: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+
+    assert!(
+        ask(&["rate", "3"]).starts_with("error=invalid-request"),
+        "a rate outside 0.5 to 2.0 is refused the same way everywhere"
+    );
+    let voices = ask(&["voices"]);
+    let said = ask(&["say", "Krate can talk"]);
+    let no_voice = |line: &str| line.starts_with("error=unsupported");
+    if cfg!(target_os = "macos") {
+        // Every Mac ships voices, and this is the platform the speech was
+        // measured on: it must really speak here.
+        assert!(
+            voices
+                .strip_prefix("voices=")
+                .and_then(|n| n.parse::<u32>().ok())
+                > Some(0),
+            "{voices}"
+        );
+        assert_eq!(said, "said=started,stopped");
+    } else {
+        assert!(
+            voices.starts_with("voices=") || no_voice(&voices),
+            "{voices}"
+        );
+        assert!(
+            said == "said=started,stopped" || no_voice(&said),
+            "a line either speaks and stops, or there is no voice: {said}"
+        );
+    }
+}
+
 /// An app can ask for more memory, and gets it only when granted (K-416;
 /// the capability survey's item 3).
 ///

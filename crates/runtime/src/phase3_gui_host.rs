@@ -28,6 +28,7 @@ use crate::{
     phase3_gui_bindings::krate::{audio, camera, gfx, speech, ui},
     phase3_ui::{Phase3HostUiMode, Phase3UiDispatcher, Phase3UiRuntime, UiDispatchError},
     scene3d::SceneBackend,
+    speech_synthesis::{SayError, SpeechSynthesis},
     speech_transcription::{LocalSpeechRuntime, SpeechError},
     uapi::{AudioCall, CameraCall, UapiCall, UapiGuard, UiCall},
 };
@@ -185,6 +186,8 @@ pub struct Phase3GuiHost {
     audio_playback: AudioPlaybackRuntime,
     /// Local speech model contexts, scoped to this one sandboxed app session.
     speech: LocalSpeechRuntime,
+    /// This app's voice: speaking text aloud, idle until it first speaks.
+    speech_out: SpeechSynthesis,
     /// A screenshot request: paint the window to this PNG at this scale once
     /// the app has drawn a frame. `taken` guards against writing every frame --
     /// the first drawn frame is the one captured.
@@ -440,6 +443,7 @@ impl Phase3GuiHost {
             cameras: CameraCaptureRuntime::default(),
             audio_playback: AudioPlaybackRuntime::default(),
             speech: LocalSpeechRuntime::default(),
+            speech_out: SpeechSynthesis::default(),
             screenshot: None,
             screenshot_taken: std::cell::Cell::new(false),
             shoot_after: std::env::var("KRATE_SHOOT_AFTER_MS")
@@ -5963,6 +5967,95 @@ impl camera::capture::Host for Phase3GuiHost {
         // Like `stop`, always allowed: releasing the device is never the thing
         // a person needs protecting from.
         Ok(self.cameras.close(stream_id).map_err(camera_error))
+    }
+}
+
+/// Speaking aloud (Phase 4 only; Phase 3 is frozen as shipped). Speech is
+/// sound, so it is `audio.playback`'s to allow -- the consent line a person
+/// already read says this app makes sound. `stop` is always allowed, like
+/// closing a camera: silencing an app is never what needs protecting.
+impl crate::phase4_gui_bindings::krate::speech::synthesis::Host for Phase3GuiHost {
+    fn voices(
+        &mut self,
+    ) -> wasmtime::Result<
+        Result<
+            Vec<crate::phase4_gui_bindings::krate::speech::synthesis::Voice>,
+            crate::phase4_gui_bindings::krate::speech::synthesis::SayError,
+        >,
+    > {
+        use crate::phase4_gui_bindings::krate::speech::synthesis as wit;
+        if !self.may_make_sound() {
+            return Ok(Err(wit::SayError::PermissionDenied));
+        }
+        Ok(self
+            .speech_out
+            .voices()
+            .map(|voices| {
+                voices
+                    .into_iter()
+                    .map(|v| wit::Voice {
+                        id: v.id,
+                        name: v.name,
+                        language: v.language,
+                    })
+                    .collect()
+            })
+            .map_err(say_error))
+    }
+
+    fn say(
+        &mut self,
+        text: String,
+        voice: Option<String>,
+        rate: Option<f32>,
+    ) -> wasmtime::Result<Result<(), crate::phase4_gui_bindings::krate::speech::synthesis::SayError>>
+    {
+        use crate::phase4_gui_bindings::krate::speech::synthesis as wit;
+        if !self.may_make_sound() {
+            return Ok(Err(wit::SayError::PermissionDenied));
+        }
+        Ok(self
+            .speech_out
+            .say(&text, voice.as_deref(), rate)
+            .map_err(say_error))
+    }
+
+    fn stop(
+        &mut self,
+    ) -> wasmtime::Result<Result<(), crate::phase4_gui_bindings::krate::speech::synthesis::SayError>>
+    {
+        self.speech_out.stop();
+        Ok(Ok(()))
+    }
+
+    fn speaking(
+        &mut self,
+    ) -> wasmtime::Result<
+        Result<bool, crate::phase4_gui_bindings::krate::speech::synthesis::SayError>,
+    > {
+        use crate::phase4_gui_bindings::krate::speech::synthesis as wit;
+        if !self.may_make_sound() {
+            return Ok(Err(wit::SayError::PermissionDenied));
+        }
+        Ok(Ok(self.speech_out.speaking()))
+    }
+}
+
+impl Phase3GuiHost {
+    fn may_make_sound(&self) -> bool {
+        self.runtime
+            .guard()
+            .check(&UapiCall::Audio(AudioCall::Playback))
+            .is_ok()
+    }
+}
+
+fn say_error(err: SayError) -> crate::phase4_gui_bindings::krate::speech::synthesis::SayError {
+    use crate::phase4_gui_bindings::krate::speech::synthesis::SayError as Wit;
+    match err {
+        SayError::InvalidRequest(why) => Wit::InvalidRequest(why),
+        SayError::Unsupported(why) => Wit::Unsupported(why),
+        SayError::Platform(why) => Wit::Platform(why),
     }
 }
 

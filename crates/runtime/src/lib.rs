@@ -64,6 +64,7 @@ pub mod random_host;
 pub mod scene3d;
 pub mod secret_host;
 pub mod shared_host;
+mod speech_synthesis;
 mod speech_transcription;
 pub mod sql_host;
 pub mod store_host;
@@ -1316,6 +1317,8 @@ impl Runtime {
         link_gui!(camera::types);
         link_gui!(camera::capture);
         link_gui!(speech::transcription);
+        // Phase 4 only: speaking aloud.
+        link_gui!(phase4_gui_bindings::krate::speech::synthesis);
 
         Ok(linker)
     }

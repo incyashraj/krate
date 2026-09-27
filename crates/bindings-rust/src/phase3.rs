@@ -1055,8 +1055,37 @@ pub mod camera {
     }
 }
 
-/// `krate:speech`: transcription.
+/// `krate:speech`: synthesis, transcription.
 pub mod speech {
+    /// `krate:speech/synthesis`.
+    pub mod synthesis {
+        pub use crate::bindings::krate::speech::synthesis::{SayError, Voice};
+
+        /// The voices this computer offers, in the order it lists them.
+        pub fn voices() -> Result<alloc::vec::Vec<Voice>, SayError> {
+            crate::bindings::krate::speech::synthesis::voices()
+        }
+
+        /// Start saying `text` and return at once; the speech plays on its own.
+        ///
+        /// Anything this app was still saying stops first, so a new line replaces
+        /// the old one rather than queueing behind it. `voice` is an id from
+        /// `voices`; none means the system's default. `rate` is a multiple of the
+        /// normal speed, 0.5 to 2.0; none means normal.
+        pub fn say(text: &str, voice: Option<&str>, rate: Option<f32>) -> Result<(), SayError> {
+            crate::bindings::krate::speech::synthesis::say(text, voice, rate)
+        }
+
+        /// Stop speaking now. Stopping when nothing is being said is not an error.
+        pub fn stop() -> Result<(), SayError> {
+            crate::bindings::krate::speech::synthesis::stop()
+        }
+
+        /// Whether this app's speech is still sounding.
+        pub fn speaking() -> Result<bool, SayError> {
+            crate::bindings::krate::speech::synthesis::speaking()
+        }
+    }
     /// `krate:speech/transcription`.
     pub mod transcription {
         pub use crate::bindings::krate::speech::transcription::{

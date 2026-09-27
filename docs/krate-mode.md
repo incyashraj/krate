@@ -691,6 +691,10 @@ takes this path, so any of them is a model for the wiring.
 - `transcription::transcribe: func( model-asset: string, pcm-s16-le: list<u8>, sample-rate: u32, language: option<string>, ) -> result<transcript, speech-error>`
 - `transcription::match-line: func( model-asset: string, pcm-s16-le: list<u8>, sample-rate: u32, language: option<string>, expected: string, ) -> result<u8, match-error>`
 - `transcription::match-line-stream: func( model-asset: string, pcm-s16-le: list<u8>, sample-rate: u32, language: option<string>, expected: string, finish: bool, ) -> result<option<u8>, match-error>`
+- `synthesis::voices: func() -> result<list<voice>, say-error>`
+- `synthesis::say: func(text: string, voice: option<string>, rate: option<f32>) -> result<_, say-error>`
+- `synthesis::stop: func() -> result<_, say-error>`
+- `synthesis::speaking: func() -> result<bool, say-error>`
 
 
 ## The shared packages, exact shapes

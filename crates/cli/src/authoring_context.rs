@@ -826,6 +826,17 @@ app's `assets/` directory and named by `model_asset`. Only reach for it \
 when the request is really about transcription and a model is provided; \
 for \"voice memo\" requests, recording + playback without transcription \
 ships today and satisfies most of them.\n\n\
+**Speaking aloud** (`krate:speech/synthesis`, under `audio.playback` -- \
+speech is sound, no extra permission): `speech::synthesis::say(\"Five \
+minutes left\", None, None)` speaks with the computer's own voice and \
+returns at once; a second `say` replaces the first rather than queueing. \
+`stop()` silences it, `speaking()` says whether it still is (poll it from \
+the event loop to light a speaking indicator or to say the next line). \
+`voices()` lists `{ id, name, language }` -- pass an `id` to `say` for a \
+particular voice, and a rate from 0.5 to 2.0 for speed. No model file, \
+nothing downloaded. Linux needs espeak-ng installed; where there is no \
+voice, `say` returns `unsupported`, so show the words on screen as well \
+and never make a step depend on hearing them.\n\n\
 **Notifications** (`ui.notify`, an explicit ask): \
 `ui::notify::show(\"Timer done\", \"The pasta is ready\")`. The OS \
 attributes it to the app. Use it when the thing the app waits for finishes \

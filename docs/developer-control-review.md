@@ -15,8 +15,8 @@ Developer ownership and control is the default (IC-175, IC-176). Krate enforces 
 
 ## Summary
 
-- 51 boundaries reviewed, 42 of them WIT interfaces (42 declared under wit/krate).
-- 31 compulsory, each with a justification or a recorded gap; 20 optional.
+- 52 boundaries reviewed, 43 of them WIT interfaces (43 declared under wit/krate).
+- 31 compulsory, each with a justification or a recorded gap; 21 optional.
 - 7 recorded gaps where the escape hatch does not yet exist or the boundary is narrower than a developer would want.
 
 ## Every boundary
@@ -47,6 +47,7 @@ Developer ownership and control is the default (IC-175, IC-176). Krate enforces 
 | `krate:phase1@0.0.1/host` | wit | the first-generation host world, kept for the bundles that use it | none new: this world is superseded and not for new apps | the Phase 2 and Phase 3 worlds | no | -- |
 | `krate:random@0.1.0/bytes` | wit | where operating-system randomness comes from | any PRNG or crate over it (rand, uuid, getrandom route here) | seed the app's own generator from it, or use none | no | -- |
 | `krate:resources@0.1.0/assets` | wit | that the app's own bundled files are readable with no grant, because they are the app's | what is bundled and in what format | embed bytes in the component itself | no | -- |
+| `krate:speech@0.1.0/synthesis` | wit | that speech is sound: allowed by audio.playback, replaced rather than queued, and stopped when the app stops | what is said, when, in which of the computer's voices and at what speed | audio/playback with the app's own synthesizer or recorded clips | no | -- |
 | `krate:speech@0.1.0/transcription` | wit | nothing: an optional local recogniser over audio the app already holds | any model or recogniser shipped in assets, or a service the app calls itself over the network boundary | audio/capture frames processed by the app | no | -- |
 | `krate:store@0.1.0/group` | wit | that a group's data is reachable only by apps whose signed publisher names them in the group's list, and that a removal is not undone by an older list | whether to share at all, what is shared, and which of the publisher's apps belong | shared under an invite code, or http-client or ws to a service the developer runs | no | -- |
 | `krate:store@0.1.0/kv` | wit | that an app's own data lives in a namespace derived from its verified lineage, so a file claiming the same id cannot read it | whether to use it at all; any data model over it | fs/files under a grant with the app's own storage library, or the app's own format inside the bundle | yes | os-safety |

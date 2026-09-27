@@ -5,8 +5,7 @@
 #[doc(hidden)]
 #[allow(non_snake_case)]
 pub unsafe fn _export_run_cabi<T: Guest>() -> i32 {
-    #[cfg(target_arch = "wasm32")]
-    _rt::run_ctors_once();
+    #[cfg(target_arch = "wasm32")] _rt::run_ctors_once();
     let result0 = T::run();
     _rt::as_i32(result0)
 }
@@ -14,18 +13,16 @@ pub trait Guest {
     fn run() -> i32;
 }
 #[doc(hidden)]
-
-macro_rules! __export_world_gui_cabi{
-  ($ty:ident with_types_in $($path_to_types:tt)*) => (const _: () = {
-
-    #[unsafe(export_name = "run")]
-    unsafe extern "C" fn export_run() -> i32 {
-      unsafe { $($path_to_types)*::_export_run_cabi::<$ty>() }
-    }
-  };);
+macro_rules! __export_world_gui_cabi {
+    ($ty:ident with_types_in $($path_to_types:tt)*) => {
+        const _ : () = { #[unsafe (export_name = "run")] unsafe extern "C" fn
+        export_run() -> i32 { unsafe { $($path_to_types)*:: _export_run_cabi::<$ty > () }
+        } };
+    };
 }
 #[doc(hidden)]
 pub(crate) use __export_world_gui_cabi;
+#[rustfmt::skip]
 #[allow(dead_code, clippy::all)]
 pub mod krate {
     pub mod audio {
@@ -34,9 +31,7 @@ pub mod krate {
         pub mod types {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             /// Audio sample representation.
             #[repr(u8)]
@@ -48,30 +43,33 @@ pub mod krate {
                 Float32,
             }
             impl ::core::fmt::Debug for SampleFormat {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
-                        SampleFormat::PcmS16 => f.debug_tuple("SampleFormat::PcmS16").finish(),
-                        SampleFormat::Float32 => f.debug_tuple("SampleFormat::Float32").finish(),
+                        SampleFormat::PcmS16 => {
+                            f.debug_tuple("SampleFormat::PcmS16").finish()
+                        }
+                        SampleFormat::Float32 => {
+                            f.debug_tuple("SampleFormat::Float32").finish()
+                        }
                     }
                 }
             }
-
             impl SampleFormat {
                 #[doc(hidden)]
                 pub unsafe fn _lift(val: u8) -> SampleFormat {
                     if !cfg!(debug_assertions) {
                         return ::core::mem::transmute(val);
                     }
-
                     match val {
                         0 => SampleFormat::PcmS16,
                         1 => SampleFormat::Float32,
-
                         _ => panic!("invalid enum discriminant"),
                     }
                 }
             }
-
             /// Stream configuration requested by the app.
             #[repr(C)]
             #[derive(Clone, Copy)]
@@ -86,7 +84,10 @@ pub mod krate {
                 pub buffer_frames: u32,
             }
             impl ::core::fmt::Debug for StreamConfig {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("StreamConfig")
                         .field("sample-rate", &self.sample_rate)
                         .field("channels", &self.channels)
@@ -110,7 +111,10 @@ pub mod krate {
                 Platform(_rt::String),
             }
             impl ::core::fmt::Debug for AudioError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
                         AudioError::PermissionDenied => {
                             f.debug_tuple("AudioError::PermissionDenied").finish()
@@ -131,23 +135,22 @@ pub mod krate {
                 }
             }
             impl ::core::fmt::Display for AudioError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     write!(f, "{:?}", self)
                 }
             }
-
             #[cfg(feature = "std")]
             impl std::error::Error for AudioError {}
         }
-
         /// Audio playback calls.
         #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
         pub mod playback {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             pub type AudioError = super::super::super::krate::audio::types::AudioError;
             pub type StreamConfig = super::super::super::krate::audio::types::StreamConfig;
@@ -157,12 +160,13 @@ pub mod krate {
                 unsafe {
                     #[repr(align(8))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>;
-                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 16 + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 16
+                            + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let super::super::super::krate::audio::types::StreamConfig {
                         sample_rate: sample_rate0,
@@ -177,9 +181,14 @@ pub mod krate {
                         #[link_name = "open"]
                         fn wit_import2(_: i32, _: i32, _: i32, _: i32, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
-                    unsafe extern "C" fn wit_import2(_: i32, _: i32, _: i32, _: i32, _: *mut u8) {
+                    unsafe extern "C" fn wit_import2(
+                        _: i32,
+                        _: i32,
+                        _: i32,
+                        _: i32,
+                        _: *mut u8,
+                    ) {
                         unreachable!()
                     }
                     unsafe {
@@ -196,7 +205,6 @@ pub mod krate {
                         0 => {
                             let e = {
                                 let l4 = *ptr1.add(8).cast::<i64>();
-
                                 l4 as u64
                             };
                             Ok(e)
@@ -218,9 +226,11 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len8 = l7;
-                                            let bytes8 =
-                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
                                             _rt::string_lift(bytes8)
                                         };
                                         V12::Unsupported(e12)
@@ -235,15 +245,16 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len11 = l10;
-                                            let bytes11 =
-                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
                                             _rt::string_lift(bytes11)
                                         };
                                         V12::Platform(e12)
                                     }
                                 };
-
                                 v12
                             };
                             Err(e)
@@ -260,11 +271,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -273,7 +286,6 @@ pub mod krate {
                         #[link_name = "start"]
                         fn wit_import1(_: i64, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
                         unreachable!()
@@ -304,9 +316,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len6 = l5;
-                                            let bytes6 =
-                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
                                             _rt::string_lift(bytes6)
                                         };
                                         V10::Unsupported(e10)
@@ -321,15 +335,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V10::Platform(e10)
                                     }
                                 };
-
                                 v10
                             };
                             Err(e)
@@ -346,11 +361,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -359,7 +376,6 @@ pub mod krate {
                         #[link_name = "stop"]
                         fn wit_import1(_: i64, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
                         unreachable!()
@@ -390,9 +406,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len6 = l5;
-                                            let bytes6 =
-                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
                                             _rt::string_lift(bytes6)
                                         };
                                         V10::Unsupported(e10)
@@ -407,15 +425,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V10::Platform(e10)
                                     }
                                 };
-
                                 v10
                             };
                             Err(e)
@@ -432,11 +451,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = bytes;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -448,19 +469,25 @@ pub mod krate {
                         #[link_name = "write"]
                         fn wit_import2(_: i64, _: *mut u8, _: usize, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
-                    unsafe extern "C" fn wit_import2(_: i64, _: *mut u8, _: usize, _: *mut u8) {
+                    unsafe extern "C" fn wit_import2(
+                        _: i64,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
                         unreachable!()
                     }
-                    unsafe { wit_import2(_rt::as_i64(&stream_id), ptr0.cast_mut(), len0, ptr1) };
+                    unsafe {
+                        wit_import2(_rt::as_i64(&stream_id), ptr0.cast_mut(), len0, ptr1)
+                    };
                     let l3 = i32::from(*ptr1.add(0).cast::<u8>());
                     let result13 = match l3 {
                         0 => {
                             let e = {
-                                let l4 =
-                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<i32>();
-
+                                let l4 = *ptr1
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<i32>();
                                 l4 as u32
                             };
                             Ok(e)
@@ -484,9 +511,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len8 = l7;
-                                            let bytes8 =
-                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
                                             _rt::string_lift(bytes8)
                                         };
                                         V12::Unsupported(e12)
@@ -501,15 +530,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len11 = l10;
-                                            let bytes11 =
-                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
                                             _rt::string_lift(bytes11)
                                         };
                                         V12::Platform(e12)
                                     }
                                 };
-
                                 v12
                             };
                             Err(e)
@@ -533,12 +563,13 @@ pub mod krate {
                 unsafe {
                     #[repr(align(8))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>;
-                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 16 + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 16
+                            + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = bytes;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -550,18 +581,23 @@ pub mod krate {
                         #[link_name = "load-sound"]
                         fn wit_import2(_: i64, _: *mut u8, _: usize, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
-                    unsafe extern "C" fn wit_import2(_: i64, _: *mut u8, _: usize, _: *mut u8) {
+                    unsafe extern "C" fn wit_import2(
+                        _: i64,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
                         unreachable!()
                     }
-                    unsafe { wit_import2(_rt::as_i64(&stream_id), ptr0.cast_mut(), len0, ptr1) };
+                    unsafe {
+                        wit_import2(_rt::as_i64(&stream_id), ptr0.cast_mut(), len0, ptr1)
+                    };
                     let l3 = i32::from(*ptr1.add(0).cast::<u8>());
                     let result13 = match l3 {
                         0 => {
                             let e = {
                                 let l4 = *ptr1.add(8).cast::<i64>();
-
                                 l4 as u64
                             };
                             Ok(e)
@@ -583,9 +619,11 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len8 = l7;
-                                            let bytes8 =
-                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
                                             _rt::string_lift(bytes8)
                                         };
                                         V12::Unsupported(e12)
@@ -600,15 +638,16 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len11 = l10;
-                                            let bytes11 =
-                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
                                             _rt::string_lift(bytes11)
                                         };
                                         V12::Platform(e12)
                                     }
                                 };
-
                                 v12
                             };
                             Err(e)
@@ -628,16 +667,22 @@ pub mod krate {
             /// `gain` scales it: 1.0 is as loaded, 0.5 is half as loud. Mixing is
             /// additive and clamped, so a dozen sounds at once distort rather than wrap
             /// around into noise.
-            pub fn play_sound(stream_id: u64, sound: u64, gain: f32) -> Result<(), AudioError> {
+            pub fn play_sound(
+                stream_id: u64,
+                sound: u64,
+                gain: f32,
+            ) -> Result<(), AudioError> {
                 unsafe {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -646,9 +691,13 @@ pub mod krate {
                         #[link_name = "play-sound"]
                         fn wit_import1(_: i64, _: i64, _: f32, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
-                    unsafe extern "C" fn wit_import1(_: i64, _: i64, _: f32, _: *mut u8) {
+                    unsafe extern "C" fn wit_import1(
+                        _: i64,
+                        _: i64,
+                        _: f32,
+                        _: *mut u8,
+                    ) {
                         unreachable!()
                     }
                     unsafe {
@@ -684,9 +733,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len6 = l5;
-                                            let bytes6 =
-                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
                                             _rt::string_lift(bytes6)
                                         };
                                         V10::Unsupported(e10)
@@ -701,15 +752,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V10::Platform(e10)
                                     }
                                 };
-
                                 v10
                             };
                             Err(e)
@@ -726,11 +778,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -739,12 +793,13 @@ pub mod krate {
                         #[link_name = "stop-sound"]
                         fn wit_import1(_: i64, _: i64, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i64, _: i64, _: *mut u8) {
                         unreachable!()
                     }
-                    unsafe { wit_import1(_rt::as_i64(&stream_id), _rt::as_i64(&sound), ptr0) };
+                    unsafe {
+                        wit_import1(_rt::as_i64(&stream_id), _rt::as_i64(&sound), ptr0)
+                    };
                     let l2 = i32::from(*ptr0.add(0).cast::<u8>());
                     let result11 = match l2 {
                         0 => {
@@ -770,9 +825,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len6 = l5;
-                                            let bytes6 =
-                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
                                             _rt::string_lift(bytes6)
                                         };
                                         V10::Unsupported(e10)
@@ -787,15 +844,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V10::Platform(e10)
                                     }
                                 };
-
                                 v10
                             };
                             Err(e)
@@ -806,15 +864,12 @@ pub mod krate {
                 }
             }
         }
-
         /// Audio capture calls.
         #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
         pub mod capture {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             pub type AudioError = super::super::super::krate::audio::types::AudioError;
             pub type StreamConfig = super::super::super::krate::audio::types::StreamConfig;
@@ -824,12 +879,13 @@ pub mod krate {
                 unsafe {
                     #[repr(align(8))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>;
-                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 16 + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 16
+                            + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let super::super::super::krate::audio::types::StreamConfig {
                         sample_rate: sample_rate0,
@@ -844,9 +900,14 @@ pub mod krate {
                         #[link_name = "open"]
                         fn wit_import2(_: i32, _: i32, _: i32, _: i32, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
-                    unsafe extern "C" fn wit_import2(_: i32, _: i32, _: i32, _: i32, _: *mut u8) {
+                    unsafe extern "C" fn wit_import2(
+                        _: i32,
+                        _: i32,
+                        _: i32,
+                        _: i32,
+                        _: *mut u8,
+                    ) {
                         unreachable!()
                     }
                     unsafe {
@@ -863,7 +924,6 @@ pub mod krate {
                         0 => {
                             let e = {
                                 let l4 = *ptr1.add(8).cast::<i64>();
-
                                 l4 as u64
                             };
                             Ok(e)
@@ -885,9 +945,11 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len8 = l7;
-                                            let bytes8 =
-                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
                                             _rt::string_lift(bytes8)
                                         };
                                         V12::Unsupported(e12)
@@ -902,15 +964,16 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len11 = l10;
-                                            let bytes11 =
-                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
                                             _rt::string_lift(bytes11)
                                         };
                                         V12::Platform(e12)
                                     }
                                 };
-
                                 v12
                             };
                             Err(e)
@@ -927,11 +990,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -940,7 +1005,6 @@ pub mod krate {
                         #[link_name = "start"]
                         fn wit_import1(_: i64, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
                         unreachable!()
@@ -971,9 +1035,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len6 = l5;
-                                            let bytes6 =
-                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
                                             _rt::string_lift(bytes6)
                                         };
                                         V10::Unsupported(e10)
@@ -988,15 +1054,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V10::Platform(e10)
                                     }
                                 };
-
                                 v10
                             };
                             Err(e)
@@ -1013,11 +1080,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -1026,7 +1095,6 @@ pub mod krate {
                         #[link_name = "stop"]
                         fn wit_import1(_: i64, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
                         unreachable!()
@@ -1057,9 +1125,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len6 = l5;
-                                            let bytes6 =
-                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
                                             _rt::string_lift(bytes6)
                                         };
                                         V10::Unsupported(e10)
@@ -1074,15 +1144,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V10::Platform(e10)
                                     }
                                 };
-
                                 v10
                             };
                             Err(e)
@@ -1094,16 +1165,21 @@ pub mod krate {
             }
             #[allow(unused_unsafe, clippy::all)]
             /// Read interleaved little-endian audio bytes.
-            pub fn read(stream_id: u64, max_bytes: u32) -> Result<_rt::Vec<u8>, AudioError> {
+            pub fn read(
+                stream_id: u64,
+                max_bytes: u32,
+            ) -> Result<_rt::Vec<u8>, AudioError> {
                 unsafe {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -1112,12 +1188,17 @@ pub mod krate {
                         #[link_name = "read"]
                         fn wit_import1(_: i64, _: i32, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i64, _: i32, _: *mut u8) {
                         unreachable!()
                     }
-                    unsafe { wit_import1(_rt::as_i64(&stream_id), _rt::as_i32(&max_bytes), ptr0) };
+                    unsafe {
+                        wit_import1(
+                            _rt::as_i64(&stream_id),
+                            _rt::as_i32(&max_bytes),
+                            ptr0,
+                        )
+                    };
                     let l2 = i32::from(*ptr0.add(0).cast::<u8>());
                     let result14 = match l2 {
                         0 => {
@@ -1129,7 +1210,6 @@ pub mod krate {
                                     .add(2 * ::core::mem::size_of::<*const u8>())
                                     .cast::<usize>();
                                 let len5 = l4;
-
                                 _rt::Vec::from_raw_parts(l3.cast(), len5, len5)
                             };
                             Ok(e)
@@ -1153,9 +1233,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V13::Unsupported(e13)
@@ -1170,15 +1252,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len12 = l11;
-                                            let bytes12 =
-                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
-
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
                                             _rt::string_lift(bytes12)
                                         };
                                         V13::Platform(e13)
                                     }
                                 };
-
                                 v13
                             };
                             Err(e)
@@ -1196,9 +1279,7 @@ pub mod krate {
         pub mod types {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             /// How a frame's bytes are laid out.
             #[repr(u8)]
@@ -1210,28 +1291,29 @@ pub mod krate {
                 Rgba8,
             }
             impl ::core::fmt::Debug for FrameFormat {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
-                        FrameFormat::Rgba8 => f.debug_tuple("FrameFormat::Rgba8").finish(),
+                        FrameFormat::Rgba8 => {
+                            f.debug_tuple("FrameFormat::Rgba8").finish()
+                        }
                     }
                 }
             }
-
             impl FrameFormat {
                 #[doc(hidden)]
                 pub unsafe fn _lift(val: u8) -> FrameFormat {
                     if !cfg!(debug_assertions) {
                         return ::core::mem::transmute(val);
                     }
-
                     match val {
                         0 => FrameFormat::Rgba8,
-
                         _ => panic!("invalid enum discriminant"),
                     }
                 }
             }
-
             /// What the app is asking the camera for.
             ///
             /// Every field is a request, not a demand: a camera that cannot do exactly
@@ -1251,7 +1333,10 @@ pub mod krate {
                 pub format: FrameFormat,
             }
             impl ::core::fmt::Debug for StreamConfig {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("StreamConfig")
                         .field("width", &self.width)
                         .field("height", &self.height)
@@ -1274,7 +1359,10 @@ pub mod krate {
                 pub format: FrameFormat,
             }
             impl ::core::fmt::Debug for FrameInfo {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("FrameInfo")
                         .field("width", &self.width)
                         .field("height", &self.height)
@@ -1292,7 +1380,10 @@ pub mod krate {
                 pub label: _rt::String,
             }
             impl ::core::fmt::Debug for DeviceInfo {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("DeviceInfo")
                         .field("id", &self.id)
                         .field("label", &self.label)
@@ -1323,7 +1414,10 @@ pub mod krate {
                 pub elapsed_millis: u64,
             }
             impl ::core::fmt::Debug for Frame {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("Frame")
                         .field("bytes", &self.bytes)
                         .field("width", &self.width)
@@ -1354,7 +1448,10 @@ pub mod krate {
                 Platform(_rt::String),
             }
             impl ::core::fmt::Debug for CameraError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
                         CameraError::PermissionDenied => {
                             f.debug_tuple("CameraError::PermissionDenied").finish()
@@ -1378,15 +1475,16 @@ pub mod krate {
                 }
             }
             impl ::core::fmt::Display for CameraError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     write!(f, "{:?}", self)
                 }
             }
-
             #[cfg(feature = "std")]
             impl std::error::Error for CameraError {}
         }
-
         /// Camera capture calls.
         ///
         /// Deliberately shaped like `krate:audio/capture`: open, start, read, stop.
@@ -1397,9 +1495,7 @@ pub mod krate {
         pub mod capture {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             pub type CameraError = super::super::super::krate::camera::types::CameraError;
             pub type DeviceInfo = super::super::super::krate::camera::types::DeviceInfo;
@@ -1416,11 +1512,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -1429,7 +1527,6 @@ pub mod krate {
                         #[link_name = "devices"]
                         fn wit_import1(_: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: *mut u8) {
                         unreachable!()
@@ -1449,16 +1546,19 @@ pub mod krate {
                                 let len11 = l4;
                                 let mut result11 = _rt::Vec::with_capacity(len11);
                                 for i in 0..len11 {
-                                    let base =
-                                        base11.add(i * (4 * ::core::mem::size_of::<*const u8>()));
+                                    let base = base11
+                                        .add(i * (4 * ::core::mem::size_of::<*const u8>()));
                                     let e11 = {
                                         let l5 = *base.add(0).cast::<*mut u8>();
                                         let l6 = *base
                                             .add(::core::mem::size_of::<*const u8>())
                                             .cast::<usize>();
                                         let len7 = l6;
-                                        let bytes7 =
-                                            _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
+                                        let bytes7 = _rt::Vec::from_raw_parts(
+                                            l5.cast(),
+                                            len7,
+                                            len7,
+                                        );
                                         let l8 = *base
                                             .add(2 * ::core::mem::size_of::<*const u8>())
                                             .cast::<*mut u8>();
@@ -1466,9 +1566,11 @@ pub mod krate {
                                             .add(3 * ::core::mem::size_of::<*const u8>())
                                             .cast::<usize>();
                                         let len10 = l9;
-                                        let bytes10 =
-                                            _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
+                                        let bytes10 = _rt::Vec::from_raw_parts(
+                                            l8.cast(),
+                                            len10,
+                                            len10,
+                                        );
                                         super::super::super::krate::camera::types::DeviceInfo {
                                             id: _rt::string_lift(bytes7),
                                             label: _rt::string_lift(bytes10),
@@ -1481,7 +1583,6 @@ pub mod krate {
                                     len11 * (4 * ::core::mem::size_of::<*const u8>()),
                                     ::core::mem::size_of::<*const u8>(),
                                 );
-
                                 result11
                             };
                             Ok(e)
@@ -1506,9 +1607,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len15 = l14;
-                                            let bytes15 =
-                                                _rt::Vec::from_raw_parts(l13.cast(), len15, len15);
-
+                                            let bytes15 = _rt::Vec::from_raw_parts(
+                                                l13.cast(),
+                                                len15,
+                                                len15,
+                                            );
                                             _rt::string_lift(bytes15)
                                         };
                                         V19::Unsupported(e19)
@@ -1523,15 +1626,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len18 = l17;
-                                            let bytes18 =
-                                                _rt::Vec::from_raw_parts(l16.cast(), len18, len18);
-
+                                            let bytes18 = _rt::Vec::from_raw_parts(
+                                                l16.cast(),
+                                                len18,
+                                                len18,
+                                            );
                                             _rt::string_lift(bytes18)
                                         };
                                         V19::Platform(e19)
                                     }
                                 };
-
                                 v19
                             };
                             Err(e)
@@ -1551,12 +1655,13 @@ pub mod krate {
                 unsafe {
                     #[repr(align(8))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>;
-                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 16 + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 16
+                            + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = device;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -1582,7 +1687,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import3(
                         _: *mut u8,
@@ -1611,7 +1715,6 @@ pub mod krate {
                         0 => {
                             let e = {
                                 let l5 = *ptr2.add(8).cast::<i64>();
-
                                 l5 as u64
                             };
                             Ok(e)
@@ -1634,9 +1737,11 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V13::Unsupported(e13)
@@ -1651,15 +1756,16 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len12 = l11;
-                                            let bytes12 =
-                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
-
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
                                             _rt::string_lift(bytes12)
                                         };
                                         V13::Platform(e13)
                                     }
                                 };
-
                                 v13
                             };
                             Err(e)
@@ -1677,11 +1783,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 8 + 3 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 8 + 3 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            8 + 3 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 8
+                            + 3 * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -1690,7 +1798,6 @@ pub mod krate {
                         #[link_name = "info"]
                         fn wit_import1(_: i64, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
                         unreachable!()
@@ -1700,8 +1807,9 @@ pub mod krate {
                     let result15 = match l2 {
                         0 => {
                             let e = {
-                                let l3 =
-                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<i32>();
+                                let l3 = *ptr0
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<i32>();
                                 let l4 = *ptr0
                                     .add(4 + 1 * ::core::mem::size_of::<*const u8>())
                                     .cast::<i32>();
@@ -1713,13 +1821,14 @@ pub mod krate {
                                         .add(12 + 1 * ::core::mem::size_of::<*const u8>())
                                         .cast::<u8>(),
                                 );
-
-                                super::super::super::krate::camera::types::FrameInfo{
-                  width: l3 as u32,
-                  height: l4 as u32,
-                  fps: l5 as u32,
-                  format: super::super::super::krate::camera::types::FrameFormat::_lift(l6 as u8),
-                }
+                                super::super::super::krate::camera::types::FrameInfo {
+                                    width: l3 as u32,
+                                    height: l4 as u32,
+                                    fps: l5 as u32,
+                                    format: super::super::super::krate::camera::types::FrameFormat::_lift(
+                                        l6 as u8,
+                                    ),
+                                }
                             };
                             Ok(e)
                         }
@@ -1743,9 +1852,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len10 = l9;
-                                            let bytes10 =
-                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
                                             _rt::string_lift(bytes10)
                                         };
                                         V14::Unsupported(e14)
@@ -1760,15 +1871,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len13 = l12;
-                                            let bytes13 =
-                                                _rt::Vec::from_raw_parts(l11.cast(), len13, len13);
-
+                                            let bytes13 = _rt::Vec::from_raw_parts(
+                                                l11.cast(),
+                                                len13,
+                                                len13,
+                                            );
                                             _rt::string_lift(bytes13)
                                         };
                                         V14::Platform(e14)
                                     }
                                 };
-
                                 v14
                             };
                             Err(e)
@@ -1785,11 +1897,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -1798,7 +1912,6 @@ pub mod krate {
                         #[link_name = "start"]
                         fn wit_import1(_: i64, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
                         unreachable!()
@@ -1830,9 +1943,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len6 = l5;
-                                            let bytes6 =
-                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
                                             _rt::string_lift(bytes6)
                                         };
                                         V10::Unsupported(e10)
@@ -1847,15 +1962,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V10::Platform(e10)
                                     }
                                 };
-
                                 v10
                             };
                             Err(e)
@@ -1876,11 +1992,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -1889,7 +2007,6 @@ pub mod krate {
                         #[link_name = "stop"]
                         fn wit_import1(_: i64, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
                         unreachable!()
@@ -1921,9 +2038,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len6 = l5;
-                                            let bytes6 =
-                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
                                             _rt::string_lift(bytes6)
                                         };
                                         V10::Unsupported(e10)
@@ -1938,15 +2057,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V10::Platform(e10)
                                     }
                                 };
-
                                 v10
                             };
                             Err(e)
@@ -1967,12 +2087,13 @@ pub mod krate {
                 unsafe {
                     #[repr(align(8))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>;
-                            32 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 32 + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            32 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 32
+                            + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -1981,7 +2102,6 @@ pub mod krate {
                         #[link_name = "read"]
                         fn wit_import1(_: i64, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
                         unreachable!()
@@ -1992,7 +2112,6 @@ pub mod krate {
                         0 => {
                             let e = {
                                 let l3 = i32::from(*ptr0.add(8).cast::<u8>());
-
                                 match l3 {
                                     0 => None,
                                     1 => {
@@ -2011,13 +2130,8 @@ pub mod krate {
                                             let l9 = *ptr0
                                                 .add(24 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<i64>();
-
                                             super::super::super::krate::camera::types::Frame {
-                                                bytes: _rt::Vec::from_raw_parts(
-                                                    l4.cast(),
-                                                    len6,
-                                                    len6,
-                                                ),
+                                                bytes: _rt::Vec::from_raw_parts(l4.cast(), len6, len6),
                                                 width: l7 as u32,
                                                 height: l8 as u32,
                                                 elapsed_millis: l9 as u64,
@@ -2048,9 +2162,11 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len13 = l12;
-                                            let bytes13 =
-                                                _rt::Vec::from_raw_parts(l11.cast(), len13, len13);
-
+                                            let bytes13 = _rt::Vec::from_raw_parts(
+                                                l11.cast(),
+                                                len13,
+                                                len13,
+                                            );
                                             _rt::string_lift(bytes13)
                                         };
                                         V17::Unsupported(e17)
@@ -2065,15 +2181,16 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len16 = l15;
-                                            let bytes16 =
-                                                _rt::Vec::from_raw_parts(l14.cast(), len16, len16);
-
+                                            let bytes16 = _rt::Vec::from_raw_parts(
+                                                l14.cast(),
+                                                len16,
+                                                len16,
+                                            );
                                             _rt::string_lift(bytes16)
                                         };
                                         V17::Platform(e17)
                                     }
                                 };
-
                                 v17
                             };
                             Err(e)
@@ -2090,11 +2207,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -2103,7 +2222,6 @@ pub mod krate {
                         #[link_name = "close"]
                         fn wit_import1(_: i64, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
                         unreachable!()
@@ -2135,9 +2253,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len6 = l5;
-                                            let bytes6 =
-                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
                                             _rt::string_lift(bytes6)
                                         };
                                         V10::Unsupported(e10)
@@ -2152,15 +2272,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V10::Platform(e10)
                                     }
                                 };
-
                                 v10
                             };
                             Err(e)
@@ -2178,9 +2299,7 @@ pub mod krate {
         pub mod types {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             /// Metadata returned for files and directories.
             #[repr(C)]
@@ -2194,7 +2313,10 @@ pub mod krate {
                 pub is_dir: bool,
             }
             impl ::core::fmt::Debug for FileStat {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("FileStat")
                         .field("size", &self.size)
                         .field("modified-millis", &self.modified_millis)
@@ -2215,11 +2337,16 @@ pub mod krate {
                 Append,
             }
             impl ::core::fmt::Debug for OpenMode {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
                         OpenMode::Read => f.debug_tuple("OpenMode::Read").finish(),
                         OpenMode::Write => f.debug_tuple("OpenMode::Write").finish(),
-                        OpenMode::ReadWrite => f.debug_tuple("OpenMode::ReadWrite").finish(),
+                        OpenMode::ReadWrite => {
+                            f.debug_tuple("OpenMode::ReadWrite").finish()
+                        }
                         OpenMode::Append => f.debug_tuple("OpenMode::Append").finish(),
                     }
                 }
@@ -2243,50 +2370,58 @@ pub mod krate {
                 Io(_rt::String),
             }
             impl ::core::fmt::Debug for FsError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
                         FsError::NotFound => f.debug_tuple("FsError::NotFound").finish(),
                         FsError::PermissionDenied => {
                             f.debug_tuple("FsError::PermissionDenied").finish()
                         }
-                        FsError::AlreadyExists => f.debug_tuple("FsError::AlreadyExists").finish(),
-                        FsError::InvalidPath => f.debug_tuple("FsError::InvalidPath").finish(),
-                        FsError::NotADirectory => f.debug_tuple("FsError::NotADirectory").finish(),
-                        FsError::IsADirectory => f.debug_tuple("FsError::IsADirectory").finish(),
+                        FsError::AlreadyExists => {
+                            f.debug_tuple("FsError::AlreadyExists").finish()
+                        }
+                        FsError::InvalidPath => {
+                            f.debug_tuple("FsError::InvalidPath").finish()
+                        }
+                        FsError::NotADirectory => {
+                            f.debug_tuple("FsError::NotADirectory").finish()
+                        }
+                        FsError::IsADirectory => {
+                            f.debug_tuple("FsError::IsADirectory").finish()
+                        }
                         FsError::Io(e) => f.debug_tuple("FsError::Io").field(e).finish(),
                     }
                 }
             }
             impl ::core::fmt::Display for FsError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     write!(f, "{:?}", self)
                 }
             }
-
             #[cfg(feature = "std")]
             impl std::error::Error for FsError {}
         }
-
         /// Filesystem functions and file resources.
         #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
         pub mod files {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             pub type FileStat = super::super::super::krate::fs::types::FileStat;
             pub type OpenMode = super::super::super::krate::fs::types::OpenMode;
             pub type FsError = super::super::super::krate::fs::types::FsError;
             /// Open file resource.
-
             #[derive(Debug)]
             #[repr(transparent)]
             pub struct File {
                 handle: _rt::Resource<File>,
             }
-
             impl File {
                 #[doc(hidden)]
                 pub unsafe fn from_handle(handle: u32) -> Self {
@@ -2294,24 +2429,20 @@ pub mod krate {
                         handle: unsafe { _rt::Resource::from_handle(handle) },
                     }
                 }
-
                 #[doc(hidden)]
                 pub fn take_handle(&self) -> u32 {
                     _rt::Resource::take_handle(&self.handle)
                 }
-
                 #[doc(hidden)]
                 pub fn handle(&self) -> u32 {
                     _rt::Resource::handle(&self.handle)
                 }
             }
-
             unsafe impl _rt::WasmResource for File {
                 #[inline]
                 unsafe fn drop(_handle: u32) {
                     #[cfg(not(target_arch = "wasm32"))]
                     unreachable!();
-
                     #[cfg(target_arch = "wasm32")]
                     {
                         #[link(wasm_import_module = "krate:fs/files@0.1.0")]
@@ -2319,12 +2450,10 @@ pub mod krate {
                             #[link_name = "[resource-drop]file"]
                             fn drop(_: u32);
                         }
-
                         unsafe { drop(_handle) };
                     }
                 }
             }
-
             impl File {
                 #[allow(unused_unsafe, clippy::all)]
                 /// Read up to `n` bytes from the current file cursor.
@@ -2333,11 +2462,13 @@ pub mod krate {
                         #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                         #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                         struct RetArea(
-                            [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                            [::core::mem::MaybeUninit<
+                                u8,
+                            >; 4 * ::core::mem::size_of::<*const u8>()],
                         );
                         let mut ret_area = RetArea(
-                            [::core::mem::MaybeUninit::uninit();
-                                4 * ::core::mem::size_of::<*const u8>()],
+                            [::core::mem::MaybeUninit::uninit(); 4
+                                * ::core::mem::size_of::<*const u8>()],
                         );
                         let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                         #[cfg(target_arch = "wasm32")]
@@ -2346,12 +2477,13 @@ pub mod krate {
                             #[link_name = "[method]file.read"]
                             fn wit_import1(_: i32, _: i32, _: *mut u8);
                         }
-
                         #[cfg(not(target_arch = "wasm32"))]
                         unsafe extern "C" fn wit_import1(_: i32, _: i32, _: *mut u8) {
                             unreachable!()
                         }
-                        unsafe { wit_import1((self).handle() as i32, _rt::as_i32(&n), ptr0) };
+                        unsafe {
+                            wit_import1((self).handle() as i32, _rt::as_i32(&n), ptr0)
+                        };
                         let l2 = i32::from(*ptr0.add(0).cast::<u8>());
                         let result11 = match l2 {
                             0 => {
@@ -2363,7 +2495,6 @@ pub mod krate {
                                         .add(2 * ::core::mem::size_of::<*const u8>())
                                         .cast::<usize>();
                                     let len5 = l4;
-
                                     _rt::Vec::from_raw_parts(l3.cast(), len5, len5)
                                 };
                                 Ok(e)
@@ -2391,15 +2522,16 @@ pub mod krate {
                                                     .add(3 * ::core::mem::size_of::<*const u8>())
                                                     .cast::<usize>();
                                                 let len9 = l8;
-                                                let bytes9 =
-                                                    _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                                let bytes9 = _rt::Vec::from_raw_parts(
+                                                    l7.cast(),
+                                                    len9,
+                                                    len9,
+                                                );
                                                 _rt::string_lift(bytes9)
                                             };
                                             V10::Io(e10)
                                         }
                                     };
-
                                     v10
                                 };
                                 Err(e)
@@ -2418,11 +2550,13 @@ pub mod krate {
                         #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                         #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                         struct RetArea(
-                            [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                            [::core::mem::MaybeUninit<
+                                u8,
+                            >; 4 * ::core::mem::size_of::<*const u8>()],
                         );
                         let mut ret_area = RetArea(
-                            [::core::mem::MaybeUninit::uninit();
-                                4 * ::core::mem::size_of::<*const u8>()],
+                            [::core::mem::MaybeUninit::uninit(); 4
+                                * ::core::mem::size_of::<*const u8>()],
                         );
                         let vec0 = bytes;
                         let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -2434,12 +2568,23 @@ pub mod krate {
                             #[link_name = "[method]file.write"]
                             fn wit_import2(_: i32, _: *mut u8, _: usize, _: *mut u8);
                         }
-
                         #[cfg(not(target_arch = "wasm32"))]
-                        unsafe extern "C" fn wit_import2(_: i32, _: *mut u8, _: usize, _: *mut u8) {
+                        unsafe extern "C" fn wit_import2(
+                            _: i32,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                        ) {
                             unreachable!()
                         }
-                        unsafe { wit_import2((self).handle() as i32, ptr0.cast_mut(), len0, ptr1) };
+                        unsafe {
+                            wit_import2(
+                                (self).handle() as i32,
+                                ptr0.cast_mut(),
+                                len0,
+                                ptr1,
+                            )
+                        };
                         let l3 = i32::from(*ptr1.add(0).cast::<u8>());
                         let result10 = match l3 {
                             0 => {
@@ -2447,7 +2592,6 @@ pub mod krate {
                                     let l4 = *ptr1
                                         .add(::core::mem::size_of::<*const u8>())
                                         .cast::<i32>();
-
                                     l4 as u32
                                 };
                                 Ok(e)
@@ -2475,15 +2619,16 @@ pub mod krate {
                                                     .add(3 * ::core::mem::size_of::<*const u8>())
                                                     .cast::<usize>();
                                                 let len8 = l7;
-                                                let bytes8 =
-                                                    _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                                let bytes8 = _rt::Vec::from_raw_parts(
+                                                    l6.cast(),
+                                                    len8,
+                                                    len8,
+                                                );
                                                 _rt::string_lift(bytes8)
                                             };
                                             V9::Io(e9)
                                         }
                                     };
-
                                     v9
                                 };
                                 Err(e)
@@ -2501,12 +2646,13 @@ pub mod krate {
                     unsafe {
                         #[repr(align(8))]
                         struct RetArea(
-                            [::core::mem::MaybeUninit<u8>;
-                                16 + 2 * ::core::mem::size_of::<*const u8>()],
+                            [::core::mem::MaybeUninit<
+                                u8,
+                            >; 16 + 2 * ::core::mem::size_of::<*const u8>()],
                         );
                         let mut ret_area = RetArea(
-                            [::core::mem::MaybeUninit::uninit();
-                                16 + 2 * ::core::mem::size_of::<*const u8>()],
+                            [::core::mem::MaybeUninit::uninit(); 16
+                                + 2 * ::core::mem::size_of::<*const u8>()],
                         );
                         let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                         #[cfg(target_arch = "wasm32")]
@@ -2515,18 +2661,18 @@ pub mod krate {
                             #[link_name = "[method]file.seek-set"]
                             fn wit_import1(_: i32, _: i64, _: *mut u8);
                         }
-
                         #[cfg(not(target_arch = "wasm32"))]
                         unsafe extern "C" fn wit_import1(_: i32, _: i64, _: *mut u8) {
                             unreachable!()
                         }
-                        unsafe { wit_import1((self).handle() as i32, _rt::as_i64(&pos), ptr0) };
+                        unsafe {
+                            wit_import1((self).handle() as i32, _rt::as_i64(&pos), ptr0)
+                        };
                         let l2 = i32::from(*ptr0.add(0).cast::<u8>());
                         let result9 = match l2 {
                             0 => {
                                 let e = {
                                     let l3 = *ptr0.add(8).cast::<i64>();
-
                                     l3 as u64
                                 };
                                 Ok(e)
@@ -2546,25 +2692,22 @@ pub mod krate {
                                             debug_assert_eq!(n, 6, "invalid enum discriminant");
                                             let e8 = {
                                                 let l5 = *ptr0
-                                                    .add(
-                                                        8 + 1 * ::core::mem::size_of::<*const u8>(),
-                                                    )
+                                                    .add(8 + 1 * ::core::mem::size_of::<*const u8>())
                                                     .cast::<*mut u8>();
                                                 let l6 = *ptr0
-                                                    .add(
-                                                        8 + 2 * ::core::mem::size_of::<*const u8>(),
-                                                    )
+                                                    .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                     .cast::<usize>();
                                                 let len7 = l6;
-                                                let bytes7 =
-                                                    _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
+                                                let bytes7 = _rt::Vec::from_raw_parts(
+                                                    l5.cast(),
+                                                    len7,
+                                                    len7,
+                                                );
                                                 _rt::string_lift(bytes7)
                                             };
                                             V8::Io(e8)
                                         }
                                     };
-
                                     v8
                                 };
                                 Err(e)
@@ -2582,12 +2725,13 @@ pub mod krate {
                     unsafe {
                         #[repr(align(8))]
                         struct RetArea(
-                            [::core::mem::MaybeUninit<u8>;
-                                16 + 2 * ::core::mem::size_of::<*const u8>()],
+                            [::core::mem::MaybeUninit<
+                                u8,
+                            >; 16 + 2 * ::core::mem::size_of::<*const u8>()],
                         );
                         let mut ret_area = RetArea(
-                            [::core::mem::MaybeUninit::uninit();
-                                16 + 2 * ::core::mem::size_of::<*const u8>()],
+                            [::core::mem::MaybeUninit::uninit(); 16
+                                + 2 * ::core::mem::size_of::<*const u8>()],
                         );
                         let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                         #[cfg(target_arch = "wasm32")]
@@ -2596,7 +2740,6 @@ pub mod krate {
                             #[link_name = "[method]file.seek-end"]
                             fn wit_import1(_: i32, _: *mut u8);
                         }
-
                         #[cfg(not(target_arch = "wasm32"))]
                         unsafe extern "C" fn wit_import1(_: i32, _: *mut u8) {
                             unreachable!()
@@ -2607,7 +2750,6 @@ pub mod krate {
                             0 => {
                                 let e = {
                                     let l3 = *ptr0.add(8).cast::<i64>();
-
                                     l3 as u64
                                 };
                                 Ok(e)
@@ -2627,25 +2769,22 @@ pub mod krate {
                                             debug_assert_eq!(n, 6, "invalid enum discriminant");
                                             let e8 = {
                                                 let l5 = *ptr0
-                                                    .add(
-                                                        8 + 1 * ::core::mem::size_of::<*const u8>(),
-                                                    )
+                                                    .add(8 + 1 * ::core::mem::size_of::<*const u8>())
                                                     .cast::<*mut u8>();
                                                 let l6 = *ptr0
-                                                    .add(
-                                                        8 + 2 * ::core::mem::size_of::<*const u8>(),
-                                                    )
+                                                    .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                     .cast::<usize>();
                                                 let len7 = l6;
-                                                let bytes7 =
-                                                    _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
+                                                let bytes7 = _rt::Vec::from_raw_parts(
+                                                    l5.cast(),
+                                                    len7,
+                                                    len7,
+                                                );
                                                 _rt::string_lift(bytes7)
                                             };
                                             V8::Io(e8)
                                         }
                                     };
-
                                     v8
                                 };
                                 Err(e)
@@ -2663,7 +2802,9 @@ pub mod krate {
                     unsafe {
                         #[repr(align(8))]
                         struct RetArea([::core::mem::MaybeUninit<u8>; 32]);
-                        let mut ret_area = RetArea([::core::mem::MaybeUninit::uninit(); 32]);
+                        let mut ret_area = RetArea(
+                            [::core::mem::MaybeUninit::uninit(); 32],
+                        );
                         let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                         #[cfg(target_arch = "wasm32")]
                         #[link(wasm_import_module = "krate:fs/files@0.1.0")]
@@ -2671,7 +2812,6 @@ pub mod krate {
                             #[link_name = "[method]file.stat"]
                             fn wit_import1(_: i32, _: *mut u8);
                         }
-
                         #[cfg(not(target_arch = "wasm32"))]
                         unsafe extern "C" fn wit_import1(_: i32, _: *mut u8) {
                             unreachable!()
@@ -2684,7 +2824,6 @@ pub mod krate {
                                     let l3 = *ptr0.add(8).cast::<i64>();
                                     let l4 = *ptr0.add(16).cast::<i64>();
                                     let l5 = i32::from(*ptr0.add(24).cast::<u8>());
-
                                     super::super::super::krate::fs::types::FileStat {
                                         size: l3 as u64,
                                         modified_millis: l4 as u64,
@@ -2708,25 +2847,22 @@ pub mod krate {
                                             debug_assert_eq!(n, 6, "invalid enum discriminant");
                                             let e10 = {
                                                 let l7 = *ptr0
-                                                    .add(
-                                                        8 + 1 * ::core::mem::size_of::<*const u8>(),
-                                                    )
+                                                    .add(8 + 1 * ::core::mem::size_of::<*const u8>())
                                                     .cast::<*mut u8>();
                                                 let l8 = *ptr0
-                                                    .add(
-                                                        8 + 2 * ::core::mem::size_of::<*const u8>(),
-                                                    )
+                                                    .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                     .cast::<usize>();
                                                 let len9 = l8;
-                                                let bytes9 =
-                                                    _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                                let bytes9 = _rt::Vec::from_raw_parts(
+                                                    l7.cast(),
+                                                    len9,
+                                                    len9,
+                                                );
                                                 _rt::string_lift(bytes9)
                                             };
                                             V10::Io(e10)
                                         }
                                     };
-
                                     v10
                                 };
                                 Err(e)
@@ -2744,11 +2880,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = path;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -2767,9 +2905,13 @@ pub mod krate {
                         #[link_name = "open"]
                         fn wit_import4(_: *mut u8, _: usize, _: i32, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
-                    unsafe extern "C" fn wit_import4(_: *mut u8, _: usize, _: i32, _: *mut u8) {
+                    unsafe extern "C" fn wit_import4(
+                        _: *mut u8,
+                        _: usize,
+                        _: i32,
+                        _: *mut u8,
+                    ) {
                         unreachable!()
                     }
                     unsafe { wit_import4(ptr0.cast_mut(), len0, result2, ptr3) };
@@ -2777,9 +2919,9 @@ pub mod krate {
                     let result12 = match l5 {
                         0 => {
                             let e = {
-                                let l6 =
-                                    *ptr3.add(::core::mem::size_of::<*const u8>()).cast::<i32>();
-
+                                let l6 = *ptr3
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<i32>();
                                 unsafe { File::from_handle(l6 as u32) }
                             };
                             Ok(e)
@@ -2807,15 +2949,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len10 = l9;
-                                            let bytes10 =
-                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
                                             _rt::string_lift(bytes10)
                                         };
                                         V11::Io(e11)
                                     }
                                 };
-
                                 v11
                             };
                             Err(e)
@@ -2841,11 +2984,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = token;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -2864,9 +3009,13 @@ pub mod krate {
                         #[link_name = "open-chosen"]
                         fn wit_import4(_: *mut u8, _: usize, _: i32, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
-                    unsafe extern "C" fn wit_import4(_: *mut u8, _: usize, _: i32, _: *mut u8) {
+                    unsafe extern "C" fn wit_import4(
+                        _: *mut u8,
+                        _: usize,
+                        _: i32,
+                        _: *mut u8,
+                    ) {
                         unreachable!()
                     }
                     unsafe { wit_import4(ptr0.cast_mut(), len0, result2, ptr3) };
@@ -2874,9 +3023,9 @@ pub mod krate {
                     let result12 = match l5 {
                         0 => {
                             let e = {
-                                let l6 =
-                                    *ptr3.add(::core::mem::size_of::<*const u8>()).cast::<i32>();
-
+                                let l6 = *ptr3
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<i32>();
                                 unsafe { File::from_handle(l6 as u32) }
                             };
                             Ok(e)
@@ -2904,15 +3053,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len10 = l9;
-                                            let bytes10 =
-                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
                                             _rt::string_lift(bytes10)
                                         };
                                         V11::Io(e11)
                                     }
                                 };
-
                                 v11
                             };
                             Err(e)
@@ -2939,7 +3089,6 @@ pub mod krate {
                         #[link_name = "stat"]
                         fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
                         unreachable!()
@@ -2952,7 +3101,6 @@ pub mod krate {
                                 let l4 = *ptr1.add(8).cast::<i64>();
                                 let l5 = *ptr1.add(16).cast::<i64>();
                                 let l6 = i32::from(*ptr1.add(24).cast::<u8>());
-
                                 super::super::super::krate::fs::types::FileStat {
                                     size: l4 as u64,
                                     modified_millis: l5 as u64,
@@ -2982,15 +3130,16 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len10 = l9;
-                                            let bytes10 =
-                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
                                             _rt::string_lift(bytes10)
                                         };
                                         V11::Io(e11)
                                     }
                                 };
-
                                 v11
                             };
                             Err(e)
@@ -3007,11 +3156,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = path;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -3023,7 +3174,6 @@ pub mod krate {
                         #[link_name = "list"]
                         fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
                         unreachable!()
@@ -3043,17 +3193,19 @@ pub mod krate {
                                 let len9 = l5;
                                 let mut result9 = _rt::Vec::with_capacity(len9);
                                 for i in 0..len9 {
-                                    let base =
-                                        base9.add(i * (2 * ::core::mem::size_of::<*const u8>()));
+                                    let base = base9
+                                        .add(i * (2 * ::core::mem::size_of::<*const u8>()));
                                     let e9 = {
                                         let l6 = *base.add(0).cast::<*mut u8>();
                                         let l7 = *base
                                             .add(::core::mem::size_of::<*const u8>())
                                             .cast::<usize>();
                                         let len8 = l7;
-                                        let bytes8 =
-                                            _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                        let bytes8 = _rt::Vec::from_raw_parts(
+                                            l6.cast(),
+                                            len8,
+                                            len8,
+                                        );
                                         _rt::string_lift(bytes8)
                                     };
                                     result9.push(e9);
@@ -3063,7 +3215,6 @@ pub mod krate {
                                     len9 * (2 * ::core::mem::size_of::<*const u8>()),
                                     ::core::mem::size_of::<*const u8>(),
                                 );
-
                                 result9
                             };
                             Ok(e)
@@ -3091,15 +3242,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len13 = l12;
-                                            let bytes13 =
-                                                _rt::Vec::from_raw_parts(l11.cast(), len13, len13);
-
+                                            let bytes13 = _rt::Vec::from_raw_parts(
+                                                l11.cast(),
+                                                len13,
+                                                len13,
+                                            );
                                             _rt::string_lift(bytes13)
                                         };
                                         V14::Io(e14)
                                     }
                                 };
-
                                 v14
                             };
                             Err(e)
@@ -3116,11 +3268,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = path;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -3132,7 +3286,6 @@ pub mod krate {
                         #[link_name = "remove-file"]
                         fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
                         unreachable!()
@@ -3167,15 +3320,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len7 = l6;
-                                            let bytes7 =
-                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
                                             _rt::string_lift(bytes7)
                                         };
                                         V8::Io(e8)
                                     }
                                 };
-
                                 v8
                             };
                             Err(e)
@@ -3192,11 +3346,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = path;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -3208,7 +3364,6 @@ pub mod krate {
                         #[link_name = "remove-dir"]
                         fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
                         unreachable!()
@@ -3243,15 +3398,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len7 = l6;
-                                            let bytes7 =
-                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
                                             _rt::string_lift(bytes7)
                                         };
                                         V8::Io(e8)
                                     }
                                 };
-
                                 v8
                             };
                             Err(e)
@@ -3268,11 +3424,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = path;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -3284,7 +3442,6 @@ pub mod krate {
                         #[link_name = "mkdir"]
                         fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
                         unreachable!()
@@ -3319,15 +3476,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len7 = l6;
-                                            let bytes7 =
-                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
                                             _rt::string_lift(bytes7)
                                         };
                                         V8::Io(e8)
                                     }
                                 };
-
                                 v8
                             };
                             Err(e)
@@ -3344,11 +3502,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = from;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -3361,9 +3521,14 @@ pub mod krate {
                     #[link(wasm_import_module = "krate:fs/files@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "rename"]
-                        fn wit_import3(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8);
+                        fn wit_import3(
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                        );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import3(
                         _: *mut u8,
@@ -3374,7 +3539,9 @@ pub mod krate {
                     ) {
                         unreachable!()
                     }
-                    unsafe { wit_import3(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1, ptr2) };
+                    unsafe {
+                        wit_import3(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1, ptr2)
+                    };
                     let l4 = i32::from(*ptr2.add(0).cast::<u8>());
                     let result10 = match l4 {
                         0 => {
@@ -3404,15 +3571,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len8 = l7;
-                                            let bytes8 =
-                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
                                             _rt::string_lift(bytes8)
                                         };
                                         V9::Io(e9)
                                     }
                                 };
-
                                 v9
                             };
                             Err(e)
@@ -3430,9 +3598,7 @@ pub mod krate {
         pub mod types {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             /// RGBA color in linear float form.
             #[repr(C)]
@@ -3448,7 +3614,10 @@ pub mod krate {
                 pub a: f32,
             }
             impl ::core::fmt::Debug for Color {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("Color")
                         .field("r", &self.r)
                         .field("g", &self.g)
@@ -3467,7 +3636,10 @@ pub mod krate {
                 pub y: f32,
             }
             impl ::core::fmt::Debug for Point {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("Point")
                         .field("x", &self.x)
                         .field("y", &self.y)
@@ -3484,7 +3656,10 @@ pub mod krate {
                 pub height: f32,
             }
             impl ::core::fmt::Debug for Size {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("Size")
                         .field("width", &self.width)
                         .field("height", &self.height)
@@ -3514,7 +3689,10 @@ pub mod krate {
                 pub descent: f32,
             }
             impl ::core::fmt::Debug for TextMetrics {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("TextMetrics")
                         .field("width", &self.width)
                         .field("height", &self.height)
@@ -3537,7 +3715,10 @@ pub mod krate {
                 pub height: f32,
             }
             impl ::core::fmt::Debug for Rect {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("Rect")
                         .field("x", &self.x)
                         .field("y", &self.y)
@@ -3556,7 +3737,10 @@ pub mod krate {
                 pub color: Color,
             }
             impl ::core::fmt::Debug for GradientStop {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("GradientStop")
                         .field("offset", &self.offset)
                         .field("color", &self.color)
@@ -3581,7 +3765,10 @@ pub mod krate {
                 Mono,
             }
             impl ::core::fmt::Debug for FontFamily {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
                         FontFamily::Sans => f.debug_tuple("FontFamily::Sans").finish(),
                         FontFamily::Serif => f.debug_tuple("FontFamily::Serif").finish(),
@@ -3589,24 +3776,20 @@ pub mod krate {
                     }
                 }
             }
-
             impl FontFamily {
                 #[doc(hidden)]
                 pub unsafe fn _lift(val: u8) -> FontFamily {
                     if !cfg!(debug_assertions) {
                         return ::core::mem::transmute(val);
                     }
-
                     match val {
                         0 => FontFamily::Sans,
                         1 => FontFamily::Serif,
                         2 => FontFamily::Mono,
-
                         _ => panic!("invalid enum discriminant"),
                     }
                 }
             }
-
             /// How text is drawn, beyond size and color.
             #[repr(C)]
             #[derive(Clone, Copy)]
@@ -3625,7 +3808,10 @@ pub mod krate {
                 pub family: FontFamily,
             }
             impl ::core::fmt::Debug for TextStyle {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("TextStyle")
                         .field("weight", &self.weight)
                         .field("italic", &self.italic)
@@ -3650,7 +3836,10 @@ pub mod krate {
                 pub bottom_left: f32,
             }
             impl ::core::fmt::Debug for CornerRadii {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("CornerRadii")
                         .field("top-left", &self.top_left)
                         .field("top-right", &self.top_right)
@@ -3672,7 +3861,10 @@ pub mod krate {
                 Platform(_rt::String),
             }
             impl ::core::fmt::Debug for GfxError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
                         GfxError::PermissionDenied => {
                             f.debug_tuple("GfxError::PermissionDenied").finish()
@@ -3690,15 +3882,16 @@ pub mod krate {
                 }
             }
             impl ::core::fmt::Display for GfxError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     write!(f, "{:?}", self)
                 }
             }
-
             #[cfg(feature = "std")]
             impl std::error::Error for GfxError {}
         }
-
         /// 2D drawing calls for widget-backed canvases.
         ///
         /// One call per drawing operation, deliberately. The first shape of this
@@ -3716,9 +3909,7 @@ pub mod krate {
         pub mod canvas2d {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             pub type Color = super::super::super::krate::gfx::types::Color;
             pub type Point = super::super::super::krate::gfx::types::Point;
@@ -3735,12 +3926,13 @@ pub mod krate {
                 unsafe {
                     #[repr(align(8))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>;
-                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 16 + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 16
+                            + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -3749,18 +3941,18 @@ pub mod krate {
                         #[link_name = "bind"]
                         fn wit_import1(_: i64, _: i64, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i64, _: i64, _: *mut u8) {
                         unreachable!()
                     }
-                    unsafe { wit_import1(_rt::as_i64(&window), _rt::as_i64(&widget), ptr0) };
+                    unsafe {
+                        wit_import1(_rt::as_i64(&window), _rt::as_i64(&widget), ptr0)
+                    };
                     let l2 = i32::from(*ptr0.add(0).cast::<u8>());
                     let result12 = match l2 {
                         0 => {
                             let e = {
                                 let l3 = *ptr0.add(8).cast::<i64>();
-
                                 l3 as u64
                             };
                             Ok(e)
@@ -3781,9 +3973,11 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len7 = l6;
-                                            let bytes7 =
-                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
                                             _rt::string_lift(bytes7)
                                         };
                                         V11::Unsupported(e11)
@@ -3798,15 +3992,16 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len10 = l9;
-                                            let bytes10 =
-                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
                                             _rt::string_lift(bytes10)
                                         };
                                         V11::Platform(e11)
                                     }
                                 };
-
                                 v11
                             };
                             Err(e)
@@ -3829,11 +4024,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -3842,7 +4039,6 @@ pub mod krate {
                         #[link_name = "canvas-size"]
                         fn wit_import1(_: i64, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
                         unreachable!()
@@ -3852,12 +4048,12 @@ pub mod krate {
                     let result13 = match l2 {
                         0 => {
                             let e = {
-                                let l3 =
-                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<f32>();
+                                let l3 = *ptr0
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<f32>();
                                 let l4 = *ptr0
                                     .add(4 + 1 * ::core::mem::size_of::<*const u8>())
                                     .cast::<f32>();
-
                                 super::super::super::krate::gfx::types::Size {
                                     width: l3,
                                     height: l4,
@@ -3883,9 +4079,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len8 = l7;
-                                            let bytes8 =
-                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
                                             _rt::string_lift(bytes8)
                                         };
                                         V12::Unsupported(e12)
@@ -3900,15 +4098,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len11 = l10;
-                                            let bytes11 =
-                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
                                             _rt::string_lift(bytes11)
                                         };
                                         V12::Platform(e12)
                                     }
                                 };
-
                                 v12
                             };
                             Err(e)
@@ -3944,11 +4143,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let super::super::super::krate::gfx::types::Size {
                         width: width0,
@@ -3961,9 +4162,13 @@ pub mod krate {
                         #[link_name = "set-design-size"]
                         fn wit_import2(_: i64, _: f32, _: f32, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
-                    unsafe extern "C" fn wit_import2(_: i64, _: f32, _: f32, _: *mut u8) {
+                    unsafe extern "C" fn wit_import2(
+                        _: i64,
+                        _: f32,
+                        _: f32,
+                        _: *mut u8,
+                    ) {
                         unreachable!()
                     }
                     unsafe {
@@ -3998,9 +4203,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len7 = l6;
-                                            let bytes7 =
-                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
                                             _rt::string_lift(bytes7)
                                         };
                                         V11::Unsupported(e11)
@@ -4015,15 +4222,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len10 = l9;
-                                            let bytes10 =
-                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
                                             _rt::string_lift(bytes10)
                                         };
                                         V11::Platform(e11)
                                     }
                                 };
-
                                 v11
                             };
                             Err(e)
@@ -4045,25 +4253,39 @@ pub mod krate {
             ///   set-clip(canvas, list-x, list-y, list-w, list-h);
             ///   // draw every row, including partly-visible ones
             ///   clear-clip(canvas);
-            pub fn set_clip(canvas: u64, x: f32, y: f32, w: f32, h: f32) -> Result<(), GfxError> {
+            pub fn set_clip(
+                canvas: u64,
+                x: f32,
+                y: f32,
+                w: f32,
+                h: f32,
+            ) -> Result<(), GfxError> {
                 unsafe {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
                     #[link(wasm_import_module = "krate:gfx/canvas2d@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "set-clip"]
-                        fn wit_import1(_: i64, _: f32, _: f32, _: f32, _: f32, _: *mut u8);
+                        fn wit_import1(
+                            _: i64,
+                            _: f32,
+                            _: f32,
+                            _: f32,
+                            _: f32,
+                            _: *mut u8,
+                        );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(
                         _: i64,
@@ -4109,9 +4331,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len6 = l5;
-                                            let bytes6 =
-                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
                                             _rt::string_lift(bytes6)
                                         };
                                         V10::Unsupported(e10)
@@ -4126,15 +4350,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V10::Platform(e10)
                                     }
                                 };
-
                                 v10
                             };
                             Err(e)
@@ -4151,11 +4376,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -4164,7 +4391,6 @@ pub mod krate {
                         #[link_name = "clear-clip"]
                         fn wit_import1(_: i64, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
                         unreachable!()
@@ -4194,9 +4420,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len6 = l5;
-                                            let bytes6 =
-                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
                                             _rt::string_lift(bytes6)
                                         };
                                         V10::Unsupported(e10)
@@ -4211,15 +4439,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V10::Platform(e10)
                                     }
                                 };
-
                                 v10
                             };
                             Err(e)
@@ -4237,11 +4466,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let super::super::super::krate::gfx::types::Color {
                         r: r0,
@@ -4254,9 +4485,15 @@ pub mod krate {
                     #[link(wasm_import_module = "krate:gfx/canvas2d@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "clear"]
-                        fn wit_import2(_: i64, _: f32, _: f32, _: f32, _: f32, _: *mut u8);
+                        fn wit_import2(
+                            _: i64,
+                            _: f32,
+                            _: f32,
+                            _: f32,
+                            _: f32,
+                            _: *mut u8,
+                        );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import2(
                         _: i64,
@@ -4302,9 +4539,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len7 = l6;
-                                            let bytes7 =
-                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
                                             _rt::string_lift(bytes7)
                                         };
                                         V11::Unsupported(e11)
@@ -4319,15 +4558,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len10 = l9;
-                                            let bytes10 =
-                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
                                             _rt::string_lift(bytes10)
                                         };
                                         V11::Platform(e11)
                                     }
                                 };
-
                                 v11
                             };
                             Err(e)
@@ -4339,16 +4579,22 @@ pub mod krate {
             }
             #[allow(unused_unsafe, clippy::all)]
             /// Fill a rectangle.
-            pub fn fill_rect(canvas: u64, area: Rect, fill: Color) -> Result<(), GfxError> {
+            pub fn fill_rect(
+                canvas: u64,
+                area: Rect,
+                fill: Color,
+            ) -> Result<(), GfxError> {
                 unsafe {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let super::super::super::krate::gfx::types::Rect {
                         x: x0,
@@ -4380,7 +4626,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import3(
                         _: i64,
@@ -4434,9 +4679,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len8 = l7;
-                                            let bytes8 =
-                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
                                             _rt::string_lift(bytes8)
                                         };
                                         V12::Unsupported(e12)
@@ -4451,15 +4698,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len11 = l10;
-                                            let bytes11 =
-                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
                                             _rt::string_lift(bytes11)
                                         };
                                         V12::Platform(e12)
                                     }
                                 };
-
                                 v12
                             };
                             Err(e)
@@ -4481,11 +4729,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let super::super::super::krate::gfx::types::Rect {
                         x: x0,
@@ -4518,7 +4768,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import3(
                         _: i64,
@@ -4574,9 +4823,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len8 = l7;
-                                            let bytes8 =
-                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
                                             _rt::string_lift(bytes8)
                                         };
                                         V12::Unsupported(e12)
@@ -4591,15 +4842,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len11 = l10;
-                                            let bytes11 =
-                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
                                             _rt::string_lift(bytes11)
                                         };
                                         V12::Platform(e12)
                                     }
                                 };
-
                                 v12
                             };
                             Err(e)
@@ -4626,11 +4878,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let super::super::super::krate::gfx::types::Rect {
                         x: x0,
@@ -4672,7 +4926,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import4(
                         _: i64,
@@ -4734,9 +4987,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V13::Unsupported(e13)
@@ -4751,15 +5006,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len12 = l11;
-                                            let bytes12 =
-                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
-
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
                                             _rt::string_lift(bytes12)
                                         };
                                         V13::Platform(e13)
                                     }
                                 };
-
                                 v13
                             };
                             Err(e)
@@ -4784,11 +5040,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let super::super::super::krate::gfx::types::Rect {
                         x: x0,
@@ -4831,7 +5089,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import4(
                         _: i64,
@@ -4895,9 +5152,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V13::Unsupported(e13)
@@ -4912,15 +5171,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len12 = l11;
-                                            let bytes12 =
-                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
-
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
                                             _rt::string_lift(bytes12)
                                         };
                                         V13::Platform(e13)
                                     }
                                 };
-
                                 v13
                             };
                             Err(e)
@@ -4947,11 +5207,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let super::super::super::krate::gfx::types::Rect {
                         x: x0,
@@ -4994,7 +5256,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import4(
                         _: i64,
@@ -5058,9 +5319,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V13::Unsupported(e13)
@@ -5075,15 +5338,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len12 = l11;
-                                            let bytes12 =
-                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
-
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
                                             _rt::string_lift(bytes12)
                                         };
                                         V13::Platform(e13)
                                     }
                                 };
-
                                 v13
                             };
                             Err(e)
@@ -5109,11 +5373,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let super::super::super::krate::gfx::types::Rect {
                         x: x0,
@@ -5141,7 +5407,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import3(
                         _: i64,
@@ -5193,9 +5458,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len8 = l7;
-                                            let bytes8 =
-                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
                                             _rt::string_lift(bytes8)
                                         };
                                         V12::Unsupported(e12)
@@ -5210,15 +5477,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len11 = l10;
-                                            let bytes11 =
-                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
                                             _rt::string_lift(bytes11)
                                         };
                                         V12::Platform(e12)
                                     }
                                 };
-
                                 v12
                             };
                             Err(e)
@@ -5246,11 +5514,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = text;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -5291,7 +5561,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import5(
                         _: i64,
@@ -5358,9 +5627,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len10 = l9;
-                                            let bytes10 =
-                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
                                             _rt::string_lift(bytes10)
                                         };
                                         V14::Unsupported(e14)
@@ -5375,15 +5646,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len13 = l12;
-                                            let bytes13 =
-                                                _rt::Vec::from_raw_parts(l11.cast(), len13, len13);
-
+                                            let bytes13 = _rt::Vec::from_raw_parts(
+                                                l11.cast(),
+                                                len13,
+                                                len13,
+                                            );
                                             _rt::string_lift(bytes13)
                                         };
                                         V14::Platform(e14)
                                     }
                                 };
-
                                 v14
                             };
                             Err(e)
@@ -5406,11 +5678,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 8 + 3 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 8 + 3 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            8 + 3 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 8
+                            + 3 * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = text;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -5438,7 +5712,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import3(
                         _: i64,
@@ -5473,8 +5746,9 @@ pub mod krate {
                     let result17 = match l4 {
                         0 => {
                             let e = {
-                                let l5 =
-                                    *ptr2.add(::core::mem::size_of::<*const u8>()).cast::<f32>();
+                                let l5 = *ptr2
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<f32>();
                                 let l6 = *ptr2
                                     .add(4 + 1 * ::core::mem::size_of::<*const u8>())
                                     .cast::<f32>();
@@ -5484,7 +5758,6 @@ pub mod krate {
                                 let l8 = *ptr2
                                     .add(12 + 1 * ::core::mem::size_of::<*const u8>())
                                     .cast::<f32>();
-
                                 super::super::super::krate::gfx::types::TextMetrics {
                                     width: l5,
                                     height: l6,
@@ -5512,9 +5785,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len12 = l11;
-                                            let bytes12 =
-                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
-
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
                                             _rt::string_lift(bytes12)
                                         };
                                         V16::Unsupported(e16)
@@ -5529,15 +5804,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len15 = l14;
-                                            let bytes15 =
-                                                _rt::Vec::from_raw_parts(l13.cast(), len15, len15);
-
+                                            let bytes15 = _rt::Vec::from_raw_parts(
+                                                l13.cast(),
+                                                len15,
+                                                len15,
+                                            );
                                             _rt::string_lift(bytes15)
                                         };
                                         V16::Platform(e16)
                                     }
                                 };
-
                                 v16
                             };
                             Err(e)
@@ -5566,11 +5842,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let super::super::super::krate::gfx::types::Point { x: x0, y: y0 } = center;
                     let super::super::super::krate::gfx::types::Color {
@@ -5599,7 +5877,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import3(
                         _: i64,
@@ -5657,9 +5934,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len8 = l7;
-                                            let bytes8 =
-                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
                                             _rt::string_lift(bytes8)
                                         };
                                         V12::Unsupported(e12)
@@ -5674,15 +5953,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len11 = l10;
-                                            let bytes11 =
-                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
                                             _rt::string_lift(bytes11)
                                         };
                                         V12::Platform(e12)
                                     }
                                 };
-
                                 v12
                             };
                             Err(e)
@@ -5709,11 +5989,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let super::super::super::krate::gfx::types::Rect {
                         x: x0,
@@ -5752,7 +6034,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import4(
                         _: i64,
@@ -5814,9 +6095,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V13::Unsupported(e13)
@@ -5831,15 +6114,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len12 = l11;
-                                            let bytes12 =
-                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
-
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
                                             _rt::string_lift(bytes12)
                                         };
                                         V13::Platform(e13)
                                     }
                                 };
-
                                 v13
                             };
                             Err(e)
@@ -5863,11 +6147,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let super::super::super::krate::gfx::types::Point { x: x0, y: y0 } = center;
                     let super::super::super::krate::gfx::types::Color {
@@ -5893,7 +6179,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import3(
                         _: i64,
@@ -5945,9 +6230,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len8 = l7;
-                                            let bytes8 =
-                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
                                             _rt::string_lift(bytes8)
                                         };
                                         V12::Unsupported(e12)
@@ -5962,15 +6249,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len11 = l10;
-                                            let bytes11 =
-                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
                                             _rt::string_lift(bytes11)
                                         };
                                         V12::Platform(e12)
                                     }
                                 };
-
                                 v12
                             };
                             Err(e)
@@ -5998,11 +6286,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let super::super::super::krate::gfx::types::Point { x: x0, y: y0 } = center;
                     let super::super::super::krate::gfx::types::Color {
@@ -6029,7 +6319,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import3(
                         _: i64,
@@ -6083,9 +6372,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len8 = l7;
-                                            let bytes8 =
-                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
                                             _rt::string_lift(bytes8)
                                         };
                                         V12::Unsupported(e12)
@@ -6100,15 +6391,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len11 = l10;
-                                            let bytes11 =
-                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
                                             _rt::string_lift(bytes11)
                                         };
                                         V12::Platform(e12)
                                     }
                                 };
-
                                 v12
                             };
                             Err(e)
@@ -6133,11 +6425,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let super::super::super::krate::gfx::types::Point { x: x0, y: y0 } = center;
                     let super::super::super::krate::gfx::types::Color {
@@ -6173,7 +6467,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import4(
                         _: i64,
@@ -6233,9 +6526,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V13::Unsupported(e13)
@@ -6250,15 +6545,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len12 = l11;
-                                            let bytes12 =
-                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
-
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
                                             _rt::string_lift(bytes12)
                                         };
                                         V13::Platform(e13)
                                     }
                                 };
-
                                 v13
                             };
                             Err(e)
@@ -6281,11 +6577,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let super::super::super::krate::gfx::types::Rect {
                         x: x0,
@@ -6327,7 +6625,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import4(
                         _: i64,
@@ -6389,9 +6686,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V13::Unsupported(e13)
@@ -6406,15 +6705,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len12 = l11;
-                                            let bytes12 =
-                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
-
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
                                             _rt::string_lift(bytes12)
                                         };
                                         V13::Platform(e13)
                                     }
                                 };
-
                                 v13
                             };
                             Err(e)
@@ -6437,11 +6737,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = text;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -6472,7 +6774,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import4(
                         _: i64,
@@ -6528,9 +6829,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V13::Unsupported(e13)
@@ -6545,15 +6848,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len12 = l11;
-                                            let bytes12 =
-                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
-
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
                                             _rt::string_lift(bytes12)
                                         };
                                         V13::Platform(e13)
                                     }
                                 };
-
                                 v13
                             };
                             Err(e)
@@ -6591,11 +6895,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 8 + 3 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 8 + 3 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            8 + 3 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 8
+                            + 3 * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = text;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -6607,7 +6913,6 @@ pub mod krate {
                         #[link_name = "measure-text"]
                         fn wit_import2(_: i64, _: *mut u8, _: usize, _: f32, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import2(
                         _: i64,
@@ -6631,8 +6936,9 @@ pub mod krate {
                     let result16 = match l3 {
                         0 => {
                             let e = {
-                                let l4 =
-                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<f32>();
+                                let l4 = *ptr1
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<f32>();
                                 let l5 = *ptr1
                                     .add(4 + 1 * ::core::mem::size_of::<*const u8>())
                                     .cast::<f32>();
@@ -6642,7 +6948,6 @@ pub mod krate {
                                 let l7 = *ptr1
                                     .add(12 + 1 * ::core::mem::size_of::<*const u8>())
                                     .cast::<f32>();
-
                                 super::super::super::krate::gfx::types::TextMetrics {
                                     width: l4,
                                     height: l5,
@@ -6670,9 +6975,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len11 = l10;
-                                            let bytes11 =
-                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
                                             _rt::string_lift(bytes11)
                                         };
                                         V15::Unsupported(e15)
@@ -6687,15 +6994,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len14 = l13;
-                                            let bytes14 =
-                                                _rt::Vec::from_raw_parts(l12.cast(), len14, len14);
-
+                                            let bytes14 = _rt::Vec::from_raw_parts(
+                                                l12.cast(),
+                                                len14,
+                                                len14,
+                                            );
                                             _rt::string_lift(bytes14)
                                         };
                                         V15::Platform(e15)
                                     }
                                 };
-
                                 v15
                             };
                             Err(e)
@@ -6723,11 +7031,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let super::super::super::krate::gfx::types::Rect {
                         x: x0,
@@ -6756,7 +7066,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import3(
                         _: i64,
@@ -6810,9 +7119,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len8 = l7;
-                                            let bytes8 =
-                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
                                             _rt::string_lift(bytes8)
                                         };
                                         V12::Unsupported(e12)
@@ -6827,15 +7138,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len11 = l10;
-                                            let bytes11 =
-                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
                                             _rt::string_lift(bytes11)
                                         };
                                         V12::Platform(e12)
                                     }
                                 };
-
                                 v12
                             };
                             Err(e)
@@ -6865,11 +7177,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let super::super::super::krate::gfx::types::Point { x: x0, y: y0 } = center;
                     let super::super::super::krate::gfx::types::Size {
@@ -6898,7 +7212,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import4(
                         _: i64,
@@ -6954,9 +7267,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V13::Unsupported(e13)
@@ -6971,15 +7286,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len12 = l11;
-                                            let bytes12 =
-                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
-
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
                                             _rt::string_lift(bytes12)
                                         };
                                         V13::Platform(e13)
                                     }
                                 };
-
                                 v13
                             };
                             Err(e)
@@ -6996,11 +7312,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -7009,7 +7327,6 @@ pub mod krate {
                         #[link_name = "present"]
                         fn wit_import1(_: i64, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
                         unreachable!()
@@ -7039,9 +7356,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len6 = l5;
-                                            let bytes6 =
-                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
                                             _rt::string_lift(bytes6)
                                         };
                                         V10::Unsupported(e10)
@@ -7056,15 +7375,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V10::Platform(e10)
                                     }
                                 };
-
                                 v10
                             };
                             Err(e)
@@ -7075,7 +7395,6 @@ pub mod krate {
                 }
             }
         }
-
         /// Software 3D: triangles with depth, lit and drawn on the CPU.
         ///
         /// Deliberately not a GPU abstraction. A real one means wgpu, shaders, and
@@ -7098,9 +7417,7 @@ pub mod krate {
         pub mod scene3d {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             pub type Color = super::super::super::krate::gfx::types::Color;
             pub type GfxError = super::super::super::krate::gfx::types::GfxError;
@@ -7198,7 +7515,10 @@ pub mod krate {
                 pub exposure: f32,
             }
             impl ::core::fmt::Debug for Lighting {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("Lighting")
                         .field("ambient", &self.ambient)
                         .field("specular", &self.specular)
@@ -7219,12 +7539,13 @@ pub mod krate {
                 unsafe {
                     #[repr(align(8))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>;
-                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 16 + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 16
+                            + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -7233,18 +7554,18 @@ pub mod krate {
                         #[link_name = "bind"]
                         fn wit_import1(_: i64, _: i64, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i64, _: i64, _: *mut u8) {
                         unreachable!()
                     }
-                    unsafe { wit_import1(_rt::as_i64(&window), _rt::as_i64(&widget), ptr0) };
+                    unsafe {
+                        wit_import1(_rt::as_i64(&window), _rt::as_i64(&widget), ptr0)
+                    };
                     let l2 = i32::from(*ptr0.add(0).cast::<u8>());
                     let result12 = match l2 {
                         0 => {
                             let e = {
                                 let l3 = *ptr0.add(8).cast::<i64>();
-
                                 l3 as u64
                             };
                             Ok(e)
@@ -7265,9 +7586,11 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len7 = l6;
-                                            let bytes7 =
-                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
                                             _rt::string_lift(bytes7)
                                         };
                                         V11::Unsupported(e11)
@@ -7282,15 +7605,16 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len10 = l9;
-                                            let bytes10 =
-                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
                                             _rt::string_lift(bytes10)
                                         };
                                         V11::Platform(e11)
                                     }
                                 };
-
                                 v11
                             };
                             Err(e)
@@ -7307,11 +7631,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let super::super::super::krate::gfx::types::Color {
                         r: r0,
@@ -7324,9 +7650,15 @@ pub mod krate {
                     #[link(wasm_import_module = "krate:gfx/scene3d@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "clear"]
-                        fn wit_import2(_: i64, _: f32, _: f32, _: f32, _: f32, _: *mut u8);
+                        fn wit_import2(
+                            _: i64,
+                            _: f32,
+                            _: f32,
+                            _: f32,
+                            _: f32,
+                            _: *mut u8,
+                        );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import2(
                         _: i64,
@@ -7372,9 +7704,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len7 = l6;
-                                            let bytes7 =
-                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
                                             _rt::string_lift(bytes7)
                                         };
                                         V11::Unsupported(e11)
@@ -7389,15 +7723,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len10 = l9;
-                                            let bytes10 =
-                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
                                             _rt::string_lift(bytes10)
                                         };
                                         V11::Platform(e11)
                                     }
                                 };
-
                                 v11
                             };
                             Err(e)
@@ -7420,11 +7755,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = eye;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -7447,7 +7784,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import3(
                         _: i64,
@@ -7495,9 +7831,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len8 = l7;
-                                            let bytes8 =
-                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
                                             _rt::string_lift(bytes8)
                                         };
                                         V12::Unsupported(e12)
@@ -7512,15 +7850,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len11 = l10;
-                                            let bytes11 =
-                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
                                             _rt::string_lift(bytes11)
                                         };
                                         V12::Platform(e12)
                                     }
                                 };
-
                                 v12
                             };
                             Err(e)
@@ -7537,11 +7876,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = direction;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -7553,12 +7894,18 @@ pub mod krate {
                         #[link_name = "light"]
                         fn wit_import2(_: i64, _: *mut u8, _: usize, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
-                    unsafe extern "C" fn wit_import2(_: i64, _: *mut u8, _: usize, _: *mut u8) {
+                    unsafe extern "C" fn wit_import2(
+                        _: i64,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
                         unreachable!()
                     }
-                    unsafe { wit_import2(_rt::as_i64(&scene), ptr0.cast_mut(), len0, ptr1) };
+                    unsafe {
+                        wit_import2(_rt::as_i64(&scene), ptr0.cast_mut(), len0, ptr1)
+                    };
                     let l3 = i32::from(*ptr1.add(0).cast::<u8>());
                     let result12 = match l3 {
                         0 => {
@@ -7583,9 +7930,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len7 = l6;
-                                            let bytes7 =
-                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
                                             _rt::string_lift(bytes7)
                                         };
                                         V11::Unsupported(e11)
@@ -7600,15 +7949,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len10 = l9;
-                                            let bytes10 =
-                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
                                             _rt::string_lift(bytes10)
                                         };
                                         V11::Platform(e11)
                                     }
                                 };
-
                                 v11
                             };
                             Err(e)
@@ -7626,16 +7976,22 @@ pub mod krate {
             ///
             /// Facing away from the camera is drawn too: an app that wants back-face
             /// culling is describing a closed mesh, and the host cannot know that.
-            pub fn triangles(scene: u64, vertices: &[f32], tint: Color) -> Result<(), GfxError> {
+            pub fn triangles(
+                scene: u64,
+                vertices: &[f32],
+                tint: Color,
+            ) -> Result<(), GfxError> {
                 unsafe {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = vertices;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -7662,7 +8018,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import3(
                         _: i64,
@@ -7712,9 +8067,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len8 = l7;
-                                            let bytes8 =
-                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
                                             _rt::string_lift(bytes8)
                                         };
                                         V12::Unsupported(e12)
@@ -7729,15 +8086,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len11 = l10;
-                                            let bytes11 =
-                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
                                             _rt::string_lift(bytes11)
                                         };
                                         V12::Platform(e12)
                                     }
                                 };
-
                                 v12
                             };
                             Err(e)
@@ -7771,11 +8129,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = vertices;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -7813,7 +8173,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import5(
                         _: i64,
@@ -7873,9 +8232,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len10 = l9;
-                                            let bytes10 =
-                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
                                             _rt::string_lift(bytes10)
                                         };
                                         V14::Unsupported(e14)
@@ -7890,15 +8251,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len13 = l12;
-                                            let bytes13 =
-                                                _rt::Vec::from_raw_parts(l11.cast(), len13, len13);
-
+                                            let bytes13 = _rt::Vec::from_raw_parts(
+                                                l11.cast(),
+                                                len13,
+                                                len13,
+                                            );
                                             _rt::string_lift(bytes13)
                                         };
                                         V14::Platform(e14)
                                     }
                                 };
-
                                 v14
                             };
                             Err(e)
@@ -7926,12 +8288,13 @@ pub mod krate {
                 unsafe {
                     #[repr(align(8))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>;
-                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 16 + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 16
+                            + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = rgba;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -7941,9 +8304,15 @@ pub mod krate {
                     #[link(wasm_import_module = "krate:gfx/scene3d@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "upload-texture"]
-                        fn wit_import2(_: i64, _: i32, _: i32, _: *mut u8, _: usize, _: *mut u8);
+                        fn wit_import2(
+                            _: i64,
+                            _: i32,
+                            _: i32,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                        );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import2(
                         _: i64,
@@ -7970,7 +8339,6 @@ pub mod krate {
                         0 => {
                             let e = {
                                 let l4 = *ptr1.add(8).cast::<i64>();
-
                                 l4 as u64
                             };
                             Ok(e)
@@ -7991,9 +8359,11 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len8 = l7;
-                                            let bytes8 =
-                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
                                             _rt::string_lift(bytes8)
                                         };
                                         V12::Unsupported(e12)
@@ -8008,15 +8378,16 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len11 = l10;
-                                            let bytes11 =
-                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
                                             _rt::string_lift(bytes11)
                                         };
                                         V12::Platform(e12)
                                     }
                                 };
-
                                 v12
                             };
                             Err(e)
@@ -8047,11 +8418,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = vertices;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -8084,7 +8457,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import4(
                         _: i64,
@@ -8140,9 +8512,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V13::Unsupported(e13)
@@ -8157,15 +8531,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len12 = l11;
-                                            let bytes12 =
-                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
-
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
                                             _rt::string_lift(bytes12)
                                         };
                                         V13::Platform(e13)
                                     }
                                 };
-
                                 v13
                             };
                             Err(e)
@@ -8207,11 +8582,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = vertices;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -8249,7 +8626,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import5(
                         _: i64,
@@ -8309,9 +8685,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len10 = l9;
-                                            let bytes10 =
-                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
                                             _rt::string_lift(bytes10)
                                         };
                                         V14::Unsupported(e14)
@@ -8326,15 +8704,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len13 = l12;
-                                            let bytes13 =
-                                                _rt::Vec::from_raw_parts(l11.cast(), len13, len13);
-
+                                            let bytes13 = _rt::Vec::from_raw_parts(
+                                                l11.cast(),
+                                                len13,
+                                                len13,
+                                            );
                                             _rt::string_lift(bytes13)
                                         };
                                         V14::Platform(e14)
                                     }
                                 };
-
                                 v14
                             };
                             Err(e)
@@ -8348,16 +8727,20 @@ pub mod krate {
             /// Set how the scene is lit. Refused by a backend that cannot do it, so an
             /// app can ask once at startup and fall back rather than discovering per
             /// frame that nothing changed.
-            pub fn set_lighting(scene: u64, lighting: &Lighting) -> Result<(), GfxError> {
+            pub fn set_lighting(
+                scene: u64,
+                lighting: &Lighting,
+            ) -> Result<(), GfxError> {
                 unsafe {
                     #[repr(align(8))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>;
-                            72 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 72 + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            72 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 72
+                            + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     *ptr0.add(0).cast::<i64>() = _rt::as_i64(&scene);
@@ -8428,7 +8811,6 @@ pub mod krate {
                         #[link_name = "set-lighting"]
                         fn wit_import6(_: *mut u8, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import6(_: *mut u8, _: *mut u8) {
                         unreachable!()
@@ -8458,9 +8840,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len11 = l10;
-                                            let bytes11 =
-                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
                                             _rt::string_lift(bytes11)
                                         };
                                         V15::Unsupported(e15)
@@ -8475,15 +8859,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len14 = l13;
-                                            let bytes14 =
-                                                _rt::Vec::from_raw_parts(l12.cast(), len14, len14);
-
+                                            let bytes14 = _rt::Vec::from_raw_parts(
+                                                l12.cast(),
+                                                len14,
+                                                len14,
+                                            );
                                             _rt::string_lift(bytes14)
                                         };
                                         V15::Platform(e15)
                                     }
                                 };
-
                                 v15
                             };
                             Err(e)
@@ -8525,11 +8910,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = vertices;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -8573,7 +8960,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import6(
                         _: i64,
@@ -8639,9 +9025,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len11 = l10;
-                                            let bytes11 =
-                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
                                             _rt::string_lift(bytes11)
                                         };
                                         V15::Unsupported(e15)
@@ -8656,15 +9044,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len14 = l13;
-                                            let bytes14 =
-                                                _rt::Vec::from_raw_parts(l12.cast(), len14, len14);
-
+                                            let bytes14 = _rt::Vec::from_raw_parts(
+                                                l12.cast(),
+                                                len14,
+                                                len14,
+                                            );
                                             _rt::string_lift(bytes14)
                                         };
                                         V15::Platform(e15)
                                     }
                                 };
-
                                 v15
                             };
                             Err(e)
@@ -8697,11 +9086,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = vertices;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -8734,7 +9125,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import4(
                         _: i64,
@@ -8790,9 +9180,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V13::Unsupported(e13)
@@ -8807,15 +9199,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len12 = l11;
-                                            let bytes12 =
-                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
-
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
                                             _rt::string_lift(bytes12)
                                         };
                                         V13::Platform(e13)
                                     }
                                 };
-
                                 v13
                             };
                             Err(e)
@@ -8842,11 +9235,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -8855,7 +9250,6 @@ pub mod krate {
                         #[link_name = "cull-back-faces"]
                         fn wit_import1(_: i64, _: i32, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i64, _: i32, _: *mut u8) {
                         unreachable!()
@@ -8894,9 +9288,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len6 = l5;
-                                            let bytes6 =
-                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
                                             _rt::string_lift(bytes6)
                                         };
                                         V10::Unsupported(e10)
@@ -8911,15 +9307,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V10::Platform(e10)
                                     }
                                 };
-
                                 v10
                             };
                             Err(e)
@@ -8936,11 +9333,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -8949,7 +9348,6 @@ pub mod krate {
                         #[link_name = "present"]
                         fn wit_import1(_: i64, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
                         unreachable!()
@@ -8979,9 +9377,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len6 = l5;
-                                            let bytes6 =
-                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
                                             _rt::string_lift(bytes6)
                                         };
                                         V10::Unsupported(e10)
@@ -8996,15 +9396,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V10::Platform(e10)
                                     }
                                 };
-
                                 v10
                             };
                             Err(e)
@@ -9022,9 +9423,7 @@ pub mod krate {
         pub mod types {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             /// Severity level for app log events.
             #[repr(u8)]
@@ -9042,7 +9441,10 @@ pub mod krate {
                 Error,
             }
             impl ::core::fmt::Debug for LogLevel {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
                         LogLevel::Trace => f.debug_tuple("LogLevel::Trace").finish(),
                         LogLevel::Debug => f.debug_tuple("LogLevel::Debug").finish(),
@@ -9052,26 +9454,22 @@ pub mod krate {
                     }
                 }
             }
-
             impl LogLevel {
                 #[doc(hidden)]
                 pub unsafe fn _lift(val: u8) -> LogLevel {
                     if !cfg!(debug_assertions) {
                         return ::core::mem::transmute(val);
                     }
-
                     match val {
                         0 => LogLevel::Trace,
                         1 => LogLevel::Debug,
                         2 => LogLevel::Info,
                         3 => LogLevel::Warn,
                         4 => LogLevel::Error,
-
                         _ => panic!("invalid enum discriminant"),
                     }
                 }
             }
-
             /// Error shape for byte streams and text stream helpers.
             #[derive(Clone)]
             pub enum IoError {
@@ -9087,44 +9485,52 @@ pub mod krate {
                 Other(_rt::String),
             }
             impl ::core::fmt::Debug for IoError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
                         IoError::Closed => f.debug_tuple("IoError::Closed").finish(),
-                        IoError::Interrupted => f.debug_tuple("IoError::Interrupted").finish(),
-                        IoError::UnexpectedEof => f.debug_tuple("IoError::UnexpectedEof").finish(),
-                        IoError::InvalidUtf8 => f.debug_tuple("IoError::InvalidUtf8").finish(),
-                        IoError::Other(e) => f.debug_tuple("IoError::Other").field(e).finish(),
+                        IoError::Interrupted => {
+                            f.debug_tuple("IoError::Interrupted").finish()
+                        }
+                        IoError::UnexpectedEof => {
+                            f.debug_tuple("IoError::UnexpectedEof").finish()
+                        }
+                        IoError::InvalidUtf8 => {
+                            f.debug_tuple("IoError::InvalidUtf8").finish()
+                        }
+                        IoError::Other(e) => {
+                            f.debug_tuple("IoError::Other").field(e).finish()
+                        }
                     }
                 }
             }
             impl ::core::fmt::Display for IoError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     write!(f, "{:?}", self)
                 }
             }
-
             #[cfg(feature = "std")]
             impl std::error::Error for IoError {}
         }
-
         /// Byte stream resources used by stdio and future IO surfaces.
         #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
         pub mod streams {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             pub type IoError = super::super::super::krate::io::types::IoError;
             /// Readable byte stream owned by the runtime.
-
             #[derive(Debug)]
             #[repr(transparent)]
             pub struct InputStream {
                 handle: _rt::Resource<InputStream>,
             }
-
             impl InputStream {
                 #[doc(hidden)]
                 pub unsafe fn from_handle(handle: u32) -> Self {
@@ -9132,24 +9538,20 @@ pub mod krate {
                         handle: unsafe { _rt::Resource::from_handle(handle) },
                     }
                 }
-
                 #[doc(hidden)]
                 pub fn take_handle(&self) -> u32 {
                     _rt::Resource::take_handle(&self.handle)
                 }
-
                 #[doc(hidden)]
                 pub fn handle(&self) -> u32 {
                     _rt::Resource::handle(&self.handle)
                 }
             }
-
             unsafe impl _rt::WasmResource for InputStream {
                 #[inline]
                 unsafe fn drop(_handle: u32) {
                     #[cfg(not(target_arch = "wasm32"))]
                     unreachable!();
-
                     #[cfg(target_arch = "wasm32")]
                     {
                         #[link(wasm_import_module = "krate:io/streams@0.1.0")]
@@ -9157,20 +9559,16 @@ pub mod krate {
                             #[link_name = "[resource-drop]input-stream"]
                             fn drop(_: u32);
                         }
-
                         unsafe { drop(_handle) };
                     }
                 }
             }
-
             /// Writable byte stream owned by the runtime.
-
             #[derive(Debug)]
             #[repr(transparent)]
             pub struct OutputStream {
                 handle: _rt::Resource<OutputStream>,
             }
-
             impl OutputStream {
                 #[doc(hidden)]
                 pub unsafe fn from_handle(handle: u32) -> Self {
@@ -9178,24 +9576,20 @@ pub mod krate {
                         handle: unsafe { _rt::Resource::from_handle(handle) },
                     }
                 }
-
                 #[doc(hidden)]
                 pub fn take_handle(&self) -> u32 {
                     _rt::Resource::take_handle(&self.handle)
                 }
-
                 #[doc(hidden)]
                 pub fn handle(&self) -> u32 {
                     _rt::Resource::handle(&self.handle)
                 }
             }
-
             unsafe impl _rt::WasmResource for OutputStream {
                 #[inline]
                 unsafe fn drop(_handle: u32) {
                     #[cfg(not(target_arch = "wasm32"))]
                     unreachable!();
-
                     #[cfg(target_arch = "wasm32")]
                     {
                         #[link(wasm_import_module = "krate:io/streams@0.1.0")]
@@ -9203,12 +9597,10 @@ pub mod krate {
                             #[link_name = "[resource-drop]output-stream"]
                             fn drop(_: u32);
                         }
-
                         unsafe { drop(_handle) };
                     }
                 }
             }
-
             impl InputStream {
                 #[allow(unused_unsafe, clippy::all)]
                 /// Read up to `n` bytes from the stream.
@@ -9217,11 +9609,13 @@ pub mod krate {
                         #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                         #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                         struct RetArea(
-                            [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                            [::core::mem::MaybeUninit<
+                                u8,
+                            >; 4 * ::core::mem::size_of::<*const u8>()],
                         );
                         let mut ret_area = RetArea(
-                            [::core::mem::MaybeUninit::uninit();
-                                4 * ::core::mem::size_of::<*const u8>()],
+                            [::core::mem::MaybeUninit::uninit(); 4
+                                * ::core::mem::size_of::<*const u8>()],
                         );
                         let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                         #[cfg(target_arch = "wasm32")]
@@ -9230,12 +9624,13 @@ pub mod krate {
                             #[link_name = "[method]input-stream.read"]
                             fn wit_import1(_: i32, _: i32, _: *mut u8);
                         }
-
                         #[cfg(not(target_arch = "wasm32"))]
                         unsafe extern "C" fn wit_import1(_: i32, _: i32, _: *mut u8) {
                             unreachable!()
                         }
-                        unsafe { wit_import1((self).handle() as i32, _rt::as_i32(&n), ptr0) };
+                        unsafe {
+                            wit_import1((self).handle() as i32, _rt::as_i32(&n), ptr0)
+                        };
                         let l2 = i32::from(*ptr0.add(0).cast::<u8>());
                         let result11 = match l2 {
                             0 => {
@@ -9247,7 +9642,6 @@ pub mod krate {
                                         .add(2 * ::core::mem::size_of::<*const u8>())
                                         .cast::<usize>();
                                     let len5 = l4;
-
                                     _rt::Vec::from_raw_parts(l3.cast(), len5, len5)
                                 };
                                 Ok(e)
@@ -9273,15 +9667,16 @@ pub mod krate {
                                                     .add(3 * ::core::mem::size_of::<*const u8>())
                                                     .cast::<usize>();
                                                 let len9 = l8;
-                                                let bytes9 =
-                                                    _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                                let bytes9 = _rt::Vec::from_raw_parts(
+                                                    l7.cast(),
+                                                    len9,
+                                                    len9,
+                                                );
                                                 _rt::string_lift(bytes9)
                                             };
                                             V10::Other(e10)
                                         }
                                     };
-
                                     v10
                                 };
                                 Err(e)
@@ -9300,11 +9695,13 @@ pub mod krate {
                         #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                         #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                         struct RetArea(
-                            [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                            [::core::mem::MaybeUninit<
+                                u8,
+                            >; 4 * ::core::mem::size_of::<*const u8>()],
                         );
                         let mut ret_area = RetArea(
-                            [::core::mem::MaybeUninit::uninit();
-                                4 * ::core::mem::size_of::<*const u8>()],
+                            [::core::mem::MaybeUninit::uninit(); 4
+                                * ::core::mem::size_of::<*const u8>()],
                         );
                         let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                         #[cfg(target_arch = "wasm32")]
@@ -9313,7 +9710,6 @@ pub mod krate {
                             #[link_name = "[method]input-stream.read-to-string"]
                             fn wit_import1(_: i32, _: *mut u8);
                         }
-
                         #[cfg(not(target_arch = "wasm32"))]
                         unsafe extern "C" fn wit_import1(_: i32, _: *mut u8) {
                             unreachable!()
@@ -9330,8 +9726,11 @@ pub mod krate {
                                         .add(2 * ::core::mem::size_of::<*const u8>())
                                         .cast::<usize>();
                                     let len5 = l4;
-                                    let bytes5 = _rt::Vec::from_raw_parts(l3.cast(), len5, len5);
-
+                                    let bytes5 = _rt::Vec::from_raw_parts(
+                                        l3.cast(),
+                                        len5,
+                                        len5,
+                                    );
                                     _rt::string_lift(bytes5)
                                 };
                                 Ok(e)
@@ -9357,15 +9756,16 @@ pub mod krate {
                                                     .add(3 * ::core::mem::size_of::<*const u8>())
                                                     .cast::<usize>();
                                                 let len9 = l8;
-                                                let bytes9 =
-                                                    _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                                let bytes9 = _rt::Vec::from_raw_parts(
+                                                    l7.cast(),
+                                                    len9,
+                                                    len9,
+                                                );
                                                 _rt::string_lift(bytes9)
                                             };
                                             V10::Other(e10)
                                         }
                                     };
-
                                     v10
                                 };
                                 Err(e)
@@ -9384,11 +9784,13 @@ pub mod krate {
                         #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                         #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                         struct RetArea(
-                            [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                            [::core::mem::MaybeUninit<
+                                u8,
+                            >; 4 * ::core::mem::size_of::<*const u8>()],
                         );
                         let mut ret_area = RetArea(
-                            [::core::mem::MaybeUninit::uninit();
-                                4 * ::core::mem::size_of::<*const u8>()],
+                            [::core::mem::MaybeUninit::uninit(); 4
+                                * ::core::mem::size_of::<*const u8>()],
                         );
                         let vec0 = bytes;
                         let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -9400,12 +9802,23 @@ pub mod krate {
                             #[link_name = "[method]output-stream.write"]
                             fn wit_import2(_: i32, _: *mut u8, _: usize, _: *mut u8);
                         }
-
                         #[cfg(not(target_arch = "wasm32"))]
-                        unsafe extern "C" fn wit_import2(_: i32, _: *mut u8, _: usize, _: *mut u8) {
+                        unsafe extern "C" fn wit_import2(
+                            _: i32,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                        ) {
                             unreachable!()
                         }
-                        unsafe { wit_import2((self).handle() as i32, ptr0.cast_mut(), len0, ptr1) };
+                        unsafe {
+                            wit_import2(
+                                (self).handle() as i32,
+                                ptr0.cast_mut(),
+                                len0,
+                                ptr1,
+                            )
+                        };
                         let l3 = i32::from(*ptr1.add(0).cast::<u8>());
                         let result10 = match l3 {
                             0 => {
@@ -9413,7 +9826,6 @@ pub mod krate {
                                     let l4 = *ptr1
                                         .add(::core::mem::size_of::<*const u8>())
                                         .cast::<i32>();
-
                                     l4 as u32
                                 };
                                 Ok(e)
@@ -9439,15 +9851,16 @@ pub mod krate {
                                                     .add(3 * ::core::mem::size_of::<*const u8>())
                                                     .cast::<usize>();
                                                 let len8 = l7;
-                                                let bytes8 =
-                                                    _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                                let bytes8 = _rt::Vec::from_raw_parts(
+                                                    l6.cast(),
+                                                    len8,
+                                                    len8,
+                                                );
                                                 _rt::string_lift(bytes8)
                                             };
                                             V9::Other(e9)
                                         }
                                     };
-
                                     v9
                                 };
                                 Err(e)
@@ -9466,11 +9879,13 @@ pub mod krate {
                         #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                         #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                         struct RetArea(
-                            [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                            [::core::mem::MaybeUninit<
+                                u8,
+                            >; 4 * ::core::mem::size_of::<*const u8>()],
                         );
                         let mut ret_area = RetArea(
-                            [::core::mem::MaybeUninit::uninit();
-                                4 * ::core::mem::size_of::<*const u8>()],
+                            [::core::mem::MaybeUninit::uninit(); 4
+                                * ::core::mem::size_of::<*const u8>()],
                         );
                         let vec0 = bytes;
                         let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -9482,12 +9897,23 @@ pub mod krate {
                             #[link_name = "[method]output-stream.write-all"]
                             fn wit_import2(_: i32, _: *mut u8, _: usize, _: *mut u8);
                         }
-
                         #[cfg(not(target_arch = "wasm32"))]
-                        unsafe extern "C" fn wit_import2(_: i32, _: *mut u8, _: usize, _: *mut u8) {
+                        unsafe extern "C" fn wit_import2(
+                            _: i32,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                        ) {
                             unreachable!()
                         }
-                        unsafe { wit_import2((self).handle() as i32, ptr0.cast_mut(), len0, ptr1) };
+                        unsafe {
+                            wit_import2(
+                                (self).handle() as i32,
+                                ptr0.cast_mut(),
+                                len0,
+                                ptr1,
+                            )
+                        };
                         let l3 = i32::from(*ptr1.add(0).cast::<u8>());
                         let result9 = match l3 {
                             0 => {
@@ -9515,15 +9941,16 @@ pub mod krate {
                                                     .add(3 * ::core::mem::size_of::<*const u8>())
                                                     .cast::<usize>();
                                                 let len7 = l6;
-                                                let bytes7 =
-                                                    _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
+                                                let bytes7 = _rt::Vec::from_raw_parts(
+                                                    l5.cast(),
+                                                    len7,
+                                                    len7,
+                                                );
                                                 _rt::string_lift(bytes7)
                                             };
                                             V8::Other(e8)
                                         }
                                     };
-
                                     v8
                                 };
                                 Err(e)
@@ -9542,11 +9969,13 @@ pub mod krate {
                         #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                         #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                         struct RetArea(
-                            [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                            [::core::mem::MaybeUninit<
+                                u8,
+                            >; 4 * ::core::mem::size_of::<*const u8>()],
                         );
                         let mut ret_area = RetArea(
-                            [::core::mem::MaybeUninit::uninit();
-                                4 * ::core::mem::size_of::<*const u8>()],
+                            [::core::mem::MaybeUninit::uninit(); 4
+                                * ::core::mem::size_of::<*const u8>()],
                         );
                         let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                         #[cfg(target_arch = "wasm32")]
@@ -9555,7 +9984,6 @@ pub mod krate {
                             #[link_name = "[method]output-stream.flush"]
                             fn wit_import1(_: i32, _: *mut u8);
                         }
-
                         #[cfg(not(target_arch = "wasm32"))]
                         unsafe extern "C" fn wit_import1(_: i32, _: *mut u8) {
                             unreachable!()
@@ -9588,15 +10016,16 @@ pub mod krate {
                                                     .add(3 * ::core::mem::size_of::<*const u8>())
                                                     .cast::<usize>();
                                                 let len6 = l5;
-                                                let bytes6 =
-                                                    _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
+                                                let bytes6 = _rt::Vec::from_raw_parts(
+                                                    l4.cast(),
+                                                    len6,
+                                                    len6,
+                                                );
                                                 _rt::string_lift(bytes6)
                                             };
                                             V7::Other(e7)
                                         }
                                     };
-
                                     v7
                                 };
                                 Err(e)
@@ -9608,15 +10037,12 @@ pub mod krate {
                 }
             }
         }
-
         /// Standard streams for CLI-style apps.
         #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
         pub mod stdio {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             pub type InputStream = super::super::super::krate::io::streams::InputStream;
             pub type OutputStream = super::super::super::krate::io::streams::OutputStream;
             #[allow(unused_unsafe, clippy::all)]
@@ -9629,7 +10055,6 @@ pub mod krate {
                         #[link_name = "stdin"]
                         fn wit_import0() -> i32;
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import0() -> i32 {
                         unreachable!()
@@ -9652,7 +10077,6 @@ pub mod krate {
                         #[link_name = "stdout"]
                         fn wit_import0() -> i32;
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import0() -> i32 {
                         unreachable!()
@@ -9675,7 +10099,6 @@ pub mod krate {
                         #[link_name = "stderr"]
                         fn wit_import0() -> i32;
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import0() -> i32 {
                         unreachable!()
@@ -9689,15 +10112,12 @@ pub mod krate {
                 }
             }
         }
-
         /// App arguments passed by the Krate launcher.
         #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
         pub mod args {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             #[allow(unused_unsafe, clippy::all)]
             /// Raw argument payload for the current CLI slice.
@@ -9709,11 +10129,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 2
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -9722,7 +10144,6 @@ pub mod krate {
                         #[link_name = "raw"]
                         fn wit_import1(_: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: *mut u8) {
                         unreachable!()
@@ -9739,15 +10160,12 @@ pub mod krate {
                 }
             }
         }
-
         /// Structured app logging.
         #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
         pub mod log {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             pub type LogLevel = super::super::super::krate::io::types::LogLevel;
             /// One key/value pair attached to a log event.
@@ -9759,7 +10177,10 @@ pub mod krate {
                 pub value: _rt::String,
             }
             impl ::core::fmt::Debug for Field {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("Field")
                         .field("key", &self.key)
                         .field("value", &self.value)
@@ -9789,12 +10210,10 @@ pub mod krate {
                         ::core::ptr::null_mut()
                     };
                     for (i, e) in vec4.into_iter().enumerate() {
-                        let base = result4.add(i * (4 * ::core::mem::size_of::<*const u8>()));
+                        let base = result4
+                            .add(i * (4 * ::core::mem::size_of::<*const u8>()));
                         {
-                            let Field {
-                                key: key1,
-                                value: value1,
-                            } = e;
+                            let Field { key: key1, value: value1 } = e;
                             let vec2 = key1;
                             let ptr2 = vec2.as_ptr().cast::<u8>();
                             let len2 = vec2.len();
@@ -9813,14 +10232,18 @@ pub mod krate {
                                 .cast::<*mut u8>() = ptr3.cast_mut();
                         }
                     }
-
                     #[cfg(target_arch = "wasm32")]
                     #[link(wasm_import_module = "krate:io/log@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "emit"]
-                        fn wit_import5(_: i32, _: *mut u8, _: usize, _: *mut u8, _: usize);
+                        fn wit_import5(
+                            _: i32,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                        );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import5(
                         _: i32,
@@ -9832,7 +10255,13 @@ pub mod krate {
                         unreachable!()
                     }
                     unsafe {
-                        wit_import5(level.clone() as i32, ptr0.cast_mut(), len0, result4, len4)
+                        wit_import5(
+                            level.clone() as i32,
+                            ptr0.cast_mut(),
+                            len0,
+                            result4,
+                            len4,
+                        )
                     };
                     if layout4.size() != 0 {
                         _rt::alloc::dealloc(result4.cast(), layout4);
@@ -9847,9 +10276,7 @@ pub mod krate {
         pub mod types {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             /// Host locale identifier using a BCP 47 language tag.
             #[derive(Clone)]
@@ -9858,10 +10285,11 @@ pub mod krate {
                 pub bcp47: _rt::String,
             }
             impl ::core::fmt::Debug for LocaleId {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                    f.debug_struct("LocaleId")
-                        .field("bcp47", &self.bcp47)
-                        .finish()
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    f.debug_struct("LocaleId").field("bcp47", &self.bcp47).finish()
                 }
             }
             /// Date rendering style requested from the host.
@@ -9878,7 +10306,10 @@ pub mod krate {
                 Full,
             }
             impl ::core::fmt::Debug for DateStyle {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
                         DateStyle::Short => f.debug_tuple("DateStyle::Short").finish(),
                         DateStyle::Medium => f.debug_tuple("DateStyle::Medium").finish(),
@@ -9887,25 +10318,21 @@ pub mod krate {
                     }
                 }
             }
-
             impl DateStyle {
                 #[doc(hidden)]
                 pub unsafe fn _lift(val: u8) -> DateStyle {
                     if !cfg!(debug_assertions) {
                         return ::core::mem::transmute(val);
                     }
-
                     match val {
                         0 => DateStyle::Short,
                         1 => DateStyle::Medium,
                         2 => DateStyle::Long,
                         3 => DateStyle::Full,
-
                         _ => panic!("invalid enum discriminant"),
                     }
                 }
             }
-
             /// Number rendering style requested from the host.
             #[repr(u8)]
             #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
@@ -9918,41 +10345,44 @@ pub mod krate {
                 Currency,
             }
             impl ::core::fmt::Debug for NumberStyle {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
-                        NumberStyle::Decimal => f.debug_tuple("NumberStyle::Decimal").finish(),
-                        NumberStyle::Percent => f.debug_tuple("NumberStyle::Percent").finish(),
-                        NumberStyle::Currency => f.debug_tuple("NumberStyle::Currency").finish(),
+                        NumberStyle::Decimal => {
+                            f.debug_tuple("NumberStyle::Decimal").finish()
+                        }
+                        NumberStyle::Percent => {
+                            f.debug_tuple("NumberStyle::Percent").finish()
+                        }
+                        NumberStyle::Currency => {
+                            f.debug_tuple("NumberStyle::Currency").finish()
+                        }
                     }
                 }
             }
-
             impl NumberStyle {
                 #[doc(hidden)]
                 pub unsafe fn _lift(val: u8) -> NumberStyle {
                     if !cfg!(debug_assertions) {
                         return ::core::mem::transmute(val);
                     }
-
                     match val {
                         0 => NumberStyle::Decimal,
                         1 => NumberStyle::Percent,
                         2 => NumberStyle::Currency,
-
                         _ => panic!("invalid enum discriminant"),
                     }
                 }
             }
         }
-
         /// Host locale and timezone discovery.
         #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
         pub mod info {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             pub type LocaleId = super::super::super::krate::locale::types::LocaleId;
             #[allow(unused_unsafe, clippy::all)]
@@ -9962,11 +10392,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 2
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -9975,7 +10407,6 @@ pub mod krate {
                         #[link_name = "current"]
                         fn wit_import1(_: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: *mut u8) {
                         unreachable!()
@@ -10000,11 +10431,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 2
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -10013,7 +10446,6 @@ pub mod krate {
                         #[link_name = "timezone"]
                         fn wit_import1(_: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: *mut u8) {
                         unreachable!()
@@ -10030,15 +10462,12 @@ pub mod krate {
                 }
             }
         }
-
         /// Host-backed date and number formatting.
         #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
         pub mod format {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             pub type LocaleId = super::super::super::krate::locale::types::LocaleId;
             pub type DateStyle = super::super::super::krate::locale::types::DateStyle;
@@ -10055,16 +10484,20 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 2
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = tz;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
                     let len0 = vec0.len();
-                    let super::super::super::krate::locale::types::LocaleId { bcp47: bcp471 } = loc;
+                    let super::super::super::krate::locale::types::LocaleId {
+                        bcp47: bcp471,
+                    } = loc;
                     let vec2 = bcp471;
                     let ptr2 = vec2.as_ptr().cast::<u8>();
                     let len2 = vec2.len();
@@ -10083,7 +10516,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import4(
                         _: i64,
@@ -10119,18 +10551,26 @@ pub mod krate {
             }
             #[allow(unused_unsafe, clippy::all)]
             /// Format a number using a style and locale.
-            pub fn format_number(value: f64, style: NumberStyle, loc: &LocaleId) -> _rt::String {
+            pub fn format_number(
+                value: f64,
+                style: NumberStyle,
+                loc: &LocaleId,
+            ) -> _rt::String {
                 unsafe {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 2
+                            * ::core::mem::size_of::<*const u8>()],
                     );
-                    let super::super::super::krate::locale::types::LocaleId { bcp47: bcp470 } = loc;
+                    let super::super::super::krate::locale::types::LocaleId {
+                        bcp47: bcp470,
+                    } = loc;
                     let vec1 = bcp470;
                     let ptr1 = vec1.as_ptr().cast::<u8>();
                     let len1 = vec1.len();
@@ -10141,7 +10581,6 @@ pub mod krate {
                         #[link_name = "format-number"]
                         fn wit_import3(_: f64, _: i32, _: *mut u8, _: usize, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import3(
                         _: f64,
@@ -10179,9 +10618,7 @@ pub mod krate {
         pub mod types {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             /// HTTP method for Phase 2 client requests.
             #[repr(u8)]
@@ -10203,26 +10640,31 @@ pub mod krate {
                 Options,
             }
             impl ::core::fmt::Debug for HttpMethod {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
                         HttpMethod::Get => f.debug_tuple("HttpMethod::Get").finish(),
                         HttpMethod::Post => f.debug_tuple("HttpMethod::Post").finish(),
                         HttpMethod::Put => f.debug_tuple("HttpMethod::Put").finish(),
-                        HttpMethod::Delete => f.debug_tuple("HttpMethod::Delete").finish(),
+                        HttpMethod::Delete => {
+                            f.debug_tuple("HttpMethod::Delete").finish()
+                        }
                         HttpMethod::Patch => f.debug_tuple("HttpMethod::Patch").finish(),
                         HttpMethod::Head => f.debug_tuple("HttpMethod::Head").finish(),
-                        HttpMethod::Options => f.debug_tuple("HttpMethod::Options").finish(),
+                        HttpMethod::Options => {
+                            f.debug_tuple("HttpMethod::Options").finish()
+                        }
                     }
                 }
             }
-
             impl HttpMethod {
                 #[doc(hidden)]
                 pub unsafe fn _lift(val: u8) -> HttpMethod {
                     if !cfg!(debug_assertions) {
                         return ::core::mem::transmute(val);
                     }
-
                     match val {
                         0 => HttpMethod::Get,
                         1 => HttpMethod::Post,
@@ -10231,12 +10673,10 @@ pub mod krate {
                         4 => HttpMethod::Patch,
                         5 => HttpMethod::Head,
                         6 => HttpMethod::Options,
-
                         _ => panic!("invalid enum discriminant"),
                     }
                 }
             }
-
             /// One HTTP header field.
             #[derive(Clone)]
             pub struct Header {
@@ -10246,7 +10686,10 @@ pub mod krate {
                 pub value: _rt::String,
             }
             impl ::core::fmt::Debug for Header {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("Header")
                         .field("name", &self.name)
                         .field("value", &self.value)
@@ -10268,7 +10711,10 @@ pub mod krate {
                 pub timeout_millis: Option<u32>,
             }
             impl ::core::fmt::Debug for Request {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("Request")
                         .field("method", &self.method)
                         .field("url", &self.url)
@@ -10289,7 +10735,10 @@ pub mod krate {
                 pub body: _rt::Vec<u8>,
             }
             impl ::core::fmt::Debug for Response {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("Response")
                         .field("status", &self.status)
                         .field("headers", &self.headers)
@@ -10320,9 +10769,14 @@ pub mod krate {
                 Other(_rt::String),
             }
             impl ::core::fmt::Debug for NetError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
-                        NetError::InvalidUrl => f.debug_tuple("NetError::InvalidUrl").finish(),
+                        NetError::InvalidUrl => {
+                            f.debug_tuple("NetError::InvalidUrl").finish()
+                        }
                         NetError::DnsFailure(e) => {
                             f.debug_tuple("NetError::DnsFailure").field(e).finish()
                         }
@@ -10333,23 +10787,29 @@ pub mod krate {
                             f.debug_tuple("NetError::TlsFailure").field(e).finish()
                         }
                         NetError::Timeout => f.debug_tuple("NetError::Timeout").finish(),
-                        NetError::BodyTooLarge => f.debug_tuple("NetError::BodyTooLarge").finish(),
+                        NetError::BodyTooLarge => {
+                            f.debug_tuple("NetError::BodyTooLarge").finish()
+                        }
                         NetError::PermissionDenied => {
                             f.debug_tuple("NetError::PermissionDenied").finish()
                         }
                         NetError::Protocol(e) => {
                             f.debug_tuple("NetError::Protocol").field(e).finish()
                         }
-                        NetError::Other(e) => f.debug_tuple("NetError::Other").field(e).finish(),
+                        NetError::Other(e) => {
+                            f.debug_tuple("NetError::Other").field(e).finish()
+                        }
                     }
                 }
             }
             impl ::core::fmt::Display for NetError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     write!(f, "{:?}", self)
                 }
             }
-
             #[cfg(feature = "std")]
             impl std::error::Error for NetError {}
             /// What became of a request started with `http-client.begin`.
@@ -10371,9 +10831,14 @@ pub mod krate {
                 UnknownHandle,
             }
             impl ::core::fmt::Debug for FetchStatus {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
-                        FetchStatus::Pending => f.debug_tuple("FetchStatus::Pending").finish(),
+                        FetchStatus::Pending => {
+                            f.debug_tuple("FetchStatus::Pending").finish()
+                        }
                         FetchStatus::Ready(e) => {
                             f.debug_tuple("FetchStatus::Ready").field(e).finish()
                         }
@@ -10387,7 +10852,6 @@ pub mod krate {
                 }
             }
         }
-
         /// HTTP client calls for CLI components.
         /// Buffered HTTP requests to hosts the person allowed.
         ///
@@ -10405,9 +10869,7 @@ pub mod krate {
         pub mod http_client {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             pub type Request = super::super::super::krate::net::types::Request;
             pub type Response = super::super::super::krate::net::types::Response;
@@ -10420,11 +10882,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = url;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -10436,7 +10900,6 @@ pub mod krate {
                         #[link_name = "get"]
                         fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
                         unreachable!()
@@ -10453,7 +10916,6 @@ pub mod krate {
                                     .add(2 * ::core::mem::size_of::<*const u8>())
                                     .cast::<usize>();
                                 let len6 = l5;
-
                                 _rt::Vec::from_raw_parts(l4.cast(), len6, len6)
                             };
                             Ok(e)
@@ -10475,9 +10937,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len10 = l9;
-                                            let bytes10 =
-                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
                                             _rt::string_lift(bytes10)
                                         };
                                         V23::DnsFailure(e23)
@@ -10491,9 +10955,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len13 = l12;
-                                            let bytes13 =
-                                                _rt::Vec::from_raw_parts(l11.cast(), len13, len13);
-
+                                            let bytes13 = _rt::Vec::from_raw_parts(
+                                                l11.cast(),
+                                                len13,
+                                                len13,
+                                            );
                                             _rt::string_lift(bytes13)
                                         };
                                         V23::ConnectFailure(e23)
@@ -10507,9 +10973,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len16 = l15;
-                                            let bytes16 =
-                                                _rt::Vec::from_raw_parts(l14.cast(), len16, len16);
-
+                                            let bytes16 = _rt::Vec::from_raw_parts(
+                                                l14.cast(),
+                                                len16,
+                                                len16,
+                                            );
                                             _rt::string_lift(bytes16)
                                         };
                                         V23::TlsFailure(e23)
@@ -10526,9 +10994,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len19 = l18;
-                                            let bytes19 =
-                                                _rt::Vec::from_raw_parts(l17.cast(), len19, len19);
-
+                                            let bytes19 = _rt::Vec::from_raw_parts(
+                                                l17.cast(),
+                                                len19,
+                                                len19,
+                                            );
                                             _rt::string_lift(bytes19)
                                         };
                                         V23::Protocol(e23)
@@ -10543,15 +11013,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len22 = l21;
-                                            let bytes22 =
-                                                _rt::Vec::from_raw_parts(l20.cast(), len22, len22);
-
+                                            let bytes22 = _rt::Vec::from_raw_parts(
+                                                l20.cast(),
+                                                len22,
+                                                len22,
+                                            );
                                             _rt::string_lift(bytes22)
                                         };
                                         V23::Other(e23)
                                     }
                                 };
-
                                 v23
                             };
                             Err(e)
@@ -10574,11 +11045,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 6 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 6 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            6 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 6
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let super::super::super::krate::net::types::Request {
                         method: method0,
@@ -10606,7 +11079,8 @@ pub mod krate {
                         ::core::ptr::null_mut()
                     };
                     for (i, e) in vec5.into_iter().enumerate() {
-                        let base = result5.add(i * (4 * ::core::mem::size_of::<*const u8>()));
+                        let base = result5
+                            .add(i * (4 * ::core::mem::size_of::<*const u8>()));
                         {
                             let super::super::super::krate::net::types::Header {
                                 name: name2,
@@ -10655,7 +11129,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import9(
                         _: i32,
@@ -10702,16 +11175,19 @@ pub mod krate {
                                 let len20 = l13;
                                 let mut result20 = _rt::Vec::with_capacity(len20);
                                 for i in 0..len20 {
-                                    let base =
-                                        base20.add(i * (4 * ::core::mem::size_of::<*const u8>()));
+                                    let base = base20
+                                        .add(i * (4 * ::core::mem::size_of::<*const u8>()));
                                     let e20 = {
                                         let l14 = *base.add(0).cast::<*mut u8>();
                                         let l15 = *base
                                             .add(::core::mem::size_of::<*const u8>())
                                             .cast::<usize>();
                                         let len16 = l15;
-                                        let bytes16 =
-                                            _rt::Vec::from_raw_parts(l14.cast(), len16, len16);
+                                        let bytes16 = _rt::Vec::from_raw_parts(
+                                            l14.cast(),
+                                            len16,
+                                            len16,
+                                        );
                                         let l17 = *base
                                             .add(2 * ::core::mem::size_of::<*const u8>())
                                             .cast::<*mut u8>();
@@ -10719,9 +11195,11 @@ pub mod krate {
                                             .add(3 * ::core::mem::size_of::<*const u8>())
                                             .cast::<usize>();
                                         let len19 = l18;
-                                        let bytes19 =
-                                            _rt::Vec::from_raw_parts(l17.cast(), len19, len19);
-
+                                        let bytes19 = _rt::Vec::from_raw_parts(
+                                            l17.cast(),
+                                            len19,
+                                            len19,
+                                        );
                                         super::super::super::krate::net::types::Header {
                                             name: _rt::string_lift(bytes16),
                                             value: _rt::string_lift(bytes19),
@@ -10741,7 +11219,6 @@ pub mod krate {
                                     .add(5 * ::core::mem::size_of::<*const u8>())
                                     .cast::<usize>();
                                 let len23 = l22;
-
                                 super::super::super::krate::net::types::Response {
                                     status: l11 as u16,
                                     headers: result20,
@@ -10767,9 +11244,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len27 = l26;
-                                            let bytes27 =
-                                                _rt::Vec::from_raw_parts(l25.cast(), len27, len27);
-
+                                            let bytes27 = _rt::Vec::from_raw_parts(
+                                                l25.cast(),
+                                                len27,
+                                                len27,
+                                            );
                                             _rt::string_lift(bytes27)
                                         };
                                         V40::DnsFailure(e40)
@@ -10783,9 +11262,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len30 = l29;
-                                            let bytes30 =
-                                                _rt::Vec::from_raw_parts(l28.cast(), len30, len30);
-
+                                            let bytes30 = _rt::Vec::from_raw_parts(
+                                                l28.cast(),
+                                                len30,
+                                                len30,
+                                            );
                                             _rt::string_lift(bytes30)
                                         };
                                         V40::ConnectFailure(e40)
@@ -10799,9 +11280,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len33 = l32;
-                                            let bytes33 =
-                                                _rt::Vec::from_raw_parts(l31.cast(), len33, len33);
-
+                                            let bytes33 = _rt::Vec::from_raw_parts(
+                                                l31.cast(),
+                                                len33,
+                                                len33,
+                                            );
                                             _rt::string_lift(bytes33)
                                         };
                                         V40::TlsFailure(e40)
@@ -10818,9 +11301,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len36 = l35;
-                                            let bytes36 =
-                                                _rt::Vec::from_raw_parts(l34.cast(), len36, len36);
-
+                                            let bytes36 = _rt::Vec::from_raw_parts(
+                                                l34.cast(),
+                                                len36,
+                                                len36,
+                                            );
                                             _rt::string_lift(bytes36)
                                         };
                                         V40::Protocol(e40)
@@ -10835,15 +11320,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len39 = l38;
-                                            let bytes39 =
-                                                _rt::Vec::from_raw_parts(l37.cast(), len39, len39);
-
+                                            let bytes39 = _rt::Vec::from_raw_parts(
+                                                l37.cast(),
+                                                len39,
+                                                len39,
+                                            );
                                             _rt::string_lift(bytes39)
                                         };
                                         V40::Other(e40)
                                     }
                                 };
-
                                 v40
                             };
                             Err(e)
@@ -10875,12 +11361,13 @@ pub mod krate {
                 unsafe {
                     #[repr(align(8))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>;
-                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 16 + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 16
+                            + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let super::super::super::krate::net::types::Request {
                         method: method0,
@@ -10908,7 +11395,8 @@ pub mod krate {
                         ::core::ptr::null_mut()
                     };
                     for (i, e) in vec5.into_iter().enumerate() {
-                        let base = result5.add(i * (4 * ::core::mem::size_of::<*const u8>()));
+                        let base = result5
+                            .add(i * (4 * ::core::mem::size_of::<*const u8>()));
                         {
                             let super::super::super::krate::net::types::Header {
                                 name: name2,
@@ -10957,7 +11445,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import9(
                         _: i32,
@@ -10992,7 +11479,6 @@ pub mod krate {
                         0 => {
                             let e = {
                                 let l11 = *ptr8.add(8).cast::<i64>();
-
                                 l11 as u64
                             };
                             Ok(e)
@@ -11012,9 +11498,11 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len15 = l14;
-                                            let bytes15 =
-                                                _rt::Vec::from_raw_parts(l13.cast(), len15, len15);
-
+                                            let bytes15 = _rt::Vec::from_raw_parts(
+                                                l13.cast(),
+                                                len15,
+                                                len15,
+                                            );
                                             _rt::string_lift(bytes15)
                                         };
                                         V28::DnsFailure(e28)
@@ -11028,9 +11516,11 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len18 = l17;
-                                            let bytes18 =
-                                                _rt::Vec::from_raw_parts(l16.cast(), len18, len18);
-
+                                            let bytes18 = _rt::Vec::from_raw_parts(
+                                                l16.cast(),
+                                                len18,
+                                                len18,
+                                            );
                                             _rt::string_lift(bytes18)
                                         };
                                         V28::ConnectFailure(e28)
@@ -11044,9 +11534,11 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len21 = l20;
-                                            let bytes21 =
-                                                _rt::Vec::from_raw_parts(l19.cast(), len21, len21);
-
+                                            let bytes21 = _rt::Vec::from_raw_parts(
+                                                l19.cast(),
+                                                len21,
+                                                len21,
+                                            );
                                             _rt::string_lift(bytes21)
                                         };
                                         V28::TlsFailure(e28)
@@ -11063,9 +11555,11 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len24 = l23;
-                                            let bytes24 =
-                                                _rt::Vec::from_raw_parts(l22.cast(), len24, len24);
-
+                                            let bytes24 = _rt::Vec::from_raw_parts(
+                                                l22.cast(),
+                                                len24,
+                                                len24,
+                                            );
                                             _rt::string_lift(bytes24)
                                         };
                                         V28::Protocol(e28)
@@ -11080,15 +11574,16 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len27 = l26;
-                                            let bytes27 =
-                                                _rt::Vec::from_raw_parts(l25.cast(), len27, len27);
-
+                                            let bytes27 = _rt::Vec::from_raw_parts(
+                                                l25.cast(),
+                                                len27,
+                                                len27,
+                                            );
                                             _rt::string_lift(bytes27)
                                         };
                                         V28::Other(e28)
                                     }
                                 };
-
                                 v28
                             };
                             Err(e)
@@ -11112,11 +11607,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 6 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 6 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            6 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 6
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -11125,7 +11622,6 @@ pub mod krate {
                         #[link_name = "poll"]
                         fn wit_import1(_: i64, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
                         unreachable!()
@@ -11150,16 +11646,19 @@ pub mod krate {
                                 let len12 = l5;
                                 let mut result12 = _rt::Vec::with_capacity(len12);
                                 for i in 0..len12 {
-                                    let base =
-                                        base12.add(i * (4 * ::core::mem::size_of::<*const u8>()));
+                                    let base = base12
+                                        .add(i * (4 * ::core::mem::size_of::<*const u8>()));
                                     let e12 = {
                                         let l6 = *base.add(0).cast::<*mut u8>();
                                         let l7 = *base
                                             .add(::core::mem::size_of::<*const u8>())
                                             .cast::<usize>();
                                         let len8 = l7;
-                                        let bytes8 =
-                                            _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
+                                        let bytes8 = _rt::Vec::from_raw_parts(
+                                            l6.cast(),
+                                            len8,
+                                            len8,
+                                        );
                                         let l9 = *base
                                             .add(2 * ::core::mem::size_of::<*const u8>())
                                             .cast::<*mut u8>();
@@ -11167,9 +11666,11 @@ pub mod krate {
                                             .add(3 * ::core::mem::size_of::<*const u8>())
                                             .cast::<usize>();
                                         let len11 = l10;
-                                        let bytes11 =
-                                            _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                        let bytes11 = _rt::Vec::from_raw_parts(
+                                            l9.cast(),
+                                            len11,
+                                            len11,
+                                        );
                                         super::super::super::krate::net::types::Header {
                                             name: _rt::string_lift(bytes8),
                                             value: _rt::string_lift(bytes11),
@@ -11189,7 +11690,6 @@ pub mod krate {
                                     .add(5 * ::core::mem::size_of::<*const u8>())
                                     .cast::<usize>();
                                 let len15 = l14;
-
                                 super::super::super::krate::net::types::Response {
                                     status: l3 as u16,
                                     headers: result12,
@@ -11215,9 +11715,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len19 = l18;
-                                            let bytes19 =
-                                                _rt::Vec::from_raw_parts(l17.cast(), len19, len19);
-
+                                            let bytes19 = _rt::Vec::from_raw_parts(
+                                                l17.cast(),
+                                                len19,
+                                                len19,
+                                            );
                                             _rt::string_lift(bytes19)
                                         };
                                         V32::DnsFailure(e32)
@@ -11231,9 +11733,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len22 = l21;
-                                            let bytes22 =
-                                                _rt::Vec::from_raw_parts(l20.cast(), len22, len22);
-
+                                            let bytes22 = _rt::Vec::from_raw_parts(
+                                                l20.cast(),
+                                                len22,
+                                                len22,
+                                            );
                                             _rt::string_lift(bytes22)
                                         };
                                         V32::ConnectFailure(e32)
@@ -11247,9 +11751,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len25 = l24;
-                                            let bytes25 =
-                                                _rt::Vec::from_raw_parts(l23.cast(), len25, len25);
-
+                                            let bytes25 = _rt::Vec::from_raw_parts(
+                                                l23.cast(),
+                                                len25,
+                                                len25,
+                                            );
                                             _rt::string_lift(bytes25)
                                         };
                                         V32::TlsFailure(e32)
@@ -11266,9 +11772,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len28 = l27;
-                                            let bytes28 =
-                                                _rt::Vec::from_raw_parts(l26.cast(), len28, len28);
-
+                                            let bytes28 = _rt::Vec::from_raw_parts(
+                                                l26.cast(),
+                                                len28,
+                                                len28,
+                                            );
                                             _rt::string_lift(bytes28)
                                         };
                                         V32::Protocol(e32)
@@ -11283,15 +11791,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len31 = l30;
-                                            let bytes31 =
-                                                _rt::Vec::from_raw_parts(l29.cast(), len31, len31);
-
+                                            let bytes31 = _rt::Vec::from_raw_parts(
+                                                l29.cast(),
+                                                len31,
+                                                len31,
+                                            );
                                             _rt::string_lift(bytes31)
                                         };
                                         V32::Other(e32)
                                     }
                                 };
-
                                 v32
                             };
                             V33::Failed(e33)
@@ -11319,7 +11828,6 @@ pub mod krate {
                         #[link_name = "cancel"]
                         fn wit_import0(_: i64);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import0(_: i64) {
                         unreachable!()
@@ -11328,7 +11836,6 @@ pub mod krate {
                 }
             }
         }
-
         /// Live two-way connections: WebSocket, ws:// and wss://.
         ///
         /// The permission story is the same one HTTP has: opening a connection is a
@@ -11344,9 +11851,7 @@ pub mod krate {
         pub mod ws {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             pub type NetError = super::super::super::krate::net::types::NetError;
             /// One message, either direction.
@@ -11358,9 +11863,14 @@ pub mod krate {
                 Binary(_rt::Vec<u8>),
             }
             impl ::core::fmt::Debug for WsMessage {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
-                        WsMessage::Text(e) => f.debug_tuple("WsMessage::Text").field(e).finish(),
+                        WsMessage::Text(e) => {
+                            f.debug_tuple("WsMessage::Text").field(e).finish()
+                        }
                         WsMessage::Binary(e) => {
                             f.debug_tuple("WsMessage::Binary").field(e).finish()
                         }
@@ -11385,14 +11895,23 @@ pub mod krate {
                 UnknownHandle,
             }
             impl ::core::fmt::Debug for WsEvent {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
                         WsEvent::Pending => f.debug_tuple("WsEvent::Pending").finish(),
                         WsEvent::Opened => f.debug_tuple("WsEvent::Opened").finish(),
-                        WsEvent::Message(e) => f.debug_tuple("WsEvent::Message").field(e).finish(),
+                        WsEvent::Message(e) => {
+                            f.debug_tuple("WsEvent::Message").field(e).finish()
+                        }
                         WsEvent::Closed => f.debug_tuple("WsEvent::Closed").finish(),
-                        WsEvent::Failed(e) => f.debug_tuple("WsEvent::Failed").field(e).finish(),
-                        WsEvent::UnknownHandle => f.debug_tuple("WsEvent::UnknownHandle").finish(),
+                        WsEvent::Failed(e) => {
+                            f.debug_tuple("WsEvent::Failed").field(e).finish()
+                        }
+                        WsEvent::UnknownHandle => {
+                            f.debug_tuple("WsEvent::UnknownHandle").finish()
+                        }
                     }
                 }
             }
@@ -11406,12 +11925,13 @@ pub mod krate {
                 unsafe {
                     #[repr(align(8))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>;
-                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 16 + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 16
+                            + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = url;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -11423,7 +11943,6 @@ pub mod krate {
                         #[link_name = "open"]
                         fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
                         unreachable!()
@@ -11434,7 +11953,6 @@ pub mod krate {
                         0 => {
                             let e = {
                                 let l4 = *ptr1.add(8).cast::<i64>();
-
                                 l4 as u64
                             };
                             Ok(e)
@@ -11454,9 +11972,11 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len8 = l7;
-                                            let bytes8 =
-                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
                                             _rt::string_lift(bytes8)
                                         };
                                         V21::DnsFailure(e21)
@@ -11470,9 +11990,11 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len11 = l10;
-                                            let bytes11 =
-                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
                                             _rt::string_lift(bytes11)
                                         };
                                         V21::ConnectFailure(e21)
@@ -11486,9 +12008,11 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len14 = l13;
-                                            let bytes14 =
-                                                _rt::Vec::from_raw_parts(l12.cast(), len14, len14);
-
+                                            let bytes14 = _rt::Vec::from_raw_parts(
+                                                l12.cast(),
+                                                len14,
+                                                len14,
+                                            );
                                             _rt::string_lift(bytes14)
                                         };
                                         V21::TlsFailure(e21)
@@ -11505,9 +12029,11 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len17 = l16;
-                                            let bytes17 =
-                                                _rt::Vec::from_raw_parts(l15.cast(), len17, len17);
-
+                                            let bytes17 = _rt::Vec::from_raw_parts(
+                                                l15.cast(),
+                                                len17,
+                                                len17,
+                                            );
                                             _rt::string_lift(bytes17)
                                         };
                                         V21::Protocol(e21)
@@ -11522,15 +12048,16 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len20 = l19;
-                                            let bytes20 =
-                                                _rt::Vec::from_raw_parts(l18.cast(), len20, len20);
-
+                                            let bytes20 = _rt::Vec::from_raw_parts(
+                                                l18.cast(),
+                                                len20,
+                                                len20,
+                                            );
                                             _rt::string_lift(bytes20)
                                         };
                                         V21::Other(e21)
                                     }
                                 };
-
                                 v21
                             };
                             Err(e)
@@ -11549,25 +12076,25 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let (result2_0, result2_1, result2_2) = match message {
                         WsMessage::Text(e) => {
                             let vec0 = e;
                             let ptr0 = vec0.as_ptr().cast::<u8>();
                             let len0 = vec0.len();
-
                             (0i32, ptr0.cast_mut(), len0)
                         }
                         WsMessage::Binary(e) => {
                             let vec1 = e;
                             let ptr1 = vec1.as_ptr().cast::<u8>();
                             let len1 = vec1.len();
-
                             (1i32, ptr1.cast_mut(), len1)
                         }
                     };
@@ -11578,7 +12105,6 @@ pub mod krate {
                         #[link_name = "send"]
                         fn wit_import4(_: i64, _: i32, _: *mut u8, _: usize, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import4(
                         _: i64,
@@ -11590,7 +12116,13 @@ pub mod krate {
                         unreachable!()
                     }
                     unsafe {
-                        wit_import4(_rt::as_i64(&handle), result2_0, result2_1, result2_2, ptr3)
+                        wit_import4(
+                            _rt::as_i64(&handle),
+                            result2_0,
+                            result2_1,
+                            result2_2,
+                            ptr3,
+                        )
                     };
                     let l5 = i32::from(*ptr3.add(0).cast::<u8>());
                     let result23 = match l5 {
@@ -11615,9 +12147,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V22::DnsFailure(e22)
@@ -11631,9 +12165,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len12 = l11;
-                                            let bytes12 =
-                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
-
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
                                             _rt::string_lift(bytes12)
                                         };
                                         V22::ConnectFailure(e22)
@@ -11647,9 +12183,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len15 = l14;
-                                            let bytes15 =
-                                                _rt::Vec::from_raw_parts(l13.cast(), len15, len15);
-
+                                            let bytes15 = _rt::Vec::from_raw_parts(
+                                                l13.cast(),
+                                                len15,
+                                                len15,
+                                            );
                                             _rt::string_lift(bytes15)
                                         };
                                         V22::TlsFailure(e22)
@@ -11666,9 +12204,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len18 = l17;
-                                            let bytes18 =
-                                                _rt::Vec::from_raw_parts(l16.cast(), len18, len18);
-
+                                            let bytes18 = _rt::Vec::from_raw_parts(
+                                                l16.cast(),
+                                                len18,
+                                                len18,
+                                            );
                                             _rt::string_lift(bytes18)
                                         };
                                         V22::Protocol(e22)
@@ -11683,15 +12223,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len21 = l20;
-                                            let bytes21 =
-                                                _rt::Vec::from_raw_parts(l19.cast(), len21, len21);
-
+                                            let bytes21 = _rt::Vec::from_raw_parts(
+                                                l19.cast(),
+                                                len21,
+                                                len21,
+                                            );
                                             _rt::string_lift(bytes21)
                                         };
                                         V22::Other(e22)
                                     }
                                 };
-
                                 v22
                             };
                             Err(e)
@@ -11710,11 +12251,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -11723,7 +12266,6 @@ pub mod krate {
                         #[link_name = "poll"]
                         fn wit_import1(_: i64, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
                         unreachable!()
@@ -11748,9 +12290,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len6 = l5;
-                                            let bytes6 =
-                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
                                             _rt::string_lift(bytes6)
                                         };
                                         WsMessage::Text(e10)
@@ -11765,13 +12309,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-
                                             _rt::Vec::from_raw_parts(l7.cast(), len9, len9)
                                         };
                                         WsMessage::Binary(e10)
                                     }
                                 };
-
                                 v10
                             };
                             WsEvent::Message(e14)
@@ -11786,8 +12328,11 @@ pub mod krate {
                                     .add(2 * ::core::mem::size_of::<*const u8>())
                                     .cast::<usize>();
                                 let len13 = l12;
-                                let bytes13 = _rt::Vec::from_raw_parts(l11.cast(), len13, len13);
-
+                                let bytes13 = _rt::Vec::from_raw_parts(
+                                    l11.cast(),
+                                    len13,
+                                    len13,
+                                );
                                 _rt::string_lift(bytes13)
                             };
                             WsEvent::Failed(e14)
@@ -11812,7 +12357,6 @@ pub mod krate {
                         #[link_name = "close"]
                         fn wit_import0(_: i64);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import0(_: i64) {
                         unreachable!()
@@ -11845,9 +12389,7 @@ pub mod krate {
         pub mod bytes {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             /// Error returned by a request for random bytes.
             #[derive(Clone)]
@@ -11870,10 +12412,17 @@ pub mod krate {
                 Unavailable(_rt::String),
             }
             impl ::core::fmt::Debug for RandomError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
-                        RandomError::Denied => f.debug_tuple("RandomError::Denied").finish(),
-                        RandomError::TooLarge => f.debug_tuple("RandomError::TooLarge").finish(),
+                        RandomError::Denied => {
+                            f.debug_tuple("RandomError::Denied").finish()
+                        }
+                        RandomError::TooLarge => {
+                            f.debug_tuple("RandomError::TooLarge").finish()
+                        }
                         RandomError::EmptyRange => {
                             f.debug_tuple("RandomError::EmptyRange").finish()
                         }
@@ -11884,11 +12433,13 @@ pub mod krate {
                 }
             }
             impl ::core::fmt::Display for RandomError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     write!(f, "{:?}", self)
                 }
             }
-
             #[cfg(feature = "std")]
             impl std::error::Error for RandomError {}
             #[allow(unused_unsafe, clippy::all)]
@@ -11901,11 +12452,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -11914,7 +12467,6 @@ pub mod krate {
                         #[link_name = "get"]
                         fn wit_import1(_: i32, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i32, _: *mut u8) {
                         unreachable!()
@@ -11931,7 +12483,6 @@ pub mod krate {
                                     .add(2 * ::core::mem::size_of::<*const u8>())
                                     .cast::<usize>();
                                 let len5 = l4;
-
                                 _rt::Vec::from_raw_parts(l3.cast(), len5, len5)
                             };
                             Ok(e)
@@ -11955,15 +12506,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         RandomError::Unavailable(e10)
                                     }
                                 };
-
                                 v10
                             };
                             Err(e)
@@ -11983,12 +12535,13 @@ pub mod krate {
                 unsafe {
                     #[repr(align(8))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>;
-                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 16 + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 16
+                            + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -11997,7 +12550,6 @@ pub mod krate {
                         #[link_name = "next-u64"]
                         fn wit_import1(_: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: *mut u8) {
                         unreachable!()
@@ -12008,7 +12560,6 @@ pub mod krate {
                         0 => {
                             let e = {
                                 let l3 = *ptr0.add(8).cast::<i64>();
-
                                 l3 as u64
                             };
                             Ok(e)
@@ -12030,15 +12581,16 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len7 = l6;
-                                            let bytes7 =
-                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
                                             _rt::string_lift(bytes7)
                                         };
                                         RandomError::Unavailable(e8)
                                     }
                                 };
-
                                 v8
                             };
                             Err(e)
@@ -12060,12 +12612,13 @@ pub mod krate {
                 unsafe {
                     #[repr(align(8))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>;
-                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 16 + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 16
+                            + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -12074,7 +12627,6 @@ pub mod krate {
                         #[link_name = "below"]
                         fn wit_import1(_: i64, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
                         unreachable!()
@@ -12085,7 +12637,6 @@ pub mod krate {
                         0 => {
                             let e = {
                                 let l3 = *ptr0.add(8).cast::<i64>();
-
                                 l3 as u64
                             };
                             Ok(e)
@@ -12107,15 +12658,16 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len7 = l6;
-                                            let bytes7 =
-                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
                                             _rt::string_lift(bytes7)
                                         };
                                         RandomError::Unavailable(e8)
                                     }
                                 };
-
                                 v8
                             };
                             Err(e)
@@ -12136,9 +12688,7 @@ pub mod krate {
         pub mod assets {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             /// Error returned while resolving an application-bundled resource.
             #[derive(Clone)]
@@ -12153,7 +12703,10 @@ pub mod krate {
                 Io(_rt::String),
             }
             impl ::core::fmt::Debug for ResourceError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
                         ResourceError::NotFound => {
                             f.debug_tuple("ResourceError::NotFound").finish()
@@ -12171,11 +12724,13 @@ pub mod krate {
                 }
             }
             impl ::core::fmt::Display for ResourceError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     write!(f, "{:?}", self)
                 }
             }
-
             #[cfg(feature = "std")]
             impl std::error::Error for ResourceError {}
             #[allow(unused_unsafe, clippy::all)]
@@ -12185,11 +12740,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = path;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -12201,7 +12758,6 @@ pub mod krate {
                         #[link_name = "read"]
                         fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
                         unreachable!()
@@ -12218,7 +12774,6 @@ pub mod krate {
                                     .add(2 * ::core::mem::size_of::<*const u8>())
                                     .cast::<usize>();
                                 let len6 = l5;
-
                                 _rt::Vec::from_raw_parts(l4.cast(), len6, len6)
                             };
                             Ok(e)
@@ -12242,15 +12797,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len10 = l9;
-                                            let bytes10 =
-                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
                                             _rt::string_lift(bytes10)
                                         };
                                         ResourceError::Io(e11)
                                     }
                                 };
-
                                 v11
                             };
                             Err(e)
@@ -12267,11 +12823,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = path;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -12283,7 +12841,6 @@ pub mod krate {
                         #[link_name = "list"]
                         fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
                         unreachable!()
@@ -12303,17 +12860,19 @@ pub mod krate {
                                 let len9 = l5;
                                 let mut result9 = _rt::Vec::with_capacity(len9);
                                 for i in 0..len9 {
-                                    let base =
-                                        base9.add(i * (2 * ::core::mem::size_of::<*const u8>()));
+                                    let base = base9
+                                        .add(i * (2 * ::core::mem::size_of::<*const u8>()));
                                     let e9 = {
                                         let l6 = *base.add(0).cast::<*mut u8>();
                                         let l7 = *base
                                             .add(::core::mem::size_of::<*const u8>())
                                             .cast::<usize>();
                                         let len8 = l7;
-                                        let bytes8 =
-                                            _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                        let bytes8 = _rt::Vec::from_raw_parts(
+                                            l6.cast(),
+                                            len8,
+                                            len8,
+                                        );
                                         _rt::string_lift(bytes8)
                                     };
                                     result9.push(e9);
@@ -12323,7 +12882,6 @@ pub mod krate {
                                     len9 * (2 * ::core::mem::size_of::<*const u8>()),
                                     ::core::mem::size_of::<*const u8>(),
                                 );
-
                                 result9
                             };
                             Ok(e)
@@ -12347,15 +12905,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len13 = l12;
-                                            let bytes13 =
-                                                _rt::Vec::from_raw_parts(l11.cast(), len13, len13);
-
+                                            let bytes13 = _rt::Vec::from_raw_parts(
+                                                l11.cast(),
+                                                len13,
+                                                len13,
+                                            );
                                             _rt::string_lift(bytes13)
                                         };
                                         ResourceError::Io(e14)
                                     }
                                 };
-
                                 v14
                             };
                             Err(e)
@@ -12376,9 +12935,7 @@ pub mod krate {
         pub mod transcription {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             /// A successful bounded transcription.
             #[derive(Clone)]
@@ -12387,10 +12944,11 @@ pub mod krate {
                 pub text: _rt::String,
             }
             impl ::core::fmt::Debug for Transcript {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                    f.debug_struct("Transcript")
-                        .field("text", &self.text)
-                        .finish()
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    f.debug_struct("Transcript").field("text", &self.text).finish()
                 }
             }
             /// Error returned while validating or transcribing audio.
@@ -12408,12 +12966,16 @@ pub mod krate {
                 Inference(_rt::String),
             }
             impl ::core::fmt::Debug for SpeechError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
-                        SpeechError::InvalidRequest(e) => f
-                            .debug_tuple("SpeechError::InvalidRequest")
-                            .field(e)
-                            .finish(),
+                        SpeechError::InvalidRequest(e) => {
+                            f.debug_tuple("SpeechError::InvalidRequest")
+                                .field(e)
+                                .finish()
+                        }
                         SpeechError::ModelNotFound => {
                             f.debug_tuple("SpeechError::ModelNotFound").finish()
                         }
@@ -12430,11 +12992,13 @@ pub mod krate {
                 }
             }
             impl ::core::fmt::Display for SpeechError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     write!(f, "{:?}", self)
                 }
             }
-
             #[cfg(feature = "std")]
             impl std::error::Error for SpeechError {}
             /// Compact error for latency-sensitive script matching.
@@ -12470,16 +13034,23 @@ pub mod krate {
                         MatchError::ModelNotFound => {
                             "The requested model is not present in the app bundle."
                         }
-                        MatchError::ModelInvalid => "The bundled model could not be loaded.",
+                        MatchError::ModelInvalid => {
+                            "The bundled model could not be loaded."
+                        }
                         MatchError::Unsupported => {
                             "The host build does not provide local transcription."
                         }
-                        MatchError::Inference => "The local model could not recognize this audio.",
+                        MatchError::Inference => {
+                            "The local model could not recognize this audio."
+                        }
                     }
                 }
             }
             impl ::core::fmt::Debug for MatchError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("MatchError")
                         .field("code", &(*self as i32))
                         .field("name", &self.name())
@@ -12488,33 +13059,31 @@ pub mod krate {
                 }
             }
             impl ::core::fmt::Display for MatchError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                    write!(f, "{} (error {})", self.name(), *self as i32)
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    write!(f, "{} (error {})", self.name(), * self as i32)
                 }
             }
-
             #[cfg(feature = "std")]
             impl std::error::Error for MatchError {}
-
             impl MatchError {
                 #[doc(hidden)]
                 pub unsafe fn _lift(val: u8) -> MatchError {
                     if !cfg!(debug_assertions) {
                         return ::core::mem::transmute(val);
                     }
-
                     match val {
                         0 => MatchError::InvalidRequest,
                         1 => MatchError::ModelNotFound,
                         2 => MatchError::ModelInvalid,
                         3 => MatchError::Unsupported,
                         4 => MatchError::Inference,
-
                         _ => panic!("invalid enum discriminant"),
                     }
                 }
             }
-
             #[allow(unused_unsafe, clippy::all)]
             /// Transcribe mono signed 16-bit little-endian PCM with a bundled model.
             pub fn transcribe(
@@ -12527,11 +13096,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = model_asset;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -12544,7 +13115,6 @@ pub mod krate {
                             let vec2 = e;
                             let ptr2 = vec2.as_ptr().cast::<u8>();
                             let len2 = vec2.len();
-
                             (1i32, ptr2.cast_mut(), len2)
                         }
                         None => (0i32, ::core::ptr::null_mut(), 0usize),
@@ -12566,7 +13136,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import5(
                         _: *mut u8,
@@ -12605,8 +13174,11 @@ pub mod krate {
                                     .add(2 * ::core::mem::size_of::<*const u8>())
                                     .cast::<usize>();
                                 let len9 = l8;
-                                let bytes9 = _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                let bytes9 = _rt::Vec::from_raw_parts(
+                                    l7.cast(),
+                                    len9,
+                                    len9,
+                                );
                                 Transcript {
                                     text: _rt::string_lift(bytes9),
                                 }
@@ -12628,9 +13200,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len13 = l12;
-                                            let bytes13 =
-                                                _rt::Vec::from_raw_parts(l11.cast(), len13, len13);
-
+                                            let bytes13 = _rt::Vec::from_raw_parts(
+                                                l11.cast(),
+                                                len13,
+                                                len13,
+                                            );
                                             _rt::string_lift(bytes13)
                                         };
                                         SpeechError::InvalidRequest(e23)
@@ -12645,9 +13219,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len16 = l15;
-                                            let bytes16 =
-                                                _rt::Vec::from_raw_parts(l14.cast(), len16, len16);
-
+                                            let bytes16 = _rt::Vec::from_raw_parts(
+                                                l14.cast(),
+                                                len16,
+                                                len16,
+                                            );
                                             _rt::string_lift(bytes16)
                                         };
                                         SpeechError::ModelInvalid(e23)
@@ -12661,9 +13237,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len19 = l18;
-                                            let bytes19 =
-                                                _rt::Vec::from_raw_parts(l17.cast(), len19, len19);
-
+                                            let bytes19 = _rt::Vec::from_raw_parts(
+                                                l17.cast(),
+                                                len19,
+                                                len19,
+                                            );
                                             _rt::string_lift(bytes19)
                                         };
                                         SpeechError::Unsupported(e23)
@@ -12678,15 +13256,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len22 = l21;
-                                            let bytes22 =
-                                                _rt::Vec::from_raw_parts(l20.cast(), len22, len22);
-
+                                            let bytes22 = _rt::Vec::from_raw_parts(
+                                                l20.cast(),
+                                                len22,
+                                                len22,
+                                            );
                                             _rt::string_lift(bytes22)
                                         };
                                         SpeechError::Inference(e23)
                                     }
                                 };
-
                                 v23
                             };
                             Err(e)
@@ -12723,7 +13302,6 @@ pub mod krate {
                             let vec2 = e;
                             let ptr2 = vec2.as_ptr().cast::<u8>();
                             let len2 = vec2.len();
-
                             (1i32, ptr2.cast_mut(), len2)
                         }
                         None => (0i32, ::core::ptr::null_mut(), 0usize),
@@ -12750,7 +13328,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import6(
                         _: *mut u8,
@@ -12787,7 +13364,6 @@ pub mod krate {
                         0 => {
                             let e = {
                                 let l8 = i32::from(*ptr5.add(1).cast::<u8>());
-
                                 l8 as u8
                             };
                             Ok(e)
@@ -12795,7 +13371,6 @@ pub mod krate {
                         1 => {
                             let e = {
                                 let l9 = i32::from(*ptr5.add(1).cast::<u8>());
-
                                 MatchError::_lift(l9 as u8)
                             };
                             Err(e)
@@ -12834,7 +13409,6 @@ pub mod krate {
                             let vec2 = e;
                             let ptr2 = vec2.as_ptr().cast::<u8>();
                             let len2 = vec2.len();
-
                             (1i32, ptr2.cast_mut(), len2)
                         }
                         None => (0i32, ::core::ptr::null_mut(), 0usize),
@@ -12862,7 +13436,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import6(
                         _: *mut u8,
@@ -12904,13 +13477,11 @@ pub mod krate {
                         0 => {
                             let e = {
                                 let l8 = i32::from(*ptr5.add(1).cast::<u8>());
-
                                 match l8 {
                                     0 => None,
                                     1 => {
                                         let e = {
                                             let l9 = i32::from(*ptr5.add(2).cast::<u8>());
-
                                             l9 as u8
                                         };
                                         Some(e)
@@ -12923,7 +13494,6 @@ pub mod krate {
                         1 => {
                             let e = {
                                 let l10 = i32::from(*ptr5.add(1).cast::<u8>());
-
                                 MatchError::_lift(l10 as u8)
                             };
                             Err(e)
@@ -12934,7 +13504,6 @@ pub mod krate {
                 }
             }
         }
-
         /// Speaking text aloud with the voices the computer already has.
         ///
         /// Speech is sound, so it is allowed wherever sound is: `audio.playback`,
@@ -12944,9 +13513,7 @@ pub mod krate {
         pub mod synthesis {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             /// One voice the computer offers.
             #[derive(Clone)]
@@ -12959,7 +13526,10 @@ pub mod krate {
                 pub language: _rt::String,
             }
             impl ::core::fmt::Debug for Voice {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("Voice")
                         .field("id", &self.id)
                         .field("name", &self.name)
@@ -12981,7 +13551,10 @@ pub mod krate {
                 Platform(_rt::String),
             }
             impl ::core::fmt::Debug for SayError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
                         SayError::PermissionDenied => {
                             f.debug_tuple("SayError::PermissionDenied").finish()
@@ -12999,11 +13572,13 @@ pub mod krate {
                 }
             }
             impl ::core::fmt::Display for SayError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     write!(f, "{:?}", self)
                 }
             }
-
             #[cfg(feature = "std")]
             impl std::error::Error for SayError {}
             #[allow(unused_unsafe, clippy::all)]
@@ -13013,11 +13588,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -13026,7 +13603,6 @@ pub mod krate {
                         #[link_name = "voices"]
                         fn wit_import1(_: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: *mut u8) {
                         unreachable!()
@@ -13046,16 +13622,19 @@ pub mod krate {
                                 let len14 = l4;
                                 let mut result14 = _rt::Vec::with_capacity(len14);
                                 for i in 0..len14 {
-                                    let base =
-                                        base14.add(i * (6 * ::core::mem::size_of::<*const u8>()));
+                                    let base = base14
+                                        .add(i * (6 * ::core::mem::size_of::<*const u8>()));
                                     let e14 = {
                                         let l5 = *base.add(0).cast::<*mut u8>();
                                         let l6 = *base
                                             .add(::core::mem::size_of::<*const u8>())
                                             .cast::<usize>();
                                         let len7 = l6;
-                                        let bytes7 =
-                                            _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
+                                        let bytes7 = _rt::Vec::from_raw_parts(
+                                            l5.cast(),
+                                            len7,
+                                            len7,
+                                        );
                                         let l8 = *base
                                             .add(2 * ::core::mem::size_of::<*const u8>())
                                             .cast::<*mut u8>();
@@ -13063,8 +13642,11 @@ pub mod krate {
                                             .add(3 * ::core::mem::size_of::<*const u8>())
                                             .cast::<usize>();
                                         let len10 = l9;
-                                        let bytes10 =
-                                            _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
+                                        let bytes10 = _rt::Vec::from_raw_parts(
+                                            l8.cast(),
+                                            len10,
+                                            len10,
+                                        );
                                         let l11 = *base
                                             .add(4 * ::core::mem::size_of::<*const u8>())
                                             .cast::<*mut u8>();
@@ -13072,9 +13654,11 @@ pub mod krate {
                                             .add(5 * ::core::mem::size_of::<*const u8>())
                                             .cast::<usize>();
                                         let len13 = l12;
-                                        let bytes13 =
-                                            _rt::Vec::from_raw_parts(l11.cast(), len13, len13);
-
+                                        let bytes13 = _rt::Vec::from_raw_parts(
+                                            l11.cast(),
+                                            len13,
+                                            len13,
+                                        );
                                         Voice {
                                             id: _rt::string_lift(bytes7),
                                             name: _rt::string_lift(bytes10),
@@ -13088,7 +13672,6 @@ pub mod krate {
                                     len14 * (6 * ::core::mem::size_of::<*const u8>()),
                                     ::core::mem::size_of::<*const u8>(),
                                 );
-
                                 result14
                             };
                             Ok(e)
@@ -13109,9 +13692,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len18 = l17;
-                                            let bytes18 =
-                                                _rt::Vec::from_raw_parts(l16.cast(), len18, len18);
-
+                                            let bytes18 = _rt::Vec::from_raw_parts(
+                                                l16.cast(),
+                                                len18,
+                                                len18,
+                                            );
                                             _rt::string_lift(bytes18)
                                         };
                                         SayError::InvalidRequest(e25)
@@ -13125,9 +13710,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len21 = l20;
-                                            let bytes21 =
-                                                _rt::Vec::from_raw_parts(l19.cast(), len21, len21);
-
+                                            let bytes21 = _rt::Vec::from_raw_parts(
+                                                l19.cast(),
+                                                len21,
+                                                len21,
+                                            );
                                             _rt::string_lift(bytes21)
                                         };
                                         SayError::Unsupported(e25)
@@ -13142,15 +13729,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len24 = l23;
-                                            let bytes24 =
-                                                _rt::Vec::from_raw_parts(l22.cast(), len24, len24);
-
+                                            let bytes24 = _rt::Vec::from_raw_parts(
+                                                l22.cast(),
+                                                len24,
+                                                len24,
+                                            );
                                             _rt::string_lift(bytes24)
                                         };
                                         SayError::Platform(e25)
                                     }
                                 };
-
                                 v25
                             };
                             Err(e)
@@ -13167,16 +13755,22 @@ pub mod krate {
             /// the old one rather than queueing behind it. `voice` is an id from
             /// `voices`; none means the system's default. `rate` is a multiple of the
             /// normal speed, 0.5 to 2.0; none means normal.
-            pub fn say(text: &str, voice: Option<&str>, rate: Option<f32>) -> Result<(), SayError> {
+            pub fn say(
+                text: &str,
+                voice: Option<&str>,
+                rate: Option<f32>,
+            ) -> Result<(), SayError> {
                 unsafe {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = text;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -13186,7 +13780,6 @@ pub mod krate {
                             let vec1 = e;
                             let ptr1 = vec1.as_ptr().cast::<u8>();
                             let len1 = vec1.len();
-
                             (1i32, ptr1.cast_mut(), len1)
                         }
                         None => (0i32, ::core::ptr::null_mut(), 0usize),
@@ -13211,7 +13804,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import5(
                         _: *mut u8,
@@ -13259,9 +13851,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len10 = l9;
-                                            let bytes10 =
-                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
                                             _rt::string_lift(bytes10)
                                         };
                                         SayError::InvalidRequest(e17)
@@ -13275,9 +13869,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len13 = l12;
-                                            let bytes13 =
-                                                _rt::Vec::from_raw_parts(l11.cast(), len13, len13);
-
+                                            let bytes13 = _rt::Vec::from_raw_parts(
+                                                l11.cast(),
+                                                len13,
+                                                len13,
+                                            );
                                             _rt::string_lift(bytes13)
                                         };
                                         SayError::Unsupported(e17)
@@ -13292,15 +13888,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len16 = l15;
-                                            let bytes16 =
-                                                _rt::Vec::from_raw_parts(l14.cast(), len16, len16);
-
+                                            let bytes16 = _rt::Vec::from_raw_parts(
+                                                l14.cast(),
+                                                len16,
+                                                len16,
+                                            );
                                             _rt::string_lift(bytes16)
                                         };
                                         SayError::Platform(e17)
                                     }
                                 };
-
                                 v17
                             };
                             Err(e)
@@ -13317,11 +13914,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -13330,7 +13929,6 @@ pub mod krate {
                         #[link_name = "stop"]
                         fn wit_import1(_: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: *mut u8) {
                         unreachable!()
@@ -13358,9 +13956,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len6 = l5;
-                                            let bytes6 =
-                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
                                             _rt::string_lift(bytes6)
                                         };
                                         SayError::InvalidRequest(e13)
@@ -13374,9 +13974,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         SayError::Unsupported(e13)
@@ -13391,15 +13993,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len12 = l11;
-                                            let bytes12 =
-                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
-
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
                                             _rt::string_lift(bytes12)
                                         };
                                         SayError::Platform(e13)
                                     }
                                 };
-
                                 v13
                             };
                             Err(e)
@@ -13416,11 +14019,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -13429,7 +14034,6 @@ pub mod krate {
                         #[link_name = "speaking"]
                         fn wit_import1(_: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: *mut u8) {
                         unreachable!()
@@ -13442,7 +14046,6 @@ pub mod krate {
                                 let l3 = i32::from(
                                     *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                 );
-
                                 _rt::bool_lift(l3 as u8)
                             };
                             Ok(e)
@@ -13463,9 +14066,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len7 = l6;
-                                            let bytes7 =
-                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
                                             _rt::string_lift(bytes7)
                                         };
                                         SayError::InvalidRequest(e14)
@@ -13479,9 +14084,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len10 = l9;
-                                            let bytes10 =
-                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
                                             _rt::string_lift(bytes10)
                                         };
                                         SayError::Unsupported(e14)
@@ -13496,15 +14103,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len13 = l12;
-                                            let bytes13 =
-                                                _rt::Vec::from_raw_parts(l11.cast(), len13, len13);
-
+                                            let bytes13 = _rt::Vec::from_raw_parts(
+                                                l11.cast(),
+                                                len13,
+                                                len13,
+                                            );
                                             _rt::string_lift(bytes13)
                                         };
                                         SayError::Platform(e14)
                                     }
                                 };
-
                                 v14
                             };
                             Err(e)
@@ -13534,9 +14142,7 @@ pub mod krate {
         pub mod kv {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             /// Error returned by a store operation.
             #[derive(Clone)]
@@ -13551,21 +14157,34 @@ pub mod krate {
                 Io(_rt::String),
             }
             impl ::core::fmt::Debug for StoreError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
-                        StoreError::Denied => f.debug_tuple("StoreError::Denied").finish(),
-                        StoreError::InvalidKey => f.debug_tuple("StoreError::InvalidKey").finish(),
-                        StoreError::TooLarge => f.debug_tuple("StoreError::TooLarge").finish(),
-                        StoreError::Io(e) => f.debug_tuple("StoreError::Io").field(e).finish(),
+                        StoreError::Denied => {
+                            f.debug_tuple("StoreError::Denied").finish()
+                        }
+                        StoreError::InvalidKey => {
+                            f.debug_tuple("StoreError::InvalidKey").finish()
+                        }
+                        StoreError::TooLarge => {
+                            f.debug_tuple("StoreError::TooLarge").finish()
+                        }
+                        StoreError::Io(e) => {
+                            f.debug_tuple("StoreError::Io").field(e).finish()
+                        }
                     }
                 }
             }
             impl ::core::fmt::Display for StoreError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     write!(f, "{:?}", self)
                 }
             }
-
             #[cfg(feature = "std")]
             impl std::error::Error for StoreError {}
             #[allow(unused_unsafe, clippy::all)]
@@ -13576,11 +14195,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = key;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -13592,7 +14213,6 @@ pub mod krate {
                         #[link_name = "get"]
                         fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
                         unreachable!()
@@ -13605,7 +14225,6 @@ pub mod krate {
                                 let l4 = i32::from(
                                     *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                 );
-
                                 match l4 {
                                     0 => None,
                                     1 => {
@@ -13617,7 +14236,6 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len7 = l6;
-
                                             _rt::Vec::from_raw_parts(l5.cast(), len7, len7)
                                         };
                                         Some(e)
@@ -13646,15 +14264,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len11 = l10;
-                                            let bytes11 =
-                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
                                             _rt::string_lift(bytes11)
                                         };
                                         StoreError::Io(e12)
                                     }
                                 };
-
                                 v12
                             };
                             Err(e)
@@ -13671,11 +14290,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = key;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -13688,9 +14309,14 @@ pub mod krate {
                     #[link(wasm_import_module = "krate:store/kv@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "set"]
-                        fn wit_import3(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8);
+                        fn wit_import3(
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                        );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import3(
                         _: *mut u8,
@@ -13701,7 +14327,9 @@ pub mod krate {
                     ) {
                         unreachable!()
                     }
-                    unsafe { wit_import3(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1, ptr2) };
+                    unsafe {
+                        wit_import3(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1, ptr2)
+                    };
                     let l4 = i32::from(*ptr2.add(0).cast::<u8>());
                     let result10 = match l4 {
                         0 => {
@@ -13727,15 +14355,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len8 = l7;
-                                            let bytes8 =
-                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
                                             _rt::string_lift(bytes8)
                                         };
                                         StoreError::Io(e9)
                                     }
                                 };
-
                                 v9
                             };
                             Err(e)
@@ -13753,11 +14382,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = key;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -13769,7 +14400,6 @@ pub mod krate {
                         #[link_name = "delete"]
                         fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
                         unreachable!()
@@ -13800,15 +14430,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len7 = l6;
-                                            let bytes7 =
-                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
                                             _rt::string_lift(bytes7)
                                         };
                                         StoreError::Io(e8)
                                     }
                                 };
-
                                 v8
                             };
                             Err(e)
@@ -13826,11 +14457,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -13839,7 +14472,6 @@ pub mod krate {
                         #[link_name = "keys"]
                         fn wit_import1(_: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: *mut u8) {
                         unreachable!()
@@ -13859,17 +14491,19 @@ pub mod krate {
                                 let len8 = l4;
                                 let mut result8 = _rt::Vec::with_capacity(len8);
                                 for i in 0..len8 {
-                                    let base =
-                                        base8.add(i * (2 * ::core::mem::size_of::<*const u8>()));
+                                    let base = base8
+                                        .add(i * (2 * ::core::mem::size_of::<*const u8>()));
                                     let e8 = {
                                         let l5 = *base.add(0).cast::<*mut u8>();
                                         let l6 = *base
                                             .add(::core::mem::size_of::<*const u8>())
                                             .cast::<usize>();
                                         let len7 = l6;
-                                        let bytes7 =
-                                            _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
+                                        let bytes7 = _rt::Vec::from_raw_parts(
+                                            l5.cast(),
+                                            len7,
+                                            len7,
+                                        );
                                         _rt::string_lift(bytes7)
                                     };
                                     result8.push(e8);
@@ -13879,7 +14513,6 @@ pub mod krate {
                                     len8 * (2 * ::core::mem::size_of::<*const u8>()),
                                     ::core::mem::size_of::<*const u8>(),
                                 );
-
                                 result8
                             };
                             Ok(e)
@@ -13903,15 +14536,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len12 = l11;
-                                            let bytes12 =
-                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
-
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
                                             _rt::string_lift(bytes12)
                                         };
                                         StoreError::Io(e13)
                                     }
                                 };
-
                                 v13
                             };
                             Err(e)
@@ -13929,11 +14563,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -13942,7 +14578,6 @@ pub mod krate {
                         #[link_name = "clear"]
                         fn wit_import1(_: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: *mut u8) {
                         unreachable!()
@@ -13973,15 +14608,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len6 = l5;
-                                            let bytes6 =
-                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
                                             _rt::string_lift(bytes6)
                                         };
                                         StoreError::Io(e7)
                                     }
                                 };
-
                                 v7
                             };
                             Err(e)
@@ -13992,7 +14628,6 @@ pub mod krate {
                 }
             }
         }
-
         /// A real database, scoped to one application.
         ///
         /// The key-value store above holds settings and small collections. An app with
@@ -14008,9 +14643,7 @@ pub mod krate {
         pub mod sql {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             /// One value in a row or a query parameter.
             ///
@@ -14031,10 +14664,15 @@ pub mod krate {
                 Blob(_rt::Vec<u8>),
             }
             impl ::core::fmt::Debug for Value {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
                         Value::Null => f.debug_tuple("Value::Null").finish(),
-                        Value::Integer(e) => f.debug_tuple("Value::Integer").field(e).finish(),
+                        Value::Integer(e) => {
+                            f.debug_tuple("Value::Integer").field(e).finish()
+                        }
                         Value::Real(e) => f.debug_tuple("Value::Real").field(e).finish(),
                         Value::Text(e) => f.debug_tuple("Value::Text").field(e).finish(),
                         Value::Blob(e) => f.debug_tuple("Value::Blob").field(e).finish(),
@@ -14057,27 +14695,35 @@ pub mod krate {
                 Io(_rt::String),
             }
             impl ::core::fmt::Debug for SqlError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
                         SqlError::Denied => f.debug_tuple("SqlError::Denied").finish(),
-                        SqlError::InvalidStatement(e) => f
-                            .debug_tuple("SqlError::InvalidStatement")
-                            .field(e)
-                            .finish(),
+                        SqlError::InvalidStatement(e) => {
+                            f.debug_tuple("SqlError::InvalidStatement").field(e).finish()
+                        }
                         SqlError::Forbidden(e) => {
                             f.debug_tuple("SqlError::Forbidden").field(e).finish()
                         }
-                        SqlError::TooLarge => f.debug_tuple("SqlError::TooLarge").finish(),
-                        SqlError::Io(e) => f.debug_tuple("SqlError::Io").field(e).finish(),
+                        SqlError::TooLarge => {
+                            f.debug_tuple("SqlError::TooLarge").finish()
+                        }
+                        SqlError::Io(e) => {
+                            f.debug_tuple("SqlError::Io").field(e).finish()
+                        }
                     }
                 }
             }
             impl ::core::fmt::Display for SqlError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     write!(f, "{:?}", self)
                 }
             }
-
             #[cfg(feature = "std")]
             impl std::error::Error for SqlError {}
             /// One returned row, in the column order of the query.
@@ -14087,7 +14733,10 @@ pub mod krate {
                 pub values: _rt::Vec<Value>,
             }
             impl ::core::fmt::Debug for Row {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("Row").field("values", &self.values).finish()
                 }
             }
@@ -14101,7 +14750,10 @@ pub mod krate {
                 pub rows: _rt::Vec<Row>,
             }
             impl ::core::fmt::Debug for QueryResult {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("QueryResult")
                         .field("columns", &self.columns)
                         .field("rows", &self.rows)
@@ -14113,16 +14765,21 @@ pub mod krate {
             ///
             /// Parameters are bound, never substituted into the text, so an app cannot
             /// build an injection out of its own user's input by accident.
-            pub fn query(statement: &str, params: &[Value]) -> Result<QueryResult, SqlError> {
+            pub fn query(
+                statement: &str,
+                params: &[Value],
+            ) -> Result<QueryResult, SqlError> {
                 unsafe {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 5 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 5 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            5 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 5
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = statement;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -14143,7 +14800,8 @@ pub mod krate {
                         ::core::ptr::null_mut()
                     };
                     for (i, e) in vec3.into_iter().enumerate() {
-                        let base = result3.add(i * (8 + 2 * ::core::mem::size_of::<*const u8>()));
+                        let base = result3
+                            .add(i * (8 + 2 * ::core::mem::size_of::<*const u8>()));
                         {
                             match e {
                                 Value::Null => {
@@ -14185,9 +14843,14 @@ pub mod krate {
                     #[link(wasm_import_module = "krate:store/sql@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "query"]
-                        fn wit_import5(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8);
+                        fn wit_import5(
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                        );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import5(
                         _: *mut u8,
@@ -14213,17 +14876,19 @@ pub mod krate {
                                 let len12 = l8;
                                 let mut result12 = _rt::Vec::with_capacity(len12);
                                 for i in 0..len12 {
-                                    let base =
-                                        base12.add(i * (2 * ::core::mem::size_of::<*const u8>()));
+                                    let base = base12
+                                        .add(i * (2 * ::core::mem::size_of::<*const u8>()));
                                     let e12 = {
                                         let l9 = *base.add(0).cast::<*mut u8>();
                                         let l10 = *base
                                             .add(::core::mem::size_of::<*const u8>())
                                             .cast::<usize>();
                                         let len11 = l10;
-                                        let bytes11 =
-                                            _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                        let bytes11 = _rt::Vec::from_raw_parts(
+                                            l9.cast(),
+                                            len11,
+                                            len11,
+                                        );
                                         _rt::string_lift(bytes11)
                                     };
                                     result12.push(e12);
@@ -14243,8 +14908,8 @@ pub mod krate {
                                 let len28 = l14;
                                 let mut result28 = _rt::Vec::with_capacity(len28);
                                 for i in 0..len28 {
-                                    let base =
-                                        base28.add(i * (2 * ::core::mem::size_of::<*const u8>()));
+                                    let base = base28
+                                        .add(i * (2 * ::core::mem::size_of::<*const u8>()));
                                     let e28 = {
                                         let l15 = *base.add(0).cast::<*mut u8>();
                                         let l16 = *base
@@ -14254,9 +14919,8 @@ pub mod krate {
                                         let len27 = l16;
                                         let mut result27 = _rt::Vec::with_capacity(len27);
                                         for i in 0..len27 {
-                                            let base = base27.add(
-                                                i * (8 + 2 * ::core::mem::size_of::<*const u8>()),
-                                            );
+                                            let base = base27
+                                                .add(i * (8 + 2 * ::core::mem::size_of::<*const u8>()));
                                             let e27 = {
                                                 let l17 = i32::from(*base.add(0).cast::<u8>());
                                                 let v26 = match l17 {
@@ -14264,7 +14928,6 @@ pub mod krate {
                                                     1 => {
                                                         let e26 = {
                                                             let l18 = *base.add(8).cast::<i64>();
-
                                                             l18
                                                         };
                                                         Value::Integer(e26)
@@ -14272,22 +14935,15 @@ pub mod krate {
                                                     2 => {
                                                         let e26 = {
                                                             let l19 = *base.add(8).cast::<f64>();
-
                                                             l19
                                                         };
                                                         Value::Real(e26)
                                                     }
                                                     3 => {
                                                         let e26 = {
-                                                            let l20 =
-                                                                *base.add(8).cast::<*mut u8>();
+                                                            let l20 = *base.add(8).cast::<*mut u8>();
                                                             let l21 = *base
-                                                                .add(
-                                                                    8 + 1 * ::core::mem::size_of::<
-                                                                        *const u8,
-                                                                    >(
-                                                                    ),
-                                                                )
+                                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
                                                                 .cast::<usize>();
                                                             let len22 = l21;
                                                             let bytes22 = _rt::Vec::from_raw_parts(
@@ -14295,39 +14951,23 @@ pub mod krate {
                                                                 len22,
                                                                 len22,
                                                             );
-
                                                             _rt::string_lift(bytes22)
                                                         };
                                                         Value::Text(e26)
                                                     }
                                                     n => {
-                                                        debug_assert_eq!(
-                                                            n, 4,
-                                                            "invalid enum discriminant"
-                                                        );
+                                                        debug_assert_eq!(n, 4, "invalid enum discriminant");
                                                         let e26 = {
-                                                            let l23 =
-                                                                *base.add(8).cast::<*mut u8>();
+                                                            let l23 = *base.add(8).cast::<*mut u8>();
                                                             let l24 = *base
-                                                                .add(
-                                                                    8 + 1 * ::core::mem::size_of::<
-                                                                        *const u8,
-                                                                    >(
-                                                                    ),
-                                                                )
+                                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
                                                                 .cast::<usize>();
                                                             let len25 = l24;
-
-                                                            _rt::Vec::from_raw_parts(
-                                                                l23.cast(),
-                                                                len25,
-                                                                len25,
-                                                            )
+                                                            _rt::Vec::from_raw_parts(l23.cast(), len25, len25)
                                                         };
                                                         Value::Blob(e26)
                                                     }
                                                 };
-
                                                 v26
                                             };
                                             result27.push(e27);
@@ -14337,7 +14977,6 @@ pub mod krate {
                                             len27 * (8 + 2 * ::core::mem::size_of::<*const u8>()),
                                             8,
                                         );
-
                                         Row { values: result27 }
                                     };
                                     result28.push(e28);
@@ -14347,7 +14986,6 @@ pub mod krate {
                                     len28 * (2 * ::core::mem::size_of::<*const u8>()),
                                     ::core::mem::size_of::<*const u8>(),
                                 );
-
                                 QueryResult {
                                     columns: result12,
                                     rows: result28,
@@ -14371,9 +15009,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len32 = l31;
-                                            let bytes32 =
-                                                _rt::Vec::from_raw_parts(l30.cast(), len32, len32);
-
+                                            let bytes32 = _rt::Vec::from_raw_parts(
+                                                l30.cast(),
+                                                len32,
+                                                len32,
+                                            );
                                             _rt::string_lift(bytes32)
                                         };
                                         SqlError::InvalidStatement(e39)
@@ -14387,9 +15027,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len35 = l34;
-                                            let bytes35 =
-                                                _rt::Vec::from_raw_parts(l33.cast(), len35, len35);
-
+                                            let bytes35 = _rt::Vec::from_raw_parts(
+                                                l33.cast(),
+                                                len35,
+                                                len35,
+                                            );
                                             _rt::string_lift(bytes35)
                                         };
                                         SqlError::Forbidden(e39)
@@ -14405,15 +15047,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len38 = l37;
-                                            let bytes38 =
-                                                _rt::Vec::from_raw_parts(l36.cast(), len38, len38);
-
+                                            let bytes38 = _rt::Vec::from_raw_parts(
+                                                l36.cast(),
+                                                len38,
+                                                len38,
+                                            );
                                             _rt::string_lift(bytes38)
                                         };
                                         SqlError::Io(e39)
                                     }
                                 };
-
                                 v39
                             };
                             Err(e)
@@ -14432,12 +15075,13 @@ pub mod krate {
                 unsafe {
                     #[repr(align(8))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>;
-                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 16 + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 16
+                            + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = statement;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -14458,7 +15102,8 @@ pub mod krate {
                         ::core::ptr::null_mut()
                     };
                     for (i, e) in vec3.into_iter().enumerate() {
-                        let base = result3.add(i * (8 + 2 * ::core::mem::size_of::<*const u8>()));
+                        let base = result3
+                            .add(i * (8 + 2 * ::core::mem::size_of::<*const u8>()));
                         {
                             match e {
                                 Value::Null => {
@@ -14500,9 +15145,14 @@ pub mod krate {
                     #[link(wasm_import_module = "krate:store/sql@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "execute"]
-                        fn wit_import5(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8);
+                        fn wit_import5(
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                        );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import5(
                         _: *mut u8,
@@ -14519,7 +15169,6 @@ pub mod krate {
                         0 => {
                             let e = {
                                 let l7 = *ptr4.add(8).cast::<i64>();
-
                                 l7 as u64
                             };
                             Ok(e)
@@ -14538,9 +15187,11 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len11 = l10;
-                                            let bytes11 =
-                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
                                             _rt::string_lift(bytes11)
                                         };
                                         SqlError::InvalidStatement(e18)
@@ -14554,9 +15205,11 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len14 = l13;
-                                            let bytes14 =
-                                                _rt::Vec::from_raw_parts(l12.cast(), len14, len14);
-
+                                            let bytes14 = _rt::Vec::from_raw_parts(
+                                                l12.cast(),
+                                                len14,
+                                                len14,
+                                            );
                                             _rt::string_lift(bytes14)
                                         };
                                         SqlError::Forbidden(e18)
@@ -14572,15 +15225,16 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len17 = l16;
-                                            let bytes17 =
-                                                _rt::Vec::from_raw_parts(l15.cast(), len17, len17);
-
+                                            let bytes17 = _rt::Vec::from_raw_parts(
+                                                l15.cast(),
+                                                len17,
+                                                len17,
+                                            );
                                             _rt::string_lift(bytes17)
                                         };
                                         SqlError::Io(e18)
                                     }
                                 };
-
                                 v18
                             };
                             Err(e)
@@ -14601,11 +15255,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec1 = statements;
                     let len1 = vec1.len();
@@ -14623,7 +15279,8 @@ pub mod krate {
                         ::core::ptr::null_mut()
                     };
                     for (i, e) in vec1.into_iter().enumerate() {
-                        let base = result1.add(i * (2 * ::core::mem::size_of::<*const u8>()));
+                        let base = result1
+                            .add(i * (2 * ::core::mem::size_of::<*const u8>()));
                         {
                             let vec0 = e;
                             let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -14641,7 +15298,6 @@ pub mod krate {
                         #[link_name = "transaction"]
                         fn wit_import3(_: *mut u8, _: usize, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import3(_: *mut u8, _: usize, _: *mut u8) {
                         unreachable!()
@@ -14669,9 +15325,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len8 = l7;
-                                            let bytes8 =
-                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
                                             _rt::string_lift(bytes8)
                                         };
                                         SqlError::InvalidStatement(e15)
@@ -14685,9 +15343,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len11 = l10;
-                                            let bytes11 =
-                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
                                             _rt::string_lift(bytes11)
                                         };
                                         SqlError::Forbidden(e15)
@@ -14703,15 +15363,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len14 = l13;
-                                            let bytes14 =
-                                                _rt::Vec::from_raw_parts(l12.cast(), len14, len14);
-
+                                            let bytes14 = _rt::Vec::from_raw_parts(
+                                                l12.cast(),
+                                                len14,
+                                                len14,
+                                            );
                                             _rt::string_lift(bytes14)
                                         };
                                         SqlError::Io(e15)
                                     }
                                 };
-
                                 v15
                             };
                             Err(e)
@@ -14725,7 +15386,6 @@ pub mod krate {
                 }
             }
         }
-
         /// Secrets an app keeps for itself, such as a sign-in token.
         ///
         /// Without this an app that signs in has to write its token to a plain file
@@ -14743,9 +15403,7 @@ pub mod krate {
         pub mod secret {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             /// Error returned by a secret operation.
             #[derive(Clone)]
@@ -14760,23 +15418,34 @@ pub mod krate {
                 Io(_rt::String),
             }
             impl ::core::fmt::Debug for SecretError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
-                        SecretError::Denied => f.debug_tuple("SecretError::Denied").finish(),
+                        SecretError::Denied => {
+                            f.debug_tuple("SecretError::Denied").finish()
+                        }
                         SecretError::InvalidName => {
                             f.debug_tuple("SecretError::InvalidName").finish()
                         }
-                        SecretError::TooLarge => f.debug_tuple("SecretError::TooLarge").finish(),
-                        SecretError::Io(e) => f.debug_tuple("SecretError::Io").field(e).finish(),
+                        SecretError::TooLarge => {
+                            f.debug_tuple("SecretError::TooLarge").finish()
+                        }
+                        SecretError::Io(e) => {
+                            f.debug_tuple("SecretError::Io").field(e).finish()
+                        }
                     }
                 }
             }
             impl ::core::fmt::Display for SecretError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     write!(f, "{:?}", self)
                 }
             }
-
             #[cfg(feature = "std")]
             impl std::error::Error for SecretError {}
             #[allow(unused_unsafe, clippy::all)]
@@ -14786,11 +15455,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = name;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -14802,7 +15473,6 @@ pub mod krate {
                         #[link_name = "get"]
                         fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
                         unreachable!()
@@ -14815,7 +15485,6 @@ pub mod krate {
                                 let l4 = i32::from(
                                     *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                 );
-
                                 match l4 {
                                     0 => None,
                                     1 => {
@@ -14827,7 +15496,6 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len7 = l6;
-
                                             _rt::Vec::from_raw_parts(l5.cast(), len7, len7)
                                         };
                                         Some(e)
@@ -14856,15 +15524,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len11 = l10;
-                                            let bytes11 =
-                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
                                             _rt::string_lift(bytes11)
                                         };
                                         SecretError::Io(e12)
                                     }
                                 };
-
                                 v12
                             };
                             Err(e)
@@ -14881,11 +15550,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = name;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -14898,9 +15569,14 @@ pub mod krate {
                     #[link(wasm_import_module = "krate:store/secret@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "set"]
-                        fn wit_import3(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8);
+                        fn wit_import3(
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                        );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import3(
                         _: *mut u8,
@@ -14911,7 +15587,9 @@ pub mod krate {
                     ) {
                         unreachable!()
                     }
-                    unsafe { wit_import3(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1, ptr2) };
+                    unsafe {
+                        wit_import3(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1, ptr2)
+                    };
                     let l4 = i32::from(*ptr2.add(0).cast::<u8>());
                     let result10 = match l4 {
                         0 => {
@@ -14937,15 +15615,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len8 = l7;
-                                            let bytes8 =
-                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
                                             _rt::string_lift(bytes8)
                                         };
                                         SecretError::Io(e9)
                                     }
                                 };
-
                                 v9
                             };
                             Err(e)
@@ -14962,11 +15641,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = name;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -14978,7 +15659,6 @@ pub mod krate {
                         #[link_name = "delete"]
                         fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
                         unreachable!()
@@ -15009,15 +15689,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len7 = l6;
-                                            let bytes7 =
-                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
                                             _rt::string_lift(bytes7)
                                         };
                                         SecretError::Io(e8)
                                     }
                                 };
-
                                 v8
                             };
                             Err(e)
@@ -15035,11 +15716,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -15048,7 +15731,6 @@ pub mod krate {
                         #[link_name = "names"]
                         fn wit_import1(_: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: *mut u8) {
                         unreachable!()
@@ -15068,17 +15750,19 @@ pub mod krate {
                                 let len8 = l4;
                                 let mut result8 = _rt::Vec::with_capacity(len8);
                                 for i in 0..len8 {
-                                    let base =
-                                        base8.add(i * (2 * ::core::mem::size_of::<*const u8>()));
+                                    let base = base8
+                                        .add(i * (2 * ::core::mem::size_of::<*const u8>()));
                                     let e8 = {
                                         let l5 = *base.add(0).cast::<*mut u8>();
                                         let l6 = *base
                                             .add(::core::mem::size_of::<*const u8>())
                                             .cast::<usize>();
                                         let len7 = l6;
-                                        let bytes7 =
-                                            _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
+                                        let bytes7 = _rt::Vec::from_raw_parts(
+                                            l5.cast(),
+                                            len7,
+                                            len7,
+                                        );
                                         _rt::string_lift(bytes7)
                                     };
                                     result8.push(e8);
@@ -15088,7 +15772,6 @@ pub mod krate {
                                     len8 * (2 * ::core::mem::size_of::<*const u8>()),
                                     ::core::mem::size_of::<*const u8>(),
                                 );
-
                                 result8
                             };
                             Ok(e)
@@ -15112,15 +15795,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len12 = l11;
-                                            let bytes12 =
-                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
-
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
                                             _rt::string_lift(bytes12)
                                         };
                                         SecretError::Io(e13)
                                     }
                                 };
-
                                 v13
                             };
                             Err(e)
@@ -15131,7 +15815,6 @@ pub mod krate {
                 }
             }
         }
-
         /// A key-value bucket shared between the machines that hold its invite code.
         ///
         /// This is how an app becomes a household app -- a shopping list two people
@@ -15149,9 +15832,7 @@ pub mod krate {
         pub mod shared {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             /// Error returned by a shared-store operation.
             #[derive(Clone)]
@@ -15170,27 +15851,40 @@ pub mod krate {
                 Io(_rt::String),
             }
             impl ::core::fmt::Debug for SharedError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
-                        SharedError::Denied => f.debug_tuple("SharedError::Denied").finish(),
-                        SharedError::NotJoined => f.debug_tuple("SharedError::NotJoined").finish(),
+                        SharedError::Denied => {
+                            f.debug_tuple("SharedError::Denied").finish()
+                        }
+                        SharedError::NotJoined => {
+                            f.debug_tuple("SharedError::NotJoined").finish()
+                        }
                         SharedError::NoSuchShare => {
                             f.debug_tuple("SharedError::NoSuchShare").finish()
                         }
                         SharedError::InvalidName => {
                             f.debug_tuple("SharedError::InvalidName").finish()
                         }
-                        SharedError::TooLarge => f.debug_tuple("SharedError::TooLarge").finish(),
-                        SharedError::Io(e) => f.debug_tuple("SharedError::Io").field(e).finish(),
+                        SharedError::TooLarge => {
+                            f.debug_tuple("SharedError::TooLarge").finish()
+                        }
+                        SharedError::Io(e) => {
+                            f.debug_tuple("SharedError::Io").field(e).finish()
+                        }
                     }
                 }
             }
             impl ::core::fmt::Display for SharedError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     write!(f, "{:?}", self)
                 }
             }
-
             #[cfg(feature = "std")]
             impl std::error::Error for SharedError {}
             #[allow(unused_unsafe, clippy::all)]
@@ -15200,11 +15894,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -15213,7 +15909,6 @@ pub mod krate {
                         #[link_name = "code"]
                         fn wit_import1(_: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: *mut u8) {
                         unreachable!()
@@ -15226,7 +15921,6 @@ pub mod krate {
                                 let l3 = i32::from(
                                     *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                 );
-
                                 match l3 {
                                     0 => None,
                                     1 => {
@@ -15238,9 +15932,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len6 = l5;
-                                            let bytes6 =
-                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
                                             _rt::string_lift(bytes6)
                                         };
                                         Some(e)
@@ -15271,15 +15967,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len10 = l9;
-                                            let bytes10 =
-                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
                                             _rt::string_lift(bytes10)
                                         };
                                         SharedError::Io(e11)
                                     }
                                 };
-
                                 v11
                             };
                             Err(e)
@@ -15297,11 +15994,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -15310,7 +16009,6 @@ pub mod krate {
                         #[link_name = "create"]
                         fn wit_import1(_: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: *mut u8) {
                         unreachable!()
@@ -15327,8 +16025,11 @@ pub mod krate {
                                     .add(2 * ::core::mem::size_of::<*const u8>())
                                     .cast::<usize>();
                                 let len5 = l4;
-                                let bytes5 = _rt::Vec::from_raw_parts(l3.cast(), len5, len5);
-
+                                let bytes5 = _rt::Vec::from_raw_parts(
+                                    l3.cast(),
+                                    len5,
+                                    len5,
+                                );
                                 _rt::string_lift(bytes5)
                             };
                             Ok(e)
@@ -15354,15 +16055,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         SharedError::Io(e10)
                                     }
                                 };
-
                                 v10
                             };
                             Err(e)
@@ -15380,11 +16082,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = code;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -15396,7 +16100,6 @@ pub mod krate {
                         #[link_name = "join"]
                         fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
                         unreachable!()
@@ -15429,15 +16132,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len7 = l6;
-                                            let bytes7 =
-                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
                                             _rt::string_lift(bytes7)
                                         };
                                         SharedError::Io(e8)
                                     }
                                 };
-
                                 v8
                             };
                             Err(e)
@@ -15454,11 +16158,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -15467,7 +16173,6 @@ pub mod krate {
                         #[link_name = "leave"]
                         fn wit_import1(_: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: *mut u8) {
                         unreachable!()
@@ -15500,15 +16205,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len6 = l5;
-                                            let bytes6 =
-                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
                                             _rt::string_lift(bytes6)
                                         };
                                         SharedError::Io(e7)
                                     }
                                 };
-
                                 v7
                             };
                             Err(e)
@@ -15525,11 +16231,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = key;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -15541,7 +16249,6 @@ pub mod krate {
                         #[link_name = "get"]
                         fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
                         unreachable!()
@@ -15554,7 +16261,6 @@ pub mod krate {
                                 let l4 = i32::from(
                                     *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                 );
-
                                 match l4 {
                                     0 => None,
                                     1 => {
@@ -15566,7 +16272,6 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len7 = l6;
-
                                             _rt::Vec::from_raw_parts(l5.cast(), len7, len7)
                                         };
                                         Some(e)
@@ -15597,15 +16302,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len11 = l10;
-                                            let bytes11 =
-                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
                                             _rt::string_lift(bytes11)
                                         };
                                         SharedError::Io(e12)
                                     }
                                 };
-
                                 v12
                             };
                             Err(e)
@@ -15622,11 +16328,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = key;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -15639,9 +16347,14 @@ pub mod krate {
                     #[link(wasm_import_module = "krate:store/shared@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "set"]
-                        fn wit_import3(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8);
+                        fn wit_import3(
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                        );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import3(
                         _: *mut u8,
@@ -15652,7 +16365,9 @@ pub mod krate {
                     ) {
                         unreachable!()
                     }
-                    unsafe { wit_import3(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1, ptr2) };
+                    unsafe {
+                        wit_import3(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1, ptr2)
+                    };
                     let l4 = i32::from(*ptr2.add(0).cast::<u8>());
                     let result10 = match l4 {
                         0 => {
@@ -15680,15 +16395,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len8 = l7;
-                                            let bytes8 =
-                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
                                             _rt::string_lift(bytes8)
                                         };
                                         SharedError::Io(e9)
                                     }
                                 };
-
                                 v9
                             };
                             Err(e)
@@ -15705,11 +16421,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = key;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -15721,7 +16439,6 @@ pub mod krate {
                         #[link_name = "delete"]
                         fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
                         unreachable!()
@@ -15754,15 +16471,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len7 = l6;
-                                            let bytes7 =
-                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
                                             _rt::string_lift(bytes7)
                                         };
                                         SharedError::Io(e8)
                                     }
                                 };
-
                                 v8
                             };
                             Err(e)
@@ -15779,11 +16497,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -15792,7 +16512,6 @@ pub mod krate {
                         #[link_name = "keys"]
                         fn wit_import1(_: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: *mut u8) {
                         unreachable!()
@@ -15812,17 +16531,19 @@ pub mod krate {
                                 let len8 = l4;
                                 let mut result8 = _rt::Vec::with_capacity(len8);
                                 for i in 0..len8 {
-                                    let base =
-                                        base8.add(i * (2 * ::core::mem::size_of::<*const u8>()));
+                                    let base = base8
+                                        .add(i * (2 * ::core::mem::size_of::<*const u8>()));
                                     let e8 = {
                                         let l5 = *base.add(0).cast::<*mut u8>();
                                         let l6 = *base
                                             .add(::core::mem::size_of::<*const u8>())
                                             .cast::<usize>();
                                         let len7 = l6;
-                                        let bytes7 =
-                                            _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
+                                        let bytes7 = _rt::Vec::from_raw_parts(
+                                            l5.cast(),
+                                            len7,
+                                            len7,
+                                        );
                                         _rt::string_lift(bytes7)
                                     };
                                     result8.push(e8);
@@ -15832,7 +16553,6 @@ pub mod krate {
                                     len8 * (2 * ::core::mem::size_of::<*const u8>()),
                                     ::core::mem::size_of::<*const u8>(),
                                 );
-
                                 result8
                             };
                             Ok(e)
@@ -15858,15 +16578,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len12 = l11;
-                                            let bytes12 =
-                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
-
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
                                             _rt::string_lift(bytes12)
                                         };
                                         SharedError::Io(e13)
                                     }
                                 };
-
                                 v13
                             };
                             Err(e)
@@ -15887,11 +16608,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -15900,7 +16623,6 @@ pub mod krate {
                         #[link_name = "sync"]
                         fn wit_import1(_: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: *mut u8) {
                         unreachable!()
@@ -15913,7 +16635,6 @@ pub mod krate {
                                 let l3 = i32::from(
                                     *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                 );
-
                                 _rt::bool_lift(l3 as u8)
                             };
                             Ok(e)
@@ -15939,15 +16660,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len7 = l6;
-                                            let bytes7 =
-                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
                                             _rt::string_lift(bytes7)
                                         };
                                         SharedError::Io(e8)
                                     }
                                 };
-
                                 v8
                             };
                             Err(e)
@@ -15958,7 +16680,6 @@ pub mod krate {
                 }
             }
         }
-
         /// Storage shared between one publisher's apps, in a named group.
         ///
         /// A budget app and a reports app from the same publisher can keep one set
@@ -15976,9 +16697,7 @@ pub mod krate {
         pub mod group {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             /// Error returned by a group operation.
             #[derive(Clone)]
@@ -15996,36 +16715,56 @@ pub mod krate {
                 Io(_rt::String),
             }
             impl ::core::fmt::Debug for GroupError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
-                        GroupError::Denied => f.debug_tuple("GroupError::Denied").finish(),
-                        GroupError::NotAMember => f.debug_tuple("GroupError::NotAMember").finish(),
-                        GroupError::InvalidKey => f.debug_tuple("GroupError::InvalidKey").finish(),
-                        GroupError::TooLarge => f.debug_tuple("GroupError::TooLarge").finish(),
-                        GroupError::Io(e) => f.debug_tuple("GroupError::Io").field(e).finish(),
+                        GroupError::Denied => {
+                            f.debug_tuple("GroupError::Denied").finish()
+                        }
+                        GroupError::NotAMember => {
+                            f.debug_tuple("GroupError::NotAMember").finish()
+                        }
+                        GroupError::InvalidKey => {
+                            f.debug_tuple("GroupError::InvalidKey").finish()
+                        }
+                        GroupError::TooLarge => {
+                            f.debug_tuple("GroupError::TooLarge").finish()
+                        }
+                        GroupError::Io(e) => {
+                            f.debug_tuple("GroupError::Io").field(e).finish()
+                        }
                     }
                 }
             }
             impl ::core::fmt::Display for GroupError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     write!(f, "{:?}", self)
                 }
             }
-
             #[cfg(feature = "std")]
             impl std::error::Error for GroupError {}
             #[allow(unused_unsafe, clippy::all)]
             /// Read one value from the group.
-            pub fn get(group: &str, key: &str) -> Result<Option<_rt::Vec<u8>>, GroupError> {
+            pub fn get(
+                group: &str,
+                key: &str,
+            ) -> Result<Option<_rt::Vec<u8>>, GroupError> {
                 unsafe {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = group;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -16038,9 +16777,14 @@ pub mod krate {
                     #[link(wasm_import_module = "krate:store/group@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "get"]
-                        fn wit_import3(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8);
+                        fn wit_import3(
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                        );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import3(
                         _: *mut u8,
@@ -16051,7 +16795,9 @@ pub mod krate {
                     ) {
                         unreachable!()
                     }
-                    unsafe { wit_import3(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1, ptr2) };
+                    unsafe {
+                        wit_import3(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1, ptr2)
+                    };
                     let l4 = i32::from(*ptr2.add(0).cast::<u8>());
                     let result14 = match l4 {
                         0 => {
@@ -16059,7 +16805,6 @@ pub mod krate {
                                 let l5 = i32::from(
                                     *ptr2.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                 );
-
                                 match l5 {
                                     0 => None,
                                     1 => {
@@ -16071,7 +16816,6 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len8 = l7;
-
                                             _rt::Vec::from_raw_parts(l6.cast(), len8, len8)
                                         };
                                         Some(e)
@@ -16101,15 +16845,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len12 = l11;
-                                            let bytes12 =
-                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
-
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
                                             _rt::string_lift(bytes12)
                                         };
                                         GroupError::Io(e13)
                                     }
                                 };
-
                                 v13
                             };
                             Err(e)
@@ -16126,11 +16871,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = group;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -16156,7 +16903,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import4(
                         _: *mut u8,
@@ -16206,15 +16952,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         GroupError::Io(e10)
                                     }
                                 };
-
                                 v10
                             };
                             Err(e)
@@ -16231,11 +16978,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = group;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -16248,9 +16997,14 @@ pub mod krate {
                     #[link(wasm_import_module = "krate:store/group@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "delete"]
-                        fn wit_import3(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8);
+                        fn wit_import3(
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                        );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import3(
                         _: *mut u8,
@@ -16261,7 +17015,9 @@ pub mod krate {
                     ) {
                         unreachable!()
                     }
-                    unsafe { wit_import3(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1, ptr2) };
+                    unsafe {
+                        wit_import3(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1, ptr2)
+                    };
                     let l4 = i32::from(*ptr2.add(0).cast::<u8>());
                     let result10 = match l4 {
                         0 => {
@@ -16288,15 +17044,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len8 = l7;
-                                            let bytes8 =
-                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
                                             _rt::string_lift(bytes8)
                                         };
                                         GroupError::Io(e9)
                                     }
                                 };
-
                                 v9
                             };
                             Err(e)
@@ -16313,11 +17070,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = group;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -16329,7 +17088,6 @@ pub mod krate {
                         #[link_name = "keys"]
                         fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
                         unreachable!()
@@ -16349,17 +17107,19 @@ pub mod krate {
                                 let len9 = l5;
                                 let mut result9 = _rt::Vec::with_capacity(len9);
                                 for i in 0..len9 {
-                                    let base =
-                                        base9.add(i * (2 * ::core::mem::size_of::<*const u8>()));
+                                    let base = base9
+                                        .add(i * (2 * ::core::mem::size_of::<*const u8>()));
                                     let e9 = {
                                         let l6 = *base.add(0).cast::<*mut u8>();
                                         let l7 = *base
                                             .add(::core::mem::size_of::<*const u8>())
                                             .cast::<usize>();
                                         let len8 = l7;
-                                        let bytes8 =
-                                            _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                        let bytes8 = _rt::Vec::from_raw_parts(
+                                            l6.cast(),
+                                            len8,
+                                            len8,
+                                        );
                                         _rt::string_lift(bytes8)
                                     };
                                     result9.push(e9);
@@ -16369,7 +17129,6 @@ pub mod krate {
                                     len9 * (2 * ::core::mem::size_of::<*const u8>()),
                                     ::core::mem::size_of::<*const u8>(),
                                 );
-
                                 result9
                             };
                             Ok(e)
@@ -16394,15 +17153,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len13 = l12;
-                                            let bytes13 =
-                                                _rt::Vec::from_raw_parts(l11.cast(), len13, len13);
-
+                                            let bytes13 = _rt::Vec::from_raw_parts(
+                                                l11.cast(),
+                                                len13,
+                                                len13,
+                                            );
                                             _rt::string_lift(bytes13)
                                         };
                                         GroupError::Io(e14)
                                     }
                                 };
-
                                 v14
                             };
                             Err(e)
@@ -16420,9 +17180,7 @@ pub mod krate {
         pub mod clock {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             #[allow(unused_unsafe, clippy::all)]
             /// Milliseconds since Unix epoch. Wall-clock; can jump.
             pub fn now_millis() -> u64 {
@@ -16433,7 +17191,6 @@ pub mod krate {
                         #[link_name = "now-millis"]
                         fn wit_import0() -> i64;
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import0() -> i64 {
                         unreachable!()
@@ -16453,7 +17210,6 @@ pub mod krate {
                         #[link_name = "monotonic-nanos"]
                         fn wit_import0() -> i64;
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import0() -> i64 {
                         unreachable!()
@@ -16463,15 +17219,12 @@ pub mod krate {
                 }
             }
         }
-
         /// Blocking sleep support for CLI components.
         #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
         pub mod sleep {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             #[allow(unused_unsafe, clippy::all)]
             /// Block the calling task for at least `millis` milliseconds.
@@ -16483,7 +17236,6 @@ pub mod krate {
                         #[link_name = "sleep-millis"]
                         fn wit_import0(_: i32);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import0(_: i32) {
                         unreachable!()
@@ -16499,9 +17251,7 @@ pub mod krate {
         pub mod types {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             /// Window state requested by an app or reported by the host.
             #[repr(u8)]
@@ -16517,36 +17267,41 @@ pub mod krate {
                 Fullscreen,
             }
             impl ::core::fmt::Debug for WindowState {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
-                        WindowState::Normal => f.debug_tuple("WindowState::Normal").finish(),
-                        WindowState::Minimized => f.debug_tuple("WindowState::Minimized").finish(),
-                        WindowState::Maximized => f.debug_tuple("WindowState::Maximized").finish(),
+                        WindowState::Normal => {
+                            f.debug_tuple("WindowState::Normal").finish()
+                        }
+                        WindowState::Minimized => {
+                            f.debug_tuple("WindowState::Minimized").finish()
+                        }
+                        WindowState::Maximized => {
+                            f.debug_tuple("WindowState::Maximized").finish()
+                        }
                         WindowState::Fullscreen => {
                             f.debug_tuple("WindowState::Fullscreen").finish()
                         }
                     }
                 }
             }
-
             impl WindowState {
                 #[doc(hidden)]
                 pub unsafe fn _lift(val: u8) -> WindowState {
                     if !cfg!(debug_assertions) {
                         return ::core::mem::transmute(val);
                     }
-
                     match val {
                         0 => WindowState::Normal,
                         1 => WindowState::Minimized,
                         2 => WindowState::Maximized,
                         3 => WindowState::Fullscreen,
-
                         _ => panic!("invalid enum discriminant"),
                     }
                 }
             }
-
             /// Logical window size in device-independent pixels.
             #[repr(C)]
             #[derive(Clone, Copy)]
@@ -16557,7 +17312,10 @@ pub mod krate {
                 pub height: u32,
             }
             impl ::core::fmt::Debug for WindowSize {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("WindowSize")
                         .field("width", &self.width)
                         .field("height", &self.height)
@@ -16576,7 +17334,10 @@ pub mod krate {
                 Unknown,
             }
             impl ::core::fmt::Debug for Theme {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
                         Theme::Light => f.debug_tuple("Theme::Light").finish(),
                         Theme::Dark => f.debug_tuple("Theme::Dark").finish(),
@@ -16584,24 +17345,20 @@ pub mod krate {
                     }
                 }
             }
-
             impl Theme {
                 #[doc(hidden)]
                 pub unsafe fn _lift(val: u8) -> Theme {
                     if !cfg!(debug_assertions) {
                         return ::core::mem::transmute(val);
                     }
-
                     match val {
                         0 => Theme::Light,
                         1 => Theme::Dark,
                         2 => Theme::Unknown,
-
                         _ => panic!("invalid enum discriminant"),
                     }
                 }
             }
-
             /// Mouse or touch button.
             #[repr(u8)]
             #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
@@ -16616,36 +17373,41 @@ pub mod krate {
                 Other,
             }
             impl ::core::fmt::Debug for PointerButton {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
-                        PointerButton::Primary => f.debug_tuple("PointerButton::Primary").finish(),
+                        PointerButton::Primary => {
+                            f.debug_tuple("PointerButton::Primary").finish()
+                        }
                         PointerButton::Secondary => {
                             f.debug_tuple("PointerButton::Secondary").finish()
                         }
-                        PointerButton::Middle => f.debug_tuple("PointerButton::Middle").finish(),
-                        PointerButton::Other => f.debug_tuple("PointerButton::Other").finish(),
+                        PointerButton::Middle => {
+                            f.debug_tuple("PointerButton::Middle").finish()
+                        }
+                        PointerButton::Other => {
+                            f.debug_tuple("PointerButton::Other").finish()
+                        }
                     }
                 }
             }
-
             impl PointerButton {
                 #[doc(hidden)]
                 pub unsafe fn _lift(val: u8) -> PointerButton {
                     if !cfg!(debug_assertions) {
                         return ::core::mem::transmute(val);
                     }
-
                     match val {
                         0 => PointerButton::Primary,
                         1 => PointerButton::Secondary,
                         2 => PointerButton::Middle,
                         3 => PointerButton::Other,
-
                         _ => panic!("invalid enum discriminant"),
                     }
                 }
             }
-
             /// Keyboard modifier state.
             #[repr(C)]
             #[derive(Clone, Copy)]
@@ -16660,7 +17422,10 @@ pub mod krate {
                 pub meta: bool,
             }
             impl ::core::fmt::Debug for Modifiers {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("Modifiers")
                         .field("shift", &self.shift)
                         .field("control", &self.control)
@@ -16689,7 +17454,10 @@ pub mod krate {
                 pub modifiers: Modifiers,
             }
             impl ::core::fmt::Debug for PointerEvent {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("PointerEvent")
                         .field("window", &self.window)
                         .field("widget", &self.widget)
@@ -16744,7 +17512,10 @@ pub mod krate {
                 pub modifiers: Modifiers,
             }
             impl ::core::fmt::Debug for WheelEvent {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("WheelEvent")
                         .field("window", &self.window)
                         .field("widget", &self.widget)
@@ -16772,7 +17543,10 @@ pub mod krate {
                 pub text: _rt::String,
             }
             impl ::core::fmt::Debug for TextChangedEvent {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("TextChangedEvent")
                         .field("window", &self.window)
                         .field("widget", &self.widget)
@@ -16795,7 +17569,10 @@ pub mod krate {
                 pub modifiers: Modifiers,
             }
             impl ::core::fmt::Debug for KeyEvent {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("KeyEvent")
                         .field("window", &self.window)
                         .field("widget", &self.widget)
@@ -16820,13 +17597,20 @@ pub mod krate {
                 Platform(_rt::String),
             }
             impl ::core::fmt::Debug for UiError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
                         UiError::PermissionDenied => {
                             f.debug_tuple("UiError::PermissionDenied").finish()
                         }
-                        UiError::InvalidWindow => f.debug_tuple("UiError::InvalidWindow").finish(),
-                        UiError::InvalidWidget => f.debug_tuple("UiError::InvalidWidget").finish(),
+                        UiError::InvalidWindow => {
+                            f.debug_tuple("UiError::InvalidWindow").finish()
+                        }
+                        UiError::InvalidWidget => {
+                            f.debug_tuple("UiError::InvalidWidget").finish()
+                        }
                         UiError::Unsupported(e) => {
                             f.debug_tuple("UiError::Unsupported").field(e).finish()
                         }
@@ -16837,11 +17621,13 @@ pub mod krate {
                 }
             }
             impl ::core::fmt::Display for UiError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     write!(f, "{:?}", self)
                 }
             }
-
             #[cfg(feature = "std")]
             impl std::error::Error for UiError {}
             /// Widget type in the portable tree.
@@ -16897,37 +17683,62 @@ pub mod krate {
                 Overlay,
             }
             impl ::core::fmt::Debug for WidgetKind {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
                         WidgetKind::Stack => f.debug_tuple("WidgetKind::Stack").finish(),
                         WidgetKind::Grid => f.debug_tuple("WidgetKind::Grid").finish(),
-                        WidgetKind::Scroll => f.debug_tuple("WidgetKind::Scroll").finish(),
+                        WidgetKind::Scroll => {
+                            f.debug_tuple("WidgetKind::Scroll").finish()
+                        }
                         WidgetKind::Tabs => f.debug_tuple("WidgetKind::Tabs").finish(),
-                        WidgetKind::Button => f.debug_tuple("WidgetKind::Button").finish(),
-                        WidgetKind::Checkbox => f.debug_tuple("WidgetKind::Checkbox").finish(),
+                        WidgetKind::Button => {
+                            f.debug_tuple("WidgetKind::Button").finish()
+                        }
+                        WidgetKind::Checkbox => {
+                            f.debug_tuple("WidgetKind::Checkbox").finish()
+                        }
                         WidgetKind::Radio => f.debug_tuple("WidgetKind::Radio").finish(),
-                        WidgetKind::Switch => f.debug_tuple("WidgetKind::Switch").finish(),
-                        WidgetKind::Slider => f.debug_tuple("WidgetKind::Slider").finish(),
-                        WidgetKind::Progress => f.debug_tuple("WidgetKind::Progress").finish(),
+                        WidgetKind::Switch => {
+                            f.debug_tuple("WidgetKind::Switch").finish()
+                        }
+                        WidgetKind::Slider => {
+                            f.debug_tuple("WidgetKind::Slider").finish()
+                        }
+                        WidgetKind::Progress => {
+                            f.debug_tuple("WidgetKind::Progress").finish()
+                        }
                         WidgetKind::Text => f.debug_tuple("WidgetKind::Text").finish(),
-                        WidgetKind::TextField => f.debug_tuple("WidgetKind::TextField").finish(),
-                        WidgetKind::TextArea => f.debug_tuple("WidgetKind::TextArea").finish(),
-                        WidgetKind::ListView => f.debug_tuple("WidgetKind::ListView").finish(),
-                        WidgetKind::TreeView => f.debug_tuple("WidgetKind::TreeView").finish(),
+                        WidgetKind::TextField => {
+                            f.debug_tuple("WidgetKind::TextField").finish()
+                        }
+                        WidgetKind::TextArea => {
+                            f.debug_tuple("WidgetKind::TextArea").finish()
+                        }
+                        WidgetKind::ListView => {
+                            f.debug_tuple("WidgetKind::ListView").finish()
+                        }
+                        WidgetKind::TreeView => {
+                            f.debug_tuple("WidgetKind::TreeView").finish()
+                        }
                         WidgetKind::Image => f.debug_tuple("WidgetKind::Image").finish(),
-                        WidgetKind::Canvas => f.debug_tuple("WidgetKind::Canvas").finish(),
-                        WidgetKind::Overlay => f.debug_tuple("WidgetKind::Overlay").finish(),
+                        WidgetKind::Canvas => {
+                            f.debug_tuple("WidgetKind::Canvas").finish()
+                        }
+                        WidgetKind::Overlay => {
+                            f.debug_tuple("WidgetKind::Overlay").finish()
+                        }
                     }
                 }
             }
-
             impl WidgetKind {
                 #[doc(hidden)]
                 pub unsafe fn _lift(val: u8) -> WidgetKind {
                     if !cfg!(debug_assertions) {
                         return ::core::mem::transmute(val);
                     }
-
                     match val {
                         0 => WidgetKind::Stack,
                         1 => WidgetKind::Grid,
@@ -16947,12 +17758,10 @@ pub mod krate {
                         15 => WidgetKind::Image,
                         16 => WidgetKind::Canvas,
                         17 => WidgetKind::Overlay,
-
                         _ => panic!("invalid enum discriminant"),
                     }
                 }
             }
-
             /// Caret and selection inside a text widget, as byte offsets into its label.
             ///
             /// Hosts that paint their own text (Linux, Windows) have no native control to
@@ -16970,7 +17779,10 @@ pub mod krate {
                 pub anchor: u32,
             }
             impl ::core::fmt::Debug for TextCursor {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("TextCursor")
                         .field("cursor", &self.cursor)
                         .field("anchor", &self.anchor)
@@ -16995,7 +17807,10 @@ pub mod krate {
                 pub a: u8,
             }
             impl ::core::fmt::Debug for Color {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("Color")
                         .field("r", &self.r)
                         .field("g", &self.g)
@@ -17039,7 +17854,10 @@ pub mod krate {
                 pub bold: bool,
             }
             impl ::core::fmt::Debug for TextStyle {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("TextStyle")
                         .field("color", &self.color)
                         .field("outline", &self.outline)
@@ -17081,7 +17899,10 @@ pub mod krate {
                 pub corner_radius: f32,
             }
             impl ::core::fmt::Debug for BoxStyle {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("BoxStyle")
                         .field("background", &self.background)
                         .field("border", &self.border)
@@ -17118,31 +17939,48 @@ pub mod krate {
                 BottomRight,
             }
             impl ::core::fmt::Debug for Placement {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
-                        Placement::Default => f.debug_tuple("Placement::Default").finish(),
-                        Placement::TopLeft => f.debug_tuple("Placement::TopLeft").finish(),
-                        Placement::TopCentre => f.debug_tuple("Placement::TopCentre").finish(),
-                        Placement::TopRight => f.debug_tuple("Placement::TopRight").finish(),
-                        Placement::CentreLeft => f.debug_tuple("Placement::CentreLeft").finish(),
+                        Placement::Default => {
+                            f.debug_tuple("Placement::Default").finish()
+                        }
+                        Placement::TopLeft => {
+                            f.debug_tuple("Placement::TopLeft").finish()
+                        }
+                        Placement::TopCentre => {
+                            f.debug_tuple("Placement::TopCentre").finish()
+                        }
+                        Placement::TopRight => {
+                            f.debug_tuple("Placement::TopRight").finish()
+                        }
+                        Placement::CentreLeft => {
+                            f.debug_tuple("Placement::CentreLeft").finish()
+                        }
                         Placement::Centre => f.debug_tuple("Placement::Centre").finish(),
-                        Placement::CentreRight => f.debug_tuple("Placement::CentreRight").finish(),
-                        Placement::BottomLeft => f.debug_tuple("Placement::BottomLeft").finish(),
+                        Placement::CentreRight => {
+                            f.debug_tuple("Placement::CentreRight").finish()
+                        }
+                        Placement::BottomLeft => {
+                            f.debug_tuple("Placement::BottomLeft").finish()
+                        }
                         Placement::BottomCentre => {
                             f.debug_tuple("Placement::BottomCentre").finish()
                         }
-                        Placement::BottomRight => f.debug_tuple("Placement::BottomRight").finish(),
+                        Placement::BottomRight => {
+                            f.debug_tuple("Placement::BottomRight").finish()
+                        }
                     }
                 }
             }
-
             impl Placement {
                 #[doc(hidden)]
                 pub unsafe fn _lift(val: u8) -> Placement {
                     if !cfg!(debug_assertions) {
                         return ::core::mem::transmute(val);
                     }
-
                     match val {
                         0 => Placement::Default,
                         1 => Placement::TopLeft,
@@ -17154,12 +17992,10 @@ pub mod krate {
                         7 => Placement::BottomLeft,
                         8 => Placement::BottomCentre,
                         9 => Placement::BottomRight,
-
                         _ => panic!("invalid enum discriminant"),
                     }
                 }
             }
-
             /// Minimal style block for the first widget protocol draft.
             #[repr(C)]
             #[derive(Clone, Copy)]
@@ -17183,7 +18019,10 @@ pub mod krate {
                 pub box_: Option<BoxStyle>,
             }
             impl ::core::fmt::Debug for Style {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("Style")
                         .field("width", &self.width)
                         .field("height", &self.height)
@@ -17222,7 +18061,10 @@ pub mod krate {
                 pub text_cursor: Option<TextCursor>,
             }
             impl ::core::fmt::Debug for WidgetNode {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("WidgetNode")
                         .field("id", &self.id)
                         .field("parent", &self.parent)
@@ -17248,7 +18090,10 @@ pub mod krate {
                 pub enabled: bool,
             }
             impl ::core::fmt::Debug for MenuItem {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("MenuItem")
                         .field("id", &self.id)
                         .field("label", &self.label)
@@ -17274,7 +18119,10 @@ pub mod krate {
                 pub token: _rt::String,
             }
             impl ::core::fmt::Debug for ChosenFile {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("ChosenFile")
                         .field("name", &self.name)
                         .field("token", &self.token)
@@ -17354,23 +18202,36 @@ pub mod krate {
                 FileHovering(bool),
             }
             impl ::core::fmt::Debug for Event {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
                         Event::CloseRequested(e) => {
                             f.debug_tuple("Event::CloseRequested").field(e).finish()
                         }
-                        Event::Resized(e) => f.debug_tuple("Event::Resized").field(e).finish(),
+                        Event::Resized(e) => {
+                            f.debug_tuple("Event::Resized").field(e).finish()
+                        }
                         Event::RedrawRequested(e) => {
                             f.debug_tuple("Event::RedrawRequested").field(e).finish()
                         }
-                        Event::Pointer(e) => f.debug_tuple("Event::Pointer").field(e).finish(),
+                        Event::Pointer(e) => {
+                            f.debug_tuple("Event::Pointer").field(e).finish()
+                        }
                         Event::Key(e) => f.debug_tuple("Event::Key").field(e).finish(),
-                        Event::Wheel(e) => f.debug_tuple("Event::Wheel").field(e).finish(),
-                        Event::TextInput(e) => f.debug_tuple("Event::TextInput").field(e).finish(),
+                        Event::Wheel(e) => {
+                            f.debug_tuple("Event::Wheel").field(e).finish()
+                        }
+                        Event::TextInput(e) => {
+                            f.debug_tuple("Event::TextInput").field(e).finish()
+                        }
                         Event::TextChanged(e) => {
                             f.debug_tuple("Event::TextChanged").field(e).finish()
                         }
-                        Event::Action(e) => f.debug_tuple("Event::Action").field(e).finish(),
+                        Event::Action(e) => {
+                            f.debug_tuple("Event::Action").field(e).finish()
+                        }
                         Event::FocusChanged(e) => {
                             f.debug_tuple("Event::FocusChanged").field(e).finish()
                         }
@@ -17387,15 +18248,12 @@ pub mod krate {
                 }
             }
         }
-
         /// Window lifecycle calls.
         #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
         pub mod window {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             pub type UiError = super::super::super::krate::ui::types::UiError;
             pub type WindowSize = super::super::super::krate::ui::types::WindowSize;
@@ -17406,12 +18264,13 @@ pub mod krate {
                 unsafe {
                     #[repr(align(8))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>;
-                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 16 + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 16
+                            + 2 * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = title;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -17427,7 +18286,6 @@ pub mod krate {
                         #[link_name = "create"]
                         fn wit_import3(_: *mut u8, _: usize, _: i32, _: i32, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import3(
                         _: *mut u8,
@@ -17452,7 +18310,6 @@ pub mod krate {
                         0 => {
                             let e = {
                                 let l5 = *ptr2.add(8).cast::<i64>();
-
                                 l5 as u64
                             };
                             Ok(e)
@@ -17474,9 +18331,11 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V13::Unsupported(e13)
@@ -17491,15 +18350,16 @@ pub mod krate {
                                                 .add(8 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len12 = l11;
-                                            let bytes12 =
-                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
-
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
                                             _rt::string_lift(bytes12)
                                         };
                                         V13::Platform(e13)
                                     }
                                 };
-
                                 v13
                             };
                             Err(e)
@@ -17516,11 +18376,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -17529,7 +18391,6 @@ pub mod krate {
                         #[link_name = "show"]
                         fn wit_import1(_: i64, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
                         unreachable!()
@@ -17560,9 +18421,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len6 = l5;
-                                            let bytes6 =
-                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
                                             _rt::string_lift(bytes6)
                                         };
                                         V10::Unsupported(e10)
@@ -17577,15 +18440,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V10::Platform(e10)
                                     }
                                 };
-
                                 v10
                             };
                             Err(e)
@@ -17602,11 +18466,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -17615,7 +18481,6 @@ pub mod krate {
                         #[link_name = "close"]
                         fn wit_import1(_: i64, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
                         unreachable!()
@@ -17646,9 +18511,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len6 = l5;
-                                            let bytes6 =
-                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
                                             _rt::string_lift(bytes6)
                                         };
                                         V10::Unsupported(e10)
@@ -17663,15 +18530,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V10::Platform(e10)
                                     }
                                 };
-
                                 v10
                             };
                             Err(e)
@@ -17688,11 +18556,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = title;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -17704,12 +18574,18 @@ pub mod krate {
                         #[link_name = "set-title"]
                         fn wit_import2(_: i64, _: *mut u8, _: usize, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
-                    unsafe extern "C" fn wit_import2(_: i64, _: *mut u8, _: usize, _: *mut u8) {
+                    unsafe extern "C" fn wit_import2(
+                        _: i64,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
                         unreachable!()
                     }
-                    unsafe { wit_import2(_rt::as_i64(&window), ptr0.cast_mut(), len0, ptr1) };
+                    unsafe {
+                        wit_import2(_rt::as_i64(&window), ptr0.cast_mut(), len0, ptr1)
+                    };
                     let l3 = i32::from(*ptr1.add(0).cast::<u8>());
                     let result12 = match l3 {
                         0 => {
@@ -17735,9 +18611,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len7 = l6;
-                                            let bytes7 =
-                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
                                             _rt::string_lift(bytes7)
                                         };
                                         V11::Unsupported(e11)
@@ -17752,15 +18630,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len10 = l9;
-                                            let bytes10 =
-                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
                                             _rt::string_lift(bytes10)
                                         };
                                         V11::Platform(e11)
                                     }
                                 };
-
                                 v11
                             };
                             Err(e)
@@ -17777,11 +18656,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let super::super::super::krate::ui::types::WindowSize {
                         width: width0,
@@ -17794,9 +18675,13 @@ pub mod krate {
                         #[link_name = "set-size"]
                         fn wit_import2(_: i64, _: i32, _: i32, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
-                    unsafe extern "C" fn wit_import2(_: i64, _: i32, _: i32, _: *mut u8) {
+                    unsafe extern "C" fn wit_import2(
+                        _: i64,
+                        _: i32,
+                        _: i32,
+                        _: *mut u8,
+                    ) {
                         unreachable!()
                     }
                     unsafe {
@@ -17832,9 +18717,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len7 = l6;
-                                            let bytes7 =
-                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
                                             _rt::string_lift(bytes7)
                                         };
                                         V11::Unsupported(e11)
@@ -17849,15 +18736,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len10 = l9;
-                                            let bytes10 =
-                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
                                             _rt::string_lift(bytes10)
                                         };
                                         V11::Platform(e11)
                                     }
                                 };
-
                                 v11
                             };
                             Err(e)
@@ -17874,11 +18762,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -17887,12 +18777,13 @@ pub mod krate {
                         #[link_name = "set-state"]
                         fn wit_import1(_: i64, _: i32, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i64, _: i32, _: *mut u8) {
                         unreachable!()
                     }
-                    unsafe { wit_import1(_rt::as_i64(&window), state.clone() as i32, ptr0) };
+                    unsafe {
+                        wit_import1(_rt::as_i64(&window), state.clone() as i32, ptr0)
+                    };
                     let l2 = i32::from(*ptr0.add(0).cast::<u8>());
                     let result11 = match l2 {
                         0 => {
@@ -17918,9 +18809,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len6 = l5;
-                                            let bytes6 =
-                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
                                             _rt::string_lift(bytes6)
                                         };
                                         V10::Unsupported(e10)
@@ -17935,15 +18828,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V10::Platform(e10)
                                     }
                                 };
-
                                 v10
                             };
                             Err(e)
@@ -17960,11 +18854,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -17973,7 +18869,6 @@ pub mod krate {
                         #[link_name = "request-redraw"]
                         fn wit_import1(_: i64, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
                         unreachable!()
@@ -18004,9 +18899,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len6 = l5;
-                                            let bytes6 =
-                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
                                             _rt::string_lift(bytes6)
                                         };
                                         V10::Unsupported(e10)
@@ -18021,15 +18918,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V10::Platform(e10)
                                     }
                                 };
-
                                 v10
                             };
                             Err(e)
@@ -18051,11 +18949,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -18064,7 +18964,6 @@ pub mod krate {
                         #[link_name = "set-full-bleed"]
                         fn wit_import1(_: i64, _: i32, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i64, _: i32, _: *mut u8) {
                         unreachable!()
@@ -18104,9 +19003,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len6 = l5;
-                                            let bytes6 =
-                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
                                             _rt::string_lift(bytes6)
                                         };
                                         V10::Unsupported(e10)
@@ -18121,15 +19022,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V10::Platform(e10)
                                     }
                                 };
-
                                 v10
                             };
                             Err(e)
@@ -18140,15 +19042,12 @@ pub mod krate {
                 }
             }
         }
-
         /// Portable widget tree calls.
         #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
         pub mod tree {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             pub type UiError = super::super::super::krate::ui::types::UiError;
             pub type WidgetNode = super::super::super::krate::ui::types::WidgetNode;
@@ -18158,12 +19057,13 @@ pub mod krate {
                 unsafe {
                     #[repr(align(8))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>;
-                            144 + 8 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 144 + 8 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            144 + 8 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 144
+                            + 8 * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     *ptr0.add(0).cast::<i64>() = _rt::as_i64(&window);
@@ -18556,7 +19456,6 @@ pub mod krate {
                         #[link_name = "set-root"]
                         fn wit_import13(_: *mut u8, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import13(_: *mut u8, _: *mut u8) {
                         unreachable!()
@@ -18587,9 +19486,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len18 = l17;
-                                            let bytes18 =
-                                                _rt::Vec::from_raw_parts(l16.cast(), len18, len18);
-
+                                            let bytes18 = _rt::Vec::from_raw_parts(
+                                                l16.cast(),
+                                                len18,
+                                                len18,
+                                            );
                                             _rt::string_lift(bytes18)
                                         };
                                         V22::Unsupported(e22)
@@ -18604,15 +19505,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len21 = l20;
-                                            let bytes21 =
-                                                _rt::Vec::from_raw_parts(l19.cast(), len21, len21);
-
+                                            let bytes21 = _rt::Vec::from_raw_parts(
+                                                l19.cast(),
+                                                len21,
+                                                len21,
+                                            );
                                             _rt::string_lift(bytes21)
                                         };
                                         V22::Platform(e22)
                                     }
                                 };
-
                                 v22
                             };
                             Err(e)
@@ -18628,12 +19530,13 @@ pub mod krate {
                 unsafe {
                     #[repr(align(8))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>;
-                            144 + 8 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 144 + 8 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            144 + 8 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 144
+                            + 8 * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     *ptr0.add(0).cast::<i64>() = _rt::as_i64(&window);
@@ -19026,7 +19929,6 @@ pub mod krate {
                         #[link_name = "upsert-node"]
                         fn wit_import13(_: *mut u8, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import13(_: *mut u8, _: *mut u8) {
                         unreachable!()
@@ -19057,9 +19959,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len18 = l17;
-                                            let bytes18 =
-                                                _rt::Vec::from_raw_parts(l16.cast(), len18, len18);
-
+                                            let bytes18 = _rt::Vec::from_raw_parts(
+                                                l16.cast(),
+                                                len18,
+                                                len18,
+                                            );
                                             _rt::string_lift(bytes18)
                                         };
                                         V22::Unsupported(e22)
@@ -19074,15 +19978,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len21 = l20;
-                                            let bytes21 =
-                                                _rt::Vec::from_raw_parts(l19.cast(), len21, len21);
-
+                                            let bytes21 = _rt::Vec::from_raw_parts(
+                                                l19.cast(),
+                                                len21,
+                                                len21,
+                                            );
                                             _rt::string_lift(bytes21)
                                         };
                                         V22::Platform(e22)
                                     }
                                 };
-
                                 v22
                             };
                             Err(e)
@@ -19099,11 +20004,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -19112,12 +20019,13 @@ pub mod krate {
                         #[link_name = "remove-node"]
                         fn wit_import1(_: i64, _: i64, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i64, _: i64, _: *mut u8) {
                         unreachable!()
                     }
-                    unsafe { wit_import1(_rt::as_i64(&window), _rt::as_i64(&widget), ptr0) };
+                    unsafe {
+                        wit_import1(_rt::as_i64(&window), _rt::as_i64(&widget), ptr0)
+                    };
                     let l2 = i32::from(*ptr0.add(0).cast::<u8>());
                     let result11 = match l2 {
                         0 => {
@@ -19143,9 +20051,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len6 = l5;
-                                            let bytes6 =
-                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
                                             _rt::string_lift(bytes6)
                                         };
                                         V10::Unsupported(e10)
@@ -19160,15 +20070,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V10::Platform(e10)
                                     }
                                 };
-
                                 v10
                             };
                             Err(e)
@@ -19185,11 +20096,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -19198,12 +20111,13 @@ pub mod krate {
                         #[link_name = "focus-node"]
                         fn wit_import1(_: i64, _: i64, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i64, _: i64, _: *mut u8) {
                         unreachable!()
                     }
-                    unsafe { wit_import1(_rt::as_i64(&window), _rt::as_i64(&widget), ptr0) };
+                    unsafe {
+                        wit_import1(_rt::as_i64(&window), _rt::as_i64(&widget), ptr0)
+                    };
                     let l2 = i32::from(*ptr0.add(0).cast::<u8>());
                     let result11 = match l2 {
                         0 => {
@@ -19229,9 +20143,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len6 = l5;
-                                            let bytes6 =
-                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
                                             _rt::string_lift(bytes6)
                                         };
                                         V10::Unsupported(e10)
@@ -19246,15 +20162,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V10::Platform(e10)
                                     }
                                 };
-
                                 v10
                             };
                             Err(e)
@@ -19266,16 +20183,22 @@ pub mod krate {
             }
             #[allow(unused_unsafe, clippy::all)]
             /// Enable or disable a widget.
-            pub fn set_enabled(window: u64, widget: u64, enabled: bool) -> Result<(), UiError> {
+            pub fn set_enabled(
+                window: u64,
+                widget: u64,
+                enabled: bool,
+            ) -> Result<(), UiError> {
                 unsafe {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -19284,9 +20207,13 @@ pub mod krate {
                         #[link_name = "set-enabled"]
                         fn wit_import1(_: i64, _: i64, _: i32, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
-                    unsafe extern "C" fn wit_import1(_: i64, _: i64, _: i32, _: *mut u8) {
+                    unsafe extern "C" fn wit_import1(
+                        _: i64,
+                        _: i64,
+                        _: i32,
+                        _: *mut u8,
+                    ) {
                         unreachable!()
                     }
                     unsafe {
@@ -19325,9 +20252,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len6 = l5;
-                                            let bytes6 =
-                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
                                             _rt::string_lift(bytes6)
                                         };
                                         V10::Unsupported(e10)
@@ -19342,15 +20271,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V10::Platform(e10)
                                     }
                                 };
-
                                 v10
                             };
                             Err(e)
@@ -19361,7 +20291,6 @@ pub mod krate {
                 }
             }
         }
-
         /// Host event delivery calls.
         ///
         /// Events are delivered one at a time in FIFO order. The single-event shape
@@ -19381,9 +20310,7 @@ pub mod krate {
         pub mod image {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             pub type UiError = super::super::super::krate::ui::types::UiError;
             /// Decoded picture data.
@@ -19406,7 +20333,10 @@ pub mod krate {
                 pub rgba: _rt::Vec<u8>,
             }
             impl ::core::fmt::Debug for ImagePixels {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("ImagePixels")
                         .field("width", &self.width)
                         .field("height", &self.height)
@@ -19425,17 +20355,15 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
-                    let ImagePixels {
-                        width: width0,
-                        height: height0,
-                        rgba: rgba0,
-                    } = pixels;
+                    let ImagePixels { width: width0, height: height0, rgba: rgba0 } = pixels;
                     let vec1 = rgba0;
                     let ptr1 = vec1.as_ptr().cast::<u8>();
                     let len1 = vec1.len();
@@ -19454,7 +20382,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import3(
                         _: i64,
@@ -19503,9 +20430,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len8 = l7;
-                                            let bytes8 =
-                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
                                             _rt::string_lift(bytes8)
                                         };
                                         V12::Unsupported(e12)
@@ -19520,15 +20449,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len11 = l10;
-                                            let bytes11 =
-                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
                                             _rt::string_lift(bytes11)
                                         };
                                         V12::Platform(e12)
                                     }
                                 };
-
                                 v12
                             };
                             Err(e)
@@ -19545,11 +20475,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -19558,12 +20490,13 @@ pub mod krate {
                         #[link_name = "clear"]
                         fn wit_import1(_: i64, _: i64, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: i64, _: i64, _: *mut u8) {
                         unreachable!()
                     }
-                    unsafe { wit_import1(_rt::as_i64(&window), _rt::as_i64(&widget), ptr0) };
+                    unsafe {
+                        wit_import1(_rt::as_i64(&window), _rt::as_i64(&widget), ptr0)
+                    };
                     let l2 = i32::from(*ptr0.add(0).cast::<u8>());
                     let result11 = match l2 {
                         0 => {
@@ -19589,9 +20522,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len6 = l5;
-                                            let bytes6 =
-                                                _rt::Vec::from_raw_parts(l4.cast(), len6, len6);
-
+                                            let bytes6 = _rt::Vec::from_raw_parts(
+                                                l4.cast(),
+                                                len6,
+                                                len6,
+                                            );
                                             _rt::string_lift(bytes6)
                                         };
                                         V10::Unsupported(e10)
@@ -19606,15 +20541,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V10::Platform(e10)
                                     }
                                 };
-
                                 v10
                             };
                             Err(e)
@@ -19625,7 +20561,6 @@ pub mod krate {
                 }
             }
         }
-
         /// Host event delivery calls.
         ///
         /// Events are delivered one at a time in FIFO order. The single-event shape
@@ -19637,9 +20572,7 @@ pub mod krate {
         pub mod events {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             pub type Event = super::super::super::krate::ui::types::Event;
             #[allow(unused_unsafe, clippy::all)]
@@ -19656,7 +20589,6 @@ pub mod krate {
                         #[link_name = "poll"]
                         fn wit_import1(_: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: *mut u8) {
                         unreachable!()
@@ -19673,7 +20605,6 @@ pub mod krate {
                                     0 => {
                                         let e61 = {
                                             let l4 = *ptr0.add(16).cast::<i64>();
-
                                             l4 as u64
                                         };
                                         V61::CloseRequested(e61)
@@ -19682,7 +20613,6 @@ pub mod krate {
                                         let e61 = {
                                             let l5 = *ptr0.add(16).cast::<i32>();
                                             let l6 = *ptr0.add(20).cast::<i32>();
-
                                             super::super::super::krate::ui::types::WindowSize {
                                                 width: l5 as u32,
                                                 height: l6 as u32,
@@ -19693,7 +20623,6 @@ pub mod krate {
                                     2 => {
                                         let e61 = {
                                             let l7 = *ptr0.add(16).cast::<i64>();
-
                                             l7 as u64
                                         };
                                         V61::RedrawRequested(e61)
@@ -19710,43 +20639,42 @@ pub mod krate {
                                             let l17 = i32::from(*ptr0.add(52).cast::<u8>());
                                             let l18 = i32::from(*ptr0.add(53).cast::<u8>());
                                             let l19 = i32::from(*ptr0.add(54).cast::<u8>());
-
-                                            super::super::super::krate::ui::types::PointerEvent{
-                        window: l8 as u64,
-                        widget: match l9 {
-                          0 => None,
-                          1 => {
-                            let e = {
-                              let l10 = *ptr0.add(32).cast::<i64>();
-
-                              l10 as u64
-                            };
-                            Some(e)
-                          }
-                          _ => _rt::invalid_enum_discriminant(),
-                        },
-                        x: l11,
-                        y: l12,
-                        button: match l13 {
-                          0 => None,
-                          1 => {
-                            let e = {
-                              let l14 = i32::from(*ptr0.add(49).cast::<u8>());
-
-                              super::super::super::krate::ui::types::PointerButton::_lift(l14 as u8)
-                            };
-                            Some(e)
-                          }
-                          _ => _rt::invalid_enum_discriminant(),
-                        },
-                        pressed: _rt::bool_lift(l15 as u8),
-                        modifiers: super::super::super::krate::ui::types::Modifiers{
-                          shift: _rt::bool_lift(l16 as u8),
-                          control: _rt::bool_lift(l17 as u8),
-                          alt: _rt::bool_lift(l18 as u8),
-                          meta: _rt::bool_lift(l19 as u8),
-                        },
-                      }
+                                            super::super::super::krate::ui::types::PointerEvent {
+                                                window: l8 as u64,
+                                                widget: match l9 {
+                                                    0 => None,
+                                                    1 => {
+                                                        let e = {
+                                                            let l10 = *ptr0.add(32).cast::<i64>();
+                                                            l10 as u64
+                                                        };
+                                                        Some(e)
+                                                    }
+                                                    _ => _rt::invalid_enum_discriminant(),
+                                                },
+                                                x: l11,
+                                                y: l12,
+                                                button: match l13 {
+                                                    0 => None,
+                                                    1 => {
+                                                        let e = {
+                                                            let l14 = i32::from(*ptr0.add(49).cast::<u8>());
+                                                            super::super::super::krate::ui::types::PointerButton::_lift(
+                                                                l14 as u8,
+                                                            )
+                                                        };
+                                                        Some(e)
+                                                    }
+                                                    _ => _rt::invalid_enum_discriminant(),
+                                                },
+                                                pressed: _rt::bool_lift(l15 as u8),
+                                                modifiers: super::super::super::krate::ui::types::Modifiers {
+                                                    shift: _rt::bool_lift(l16 as u8),
+                                                    control: _rt::bool_lift(l17 as u8),
+                                                    alt: _rt::bool_lift(l18 as u8),
+                                                    meta: _rt::bool_lift(l19 as u8),
+                                                },
+                                            }
                                         };
                                         V61::Pointer(e61)
                                     }
@@ -19759,72 +20687,58 @@ pub mod krate {
                                                 .add(40 + 1 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len25 = l24;
-                                            let bytes25 =
-                                                _rt::Vec::from_raw_parts(l23.cast(), len25, len25);
+                                            let bytes25 = _rt::Vec::from_raw_parts(
+                                                l23.cast(),
+                                                len25,
+                                                len25,
+                                            );
                                             let l26 = i32::from(
                                                 *ptr0
-                                                    .add(
-                                                        40 + 2 * ::core::mem::size_of::<*const u8>(
-                                                        ),
-                                                    )
+                                                    .add(40 + 2 * ::core::mem::size_of::<*const u8>())
                                                     .cast::<u8>(),
                                             );
                                             let l27 = i32::from(
                                                 *ptr0
-                                                    .add(
-                                                        41 + 2 * ::core::mem::size_of::<*const u8>(
-                                                        ),
-                                                    )
+                                                    .add(41 + 2 * ::core::mem::size_of::<*const u8>())
                                                     .cast::<u8>(),
                                             );
                                             let l28 = i32::from(
                                                 *ptr0
-                                                    .add(
-                                                        42 + 2 * ::core::mem::size_of::<*const u8>(
-                                                        ),
-                                                    )
+                                                    .add(42 + 2 * ::core::mem::size_of::<*const u8>())
                                                     .cast::<u8>(),
                                             );
                                             let l29 = i32::from(
                                                 *ptr0
-                                                    .add(
-                                                        43 + 2 * ::core::mem::size_of::<*const u8>(
-                                                        ),
-                                                    )
+                                                    .add(43 + 2 * ::core::mem::size_of::<*const u8>())
                                                     .cast::<u8>(),
                                             );
                                             let l30 = i32::from(
                                                 *ptr0
-                                                    .add(
-                                                        44 + 2 * ::core::mem::size_of::<*const u8>(
-                                                        ),
-                                                    )
+                                                    .add(44 + 2 * ::core::mem::size_of::<*const u8>())
                                                     .cast::<u8>(),
                                             );
-
-                                            super::super::super::krate::ui::types::KeyEvent{
-                        window: l20 as u64,
-                        widget: match l21 {
-                          0 => None,
-                          1 => {
-                            let e = {
-                              let l22 = *ptr0.add(32).cast::<i64>();
-
-                              l22 as u64
-                            };
-                            Some(e)
-                          }
-                          _ => _rt::invalid_enum_discriminant(),
-                        },
-                        key: _rt::string_lift(bytes25),
-                        pressed: _rt::bool_lift(l26 as u8),
-                        modifiers: super::super::super::krate::ui::types::Modifiers{
-                          shift: _rt::bool_lift(l27 as u8),
-                          control: _rt::bool_lift(l28 as u8),
-                          alt: _rt::bool_lift(l29 as u8),
-                          meta: _rt::bool_lift(l30 as u8),
-                        },
-                      }
+                                            super::super::super::krate::ui::types::KeyEvent {
+                                                window: l20 as u64,
+                                                widget: match l21 {
+                                                    0 => None,
+                                                    1 => {
+                                                        let e = {
+                                                            let l22 = *ptr0.add(32).cast::<i64>();
+                                                            l22 as u64
+                                                        };
+                                                        Some(e)
+                                                    }
+                                                    _ => _rt::invalid_enum_discriminant(),
+                                                },
+                                                key: _rt::string_lift(bytes25),
+                                                pressed: _rt::bool_lift(l26 as u8),
+                                                modifiers: super::super::super::krate::ui::types::Modifiers {
+                                                    shift: _rt::bool_lift(l27 as u8),
+                                                    control: _rt::bool_lift(l28 as u8),
+                                                    alt: _rt::bool_lift(l29 as u8),
+                                                    meta: _rt::bool_lift(l30 as u8),
+                                                },
+                                            }
                                         };
                                         V61::Key(e61)
                                     }
@@ -19840,32 +20754,30 @@ pub mod krate {
                                             let l39 = i32::from(*ptr0.add(57).cast::<u8>());
                                             let l40 = i32::from(*ptr0.add(58).cast::<u8>());
                                             let l41 = i32::from(*ptr0.add(59).cast::<u8>());
-
-                                            super::super::super::krate::ui::types::WheelEvent{
-                        window: l31 as u64,
-                        widget: match l32 {
-                          0 => None,
-                          1 => {
-                            let e = {
-                              let l33 = *ptr0.add(32).cast::<i64>();
-
-                              l33 as u64
-                            };
-                            Some(e)
-                          }
-                          _ => _rt::invalid_enum_discriminant(),
-                        },
-                        x: l34,
-                        y: l35,
-                        dx: l36,
-                        dy: l37,
-                        modifiers: super::super::super::krate::ui::types::Modifiers{
-                          shift: _rt::bool_lift(l38 as u8),
-                          control: _rt::bool_lift(l39 as u8),
-                          alt: _rt::bool_lift(l40 as u8),
-                          meta: _rt::bool_lift(l41 as u8),
-                        },
-                      }
+                                            super::super::super::krate::ui::types::WheelEvent {
+                                                window: l31 as u64,
+                                                widget: match l32 {
+                                                    0 => None,
+                                                    1 => {
+                                                        let e = {
+                                                            let l33 = *ptr0.add(32).cast::<i64>();
+                                                            l33 as u64
+                                                        };
+                                                        Some(e)
+                                                    }
+                                                    _ => _rt::invalid_enum_discriminant(),
+                                                },
+                                                x: l34,
+                                                y: l35,
+                                                dx: l36,
+                                                dy: l37,
+                                                modifiers: super::super::super::krate::ui::types::Modifiers {
+                                                    shift: _rt::bool_lift(l38 as u8),
+                                                    control: _rt::bool_lift(l39 as u8),
+                                                    alt: _rt::bool_lift(l40 as u8),
+                                                    meta: _rt::bool_lift(l41 as u8),
+                                                },
+                                            }
                                         };
                                         V61::Wheel(e61)
                                     }
@@ -19876,9 +20788,11 @@ pub mod krate {
                                                 .add(16 + 1 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len44 = l43;
-                                            let bytes44 =
-                                                _rt::Vec::from_raw_parts(l42.cast(), len44, len44);
-
+                                            let bytes44 = _rt::Vec::from_raw_parts(
+                                                l42.cast(),
+                                                len44,
+                                                len44,
+                                            );
                                             _rt::string_lift(bytes44)
                                         };
                                         V61::TextInput(e61)
@@ -19892,21 +20806,22 @@ pub mod krate {
                                                 .add(32 + 1 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len49 = l48;
-                                            let bytes49 =
-                                                _rt::Vec::from_raw_parts(l47.cast(), len49, len49);
-
-                                            super::super::super::krate::ui::types::TextChangedEvent{
-                        window: l45 as u64,
-                        widget: l46 as u64,
-                        text: _rt::string_lift(bytes49),
-                      }
+                                            let bytes49 = _rt::Vec::from_raw_parts(
+                                                l47.cast(),
+                                                len49,
+                                                len49,
+                                            );
+                                            super::super::super::krate::ui::types::TextChangedEvent {
+                                                window: l45 as u64,
+                                                widget: l46 as u64,
+                                                text: _rt::string_lift(bytes49),
+                                            }
                                         };
                                         V61::TextChanged(e61)
                                     }
                                     8 => {
                                         let e61 = {
                                             let l50 = *ptr0.add(16).cast::<i64>();
-
                                             l50 as u64
                                         };
                                         V61::Action(e61)
@@ -19914,13 +20829,11 @@ pub mod krate {
                                     9 => {
                                         let e61 = {
                                             let l51 = i32::from(*ptr0.add(16).cast::<u8>());
-
                                             match l51 {
                                                 0 => None,
                                                 1 => {
                                                     let e = {
                                                         let l52 = *ptr0.add(24).cast::<i64>();
-
                                                         l52 as u64
                                                     };
                                                     Some(e)
@@ -19933,7 +20846,6 @@ pub mod krate {
                                     10 => {
                                         let e61 = {
                                             let l53 = i32::from(*ptr0.add(16).cast::<u8>());
-
                                             super::super::super::krate::ui::types::Theme::_lift(
                                                 l53 as u8,
                                             )
@@ -19947,8 +20859,11 @@ pub mod krate {
                                                 .add(16 + 1 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len56 = l55;
-                                            let bytes56 =
-                                                _rt::Vec::from_raw_parts(l54.cast(), len56, len56);
+                                            let bytes56 = _rt::Vec::from_raw_parts(
+                                                l54.cast(),
+                                                len56,
+                                                len56,
+                                            );
                                             let l57 = *ptr0
                                                 .add(16 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<*mut u8>();
@@ -19956,9 +20871,11 @@ pub mod krate {
                                                 .add(16 + 3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len59 = l58;
-                                            let bytes59 =
-                                                _rt::Vec::from_raw_parts(l57.cast(), len59, len59);
-
+                                            let bytes59 = _rt::Vec::from_raw_parts(
+                                                l57.cast(),
+                                                len59,
+                                                len59,
+                                            );
                                             super::super::super::krate::ui::types::ChosenFile {
                                                 name: _rt::string_lift(bytes56),
                                                 token: _rt::string_lift(bytes59),
@@ -19970,13 +20887,11 @@ pub mod krate {
                                         debug_assert_eq!(n, 12, "invalid enum discriminant");
                                         let e61 = {
                                             let l60 = i32::from(*ptr0.add(16).cast::<u8>());
-
                                             _rt::bool_lift(l60 as u8)
                                         };
                                         V61::FileHovering(e61)
                                     }
                                 };
-
                                 v61
                             };
                             Some(e)
@@ -20004,7 +20919,6 @@ pub mod krate {
                         #[link_name = "wait"]
                         fn wit_import2(_: i32, _: i32, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import2(_: i32, _: i32, _: *mut u8) {
                         unreachable!()
@@ -20021,7 +20935,6 @@ pub mod krate {
                                     0 => {
                                         let e62 = {
                                             let l5 = *ptr1.add(16).cast::<i64>();
-
                                             l5 as u64
                                         };
                                         V62::CloseRequested(e62)
@@ -20030,7 +20943,6 @@ pub mod krate {
                                         let e62 = {
                                             let l6 = *ptr1.add(16).cast::<i32>();
                                             let l7 = *ptr1.add(20).cast::<i32>();
-
                                             super::super::super::krate::ui::types::WindowSize {
                                                 width: l6 as u32,
                                                 height: l7 as u32,
@@ -20041,7 +20953,6 @@ pub mod krate {
                                     2 => {
                                         let e62 = {
                                             let l8 = *ptr1.add(16).cast::<i64>();
-
                                             l8 as u64
                                         };
                                         V62::RedrawRequested(e62)
@@ -20058,43 +20969,42 @@ pub mod krate {
                                             let l18 = i32::from(*ptr1.add(52).cast::<u8>());
                                             let l19 = i32::from(*ptr1.add(53).cast::<u8>());
                                             let l20 = i32::from(*ptr1.add(54).cast::<u8>());
-
-                                            super::super::super::krate::ui::types::PointerEvent{
-                        window: l9 as u64,
-                        widget: match l10 {
-                          0 => None,
-                          1 => {
-                            let e = {
-                              let l11 = *ptr1.add(32).cast::<i64>();
-
-                              l11 as u64
-                            };
-                            Some(e)
-                          }
-                          _ => _rt::invalid_enum_discriminant(),
-                        },
-                        x: l12,
-                        y: l13,
-                        button: match l14 {
-                          0 => None,
-                          1 => {
-                            let e = {
-                              let l15 = i32::from(*ptr1.add(49).cast::<u8>());
-
-                              super::super::super::krate::ui::types::PointerButton::_lift(l15 as u8)
-                            };
-                            Some(e)
-                          }
-                          _ => _rt::invalid_enum_discriminant(),
-                        },
-                        pressed: _rt::bool_lift(l16 as u8),
-                        modifiers: super::super::super::krate::ui::types::Modifiers{
-                          shift: _rt::bool_lift(l17 as u8),
-                          control: _rt::bool_lift(l18 as u8),
-                          alt: _rt::bool_lift(l19 as u8),
-                          meta: _rt::bool_lift(l20 as u8),
-                        },
-                      }
+                                            super::super::super::krate::ui::types::PointerEvent {
+                                                window: l9 as u64,
+                                                widget: match l10 {
+                                                    0 => None,
+                                                    1 => {
+                                                        let e = {
+                                                            let l11 = *ptr1.add(32).cast::<i64>();
+                                                            l11 as u64
+                                                        };
+                                                        Some(e)
+                                                    }
+                                                    _ => _rt::invalid_enum_discriminant(),
+                                                },
+                                                x: l12,
+                                                y: l13,
+                                                button: match l14 {
+                                                    0 => None,
+                                                    1 => {
+                                                        let e = {
+                                                            let l15 = i32::from(*ptr1.add(49).cast::<u8>());
+                                                            super::super::super::krate::ui::types::PointerButton::_lift(
+                                                                l15 as u8,
+                                                            )
+                                                        };
+                                                        Some(e)
+                                                    }
+                                                    _ => _rt::invalid_enum_discriminant(),
+                                                },
+                                                pressed: _rt::bool_lift(l16 as u8),
+                                                modifiers: super::super::super::krate::ui::types::Modifiers {
+                                                    shift: _rt::bool_lift(l17 as u8),
+                                                    control: _rt::bool_lift(l18 as u8),
+                                                    alt: _rt::bool_lift(l19 as u8),
+                                                    meta: _rt::bool_lift(l20 as u8),
+                                                },
+                                            }
                                         };
                                         V62::Pointer(e62)
                                     }
@@ -20107,72 +21017,58 @@ pub mod krate {
                                                 .add(40 + 1 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len26 = l25;
-                                            let bytes26 =
-                                                _rt::Vec::from_raw_parts(l24.cast(), len26, len26);
+                                            let bytes26 = _rt::Vec::from_raw_parts(
+                                                l24.cast(),
+                                                len26,
+                                                len26,
+                                            );
                                             let l27 = i32::from(
                                                 *ptr1
-                                                    .add(
-                                                        40 + 2 * ::core::mem::size_of::<*const u8>(
-                                                        ),
-                                                    )
+                                                    .add(40 + 2 * ::core::mem::size_of::<*const u8>())
                                                     .cast::<u8>(),
                                             );
                                             let l28 = i32::from(
                                                 *ptr1
-                                                    .add(
-                                                        41 + 2 * ::core::mem::size_of::<*const u8>(
-                                                        ),
-                                                    )
+                                                    .add(41 + 2 * ::core::mem::size_of::<*const u8>())
                                                     .cast::<u8>(),
                                             );
                                             let l29 = i32::from(
                                                 *ptr1
-                                                    .add(
-                                                        42 + 2 * ::core::mem::size_of::<*const u8>(
-                                                        ),
-                                                    )
+                                                    .add(42 + 2 * ::core::mem::size_of::<*const u8>())
                                                     .cast::<u8>(),
                                             );
                                             let l30 = i32::from(
                                                 *ptr1
-                                                    .add(
-                                                        43 + 2 * ::core::mem::size_of::<*const u8>(
-                                                        ),
-                                                    )
+                                                    .add(43 + 2 * ::core::mem::size_of::<*const u8>())
                                                     .cast::<u8>(),
                                             );
                                             let l31 = i32::from(
                                                 *ptr1
-                                                    .add(
-                                                        44 + 2 * ::core::mem::size_of::<*const u8>(
-                                                        ),
-                                                    )
+                                                    .add(44 + 2 * ::core::mem::size_of::<*const u8>())
                                                     .cast::<u8>(),
                                             );
-
-                                            super::super::super::krate::ui::types::KeyEvent{
-                        window: l21 as u64,
-                        widget: match l22 {
-                          0 => None,
-                          1 => {
-                            let e = {
-                              let l23 = *ptr1.add(32).cast::<i64>();
-
-                              l23 as u64
-                            };
-                            Some(e)
-                          }
-                          _ => _rt::invalid_enum_discriminant(),
-                        },
-                        key: _rt::string_lift(bytes26),
-                        pressed: _rt::bool_lift(l27 as u8),
-                        modifiers: super::super::super::krate::ui::types::Modifiers{
-                          shift: _rt::bool_lift(l28 as u8),
-                          control: _rt::bool_lift(l29 as u8),
-                          alt: _rt::bool_lift(l30 as u8),
-                          meta: _rt::bool_lift(l31 as u8),
-                        },
-                      }
+                                            super::super::super::krate::ui::types::KeyEvent {
+                                                window: l21 as u64,
+                                                widget: match l22 {
+                                                    0 => None,
+                                                    1 => {
+                                                        let e = {
+                                                            let l23 = *ptr1.add(32).cast::<i64>();
+                                                            l23 as u64
+                                                        };
+                                                        Some(e)
+                                                    }
+                                                    _ => _rt::invalid_enum_discriminant(),
+                                                },
+                                                key: _rt::string_lift(bytes26),
+                                                pressed: _rt::bool_lift(l27 as u8),
+                                                modifiers: super::super::super::krate::ui::types::Modifiers {
+                                                    shift: _rt::bool_lift(l28 as u8),
+                                                    control: _rt::bool_lift(l29 as u8),
+                                                    alt: _rt::bool_lift(l30 as u8),
+                                                    meta: _rt::bool_lift(l31 as u8),
+                                                },
+                                            }
                                         };
                                         V62::Key(e62)
                                     }
@@ -20188,32 +21084,30 @@ pub mod krate {
                                             let l40 = i32::from(*ptr1.add(57).cast::<u8>());
                                             let l41 = i32::from(*ptr1.add(58).cast::<u8>());
                                             let l42 = i32::from(*ptr1.add(59).cast::<u8>());
-
-                                            super::super::super::krate::ui::types::WheelEvent{
-                        window: l32 as u64,
-                        widget: match l33 {
-                          0 => None,
-                          1 => {
-                            let e = {
-                              let l34 = *ptr1.add(32).cast::<i64>();
-
-                              l34 as u64
-                            };
-                            Some(e)
-                          }
-                          _ => _rt::invalid_enum_discriminant(),
-                        },
-                        x: l35,
-                        y: l36,
-                        dx: l37,
-                        dy: l38,
-                        modifiers: super::super::super::krate::ui::types::Modifiers{
-                          shift: _rt::bool_lift(l39 as u8),
-                          control: _rt::bool_lift(l40 as u8),
-                          alt: _rt::bool_lift(l41 as u8),
-                          meta: _rt::bool_lift(l42 as u8),
-                        },
-                      }
+                                            super::super::super::krate::ui::types::WheelEvent {
+                                                window: l32 as u64,
+                                                widget: match l33 {
+                                                    0 => None,
+                                                    1 => {
+                                                        let e = {
+                                                            let l34 = *ptr1.add(32).cast::<i64>();
+                                                            l34 as u64
+                                                        };
+                                                        Some(e)
+                                                    }
+                                                    _ => _rt::invalid_enum_discriminant(),
+                                                },
+                                                x: l35,
+                                                y: l36,
+                                                dx: l37,
+                                                dy: l38,
+                                                modifiers: super::super::super::krate::ui::types::Modifiers {
+                                                    shift: _rt::bool_lift(l39 as u8),
+                                                    control: _rt::bool_lift(l40 as u8),
+                                                    alt: _rt::bool_lift(l41 as u8),
+                                                    meta: _rt::bool_lift(l42 as u8),
+                                                },
+                                            }
                                         };
                                         V62::Wheel(e62)
                                     }
@@ -20224,9 +21118,11 @@ pub mod krate {
                                                 .add(16 + 1 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len45 = l44;
-                                            let bytes45 =
-                                                _rt::Vec::from_raw_parts(l43.cast(), len45, len45);
-
+                                            let bytes45 = _rt::Vec::from_raw_parts(
+                                                l43.cast(),
+                                                len45,
+                                                len45,
+                                            );
                                             _rt::string_lift(bytes45)
                                         };
                                         V62::TextInput(e62)
@@ -20240,21 +21136,22 @@ pub mod krate {
                                                 .add(32 + 1 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len50 = l49;
-                                            let bytes50 =
-                                                _rt::Vec::from_raw_parts(l48.cast(), len50, len50);
-
-                                            super::super::super::krate::ui::types::TextChangedEvent{
-                        window: l46 as u64,
-                        widget: l47 as u64,
-                        text: _rt::string_lift(bytes50),
-                      }
+                                            let bytes50 = _rt::Vec::from_raw_parts(
+                                                l48.cast(),
+                                                len50,
+                                                len50,
+                                            );
+                                            super::super::super::krate::ui::types::TextChangedEvent {
+                                                window: l46 as u64,
+                                                widget: l47 as u64,
+                                                text: _rt::string_lift(bytes50),
+                                            }
                                         };
                                         V62::TextChanged(e62)
                                     }
                                     8 => {
                                         let e62 = {
                                             let l51 = *ptr1.add(16).cast::<i64>();
-
                                             l51 as u64
                                         };
                                         V62::Action(e62)
@@ -20262,13 +21159,11 @@ pub mod krate {
                                     9 => {
                                         let e62 = {
                                             let l52 = i32::from(*ptr1.add(16).cast::<u8>());
-
                                             match l52 {
                                                 0 => None,
                                                 1 => {
                                                     let e = {
                                                         let l53 = *ptr1.add(24).cast::<i64>();
-
                                                         l53 as u64
                                                     };
                                                     Some(e)
@@ -20281,7 +21176,6 @@ pub mod krate {
                                     10 => {
                                         let e62 = {
                                             let l54 = i32::from(*ptr1.add(16).cast::<u8>());
-
                                             super::super::super::krate::ui::types::Theme::_lift(
                                                 l54 as u8,
                                             )
@@ -20295,8 +21189,11 @@ pub mod krate {
                                                 .add(16 + 1 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len57 = l56;
-                                            let bytes57 =
-                                                _rt::Vec::from_raw_parts(l55.cast(), len57, len57);
+                                            let bytes57 = _rt::Vec::from_raw_parts(
+                                                l55.cast(),
+                                                len57,
+                                                len57,
+                                            );
                                             let l58 = *ptr1
                                                 .add(16 + 2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<*mut u8>();
@@ -20304,9 +21201,11 @@ pub mod krate {
                                                 .add(16 + 3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len60 = l59;
-                                            let bytes60 =
-                                                _rt::Vec::from_raw_parts(l58.cast(), len60, len60);
-
+                                            let bytes60 = _rt::Vec::from_raw_parts(
+                                                l58.cast(),
+                                                len60,
+                                                len60,
+                                            );
                                             super::super::super::krate::ui::types::ChosenFile {
                                                 name: _rt::string_lift(bytes57),
                                                 token: _rt::string_lift(bytes60),
@@ -20318,13 +21217,11 @@ pub mod krate {
                                         debug_assert_eq!(n, 12, "invalid enum discriminant");
                                         let e62 = {
                                             let l61 = i32::from(*ptr1.add(16).cast::<u8>());
-
                                             _rt::bool_lift(l61 as u8)
                                         };
                                         V62::FileHovering(e62)
                                     }
                                 };
-
                                 v62
                             };
                             Some(e)
@@ -20350,14 +21247,12 @@ pub mod krate {
                     let vec0 = key;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
                     let len0 = vec0.len();
-
                     #[cfg(target_arch = "wasm32")]
                     #[link(wasm_import_module = "krate:ui/events@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "key-held"]
                         fn wit_import1(_: *mut u8, _: usize) -> i32;
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: *mut u8, _: usize) -> i32 {
                         unreachable!()
@@ -20380,7 +21275,6 @@ pub mod krate {
                         #[link_name = "gamepad-connected"]
                         fn wit_import0() -> i32;
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import0() -> i32 {
                         unreachable!()
@@ -20405,14 +21299,12 @@ pub mod krate {
                     let vec0 = button;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
                     let len0 = vec0.len();
-
                     #[cfg(target_arch = "wasm32")]
                     #[link(wasm_import_module = "krate:ui/events@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "gamepad-held"]
                         fn wit_import1(_: *mut u8, _: usize) -> i32;
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: *mut u8, _: usize) -> i32 {
                         unreachable!()
@@ -20436,14 +21328,12 @@ pub mod krate {
                     let vec0 = axis;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
                     let len0 = vec0.len();
-
                     #[cfg(target_arch = "wasm32")]
                     #[link(wasm_import_module = "krate:ui/events@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "gamepad-axis"]
                         fn wit_import1(_: *mut u8, _: usize) -> f32;
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: *mut u8, _: usize) -> f32 {
                         unreachable!()
@@ -20453,15 +21343,12 @@ pub mod krate {
                 }
             }
         }
-
         /// System dialog calls.
         #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
         pub mod dialog {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             pub type ChosenFile = super::super::super::krate::ui::types::ChosenFile;
             pub type UiError = super::super::super::krate::ui::types::UiError;
@@ -20476,7 +21363,10 @@ pub mod krate {
                 pub token: _rt::String,
             }
             impl ::core::fmt::Debug for ChosenFolder {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     f.debug_struct("ChosenFolder")
                         .field("name", &self.name)
                         .field("token", &self.token)
@@ -20490,11 +21380,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = title;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -20516,7 +21408,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import3(
                         _: i64,
@@ -20563,9 +21454,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len8 = l7;
-                                            let bytes8 =
-                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
                                             _rt::string_lift(bytes8)
                                         };
                                         V12::Unsupported(e12)
@@ -20580,15 +21473,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len11 = l10;
-                                            let bytes11 =
-                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
                                             _rt::string_lift(bytes11)
                                         };
                                         V12::Platform(e12)
                                     }
                                 };
-
                                 v12
                             };
                             Err(e)
@@ -20600,16 +21494,22 @@ pub mod krate {
             }
             #[allow(unused_unsafe, clippy::all)]
             /// Ask a yes/no question and return true for yes.
-            pub fn confirm(window: u64, title: &str, body: &str) -> Result<bool, UiError> {
+            pub fn confirm(
+                window: u64,
+                title: &str,
+                body: &str,
+            ) -> Result<bool, UiError> {
                 unsafe {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = title;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -20631,7 +21531,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import3(
                         _: i64,
@@ -20660,7 +21559,6 @@ pub mod krate {
                                 let l5 = i32::from(
                                     *ptr2.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                 );
-
                                 _rt::bool_lift(l5 as u8)
                             };
                             Ok(e)
@@ -20684,9 +21582,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V13::Unsupported(e13)
@@ -20701,15 +21601,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len12 = l11;
-                                            let bytes12 =
-                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
-
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
                                             _rt::string_lift(bytes12)
                                         };
                                         V13::Platform(e13)
                                     }
                                 };
-
                                 v13
                             };
                             Err(e)
@@ -20748,11 +21649,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 6 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 6 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            6 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 6
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = title;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -20774,7 +21677,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import3(
                         _: i64,
@@ -20803,7 +21705,6 @@ pub mod krate {
                                 let l5 = i32::from(
                                     *ptr2.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                 );
-
                                 match l5 {
                                     0 => None,
                                     1 => {
@@ -20815,8 +21716,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len8 = l7;
-                                            let bytes8 =
-                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
                                             let l9 = *ptr2
                                                 .add(4 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<*mut u8>();
@@ -20824,9 +21728,11 @@ pub mod krate {
                                                 .add(5 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len11 = l10;
-                                            let bytes11 =
-                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
                                             super::super::super::krate::ui::types::ChosenFile {
                                                 name: _rt::string_lift(bytes8),
                                                 token: _rt::string_lift(bytes11),
@@ -20858,9 +21764,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len15 = l14;
-                                            let bytes15 =
-                                                _rt::Vec::from_raw_parts(l13.cast(), len15, len15);
-
+                                            let bytes15 = _rt::Vec::from_raw_parts(
+                                                l13.cast(),
+                                                len15,
+                                                len15,
+                                            );
                                             _rt::string_lift(bytes15)
                                         };
                                         V19::Unsupported(e19)
@@ -20875,15 +21783,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len18 = l17;
-                                            let bytes18 =
-                                                _rt::Vec::from_raw_parts(l16.cast(), len18, len18);
-
+                                            let bytes18 = _rt::Vec::from_raw_parts(
+                                                l16.cast(),
+                                                len18,
+                                                len18,
+                                            );
                                             _rt::string_lift(bytes18)
                                         };
                                         V19::Platform(e19)
                                     }
                                 };
-
                                 v19
                             };
                             Err(e)
@@ -20926,11 +21835,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 6 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 6 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            6 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 6
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = title;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -20957,7 +21868,6 @@ pub mod krate {
                             _: *mut u8,
                         );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import4(
                         _: i64,
@@ -20990,7 +21900,6 @@ pub mod krate {
                                 let l6 = i32::from(
                                     *ptr3.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                 );
-
                                 match l6 {
                                     0 => None,
                                     1 => {
@@ -21002,8 +21911,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             let l10 = *ptr3
                                                 .add(4 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<*mut u8>();
@@ -21011,9 +21923,11 @@ pub mod krate {
                                                 .add(5 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len12 = l11;
-                                            let bytes12 =
-                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
-
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
                                             super::super::super::krate::ui::types::ChosenFile {
                                                 name: _rt::string_lift(bytes9),
                                                 token: _rt::string_lift(bytes12),
@@ -21045,9 +21959,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len16 = l15;
-                                            let bytes16 =
-                                                _rt::Vec::from_raw_parts(l14.cast(), len16, len16);
-
+                                            let bytes16 = _rt::Vec::from_raw_parts(
+                                                l14.cast(),
+                                                len16,
+                                                len16,
+                                            );
                                             _rt::string_lift(bytes16)
                                         };
                                         V20::Unsupported(e20)
@@ -21062,15 +21978,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len19 = l18;
-                                            let bytes19 =
-                                                _rt::Vec::from_raw_parts(l17.cast(), len19, len19);
-
+                                            let bytes19 = _rt::Vec::from_raw_parts(
+                                                l17.cast(),
+                                                len19,
+                                                len19,
+                                            );
                                             _rt::string_lift(bytes19)
                                         };
                                         V20::Platform(e20)
                                     }
                                 };
-
                                 v20
                             };
                             Err(e)
@@ -21093,16 +22010,21 @@ pub mod krate {
             ///
             /// `none` means they cancelled, which is a normal outcome and not an
             /// error. Requires the `ui.dialog:open-folder` capability.
-            pub fn open_folder(window: u64, title: &str) -> Result<Option<ChosenFolder>, UiError> {
+            pub fn open_folder(
+                window: u64,
+                title: &str,
+            ) -> Result<Option<ChosenFolder>, UiError> {
                 unsafe {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 6 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 6 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            6 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 6
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = title;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -21114,12 +22036,18 @@ pub mod krate {
                         #[link_name = "open-folder"]
                         fn wit_import2(_: i64, _: *mut u8, _: usize, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
-                    unsafe extern "C" fn wit_import2(_: i64, _: *mut u8, _: usize, _: *mut u8) {
+                    unsafe extern "C" fn wit_import2(
+                        _: i64,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
                         unreachable!()
                     }
-                    unsafe { wit_import2(_rt::as_i64(&window), ptr0.cast_mut(), len0, ptr1) };
+                    unsafe {
+                        wit_import2(_rt::as_i64(&window), ptr0.cast_mut(), len0, ptr1)
+                    };
                     let l3 = i32::from(*ptr1.add(0).cast::<u8>());
                     let result19 = match l3 {
                         0 => {
@@ -21127,7 +22055,6 @@ pub mod krate {
                                 let l4 = i32::from(
                                     *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                 );
-
                                 match l4 {
                                     0 => None,
                                     1 => {
@@ -21139,8 +22066,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len7 = l6;
-                                            let bytes7 =
-                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
                                             let l8 = *ptr1
                                                 .add(4 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<*mut u8>();
@@ -21148,9 +22078,11 @@ pub mod krate {
                                                 .add(5 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len10 = l9;
-                                            let bytes10 =
-                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
                                             ChosenFolder {
                                                 name: _rt::string_lift(bytes7),
                                                 token: _rt::string_lift(bytes10),
@@ -21182,9 +22114,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len14 = l13;
-                                            let bytes14 =
-                                                _rt::Vec::from_raw_parts(l12.cast(), len14, len14);
-
+                                            let bytes14 = _rt::Vec::from_raw_parts(
+                                                l12.cast(),
+                                                len14,
+                                                len14,
+                                            );
                                             _rt::string_lift(bytes14)
                                         };
                                         V18::Unsupported(e18)
@@ -21199,15 +22133,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len17 = l16;
-                                            let bytes17 =
-                                                _rt::Vec::from_raw_parts(l15.cast(), len17, len17);
-
+                                            let bytes17 = _rt::Vec::from_raw_parts(
+                                                l15.cast(),
+                                                len17,
+                                                len17,
+                                            );
                                             _rt::string_lift(bytes17)
                                         };
                                         V18::Platform(e18)
                                     }
                                 };
-
                                 v18
                             };
                             Err(e)
@@ -21218,15 +22153,12 @@ pub mod krate {
                 }
             }
         }
-
         /// Clipboard calls.
         #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
         pub mod clipboard {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             pub type UiError = super::super::super::krate::ui::types::UiError;
             #[allow(unused_unsafe, clippy::all)]
@@ -21236,11 +22168,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
@@ -21249,7 +22183,6 @@ pub mod krate {
                         #[link_name = "read-text"]
                         fn wit_import1(_: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import1(_: *mut u8) {
                         unreachable!()
@@ -21266,8 +22199,11 @@ pub mod krate {
                                     .add(2 * ::core::mem::size_of::<*const u8>())
                                     .cast::<usize>();
                                 let len5 = l4;
-                                let bytes5 = _rt::Vec::from_raw_parts(l3.cast(), len5, len5);
-
+                                let bytes5 = _rt::Vec::from_raw_parts(
+                                    l3.cast(),
+                                    len5,
+                                    len5,
+                                );
                                 _rt::string_lift(bytes5)
                             };
                             Ok(e)
@@ -21291,9 +22227,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V13::Unsupported(e13)
@@ -21308,15 +22246,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len12 = l11;
-                                            let bytes12 =
-                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
-
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
                                             _rt::string_lift(bytes12)
                                         };
                                         V13::Platform(e13)
                                     }
                                 };
-
                                 v13
                             };
                             Err(e)
@@ -21333,11 +22272,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = text;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -21349,7 +22290,6 @@ pub mod krate {
                         #[link_name = "write-text"]
                         fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
                         unreachable!()
@@ -21380,9 +22320,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len7 = l6;
-                                            let bytes7 =
-                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
                                             _rt::string_lift(bytes7)
                                         };
                                         V11::Unsupported(e11)
@@ -21397,15 +22339,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len10 = l9;
-                                            let bytes10 =
-                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
                                             _rt::string_lift(bytes10)
                                         };
                                         V11::Platform(e11)
                                     }
                                 };
-
                                 v11
                             };
                             Err(e)
@@ -21416,15 +22359,12 @@ pub mod krate {
                 }
             }
         }
-
         /// Menu calls.
         #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
         pub mod menu {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             pub type MenuItem = super::super::super::krate::ui::types::MenuItem;
             pub type UiError = super::super::super::krate::ui::types::UiError;
@@ -21435,11 +22375,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec2 = items;
                     let len2 = vec2.len();
@@ -21457,7 +22399,8 @@ pub mod krate {
                         ::core::ptr::null_mut()
                     };
                     for (i, e) in vec2.into_iter().enumerate() {
-                        let base = result2.add(i * (16 + 2 * ::core::mem::size_of::<*const u8>()));
+                        let base = result2
+                            .add(i * (16 + 2 * ::core::mem::size_of::<*const u8>()));
                         {
                             let super::super::super::krate::ui::types::MenuItem {
                                 id: id0,
@@ -21487,9 +22430,13 @@ pub mod krate {
                         #[link_name = "set-items"]
                         fn wit_import4(_: i64, _: *mut u8, _: usize, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
-                    unsafe extern "C" fn wit_import4(_: i64, _: *mut u8, _: usize, _: *mut u8) {
+                    unsafe extern "C" fn wit_import4(
+                        _: i64,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
                         unreachable!()
                     }
                     unsafe { wit_import4(_rt::as_i64(&window), result2, len2, ptr3) };
@@ -21518,9 +22465,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len9 = l8;
-                                            let bytes9 =
-                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
-
+                                            let bytes9 = _rt::Vec::from_raw_parts(
+                                                l7.cast(),
+                                                len9,
+                                                len9,
+                                            );
                                             _rt::string_lift(bytes9)
                                         };
                                         V13::Unsupported(e13)
@@ -21535,15 +22484,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len12 = l11;
-                                            let bytes12 =
-                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
-
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
+                                            );
                                             _rt::string_lift(bytes12)
                                         };
                                         V13::Platform(e13)
                                     }
                                 };
-
                                 v13
                             };
                             Err(e)
@@ -21557,7 +22507,6 @@ pub mod krate {
                 }
             }
         }
-
         /// Opening a link in the person's browser.
         ///
         /// An app that shows documentation, a sign-in page, or a "learn more" link
@@ -21574,9 +22523,7 @@ pub mod krate {
         pub mod launcher {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             /// Why a URL could not be opened.
             #[derive(Clone)]
@@ -21589,9 +22536,14 @@ pub mod krate {
                 Unavailable(_rt::String),
             }
             impl ::core::fmt::Debug for LaunchError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
-                        LaunchError::Denied => f.debug_tuple("LaunchError::Denied").finish(),
+                        LaunchError::Denied => {
+                            f.debug_tuple("LaunchError::Denied").finish()
+                        }
                         LaunchError::InvalidUrl(e) => {
                             f.debug_tuple("LaunchError::InvalidUrl").field(e).finish()
                         }
@@ -21602,11 +22554,13 @@ pub mod krate {
                 }
             }
             impl ::core::fmt::Display for LaunchError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     write!(f, "{:?}", self)
                 }
             }
-
             #[cfg(feature = "std")]
             impl std::error::Error for LaunchError {}
             #[allow(unused_unsafe, clippy::all)]
@@ -21620,11 +22574,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = url;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -21636,7 +22592,6 @@ pub mod krate {
                         #[link_name = "open-url"]
                         fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
                         unreachable!()
@@ -21664,9 +22619,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len7 = l6;
-                                            let bytes7 =
-                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
-
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
                                             _rt::string_lift(bytes7)
                                         };
                                         LaunchError::InvalidUrl(e11)
@@ -21681,15 +22638,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len10 = l9;
-                                            let bytes10 =
-                                                _rt::Vec::from_raw_parts(l8.cast(), len10, len10);
-
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
                                             _rt::string_lift(bytes10)
                                         };
                                         LaunchError::Unavailable(e11)
                                     }
                                 };
-
                                 v11
                             };
                             Err(e)
@@ -21700,7 +22658,6 @@ pub mod krate {
                 }
             }
         }
-
         /// Desktop notifications.
         ///
         /// An app that finishes a long task, receives a message, or hits a timer needs
@@ -21710,9 +22667,7 @@ pub mod krate {
         pub mod notify {
             #[used]
             #[doc(hidden)]
-            static __FORCE_SECTION_REF: fn() =
-                super::super::super::__link_custom_section_describing_imports;
-
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
             /// Why a notification could not be shown.
             #[derive(Clone)]
@@ -21725,13 +22680,19 @@ pub mod krate {
                 Unavailable(_rt::String),
             }
             impl ::core::fmt::Debug for NotifyError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     match self {
-                        NotifyError::Denied => f.debug_tuple("NotifyError::Denied").finish(),
-                        NotifyError::InvalidContent(e) => f
-                            .debug_tuple("NotifyError::InvalidContent")
-                            .field(e)
-                            .finish(),
+                        NotifyError::Denied => {
+                            f.debug_tuple("NotifyError::Denied").finish()
+                        }
+                        NotifyError::InvalidContent(e) => {
+                            f.debug_tuple("NotifyError::InvalidContent")
+                                .field(e)
+                                .finish()
+                        }
                         NotifyError::Unavailable(e) => {
                             f.debug_tuple("NotifyError::Unavailable").field(e).finish()
                         }
@@ -21739,11 +22700,13 @@ pub mod krate {
                 }
             }
             impl ::core::fmt::Display for NotifyError {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     write!(f, "{:?}", self)
                 }
             }
-
             #[cfg(feature = "std")]
             impl std::error::Error for NotifyError {}
             #[allow(unused_unsafe, clippy::all)]
@@ -21758,11 +22721,13 @@ pub mod krate {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
                     #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
                     struct RetArea(
-                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit();
-                            4 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
                     );
                     let vec0 = title;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
@@ -21775,9 +22740,14 @@ pub mod krate {
                     #[link(wasm_import_module = "krate:ui/notify@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "show"]
-                        fn wit_import3(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8);
+                        fn wit_import3(
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                        );
                     }
-
                     #[cfg(not(target_arch = "wasm32"))]
                     unsafe extern "C" fn wit_import3(
                         _: *mut u8,
@@ -21788,7 +22758,9 @@ pub mod krate {
                     ) {
                         unreachable!()
                     }
-                    unsafe { wit_import3(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1, ptr2) };
+                    unsafe {
+                        wit_import3(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1, ptr2)
+                    };
                     let l4 = i32::from(*ptr2.add(0).cast::<u8>());
                     let result13 = match l4 {
                         0 => {
@@ -21811,9 +22783,11 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len8 = l7;
-                                            let bytes8 =
-                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
-
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
                                             _rt::string_lift(bytes8)
                                         };
                                         NotifyError::InvalidContent(e12)
@@ -21828,15 +22802,16 @@ pub mod krate {
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
                                             let len11 = l10;
-                                            let bytes11 =
-                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
-
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
                                             _rt::string_lift(bytes11)
                                         };
                                         NotifyError::Unavailable(e12)
                                     }
                                 };
-
                                 v12
                             };
                             Err(e)
@@ -21849,14 +22824,13 @@ pub mod krate {
         }
     }
 }
+#[rustfmt::skip]
 mod _rt {
     #![allow(dead_code, clippy::all)]
     pub use alloc_crate::string::String;
-
     use core::fmt;
     use core::marker;
     use core::sync::atomic::{AtomicU32, Ordering::Relaxed};
-
     /// A type which represents a component model resource, either imported or
     /// exported into this component.
     ///
@@ -21871,16 +22845,9 @@ mod _rt {
     /// resources.
     #[repr(transparent)]
     pub struct Resource<T: WasmResource> {
-        // NB: This would ideally be `u32` but it is not. The fact that this has
-        // interior mutability is not exposed in the API of this type except for the
-        // `take_handle` method which is supposed to in theory be private.
-        //
-        // This represents, almost all the time, a valid handle value. When it's
-        // invalid it's stored as `u32::MAX`.
         handle: AtomicU32,
         _marker: marker::PhantomData<T>,
     }
-
     /// A trait which all wasm resources implement, namely providing the ability to
     /// drop a resource.
     ///
@@ -21890,7 +22857,6 @@ mod _rt {
         /// Invokes the `[resource-drop]...` intrinsic.
         unsafe fn drop(handle: u32);
     }
-
     impl<T: WasmResource> Resource<T> {
         #[doc(hidden)]
         pub unsafe fn from_handle(handle: u32) -> Self {
@@ -21900,7 +22866,6 @@ mod _rt {
                 _marker: marker::PhantomData,
             }
         }
-
         /// Takes ownership of the handle owned by `resource`.
         ///
         /// Note that this ideally would be `into_handle` taking `Resource<T>` by
@@ -21917,101 +22882,80 @@ mod _rt {
         pub fn take_handle(resource: &Resource<T>) -> u32 {
             resource.handle.swap(u32::MAX, Relaxed)
         }
-
         #[doc(hidden)]
         pub fn handle(resource: &Resource<T>) -> u32 {
             resource.handle.load(Relaxed)
         }
     }
-
     impl<T: WasmResource> fmt::Debug for Resource<T> {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            f.debug_struct("Resource")
-                .field("handle", &self.handle)
-                .finish()
+            f.debug_struct("Resource").field("handle", &self.handle).finish()
         }
     }
-
     impl<T: WasmResource> Drop for Resource<T> {
         fn drop(&mut self) {
             unsafe {
                 match self.handle.load(Relaxed) {
-                    // If this handle was "taken" then don't do anything in the
-                    // destructor.
                     u32::MAX => {}
-
-                    // ... but otherwise do actually destroy it with the imported
-                    // component model intrinsic as defined through `T`.
                     other => T::drop(other),
                 }
             }
         }
     }
     pub use alloc_crate::vec::Vec;
-
     pub fn as_i32<T: AsI32>(t: T) -> i32 {
         t.as_i32()
     }
-
     pub trait AsI32 {
         fn as_i32(self) -> i32;
     }
-
     impl<'a, T: Copy + AsI32> AsI32 for &'a T {
         fn as_i32(self) -> i32 {
             (*self).as_i32()
         }
     }
-
     impl AsI32 for i32 {
         #[inline]
         fn as_i32(self) -> i32 {
             self as i32
         }
     }
-
     impl AsI32 for u32 {
         #[inline]
         fn as_i32(self) -> i32 {
             self as i32
         }
     }
-
     impl AsI32 for i16 {
         #[inline]
         fn as_i32(self) -> i32 {
             self as i32
         }
     }
-
     impl AsI32 for u16 {
         #[inline]
         fn as_i32(self) -> i32 {
             self as i32
         }
     }
-
     impl AsI32 for i8 {
         #[inline]
         fn as_i32(self) -> i32 {
             self as i32
         }
     }
-
     impl AsI32 for u8 {
         #[inline]
         fn as_i32(self) -> i32 {
             self as i32
         }
     }
-
     impl AsI32 for char {
         #[inline]
         fn as_i32(self) -> i32 {
             self as i32
         }
     }
-
     impl AsI32 for usize {
         #[inline]
         fn as_i32(self) -> i32 {
@@ -22033,28 +22977,23 @@ mod _rt {
         }
     }
     pub use alloc_crate::alloc;
-
     pub fn as_i64<T: AsI64>(t: T) -> i64 {
         t.as_i64()
     }
-
     pub trait AsI64 {
         fn as_i64(self) -> i64;
     }
-
     impl<'a, T: Copy + AsI64> AsI64 for &'a T {
         fn as_i64(self) -> i64 {
             (*self).as_i64()
         }
     }
-
     impl AsI64 for i64 {
         #[inline]
         fn as_i64(self) -> i64 {
             self as i64
         }
     }
-
     impl AsI64 for u64 {
         #[inline]
         fn as_i64(self) -> i64 {
@@ -22079,56 +23018,46 @@ mod _rt {
         let layout = alloc::Layout::from_size_align_unchecked(size, align);
         alloc::dealloc(ptr, layout);
     }
-
     pub fn as_f64<T: AsF64>(t: T) -> f64 {
         t.as_f64()
     }
-
     pub trait AsF64 {
         fn as_f64(self) -> f64;
     }
-
     impl<'a, T: Copy + AsF64> AsF64 for &'a T {
         fn as_f64(self) -> f64 {
             (*self).as_f64()
         }
     }
-
     impl AsF64 for f64 {
         #[inline]
         fn as_f64(self) -> f64 {
             self as f64
         }
     }
-
     pub fn as_f32<T: AsF32>(t: T) -> f32 {
         t.as_f32()
     }
-
     pub trait AsF32 {
         fn as_f32(self) -> f32;
     }
-
     impl<'a, T: Copy + AsF32> AsF32 for &'a T {
         fn as_f32(self) -> f32 {
             (*self).as_f32()
         }
     }
-
     impl AsF32 for f32 {
         #[inline]
         fn as_f32(self) -> f32 {
             self as f32
         }
     }
-
     #[cfg(target_arch = "wasm32")]
     pub fn run_ctors_once() {
         wit_bindgen_rt::run_ctors_once();
     }
     extern crate alloc as alloc_crate;
 }
-
 /// Generates `#[unsafe(no_mangle)]` functions to export the specified type as
 /// the root implementation of all generated traits.
 ///
@@ -22147,18 +23076,21 @@ mod _rt {
 /// ```
 #[allow(unused_macros)]
 #[doc(hidden)]
-
 macro_rules! __export_gui_impl {
-  ($ty:ident) => (self::export!($ty with_types_in self););
-  ($ty:ident with_types_in $($path_to_types_root:tt)*) => (
-  $($path_to_types_root)*::__export_world_gui_cabi!($ty with_types_in $($path_to_types_root)*);
-  )
+    ($ty:ident) => {
+        self::export!($ty with_types_in self);
+    };
+    ($ty:ident with_types_in $($path_to_types_root:tt)*) => {
+        $($path_to_types_root)*:: __export_world_gui_cabi!($ty with_types_in
+        $($path_to_types_root)*);
+    };
 }
 #[doc(inline)]
 pub(crate) use __export_gui_impl as export;
-
 #[cfg(target_arch = "wasm32")]
-#[unsafe(link_section = "component-type:wit-bindgen:0.41.0:krate:app@0.2.0:gui:encoded world")]
+#[unsafe(
+    link_section = "component-type:wit-bindgen:0.41.0:krate:app@0.2.0:gui:encoded world"
+)]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
 pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 13831] = *b"\
@@ -22478,7 +23410,6 @@ say\x01\x0a\x01@\0\0\x09\x04\0\x04stop\x01\x0b\x01j\x01\x7f\x01\x03\x01@\0\0\x0c
 \0\x03run\x01P\x04\0\x13krate:app/gui@0.2.0\x04\0\x0b\x09\x01\0\x03gui\x03\0\0\0\
 G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindge\
 n-rust\x060.41.0";
-
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {
