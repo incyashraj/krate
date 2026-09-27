@@ -960,22 +960,102 @@ function runningJob() {
   }
 }
 
+/* A finished job, in the desktop's own result shape. */
+function resultFromJob(job) {
+  return {
+    path: `${BUILDER}${job.result.download}`,
+    name: `${job.result.name}.krate`,
+    size: job.result.size,
+    asks: job.result.asks || [],
+    shot: job.result.shot || "",
+    // The build service's request verdict, in the desktop's own
+    // field names, so the one done card reads both.
+    verdict: job.result.verdict || null,
+    verdict_detail: job.result.verdict_detail || null,
+    // Made on the web: the desktop fetches the file from this URL
+    // with the same sign-in before it opens or changes the app.
+    web: true,
+  };
+}
+
+/* Put a finished app into its session, so the wall's promise ("this
+ * session is waiting in Studio") is kept with the file, not only the
+ * sentence they typed. Updated in place: what Studio's UI wrote there
+ * (messages, the build count, the plan) stays, and only the result is new. */
+function saveResultToSession(sessionId, request, result) {
+  if (!sessionId) return;
+  const existing = localSessions().find((s) => s && s.id === sessionId);
+  const saved = existing
+    ? { ...existing, updated: Date.now(), result }
+    : {
+      id: sessionId,
+      title: Array.from(request || "").slice(0, 80).join(""),
+      created: Date.now(),
+      updated: Date.now(),
+      messages: [
+        { who: "YOU", body: request || "" },
+        { who: "KRATE", body: `Made ${result.name} (${result.size}).` },
+      ],
+      result,
+    };
+  COMMANDS.session_save({ session: saved }).catch(() => {});
+}
+
+/* Is this failure the build's answer, or only the way to it?
+ *
+ * 401/403/404 are the service saying no -- the job is not yours or not
+ * there -- and nothing will change by asking again. Everything else (no
+ * network, a 502 from the proxy, a 429, a restart in progress) is the road,
+ * not the destination. The build carries on on the server regardless, so
+ * giving up on a blip used to lose an app that was made and counted: the
+ * free one, with "Try again" then refusing it as already made (K-886). */
+function isFinalPollError(err) {
+  return err && (err.status === 401 || err.status === 403 || err.status === 404);
+}
+/* How long to keep reconnecting before saying so. The record is kept even
+ * then, so reopening the page still picks the build up. */
+const POLL_GIVE_UP_MS = 10 * 60 * 1000;
+
 function watchJob(jobId, request, sessionId) {
   bridge.job = jobId;
   bridge.jobResult = null;
   rememberRunningJob(jobId, sessionId, request);
   let lastLine = "";
   let lastShot = "";
+  let inFlight = false;
+  let failingSince = 0;
   return new Promise((resolve, reject) => {
     const tick = async () => {
+      // One question at a time: on a hanging network, ticks every 1.5 s
+      // would otherwise pile up behind each other.
+      if (inFlight) return;
+      inFlight = true;
       let job;
       try {
         job = await builder(`/build/${jobId}`);
       } catch (err) {
-        clearInterval(bridge.poll);
-        forgetRunningJob();
-        return reject(err);
+        inFlight = false;
+        if (isFinalPollError(err)) {
+          clearInterval(bridge.poll);
+          forgetRunningJob();
+          return reject(err);
+        }
+        if (!failingSince) {
+          failingSince = Date.now();
+          if (typeof window.onEngineLine === "function") {
+            window.onEngineLine("The connection to the build dropped. It is still being made; reconnecting...");
+          }
+        }
+        if (Date.now() - failingSince > POLL_GIVE_UP_MS) {
+          clearInterval(bridge.poll);
+          // Kept on purpose: reopening the page reattaches to it.
+          return reject(withStatus(new Error(
+            "Lost touch with the build service. Your app may still finish: reopen this page and it picks the build back up."), 0));
+        }
+        return;
       }
+      inFlight = false;
+      failingSince = 0;
       if (job.line && job.line !== lastLine && typeof window.onEngineLine === "function") {
         lastLine = job.line;
         window.onEngineLine(job.line);
@@ -988,45 +1068,11 @@ function watchJob(jobId, request, sessionId) {
         clearInterval(bridge.poll);
         forgetRunningJob();
         bridge.jobResult = job.result;
-        const result = {
-          path: `${BUILDER}${job.result.download}`,
-          name: `${job.result.name}.krate`,
-          size: job.result.size,
-          asks: job.result.asks || [],
-          shot: job.result.shot || "",
-          // The build service's request verdict, in the desktop's own
-          // field names, so the one done card reads both.
-          verdict: job.result.verdict || null,
-          verdict_detail: job.result.verdict_detail || null,
-          // Made on the web: the desktop fetches the file from this URL
-          // with the same sign-in before it opens or changes the app.
-          web: true,
-        };
-        if (sessionId) {
-          // The session saved before the build now carries the app, so the
-          // wall's promise ("this session is waiting in Studio") is kept
-          // with the file, not only the sentence they typed. The record is
-          // updated in place: what Studio's UI wrote there (messages, the
-          // build count, the plan) stays, and only the result is new.
-          const existing = localSessions().find((s) => s.id === sessionId);
-          const saved = existing
-            ? { ...existing, updated: Date.now(), result }
-            : {
-              id: sessionId,
-              title: (request || "").slice(0, 80),
-              created: Date.now(),
-              updated: Date.now(),
-              messages: [
-                { who: "YOU", body: request || "" },
-                { who: "KRATE", body: `Made ${result.name} (${result.size}).` },
-              ],
-              result,
-            };
-          COMMANDS.session_save({ session: saved }).catch(() => {});
-        }
+        const result = resultFromJob(job);
+        saveResultToSession(sessionId, request, result);
         return resolve(result);
       }
-      if (job.state === "failed" || job.state === "stopped") {
+      if (job.state === "failed" || job.state === "stopped" || job.state === "expired") {
         clearInterval(bridge.poll);
         forgetRunningJob();
         return reject(new Error(job.error || "that build stopped"));
@@ -1560,8 +1606,13 @@ const COMMANDS = {
   async open_krate({ path } = {}) {
     return COMMANDS.open_app({ path });
   },
-  async autorun({ path } = {}) {
-    return COMMANDS.open_app({ path });
+  /* The desktop's test hook (KRATE_STUDIO_AUTORUN): Studio types whatever
+   * this returns into the box and starts a build. A tab has no such hook,
+   * so the answer is always nothing. It used to borrow open_app, whose
+   * status word "asking" Studio then built -- on every page load, and on a
+   * bring-your-own-key account at the person's expense (K-885). */
+  async autorun() {
+    return null;
   },
   pick_folder() {
     return refuse("A browser chooses where downloads go, not this page.");
@@ -2634,10 +2685,9 @@ console.info("krate: studio bridge ready (hub + builder)");
  * app they had waited minutes for -- while it went on being built, and went
  * on counting against their allowance.
  *
- * Only reattaches when the job is genuinely still going. A job that
- * finished while the tab was away is left alone: its result was already
- * written into the session when it settled, so the session shows the app
- * the ordinary way.
+ * Reattaches when the job is still going. A job that finished while the
+ * tab was away has its result written into the session here -- the tab
+ * that would have written it was closed (K-886).
  */
 (function pickTheBuildBackUp() {
   const rec = runningJob();
@@ -2651,11 +2701,25 @@ console.info("krate: studio bridge ready (hub + builder)");
     try {
       job = await builder(`/build/${rec.job}`);
     } catch (e) {
-      // The service does not know it any more. Nothing to reattach to.
-      forgetRunningJob();
+      // Only a definite "not there / not yours" drops the record. A network
+      // failure keeps it, so the next load tries again (K-886).
+      if (isFinalPollError(e)) forgetRunningJob();
       return;
     }
-    if (!job || job.state === "done" || job.state === "error") {
+    // Finished while the tab was away: the result was NOT written anywhere
+    // (the tab that would have written it was closed), so write it now and
+    // show it. Discarding it here lost made apps (K-886).
+    if (job && job.state === "done" && job.result) {
+      forgetRunningJob();
+      const result = resultFromJob(job);
+      saveResultToSession(rec.session, rec.request, result);
+      const session = localSessions().find((s) => s && s.id === rec.session);
+      if (session && typeof window.openSession === "function") {
+        try { window.openSession({ ...session, result }); } catch (e) {}
+      }
+      return;
+    }
+    if (!job || job.state !== "working") {
       forgetRunningJob();
       return;
     }

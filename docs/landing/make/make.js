@@ -76,8 +76,13 @@ async function refusal(res) {
   try {
     body = JSON.parse(raw);
   } catch (e) {}
+  // A proxy's error page is HTML, and "<html><body><h1>502 Bad Gateway"
+  // was shown to people as the reason their app failed (K-886).
+  const readable = raw && !/^\s*</.test(raw) ? raw : "";
   const err = new Error(
-    (body && typeof body.message === "string" && body.message) || raw || res.statusText,
+    (body && typeof body.message === "string" && body.message)
+      || readable
+      || "The build service did not answer just then.",
   );
   err.status = res.status;
   if (body && typeof body === "object") {
@@ -218,6 +223,7 @@ async function startMake() {
       body: JSON.stringify({ request }),
     });
     state.job = job.id;
+    rememberJob(job.id, request);
     poll();
   } catch (err) {
     const message = String(err.message || err);
@@ -297,14 +303,50 @@ function advance(stageKey, line) {
   }
 }
 
+/* The build carries on on the server whatever the page does, so the page
+ * keeps what it needs to find it again: a reload, a closed tab or a
+ * dropped connection used to lose an app that was made and counted, the
+ * free one (K-886). */
+const JOB_KEY = "krate.make.job.v1";
+function rememberJob(job, request) {
+  try { localStorage.setItem(JOB_KEY, JSON.stringify({ job, request, at: Date.now() })); } catch (e) {}
+}
+function forgetJob() {
+  try { localStorage.removeItem(JOB_KEY); } catch (e) {}
+}
+function rememberedJob() {
+  try {
+    const rec = JSON.parse(localStorage.getItem(JOB_KEY) || "null");
+    if (!rec || typeof rec.job !== "string" || !Number.isFinite(rec.at)) return null;
+    if (Date.now() - rec.at > 2 * 60 * 60 * 1000) { forgetJob(); return null; }
+    return rec;
+  } catch (e) {
+    return null;
+  }
+}
+let pollFailingSince = 0;
+
 async function poll() {
   if (!state.job) return;
   let job;
   try {
     job = await builder(`/build/${state.job}`);
   } catch (err) {
-    return failed(String(err.message || err));
+    // Only the service saying no ends it: not yours, or not there.
+    if (err.status === 401 || err.status === 403 || err.status === 404) {
+      forgetJob();
+      return failed(String(err.message || err));
+    }
+    if (!pollFailingSince) pollFailingSince = Date.now();
+    if (Date.now() - pollFailingSince > 10 * 60 * 1000) {
+      // The job is still remembered: reopening the page picks it up.
+      return failed("Lost touch with the build service. Your app may still finish: reopen this page and it picks the build back up.");
+    }
+    $("nowLine").textContent = "The connection dropped. Still being made; reconnecting...";
+    setTimeout(poll, 3000);
+    return;
   }
+  pollFailingSince = 0;
 
   if (job.stage) advance(job.stage, job.line);
 
@@ -323,8 +365,11 @@ async function poll() {
     }
   }
 
-  if (job.state === "done") return finished(job.result);
-  if (job.state === "failed") return failed(job.error || "that one didn't come together");
+  if (job.state === "done") { forgetJob(); return finished(job.result); }
+  if (job.state === "failed" || job.state === "stopped" || job.state === "expired") {
+    forgetJob();
+    return failed(job.error || "that one didn't come together");
+  }
   setTimeout(poll, 1500);
 }
 
@@ -368,6 +413,7 @@ function stopBuild() {
   clearInterval(thinkTimer);
   if (state.job) builder(`/build/${state.job}/stop`, { method: "POST" }).catch(() => {});
   state.job = null;
+  forgetJob();
   show("viewAsk");
 }
 
@@ -620,6 +666,17 @@ function boot() {
   paintIdeas();
   show("viewAsk");
   riseIn();
+
+  // A build this browser started and has not seen finish: go back to it.
+  const pending = rememberedJob();
+  if (pending && state.token) {
+    state.request = pending.request || "";
+    $("prompt").value = state.request;
+    state.job = pending.job;
+    show("viewWork");
+    resetWork();
+    poll();
+  }
 
   const box = $("prompt");
   box.addEventListener("input", () => {

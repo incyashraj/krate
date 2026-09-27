@@ -874,9 +874,13 @@ assert.match(bridge, /const RUNNING_KEY = "krate\.web\.running\.v1";/,
   // missing clear. The count is what matters, not the spacing.
   const clears = [...bridge.matchAll(/clearInterval\(bridge\.poll\);/g)];
   assert.ok(clears.length >= 4, `expected at least 4 poll clears, found ${clears.length}`);
+  // One exit keeps the record on purpose: giving up after ten minutes of a
+  // service that cannot be reached. The build may still finish, and the
+  // record is how a reopened page finds it (K-886). It is marked in the
+  // code with "Kept on purpose", and it is the only one.
   const unpaired = clears.filter((m) => {
     const after = bridge.slice(m.index, m.index + 320);
-    return !after.includes("forgetRunningJob();");
+    return !after.includes("forgetRunningJob();") && !after.includes("Kept on purpose");
   });
   assert.equal(
     unpaired.length,
@@ -885,7 +889,24 @@ assert.match(bridge, /const RUNNING_KEY = "krate\.web\.running\.v1";/,
       + `clear the interval and leave the record behind, so the next visit `
       + `chases a build that is over`,
   );
+  const kept = clears.filter((m) => bridge.slice(m.index, m.index + 320).includes("Kept on purpose"));
+  assert.equal(kept.length, 1, "exactly one exit keeps the record: the long network outage");
 }
+// K-886: a network blip is not the end of a build. A failed poll that is
+// not 401/403/404 keeps polling, and a job that finished while the tab was
+// closed has its result written into the session rather than discarded.
+{
+  const watch = bridge.slice(bridge.indexOf("function watchJob("));
+  const body = watch.slice(0, watch.indexOf("\n}\n"));
+  assert.match(body, /if \(isFinalPollError\(err\)\)/, "only a final error ends the watch at once");
+  assert.match(bridge, /return err && \(err\.status === 401 \|\| err\.status === 403 \|\| err\.status === 404\);/,
+    "final means the service said no, not that the road dropped");
+  const back = bridge.slice(bridge.indexOf("function pickTheBuildBackUp("));
+  const backBody = back.slice(0, back.indexOf("\n})();"));
+  assert.match(backBody, /job\.state === "done" && job\.result[\s\S]*saveResultToSession\(rec\.session, rec\.request, result\)/,
+    "a build that finished while the tab was away lands in its session");
+}
+console.log("ok  a network blip or a closed tab does not lose a made app");
 // And a tab that comes back picks it up, through Studio's own build card
 // rather than a second lifecycle bolted on beside it.
 assert.match(bridge, /function pickTheBuildBackUp\(\)/, "a returning tab looks for one");
