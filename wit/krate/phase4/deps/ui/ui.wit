@@ -786,3 +786,35 @@ interface notify {
   /// which keeps this from becoming a way to watch the person.
   show: func(title: string, body: string) -> result<_, notify-error>;
 }
+
+/// Printing what the app's window shows.
+///
+/// The host paints the window for paper and the system's print dialog does
+/// the rest: the person picks the printer, the copies, or Save as PDF -- or
+/// cancels. Nothing prints unless they say so, so any app with a window may
+/// ask. Where Krate cannot reach a print dialog, the pages open in the PDF
+/// viewer to print from there, and the answer says so.
+interface print {
+  use types.{ui-error};
+
+  /// What happened.
+  enum print-outcome {
+    /// The person printed or saved it.
+    printed,
+    /// They closed the dialog without printing.
+    cancelled,
+    /// The pages opened in the system's PDF viewer, to print from there.
+    opened-in-viewer,
+  }
+
+  /// Print what the window shows now, as one page, and wait for the person.
+  window: func(window: u64, title: string) -> result<print-outcome, ui-error>;
+
+  /// Keep what the window shows now as the next page of a longer document,
+  /// and return how many pages are kept (at most 100). Draw each page in
+  /// the window, add it, then `finish`.
+  add-page: func(window: u64) -> result<u32, ui-error>;
+
+  /// Print the pages added so far, wait for the person, and start over.
+  finish: func(window: u64, title: string) -> result<print-outcome, ui-error>;
+}

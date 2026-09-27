@@ -80,6 +80,9 @@ sha2 = "0.10.9"
 ring = "0.17"
 # Encoding a window frame to a PNG for `krate shoot` and headless verification.
 png = "0.18.1"
+# Compresses the page images of a print job (`print_host`). Already in the
+# tree under `png`, so a direct edge, not new surface.
+miniz_oxide = "0.8.9"
 # vector-text so a headless screenshot renders with the same antialiased vello
 # text the Windows and Linux windows use -- a screenshot has to look like the
 # real thing to be worth taking.
@@ -116,7 +119,7 @@ objc2 = "0.6.4"
 objc2-av-foundation = { version = "0.3.2", default-features = false, features = ["AVCaptureDevice", "AVCaptureInput", "AVCaptureOutput", "AVCaptureOutputBase", "AVCaptureSession", "AVCaptureSessionPreset", "AVCaptureVideoDataOutput", "AVMediaFormat", "block2", "dispatch2", "objc2-core-media"] }
 objc2-core-media = { version = "0.3.2", default-features = false, features = ["CMBase", "CMFormatDescription", "CMSampleBuffer", "CMSync", "CMTime", "objc2-core-video"] }
 objc2-core-video = { version = "0.3.2", default-features = false, features = ["CVBase", "CVBuffer", "CVImageBuffer", "CVPixelBuffer", "CVPixelFormatDescription", "CVReturn"] }
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSArray", "NSDictionary", "NSString", "NSValue", "NSObject", "objc2-core-foundation"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSArray", "NSData", "NSDictionary", "NSString", "NSURL", "NSValue", "NSObject", "objc2-core-foundation"] }
 dispatch2 = { version = "0.3.0", default-features = false, features = ["std", "objc2"] }
 # The completion block macOS calls with the person's answer to the camera prompt.
 block2 = "0.6.2"

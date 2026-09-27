@@ -856,7 +856,16 @@ and never make a step depend on the notification having appeared.\n\n\
 `ui::launch::open_url(\"https://...\")` hands a link to the person's \
 browser. Pairs with 2c: a \"get your API token\" button that opens the \
 backend's token page beats explaining where to click. Never open a URL the \
-person did not just ask for.\n\n";
+person did not just ask for.\n\n\
+**Printing** (`krate:ui/print`, no capability -- the system's print dialog \
+is the person's choice): draw the page in the window, `canvas2d::present`, \
+then `ui::print::window(win, \"Invoice 42\")` prints what the window shows \
+and waits for the person. For several pages, draw each one and call \
+`ui::print::add_page(win)`, then `ui::print::finish(win, title)`. The \
+answer is `Printed`, `Cancelled`, or `OpenedInViewer` (Windows and Linux \
+open the pages in the PDF viewer to print from there) -- say which in the \
+window, and never claim it printed on `OpenedInViewer`. Draw the page on a \
+white background: paper is white, and a dark theme wastes ink.\n\n";
 
 /// Section 2f: game feel. The Ice Climber A/B (one request, two agents)
 /// showed the runtime treats every agent the same and the results still

@@ -1,0 +1,21 @@
+[app]
+id = "com.acme.print-probe"
+name = "print-probe"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_print_probe.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Draw the page to print"
+required = true
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Print what the print dialog answered"
+required = true
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read how many pages to print"
+required = true

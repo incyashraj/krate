@@ -2443,6 +2443,7 @@ dependencies = [
  "krate-policy",
  "krate-scene3d-gpu",
  "libc",
+ "miniz_oxide",
  "nokhwa",
  "objc2 0.6.4",
  "objc2-av-foundation",

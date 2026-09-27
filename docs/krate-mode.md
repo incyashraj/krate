@@ -672,6 +672,9 @@ takes this path, so any of them is a model for the wiring.
 - `menu::set-items: func(window: u64, items: list<menu-item>) -> result<_, ui-error>`
 - `launcher::open-url: func(url: string) -> result<_, launch-error>`
 - `notify::show: func(title: string, body: string) -> result<_, notify-error>`
+- `print::window: func(window: u64, title: string) -> result<print-outcome, ui-error>`
+- `print::add-page: func(window: u64) -> result<u32, ui-error>`
+- `print::finish: func(window: u64, title: string) -> result<print-outcome, ui-error>`
 
 ## `audio`
 

@@ -7,7 +7,7 @@
 
 #![allow(clippy::too_many_arguments)]
 
-/// `krate:ui`: clipboard, dialog, events, image, launcher, menu, notify, tree, window.
+/// `krate:ui`: clipboard, dialog, events, image, launcher, menu, notify, print, tree, window.
 pub mod ui {
     /// `krate:ui/clipboard`.
     pub mod clipboard {
@@ -223,6 +223,27 @@ pub mod ui {
         /// which keeps this from becoming a way to watch the person.
         pub fn show(title: &str, body: &str) -> Result<(), NotifyError> {
             crate::bindings::krate::ui::notify::show(title, body)
+        }
+    }
+    /// `krate:ui/print`.
+    pub mod print {
+        pub use crate::bindings::krate::ui::print::{PrintOutcome, UiError};
+
+        /// Print what the window shows now, as one page, and wait for the person.
+        pub fn window(window: u64, title: &str) -> Result<PrintOutcome, UiError> {
+            crate::bindings::krate::ui::print::window(window, title)
+        }
+
+        /// Keep what the window shows now as the next page of a longer document,
+        /// and return how many pages are kept (at most 100). Draw each page in
+        /// the window, add it, then `finish`.
+        pub fn add_page(window: u64) -> Result<u32, UiError> {
+            crate::bindings::krate::ui::print::add_page(window)
+        }
+
+        /// Print the pages added so far, wait for the person, and start over.
+        pub fn finish(window: u64, title: &str) -> Result<PrintOutcome, UiError> {
+            crate::bindings::krate::ui::print::finish(window, title)
         }
     }
     /// `krate:ui/tree`.

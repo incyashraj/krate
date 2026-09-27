@@ -5908,6 +5908,94 @@ fn a_group_is_shared_by_its_members_and_closed_to_everyone_else() {
     assert_eq!(call(&budget, &["get", "total"]), "get=43");
 }
 
+/// An app prints what its window shows (krate:ui/print, the capability
+/// roadmap's `ui.print`), through the binary a person runs.
+///
+/// `print-probe.wasm` is apps/krate-print-probe built: it draws a rate
+/// card, prints it, and exits without waiting for input -- which also
+/// covers K-881, the abort at teardown when an app left a presented
+/// window open. `KRATE_PRINT_TO` makes the host write the document instead
+/// of showing a dialog: on macOS through the system's own print operation
+/// as a save job, elsewhere as the PDF the viewer would have opened.
+#[test]
+fn an_app_prints_its_window_and_the_document_has_its_pages() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/print-probe.wasm")).expect("probe");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        "[app]\nid = \"com.acme.print-probe\"\nname = \"print-probe\"\nversion = \"1.0.0\"\n\
+         entry = \"code.wasm\"\nworld = \"krate:app/gui@0.2.0\"\n\n\
+         [[capabilities]]\ncap = \"ui.window:create\"\nrationale = \"draw\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"io.stdout\"\nrationale = \"print\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"io.args\"\nrationale = \"args\"\nrequired = true\n",
+    )
+    .expect("manifest");
+    let bundle = dir.path().join("print.krate");
+    assert!(krate()
+        .arg("pack")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .status()
+        .expect("pack")
+        .success());
+    let run = |mode: &str| {
+        let pdf = dir.path().join(format!("{mode}.pdf"));
+        let out = krate()
+            .env("KRATE_PRINT_TO", &pdf)
+            .arg("run")
+            .arg(&bundle)
+            .arg("--auto-grant")
+            .args(["--", mode])
+            .output()
+            .expect("run");
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        assert!(
+            out.status.success() && !stderr.contains("panicked"),
+            "the run ends cleanly, window left open or not (K-881): {stderr}"
+        );
+        (
+            String::from_utf8_lossy(&out.stdout).trim().to_string(),
+            std::fs::read(&pdf).ok(),
+        )
+    };
+    let delivered = if cfg!(target_os = "macos") {
+        "printed"
+    } else {
+        "opened-in-viewer"
+    };
+
+    let (said, one) = run("one");
+    assert_eq!(said, delivered);
+    let one = one.expect("the document was written");
+    assert!(
+        one.starts_with(b"%PDF-") && one.len() > 2_000,
+        "a real document"
+    );
+
+    let (said, two) = run("two");
+    assert_eq!(said, format!("pages=2 {delivered}"));
+    let two = two.expect("the two-page document was written");
+    assert!(two.starts_with(b"%PDF-"));
+    if !cfg!(target_os = "macos") {
+        assert!(
+            String::from_utf8_lossy(&two).contains("/Count 2"),
+            "two pages in the document"
+        );
+    }
+
+    assert_eq!(run("bad-window").0, "error=invalid-window");
+    assert_eq!(
+        run("empty").0,
+        "error=other",
+        "finishing with no pages added is refused, not an empty print"
+    );
+}
+
 /// An app notices files change in a folder it may list (krate:fs/watch,
 /// the capability roadmap's `fs.watch`).
 ///

@@ -188,6 +188,8 @@ pub struct Phase3GuiHost {
     speech: LocalSpeechRuntime,
     /// This app's voice: speaking text aloud, idle until it first speaks.
     speech_out: SpeechSynthesis,
+    /// Pages kept for a print job (`krate:ui/print`), until `finish`.
+    print_pages: Vec<crate::print_host::Page>,
     /// A screenshot request: paint the window to this PNG at this scale once
     /// the app has drawn a frame. `taken` guards against writing every frame --
     /// the first drawn frame is the one captured.
@@ -444,6 +446,7 @@ impl Phase3GuiHost {
             audio_playback: AudioPlaybackRuntime::default(),
             speech: LocalSpeechRuntime::default(),
             speech_out: SpeechSynthesis::default(),
+            print_pages: Vec::new(),
             screenshot: None,
             screenshot_taken: std::cell::Cell::new(false),
             shoot_after: std::env::var("KRATE_SHOOT_AFTER_MS")
@@ -2789,6 +2792,60 @@ impl Phase3GuiHost {
             }
         }
         result
+    }
+
+    /// What the window shows now, painted for paper by the same painter a
+    /// screenshot uses (`render_window_png`), so the page is what the person
+    /// sees -- at `PRINT_SCALE`, about 200 dots per inch on a page.
+    pub(crate) fn capture_print_page(
+        &self,
+        raw: u64,
+    ) -> Result<crate::print_host::Page, ui::types::UiError> {
+        let window = self.window_id(raw)?;
+        let Some((size, placements)) = self
+            .window_placements(window)
+            .map_err(|err| ui::types::UiError::Platform(err.to_string()))?
+        else {
+            return Err(ui::types::UiError::Platform(
+                "the window has drawn nothing to print yet".to_string(),
+            ));
+        };
+        let scale = crate::print_host::PRINT_SCALE;
+        let width = ((size.width as f32) * scale).round().max(1.0) as u32;
+        let height = ((size.height as f32) * scale).round().max(1.0) as u32;
+        let mut argb = vec![0u32; width as usize * height as usize];
+        krate_adapter_common::painter::paint_placements(
+            &mut argb,
+            width,
+            height,
+            scale,
+            &placements,
+            krate_adapter_common::painter::PaintInteraction::default(),
+        );
+        Ok(crate::print_host::Page {
+            width,
+            height,
+            argb,
+            points: (size.width as f32, size.height as f32),
+        })
+    }
+
+    /// Close every window the app left open, at the end of its run (K-881).
+    ///
+    /// An app that returns from `run` with a window still open used to leave
+    /// that window's adapter session -- and its GPU presenter -- for thread
+    /// teardown, where wgpu's queue drop reached for a thread-local wgpu had
+    /// already destroyed, and the process aborted after the app had finished
+    /// cleanly. Closing here drops them while everything is still alive.
+    pub(crate) fn close_open_windows(&mut self) {
+        for id in std::mem::take(&mut self.windows) {
+            self.maybe_take_screenshot_for(id);
+            let _ = self.dispatcher().close_window(id);
+        }
+    }
+
+    pub(crate) fn print_pages_mut(&mut self) -> &mut Vec<crate::print_host::Page> {
+        &mut self.print_pages
     }
 
     fn window_id(&self, raw: u64) -> Result<WindowId, ui::types::UiError> {
@@ -5967,6 +6024,96 @@ impl camera::capture::Host for Phase3GuiHost {
         // Like `stop`, always allowed: releasing the device is never the thing
         // a person needs protecting from.
         Ok(self.cameras.close(stream_id).map_err(camera_error))
+    }
+}
+
+/// Printing (Phase 4 only). Any app with a window may ask: nothing reaches
+/// a printer unless the person says so in the system's own dialog.
+impl crate::phase4_gui_bindings::krate::ui::print::Host for Phase3GuiHost {
+    fn window(
+        &mut self,
+        window: u64,
+        title: String,
+    ) -> wasmtime::Result<
+        Result<
+            crate::phase4_gui_bindings::krate::ui::print::PrintOutcome,
+            crate::phase4_gui_bindings::krate::ui::types::UiError,
+        >,
+    > {
+        let page = match self.capture_print_page(window) {
+            Ok(page) => page,
+            Err(err) => return Ok(Err(crate::phase4_gui_host::error_to_phase4(err))),
+        };
+        Ok(print_now(&title, &[page]))
+    }
+
+    fn add_page(
+        &mut self,
+        window: u64,
+    ) -> wasmtime::Result<Result<u32, crate::phase4_gui_bindings::krate::ui::types::UiError>> {
+        if self.print_pages_mut().len() >= crate::print_host::MAX_PAGES {
+            return Ok(Err(
+                crate::phase4_gui_bindings::krate::ui::types::UiError::Platform(format!(
+                    "a document holds at most {} pages; finish this one first",
+                    crate::print_host::MAX_PAGES
+                )),
+            ));
+        }
+        let page = match self.capture_print_page(window) {
+            Ok(page) => page,
+            Err(err) => return Ok(Err(crate::phase4_gui_host::error_to_phase4(err))),
+        };
+        let pages = self.print_pages_mut();
+        pages.push(page);
+        Ok(Ok(pages.len() as u32))
+    }
+
+    fn finish(
+        &mut self,
+        window: u64,
+        title: String,
+    ) -> wasmtime::Result<
+        Result<
+            crate::phase4_gui_bindings::krate::ui::print::PrintOutcome,
+            crate::phase4_gui_bindings::krate::ui::types::UiError,
+        >,
+    > {
+        // The window must still be the app's, like every other call.
+        if let Err(err) = self.capture_print_page(window).map(|_| ()) {
+            return Ok(Err(crate::phase4_gui_host::error_to_phase4(err)));
+        }
+        let pages = std::mem::take(self.print_pages_mut());
+        if pages.is_empty() {
+            return Ok(Err(
+                crate::phase4_gui_bindings::krate::ui::types::UiError::Platform(
+                    "no pages were added to print".to_string(),
+                ),
+            ));
+        }
+        Ok(print_now(&title, &pages))
+    }
+}
+
+fn print_now(
+    title: &str,
+    pages: &[crate::print_host::Page],
+) -> Result<
+    crate::phase4_gui_bindings::krate::ui::print::PrintOutcome,
+    crate::phase4_gui_bindings::krate::ui::types::UiError,
+> {
+    use crate::print_host::Outcome;
+    let document = crate::print_host::pdf(title, pages);
+    match crate::print_host::print(title, &document) {
+        Ok(Outcome::Printed) => {
+            Ok(crate::phase4_gui_bindings::krate::ui::print::PrintOutcome::Printed)
+        }
+        Ok(Outcome::Cancelled) => {
+            Ok(crate::phase4_gui_bindings::krate::ui::print::PrintOutcome::Cancelled)
+        }
+        Ok(Outcome::OpenedInViewer) => {
+            Ok(crate::phase4_gui_bindings::krate::ui::print::PrintOutcome::OpenedInViewer)
+        }
+        Err(why) => Err(crate::phase4_gui_bindings::krate::ui::types::UiError::Platform(why)),
     }
 }
 

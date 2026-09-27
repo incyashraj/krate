@@ -3,7 +3,7 @@
 Generated from the runtime host, not written by hand. Run
 `cargo run -p krate-tools --bin check-interface-parity -- --write` to refresh it.
 
-**13 of 16 declared interfaces are fully implemented. 1 are declared and do nothing yet.**
+**14 of 17 declared interfaces are fully implemented. 1 are declared and do nothing yet.**
 
 An interface that is declared but not implemented refuses every call with
 `Unsupported`. That is the honest failure -- nothing pretends to work -- but a
@@ -31,6 +31,7 @@ not be drawn into. That pair reads `works` on both tables now.
 | `ui.launcher` | 1 | **works** |
 | `ui.menu` | 1 | **not implemented** |
 | `ui.notify` | 1 | **works** |
+| `ui.print` | 3 | **works** |
 | `ui.tree` | 5 | partly -- 1 of 5 refuse |
 | `ui.window` | 8 | partly -- 1 of 8 refuse |
 

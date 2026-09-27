@@ -264,7 +264,7 @@ fn color_from_phase4(color: ui4::types::Color) -> Color {
 ///
 /// The two are structurally identical and are distinct Rust types only
 /// because they come from two generated modules.
-fn error_to_phase4(err: ui3::types::UiError) -> ui4::types::UiError {
+pub(crate) fn error_to_phase4(err: ui3::types::UiError) -> ui4::types::UiError {
     match err {
         ui3::types::UiError::PermissionDenied => ui4::types::UiError::PermissionDenied,
         ui3::types::UiError::InvalidWindow => ui4::types::UiError::InvalidWindow,

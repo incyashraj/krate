@@ -61,6 +61,7 @@ pub mod phase3_gui_bindings;
 pub mod phase3_gui_host;
 pub mod phase4_gui_bindings;
 pub mod phase4_gui_host;
+mod print_host;
 pub mod random_host;
 pub mod scene3d;
 pub mod secret_host;
@@ -1303,6 +1304,7 @@ impl Runtime {
         // so it gets its own events module rather than reusing Phase 3's
         // (K-175).
         link_gui!(ui4::events);
+        link_gui!(ui4::print);
 
         link_gui!(ui::window);
         link_gui!(ui::image);
@@ -1350,6 +1352,11 @@ impl Runtime {
                     tracing::debug!(?error, "could not write the usability report");
                 }
             }
+        }
+        // After the report, which reads the windows; before the process
+        // winds down, which must not be what drops them (K-881).
+        if let Some(gui) = store.data_mut().phase3_gui.as_mut() {
+            gui.close_open_windows();
         }
 
         let code = match outcome {
