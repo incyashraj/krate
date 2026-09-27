@@ -61,6 +61,11 @@ run "public claims (CI docs lane)" sh -c 'python3 scripts/check-claims.py > "${T
 # standardizes and how an app escapes it (IC-175). store.group reached CI
 # unreviewed on 2026-09-27 because this gate never asked.
 run "developer-control review (CI docs lane)" python3 scripts/developer-control-review.py --check
+# CI's bindings lane regenerates every app's bindings and fails on a diff.
+# The script compares with git and REVERTS on failure, so a refresh that is
+# regenerated but not yet committed must be committed first -- running it
+# over one threw the refresh away on 2026-09-27 and a stale copy was pushed.
+run "app bindings are fresh (CI lane)" sh -c 'git diff --quiet -- "*/src/bindings.rs" || { echo "bindings are regenerated but not committed: commit them, then run this again (the check would revert them)"; exit 1; }; sh scripts/check-bindings-fresh.sh'
 # CI's UAPI lane regenerates the Phase 2 freeze pages and fails on a diff.
 # Compared with the working tree, not with git, so a regeneration you have
 # made and not yet committed passes; a stale page is left regenerated.
