@@ -291,11 +291,20 @@ function authoringOff() {
  * records the spend against the right bucket.
  */
 async function ownKey(token, vendor) {
-  if (!token) return null;
+  // The hub hands a key out only to the build service (K-861): the person's
+  // session says whose key, this secret says who is asking. Without it the
+  // hub refuses, so do not ask -- and a missing secret reads as "no key",
+  // which falls back to the funded path and its wall.
+  const builderSecret = process.env.KRATE_BUILDER_SECRET || "";
+  if (!token || !builderSecret) return null;
   try {
     const res = await fetch(`${HUB}/keys/use`, {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${token}`,
+        "x-krate-builder": builderSecret,
+      },
       body: JSON.stringify({ vendor }),
     });
     if (!res.ok) return null;

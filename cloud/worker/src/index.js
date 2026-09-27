@@ -490,7 +490,11 @@ export default {
         return cors(await forgetKey(request, env));
       }
       if (request.method === "POST" && pathname === "/keys/use") {
-        return cors(await useKey(request, env));
+        // NOT cors(): only the build service calls this, server to server.
+        // Without the header a browser cannot read the answer, so a script
+        // running on a krate.tech page -- an XSS -- cannot turn a stolen
+        // session into the person's plaintext key (K-861).
+        return useKey(request, env);
       }
       if (request.method === "GET" && pathname === "/spend") {
         return cors(await spendReport(request, env));
@@ -4563,12 +4567,38 @@ async function forgetKey(request, env) {
   return json({ ok: true });
 }
 
+/// Is this request from the build service? It carries a secret only the
+/// builder and this worker hold (`KRATE_BUILDER_SECRET`, set on both).
+/// Compared by digest, so the time taken says nothing about how much of a
+/// guess was right. No secret configured means nobody qualifies.
+async function fromBuilder(request, env) {
+  const expected = env.KRATE_BUILDER_SECRET || "";
+  const offered = request.headers.get("x-krate-builder") || "";
+  if (!expected || !offered) return false;
+  const digest = async (s) =>
+    new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)));
+  const [a, b] = await Promise.all([digest(expected), digest(offered)]);
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+
 /// Hand one decrypted key to the build service, for a build this very
-/// person started. Called with THEIR session, never a service token: the
-/// key belongs to the account that pasted it, and the only thing entitled
-/// to ask for it is a build that account is running. Answers 404 when they
-/// have not set one, so the caller falls back to whatever it has.
+/// person started.
+///
+/// TWO credentials, because either alone is not enough. The person's
+/// session says WHOSE key: the builder can only ever read the key of the
+/// account whose build it is running. The builder's secret says WHO is
+/// asking: this used to take the session alone, on a CORS-enabled route,
+/// so anything holding a person's session -- a script injected into a
+/// krate.tech page, say -- could read their API key in plain text, while
+/// the comment above promised it never travels back to a browser (K-861).
+/// Answers 404 when they have not set one, so the caller falls back to
+/// whatever it has.
 async function useKey(request, env) {
+  if (!(await fromBuilder(request, env))) {
+    return text("Only the build service may ask for this.", 403);
+  }
   const user = await authedUser(request, env);
   if (!user) return text("Sign in first.", 401);
   let body;

@@ -24,6 +24,9 @@ const env = {
   // The wrapping secret. In production this is a Cloudflare secret; absent,
   // every key route refuses rather than storing something it cannot protect.
   KEY_WRAP_SECRET: "test-wrapping-secret",
+  // What the build service proves itself with on /keys/use (K-861). Set on
+  // the worker and on the builder; a browser never has it.
+  KRATE_BUILDER_SECRET: "test-builder-secret",
   APPS: {
     get: async (k) => KV.get(k) ?? null,
     put: async (k, v) => { KV.set(k, v); },
@@ -39,8 +42,10 @@ KV.set("user:u-alice", JSON.stringify({ id: "u-alice", login: "alice" }));
 KV.set("session:krs_bob", "u-bob");
 KV.set("user:u-bob", JSON.stringify({ id: "u-bob", login: "bob" }));
 
-async function call(method, path, body, token, envOverride) {
-  const headers = { "content-type": "application/json" };
+const AS_BUILDER = { "x-krate-builder": "test-builder-secret" };
+
+async function call(method, path, body, token, envOverride, extra = {}) {
+  const headers = { "content-type": "application/json", ...extra };
   if (token) headers.authorization = `Bearer ${token}`;
   const res = await worker.fetch(
     new Request(`https://hub.test${path}`, {
@@ -54,7 +59,7 @@ async function call(method, path, body, token, envOverride) {
   const text = await res.text();
   let parsed = null;
   try { parsed = JSON.parse(text); } catch (e) { /* plain text */ }
-  return { status: res.status, body: parsed, text };
+  return { status: res.status, body: parsed, text, cors: res.headers.get("access-control-allow-origin") };
 }
 
 const REAL_KEY = "sk-ant-api03-thisisapretendkeylongenoughtopass";
@@ -104,23 +109,43 @@ assert.ok(!listed.text.includes("sk-ant-api03"), "not even most of it");
 /* ---- one person's key is not another's ---------------------------------- */
 const bobSees = await call("GET", "/keys", undefined, "krs_bob");
 assert.strictEqual(bobSees.body.keys[0].set, false, "Bob has no key of his own");
-assert.strictEqual((await call("POST", "/keys/use", { vendor: "anthropic" }, "krs_bob")).status, 404,
-  "and cannot fetch Alice's");
+assert.strictEqual((await call("POST", "/keys/use", { vendor: "anthropic" }, "krs_bob", env, AS_BUILDER)).status, 404,
+  "and even the build service cannot fetch Alice's with Bob's session");
 
-/* ---- the build service reads it back, with the owner's session ---------- */
-const used = await call("POST", "/keys/use", { vendor: "anthropic" }, "krs_alice");
+/* ---- the owner's session ALONE does not open the key (K-861) ------------ */
+// This is what a script injected into a krate.tech page holds: the
+// person's session, and nothing else. It used to be enough to read their
+// API key in plain text, on a route that answered browsers.
+{
+  const stolen = await call("POST", "/keys/use", { vendor: "anthropic" }, "krs_alice");
+  assert.strictEqual(stolen.status, 403, `a session alone is refused: ${stolen.text}`);
+  assert.ok(!stolen.text.includes(REAL_KEY), "and the key is not in the answer");
+  assert.strictEqual(stolen.cors, null, "and a browser could not read the answer anyway: no CORS");
+  const guessed = await call("POST", "/keys/use", { vendor: "anthropic" }, "krs_alice", env,
+    { "x-krate-builder": "test-builder-secreT" });
+  assert.strictEqual(guessed.status, 403, "a near-miss secret is refused");
+  const unset = await call("POST", "/keys/use", { vendor: "anthropic" }, "krs_alice",
+    { ...env, KRATE_BUILDER_SECRET: "" }, { "x-krate-builder": "" });
+  assert.strictEqual(unset.status, 403, "a hub with no builder secret set hands the key to nobody");
+}
+
+/* ---- the build service reads it back: its secret AND the owner's session  */
+const used = await call("POST", "/keys/use", { vendor: "anthropic" }, "krs_alice", env, AS_BUILDER);
 assert.strictEqual(used.status, 200, used.text);
 assert.strictEqual(used.body.key, REAL_KEY, "it decrypts to exactly what was stored");
+assert.strictEqual(used.cors, null, "server to server: no CORS on the one answer carrying a key");
+assert.strictEqual((await call("POST", "/keys/use", { vendor: "anthropic" }, undefined, env, AS_BUILDER)).status, 401,
+  "the builder's secret alone names no account, so it opens nothing");
 
 // Without the wrapping secret the stored bytes are useless -- which is the
 // point of encrypting them at all.
-const noSecret = await call("POST", "/keys/use", { vendor: "anthropic" }, "krs_alice", { ...env, KEY_WRAP_SECRET: "" });
+const noSecret = await call("POST", "/keys/use", { vendor: "anthropic" }, "krs_alice", { ...env, KEY_WRAP_SECRET: "" }, AS_BUILDER);
 assert.notStrictEqual(noSecret.status, 200, "a KV dump alone does not yield the key");
 
 /* ---- forgetting means gone ---------------------------------------------- */
 assert.strictEqual((await call("POST", "/keys/forget", { vendor: "anthropic" }, "krs_alice")).status, 200);
 assert.strictEqual((await call("GET", "/keys", undefined, "krs_alice")).body.keys[0].set, false);
-assert.strictEqual((await call("POST", "/keys/use", { vendor: "anthropic" }, "krs_alice")).status, 404);
+assert.strictEqual((await call("POST", "/keys/use", { vendor: "anthropic" }, "krs_alice", env, AS_BUILDER)).status, 404);
 
 /* ---- the ledger: two pockets, kept apart -------------------------------- */
 await call("POST", "/spend", { usd: 0.7612, model: "claude-opus-5", rounds: 7, app: "Tip calculator", paid_by: "krate" }, "krs_alice");

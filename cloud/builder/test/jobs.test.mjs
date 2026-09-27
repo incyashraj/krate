@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const HUB_PORT = 8931;
+const BUILDER_SECRET = "builder-secret-for-tests";
 const BUILDER_PORT = 8932;
 const BUILDER = `http://127.0.0.1:${BUILDER_PORT}`;
 
@@ -42,6 +43,12 @@ const hub = createServer((req, res) => {
     let raw = "";
     req.on("data", (c) => { raw += c; });
     req.on("end", () => {
+      // Like the real hub (K-861): the person's session alone opens
+      // nothing; the build service proves itself with its own secret.
+      if (req.headers["x-krate-builder"] !== BUILDER_SECRET) {
+        res.statusCode = 403;
+        return res.end("Only the build service may ask for this.");
+      }
       const held = who ? heldKeys[who] : null;
       if (!held) { res.statusCode = 404; return res.end("no key set"); }
       keyCalls.push({ who });
@@ -196,6 +203,7 @@ function startBuilder(stateDir, krateBin, extraEnv = {}) {
       KRATE_HUB: `http://127.0.0.1:${HUB_PORT}`,
       KRATE_STATE_DIR: stateDir,
       KRATE_AGENT: "claude", // a CLI provider: no API key needed to switch on
+      KRATE_BUILDER_SECRET: BUILDER_SECRET,
       ...extraEnv,
     },
     stdio: ["ignore", "pipe", "pipe"],

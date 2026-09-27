@@ -73,6 +73,7 @@ KRATE_BIN=/path/to/krate KRATE_AGENT=claude node src/server.js
 | `KRATE_ORIGIN` | The site allowed to call this, for CORS |
 | `KRATE_BUILD_TIMEOUT_MS` | How long one build may take. Default 15 minutes |
 | `KRATE_BUILDER_DEV` | `1` skips the wall, for developing the service. **Never set in production** |
+| `KRATE_BUILDER_SECRET` | The secret the hub's `/keys/use` asks for before it hands out a person's own API key (K-861). A Fly secret here and a Worker secret on the hub, the same value on both; unset, bring-your-own-key builds fall back to the funded path |
 
 ## The doors
 
