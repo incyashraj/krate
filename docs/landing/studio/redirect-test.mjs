@@ -31,4 +31,46 @@ for (const [name, input, want] of cases) {
 }
 console.log(`${hasGuard ? "ok  " : "FAIL"} /login sends a signed-in visitor straight to /app`);
 if (!hasGuard) bad++;
+
+// A session that dies while the tab is open (K-793). The build service's
+// 401 means the session is over; Plan and Make must both go to sign in
+// once, forget the dead token and keep the sentence -- not show a bare
+// "Sign in first.", and not, from Plan, promise a build first.
+{
+  const grab = (name) => {
+    const at = src.indexOf(`  async ${name}(`);
+    return src.slice(at, src.indexOf("\n  },\n", at)) + "\n  }";
+  };
+  const helper = src.slice(src.indexOf("function sessionOver("));
+  const sessionOverSrc = helper.slice(0, helper.indexOf("\n}\n") + 3);
+  for (const name of ["plan_request", "create_app"]) {
+    const bridge = { token: "krs_expired" };
+    const went = [];
+    const removed = [];
+    const dropped = [];
+    const localStorage = { removeItem: (k) => removed.push(k) };
+    const TOKEN_KEY = "krate_tok";
+    const goSignIn = (r) => { went.push(r); return new Promise(() => {}); };
+    const dropUnbuilt = (r) => dropped.push(r);
+    const builder = async () => { const e = new Error("Sign in first."); e.status = 401; throw e; };
+    const COMMANDS = {};
+    const run = eval(`(function () {
+      ${sessionOverSrc}
+      const webMode = () => "build";
+      const tooLong = () => null;
+      const deviceId = () => "dev";
+      const attachmentsFor = () => [];
+      const localSessions = () => [];
+      COMMANDS.session_save = async () => {};
+      return ({\n${grab(name)}\n});
+    })()`);
+    let settled = false;
+    run[name]({ request: "a tiny timer" }).then(() => { settled = true; }, () => { settled = true; });
+    await new Promise((r) => setTimeout(r, 10));
+    const ok = went.length === 1 && went[0] === "a tiny timer" && bridge.token === null
+      && removed.includes("krate_tok") && !settled && dropped.includes("a tiny timer");
+    if (!ok) bad++;
+    console.log(`${ok ? "ok  " : "FAIL"} ${name}: an expired session goes to sign in once, request kept -> ${JSON.stringify({ went, token: bridge.token, settled })}`);
+  }
+}
 process.exit(bad ? 1 : 0);

@@ -59,6 +59,23 @@ function goSignIn(request) {
   return new Promise(() => {});
 }
 
+/* The build service said the session is over.
+ *
+ * Its 401 means exactly that: an outage reaching the hub is a 502 since
+ * K-888. A session that expired while the tab was open used to reach
+ * Studio as a bare "Sign in first." -- and from Plan, as "I'll skip the
+ * questions this time and build right away" followed by the same line, the
+ * contradiction K-776 removed for somebody who was never signed in. It is
+ * the same door as that one now: forget the dead token, keep the sentence,
+ * go to sign in once (K-793). Returns null for anything else. */
+function sessionOver(err, request, sessionId) {
+  if (!err || err.status !== 401) return null;
+  bridge.token = null;
+  try { localStorage.removeItem(TOKEN_KEY); } catch (e) {}
+  dropUnbuilt(request, sessionId);
+  return goSignIn(request);
+}
+
 /* Whatever is in the Home box right now, so a sign-in hop never costs a
  * sentence somebody was in the middle of. */
 function composerText() {
@@ -1375,6 +1392,8 @@ const COMMANDS = {
         if (err && err.status) wall.status = err.status;
         throw wall;
       }
+      const over = sessionOver(err, request, sessionId);
+      if (over) return over;  // the page is navigating away
       throw err;
     }
     return watchJob(started.id, request, sessionId);
@@ -1466,6 +1485,8 @@ const COMMANDS = {
         if (err && err.status) wall.status = err.status;
         throw wall;
       }
+      const over = sessionOver(err, request);
+      if (over) return over;  // the page is navigating away
       throw err;
     }
     // Studio's UI expects the engine's JSON as text, exactly as the
