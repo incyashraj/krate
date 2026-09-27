@@ -572,7 +572,19 @@ pub fn resolve_session_policy(
 ) -> Result<SessionPolicy> {
     match (manifest, auto_grant) {
         (Some(manifest), true) => SessionPolicy::allow_all_declared(manifest),
-        _ => SessionPolicy::from_cli_grants(cli_grants),
+        // An operator's --grant is checked against what the app declared
+        // (K-870, IC-733). K-387 made the MCP path do this and the command
+        // line kept the unchecked parser, so `krate run app.krate --grant
+        // store.kv` handed an app a store its manifest never mentioned --
+        // measured: 11 of 11 saves, with the declaration deleted.
+        (Some(manifest), false) => {
+            let declared: BTreeSet<Capability> =
+                manifest.declared_capabilities()?.into_iter().collect();
+            SessionPolicy::from_cli_grants_declared(cli_grants, &declared)
+        }
+        // A bare component with no manifest has nothing to check against;
+        // the operator's grants are the whole policy, as before.
+        (None, _) => SessionPolicy::from_cli_grants(cli_grants),
     }
 }
 

@@ -5751,6 +5751,76 @@ fn an_app_that_declares_more_memory_gets_it_only_when_granted() {
     );
 }
 
+/// An operator's --grant cannot hand an app a capability its manifest never
+/// declared (K-870, IC-733). K-387 closed this on the MCP path; the command
+/// line kept the unchecked parser, and an app with its store declaration
+/// deleted saved 11 of 11 times under `--grant store.kv`.
+#[test]
+fn a_grant_the_manifest_never_declared_is_refused_on_the_command_line() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/memory-probe.wasm")).expect("probe");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        "[app]\nid = \"com.acme.plain\"\nname = \"plain\"\nversion = \"1.0.0\"\n\
+         entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+         [[capabilities]]\ncap = \"io.stdout\"\nrationale = \"print\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"io.args\"\nrationale = \"args\"\nrequired = true\n",
+    )
+    .expect("manifest");
+    let bundle = dir.path().join("plain.krate");
+    assert!(krate()
+        .arg("pack")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .status()
+        .expect("pack")
+        .success());
+
+    let refused = krate()
+        .arg("run")
+        .arg(&bundle)
+        .args([
+            "--grant",
+            "io.stdout",
+            "--grant",
+            "io.args",
+            "--grant",
+            "store.kv",
+            "--",
+            "10",
+        ])
+        .output()
+        .expect("run");
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(
+        !refused.status.success(),
+        "an undeclared grant must stop the run: {stderr}"
+    );
+    assert!(
+        stderr.contains("store.kv") && stderr.contains("not declared"),
+        "and say which capability and why: {stderr}"
+    );
+
+    // The declared ones alone still run -- the check is not a blanket refusal.
+    let fine = krate()
+        .arg("run")
+        .arg(&bundle)
+        .args(["--grant", "io.stdout", "--grant", "io.args", "--", "10"])
+        .output()
+        .expect("run");
+    assert!(
+        fine.status.success(),
+        "{}",
+        String::from_utf8_lossy(&fine.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&fine.stdout).trim(), "held=10");
+}
+
 /// Uninstalling removes the app and keeps what the person wrote in it,
 /// unless they ask otherwise (IC-278, IC-396).
 ///
