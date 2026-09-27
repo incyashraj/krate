@@ -233,6 +233,13 @@ jobs:
           # scripts: a shared link opened on a desktop gets the app itself,
           # not just its name (K-858).
           node docs/landing/studio/first-contact-test.mjs
+          # And that a page load never starts a build: in a tab the desktop
+          # test hook once typed "asking" into the box and built it on every
+          # visit, at the person's expense on their own key (K-885).
+          node docs/landing/studio/autorun-test.mjs
+          # And that a failed build tells the person what happened in
+          # words about their app, from the engine's real output (K-892).
+          node docs/landing/studio/failure-words-test.mjs
 
           mkdir -p _site/app
           cp -R studio/ui/. _site/app/
