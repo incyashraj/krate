@@ -1321,6 +1321,310 @@ pub mod krate {
                 }
             }
         }
+        /// Noticing when the files in a folder change: a folder of photos to shrink,
+        /// a notes folder another editor also writes, an inbox a scanner fills.
+        ///
+        /// A watch sees what listing the folder would see and nothing more, so it
+        /// needs what listing needs: `fs.list` on the folder, or a folder the
+        /// person picked (`picked/<token>/...`). Changes are found by looking, not
+        /// pushed, which is the same on every system and cannot fall behind.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod watch {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
+            use super::super::super::_rt;
+            pub type FsError = super::super::super::krate::fs::types::FsError;
+            /// What happened to one path.
+            #[repr(u8)]
+            #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+            pub enum ChangeKind {
+                /// It appeared.
+                Created,
+                /// Its size or modified time changed.
+                Modified,
+                /// It went away. A rename is a removal and a creation.
+                Removed,
+            }
+            impl ::core::fmt::Debug for ChangeKind {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    match self {
+                        ChangeKind::Created => {
+                            f.debug_tuple("ChangeKind::Created").finish()
+                        }
+                        ChangeKind::Modified => {
+                            f.debug_tuple("ChangeKind::Modified").finish()
+                        }
+                        ChangeKind::Removed => {
+                            f.debug_tuple("ChangeKind::Removed").finish()
+                        }
+                    }
+                }
+            }
+            impl ChangeKind {
+                #[doc(hidden)]
+                pub unsafe fn _lift(val: u8) -> ChangeKind {
+                    if !cfg!(debug_assertions) {
+                        return ::core::mem::transmute(val);
+                    }
+                    match val {
+                        0 => ChangeKind::Created,
+                        1 => ChangeKind::Modified,
+                        2 => ChangeKind::Removed,
+                        _ => panic!("invalid enum discriminant"),
+                    }
+                }
+            }
+            /// One change: the watched folder's path joined with the entry's path
+            /// inside it, `/`-separated -- a path the app can pass straight back to
+            /// `files.open` or `files.stat`.
+            #[derive(Clone)]
+            pub struct Change {
+                /// Where it happened, as the app would name it.
+                pub path: _rt::String,
+                /// What happened to it.
+                pub kind: ChangeKind,
+                /// True when the path is a folder.
+                pub is_dir: bool,
+            }
+            impl ::core::fmt::Debug for Change {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    f.debug_struct("Change")
+                        .field("path", &self.path)
+                        .field("kind", &self.kind)
+                        .field("is-dir", &self.is_dir)
+                        .finish()
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Start watching a folder and everything under it, and return an id for
+            /// `changes`. At most 8 watches at once, and 20,000 entries each: a
+            /// bigger tree is refused rather than watched in part.
+            pub fn start(path: &str) -> Result<u64, FsError> {
+                unsafe {
+                    #[repr(align(8))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 16 + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 16
+                            + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = path;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:fs/watch@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "start"]
+                        fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result10 = match l3 {
+                        0 => {
+                            let e = {
+                                let l4 = *ptr1.add(8).cast::<i64>();
+                                l4 as u64
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l5 = i32::from(*ptr1.add(8).cast::<u8>());
+                                use super::super::super::krate::fs::types::FsError as V9;
+                                let v9 = match l5 {
+                                    0 => V9::NotFound,
+                                    1 => V9::PermissionDenied,
+                                    2 => V9::AlreadyExists,
+                                    3 => V9::InvalidPath,
+                                    4 => V9::NotADirectory,
+                                    5 => V9::IsADirectory,
+                                    n => {
+                                        debug_assert_eq!(n, 6, "invalid enum discriminant");
+                                        let e9 = {
+                                            let l6 = *ptr1
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l7 = *ptr1
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len8 = l7;
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
+                                            _rt::string_lift(bytes8)
+                                        };
+                                        V9::Io(e9)
+                                    }
+                                };
+                                v9
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result10
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// What changed since `start` or the last call, sorted by path. Looks at
+            /// most four times a second: calling sooner returns an empty list, not an
+            /// error, so an app may simply ask every frame.
+            pub fn changes(watch_id: u64) -> Result<_rt::Vec<Change>, FsError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:fs/watch@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "changes"]
+                        fn wit_import1(_: i64, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(_rt::as_i64(&watch_id), ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result16 = match l2 {
+                        0 => {
+                            let e = {
+                                let l3 = *ptr0
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l4 = *ptr0
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let base10 = l3;
+                                let len10 = l4;
+                                let mut result10 = _rt::Vec::with_capacity(len10);
+                                for i in 0..len10 {
+                                    let base = base10
+                                        .add(i * (3 * ::core::mem::size_of::<*const u8>()));
+                                    let e10 = {
+                                        let l5 = *base.add(0).cast::<*mut u8>();
+                                        let l6 = *base
+                                            .add(::core::mem::size_of::<*const u8>())
+                                            .cast::<usize>();
+                                        let len7 = l6;
+                                        let bytes7 = _rt::Vec::from_raw_parts(
+                                            l5.cast(),
+                                            len7,
+                                            len7,
+                                        );
+                                        let l8 = i32::from(
+                                            *base
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<u8>(),
+                                        );
+                                        let l9 = i32::from(
+                                            *base
+                                                .add(1 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<u8>(),
+                                        );
+                                        Change {
+                                            path: _rt::string_lift(bytes7),
+                                            kind: ChangeKind::_lift(l8 as u8),
+                                            is_dir: _rt::bool_lift(l9 as u8),
+                                        }
+                                    };
+                                    result10.push(e10);
+                                }
+                                _rt::cabi_dealloc(
+                                    base10,
+                                    len10 * (3 * ::core::mem::size_of::<*const u8>()),
+                                    ::core::mem::size_of::<*const u8>(),
+                                );
+                                result10
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l11 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                use super::super::super::krate::fs::types::FsError as V15;
+                                let v15 = match l11 {
+                                    0 => V15::NotFound,
+                                    1 => V15::PermissionDenied,
+                                    2 => V15::AlreadyExists,
+                                    3 => V15::InvalidPath,
+                                    4 => V15::NotADirectory,
+                                    5 => V15::IsADirectory,
+                                    n => {
+                                        debug_assert_eq!(n, 6, "invalid enum discriminant");
+                                        let e15 = {
+                                            let l12 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l13 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len14 = l13;
+                                            let bytes14 = _rt::Vec::from_raw_parts(
+                                                l12.cast(),
+                                                len14,
+                                                len14,
+                                            );
+                                            _rt::string_lift(bytes14)
+                                        };
+                                        V15::Io(e15)
+                                    }
+                                };
+                                v15
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result16
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Stop watching. An id that is not watching is ignored.
+            pub fn stop(watch_id: u64) -> () {
+                unsafe {
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:fs/watch@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "stop"]
+                        fn wit_import0(_: i64);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import0(_: i64) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import0(_rt::as_i64(&watch_id)) };
+                }
+            }
+        }
     }
     pub mod io {
         /// Shared IO records and errors.
@@ -8190,8 +8494,8 @@ pub(crate) use __export_cli_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 5101] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xf3&\x01A\x02\x01A<\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 5315] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xc9(\x01A\x02\x01A>\x01\
 B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x09log-level\x03\
 \0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eof\0\0\x0cinvalid-\
 utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x14krate:io/types@0.1\
@@ -8231,88 +8535,93 @@ paths\0\x10\x04\0\x04stat\x01\x16\x01ps\x01j\x01\x17\x01\x05\x01@\x01\x04paths\0
 \x18\x04\0\x04list\x01\x19\x01j\0\x01\x05\x01@\x01\x04paths\0\x1a\x04\0\x0bremov\
 e-file\x01\x1b\x04\0\x0aremove-dir\x01\x1b\x04\0\x05mkdir\x01\x1b\x01@\x02\x04fr\
 oms\x02tos\0\x1a\x04\0\x06rename\x01\x1c\x03\0\x14krate:fs/files@0.1.0\x05\x0d\x01\
-B\x0f\x01m\x07\x03get\x04post\x03put\x06delete\x05patch\x04head\x07options\x04\0\
-\x0bhttp-method\x03\0\0\x01r\x02\x04names\x05values\x04\0\x06header\x03\0\x02\x01\
-p\x03\x01p}\x01ky\x01r\x05\x06method\x01\x03urls\x07headers\x04\x04body\x05\x0et\
-imeout-millis\x06\x04\0\x07request\x03\0\x07\x01r\x03\x06status{\x07headers\x04\x04\
-body\x05\x04\0\x08response\x03\0\x09\x01q\x09\x0binvalid-url\0\0\x0bdns-failure\x01\
-s\0\x0fconnect-failure\x01s\0\x0btls-failure\x01s\0\x07timeout\0\0\x0ebody-too-l\
-arge\0\0\x11permission-denied\0\0\x08protocol\x01s\0\x05other\x01s\0\x04\0\x09ne\
-t-error\x03\0\x0b\x01q\x04\x07pending\0\0\x05ready\x01\x0a\0\x06failed\x01\x0c\0\
-\x0eunknown-handle\0\0\x04\0\x0cfetch-status\x03\0\x0d\x03\0\x15krate:net/types@\
-0.1.0\x05\x0e\x02\x03\0\x07\x07request\x02\x03\0\x07\x08response\x02\x03\0\x07\x09\
-net-error\x02\x03\0\x07\x0cfetch-status\x01B\x16\x02\x03\x02\x01\x0f\x04\0\x07re\
-quest\x03\0\0\x02\x03\x02\x01\x10\x04\0\x08response\x03\0\x02\x02\x03\x02\x01\x11\
-\x04\0\x09net-error\x03\0\x04\x02\x03\x02\x01\x12\x04\0\x0cfetch-status\x03\0\x06\
-\x01p}\x01j\x01\x08\x01\x05\x01@\x01\x03urls\0\x09\x04\0\x03get\x01\x0a\x01j\x01\
-\x03\x01\x05\x01@\x01\x03req\x01\0\x0b\x04\0\x05fetch\x01\x0c\x01j\x01w\x01\x05\x01\
-@\x01\x03req\x01\0\x0d\x04\0\x05begin\x01\x0e\x01@\x01\x06handlew\0\x07\x04\0\x04\
-poll\x01\x0f\x01@\x01\x06handlew\x01\0\x04\0\x06cancel\x01\x10\x03\0\x1bkrate:ne\
-t/http-client@0.1.0\x05\x13\x01B\x11\x02\x03\x02\x01\x11\x04\0\x09net-error\x03\0\
-\0\x01p}\x01q\x02\x04text\x01s\0\x06binary\x01\x02\0\x04\0\x0aws-message\x03\0\x03\
-\x01q\x06\x07pending\0\0\x06opened\0\0\x07message\x01\x04\0\x06closed\0\0\x06fai\
-led\x01s\0\x0eunknown-handle\0\0\x04\0\x08ws-event\x03\0\x05\x01j\x01w\x01\x01\x01\
-@\x01\x03urls\0\x07\x04\0\x04open\x01\x08\x01j\0\x01\x01\x01@\x02\x06handlew\x07\
-message\x04\0\x09\x04\0\x04send\x01\x0a\x01@\x01\x06handlew\0\x06\x04\0\x04poll\x01\
-\x0b\x01@\x01\x06handlew\x01\0\x04\0\x05close\x01\x0c\x03\0\x12krate:net/ws@0.1.\
-0\x05\x14\x01B\x03\x01@\0\0w\x04\0\x0anow-millis\x01\0\x04\0\x0fmonotonic-nanos\x01\
-\0\x03\0\x16krate:time/clock@0.1.0\x05\x15\x01B\x02\x01@\x01\x06millisy\x01\0\x04\
-\0\x0csleep-millis\x01\0\x03\0\x16krate:time/sleep@0.1.0\x05\x16\x01B\x06\x01r\x01\
-\x05bcp47s\x04\0\x09locale-id\x03\0\0\x01m\x04\x05short\x06medium\x04long\x04ful\
-l\x04\0\x0adate-style\x03\0\x02\x01m\x03\x07decimal\x07percent\x08currency\x04\0\
-\x0cnumber-style\x03\0\x04\x03\0\x18krate:locale/types@0.1.0\x05\x17\x02\x03\0\x0c\
-\x09locale-id\x01B\x06\x02\x03\x02\x01\x18\x04\0\x09locale-id\x03\0\0\x01@\0\0\x01\
-\x04\0\x07current\x01\x02\x01@\0\0s\x04\0\x08timezone\x01\x03\x03\0\x17krate:loc\
-ale/info@0.1.0\x05\x19\x02\x03\0\x0c\x0adate-style\x02\x03\0\x0c\x0cnumber-style\
-\x01B\x0a\x02\x03\x02\x01\x18\x04\0\x09locale-id\x03\0\0\x02\x03\x02\x01\x1a\x04\
-\0\x0adate-style\x03\0\x02\x02\x03\x02\x01\x1b\x04\0\x0cnumber-style\x03\0\x04\x01\
-@\x04\x06millisw\x02tzs\x05style\x03\x03loc\x01\0s\x04\0\x0bformat-date\x01\x06\x01\
-@\x03\x05valueu\x05style\x05\x03loc\x01\0s\x04\0\x0dformat-number\x01\x07\x03\0\x19\
-krate:locale/format@0.1.0\x05\x1c\x01B\x0a\x01q\x04\x09not-found\0\0\x0cinvalid-\
-path\0\0\x09too-large\0\0\x02io\x01s\0\x04\0\x0eresource-error\x03\0\0\x01p}\x01\
-j\x01\x02\x01\x01\x01@\x01\x04paths\0\x03\x04\0\x04read\x01\x04\x01ps\x01j\x01\x05\
-\x01\x01\x01@\x01\x04paths\0\x06\x04\0\x04list\x01\x07\x03\0\x1ckrate:resources/\
-assets@0.1.0\x05\x1d\x01B\x12\x01q\x04\x06denied\0\0\x0binvalid-key\0\0\x09too-l\
-arge\0\0\x02io\x01s\0\x04\0\x0bstore-error\x03\0\0\x01p}\x01k\x02\x01j\x01\x03\x01\
-\x01\x01@\x01\x03keys\0\x04\x04\0\x03get\x01\x05\x01j\0\x01\x01\x01@\x02\x03keys\
-\x05value\x02\0\x06\x04\0\x03set\x01\x07\x01@\x01\x03keys\0\x06\x04\0\x06delete\x01\
-\x08\x01ps\x01j\x01\x09\x01\x01\x01@\0\0\x0a\x04\0\x04keys\x01\x0b\x01@\0\0\x06\x04\
-\0\x05clear\x01\x0c\x03\0\x14krate:store/kv@0.1.0\x05\x1e\x01B\x15\x01p}\x01q\x05\
-\x04null\0\0\x07integer\x01x\0\x04real\x01u\0\x04text\x01s\0\x04blob\x01\0\0\x04\
-\0\x05value\x03\0\x01\x01q\x05\x06denied\0\0\x11invalid-statement\x01s\0\x09forb\
-idden\x01s\0\x09too-large\0\0\x02io\x01s\0\x04\0\x09sql-error\x03\0\x03\x01p\x02\
-\x01r\x01\x06values\x05\x04\0\x03row\x03\0\x06\x01ps\x01p\x07\x01r\x02\x07column\
-s\x08\x04rows\x09\x04\0\x0cquery-result\x03\0\x0a\x01j\x01\x0b\x01\x04\x01@\x02\x09\
-statements\x06params\x05\0\x0c\x04\0\x05query\x01\x0d\x01j\x01w\x01\x04\x01@\x02\
-\x09statements\x06params\x05\0\x0e\x04\0\x07execute\x01\x0f\x01j\0\x01\x04\x01@\x01\
-\x0astatements\x08\0\x10\x04\0\x0btransaction\x01\x11\x03\0\x15krate:store/sql@0\
-.1.0\x05\x1f\x01B\x10\x01q\x04\x06denied\0\0\x0cinvalid-name\0\0\x09too-large\0\0\
-\x02io\x01s\0\x04\0\x0csecret-error\x03\0\0\x01p}\x01k\x02\x01j\x01\x03\x01\x01\x01\
-@\x01\x04names\0\x04\x04\0\x03get\x01\x05\x01j\0\x01\x01\x01@\x02\x04names\x06se\
-cret\x02\0\x06\x04\0\x03set\x01\x07\x01@\x01\x04names\0\x06\x04\0\x06delete\x01\x08\
-\x01ps\x01j\x01\x09\x01\x01\x01@\0\0\x0a\x04\0\x05names\x01\x0b\x03\0\x18krate:s\
-tore/secret@0.1.0\x05\x20\x01B\x1e\x01q\x06\x06denied\0\0\x0anot-joined\0\0\x0dn\
-o-such-share\0\0\x0cinvalid-name\0\0\x09too-large\0\0\x02io\x01s\0\x04\0\x0cshar\
-ed-error\x03\0\0\x01ks\x01j\x01\x02\x01\x01\x01@\0\0\x03\x04\0\x04code\x01\x04\x01\
-j\x01s\x01\x01\x01@\0\0\x05\x04\0\x06create\x01\x06\x01j\0\x01\x01\x01@\x01\x04c\
-odes\0\x07\x04\0\x04join\x01\x08\x01@\0\0\x07\x04\0\x05leave\x01\x09\x01p}\x01k\x0a\
-\x01j\x01\x0b\x01\x01\x01@\x01\x03keys\0\x0c\x04\0\x03get\x01\x0d\x01@\x02\x03ke\
-ys\x05value\x0a\0\x07\x04\0\x03set\x01\x0e\x01@\x01\x03keys\0\x07\x04\0\x06delet\
-e\x01\x0f\x01ps\x01j\x01\x10\x01\x01\x01@\0\0\x11\x04\0\x04keys\x01\x12\x01j\x01\
-\x7f\x01\x01\x01@\0\0\x13\x04\0\x04sync\x01\x14\x03\0\x18krate:store/shared@0.1.\
-0\x05!\x01B\x10\x01q\x05\x06denied\0\0\x0cnot-a-member\0\0\x0binvalid-key\0\0\x09\
-too-large\0\0\x02io\x01s\0\x04\0\x0bgroup-error\x03\0\0\x01p}\x01k\x02\x01j\x01\x03\
-\x01\x01\x01@\x02\x05groups\x03keys\0\x04\x04\0\x03get\x01\x05\x01j\0\x01\x01\x01\
-@\x03\x05groups\x03keys\x05value\x02\0\x06\x04\0\x03set\x01\x07\x01@\x02\x05grou\
-ps\x03keys\0\x06\x04\0\x06delete\x01\x08\x01ps\x01j\x01\x09\x01\x01\x01@\x01\x05\
-groups\0\x0a\x04\0\x04keys\x01\x0b\x03\0\x17krate:store/group@0.1.0\x05\"\x01B\x0b\
-\x01q\x04\x06denied\0\0\x09too-large\0\0\x0bempty-range\0\0\x0bunavailable\x01s\0\
-\x04\0\x0crandom-error\x03\0\0\x01p}\x01j\x01\x02\x01\x01\x01@\x01\x05county\0\x03\
-\x04\0\x03get\x01\x04\x01j\x01w\x01\x01\x01@\0\0\x05\x04\0\x08next-u64\x01\x06\x01\
-@\x01\x05boundw\0\x05\x04\0\x05below\x01\x07\x03\0\x18krate:random/bytes@0.1.0\x05\
-#\x01@\0\0z\x04\0\x03run\x01$\x04\0\x13krate:app/cli@0.1.0\x04\0\x0b\x09\x01\0\x03\
-cli\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10\
-wit-bindgen-rust\x060.41.0";
+B\x0f\x02\x03\x02\x01\x0c\x04\0\x08fs-error\x03\0\0\x01m\x03\x07created\x08modif\
+ied\x07removed\x04\0\x0bchange-kind\x03\0\x02\x01r\x03\x04paths\x04kind\x03\x06i\
+s-dir\x7f\x04\0\x06change\x03\0\x04\x01j\x01w\x01\x01\x01@\x01\x04paths\0\x06\x04\
+\0\x05start\x01\x07\x01p\x05\x01j\x01\x08\x01\x01\x01@\x01\x08watch-idw\0\x09\x04\
+\0\x07changes\x01\x0a\x01@\x01\x08watch-idw\x01\0\x04\0\x04stop\x01\x0b\x03\0\x14\
+krate:fs/watch@0.1.0\x05\x0e\x01B\x0f\x01m\x07\x03get\x04post\x03put\x06delete\x05\
+patch\x04head\x07options\x04\0\x0bhttp-method\x03\0\0\x01r\x02\x04names\x05value\
+s\x04\0\x06header\x03\0\x02\x01p\x03\x01p}\x01ky\x01r\x05\x06method\x01\x03urls\x07\
+headers\x04\x04body\x05\x0etimeout-millis\x06\x04\0\x07request\x03\0\x07\x01r\x03\
+\x06status{\x07headers\x04\x04body\x05\x04\0\x08response\x03\0\x09\x01q\x09\x0bi\
+nvalid-url\0\0\x0bdns-failure\x01s\0\x0fconnect-failure\x01s\0\x0btls-failure\x01\
+s\0\x07timeout\0\0\x0ebody-too-large\0\0\x11permission-denied\0\0\x08protocol\x01\
+s\0\x05other\x01s\0\x04\0\x09net-error\x03\0\x0b\x01q\x04\x07pending\0\0\x05read\
+y\x01\x0a\0\x06failed\x01\x0c\0\x0eunknown-handle\0\0\x04\0\x0cfetch-status\x03\0\
+\x0d\x03\0\x15krate:net/types@0.1.0\x05\x0f\x02\x03\0\x08\x07request\x02\x03\0\x08\
+\x08response\x02\x03\0\x08\x09net-error\x02\x03\0\x08\x0cfetch-status\x01B\x16\x02\
+\x03\x02\x01\x10\x04\0\x07request\x03\0\0\x02\x03\x02\x01\x11\x04\0\x08response\x03\
+\0\x02\x02\x03\x02\x01\x12\x04\0\x09net-error\x03\0\x04\x02\x03\x02\x01\x13\x04\0\
+\x0cfetch-status\x03\0\x06\x01p}\x01j\x01\x08\x01\x05\x01@\x01\x03urls\0\x09\x04\
+\0\x03get\x01\x0a\x01j\x01\x03\x01\x05\x01@\x01\x03req\x01\0\x0b\x04\0\x05fetch\x01\
+\x0c\x01j\x01w\x01\x05\x01@\x01\x03req\x01\0\x0d\x04\0\x05begin\x01\x0e\x01@\x01\
+\x06handlew\0\x07\x04\0\x04poll\x01\x0f\x01@\x01\x06handlew\x01\0\x04\0\x06cance\
+l\x01\x10\x03\0\x1bkrate:net/http-client@0.1.0\x05\x14\x01B\x11\x02\x03\x02\x01\x12\
+\x04\0\x09net-error\x03\0\0\x01p}\x01q\x02\x04text\x01s\0\x06binary\x01\x02\0\x04\
+\0\x0aws-message\x03\0\x03\x01q\x06\x07pending\0\0\x06opened\0\0\x07message\x01\x04\
+\0\x06closed\0\0\x06failed\x01s\0\x0eunknown-handle\0\0\x04\0\x08ws-event\x03\0\x05\
+\x01j\x01w\x01\x01\x01@\x01\x03urls\0\x07\x04\0\x04open\x01\x08\x01j\0\x01\x01\x01\
+@\x02\x06handlew\x07message\x04\0\x09\x04\0\x04send\x01\x0a\x01@\x01\x06handlew\0\
+\x06\x04\0\x04poll\x01\x0b\x01@\x01\x06handlew\x01\0\x04\0\x05close\x01\x0c\x03\0\
+\x12krate:net/ws@0.1.0\x05\x15\x01B\x03\x01@\0\0w\x04\0\x0anow-millis\x01\0\x04\0\
+\x0fmonotonic-nanos\x01\0\x03\0\x16krate:time/clock@0.1.0\x05\x16\x01B\x02\x01@\x01\
+\x06millisy\x01\0\x04\0\x0csleep-millis\x01\0\x03\0\x16krate:time/sleep@0.1.0\x05\
+\x17\x01B\x06\x01r\x01\x05bcp47s\x04\0\x09locale-id\x03\0\0\x01m\x04\x05short\x06\
+medium\x04long\x04full\x04\0\x0adate-style\x03\0\x02\x01m\x03\x07decimal\x07perc\
+ent\x08currency\x04\0\x0cnumber-style\x03\0\x04\x03\0\x18krate:locale/types@0.1.\
+0\x05\x18\x02\x03\0\x0d\x09locale-id\x01B\x06\x02\x03\x02\x01\x19\x04\0\x09local\
+e-id\x03\0\0\x01@\0\0\x01\x04\0\x07current\x01\x02\x01@\0\0s\x04\0\x08timezone\x01\
+\x03\x03\0\x17krate:locale/info@0.1.0\x05\x1a\x02\x03\0\x0d\x0adate-style\x02\x03\
+\0\x0d\x0cnumber-style\x01B\x0a\x02\x03\x02\x01\x19\x04\0\x09locale-id\x03\0\0\x02\
+\x03\x02\x01\x1b\x04\0\x0adate-style\x03\0\x02\x02\x03\x02\x01\x1c\x04\0\x0cnumb\
+er-style\x03\0\x04\x01@\x04\x06millisw\x02tzs\x05style\x03\x03loc\x01\0s\x04\0\x0b\
+format-date\x01\x06\x01@\x03\x05valueu\x05style\x05\x03loc\x01\0s\x04\0\x0dforma\
+t-number\x01\x07\x03\0\x19krate:locale/format@0.1.0\x05\x1d\x01B\x0a\x01q\x04\x09\
+not-found\0\0\x0cinvalid-path\0\0\x09too-large\0\0\x02io\x01s\0\x04\0\x0eresourc\
+e-error\x03\0\0\x01p}\x01j\x01\x02\x01\x01\x01@\x01\x04paths\0\x03\x04\0\x04read\
+\x01\x04\x01ps\x01j\x01\x05\x01\x01\x01@\x01\x04paths\0\x06\x04\0\x04list\x01\x07\
+\x03\0\x1ckrate:resources/assets@0.1.0\x05\x1e\x01B\x12\x01q\x04\x06denied\0\0\x0b\
+invalid-key\0\0\x09too-large\0\0\x02io\x01s\0\x04\0\x0bstore-error\x03\0\0\x01p}\
+\x01k\x02\x01j\x01\x03\x01\x01\x01@\x01\x03keys\0\x04\x04\0\x03get\x01\x05\x01j\0\
+\x01\x01\x01@\x02\x03keys\x05value\x02\0\x06\x04\0\x03set\x01\x07\x01@\x01\x03ke\
+ys\0\x06\x04\0\x06delete\x01\x08\x01ps\x01j\x01\x09\x01\x01\x01@\0\0\x0a\x04\0\x04\
+keys\x01\x0b\x01@\0\0\x06\x04\0\x05clear\x01\x0c\x03\0\x14krate:store/kv@0.1.0\x05\
+\x1f\x01B\x15\x01p}\x01q\x05\x04null\0\0\x07integer\x01x\0\x04real\x01u\0\x04tex\
+t\x01s\0\x04blob\x01\0\0\x04\0\x05value\x03\0\x01\x01q\x05\x06denied\0\0\x11inva\
+lid-statement\x01s\0\x09forbidden\x01s\0\x09too-large\0\0\x02io\x01s\0\x04\0\x09\
+sql-error\x03\0\x03\x01p\x02\x01r\x01\x06values\x05\x04\0\x03row\x03\0\x06\x01ps\
+\x01p\x07\x01r\x02\x07columns\x08\x04rows\x09\x04\0\x0cquery-result\x03\0\x0a\x01\
+j\x01\x0b\x01\x04\x01@\x02\x09statements\x06params\x05\0\x0c\x04\0\x05query\x01\x0d\
+\x01j\x01w\x01\x04\x01@\x02\x09statements\x06params\x05\0\x0e\x04\0\x07execute\x01\
+\x0f\x01j\0\x01\x04\x01@\x01\x0astatements\x08\0\x10\x04\0\x0btransaction\x01\x11\
+\x03\0\x15krate:store/sql@0.1.0\x05\x20\x01B\x10\x01q\x04\x06denied\0\0\x0cinval\
+id-name\0\0\x09too-large\0\0\x02io\x01s\0\x04\0\x0csecret-error\x03\0\0\x01p}\x01\
+k\x02\x01j\x01\x03\x01\x01\x01@\x01\x04names\0\x04\x04\0\x03get\x01\x05\x01j\0\x01\
+\x01\x01@\x02\x04names\x06secret\x02\0\x06\x04\0\x03set\x01\x07\x01@\x01\x04name\
+s\0\x06\x04\0\x06delete\x01\x08\x01ps\x01j\x01\x09\x01\x01\x01@\0\0\x0a\x04\0\x05\
+names\x01\x0b\x03\0\x18krate:store/secret@0.1.0\x05!\x01B\x1e\x01q\x06\x06denied\
+\0\0\x0anot-joined\0\0\x0dno-such-share\0\0\x0cinvalid-name\0\0\x09too-large\0\0\
+\x02io\x01s\0\x04\0\x0cshared-error\x03\0\0\x01ks\x01j\x01\x02\x01\x01\x01@\0\0\x03\
+\x04\0\x04code\x01\x04\x01j\x01s\x01\x01\x01@\0\0\x05\x04\0\x06create\x01\x06\x01\
+j\0\x01\x01\x01@\x01\x04codes\0\x07\x04\0\x04join\x01\x08\x01@\0\0\x07\x04\0\x05\
+leave\x01\x09\x01p}\x01k\x0a\x01j\x01\x0b\x01\x01\x01@\x01\x03keys\0\x0c\x04\0\x03\
+get\x01\x0d\x01@\x02\x03keys\x05value\x0a\0\x07\x04\0\x03set\x01\x0e\x01@\x01\x03\
+keys\0\x07\x04\0\x06delete\x01\x0f\x01ps\x01j\x01\x10\x01\x01\x01@\0\0\x11\x04\0\
+\x04keys\x01\x12\x01j\x01\x7f\x01\x01\x01@\0\0\x13\x04\0\x04sync\x01\x14\x03\0\x18\
+krate:store/shared@0.1.0\x05\"\x01B\x10\x01q\x05\x06denied\0\0\x0cnot-a-member\0\
+\0\x0binvalid-key\0\0\x09too-large\0\0\x02io\x01s\0\x04\0\x0bgroup-error\x03\0\0\
+\x01p}\x01k\x02\x01j\x01\x03\x01\x01\x01@\x02\x05groups\x03keys\0\x04\x04\0\x03g\
+et\x01\x05\x01j\0\x01\x01\x01@\x03\x05groups\x03keys\x05value\x02\0\x06\x04\0\x03\
+set\x01\x07\x01@\x02\x05groups\x03keys\0\x06\x04\0\x06delete\x01\x08\x01ps\x01j\x01\
+\x09\x01\x01\x01@\x01\x05groups\0\x0a\x04\0\x04keys\x01\x0b\x03\0\x17krate:store\
+/group@0.1.0\x05#\x01B\x0b\x01q\x04\x06denied\0\0\x09too-large\0\0\x0bempty-rang\
+e\0\0\x0bunavailable\x01s\0\x04\0\x0crandom-error\x03\0\0\x01p}\x01j\x01\x02\x01\
+\x01\x01@\x01\x05county\0\x03\x04\0\x03get\x01\x04\x01j\x01w\x01\x01\x01@\0\0\x05\
+\x04\0\x08next-u64\x01\x06\x01@\x01\x05boundw\0\x05\x04\0\x05below\x01\x07\x03\0\
+\x18krate:random/bytes@0.1.0\x05$\x01@\0\0z\x04\0\x03run\x01%\x04\0\x13krate:app\
+/cli@0.1.0\x04\0\x0b\x09\x01\0\x03cli\x03\0\0\0G\x09producers\x01\x0cprocessed-b\
+y\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {
