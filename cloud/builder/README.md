@@ -73,6 +73,9 @@ KRATE_BIN=/path/to/krate KRATE_AGENT=claude node src/server.js
 | `KRATE_ORIGIN` | The site allowed to call this, for CORS |
 | `KRATE_BUILD_TIMEOUT_MS` | How long one build may take. Default 15 minutes |
 | `KRATE_BUILDER_DEV` | `1` skips the wall, for developing the service. **Never set in production** |
+| `KRATE_PLAN_PER_HOUR` | Plans one account may ask for on our key per hour. Default 12, counted on the volume so a wake does not reset it |
+| `KRATE_PLAN_BUDGET_USD_PER_DAY` | What planning on our key may cost in one day, all accounts together. Default 10 |
+| `KRATE_PLAN_UNPRICED_USD` | What a plan is charged when the engine prints no `krate-spend:` line. Default 0.45, the old worst case |
 | `KRATE_BUILDER_SECRET` | The secret the hub's `/keys/use` asks for before it hands out a person's own API key (K-861). A Fly secret here and a Worker secret on the hub, the same value on both; unset, bring-your-own-key builds fall back to the funded path |
 
 ## The doors

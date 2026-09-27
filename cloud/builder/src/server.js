@@ -61,12 +61,47 @@ const activeByAccount = new Map(); // account -> job id
  * account, trimmed as it is read; the process holds at most one entry per
  * recent caller, which is the same shape as activeByAccount above.
  *
- * Honest limit: this is per PROCESS, so a second builder machine would
+ * The counts live on the volume, not only in this process (K-862). The
+ * machine stops when idle and starts on the next request, and a count held
+ * in memory started at zero on every wake -- so "twelve an hour" was
+ * twelve per wake, which a script decides. Same file for the day's spend.
+ *
+ * Honest limit: this is per VOLUME, so a second builder machine would
  * have its own count. That is the same caveat the one-build-per-account
- * guard carries, and the fix for both is the hub, not this file. */
+ * guard carries, and the fix for both is the hub, not this file. The hub
+ * was not used here on purpose: its KV allows 1,000 writes a day for the
+ * whole account (K-912), and a write per plan would spend that on asking. */
 const PLAN_PER_HOUR = Number(process.env.KRATE_PLAN_PER_HOUR || 12);
 const PLAN_WINDOW_MS = 60 * 60 * 1000;
 const plansByAccount = new Map(); // account -> [timestamps]
+
+/* What planning on OUR key may cost in one day, across every account.
+ *
+ * A per-account limit does not bound the bill: accounts are free, and an
+ * email address makes one. So the day has a ceiling, counted from the
+ * engine's own `krate-spend:` line for each plan. A plan with no such line
+ * -- an engine too old to print one -- is charged at a deliberately high
+ * guess, so the ceiling still holds rather than counting it as free.
+ * Past the ceiling a plan is refused; building is not, and a build asks
+ * what it needs by itself. */
+const PLAN_BUDGET_USD_PER_DAY = Number(process.env.KRATE_PLAN_BUDGET_USD_PER_DAY || 10);
+const PLAN_UNPRICED_USD = Number(process.env.KRATE_PLAN_UNPRICED_USD || 0.45);
+let planSpend = { day: "", usd: 0 };
+
+function planDay() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/* A new day starts the count from zero. */
+function rollPlanDay() {
+  if (planSpend.day !== planDay()) planSpend = { day: planDay(), usd: 0 };
+}
+
+/* Is there room today for one more plan on our key? */
+function planBudgetLeft() {
+  rollPlanDay();
+  return planSpend.usd < PLAN_BUDGET_USD_PER_DAY;
+}
 
 /* Claim the one-build-at-a-time slot, atomically.
  *
@@ -102,6 +137,43 @@ function planAllowance(account) {
   return { ok: true };
 }
 
+/* The plan ledger on the volume: recent plans per account, and the day's
+ * spend. Small (one timestamp per plan in the last hour), written whole
+ * and renamed into place so a crash mid-write leaves the old one. */
+function plansFile() {
+  return join(STATE_DIR, "plans.json");
+}
+
+async function loadPlans() {
+  try {
+    const saved = JSON.parse(await readFile(plansFile(), "utf8"));
+    for (const [account, list] of Object.entries(saved.accounts || {})) {
+      if (Array.isArray(list)) plansByAccount.set(account, list.filter(Number.isFinite));
+    }
+    if (saved.spend && typeof saved.spend.day === "string" && Number.isFinite(saved.spend.usd)) {
+      planSpend = { day: saved.spend.day, usd: saved.spend.usd };
+    }
+  } catch (e) { /* none yet, or torn: start from what memory has */ }
+}
+
+async function savePlans() {
+  if (!stateWritable) return;
+  const now = Date.now();
+  const accounts = {};
+  for (const [account, list] of plansByAccount) {
+    const recent = list.filter((at) => now - at < PLAN_WINDOW_MS);
+    if (recent.length) accounts[account] = recent;
+    else plansByAccount.delete(account);
+  }
+  const tmp = `${plansFile()}.${randomBytes(4).toString("hex")}.tmp`;
+  try {
+    await writeFile(tmp, JSON.stringify({ accounts, spend: planSpend }));
+    await rename(tmp, plansFile());
+  } catch (e) {
+    console.error(`could not save the plan ledger: ${e.message}`);
+  }
+}
+
 /* ---- durable state -------------------------------------------------------
  * The machine stops when nobody is building and starts on the next request.
  * Jobs used to live only in this process, so every one of those restarts
@@ -133,6 +205,7 @@ async function initState() {
     console.error(`state dir unavailable (${err.message}); jobs will not survive a restart`);
     return;
   }
+  await loadPlans();
 
   // Every record left by the previous life of this process. A job that was
   // mid-build when the machine stopped cannot be resumed -- the compiler
@@ -808,13 +881,16 @@ async function planRequest(request, theirKey = null, attachments = []) {
     proc.on("close", (code) => {
       clearTimeout(killer);
       const text = out.trim();
+      // What the model call cost, from the engine's own line -- printed
+      // whether or not the answer turned out to be a plan (K-862).
+      const spend = spendFromLines(err.split("\n"));
       if (code !== 0 || !text) {
-        return finish({ ok: false, message: plainFailure(err || "the plan step failed") });
+        return finish({ ok: false, spend, message: plainFailure(err || "the plan step failed") });
       }
       try { JSON.parse(text); } catch (e) {
-        return finish({ ok: false, message: "the plan step answered with something that is not a plan" });
+        return finish({ ok: false, spend, message: "the plan step answered with something that is not a plan" });
       }
-      finish({ ok: true, text });
+      finish({ ok: true, spend, text });
     });
   });
 }
@@ -1174,6 +1250,16 @@ const server = createServer(async (req, res) => {
       // Somebody on their own key is spending their own money, so the
       // ceiling is ours to apply only when the bill is ours.
       if (!theirs) {
+        // The day's ceiling first, so a refusal does not also use up one
+        // of the person's plans for the hour.
+        if (!planBudgetLeft()) {
+          await audit({ action: "plan-refused", account, why: "day budget" });
+          return send(
+            res,
+            429,
+            "Planning is resting for today. Start building what you have -- the build asks for anything it needs.",
+          );
+        }
         const room = planAllowance(account);
         if (!room.ok) {
           return send(
@@ -1183,8 +1269,27 @@ const server = createServer(async (req, res) => {
             `minute${room.minutes === 1 ? "" : "s"}, or start building what you have.`,
           );
         }
+        // Written before the model is called, so a machine that stops
+        // mid-plan still remembers the plan was asked for.
+        await savePlans();
       }
       const answer = await planRequest(request, theirs, body.attachments);
+      // What it cost, and whose money (K-862). A plan answered without a
+      // price line is charged the high guess on our key, never zero.
+      const usd = answer.spend ? answer.spend.usd : (answer.ok && !theirs ? PLAN_UNPRICED_USD : 0);
+      if (!theirs && usd > 0) {
+        rollPlanDay();
+        planSpend.usd += usd;
+        await savePlans();
+      }
+      await audit({
+        action: "plan",
+        account,
+        ok: answer.ok,
+        usd,
+        priced: Boolean(answer.spend),
+        paid_by: theirs ? "own" : "krate",
+      });
       if (!answer.ok) return send(res, 502, answer.message);
       res.statusCode = 200;
       res.setHeader("content-type", "application/json");

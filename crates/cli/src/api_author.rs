@@ -46,6 +46,16 @@ const MAX_ROUNDS: usize = 40;
 /// a guard that budgets 8,192 would let a run pass its ceiling by a round.
 const MAX_REPLY_TOKENS: u64 = 16_000;
 
+/// The most a plan's one answer may run to (K-862).
+///
+/// A plan is one JSON object: up to three short questions, or three
+/// sentences and a short list. That is a few hundred tokens. It was sent
+/// with the build loop's 16,000 ceiling and the whole tool schema, so the
+/// worst case was about $0.41 of Opus output per plan, on a step the build
+/// service offers twelve times an hour to anyone signed in. 2,000 is several
+/// times what an honest plan needs and a fortieth of that bill.
+const PLAN_REPLY_TOKENS: u64 = 2_000;
+
 /// The most one app may cost before the loop stops, in US dollars.
 ///
 /// Rounds alone were never a spending limit, only a proxy for one, and a bad
@@ -586,9 +596,105 @@ pub fn ask_once(vendor: ApiVendor, prompt: &str) -> Result<String> {
         .ok_or_else(|| anyhow::anyhow!("no {} API key is set", vendor.label()))?;
     let model = model_for(vendor);
     let messages = vec![serde_json::json!({"role": "user", "content": prompt})];
-    let reply = call_api(vendor, &key, &model, &messages, "")?;
+    // A short answer and no tools: the plan never calls one, and the schema
+    // alone is input paid for on every plan (K-862).
+    let reply = call_api_with(
+        vendor,
+        &key,
+        &model,
+        &messages,
+        "",
+        PLAN_REPLY_TOKENS,
+        false,
+    )?;
+    // Priced like a build, on the same `krate-spend:` line, so the build
+    // service can hold planning to a daily ceiling and a person on their own
+    // key can see what a plan cost. A reply with no usage block is still
+    // announced -- at zero, with the model named -- and the service charges
+    // an unpriced plan at its high guess rather than as free.
+    let mut spend = Spend::default();
+    spend.add(vendor, &reply);
+    announce_spend_detailed(
+        spend.dollars(&model),
+        &model,
+        1,
+        spend.input,
+        spend.output,
+        spend.cache_write,
+        spend.cache_read,
+    );
     let (text, _calls, _stop) = parse_reply(vendor, &reply);
     Ok(text)
+}
+
+/// The request body for one call. Split out so a test can see exactly what
+/// a plan sends without a network.
+fn request_body(
+    vendor: ApiVendor,
+    model: &str,
+    messages: &[serde_json::Value],
+    system: &str,
+    max_tokens: u64,
+    with_tools: bool,
+) -> serde_json::Value {
+    match vendor {
+        ApiVendor::Anthropic => {
+            let mut body = serde_json::json!({
+                "model": model,
+                "max_tokens": max_tokens,
+                "messages": cached_tail(messages),
+            });
+            // The authoring pack, marked cacheable.
+            //
+            // It is ~21,000 tokens and it is byte-identical on every
+            // round of the fix-it loop, so without this it is bought at
+            // full price eight or more times to build one app. Written
+            // once on the first round and read at a tenth of the price
+            // after that, which is close to half the cost of a build --
+            // on any model, with nothing given up, because the bytes the
+            // model sees do not change.
+            //
+            // This helps the FIRST person too, which is the part that is
+            // easy to get wrong: the saving is within one build, not
+            // across builds. Round 1 writes the cache and rounds 2..n
+            // read it. Cross-build reuse would need another build inside
+            // the five-minute window, which is not the common case and is
+            // not what this is for.
+            //
+            // Left out when there is none: a plan has no system prompt,
+            // and an empty text block is not something to send.
+            if !system.is_empty() {
+                body["system"] = serde_json::json!([{
+                    "type": "text",
+                    "text": system,
+                    "cache_control": { "type": "ephemeral" }
+                }]);
+            }
+            if with_tools {
+                body["tools"] = tool_schema(vendor);
+            }
+            body
+        }
+        ApiVendor::OpenAi => {
+            // OpenAI carries the system prompt as the first message.
+            let mut full = Vec::new();
+            if !system.is_empty() {
+                full.push(serde_json::json!({"role": "system", "content": system}));
+            }
+            full.extend_from_slice(messages);
+            let mut body = serde_json::json!({
+                "model": model,
+                "messages": full,
+            });
+            if with_tools {
+                body["tools"] = tool_schema(vendor);
+            } else {
+                // The build loop never capped OpenAI replies; a plan does.
+                body["max_completion_tokens"] = serde_json::json!(max_tokens);
+            }
+            body
+        }
+    }
 }
 
 /// The conversation, with its tail marked cacheable.
@@ -635,7 +741,8 @@ fn cached_tail(messages: &[serde_json::Value]) -> Vec<serde_json::Value> {
     out
 }
 
-/// One HTTP round trip to the vendor.
+/// One HTTP round trip to the vendor, as the build loop makes it: the full
+/// reply allowance and the tool schema.
 fn call_api(
     vendor: ApiVendor,
     key: &str,
@@ -643,54 +750,32 @@ fn call_api(
     messages: &[serde_json::Value],
     system: &str,
 ) -> Result<serde_json::Value> {
-    let (url, body, auth_header, auth_value) = match vendor {
+    call_api_with(vendor, key, model, messages, system, MAX_REPLY_TOKENS, true)
+}
+
+/// One HTTP round trip to the vendor, with the reply allowance and tools
+/// chosen by the caller.
+fn call_api_with(
+    vendor: ApiVendor,
+    key: &str,
+    model: &str,
+    messages: &[serde_json::Value],
+    system: &str,
+    max_tokens: u64,
+    with_tools: bool,
+) -> Result<serde_json::Value> {
+    let body = request_body(vendor, model, messages, system, max_tokens, with_tools);
+    let (url, auth_header, auth_value) = match vendor {
         ApiVendor::Anthropic => (
             "https://api.anthropic.com/v1/messages",
-            serde_json::json!({
-                "model": model,
-                "max_tokens": MAX_REPLY_TOKENS,
-                // The authoring pack, marked cacheable.
-                //
-                // It is ~21,000 tokens and it is byte-identical on every
-                // round of the fix-it loop, so without this it is bought at
-                // full price eight or more times to build one app. Written
-                // once on the first round and read at a tenth of the price
-                // after that, which is close to half the cost of a build --
-                // on any model, with nothing given up, because the bytes the
-                // model sees do not change.
-                //
-                // This helps the FIRST person too, which is the part that is
-                // easy to get wrong: the saving is within one build, not
-                // across builds. Round 1 writes the cache and rounds 2..n
-                // read it. Cross-build reuse would need another build inside
-                // the five-minute window, which is not the common case and is
-                // not what this is for.
-                "system": [{
-                    "type": "text",
-                    "text": system,
-                    "cache_control": { "type": "ephemeral" }
-                }],
-                "tools": tool_schema(vendor),
-                "messages": cached_tail(messages),
-            }),
             "x-api-key",
             key.to_string(),
         ),
-        ApiVendor::OpenAi => {
-            // OpenAI carries the system prompt as the first message.
-            let mut full = vec![serde_json::json!({"role": "system", "content": system})];
-            full.extend_from_slice(messages);
-            (
-                "https://api.openai.com/v1/chat/completions",
-                serde_json::json!({
-                    "model": model,
-                    "tools": tool_schema(vendor),
-                    "messages": full,
-                }),
-                "Authorization",
-                format!("Bearer {key}"),
-            )
-        }
+        ApiVendor::OpenAi => (
+            "https://api.openai.com/v1/chat/completions",
+            "Authorization",
+            format!("Bearer {key}"),
+        ),
     };
 
     let mut request = ureq::post(url)
@@ -1037,6 +1122,39 @@ pub fn run(vendor: ApiVendor, app_dir: &str, request: &str) -> Result<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// K-862: a plan asks for a short answer and sends no tool schema; the
+    /// build loop keeps its full allowance and its tools.
+    #[test]
+    fn a_plan_asks_for_a_short_answer_and_sends_no_tools() {
+        let messages = vec![serde_json::json!({"role": "user", "content": "a timer"})];
+        for vendor in [ApiVendor::Anthropic, ApiVendor::OpenAi] {
+            let plan = request_body(vendor, "m", &messages, "", PLAN_REPLY_TOKENS, false);
+            assert!(
+                plan.get("tools").is_none(),
+                "{vendor:?}: no tools on a plan"
+            );
+            let cap = plan
+                .get("max_tokens")
+                .or_else(|| plan.get("max_completion_tokens"))
+                .and_then(|v| v.as_u64());
+            assert_eq!(cap, Some(PLAN_REPLY_TOKENS), "{vendor:?}: capped");
+            assert!(
+                plan.get("system").is_none(),
+                "{vendor:?}: no empty system block"
+            );
+
+            let build = request_body(vendor, "m", &messages, "pack", MAX_REPLY_TOKENS, true);
+            assert!(
+                build.get("tools").is_some(),
+                "{vendor:?}: the build keeps its tools"
+            );
+        }
+        assert!(
+            PLAN_REPLY_TOKENS * 8 <= MAX_REPLY_TOKENS,
+            "a plan is a small fraction of a round"
+        );
+    }
 
     /// The containment check is the whole sandbox for this provider, since
     /// it has no general command tool. A model that asks for `../` or an
