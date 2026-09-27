@@ -93,6 +93,13 @@ const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
         "<group-name>",
         false,
     ),
+    // More memory than the default 256 MiB, in MiB (the capability survey's
+    // item 3; K-416). Without it a double-clicked app could never have more:
+    // `--mem-limit` exists only for someone typing a command. Declared, it
+    // reaches the person as one consent line -- "use up to 1 GB of memory"
+    // -- so a photo editor can ask and the person can decide. Never
+    // default-granted: on a small machine it is a real question.
+    CapabilitySpec::resource_scoped(CapabilityPhase::Phase2, "memory", "budget", "<MiB>", false),
     // Random bytes from the OS. Resource-free because there is nothing to
     // scope -- entropy has no location and reveals nothing about the machine.
     //
@@ -907,6 +914,10 @@ fn validate_capability_resource(
         return Ok(());
     }
 
+    if module == "memory" && action == "budget" {
+        return validate_memory_budget(resource).map(|_| ());
+    }
+
     if module == "gfx" && action == "gpu" {
         validate_one_of(resource, &["basic", "compute"], "GPU resource")?;
     }
@@ -1014,6 +1025,27 @@ fn canonicalize_connect_resource(resource: &str) -> Option<String> {
 ///
 /// It is also shown to a person on the permission wall, so it must read as
 /// itself: no control characters, no leading or trailing punctuation.
+/// The most an app may ask for with `memory.budget:<MiB>`.
+///
+/// A component's linear memory is 32-bit, so 4 GiB is the address space;
+/// this leaves half a gigabyte of it unclaimed rather than promise the last
+/// byte of a space the guest's own allocator also needs.
+pub const MAX_MEMORY_BUDGET_MIB: u64 = 3584;
+
+/// The MiB a `memory.budget:<MiB>` resource asks for.
+pub fn validate_memory_budget(resource: &str) -> std::result::Result<u64, String> {
+    let mib: u64 = resource.parse().map_err(|_| {
+        format!("memory budget {resource:?} must be a whole number of MiB, like 1024")
+    })?;
+    if mib == 0 || mib > MAX_MEMORY_BUDGET_MIB {
+        return Err(format!(
+            "memory budget {mib} MiB is outside 1..={MAX_MEMORY_BUDGET_MIB} -- an app's memory \
+             is addressed with 32 bits"
+        ));
+    }
+    Ok(mib)
+}
+
 pub fn validate_group_name(name: &str) -> std::result::Result<(), String> {
     if name.is_empty() {
         return Err("a shared group needs a name".to_string());
@@ -1255,6 +1287,22 @@ mod tests {
     /// names flattening to one identifier would silently share a store that
     /// was never meant to be shared -- the exact collision the capability
     /// exists to replace with a deliberate act.
+    #[test]
+    fn a_memory_budget_is_whole_mib_within_the_address_space() {
+        // K-416. The edges of what a 32-bit guest can be promised.
+        assert_eq!(validate_memory_budget("1024"), Ok(1024));
+        assert_eq!(validate_memory_budget("3584"), Ok(MAX_MEMORY_BUDGET_MIB));
+        for bad in ["0", "3585", "4096", "1.5", "1GB", "", "-1"] {
+            assert!(
+                validate_memory_budget(bad).is_err(),
+                "{bad:?} must be refused"
+            );
+        }
+        // And it reaches the manifest's own capability check.
+        assert!("memory.budget:1024".parse::<Capability>().is_ok());
+        assert!(validate_capability_resource("memory", "budget", "5000").is_err());
+    }
+
     #[test]
     fn a_shared_group_name_is_refused_rather_than_flattened() {
         for good in ["family-budget", "notes2", "a", "team-1-plans"] {

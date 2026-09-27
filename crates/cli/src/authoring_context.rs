@@ -698,6 +698,7 @@ fn capability_note(pattern: &str) -> &'static str {
         "audio.playback" => "play sound",
         "audio.capture" => "record from the microphone",
         "store.shared" => "share a key-value bucket with everyone holding its invite code",
+        "memory.budget" => "more than the default 256 MiB of memory, in MiB (up to 3584); the person sees it at consent",
         "store.group" => "share a key-value store with the same publisher's other apps, in a named group its signed list admits",
         "camera.capture" => "see through the camera",
         _ => "",
@@ -1126,6 +1127,14 @@ function required\", and a std guest that drops `\"std\"` fails with \
 avoid `format!`, `.unwrap()`, and `a[i]` indexing.\n\n\
 `apps/krate-contacts` is a shipped `no_std` GUI app to copy this wiring \
 from.\n\n\
+## Memory: 256 MiB unless the app asks\n\n\
+An app gets 256 MiB. A growing `Vec` or `String` briefly holds its old and \
+new buffer together, so plan on about half of that for live data. An app \
+that needs more -- a photo editor, a large document, a real dataset -- \
+declares `memory.budget:<MiB>` (up to 3584); the person sees \"use up to 1 \
+GB of memory\" at consent. Allocate anything large with `Vec::try_reserve` \
+or `try_reserve_exact` and handle the `Err`: running out is then an error \
+the app can explain (\"that photo is too large\"), not a crash.\n\n\
 ## A dependency that needs randomness (getrandom / rand / uuid)\n\n\
 These do not build on a target with no OS entropy unless a backend is \
 registered. Do not hand-shim it. Add `features = [\"getrandom-backend\"]` to the \

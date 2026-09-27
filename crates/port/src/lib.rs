@@ -1349,6 +1349,25 @@ fn inspect_content(path: &str, text: &str, analysis: &mut Analysis) {
         "Krate's `store.shared` capability is a key-value bucket synced between every machine holding its invite code, through krate.tech -- no accounts, no backend to run. Ports that lean on a realtime service map their shared documents onto per-item keys there.",
         Some("store.shared"),
     );
+    // A program that needs more than a small heap (K-416): JVM and Node
+    // heap flags, and the usual words for big in-memory work.
+    detect_pattern(
+        analysis,
+        "large-memory",
+        &[
+            "-xmx",
+            "max-old-space-size",
+            "largeheap",
+            "memory limit",
+            "heap size",
+        ],
+        path,
+        text,
+        Severity::Change,
+        "Needs more memory than a small app",
+        "A Krate app gets 256 MiB unless it declares `memory.budget:<MiB>` (up to 3584), which the person sees at consent. Allocate large buffers with `try_reserve` so running out is an error the app can report.",
+        Some("memory.budget"),
+    );
     // Data shared between one maker's own apps on one device (IC-738):
     // Apple app groups, Android's shared user id, a common settings suite.
     // Krate's answer is a named group the publisher signs the members of.

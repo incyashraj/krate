@@ -173,9 +173,10 @@ enum Command {
         #[arg(long)]
         untrusted: bool,
 
-        /// Max memory in MiB.
-        #[arg(long, default_value_t = 256)]
-        mem_limit: u64,
+        /// Max memory in MiB. Without it: 256, or what the app declared with
+        /// `memory.budget:<MiB>` and was granted.
+        #[arg(long)]
+        mem_limit: Option<u64>,
 
         /// Max bytes accepted for one Phase 2 HTTP response.
         #[arg(long, default_value_t = DEFAULT_MAX_HTTP_RESPONSE_BYTES)]
@@ -3784,7 +3785,8 @@ struct RunRequest {
     /// Resolved component path. Filled in by resolve_run_target.
     file: PathBuf,
     fuel: Option<u64>,
-    mem_limit: u64,
+    /// An explicit limit in MiB, which wins over what the app declares.
+    mem_limit: Option<u64>,
     max_http_response_bytes: usize,
     http_timeout_millis: u32,
     sandbox_root: PathBuf,
@@ -4800,7 +4802,7 @@ pub(crate) fn run_bundle_inline(bundle: &Path) -> Result<()> {
         assets_root: None,
         insecure_http: false,
         fuel: None,
-        mem_limit: 256,
+        mem_limit: None,
         max_http_response_bytes: DEFAULT_MAX_HTTP_RESPONSE_BYTES,
         http_timeout_millis: DEFAULT_HTTP_TIMEOUT_MILLIS,
         sandbox_root: PathBuf::from("."),
@@ -4934,6 +4936,10 @@ fn load_pkcs8_key(path: &Path, what: &str) -> Result<krate_bundle::signing::Sign
 fn hex_of(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
+
+/// Memory an app gets unless it declares `memory.budget` or the command
+/// line says otherwise.
+const DEFAULT_MEMORY_MIB: u64 = 256;
 
 fn unix_now() -> u64 {
     std::time::SystemTime::now()
@@ -13809,10 +13815,30 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
             .collect(),
         _ => std::collections::BTreeMap::new(),
     };
+    // How much memory the app may use (K-416): an explicit --mem-limit wins;
+    // otherwise what the app declared with `memory.budget:<MiB>` and the
+    // person granted; otherwise the default. A declaration nobody granted
+    // changes nothing -- the consent line is the whole point of it.
+    let declared_budget = match manifest {
+        Some(manifest) => manifest
+            .declared_capabilities()?
+            .into_iter()
+            .filter(|cap| cap.module() == "memory" && cap.action() == "budget")
+            .filter(|cap| policy.allows(cap))
+            .filter_map(|cap| {
+                cap.resource()
+                    .and_then(|mib| krate_manifest::validate_memory_budget(mib).ok())
+            })
+            .max(),
+        None => None,
+    };
+    let memory_mib = request
+        .mem_limit
+        .or(declared_budget)
+        .unwrap_or(DEFAULT_MEMORY_MIB);
     let config = Config {
         fuel: request.fuel,
-        memory_bytes: request
-            .mem_limit
+        memory_bytes: memory_mib
             .checked_mul(1024 * 1024)
             .context("memory limit is too large")?,
         session_policy: policy,
@@ -15981,7 +16007,7 @@ fn open_app(direct: Option<PathBuf>) -> Result<u8> {
         assets_root: None,
         insecure_http: false,
         fuel: None,
-        mem_limit: 256,
+        mem_limit: None,
         max_http_response_bytes: DEFAULT_MAX_HTTP_RESPONSE_BYTES,
         http_timeout_millis: DEFAULT_HTTP_TIMEOUT_MILLIS,
         sandbox_root,
@@ -16126,6 +16152,13 @@ fn human_label(cap: &Capability) -> String {
         ("store", "kv") => "save its own settings and data".to_string(),
         ("store", "sql") => "keep its own database".to_string(),
         ("store", "secret") => "save sign-in details for itself".to_string(),
+        ("memory", "budget") => match cap.resource().and_then(|mib| mib.parse::<u64>().ok()) {
+            Some(mib) if mib >= 1024 && mib % 1024 == 0 => {
+                format!("use up to {} GB of memory", mib / 1024)
+            }
+            Some(mib) => format!("use up to {mib} MB of memory"),
+            None => "use more memory than apps normally get".to_string(),
+        },
         ("store", "group") => match cap.resource() {
             Some(group) => format!("share data in \"{group}\" with other apps its maker names"),
             None => "share data with other apps its maker names".to_string(),

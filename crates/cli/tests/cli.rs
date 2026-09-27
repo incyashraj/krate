@@ -5681,6 +5681,76 @@ fn a_group_is_shared_by_its_members_and_closed_to_everyone_else() {
     );
 }
 
+/// An app can ask for more memory, and gets it only when granted (K-416;
+/// the capability survey's item 3).
+///
+/// `memory-probe.wasm` is apps/krate-memory-probe built: it asks for N MiB
+/// with `try_reserve_exact` and prints `held=N` or `refused=N`. Every case
+/// ends in an answer, never a crash -- the half K-395 fixed.
+#[test]
+fn an_app_that_declares_more_memory_gets_it_only_when_granted() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let wasm = dir.path().join("code.wasm");
+    std::fs::write(&wasm, include_bytes!("fixtures/memory-probe.wasm")).expect("probe");
+    let manifest = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest,
+        "[app]\nid = \"com.acme.memory-probe\"\nname = \"memory-probe\"\nversion = \"1.0.0\"\n\
+         entry = \"code.wasm\"\nworld = \"krate:app/cli@0.1.0\"\n\n\
+         [[capabilities]]\ncap = \"io.stdout\"\nrationale = \"print\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"io.args\"\nrationale = \"args\"\nrequired = true\n\n\
+         [[capabilities]]\ncap = \"memory.budget:1024\"\nrationale = \"hold a picture\"\nrequired = false\n",
+    )
+    .expect("manifest");
+    let bundle = dir.path().join("probe.krate");
+    assert!(krate()
+        .arg("pack")
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .status()
+        .expect("pack")
+        .success());
+    let ask = |extra: &[&str], mib: &str| {
+        let out = krate()
+            .arg("run")
+            .arg(&bundle)
+            .args(extra)
+            .args(["--", mib])
+            .output()
+            .expect("run");
+        assert!(
+            out.status.success(),
+            "every answer is an answer, not a crash: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+
+    assert_eq!(
+        ask(&["--grant", "io.stdout", "--grant", "io.args"], "400"),
+        "refused=400",
+        "the fixture must really need more than the default 256 MiB"
+    );
+    assert_eq!(
+        ask(&["--auto-grant"], "400"),
+        "held=400",
+        "the declared budget, granted, is what the app gets"
+    );
+    assert_eq!(
+        ask(&["--auto-grant"], "1100"),
+        "refused=1100",
+        "and no more than it declared"
+    );
+    assert_eq!(
+        ask(&["--auto-grant", "--mem-limit", "200"], "400"),
+        "refused=400",
+        "an explicit --mem-limit wins over the declaration"
+    );
+}
+
 /// Uninstalling removes the app and keeps what the person wrote in it,
 /// unless they ask otherwise (IC-278, IC-396).
 ///

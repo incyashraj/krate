@@ -1,0 +1,21 @@
+[app]
+id = "com.acme.memory-probe"
+name = "memory-probe"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_memory_probe.wasm"
+world = "krate:app/cli@0.1.0"
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Print whether the buffer was held"
+required = true
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read how much to ask for"
+required = true
+
+[[capabilities]]
+cap = "memory.budget:1024"
+rationale = "Hold a large buffer, the way a photo editor holds a picture"
+required = false

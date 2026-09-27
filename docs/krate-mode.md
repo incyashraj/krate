@@ -514,6 +514,7 @@ to exactly what the app needs, e.g. `fs.read:notes/**`.
 | `store.secret` | no | secrets encrypted at rest (passwords, tokens); not the OS keychain |
 | `store.shared` | no | share a key-value bucket with everyone holding its invite code |
 | `store.group:<group-name>` | no | share a key-value store with the same publisher's other apps, in a named group its signed list admits |
+| `memory.budget:<MiB>` | no | more than the default 256 MiB of memory, in MiB (up to 3584); the person sees it at consent |
 | `random.bytes` | no | entropy (also what getrandom/rand need) |
 | `fs.remove:<path-glob>` | no | delete under a folder |
 | `fs.mkdir:<path-glob>` | no | make folders |

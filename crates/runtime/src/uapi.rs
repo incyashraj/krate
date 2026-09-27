@@ -22,6 +22,23 @@ pub enum UapiCall {
     Camera(CameraCall),
     Store(StoreCall),
     Random(RandomCall),
+    /// Asking for more than the default memory (K-416). Not a call a guest
+    /// makes at run time -- the budget is fixed before the app starts -- but
+    /// named here so the capability has a UAPI identity like every other.
+    Memory(MemoryCall),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MemoryCall {
+    Budget { mib: u64 },
+}
+
+impl fmt::Display for MemoryCall {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Budget { mib } => write!(f, "budget:{mib}"),
+        }
+    }
 }
 
 impl UapiCall {
@@ -41,6 +58,7 @@ impl UapiCall {
             Self::Camera(call) => format!("camera.{call}"),
             Self::Store(call) => format!("store.{call}"),
             Self::Random(call) => format!("random.{call}"),
+            Self::Memory(call) => format!("memory.{call}"),
         }
     }
 }
@@ -709,6 +727,7 @@ mod tests {
                 group: "family-budget".to_string(),
             }),
             UapiCall::Random(RandomCall::Bytes),
+            UapiCall::Memory(MemoryCall::Budget { mib: 1024 }),
             UapiCall::Fs(FsCall::Read {
                 path: "./data/input.txt".to_string(),
             }),

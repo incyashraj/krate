@@ -1316,6 +1316,16 @@ fn plain_capability(cap: &str) -> Option<String> {
         "store.kv" | "store.sql" => "remember things between runs",
         "store.secret" => "use your keychain for passwords",
         "store.shared" => "share its data with anyone who has its invite code, through krate.tech",
+        // The size, in the units people buy computers in (K-416).
+        "memory.budget" => {
+            return Some(match scope.and_then(|mib| mib.parse::<u64>().ok()) {
+                Some(mib) if mib >= 1024 && mib % 1024 == 0 => {
+                    format!("use up to {} GB of memory (apps get 256 MB unless they ask)", mib / 1024)
+                }
+                Some(mib) => format!("use up to {mib} MB of memory (apps get 256 MB unless they ask)"),
+                None => "use more memory than apps normally get".to_string(),
+            })
+        }
         // Scoped to the group's name, and honest that the maker, not the
         // person, decides which apps are in it (IC-738).
         "store.group" => {
