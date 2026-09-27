@@ -34,7 +34,10 @@ pub struct Page {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
+    /// macOS, from its print panel; elsewhere the viewer does the printing.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Printed,
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Cancelled,
     /// Windows and Linux; macOS always has its print panel.
     #[cfg_attr(target_os = "macos", allow(dead_code))]
