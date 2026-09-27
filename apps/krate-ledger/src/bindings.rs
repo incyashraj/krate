@@ -22457,6 +22457,371 @@ pub mod krate {
                 }
             }
         }
+        /// Printing what the app's window shows.
+        ///
+        /// The host paints the window for paper and the system's print dialog does
+        /// the rest: the person picks the printer, the copies, or Save as PDF -- or
+        /// cancels. Nothing prints unless they say so, so any app with a window may
+        /// ask. Where Krate cannot reach a print dialog, the pages open in the PDF
+        /// viewer to print from there, and the answer says so.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod print {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
+            use super::super::super::_rt;
+            pub type UiError = super::super::super::krate::ui::types::UiError;
+            /// What happened.
+            #[repr(u8)]
+            #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+            pub enum PrintOutcome {
+                /// The person printed or saved it.
+                Printed,
+                /// They closed the dialog without printing.
+                Cancelled,
+                /// The pages opened in the system's PDF viewer, to print from there.
+                OpenedInViewer,
+            }
+            impl ::core::fmt::Debug for PrintOutcome {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    match self {
+                        PrintOutcome::Printed => {
+                            f.debug_tuple("PrintOutcome::Printed").finish()
+                        }
+                        PrintOutcome::Cancelled => {
+                            f.debug_tuple("PrintOutcome::Cancelled").finish()
+                        }
+                        PrintOutcome::OpenedInViewer => {
+                            f.debug_tuple("PrintOutcome::OpenedInViewer").finish()
+                        }
+                    }
+                }
+            }
+            impl PrintOutcome {
+                #[doc(hidden)]
+                pub unsafe fn _lift(val: u8) -> PrintOutcome {
+                    if !cfg!(debug_assertions) {
+                        return ::core::mem::transmute(val);
+                    }
+                    match val {
+                        0 => PrintOutcome::Printed,
+                        1 => PrintOutcome::Cancelled,
+                        2 => PrintOutcome::OpenedInViewer,
+                        _ => panic!("invalid enum discriminant"),
+                    }
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Print what the window shows now, as one page, and wait for the person.
+            pub fn window(window: u64, title: &str) -> Result<PrintOutcome, UiError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = title;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:ui/print@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "window"]
+                        fn wit_import2(_: i64, _: *mut u8, _: usize, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(
+                        _: i64,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import2(_rt::as_i64(&window), ptr0.cast_mut(), len0, ptr1)
+                    };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result13 = match l3 {
+                        0 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                PrintOutcome::_lift(l4 as u8)
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l5 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                use super::super::super::krate::ui::types::UiError as V12;
+                                let v12 = match l5 {
+                                    0 => V12::PermissionDenied,
+                                    1 => V12::InvalidWindow,
+                                    2 => V12::InvalidWidget,
+                                    3 => {
+                                        let e12 = {
+                                            let l6 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l7 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len8 = l7;
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
+                                            _rt::string_lift(bytes8)
+                                        };
+                                        V12::Unsupported(e12)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 4, "invalid enum discriminant");
+                                        let e12 = {
+                                            let l9 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l10 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len11 = l10;
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
+                                            _rt::string_lift(bytes11)
+                                        };
+                                        V12::Platform(e12)
+                                    }
+                                };
+                                v12
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result13
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Keep what the window shows now as the next page of a longer document,
+            /// and return how many pages are kept (at most 100). Draw each page in
+            /// the window, add it, then `finish`.
+            pub fn add_page(window: u64) -> Result<u32, UiError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:ui/print@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "add-page"]
+                        fn wit_import1(_: i64, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(_rt::as_i64(&window), ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result12 = match l2 {
+                        0 => {
+                            let e = {
+                                let l3 = *ptr0
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<i32>();
+                                l3 as u32
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                use super::super::super::krate::ui::types::UiError as V11;
+                                let v11 = match l4 {
+                                    0 => V11::PermissionDenied,
+                                    1 => V11::InvalidWindow,
+                                    2 => V11::InvalidWidget,
+                                    3 => {
+                                        let e11 = {
+                                            let l5 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
+                                            _rt::string_lift(bytes7)
+                                        };
+                                        V11::Unsupported(e11)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 4, "invalid enum discriminant");
+                                        let e11 = {
+                                            let l8 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l9 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len10 = l9;
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
+                                            _rt::string_lift(bytes10)
+                                        };
+                                        V11::Platform(e11)
+                                    }
+                                };
+                                v11
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result12
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Print the pages added so far, wait for the person, and start over.
+            pub fn finish(window: u64, title: &str) -> Result<PrintOutcome, UiError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = title;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:ui/print@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "finish"]
+                        fn wit_import2(_: i64, _: *mut u8, _: usize, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(
+                        _: i64,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import2(_rt::as_i64(&window), ptr0.cast_mut(), len0, ptr1)
+                    };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result13 = match l3 {
+                        0 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                PrintOutcome::_lift(l4 as u8)
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l5 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                use super::super::super::krate::ui::types::UiError as V12;
+                                let v12 = match l5 {
+                                    0 => V12::PermissionDenied,
+                                    1 => V12::InvalidWindow,
+                                    2 => V12::InvalidWidget,
+                                    3 => {
+                                        let e12 = {
+                                            let l6 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l7 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len8 = l7;
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
+                                            _rt::string_lift(bytes8)
+                                        };
+                                        V12::Unsupported(e12)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 4, "invalid enum discriminant");
+                                        let e12 = {
+                                            let l9 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l10 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len11 = l10;
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
+                                            _rt::string_lift(bytes11)
+                                        };
+                                        V12::Platform(e12)
+                                    }
+                                };
+                                v12
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result13
+                }
+            }
+        }
         /// Clipboard calls.
         #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
         pub mod clipboard {
@@ -23397,328 +23762,333 @@ pub(crate) use __export_gui_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 14045] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xe3l\x01A\x02\x01A~\x01\
-B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x09log-level\x03\
-\0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eof\0\0\x0cinvalid-\
-utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x14krate:io/types@0.1\
-.0\x05\0\x02\x03\0\0\x08io-error\x01B\x15\x02\x03\x02\x01\x01\x04\0\x08io-error\x03\
-\0\0\x04\0\x0cinput-stream\x03\x01\x04\0\x0doutput-stream\x03\x01\x01h\x02\x01p}\
-\x01j\x01\x05\x01\x01\x01@\x02\x04self\x04\x01ny\0\x06\x04\0\x19[method]input-st\
-ream.read\x01\x07\x01j\x01s\x01\x01\x01@\x01\x04self\x04\0\x08\x04\0#[method]inp\
-ut-stream.read-to-string\x01\x09\x01h\x03\x01j\x01y\x01\x01\x01@\x02\x04self\x0a\
-\x05bytes\x05\0\x0b\x04\0\x1b[method]output-stream.write\x01\x0c\x01j\0\x01\x01\x01\
-@\x02\x04self\x0a\x05bytes\x05\0\x0d\x04\0\x1f[method]output-stream.write-all\x01\
-\x0e\x01@\x01\x04self\x0a\0\x0d\x04\0\x1b[method]output-stream.flush\x01\x0f\x03\
-\0\x16krate:io/streams@0.1.0\x05\x02\x02\x03\0\x01\x0cinput-stream\x02\x03\0\x01\
-\x0doutput-stream\x01B\x0b\x02\x03\x02\x01\x03\x04\0\x0cinput-stream\x03\0\0\x02\
-\x03\x02\x01\x04\x04\0\x0doutput-stream\x03\0\x02\x01i\x01\x01@\0\0\x04\x04\0\x05\
-stdin\x01\x05\x01i\x03\x01@\0\0\x06\x04\0\x06stdout\x01\x07\x04\0\x06stderr\x01\x07\
-\x03\0\x14krate:io/stdio@0.1.0\x05\x05\x01B\x02\x01@\0\0s\x04\0\x03raw\x01\0\x03\
-\0\x13krate:io/args@0.1.0\x05\x06\x02\x03\0\0\x09log-level\x01B\x07\x02\x03\x02\x01\
-\x07\x04\0\x09log-level\x03\0\0\x01r\x02\x03keys\x05values\x04\0\x05field\x03\0\x02\
-\x01p\x03\x01@\x03\x05level\x01\x07messages\x06fields\x04\x01\0\x04\0\x04emit\x01\
-\x05\x03\0\x12krate:io/log@0.1.0\x05\x08\x01B\x06\x01r\x03\x04sizew\x0fmodified-\
-millisw\x06is-dir\x7f\x04\0\x09file-stat\x03\0\0\x01q\x04\x04read\0\0\x05write\0\
-\0\x0aread-write\0\0\x06append\0\0\x04\0\x09open-mode\x03\0\x02\x01q\x07\x09not-\
-found\0\0\x11permission-denied\0\0\x0ealready-exists\0\0\x0cinvalid-path\0\0\x0f\
-not-a-directory\0\0\x0eis-a-directory\0\0\x02io\x01s\0\x04\0\x08fs-error\x03\0\x04\
-\x03\0\x14krate:fs/types@0.1.0\x05\x09\x02\x03\0\x05\x09file-stat\x02\x03\0\x05\x09\
-open-mode\x02\x03\0\x05\x08fs-error\x01B*\x02\x03\x02\x01\x0a\x04\0\x09file-stat\
-\x03\0\0\x02\x03\x02\x01\x0b\x04\0\x09open-mode\x03\0\x02\x02\x03\x02\x01\x0c\x04\
-\0\x08fs-error\x03\0\x04\x04\0\x04file\x03\x01\x01h\x06\x01p}\x01j\x01\x08\x01\x05\
-\x01@\x02\x04self\x07\x01ny\0\x09\x04\0\x11[method]file.read\x01\x0a\x01j\x01y\x01\
-\x05\x01@\x02\x04self\x07\x05bytes\x08\0\x0b\x04\0\x12[method]file.write\x01\x0c\
-\x01j\x01w\x01\x05\x01@\x02\x04self\x07\x03posw\0\x0d\x04\0\x15[method]file.seek\
--set\x01\x0e\x01@\x01\x04self\x07\0\x0d\x04\0\x15[method]file.seek-end\x01\x0f\x01\
-j\x01\x01\x01\x05\x01@\x01\x04self\x07\0\x10\x04\0\x11[method]file.stat\x01\x11\x01\
-i\x06\x01j\x01\x12\x01\x05\x01@\x02\x04paths\x04mode\x03\0\x13\x04\0\x04open\x01\
-\x14\x01@\x02\x05tokens\x04mode\x03\0\x13\x04\0\x0bopen-chosen\x01\x15\x01@\x01\x04\
-paths\0\x10\x04\0\x04stat\x01\x16\x01ps\x01j\x01\x17\x01\x05\x01@\x01\x04paths\0\
-\x18\x04\0\x04list\x01\x19\x01j\0\x01\x05\x01@\x01\x04paths\0\x1a\x04\0\x0bremov\
-e-file\x01\x1b\x04\0\x0aremove-dir\x01\x1b\x04\0\x05mkdir\x01\x1b\x01@\x02\x04fr\
-oms\x02tos\0\x1a\x04\0\x06rename\x01\x1c\x03\0\x14krate:fs/files@0.1.0\x05\x0d\x01\
-B\x0f\x02\x03\x02\x01\x0c\x04\0\x08fs-error\x03\0\0\x01m\x03\x07created\x08modif\
-ied\x07removed\x04\0\x0bchange-kind\x03\0\x02\x01r\x03\x04paths\x04kind\x03\x06i\
-s-dir\x7f\x04\0\x06change\x03\0\x04\x01j\x01w\x01\x01\x01@\x01\x04paths\0\x06\x04\
-\0\x05start\x01\x07\x01p\x05\x01j\x01\x08\x01\x01\x01@\x01\x08watch-idw\0\x09\x04\
-\0\x07changes\x01\x0a\x01@\x01\x08watch-idw\x01\0\x04\0\x04stop\x01\x0b\x03\0\x14\
-krate:fs/watch@0.1.0\x05\x0e\x01B\x0f\x01m\x07\x03get\x04post\x03put\x06delete\x05\
-patch\x04head\x07options\x04\0\x0bhttp-method\x03\0\0\x01r\x02\x04names\x05value\
-s\x04\0\x06header\x03\0\x02\x01p\x03\x01p}\x01ky\x01r\x05\x06method\x01\x03urls\x07\
-headers\x04\x04body\x05\x0etimeout-millis\x06\x04\0\x07request\x03\0\x07\x01r\x03\
-\x06status{\x07headers\x04\x04body\x05\x04\0\x08response\x03\0\x09\x01q\x09\x0bi\
-nvalid-url\0\0\x0bdns-failure\x01s\0\x0fconnect-failure\x01s\0\x0btls-failure\x01\
-s\0\x07timeout\0\0\x0ebody-too-large\0\0\x11permission-denied\0\0\x08protocol\x01\
-s\0\x05other\x01s\0\x04\0\x09net-error\x03\0\x0b\x01q\x04\x07pending\0\0\x05read\
-y\x01\x0a\0\x06failed\x01\x0c\0\x0eunknown-handle\0\0\x04\0\x0cfetch-status\x03\0\
-\x0d\x03\0\x15krate:net/types@0.1.0\x05\x0f\x02\x03\0\x08\x07request\x02\x03\0\x08\
-\x08response\x02\x03\0\x08\x09net-error\x02\x03\0\x08\x0cfetch-status\x01B\x16\x02\
-\x03\x02\x01\x10\x04\0\x07request\x03\0\0\x02\x03\x02\x01\x11\x04\0\x08response\x03\
-\0\x02\x02\x03\x02\x01\x12\x04\0\x09net-error\x03\0\x04\x02\x03\x02\x01\x13\x04\0\
-\x0cfetch-status\x03\0\x06\x01p}\x01j\x01\x08\x01\x05\x01@\x01\x03urls\0\x09\x04\
-\0\x03get\x01\x0a\x01j\x01\x03\x01\x05\x01@\x01\x03req\x01\0\x0b\x04\0\x05fetch\x01\
-\x0c\x01j\x01w\x01\x05\x01@\x01\x03req\x01\0\x0d\x04\0\x05begin\x01\x0e\x01@\x01\
-\x06handlew\0\x07\x04\0\x04poll\x01\x0f\x01@\x01\x06handlew\x01\0\x04\0\x06cance\
-l\x01\x10\x03\0\x1bkrate:net/http-client@0.1.0\x05\x14\x01B\x11\x02\x03\x02\x01\x12\
-\x04\0\x09net-error\x03\0\0\x01p}\x01q\x02\x04text\x01s\0\x06binary\x01\x02\0\x04\
-\0\x0aws-message\x03\0\x03\x01q\x06\x07pending\0\0\x06opened\0\0\x07message\x01\x04\
-\0\x06closed\0\0\x06failed\x01s\0\x0eunknown-handle\0\0\x04\0\x08ws-event\x03\0\x05\
-\x01j\x01w\x01\x01\x01@\x01\x03urls\0\x07\x04\0\x04open\x01\x08\x01j\0\x01\x01\x01\
-@\x02\x06handlew\x07message\x04\0\x09\x04\0\x04send\x01\x0a\x01@\x01\x06handlew\0\
-\x06\x04\0\x04poll\x01\x0b\x01@\x01\x06handlew\x01\0\x04\0\x05close\x01\x0c\x03\0\
-\x12krate:net/ws@0.1.0\x05\x15\x01B\x03\x01@\0\0w\x04\0\x0anow-millis\x01\0\x04\0\
-\x0fmonotonic-nanos\x01\0\x03\0\x16krate:time/clock@0.1.0\x05\x16\x01B\x02\x01@\x01\
-\x06millisy\x01\0\x04\0\x0csleep-millis\x01\0\x03\0\x16krate:time/sleep@0.1.0\x05\
-\x17\x01B\x06\x01r\x01\x05bcp47s\x04\0\x09locale-id\x03\0\0\x01m\x04\x05short\x06\
-medium\x04long\x04full\x04\0\x0adate-style\x03\0\x02\x01m\x03\x07decimal\x07perc\
-ent\x08currency\x04\0\x0cnumber-style\x03\0\x04\x03\0\x18krate:locale/types@0.1.\
-0\x05\x18\x02\x03\0\x0d\x09locale-id\x01B\x06\x02\x03\x02\x01\x19\x04\0\x09local\
-e-id\x03\0\0\x01@\0\0\x01\x04\0\x07current\x01\x02\x01@\0\0s\x04\0\x08timezone\x01\
-\x03\x03\0\x17krate:locale/info@0.1.0\x05\x1a\x02\x03\0\x0d\x0adate-style\x02\x03\
-\0\x0d\x0cnumber-style\x01B\x0a\x02\x03\x02\x01\x19\x04\0\x09locale-id\x03\0\0\x02\
-\x03\x02\x01\x1b\x04\0\x0adate-style\x03\0\x02\x02\x03\x02\x01\x1c\x04\0\x0cnumb\
-er-style\x03\0\x04\x01@\x04\x06millisw\x02tzs\x05style\x03\x03loc\x01\0s\x04\0\x0b\
-format-date\x01\x06\x01@\x03\x05valueu\x05style\x05\x03loc\x01\0s\x04\0\x0dforma\
-t-number\x01\x07\x03\0\x19krate:locale/format@0.1.0\x05\x1d\x01B\x0a\x01q\x04\x09\
-not-found\0\0\x0cinvalid-path\0\0\x09too-large\0\0\x02io\x01s\0\x04\0\x0eresourc\
-e-error\x03\0\0\x01p}\x01j\x01\x02\x01\x01\x01@\x01\x04paths\0\x03\x04\0\x04read\
-\x01\x04\x01ps\x01j\x01\x05\x01\x01\x01@\x01\x04paths\0\x06\x04\0\x04list\x01\x07\
-\x03\0\x1ckrate:resources/assets@0.1.0\x05\x1e\x01B\x12\x01q\x04\x06denied\0\0\x0b\
-invalid-key\0\0\x09too-large\0\0\x02io\x01s\0\x04\0\x0bstore-error\x03\0\0\x01p}\
-\x01k\x02\x01j\x01\x03\x01\x01\x01@\x01\x03keys\0\x04\x04\0\x03get\x01\x05\x01j\0\
-\x01\x01\x01@\x02\x03keys\x05value\x02\0\x06\x04\0\x03set\x01\x07\x01@\x01\x03ke\
-ys\0\x06\x04\0\x06delete\x01\x08\x01ps\x01j\x01\x09\x01\x01\x01@\0\0\x0a\x04\0\x04\
-keys\x01\x0b\x01@\0\0\x06\x04\0\x05clear\x01\x0c\x03\0\x14krate:store/kv@0.1.0\x05\
-\x1f\x01B\x15\x01p}\x01q\x05\x04null\0\0\x07integer\x01x\0\x04real\x01u\0\x04tex\
-t\x01s\0\x04blob\x01\0\0\x04\0\x05value\x03\0\x01\x01q\x05\x06denied\0\0\x11inva\
-lid-statement\x01s\0\x09forbidden\x01s\0\x09too-large\0\0\x02io\x01s\0\x04\0\x09\
-sql-error\x03\0\x03\x01p\x02\x01r\x01\x06values\x05\x04\0\x03row\x03\0\x06\x01ps\
-\x01p\x07\x01r\x02\x07columns\x08\x04rows\x09\x04\0\x0cquery-result\x03\0\x0a\x01\
-j\x01\x0b\x01\x04\x01@\x02\x09statements\x06params\x05\0\x0c\x04\0\x05query\x01\x0d\
-\x01j\x01w\x01\x04\x01@\x02\x09statements\x06params\x05\0\x0e\x04\0\x07execute\x01\
-\x0f\x01j\0\x01\x04\x01@\x01\x0astatements\x08\0\x10\x04\0\x0btransaction\x01\x11\
-\x03\0\x15krate:store/sql@0.1.0\x05\x20\x01B\x10\x01q\x04\x06denied\0\0\x0cinval\
-id-name\0\0\x09too-large\0\0\x02io\x01s\0\x04\0\x0csecret-error\x03\0\0\x01p}\x01\
-k\x02\x01j\x01\x03\x01\x01\x01@\x01\x04names\0\x04\x04\0\x03get\x01\x05\x01j\0\x01\
-\x01\x01@\x02\x04names\x06secret\x02\0\x06\x04\0\x03set\x01\x07\x01@\x01\x04name\
-s\0\x06\x04\0\x06delete\x01\x08\x01ps\x01j\x01\x09\x01\x01\x01@\0\0\x0a\x04\0\x05\
-names\x01\x0b\x03\0\x18krate:store/secret@0.1.0\x05!\x01B\x1e\x01q\x06\x06denied\
-\0\0\x0anot-joined\0\0\x0dno-such-share\0\0\x0cinvalid-name\0\0\x09too-large\0\0\
-\x02io\x01s\0\x04\0\x0cshared-error\x03\0\0\x01ks\x01j\x01\x02\x01\x01\x01@\0\0\x03\
-\x04\0\x04code\x01\x04\x01j\x01s\x01\x01\x01@\0\0\x05\x04\0\x06create\x01\x06\x01\
-j\0\x01\x01\x01@\x01\x04codes\0\x07\x04\0\x04join\x01\x08\x01@\0\0\x07\x04\0\x05\
-leave\x01\x09\x01p}\x01k\x0a\x01j\x01\x0b\x01\x01\x01@\x01\x03keys\0\x0c\x04\0\x03\
-get\x01\x0d\x01@\x02\x03keys\x05value\x0a\0\x07\x04\0\x03set\x01\x0e\x01@\x01\x03\
-keys\0\x07\x04\0\x06delete\x01\x0f\x01ps\x01j\x01\x10\x01\x01\x01@\0\0\x11\x04\0\
-\x04keys\x01\x12\x01j\x01\x7f\x01\x01\x01@\0\0\x13\x04\0\x04sync\x01\x14\x03\0\x18\
-krate:store/shared@0.1.0\x05\"\x01B\x10\x01q\x05\x06denied\0\0\x0cnot-a-member\0\
-\0\x0binvalid-key\0\0\x09too-large\0\0\x02io\x01s\0\x04\0\x0bgroup-error\x03\0\0\
-\x01p}\x01k\x02\x01j\x01\x03\x01\x01\x01@\x02\x05groups\x03keys\0\x04\x04\0\x03g\
-et\x01\x05\x01j\0\x01\x01\x01@\x03\x05groups\x03keys\x05value\x02\0\x06\x04\0\x03\
-set\x01\x07\x01@\x02\x05groups\x03keys\0\x06\x04\0\x06delete\x01\x08\x01ps\x01j\x01\
-\x09\x01\x01\x01@\x01\x05groups\0\x0a\x04\0\x04keys\x01\x0b\x03\0\x17krate:store\
-/group@0.1.0\x05#\x01B\x0b\x01q\x04\x06denied\0\0\x09too-large\0\0\x0bempty-rang\
-e\0\0\x0bunavailable\x01s\0\x04\0\x0crandom-error\x03\0\0\x01p}\x01j\x01\x02\x01\
-\x01\x01@\x01\x05county\0\x03\x04\0\x03get\x01\x04\x01j\x01w\x01\x01\x01@\0\0\x05\
-\x04\0\x08next-u64\x01\x06\x01@\x01\x05boundw\0\x05\x04\0\x05below\x01\x07\x03\0\
-\x18krate:random/bytes@0.1.0\x05$\x01B7\x01m\x04\x06normal\x09minimized\x09maxim\
-ized\x0afullscreen\x04\0\x0cwindow-state\x03\0\0\x01r\x02\x05widthy\x06heighty\x04\
-\0\x0bwindow-size\x03\0\x02\x01r\x04\x01xv\x01yv\x05widthv\x06heightv\x04\0\x04r\
-ect\x03\0\x04\x01m\x03\x05light\x04dark\x07unknown\x04\0\x05theme\x03\0\x06\x01m\
-\x04\x07primary\x09secondary\x06middle\x05other\x04\0\x0epointer-button\x03\0\x08\
-\x01r\x04\x05shift\x7f\x07control\x7f\x03alt\x7f\x04meta\x7f\x04\0\x09modifiers\x03\
-\0\x0a\x01kw\x01k\x09\x01r\x07\x06windoww\x06widget\x0c\x01xv\x01yv\x06button\x0d\
-\x07pressed\x7f\x09modifiers\x0b\x04\0\x0dpointer-event\x03\0\x0e\x01r\x07\x06wi\
-ndoww\x06widget\x0c\x01xv\x01yv\x02dxv\x02dyv\x09modifiers\x0b\x04\0\x0bwheel-ev\
-ent\x03\0\x10\x01r\x03\x06windoww\x06widgetw\x04texts\x04\0\x12text-changed-even\
-t\x03\0\x12\x01r\x05\x06windoww\x06widget\x0c\x03keys\x07pressed\x7f\x09modifier\
-s\x0b\x04\0\x09key-event\x03\0\x14\x01q\x05\x11permission-denied\0\0\x0einvalid-\
-window\0\0\x0einvalid-widget\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x08\
-ui-error\x03\0\x16\x01m\x12\x05stack\x04grid\x06scroll\x04tabs\x06button\x08chec\
-kbox\x05radio\x06switch\x06slider\x08progress\x04text\x0atext-field\x09text-area\
-\x09list-view\x09tree-view\x05image\x06canvas\x07overlay\x04\0\x0bwidget-kind\x03\
-\0\x18\x01r\x02\x06cursory\x06anchory\x04\0\x0btext-cursor\x03\0\x1a\x01r\x04\x01\
-r}\x01g}\x01b}\x01a}\x04\0\x05color\x03\0\x1c\x01k\x1d\x01kv\x01r\x05\x05color\x1e\
-\x07outline\x1e\x0doutline-widthv\x04size\x1f\x04bold\x7f\x04\0\x0atext-style\x03\
-\0\x20\x01r\x04\x0abackground\x1e\x06border\x1e\x0cborder-widthv\x0dcorner-radiu\
-sv\x04\0\x09box-style\x03\0\"\x01m\x0a\x07default\x08top-left\x0atop-centre\x09t\
-op-right\x0bcentre-left\x06centre\x0ccentre-right\x0bbottom-left\x0dbottom-centr\
-e\x0cbottom-right\x04\0\x09placement\x03\0$\x01k!\x01k%\x01k#\x01r\x07\x05width\x1f\
-\x06height\x1f\x04growv\x07paddingv\x04text&\x05place'\x03box(\x04\0\x05style\x03\
-\0)\x01ks\x01k\x7f\x01ky\x01k\x1b\x01r\x0a\x02idw\x06parent\x0c\x04kind\x19\x05l\
-abel+\x04role+\x05style*\x07checked,\x05value\x1f\x08selected-\x0btext-cursor.\x04\
-\0\x0bwidget-node\x03\0/\x01r\x03\x02idw\x05labels\x07enabled\x7f\x04\0\x09menu-\
-item\x03\01\x01r\x02\x04names\x05tokens\x04\0\x0bchosen-file\x03\03\x01q\x0d\x0f\
-close-requested\x01w\0\x07resized\x01\x03\0\x10redraw-requested\x01w\0\x07pointe\
-r\x01\x0f\0\x03key\x01\x15\0\x05wheel\x01\x11\0\x0atext-input\x01s\0\x0ctext-cha\
-nged\x01\x13\0\x06action\x01w\0\x0dfocus-changed\x01\x0c\0\x0dtheme-changed\x01\x07\
-\0\x0cfile-dropped\x014\0\x0dfile-hovering\x01\x7f\0\x04\0\x05event\x03\05\x03\0\
-\x14krate:ui/types@0.1.0\x05%\x02\x03\0\x17\x08ui-error\x02\x03\0\x17\x0bwindow-\
-size\x02\x03\0\x17\x0cwindow-state\x01B\x16\x02\x03\x02\x01&\x04\0\x08ui-error\x03\
-\0\0\x02\x03\x02\x01'\x04\0\x0bwindow-size\x03\0\x02\x02\x03\x02\x01(\x04\0\x0cw\
-indow-state\x03\0\x04\x01j\x01w\x01\x01\x01@\x02\x05titles\x04size\x03\0\x06\x04\
-\0\x06create\x01\x07\x01j\0\x01\x01\x01@\x01\x06windoww\0\x08\x04\0\x04show\x01\x09\
-\x04\0\x05close\x01\x09\x01@\x02\x06windoww\x05titles\0\x08\x04\0\x09set-title\x01\
-\x0a\x01@\x02\x06windoww\x04size\x03\0\x08\x04\0\x08set-size\x01\x0b\x01@\x02\x06\
-windoww\x05state\x05\0\x08\x04\0\x09set-state\x01\x0c\x04\0\x0erequest-redraw\x01\
-\x09\x01@\x02\x06windoww\x07enabled\x7f\0\x08\x04\0\x0eset-full-bleed\x01\x0d\x03\
-\0\x15krate:ui/window@0.1.0\x05)\x02\x03\0\x17\x0bwidget-node\x01B\x0e\x02\x03\x02\
-\x01&\x04\0\x08ui-error\x03\0\0\x02\x03\x02\x01*\x04\0\x0bwidget-node\x03\0\x02\x01\
-j\0\x01\x01\x01@\x02\x06windoww\x04root\x03\0\x04\x04\0\x08set-root\x01\x05\x01@\
-\x02\x06windoww\x04node\x03\0\x04\x04\0\x0bupsert-node\x01\x06\x01@\x02\x06windo\
-ww\x06widgetw\0\x04\x04\0\x0bremove-node\x01\x07\x04\0\x0afocus-node\x01\x07\x01\
-@\x03\x06windoww\x06widgetw\x07enabled\x7f\0\x04\x04\0\x0bset-enabled\x01\x08\x03\
-\0\x13krate:ui/tree@0.1.0\x05+\x01B\x0a\x02\x03\x02\x01&\x04\0\x08ui-error\x03\0\
-\0\x01p}\x01r\x03\x05widthy\x06heighty\x04rgba\x02\x04\0\x0cimage-pixels\x03\0\x03\
-\x01j\0\x01\x01\x01@\x03\x06windoww\x06widgetw\x06pixels\x04\0\x05\x04\0\x0aset-\
-pixels\x01\x06\x01@\x02\x06windoww\x06widgetw\0\x05\x04\0\x05clear\x01\x07\x03\0\
-\x14krate:ui/image@0.1.0\x05,\x02\x03\0\x17\x05event\x01B\x10\x02\x03\x02\x01-\x04\
-\0\x05event\x03\0\0\x01k\x01\x01@\0\0\x02\x04\0\x04poll\x01\x03\x01ky\x01@\x01\x0e\
-timeout-millis\x04\0\x02\x04\0\x04wait\x01\x05\x01@\x01\x03keys\0\x7f\x04\0\x08k\
-ey-held\x01\x06\x01@\0\0\x7f\x04\0\x11gamepad-connected\x01\x07\x01@\x01\x06butt\
-ons\0\x7f\x04\0\x0cgamepad-held\x01\x08\x01@\x01\x04axiss\0v\x04\0\x0cgamepad-ax\
-is\x01\x09\x03\0\x15krate:ui/events@0.1.0\x05.\x02\x03\0\x17\x0bchosen-file\x01B\
-\x16\x02\x03\x02\x01/\x04\0\x0bchosen-file\x03\0\0\x02\x03\x02\x01&\x04\0\x08ui-\
-error\x03\0\x02\x01r\x02\x04names\x05tokens\x04\0\x0dchosen-folder\x03\0\x04\x01\
-j\0\x01\x03\x01@\x03\x06windoww\x05titles\x04bodys\0\x06\x04\0\x07message\x01\x07\
-\x01j\x01\x7f\x01\x03\x01@\x03\x06windoww\x05titles\x04bodys\0\x08\x04\0\x07conf\
-irm\x01\x09\x01k\x01\x01j\x01\x0a\x01\x03\x01@\x03\x06windoww\x05titles\x06filte\
-rs\0\x0b\x04\0\x09open-file\x01\x0c\x01@\x04\x06windoww\x05titles\x09suggesteds\x06\
-filters\0\x0b\x04\0\x09save-file\x01\x0d\x01k\x05\x01j\x01\x0e\x01\x03\x01@\x02\x06\
-windoww\x05titles\0\x0f\x04\0\x0bopen-folder\x01\x10\x03\0\x15krate:ui/dialog@0.\
-1.0\x050\x01B\x08\x02\x03\x02\x01&\x04\0\x08ui-error\x03\0\0\x01j\x01s\x01\x01\x01\
-@\0\0\x02\x04\0\x09read-text\x01\x03\x01j\0\x01\x01\x01@\x01\x04texts\0\x04\x04\0\
-\x0awrite-text\x01\x05\x03\0\x18krate:ui/clipboard@0.1.0\x051\x02\x03\0\x17\x09m\
-enu-item\x01B\x08\x02\x03\x02\x012\x04\0\x09menu-item\x03\0\0\x02\x03\x02\x01&\x04\
-\0\x08ui-error\x03\0\x02\x01p\x01\x01j\0\x01\x03\x01@\x02\x06windoww\x05items\x04\
-\0\x05\x04\0\x09set-items\x01\x06\x03\0\x13krate:ui/menu@0.1.0\x053\x01B\x05\x01\
-q\x03\x06denied\0\0\x0binvalid-url\x01s\0\x0bunavailable\x01s\0\x04\0\x0claunch-\
-error\x03\0\0\x01j\0\x01\x01\x01@\x01\x03urls\0\x02\x04\0\x08open-url\x01\x03\x03\
-\0\x17krate:ui/launcher@0.1.0\x054\x01B\x05\x01q\x03\x06denied\0\0\x0finvalid-co\
-ntent\x01s\0\x0bunavailable\x01s\0\x04\0\x0cnotify-error\x03\0\0\x01j\0\x01\x01\x01\
-@\x02\x05titles\x04bodys\0\x02\x04\0\x04show\x01\x03\x03\0\x15krate:ui/notify@0.\
-1.0\x055\x01B\x14\x01r\x04\x01rv\x01gv\x01bv\x01av\x04\0\x05color\x03\0\0\x01r\x02\
-\x01xv\x01yv\x04\0\x05point\x03\0\x02\x01r\x02\x05widthv\x06heightv\x04\0\x04siz\
-e\x03\0\x04\x01r\x04\x05widthv\x06heightv\x06ascentv\x07descentv\x04\0\x0ctext-m\
-etrics\x03\0\x06\x01r\x04\x01xv\x01yv\x05widthv\x06heightv\x04\0\x04rect\x03\0\x08\
-\x01r\x02\x06offsetv\x05color\x01\x04\0\x0dgradient-stop\x03\0\x0a\x01m\x03\x04s\
-ans\x05serif\x04mono\x04\0\x0bfont-family\x03\0\x0c\x01r\x04\x06weight{\x06itali\
-c\x7f\x0eletter-spacingv\x06family\x0d\x04\0\x0atext-style\x03\0\x0e\x01r\x04\x08\
-top-leftv\x09top-rightv\x0cbottom-rightv\x0bbottom-leftv\x04\0\x0ccorner-radii\x03\
-\0\x10\x01q\x04\x11permission-denied\0\0\x0einvalid-target\0\0\x0bunsupported\x01\
-s\0\x08platform\x01s\0\x04\0\x09gfx-error\x03\0\x12\x03\0\x15krate:gfx/types@0.1\
-.0\x056\x02\x03\0!\x05color\x02\x03\0!\x05point\x02\x03\0!\x04rect\x02\x03\0!\x04\
-size\x02\x03\0!\x0ctext-metrics\x02\x03\0!\x09gfx-error\x02\x03\0!\x0dgradient-s\
-top\x02\x03\0!\x0ccorner-radii\x02\x03\0!\x0atext-style\x02\x03\0!\x0bfont-famil\
-y\x01BK\x02\x03\x02\x017\x04\0\x05color\x03\0\0\x02\x03\x02\x018\x04\0\x05point\x03\
-\0\x02\x02\x03\x02\x019\x04\0\x04rect\x03\0\x04\x02\x03\x02\x01:\x04\0\x04size\x03\
-\0\x06\x02\x03\x02\x01;\x04\0\x0ctext-metrics\x03\0\x08\x02\x03\x02\x01<\x04\0\x09\
-gfx-error\x03\0\x0a\x02\x03\x02\x01=\x04\0\x0dgradient-stop\x03\0\x0c\x02\x03\x02\
-\x01>\x04\0\x0ccorner-radii\x03\0\x0e\x02\x03\x02\x01?\x04\0\x0atext-style\x03\0\
-\x10\x02\x03\x02\x01@\x04\0\x0bfont-family\x03\0\x12\x01j\x01w\x01\x0b\x01@\x02\x06\
-windoww\x06widgetw\0\x14\x04\0\x04bind\x01\x15\x01j\x01\x07\x01\x0b\x01@\x01\x06\
-canvasw\0\x16\x04\0\x0bcanvas-size\x01\x17\x01j\0\x01\x0b\x01@\x02\x06canvasw\x04\
-size\x07\0\x18\x04\0\x0fset-design-size\x01\x19\x01@\x05\x06canvasw\x01xv\x01yv\x01\
-wv\x01hv\0\x18\x04\0\x08set-clip\x01\x1a\x01@\x01\x06canvasw\0\x18\x04\0\x0aclea\
-r-clip\x01\x1b\x01@\x02\x06canvasw\x04fill\x01\0\x18\x04\0\x05clear\x01\x1c\x01@\
-\x03\x06canvasw\x04area\x05\x04fill\x01\0\x18\x04\0\x09fill-rect\x01\x1d\x01@\x04\
-\x06canvasw\x04area\x05\x06stroke\x01\x05widthv\0\x18\x04\0\x0bstroke-rect\x01\x1e\
-\x01@\x04\x06canvasw\x04area\x05\x05radii\x0f\x04fill\x01\0\x18\x04\0\x0ffill-ro\
-und-rect\x01\x1f\x01@\x05\x06canvasw\x04area\x05\x05radii\x0f\x05widthv\x06strok\
-e\x01\0\x18\x04\0\x11stroke-round-rect\x01\x20\x01@\x05\x06canvasw\x04area\x05\x05\
-radii\x0f\x04blurv\x06shadow\x01\0\x18\x04\0\x16drop-shadow-round-rect\x01!\x01p\
-\x0d\x01@\x04\x06canvasw\x04area\x05\x0dangle-degreesv\x05stops\"\0\x18\x04\0\x15\
-linear-gradient-stops\x01#\x01@\x06\x06canvasw\x04texts\x06origin\x03\x09font-si\
-zev\x03ink\x01\x05style\x11\0\x18\x04\0\x10draw-text-styled\x01$\x01j\x01\x09\x01\
-\x0b\x01@\x04\x06canvasw\x04texts\x09font-sizev\x05style\x11\0%\x04\0\x13measure\
--text-styled\x01&\x01@\x07\x06canvasw\x06center\x03\x06radiusv\x0dstart-degreesv\
-\x0dsweep-degreesv\x05widthv\x06stroke\x01\0\x18\x04\0\x0astroke-arc\x01'\x01p}\x01\
-@\x06\x06canvasw\x04area\x05\x05radii\x0f\x05widthy\x06heighty\x04rgba(\0\x18\x04\
-\0\x11draw-pixels-round\x01)\x01@\x04\x06canvasw\x06center\x03\x06radiusv\x04fil\
-l\x01\0\x18\x04\0\x0bfill-circle\x01*\x01@\x05\x06canvasw\x06center\x03\x06radiu\
-sv\x05widthv\x06stroke\x01\0\x18\x04\0\x0dstroke-circle\x01+\x01@\x05\x06canvasw\
-\x06center\x03\x06radiusv\x05inner\x01\x05outer\x01\0\x18\x04\0\x0fradial-gradie\
-nt\x01,\x01@\x04\x06canvasw\x04area\x05\x03top\x01\x06bottom\x01\0\x18\x04\0\x0f\
-linear-gradient\x01-\x01@\x05\x06canvasw\x04texts\x06origin\x03\x09font-sizev\x03\
-ink\x01\0\x18\x04\0\x09draw-text\x01.\x01@\x03\x06canvasw\x04texts\x09font-sizev\
-\0%\x04\0\x0cmeasure-text\x01/\x01@\x05\x06canvasw\x04area\x05\x05widthy\x06heig\
-hty\x04rgba(\0\x18\x04\0\x0bdraw-pixels\x010\x01@\x07\x06canvasw\x06center\x03\x03\
-dst\x07\x05anglev\x05widthy\x06heighty\x04rgba(\0\x18\x04\0\x0bdraw-sprite\x011\x04\
-\0\x07present\x01\x1b\x03\0\x18krate:gfx/canvas2d@0.1.0\x05A\x01B%\x02\x03\x02\x01\
-7\x04\0\x05color\x03\0\0\x02\x03\x02\x01<\x04\0\x09gfx-error\x03\0\x02\x01pv\x01\
-r\x0a\x07ambientv\x08specularv\x09shininessv\x0bfog-densityv\x09fog-color\x01\x0e\
-fill-direction\x04\x0afill-color\x01\x0dshadow-radiusv\x0fshadow-softnessv\x08ex\
-posurev\x04\0\x08lighting\x03\0\x05\x01j\x01w\x01\x03\x01@\x02\x06windoww\x06wid\
-getw\0\x07\x04\0\x04bind\x01\x08\x01j\0\x01\x03\x01@\x02\x05scenew\x03sky\x01\0\x09\
-\x04\0\x05clear\x01\x0a\x01@\x04\x05scenew\x03eye\x04\x07look-at\x04\x0bfov-degr\
-eesv\0\x09\x04\0\x06camera\x01\x0b\x01@\x02\x05scenew\x09direction\x04\0\x09\x04\
-\0\x05light\x01\x0c\x01@\x03\x05scenew\x08vertices\x04\x04tint\x01\0\x09\x04\0\x09\
-triangles\x01\x0d\x01@\x06\x05scenew\x08vertices\x04\x09translate\x04\x0erotate-\
-degrees\x04\x05scalev\x04tint\x01\0\x09\x04\0\x05place\x01\x0e\x01p}\x01@\x04\x05\
-scenew\x05widthy\x06heighty\x04rgba\x0f\0\x07\x04\0\x0eupload-texture\x01\x10\x01\
-@\x05\x05scenew\x08vertices\x04\x03uvs\x04\x07texturew\x04tint\x01\0\x09\x04\0\x08\
-textured\x01\x11\x01@\x06\x05scenew\x08vertices\x04\x07normals\x04\x03uvs\x04\x07\
-texturew\x04tint\x01\0\x09\x04\0\x06smooth\x01\x12\x01@\x02\x05scenew\x08lightin\
-g\x06\0\x09\x04\0\x0cset-lighting\x01\x13\x01@\x08\x05scenew\x08vertices\x04\x07\
-normals\x04\x08tangents\x04\x03uvs\x04\x07texturew\x0enormal-texturew\x04tint\x01\
-\0\x09\x04\0\x0dnormal-mapped\x01\x14\x04\0\x05unlit\x01\x11\x01@\x02\x05scenew\x07\
-enabled\x7f\0\x09\x04\0\x0fcull-back-faces\x01\x15\x01@\x01\x05scenew\0\x09\x04\0\
-\x07present\x01\x16\x03\0\x17krate:gfx/scene3d@0.1.0\x05B\x01B\x06\x01m\x02\x07p\
-cm-s16\x07float32\x04\0\x0dsample-format\x03\0\0\x01r\x04\x0bsample-ratey\x08cha\
-nnels{\x06format\x01\x0dbuffer-framesy\x04\0\x0dstream-config\x03\0\x02\x01q\x05\
-\x11permission-denied\0\0\x0einvalid-stream\0\0\x12device-unavailable\0\0\x0buns\
-upported\x01s\0\x08platform\x01s\0\x04\0\x0baudio-error\x03\0\x04\x03\0\x17krate\
-:audio/types@0.1.0\x05C\x02\x03\0$\x0baudio-error\x02\x03\0$\x0dstream-config\x01\
-B\x15\x02\x03\x02\x01D\x04\0\x0baudio-error\x03\0\0\x02\x03\x02\x01E\x04\0\x0dst\
-ream-config\x03\0\x02\x01j\x01w\x01\x01\x01@\x01\x06config\x03\0\x04\x04\0\x04op\
-en\x01\x05\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x06\x04\0\x05start\x01\x07\x04\
-\0\x04stop\x01\x07\x01p}\x01j\x01y\x01\x01\x01@\x02\x09stream-idw\x05bytes\x08\0\
-\x09\x04\0\x05write\x01\x0a\x01@\x02\x09stream-idw\x05bytes\x08\0\x04\x04\0\x0al\
-oad-sound\x01\x0b\x01@\x03\x09stream-idw\x05soundw\x04gainv\0\x06\x04\0\x0aplay-\
-sound\x01\x0c\x01@\x02\x09stream-idw\x05soundw\0\x06\x04\0\x0astop-sound\x01\x0d\
-\x03\0\x1akrate:audio/playback@0.1.0\x05F\x01B\x0f\x02\x03\x02\x01D\x04\0\x0baud\
-io-error\x03\0\0\x02\x03\x02\x01E\x04\0\x0dstream-config\x03\0\x02\x01j\x01w\x01\
-\x01\x01@\x01\x06config\x03\0\x04\x04\0\x04open\x01\x05\x01j\0\x01\x01\x01@\x01\x09\
-stream-idw\0\x06\x04\0\x05start\x01\x07\x04\0\x04stop\x01\x07\x01p}\x01j\x01\x08\
-\x01\x01\x01@\x02\x09stream-idw\x09max-bytesy\0\x09\x04\0\x04read\x01\x0a\x03\0\x19\
-krate:audio/capture@0.1.0\x05G\x01B\x0d\x01m\x01\x05rgba8\x04\0\x0cframe-format\x03\
-\0\0\x01r\x04\x05widthy\x06heighty\x03fpsy\x06format\x01\x04\0\x0dstream-config\x03\
-\0\x02\x01r\x04\x05widthy\x06heighty\x03fpsy\x06format\x01\x04\0\x0aframe-info\x03\
-\0\x04\x01r\x02\x02ids\x05labels\x04\0\x0bdevice-info\x03\0\x06\x01p}\x01r\x04\x05\
-bytes\x08\x05widthy\x06heighty\x0eelapsed-millisw\x04\0\x05frame\x03\0\x09\x01q\x06\
-\x11permission-denied\0\0\x0einvalid-stream\0\0\x12device-unavailable\0\0\x0dsys\
-tem-denied\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x0ccamera-error\x03\
-\0\x0b\x03\0\x18krate:camera/types@0.1.0\x05H\x02\x03\0'\x0ccamera-error\x02\x03\
-\0'\x0bdevice-info\x02\x03\0'\x05frame\x02\x03\0'\x0aframe-info\x02\x03\0'\x0dst\
-ream-config\x01B\x1d\x02\x03\x02\x01I\x04\0\x0ccamera-error\x03\0\0\x02\x03\x02\x01\
-J\x04\0\x0bdevice-info\x03\0\x02\x02\x03\x02\x01K\x04\0\x05frame\x03\0\x04\x02\x03\
-\x02\x01L\x04\0\x0aframe-info\x03\0\x06\x02\x03\x02\x01M\x04\0\x0dstream-config\x03\
-\0\x08\x01p\x03\x01j\x01\x0a\x01\x01\x01@\0\0\x0b\x04\0\x07devices\x01\x0c\x01j\x01\
-w\x01\x01\x01@\x02\x06devices\x06config\x09\0\x0d\x04\0\x04open\x01\x0e\x01j\x01\
-\x07\x01\x01\x01@\x01\x09stream-idw\0\x0f\x04\0\x04info\x01\x10\x01j\0\x01\x01\x01\
-@\x01\x09stream-idw\0\x11\x04\0\x05start\x01\x12\x04\0\x04stop\x01\x12\x01k\x05\x01\
-j\x01\x13\x01\x01\x01@\x01\x09stream-idw\0\x14\x04\0\x04read\x01\x15\x04\0\x05cl\
-ose\x01\x12\x03\0\x1akrate:camera/capture@0.1.0\x05N\x01B\x12\x01r\x01\x04texts\x04\
-\0\x0atranscript\x03\0\0\x01q\x05\x0finvalid-request\x01s\0\x0fmodel-not-found\0\
-\0\x0dmodel-invalid\x01s\0\x0bunsupported\x01s\0\x09inference\x01s\0\x04\0\x0csp\
-eech-error\x03\0\x02\x01m\x05\x0finvalid-request\x0fmodel-not-found\x0dmodel-inv\
-alid\x0bunsupported\x09inference\x04\0\x0bmatch-error\x03\0\x04\x01p}\x01ks\x01j\
-\x01\x01\x01\x03\x01@\x04\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample-ratey\x08l\
-anguage\x07\0\x08\x04\0\x0atranscribe\x01\x09\x01j\x01}\x01\x05\x01@\x05\x0bmode\
-l-assets\x0apcm-s16-le\x06\x0bsample-ratey\x08language\x07\x08expecteds\0\x0a\x04\
-\0\x0amatch-line\x01\x0b\x01k}\x01j\x01\x0c\x01\x05\x01@\x06\x0bmodel-assets\x0a\
-pcm-s16-le\x06\x0bsample-ratey\x08language\x07\x08expecteds\x06finish\x7f\0\x0d\x04\
-\0\x11match-line-stream\x01\x0e\x03\0\x20krate:speech/transcription@0.1.0\x05O\x01\
-B\x12\x01r\x03\x02ids\x04names\x08languages\x04\0\x05voice\x03\0\0\x01q\x04\x11p\
-ermission-denied\0\0\x0finvalid-request\x01s\0\x0bunsupported\x01s\0\x08platform\
-\x01s\0\x04\0\x09say-error\x03\0\x02\x01p\x01\x01j\x01\x04\x01\x03\x01@\0\0\x05\x04\
-\0\x06voices\x01\x06\x01ks\x01kv\x01j\0\x01\x03\x01@\x03\x04texts\x05voice\x07\x04\
-rate\x08\0\x09\x04\0\x03say\x01\x0a\x01@\0\0\x09\x04\0\x04stop\x01\x0b\x01j\x01\x7f\
-\x01\x03\x01@\0\0\x0c\x04\0\x08speaking\x01\x0d\x03\0\x1ckrate:speech/synthesis@\
-0.1.0\x05P\x01@\0\0z\x04\0\x03run\x01Q\x04\0\x13krate:app/gui@0.2.0\x04\0\x0b\x09\
-\x01\0\x03gui\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x07\
-0.227.1\x10wit-bindgen-rust\x060.41.0";
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 14230] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x9cn\x01A\x02\x01A\x80\
+\x01\x01B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x09log-l\
+evel\x03\0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eof\0\0\x0c\
+invalid-utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x14krate:io/t\
+ypes@0.1.0\x05\0\x02\x03\0\0\x08io-error\x01B\x15\x02\x03\x02\x01\x01\x04\0\x08i\
+o-error\x03\0\0\x04\0\x0cinput-stream\x03\x01\x04\0\x0doutput-stream\x03\x01\x01\
+h\x02\x01p}\x01j\x01\x05\x01\x01\x01@\x02\x04self\x04\x01ny\0\x06\x04\0\x19[meth\
+od]input-stream.read\x01\x07\x01j\x01s\x01\x01\x01@\x01\x04self\x04\0\x08\x04\0#\
+[method]input-stream.read-to-string\x01\x09\x01h\x03\x01j\x01y\x01\x01\x01@\x02\x04\
+self\x0a\x05bytes\x05\0\x0b\x04\0\x1b[method]output-stream.write\x01\x0c\x01j\0\x01\
+\x01\x01@\x02\x04self\x0a\x05bytes\x05\0\x0d\x04\0\x1f[method]output-stream.writ\
+e-all\x01\x0e\x01@\x01\x04self\x0a\0\x0d\x04\0\x1b[method]output-stream.flush\x01\
+\x0f\x03\0\x16krate:io/streams@0.1.0\x05\x02\x02\x03\0\x01\x0cinput-stream\x02\x03\
+\0\x01\x0doutput-stream\x01B\x0b\x02\x03\x02\x01\x03\x04\0\x0cinput-stream\x03\0\
+\0\x02\x03\x02\x01\x04\x04\0\x0doutput-stream\x03\0\x02\x01i\x01\x01@\0\0\x04\x04\
+\0\x05stdin\x01\x05\x01i\x03\x01@\0\0\x06\x04\0\x06stdout\x01\x07\x04\0\x06stder\
+r\x01\x07\x03\0\x14krate:io/stdio@0.1.0\x05\x05\x01B\x02\x01@\0\0s\x04\0\x03raw\x01\
+\0\x03\0\x13krate:io/args@0.1.0\x05\x06\x02\x03\0\0\x09log-level\x01B\x07\x02\x03\
+\x02\x01\x07\x04\0\x09log-level\x03\0\0\x01r\x02\x03keys\x05values\x04\0\x05fiel\
+d\x03\0\x02\x01p\x03\x01@\x03\x05level\x01\x07messages\x06fields\x04\x01\0\x04\0\
+\x04emit\x01\x05\x03\0\x12krate:io/log@0.1.0\x05\x08\x01B\x06\x01r\x03\x04sizew\x0f\
+modified-millisw\x06is-dir\x7f\x04\0\x09file-stat\x03\0\0\x01q\x04\x04read\0\0\x05\
+write\0\0\x0aread-write\0\0\x06append\0\0\x04\0\x09open-mode\x03\0\x02\x01q\x07\x09\
+not-found\0\0\x11permission-denied\0\0\x0ealready-exists\0\0\x0cinvalid-path\0\0\
+\x0fnot-a-directory\0\0\x0eis-a-directory\0\0\x02io\x01s\0\x04\0\x08fs-error\x03\
+\0\x04\x03\0\x14krate:fs/types@0.1.0\x05\x09\x02\x03\0\x05\x09file-stat\x02\x03\0\
+\x05\x09open-mode\x02\x03\0\x05\x08fs-error\x01B*\x02\x03\x02\x01\x0a\x04\0\x09f\
+ile-stat\x03\0\0\x02\x03\x02\x01\x0b\x04\0\x09open-mode\x03\0\x02\x02\x03\x02\x01\
+\x0c\x04\0\x08fs-error\x03\0\x04\x04\0\x04file\x03\x01\x01h\x06\x01p}\x01j\x01\x08\
+\x01\x05\x01@\x02\x04self\x07\x01ny\0\x09\x04\0\x11[method]file.read\x01\x0a\x01\
+j\x01y\x01\x05\x01@\x02\x04self\x07\x05bytes\x08\0\x0b\x04\0\x12[method]file.wri\
+te\x01\x0c\x01j\x01w\x01\x05\x01@\x02\x04self\x07\x03posw\0\x0d\x04\0\x15[method\
+]file.seek-set\x01\x0e\x01@\x01\x04self\x07\0\x0d\x04\0\x15[method]file.seek-end\
+\x01\x0f\x01j\x01\x01\x01\x05\x01@\x01\x04self\x07\0\x10\x04\0\x11[method]file.s\
+tat\x01\x11\x01i\x06\x01j\x01\x12\x01\x05\x01@\x02\x04paths\x04mode\x03\0\x13\x04\
+\0\x04open\x01\x14\x01@\x02\x05tokens\x04mode\x03\0\x13\x04\0\x0bopen-chosen\x01\
+\x15\x01@\x01\x04paths\0\x10\x04\0\x04stat\x01\x16\x01ps\x01j\x01\x17\x01\x05\x01\
+@\x01\x04paths\0\x18\x04\0\x04list\x01\x19\x01j\0\x01\x05\x01@\x01\x04paths\0\x1a\
+\x04\0\x0bremove-file\x01\x1b\x04\0\x0aremove-dir\x01\x1b\x04\0\x05mkdir\x01\x1b\
+\x01@\x02\x04froms\x02tos\0\x1a\x04\0\x06rename\x01\x1c\x03\0\x14krate:fs/files@\
+0.1.0\x05\x0d\x01B\x0f\x02\x03\x02\x01\x0c\x04\0\x08fs-error\x03\0\0\x01m\x03\x07\
+created\x08modified\x07removed\x04\0\x0bchange-kind\x03\0\x02\x01r\x03\x04paths\x04\
+kind\x03\x06is-dir\x7f\x04\0\x06change\x03\0\x04\x01j\x01w\x01\x01\x01@\x01\x04p\
+aths\0\x06\x04\0\x05start\x01\x07\x01p\x05\x01j\x01\x08\x01\x01\x01@\x01\x08watc\
+h-idw\0\x09\x04\0\x07changes\x01\x0a\x01@\x01\x08watch-idw\x01\0\x04\0\x04stop\x01\
+\x0b\x03\0\x14krate:fs/watch@0.1.0\x05\x0e\x01B\x0f\x01m\x07\x03get\x04post\x03p\
+ut\x06delete\x05patch\x04head\x07options\x04\0\x0bhttp-method\x03\0\0\x01r\x02\x04\
+names\x05values\x04\0\x06header\x03\0\x02\x01p\x03\x01p}\x01ky\x01r\x05\x06metho\
+d\x01\x03urls\x07headers\x04\x04body\x05\x0etimeout-millis\x06\x04\0\x07request\x03\
+\0\x07\x01r\x03\x06status{\x07headers\x04\x04body\x05\x04\0\x08response\x03\0\x09\
+\x01q\x09\x0binvalid-url\0\0\x0bdns-failure\x01s\0\x0fconnect-failure\x01s\0\x0b\
+tls-failure\x01s\0\x07timeout\0\0\x0ebody-too-large\0\0\x11permission-denied\0\0\
+\x08protocol\x01s\0\x05other\x01s\0\x04\0\x09net-error\x03\0\x0b\x01q\x04\x07pen\
+ding\0\0\x05ready\x01\x0a\0\x06failed\x01\x0c\0\x0eunknown-handle\0\0\x04\0\x0cf\
+etch-status\x03\0\x0d\x03\0\x15krate:net/types@0.1.0\x05\x0f\x02\x03\0\x08\x07re\
+quest\x02\x03\0\x08\x08response\x02\x03\0\x08\x09net-error\x02\x03\0\x08\x0cfetc\
+h-status\x01B\x16\x02\x03\x02\x01\x10\x04\0\x07request\x03\0\0\x02\x03\x02\x01\x11\
+\x04\0\x08response\x03\0\x02\x02\x03\x02\x01\x12\x04\0\x09net-error\x03\0\x04\x02\
+\x03\x02\x01\x13\x04\0\x0cfetch-status\x03\0\x06\x01p}\x01j\x01\x08\x01\x05\x01@\
+\x01\x03urls\0\x09\x04\0\x03get\x01\x0a\x01j\x01\x03\x01\x05\x01@\x01\x03req\x01\
+\0\x0b\x04\0\x05fetch\x01\x0c\x01j\x01w\x01\x05\x01@\x01\x03req\x01\0\x0d\x04\0\x05\
+begin\x01\x0e\x01@\x01\x06handlew\0\x07\x04\0\x04poll\x01\x0f\x01@\x01\x06handle\
+w\x01\0\x04\0\x06cancel\x01\x10\x03\0\x1bkrate:net/http-client@0.1.0\x05\x14\x01\
+B\x11\x02\x03\x02\x01\x12\x04\0\x09net-error\x03\0\0\x01p}\x01q\x02\x04text\x01s\
+\0\x06binary\x01\x02\0\x04\0\x0aws-message\x03\0\x03\x01q\x06\x07pending\0\0\x06\
+opened\0\0\x07message\x01\x04\0\x06closed\0\0\x06failed\x01s\0\x0eunknown-handle\
+\0\0\x04\0\x08ws-event\x03\0\x05\x01j\x01w\x01\x01\x01@\x01\x03urls\0\x07\x04\0\x04\
+open\x01\x08\x01j\0\x01\x01\x01@\x02\x06handlew\x07message\x04\0\x09\x04\0\x04se\
+nd\x01\x0a\x01@\x01\x06handlew\0\x06\x04\0\x04poll\x01\x0b\x01@\x01\x06handlew\x01\
+\0\x04\0\x05close\x01\x0c\x03\0\x12krate:net/ws@0.1.0\x05\x15\x01B\x03\x01@\0\0w\
+\x04\0\x0anow-millis\x01\0\x04\0\x0fmonotonic-nanos\x01\0\x03\0\x16krate:time/cl\
+ock@0.1.0\x05\x16\x01B\x02\x01@\x01\x06millisy\x01\0\x04\0\x0csleep-millis\x01\0\
+\x03\0\x16krate:time/sleep@0.1.0\x05\x17\x01B\x06\x01r\x01\x05bcp47s\x04\0\x09lo\
+cale-id\x03\0\0\x01m\x04\x05short\x06medium\x04long\x04full\x04\0\x0adate-style\x03\
+\0\x02\x01m\x03\x07decimal\x07percent\x08currency\x04\0\x0cnumber-style\x03\0\x04\
+\x03\0\x18krate:locale/types@0.1.0\x05\x18\x02\x03\0\x0d\x09locale-id\x01B\x06\x02\
+\x03\x02\x01\x19\x04\0\x09locale-id\x03\0\0\x01@\0\0\x01\x04\0\x07current\x01\x02\
+\x01@\0\0s\x04\0\x08timezone\x01\x03\x03\0\x17krate:locale/info@0.1.0\x05\x1a\x02\
+\x03\0\x0d\x0adate-style\x02\x03\0\x0d\x0cnumber-style\x01B\x0a\x02\x03\x02\x01\x19\
+\x04\0\x09locale-id\x03\0\0\x02\x03\x02\x01\x1b\x04\0\x0adate-style\x03\0\x02\x02\
+\x03\x02\x01\x1c\x04\0\x0cnumber-style\x03\0\x04\x01@\x04\x06millisw\x02tzs\x05s\
+tyle\x03\x03loc\x01\0s\x04\0\x0bformat-date\x01\x06\x01@\x03\x05valueu\x05style\x05\
+\x03loc\x01\0s\x04\0\x0dformat-number\x01\x07\x03\0\x19krate:locale/format@0.1.0\
+\x05\x1d\x01B\x0a\x01q\x04\x09not-found\0\0\x0cinvalid-path\0\0\x09too-large\0\0\
+\x02io\x01s\0\x04\0\x0eresource-error\x03\0\0\x01p}\x01j\x01\x02\x01\x01\x01@\x01\
+\x04paths\0\x03\x04\0\x04read\x01\x04\x01ps\x01j\x01\x05\x01\x01\x01@\x01\x04pat\
+hs\0\x06\x04\0\x04list\x01\x07\x03\0\x1ckrate:resources/assets@0.1.0\x05\x1e\x01\
+B\x12\x01q\x04\x06denied\0\0\x0binvalid-key\0\0\x09too-large\0\0\x02io\x01s\0\x04\
+\0\x0bstore-error\x03\0\0\x01p}\x01k\x02\x01j\x01\x03\x01\x01\x01@\x01\x03keys\0\
+\x04\x04\0\x03get\x01\x05\x01j\0\x01\x01\x01@\x02\x03keys\x05value\x02\0\x06\x04\
+\0\x03set\x01\x07\x01@\x01\x03keys\0\x06\x04\0\x06delete\x01\x08\x01ps\x01j\x01\x09\
+\x01\x01\x01@\0\0\x0a\x04\0\x04keys\x01\x0b\x01@\0\0\x06\x04\0\x05clear\x01\x0c\x03\
+\0\x14krate:store/kv@0.1.0\x05\x1f\x01B\x15\x01p}\x01q\x05\x04null\0\0\x07intege\
+r\x01x\0\x04real\x01u\0\x04text\x01s\0\x04blob\x01\0\0\x04\0\x05value\x03\0\x01\x01\
+q\x05\x06denied\0\0\x11invalid-statement\x01s\0\x09forbidden\x01s\0\x09too-large\
+\0\0\x02io\x01s\0\x04\0\x09sql-error\x03\0\x03\x01p\x02\x01r\x01\x06values\x05\x04\
+\0\x03row\x03\0\x06\x01ps\x01p\x07\x01r\x02\x07columns\x08\x04rows\x09\x04\0\x0c\
+query-result\x03\0\x0a\x01j\x01\x0b\x01\x04\x01@\x02\x09statements\x06params\x05\
+\0\x0c\x04\0\x05query\x01\x0d\x01j\x01w\x01\x04\x01@\x02\x09statements\x06params\
+\x05\0\x0e\x04\0\x07execute\x01\x0f\x01j\0\x01\x04\x01@\x01\x0astatements\x08\0\x10\
+\x04\0\x0btransaction\x01\x11\x03\0\x15krate:store/sql@0.1.0\x05\x20\x01B\x10\x01\
+q\x04\x06denied\0\0\x0cinvalid-name\0\0\x09too-large\0\0\x02io\x01s\0\x04\0\x0cs\
+ecret-error\x03\0\0\x01p}\x01k\x02\x01j\x01\x03\x01\x01\x01@\x01\x04names\0\x04\x04\
+\0\x03get\x01\x05\x01j\0\x01\x01\x01@\x02\x04names\x06secret\x02\0\x06\x04\0\x03\
+set\x01\x07\x01@\x01\x04names\0\x06\x04\0\x06delete\x01\x08\x01ps\x01j\x01\x09\x01\
+\x01\x01@\0\0\x0a\x04\0\x05names\x01\x0b\x03\0\x18krate:store/secret@0.1.0\x05!\x01\
+B\x1e\x01q\x06\x06denied\0\0\x0anot-joined\0\0\x0dno-such-share\0\0\x0cinvalid-n\
+ame\0\0\x09too-large\0\0\x02io\x01s\0\x04\0\x0cshared-error\x03\0\0\x01ks\x01j\x01\
+\x02\x01\x01\x01@\0\0\x03\x04\0\x04code\x01\x04\x01j\x01s\x01\x01\x01@\0\0\x05\x04\
+\0\x06create\x01\x06\x01j\0\x01\x01\x01@\x01\x04codes\0\x07\x04\0\x04join\x01\x08\
+\x01@\0\0\x07\x04\0\x05leave\x01\x09\x01p}\x01k\x0a\x01j\x01\x0b\x01\x01\x01@\x01\
+\x03keys\0\x0c\x04\0\x03get\x01\x0d\x01@\x02\x03keys\x05value\x0a\0\x07\x04\0\x03\
+set\x01\x0e\x01@\x01\x03keys\0\x07\x04\0\x06delete\x01\x0f\x01ps\x01j\x01\x10\x01\
+\x01\x01@\0\0\x11\x04\0\x04keys\x01\x12\x01j\x01\x7f\x01\x01\x01@\0\0\x13\x04\0\x04\
+sync\x01\x14\x03\0\x18krate:store/shared@0.1.0\x05\"\x01B\x10\x01q\x05\x06denied\
+\0\0\x0cnot-a-member\0\0\x0binvalid-key\0\0\x09too-large\0\0\x02io\x01s\0\x04\0\x0b\
+group-error\x03\0\0\x01p}\x01k\x02\x01j\x01\x03\x01\x01\x01@\x02\x05groups\x03ke\
+ys\0\x04\x04\0\x03get\x01\x05\x01j\0\x01\x01\x01@\x03\x05groups\x03keys\x05value\
+\x02\0\x06\x04\0\x03set\x01\x07\x01@\x02\x05groups\x03keys\0\x06\x04\0\x06delete\
+\x01\x08\x01ps\x01j\x01\x09\x01\x01\x01@\x01\x05groups\0\x0a\x04\0\x04keys\x01\x0b\
+\x03\0\x17krate:store/group@0.1.0\x05#\x01B\x0b\x01q\x04\x06denied\0\0\x09too-la\
+rge\0\0\x0bempty-range\0\0\x0bunavailable\x01s\0\x04\0\x0crandom-error\x03\0\0\x01\
+p}\x01j\x01\x02\x01\x01\x01@\x01\x05county\0\x03\x04\0\x03get\x01\x04\x01j\x01w\x01\
+\x01\x01@\0\0\x05\x04\0\x08next-u64\x01\x06\x01@\x01\x05boundw\0\x05\x04\0\x05be\
+low\x01\x07\x03\0\x18krate:random/bytes@0.1.0\x05$\x01B7\x01m\x04\x06normal\x09m\
+inimized\x09maximized\x0afullscreen\x04\0\x0cwindow-state\x03\0\0\x01r\x02\x05wi\
+dthy\x06heighty\x04\0\x0bwindow-size\x03\0\x02\x01r\x04\x01xv\x01yv\x05widthv\x06\
+heightv\x04\0\x04rect\x03\0\x04\x01m\x03\x05light\x04dark\x07unknown\x04\0\x05th\
+eme\x03\0\x06\x01m\x04\x07primary\x09secondary\x06middle\x05other\x04\0\x0epoint\
+er-button\x03\0\x08\x01r\x04\x05shift\x7f\x07control\x7f\x03alt\x7f\x04meta\x7f\x04\
+\0\x09modifiers\x03\0\x0a\x01kw\x01k\x09\x01r\x07\x06windoww\x06widget\x0c\x01xv\
+\x01yv\x06button\x0d\x07pressed\x7f\x09modifiers\x0b\x04\0\x0dpointer-event\x03\0\
+\x0e\x01r\x07\x06windoww\x06widget\x0c\x01xv\x01yv\x02dxv\x02dyv\x09modifiers\x0b\
+\x04\0\x0bwheel-event\x03\0\x10\x01r\x03\x06windoww\x06widgetw\x04texts\x04\0\x12\
+text-changed-event\x03\0\x12\x01r\x05\x06windoww\x06widget\x0c\x03keys\x07presse\
+d\x7f\x09modifiers\x0b\x04\0\x09key-event\x03\0\x14\x01q\x05\x11permission-denie\
+d\0\0\x0einvalid-window\0\0\x0einvalid-widget\0\0\x0bunsupported\x01s\0\x08platf\
+orm\x01s\0\x04\0\x08ui-error\x03\0\x16\x01m\x12\x05stack\x04grid\x06scroll\x04ta\
+bs\x06button\x08checkbox\x05radio\x06switch\x06slider\x08progress\x04text\x0atex\
+t-field\x09text-area\x09list-view\x09tree-view\x05image\x06canvas\x07overlay\x04\
+\0\x0bwidget-kind\x03\0\x18\x01r\x02\x06cursory\x06anchory\x04\0\x0btext-cursor\x03\
+\0\x1a\x01r\x04\x01r}\x01g}\x01b}\x01a}\x04\0\x05color\x03\0\x1c\x01k\x1d\x01kv\x01\
+r\x05\x05color\x1e\x07outline\x1e\x0doutline-widthv\x04size\x1f\x04bold\x7f\x04\0\
+\x0atext-style\x03\0\x20\x01r\x04\x0abackground\x1e\x06border\x1e\x0cborder-widt\
+hv\x0dcorner-radiusv\x04\0\x09box-style\x03\0\"\x01m\x0a\x07default\x08top-left\x0a\
+top-centre\x09top-right\x0bcentre-left\x06centre\x0ccentre-right\x0bbottom-left\x0d\
+bottom-centre\x0cbottom-right\x04\0\x09placement\x03\0$\x01k!\x01k%\x01k#\x01r\x07\
+\x05width\x1f\x06height\x1f\x04growv\x07paddingv\x04text&\x05place'\x03box(\x04\0\
+\x05style\x03\0)\x01ks\x01k\x7f\x01ky\x01k\x1b\x01r\x0a\x02idw\x06parent\x0c\x04\
+kind\x19\x05label+\x04role+\x05style*\x07checked,\x05value\x1f\x08selected-\x0bt\
+ext-cursor.\x04\0\x0bwidget-node\x03\0/\x01r\x03\x02idw\x05labels\x07enabled\x7f\
+\x04\0\x09menu-item\x03\01\x01r\x02\x04names\x05tokens\x04\0\x0bchosen-file\x03\0\
+3\x01q\x0d\x0fclose-requested\x01w\0\x07resized\x01\x03\0\x10redraw-requested\x01\
+w\0\x07pointer\x01\x0f\0\x03key\x01\x15\0\x05wheel\x01\x11\0\x0atext-input\x01s\0\
+\x0ctext-changed\x01\x13\0\x06action\x01w\0\x0dfocus-changed\x01\x0c\0\x0dtheme-\
+changed\x01\x07\0\x0cfile-dropped\x014\0\x0dfile-hovering\x01\x7f\0\x04\0\x05eve\
+nt\x03\05\x03\0\x14krate:ui/types@0.1.0\x05%\x02\x03\0\x17\x08ui-error\x02\x03\0\
+\x17\x0bwindow-size\x02\x03\0\x17\x0cwindow-state\x01B\x16\x02\x03\x02\x01&\x04\0\
+\x08ui-error\x03\0\0\x02\x03\x02\x01'\x04\0\x0bwindow-size\x03\0\x02\x02\x03\x02\
+\x01(\x04\0\x0cwindow-state\x03\0\x04\x01j\x01w\x01\x01\x01@\x02\x05titles\x04si\
+ze\x03\0\x06\x04\0\x06create\x01\x07\x01j\0\x01\x01\x01@\x01\x06windoww\0\x08\x04\
+\0\x04show\x01\x09\x04\0\x05close\x01\x09\x01@\x02\x06windoww\x05titles\0\x08\x04\
+\0\x09set-title\x01\x0a\x01@\x02\x06windoww\x04size\x03\0\x08\x04\0\x08set-size\x01\
+\x0b\x01@\x02\x06windoww\x05state\x05\0\x08\x04\0\x09set-state\x01\x0c\x04\0\x0e\
+request-redraw\x01\x09\x01@\x02\x06windoww\x07enabled\x7f\0\x08\x04\0\x0eset-ful\
+l-bleed\x01\x0d\x03\0\x15krate:ui/window@0.1.0\x05)\x02\x03\0\x17\x0bwidget-node\
+\x01B\x0e\x02\x03\x02\x01&\x04\0\x08ui-error\x03\0\0\x02\x03\x02\x01*\x04\0\x0bw\
+idget-node\x03\0\x02\x01j\0\x01\x01\x01@\x02\x06windoww\x04root\x03\0\x04\x04\0\x08\
+set-root\x01\x05\x01@\x02\x06windoww\x04node\x03\0\x04\x04\0\x0bupsert-node\x01\x06\
+\x01@\x02\x06windoww\x06widgetw\0\x04\x04\0\x0bremove-node\x01\x07\x04\0\x0afocu\
+s-node\x01\x07\x01@\x03\x06windoww\x06widgetw\x07enabled\x7f\0\x04\x04\0\x0bset-\
+enabled\x01\x08\x03\0\x13krate:ui/tree@0.1.0\x05+\x01B\x0a\x02\x03\x02\x01&\x04\0\
+\x08ui-error\x03\0\0\x01p}\x01r\x03\x05widthy\x06heighty\x04rgba\x02\x04\0\x0cim\
+age-pixels\x03\0\x03\x01j\0\x01\x01\x01@\x03\x06windoww\x06widgetw\x06pixels\x04\
+\0\x05\x04\0\x0aset-pixels\x01\x06\x01@\x02\x06windoww\x06widgetw\0\x05\x04\0\x05\
+clear\x01\x07\x03\0\x14krate:ui/image@0.1.0\x05,\x02\x03\0\x17\x05event\x01B\x10\
+\x02\x03\x02\x01-\x04\0\x05event\x03\0\0\x01k\x01\x01@\0\0\x02\x04\0\x04poll\x01\
+\x03\x01ky\x01@\x01\x0etimeout-millis\x04\0\x02\x04\0\x04wait\x01\x05\x01@\x01\x03\
+keys\0\x7f\x04\0\x08key-held\x01\x06\x01@\0\0\x7f\x04\0\x11gamepad-connected\x01\
+\x07\x01@\x01\x06buttons\0\x7f\x04\0\x0cgamepad-held\x01\x08\x01@\x01\x04axiss\0\
+v\x04\0\x0cgamepad-axis\x01\x09\x03\0\x15krate:ui/events@0.1.0\x05.\x02\x03\0\x17\
+\x0bchosen-file\x01B\x16\x02\x03\x02\x01/\x04\0\x0bchosen-file\x03\0\0\x02\x03\x02\
+\x01&\x04\0\x08ui-error\x03\0\x02\x01r\x02\x04names\x05tokens\x04\0\x0dchosen-fo\
+lder\x03\0\x04\x01j\0\x01\x03\x01@\x03\x06windoww\x05titles\x04bodys\0\x06\x04\0\
+\x07message\x01\x07\x01j\x01\x7f\x01\x03\x01@\x03\x06windoww\x05titles\x04bodys\0\
+\x08\x04\0\x07confirm\x01\x09\x01k\x01\x01j\x01\x0a\x01\x03\x01@\x03\x06windoww\x05\
+titles\x06filters\0\x0b\x04\0\x09open-file\x01\x0c\x01@\x04\x06windoww\x05titles\
+\x09suggesteds\x06filters\0\x0b\x04\0\x09save-file\x01\x0d\x01k\x05\x01j\x01\x0e\
+\x01\x03\x01@\x02\x06windoww\x05titles\0\x0f\x04\0\x0bopen-folder\x01\x10\x03\0\x15\
+krate:ui/dialog@0.1.0\x050\x01B\x0b\x02\x03\x02\x01&\x04\0\x08ui-error\x03\0\0\x01\
+m\x03\x07printed\x09cancelled\x10opened-in-viewer\x04\0\x0dprint-outcome\x03\0\x02\
+\x01j\x01\x03\x01\x01\x01@\x02\x06windoww\x05titles\0\x04\x04\0\x06window\x01\x05\
+\x01j\x01y\x01\x01\x01@\x01\x06windoww\0\x06\x04\0\x08add-page\x01\x07\x04\0\x06\
+finish\x01\x05\x03\0\x14krate:ui/print@0.1.0\x051\x01B\x08\x02\x03\x02\x01&\x04\0\
+\x08ui-error\x03\0\0\x01j\x01s\x01\x01\x01@\0\0\x02\x04\0\x09read-text\x01\x03\x01\
+j\0\x01\x01\x01@\x01\x04texts\0\x04\x04\0\x0awrite-text\x01\x05\x03\0\x18krate:u\
+i/clipboard@0.1.0\x052\x02\x03\0\x17\x09menu-item\x01B\x08\x02\x03\x02\x013\x04\0\
+\x09menu-item\x03\0\0\x02\x03\x02\x01&\x04\0\x08ui-error\x03\0\x02\x01p\x01\x01j\
+\0\x01\x03\x01@\x02\x06windoww\x05items\x04\0\x05\x04\0\x09set-items\x01\x06\x03\
+\0\x13krate:ui/menu@0.1.0\x054\x01B\x05\x01q\x03\x06denied\0\0\x0binvalid-url\x01\
+s\0\x0bunavailable\x01s\0\x04\0\x0claunch-error\x03\0\0\x01j\0\x01\x01\x01@\x01\x03\
+urls\0\x02\x04\0\x08open-url\x01\x03\x03\0\x17krate:ui/launcher@0.1.0\x055\x01B\x05\
+\x01q\x03\x06denied\0\0\x0finvalid-content\x01s\0\x0bunavailable\x01s\0\x04\0\x0c\
+notify-error\x03\0\0\x01j\0\x01\x01\x01@\x02\x05titles\x04bodys\0\x02\x04\0\x04s\
+how\x01\x03\x03\0\x15krate:ui/notify@0.1.0\x056\x01B\x14\x01r\x04\x01rv\x01gv\x01\
+bv\x01av\x04\0\x05color\x03\0\0\x01r\x02\x01xv\x01yv\x04\0\x05point\x03\0\x02\x01\
+r\x02\x05widthv\x06heightv\x04\0\x04size\x03\0\x04\x01r\x04\x05widthv\x06heightv\
+\x06ascentv\x07descentv\x04\0\x0ctext-metrics\x03\0\x06\x01r\x04\x01xv\x01yv\x05\
+widthv\x06heightv\x04\0\x04rect\x03\0\x08\x01r\x02\x06offsetv\x05color\x01\x04\0\
+\x0dgradient-stop\x03\0\x0a\x01m\x03\x04sans\x05serif\x04mono\x04\0\x0bfont-fami\
+ly\x03\0\x0c\x01r\x04\x06weight{\x06italic\x7f\x0eletter-spacingv\x06family\x0d\x04\
+\0\x0atext-style\x03\0\x0e\x01r\x04\x08top-leftv\x09top-rightv\x0cbottom-rightv\x0b\
+bottom-leftv\x04\0\x0ccorner-radii\x03\0\x10\x01q\x04\x11permission-denied\0\0\x0e\
+invalid-target\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x09gfx-error\x03\
+\0\x12\x03\0\x15krate:gfx/types@0.1.0\x057\x02\x03\0\"\x05color\x02\x03\0\"\x05p\
+oint\x02\x03\0\"\x04rect\x02\x03\0\"\x04size\x02\x03\0\"\x0ctext-metrics\x02\x03\
+\0\"\x09gfx-error\x02\x03\0\"\x0dgradient-stop\x02\x03\0\"\x0ccorner-radii\x02\x03\
+\0\"\x0atext-style\x02\x03\0\"\x0bfont-family\x01BK\x02\x03\x02\x018\x04\0\x05co\
+lor\x03\0\0\x02\x03\x02\x019\x04\0\x05point\x03\0\x02\x02\x03\x02\x01:\x04\0\x04\
+rect\x03\0\x04\x02\x03\x02\x01;\x04\0\x04size\x03\0\x06\x02\x03\x02\x01<\x04\0\x0c\
+text-metrics\x03\0\x08\x02\x03\x02\x01=\x04\0\x09gfx-error\x03\0\x0a\x02\x03\x02\
+\x01>\x04\0\x0dgradient-stop\x03\0\x0c\x02\x03\x02\x01?\x04\0\x0ccorner-radii\x03\
+\0\x0e\x02\x03\x02\x01@\x04\0\x0atext-style\x03\0\x10\x02\x03\x02\x01A\x04\0\x0b\
+font-family\x03\0\x12\x01j\x01w\x01\x0b\x01@\x02\x06windoww\x06widgetw\0\x14\x04\
+\0\x04bind\x01\x15\x01j\x01\x07\x01\x0b\x01@\x01\x06canvasw\0\x16\x04\0\x0bcanva\
+s-size\x01\x17\x01j\0\x01\x0b\x01@\x02\x06canvasw\x04size\x07\0\x18\x04\0\x0fset\
+-design-size\x01\x19\x01@\x05\x06canvasw\x01xv\x01yv\x01wv\x01hv\0\x18\x04\0\x08\
+set-clip\x01\x1a\x01@\x01\x06canvasw\0\x18\x04\0\x0aclear-clip\x01\x1b\x01@\x02\x06\
+canvasw\x04fill\x01\0\x18\x04\0\x05clear\x01\x1c\x01@\x03\x06canvasw\x04area\x05\
+\x04fill\x01\0\x18\x04\0\x09fill-rect\x01\x1d\x01@\x04\x06canvasw\x04area\x05\x06\
+stroke\x01\x05widthv\0\x18\x04\0\x0bstroke-rect\x01\x1e\x01@\x04\x06canvasw\x04a\
+rea\x05\x05radii\x0f\x04fill\x01\0\x18\x04\0\x0ffill-round-rect\x01\x1f\x01@\x05\
+\x06canvasw\x04area\x05\x05radii\x0f\x05widthv\x06stroke\x01\0\x18\x04\0\x11stro\
+ke-round-rect\x01\x20\x01@\x05\x06canvasw\x04area\x05\x05radii\x0f\x04blurv\x06s\
+hadow\x01\0\x18\x04\0\x16drop-shadow-round-rect\x01!\x01p\x0d\x01@\x04\x06canvas\
+w\x04area\x05\x0dangle-degreesv\x05stops\"\0\x18\x04\0\x15linear-gradient-stops\x01\
+#\x01@\x06\x06canvasw\x04texts\x06origin\x03\x09font-sizev\x03ink\x01\x05style\x11\
+\0\x18\x04\0\x10draw-text-styled\x01$\x01j\x01\x09\x01\x0b\x01@\x04\x06canvasw\x04\
+texts\x09font-sizev\x05style\x11\0%\x04\0\x13measure-text-styled\x01&\x01@\x07\x06\
+canvasw\x06center\x03\x06radiusv\x0dstart-degreesv\x0dsweep-degreesv\x05widthv\x06\
+stroke\x01\0\x18\x04\0\x0astroke-arc\x01'\x01p}\x01@\x06\x06canvasw\x04area\x05\x05\
+radii\x0f\x05widthy\x06heighty\x04rgba(\0\x18\x04\0\x11draw-pixels-round\x01)\x01\
+@\x04\x06canvasw\x06center\x03\x06radiusv\x04fill\x01\0\x18\x04\0\x0bfill-circle\
+\x01*\x01@\x05\x06canvasw\x06center\x03\x06radiusv\x05widthv\x06stroke\x01\0\x18\
+\x04\0\x0dstroke-circle\x01+\x01@\x05\x06canvasw\x06center\x03\x06radiusv\x05inn\
+er\x01\x05outer\x01\0\x18\x04\0\x0fradial-gradient\x01,\x01@\x04\x06canvasw\x04a\
+rea\x05\x03top\x01\x06bottom\x01\0\x18\x04\0\x0flinear-gradient\x01-\x01@\x05\x06\
+canvasw\x04texts\x06origin\x03\x09font-sizev\x03ink\x01\0\x18\x04\0\x09draw-text\
+\x01.\x01@\x03\x06canvasw\x04texts\x09font-sizev\0%\x04\0\x0cmeasure-text\x01/\x01\
+@\x05\x06canvasw\x04area\x05\x05widthy\x06heighty\x04rgba(\0\x18\x04\0\x0bdraw-p\
+ixels\x010\x01@\x07\x06canvasw\x06center\x03\x03dst\x07\x05anglev\x05widthy\x06h\
+eighty\x04rgba(\0\x18\x04\0\x0bdraw-sprite\x011\x04\0\x07present\x01\x1b\x03\0\x18\
+krate:gfx/canvas2d@0.1.0\x05B\x01B%\x02\x03\x02\x018\x04\0\x05color\x03\0\0\x02\x03\
+\x02\x01=\x04\0\x09gfx-error\x03\0\x02\x01pv\x01r\x0a\x07ambientv\x08specularv\x09\
+shininessv\x0bfog-densityv\x09fog-color\x01\x0efill-direction\x04\x0afill-color\x01\
+\x0dshadow-radiusv\x0fshadow-softnessv\x08exposurev\x04\0\x08lighting\x03\0\x05\x01\
+j\x01w\x01\x03\x01@\x02\x06windoww\x06widgetw\0\x07\x04\0\x04bind\x01\x08\x01j\0\
+\x01\x03\x01@\x02\x05scenew\x03sky\x01\0\x09\x04\0\x05clear\x01\x0a\x01@\x04\x05\
+scenew\x03eye\x04\x07look-at\x04\x0bfov-degreesv\0\x09\x04\0\x06camera\x01\x0b\x01\
+@\x02\x05scenew\x09direction\x04\0\x09\x04\0\x05light\x01\x0c\x01@\x03\x05scenew\
+\x08vertices\x04\x04tint\x01\0\x09\x04\0\x09triangles\x01\x0d\x01@\x06\x05scenew\
+\x08vertices\x04\x09translate\x04\x0erotate-degrees\x04\x05scalev\x04tint\x01\0\x09\
+\x04\0\x05place\x01\x0e\x01p}\x01@\x04\x05scenew\x05widthy\x06heighty\x04rgba\x0f\
+\0\x07\x04\0\x0eupload-texture\x01\x10\x01@\x05\x05scenew\x08vertices\x04\x03uvs\
+\x04\x07texturew\x04tint\x01\0\x09\x04\0\x08textured\x01\x11\x01@\x06\x05scenew\x08\
+vertices\x04\x07normals\x04\x03uvs\x04\x07texturew\x04tint\x01\0\x09\x04\0\x06sm\
+ooth\x01\x12\x01@\x02\x05scenew\x08lighting\x06\0\x09\x04\0\x0cset-lighting\x01\x13\
+\x01@\x08\x05scenew\x08vertices\x04\x07normals\x04\x08tangents\x04\x03uvs\x04\x07\
+texturew\x0enormal-texturew\x04tint\x01\0\x09\x04\0\x0dnormal-mapped\x01\x14\x04\
+\0\x05unlit\x01\x11\x01@\x02\x05scenew\x07enabled\x7f\0\x09\x04\0\x0fcull-back-f\
+aces\x01\x15\x01@\x01\x05scenew\0\x09\x04\0\x07present\x01\x16\x03\0\x17krate:gf\
+x/scene3d@0.1.0\x05C\x01B\x06\x01m\x02\x07pcm-s16\x07float32\x04\0\x0dsample-for\
+mat\x03\0\0\x01r\x04\x0bsample-ratey\x08channels{\x06format\x01\x0dbuffer-frames\
+y\x04\0\x0dstream-config\x03\0\x02\x01q\x05\x11permission-denied\0\0\x0einvalid-\
+stream\0\0\x12device-unavailable\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\
+\0\x0baudio-error\x03\0\x04\x03\0\x17krate:audio/types@0.1.0\x05D\x02\x03\0%\x0b\
+audio-error\x02\x03\0%\x0dstream-config\x01B\x15\x02\x03\x02\x01E\x04\0\x0baudio\
+-error\x03\0\0\x02\x03\x02\x01F\x04\0\x0dstream-config\x03\0\x02\x01j\x01w\x01\x01\
+\x01@\x01\x06config\x03\0\x04\x04\0\x04open\x01\x05\x01j\0\x01\x01\x01@\x01\x09s\
+tream-idw\0\x06\x04\0\x05start\x01\x07\x04\0\x04stop\x01\x07\x01p}\x01j\x01y\x01\
+\x01\x01@\x02\x09stream-idw\x05bytes\x08\0\x09\x04\0\x05write\x01\x0a\x01@\x02\x09\
+stream-idw\x05bytes\x08\0\x04\x04\0\x0aload-sound\x01\x0b\x01@\x03\x09stream-idw\
+\x05soundw\x04gainv\0\x06\x04\0\x0aplay-sound\x01\x0c\x01@\x02\x09stream-idw\x05\
+soundw\0\x06\x04\0\x0astop-sound\x01\x0d\x03\0\x1akrate:audio/playback@0.1.0\x05\
+G\x01B\x0f\x02\x03\x02\x01E\x04\0\x0baudio-error\x03\0\0\x02\x03\x02\x01F\x04\0\x0d\
+stream-config\x03\0\x02\x01j\x01w\x01\x01\x01@\x01\x06config\x03\0\x04\x04\0\x04\
+open\x01\x05\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x06\x04\0\x05start\x01\x07\x04\
+\0\x04stop\x01\x07\x01p}\x01j\x01\x08\x01\x01\x01@\x02\x09stream-idw\x09max-byte\
+sy\0\x09\x04\0\x04read\x01\x0a\x03\0\x19krate:audio/capture@0.1.0\x05H\x01B\x0d\x01\
+m\x01\x05rgba8\x04\0\x0cframe-format\x03\0\0\x01r\x04\x05widthy\x06heighty\x03fp\
+sy\x06format\x01\x04\0\x0dstream-config\x03\0\x02\x01r\x04\x05widthy\x06heighty\x03\
+fpsy\x06format\x01\x04\0\x0aframe-info\x03\0\x04\x01r\x02\x02ids\x05labels\x04\0\
+\x0bdevice-info\x03\0\x06\x01p}\x01r\x04\x05bytes\x08\x05widthy\x06heighty\x0eel\
+apsed-millisw\x04\0\x05frame\x03\0\x09\x01q\x06\x11permission-denied\0\0\x0einva\
+lid-stream\0\0\x12device-unavailable\0\0\x0dsystem-denied\0\0\x0bunsupported\x01\
+s\0\x08platform\x01s\0\x04\0\x0ccamera-error\x03\0\x0b\x03\0\x18krate:camera/typ\
+es@0.1.0\x05I\x02\x03\0(\x0ccamera-error\x02\x03\0(\x0bdevice-info\x02\x03\0(\x05\
+frame\x02\x03\0(\x0aframe-info\x02\x03\0(\x0dstream-config\x01B\x1d\x02\x03\x02\x01\
+J\x04\0\x0ccamera-error\x03\0\0\x02\x03\x02\x01K\x04\0\x0bdevice-info\x03\0\x02\x02\
+\x03\x02\x01L\x04\0\x05frame\x03\0\x04\x02\x03\x02\x01M\x04\0\x0aframe-info\x03\0\
+\x06\x02\x03\x02\x01N\x04\0\x0dstream-config\x03\0\x08\x01p\x03\x01j\x01\x0a\x01\
+\x01\x01@\0\0\x0b\x04\0\x07devices\x01\x0c\x01j\x01w\x01\x01\x01@\x02\x06devices\
+\x06config\x09\0\x0d\x04\0\x04open\x01\x0e\x01j\x01\x07\x01\x01\x01@\x01\x09stre\
+am-idw\0\x0f\x04\0\x04info\x01\x10\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x11\x04\
+\0\x05start\x01\x12\x04\0\x04stop\x01\x12\x01k\x05\x01j\x01\x13\x01\x01\x01@\x01\
+\x09stream-idw\0\x14\x04\0\x04read\x01\x15\x04\0\x05close\x01\x12\x03\0\x1akrate\
+:camera/capture@0.1.0\x05O\x01B\x12\x01r\x01\x04texts\x04\0\x0atranscript\x03\0\0\
+\x01q\x05\x0finvalid-request\x01s\0\x0fmodel-not-found\0\0\x0dmodel-invalid\x01s\
+\0\x0bunsupported\x01s\0\x09inference\x01s\0\x04\0\x0cspeech-error\x03\0\x02\x01\
+m\x05\x0finvalid-request\x0fmodel-not-found\x0dmodel-invalid\x0bunsupported\x09i\
+nference\x04\0\x0bmatch-error\x03\0\x04\x01p}\x01ks\x01j\x01\x01\x01\x03\x01@\x04\
+\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample-ratey\x08language\x07\0\x08\x04\0\x0a\
+transcribe\x01\x09\x01j\x01}\x01\x05\x01@\x05\x0bmodel-assets\x0apcm-s16-le\x06\x0b\
+sample-ratey\x08language\x07\x08expecteds\0\x0a\x04\0\x0amatch-line\x01\x0b\x01k\
+}\x01j\x01\x0c\x01\x05\x01@\x06\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample-rate\
+y\x08language\x07\x08expecteds\x06finish\x7f\0\x0d\x04\0\x11match-line-stream\x01\
+\x0e\x03\0\x20krate:speech/transcription@0.1.0\x05P\x01B\x12\x01r\x03\x02ids\x04\
+names\x08languages\x04\0\x05voice\x03\0\0\x01q\x04\x11permission-denied\0\0\x0fi\
+nvalid-request\x01s\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x09say-erro\
+r\x03\0\x02\x01p\x01\x01j\x01\x04\x01\x03\x01@\0\0\x05\x04\0\x06voices\x01\x06\x01\
+ks\x01kv\x01j\0\x01\x03\x01@\x03\x04texts\x05voice\x07\x04rate\x08\0\x09\x04\0\x03\
+say\x01\x0a\x01@\0\0\x09\x04\0\x04stop\x01\x0b\x01j\x01\x7f\x01\x03\x01@\0\0\x0c\
+\x04\0\x08speaking\x01\x0d\x03\0\x1ckrate:speech/synthesis@0.1.0\x05Q\x01@\0\0z\x04\
+\0\x03run\x01R\x04\0\x13krate:app/gui@0.2.0\x04\0\x0b\x09\x01\0\x03gui\x03\0\0\0\
+G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindge\
+n-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {
