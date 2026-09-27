@@ -13506,8 +13506,9 @@ pub mod krate {
         }
         /// Speaking text aloud with the voices the computer already has.
         ///
-        /// Speech is sound, so it needs what any sound needs: `audio.playback`.
-        /// Nothing is downloaded and nothing leaves the computer.
+        /// Speech is sound, so it is allowed wherever sound is: `audio.playback`,
+        /// which every app has unless the person takes it away. Nothing is
+        /// downloaded and nothing leaves the computer.
         #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
         pub mod synthesis {
             #[used]
@@ -13539,7 +13540,7 @@ pub mod krate {
             /// Error returned by a speech call.
             #[derive(Clone)]
             pub enum SayError {
-                /// The app may not make sound: `audio.playback` was not granted.
+                /// The app may not make sound: `audio.playback` was taken away.
                 PermissionDenied,
                 /// Empty text, text over 4,000 characters, an unknown voice id, or a
                 /// rate outside 0.5 to 2.0.
