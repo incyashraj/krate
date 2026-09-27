@@ -11724,7 +11724,13 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
             // used to break by putting the starter back over the agent's
             // src/lib.rs before every run (K-078).
             if !dest.exists() {
-                let _ = fs::write(&dest, &file.contents);
+                let contents = match model_starter {
+                    Some(example) if file.path == "Cargo.toml" => {
+                        starter_cargo_toml(&file.contents, example.lib)
+                    }
+                    _ => file.contents.clone(),
+                };
+                let _ = fs::write(&dest, contents);
             }
         }
     }
@@ -17581,6 +17587,24 @@ fn manifest_overreach(manifest: &krate_manifest::Manifest, imports: &[String]) -
     None
 }
 
+/// The skeleton's Cargo.toml, made to agree with the starter it seeds.
+///
+/// The skeleton is a `std` app, so its Cargo.toml turns on the SDK's `std`
+/// feature. A model starter replaces the code with a shipped example, and
+/// every one is `#![no_std]` and built WITHOUT that feature. Left as it was,
+/// the `std` feature linked std's allocator glue beside the starter, and the
+/// fetch starter -- untouched -- failed the import check with twenty
+/// `wasi:*` imports (K-894). The SDK owns the allocator, panic handler and
+/// memory intrinsics for a no_std guest, exactly as the shipped app has it.
+fn starter_cargo_toml(skeleton_cargo: &str, starter_lib: &str) -> String {
+    let no_std = starter_lib.lines().any(|line| line.trim() == "#![no_std]");
+    if no_std {
+        skeleton_cargo.replace(r#"features = ["gui", "std"]"#, r#"features = ["gui"]"#)
+    } else {
+        skeleton_cargo.to_string()
+    }
+}
+
 fn build_fix(detail: &str) -> String {
     let generic = "Fix the compiler errors above. The build uses rustup's toolchain and the \
                    wasm32-wasip1 target; run `krate doctor` if the target or toolchain looks \
@@ -20970,6 +20994,47 @@ fn run() -> i32 {
     fn an_unbounded_loop_is_correct() {
         let lib = "fn run() -> i32 { loop { match events::wait(None) { _ => {} } } }";
         assert!(bounded_interactive_loop(lib).is_none());
+    }
+}
+
+#[cfg(test)]
+mod starter_cargo_tests {
+    use super::starter_cargo_toml;
+
+    /// Every model starter is seeded with the SDK features its own shipped
+    /// app builds with (K-894). The fetch starter, left untouched, failed
+    /// the import check because the skeleton's `std` feature rode along.
+    #[test]
+    fn each_starter_gets_the_sdk_features_its_shipped_app_uses() {
+        let skeleton = krate_author::skeleton("probe-app", "/sdk", krate_author::Skeleton::Gui)
+            .expect("gui skeleton");
+        let cargo = &skeleton
+            .files
+            .iter()
+            .find(|f| f.path == "Cargo.toml")
+            .expect("the skeleton writes a Cargo.toml")
+            .contents;
+        // The hazard is real: the skeleton itself asks for std.
+        assert!(
+            cargo.contains(r#"features = ["gui", "std"]"#),
+            "the skeleton no longer asks for std, so this test no longer tests anything"
+        );
+        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        for example in crate::authoring_context::EMBEDDED_EXAMPLES {
+            let shipped =
+                std::fs::read_to_string(repo.join("apps").join(example.name).join("Cargo.toml"))
+                    .unwrap_or_else(|e| panic!("apps/{}/Cargo.toml: {e}", example.name));
+            let shipped_std = shipped
+                .lines()
+                .any(|l| l.trim_start().starts_with("krate =") && l.contains(r#""std""#));
+            let seeded = starter_cargo_toml(cargo, example.lib);
+            let seeded_std = seeded.contains(r#"features = ["gui", "std"]"#);
+            assert_eq!(
+                seeded_std, shipped_std,
+                "the {} starter is seeded with std={} but its shipped app builds with std={}",
+                example.name, seeded_std, shipped_std
+            );
+        }
     }
 }
 
