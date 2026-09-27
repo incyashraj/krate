@@ -17,7 +17,7 @@ on:
         description: Per-target fuzz duration in seconds
         required: false
         type: string
-        default: "4800"
+        default: "2400"
 
 concurrency:
   group: self-hosted-fuzz-nightly-${{ github.ref }}
@@ -33,8 +33,15 @@ jobs:
     name: Fuzz nightly
     runs-on: [self-hosted, krate-local]
     timeout-minutes: 360
+    # Four targets at 2400 s is 2 h 40 m of fuzzing, done by about 00:00
+    # SGT. At 4800 s it was 5 h 20 m plus an hour saving the corpus: past
+    # the 360-minute ceiling even on a night the laptop stayed awake, and
+    # it rarely did -- the 2026-09-26 run crawled from 03:00 SGT (one
+    # target took 5637 s for 4800, the next ran at 716 exec/s) and was
+    # cancelled, so no nightly had passed for eight days. The corpus
+    # carries over, so a shorter night still continues the campaign.
     env:
-      KRATE_FUZZ_MAX_TOTAL_TIME: ${{ github.event_name == 'workflow_dispatch' && inputs.fuzz_max_total_time || '4800' }}
+      KRATE_FUZZ_MAX_TOTAL_TIME: ${{ github.event_name == 'workflow_dispatch' && inputs.fuzz_max_total_time || '2400' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
