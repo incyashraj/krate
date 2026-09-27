@@ -57,6 +57,10 @@ run "clippy without speech (CI lint lane)" sh -c 'cargo clippy -q -p krate-runti
 # evidence row. Invest/ is private and absent on CI, so its findings are
 # not what CI judges and are left out here.
 run "public claims (CI docs lane)" sh -c 'python3 scripts/check-claims.py > "${TMPDIR:-/tmp}/krate-claims.$$" 2>&1; ! grep -E "which no claim record vouches for|was false" "${TMPDIR:-/tmp}/krate-claims.$$" | grep -v "Invest/"'
+# CI's docs lane refuses a WIT interface nobody reviewed for what it
+# standardizes and how an app escapes it (IC-175). store.group reached CI
+# unreviewed on 2026-09-27 because this gate never asked.
+run "developer-control review (CI docs lane)" python3 scripts/developer-control-review.py --check
 # CI's UAPI lane regenerates the Phase 2 freeze pages and fails on a diff.
 # Compared with the working tree, not with git, so a regeneration you have
 # made and not yet committed passes; a stale page is left regenerated.
