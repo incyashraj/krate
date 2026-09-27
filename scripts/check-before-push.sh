@@ -49,6 +49,18 @@ echo "checks CI will repeat:"
 run "rustfmt (workspace)" cargo fmt --all -- --check
 run "rustfmt (studio)" sh -c 'cd studio && cargo fmt -- --check'
 run "clippy" cargo clippy --workspace --all-targets
+# CI's lint lane also builds WITHOUT default features (speech off), which
+# changes type sizes: an enum that passes large_enum_variant with speech on
+# failed it with speech off, and only CI saw it (2026-09-27).
+run "clippy without speech (CI lint lane)" sh -c 'cargo clippy -q -p krate-runtime --all-targets --no-default-features --features phase2-bindings -- -D warnings && cargo clippy -q -p krate-cli --all-targets --no-default-features -- -D warnings'
+# CI's docs lane: every number with a unit on a public page names an
+# evidence row. Invest/ is private and absent on CI, so its findings are
+# not what CI judges and are left out here.
+run "public claims (CI docs lane)" sh -c 'python3 scripts/check-claims.py > "${TMPDIR:-/tmp}/krate-claims.$$" 2>&1; ! grep -E "which no claim record vouches for|was false" "${TMPDIR:-/tmp}/krate-claims.$$" | grep -v "Invest/"'
+# CI's UAPI lane regenerates the Phase 2 freeze pages and fails on a diff.
+# Compared with the working tree, not with git, so a regeneration you have
+# made and not yet committed passes; a stale page is left regenerated.
+run "UAPI freeze pages are current" sh -c 'd=$(mktemp -d); for f in lock evidence; do cp docs/book/src/phase2/uapi-freeze-$f.md "$d/$f"; done; sh scripts/generate-uapi-freeze-lock.sh >/dev/null 2>&1 && sh scripts/generate-uapi-freeze-evidence.sh >/dev/null 2>&1 && cmp -s "$d/lock" docs/book/src/phase2/uapi-freeze-lock.md && cmp -s "$d/evidence" docs/book/src/phase2/uapi-freeze-evidence.md; r=$?; rm -rf "$d"; exit $r'
 
 # The exact command CI's quick lane runs ("Run workspace tests"), four
 # minutes on this machine. Until 2026-09-20 this gate ran no cargo tests at

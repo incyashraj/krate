@@ -143,6 +143,10 @@ enum GroupCommand {
     List,
 }
 
+// Parsed once per process and matched once, so the size gap between `Run`
+// and the other variants costs nothing; boxing `Run`'s fields to satisfy the
+// lint would only make every use of them noisier.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Send any spooled usage events, then exit. Spawned detached by the

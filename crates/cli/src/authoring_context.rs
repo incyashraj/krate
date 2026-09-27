@@ -698,7 +698,7 @@ fn capability_note(pattern: &str) -> &'static str {
         "audio.playback" => "play sound",
         "audio.capture" => "record from the microphone",
         "store.shared" => "share a key-value bucket with everyone holding its invite code",
-        "memory.budget" => "more than the default 256 MiB of memory, in MiB (up to 3584); the person sees it at consent",
+        "memory.budget" => "more memory than the default, in MiB (up to 3584); the person sees it at consent",
         "store.group" => "share a key-value store with the same publisher's other apps, in a named group its signed list admits",
         "camera.capture" => "see through the camera",
         _ => "",
