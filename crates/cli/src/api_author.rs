@@ -1150,10 +1150,12 @@ mod tests {
                 "{vendor:?}: the build keeps its tools"
             );
         }
-        assert!(
-            PLAN_REPLY_TOKENS * 8 <= MAX_REPLY_TOKENS,
-            "a plan is a small fraction of a round"
-        );
+        const {
+            assert!(
+                PLAN_REPLY_TOKENS * 8 <= MAX_REPLY_TOKENS,
+                "a plan is a small fraction of a round"
+            )
+        };
     }
 
     /// The containment check is the whole sandbox for this provider, since
