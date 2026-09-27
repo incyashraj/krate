@@ -2366,16 +2366,52 @@ async function newSession(env, userId) {
   return token;
 }
 
+/// Where a sign-in started, and the proof the browser that finishes it is
+/// the one that began it (K-909).
+///
+/// A finished sign-in is a session handed to a page. Nothing used to tie it
+/// to the browser that asked, so a link carrying SOMEONE ELSE's finished
+/// sign-in -- the attacker's own, started and completed on their machine --
+/// signed the visitor into the attacker's account, and everything they then
+/// made landed where the attacker could read it.
+///
+/// So the page that starts a sign-in keeps a random `nonce` in its own
+/// storage and sends it here; the hub carries it through the provider round
+/// trip untouched and hands it back beside the session; /login/done accepts
+/// the session only when the nonce is one this browser is holding. The
+/// desktop does the same with `app_nonce` on its side of the krate:// hop.
+///
+/// Carried in the state record the start already writes -- `login:<state>`
+/// or `email:<token>` -- so this costs no KV write of its own (K-912). The
+/// hub does not insist on a nonce: the check that matters is the page's,
+/// and an old page mid-deploy must still get a person signed in.
+function signInStart(from, nonce, appNonce) {
+  const ok = (v) => (/^[A-Za-z0-9_-]{16,64}$/.test(v || "") ? v : "");
+  return { from: from === "app" ? "app" : "web", nonce: ok(nonce), app_nonce: ok(appNonce) };
+}
+
+/// Read a stored start. Before K-909 the record was the bare word "app" or
+/// "web"; a sign-in in flight across the deploy still has one of those.
+function readSignInStart(raw) {
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object") return signInStart(parsed.from, parsed.nonce, parsed.app_nonce);
+  } catch (e) { /* the old bare word */ }
+  return signInStart(raw, "", "");
+}
+
 /// Deliver a finished sign-in to wherever it started. Everything rides in
 /// the fragment, which never leaves the browser.
-function deliver(from, user, token) {
+function deliver(start, user, token) {
   const hand = new URLSearchParams({
     token,
     login: user.login || "",
     name: user.name || "",
     avatar_url: user.avatar_url || "",
   });
-  const suffix = from === "app" ? "?app=1" : "";
+  if (start.nonce) hand.set("nonce", start.nonce);
+  if (start.app_nonce) hand.set("app_nonce", start.app_nonce);
+  const suffix = start.from === "app" ? "?app=1" : "";
   return Response.redirect(`https://krate.tech/login/done/${suffix}#${hand.toString()}`, 302);
 }
 
@@ -2385,9 +2421,13 @@ async function googleStart(url, env) {
   if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) {
     return text("Google sign-in is not configured on this hub yet.", 503);
   }
-  const from = url.searchParams.get("from") === "app" ? "app" : "web";
+  const start = signInStart(
+    url.searchParams.get("from"),
+    url.searchParams.get("nonce"),
+    url.searchParams.get("app_nonce"),
+  );
   const state = crypto.randomUUID();
-  await env.APPS.put(`login:${state}`, from, { expirationTtl: 600 });
+  await env.APPS.put(`login:${state}`, JSON.stringify(start), { expirationTtl: 600 });
   const auth = new URL("https://accounts.google.com/o/oauth2/v2/auth");
   auth.searchParams.set("client_id", env.GOOGLE_CLIENT_ID);
   auth.searchParams.set("redirect_uri", `${env.PUBLIC_BASE}/login/google/callback`);
@@ -2399,9 +2439,10 @@ async function googleStart(url, env) {
 
 async function googleCallback(url, env) {
   const state = url.searchParams.get("state") || "";
-  const from = await env.APPS.get(`login:${state}`);
-  if (!from) return text("This sign-in link expired. Start again from krate.tech/login.", 400);
+  const stored = await env.APPS.get(`login:${state}`);
+  if (!stored) return text("This sign-in link expired. Start again from krate.tech/login.", 400);
   await env.APPS.delete(`login:${state}`);
+  const start = readSignInStart(stored);
   const exchange = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
@@ -2427,7 +2468,7 @@ async function googleCallback(url, env) {
     name: claims.name,
     avatar_url: claims.picture,
   });
-  return deliver(from, user, await newSession(env, user.id));
+  return deliver(start, user, await newSession(env, user.id));
 }
 
 // -------------------------------------------------------------------- email
@@ -2607,14 +2648,14 @@ async function emailStart(request, env) {
   if (!env.RESEND_API_KEY) {
     return text("Email sign-in is not configured on this hub yet.", 503);
   }
-  const { email, from } = await request.json().catch(() => ({}));
+  const { email, from, nonce, app_nonce: appNonce } = await request.json().catch(() => ({}));
   if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     return text("That does not look like an email address.", 400);
   }
   const token = crypto.randomUUID().replaceAll("-", "");
   await env.APPS.put(
     `email:${token}`,
-    JSON.stringify({ email: email.toLowerCase(), from: from === "app" ? "app" : "web" }),
+    JSON.stringify({ email: email.toLowerCase(), ...signInStart(from, nonce, appNonce) }),
     { expirationTtl: 900 },
   );
   const link = `${env.PUBLIC_BASE}/login/email/verify?t=${token}`;
@@ -2679,9 +2720,9 @@ async function emailVerify(url, env) {
   const stored = await env.APPS.get(`email:${token}`);
   if (!stored) return text("This sign-in link expired or was already used.", 400);
   await env.APPS.delete(`email:${token}`);
-  const { email, from } = JSON.parse(stored);
-  const user = await ensureUser(env, "email", email, { email });
-  return deliver(from, user, await newSession(env, user.id));
+  const record = JSON.parse(stored);
+  const user = await ensureUser(env, "email", record.email, { email: record.email });
+  return deliver(signInStart(record.from, record.nonce, record.app_nonce), user, await newSession(env, user.id));
 }
 
 // --------------------------------------------------------------- web sign-in
@@ -2702,11 +2743,16 @@ async function loginStart(url, env) {
   }
   // Where to deliver the person afterwards. "app" means hand the identity to
   // the desktop app through its URL scheme; anything else means the site.
-  const from = url.searchParams.get("from") === "app" ? "app" : "web";
+  // The page's nonce rides along in the same record (K-909).
+  const start = signInStart(
+    url.searchParams.get("from"),
+    url.searchParams.get("nonce"),
+    url.searchParams.get("app_nonce"),
+  );
   // The state ties the callback to this start. Ten minutes is enough to type
   // a password and approve; an unused state simply expires.
   const state = crypto.randomUUID();
-  await env.APPS.put(`login:${state}`, from, { expirationTtl: 600 });
+  await env.APPS.put(`login:${state}`, JSON.stringify(start), { expirationTtl: 600 });
 
   const auth = new URL("https://github.com/login/oauth/authorize");
   auth.searchParams.set("client_id", GITHUB_CLIENT_ID);
@@ -2719,10 +2765,11 @@ async function loginStart(url, env) {
 async function loginCallback(url, env) {
   const state = url.searchParams.get("state") || "";
   const code = url.searchParams.get("code") || "";
-  const from = await env.APPS.get(`login:${state}`);
-  if (!from) return text("This sign-in link expired. Start again from krate.tech/login.", 400);
+  const stored = await env.APPS.get(`login:${state}`);
+  if (!stored) return text("This sign-in link expired. Start again from krate.tech/login.", 400);
   // One shot: a replayed callback with the same state gets the line above.
   await env.APPS.delete(`login:${state}`);
+  const start = readSignInStart(stored);
 
   const exchange = await fetch("https://github.com/login/oauth/access_token", {
     method: "POST",
@@ -2757,7 +2804,7 @@ async function loginCallback(url, env) {
   // already publishes with it and the hub already verifies it. The account
   // record exists either way, so a later Google or email sign-in with the
   // same address lands on this same user.
-  return deliver(from, { ...account, login: profile.login }, result.access_token);
+  return deliver(start, { ...account, login: profile.login }, result.access_token);
 }
 
 async function authStart(env) {

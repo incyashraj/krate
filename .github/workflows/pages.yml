@@ -240,6 +240,11 @@ jobs:
           # And that a failed build tells the person what happened in
           # words about their app, from the engine's real output (K-892).
           node docs/landing/studio/failure-words-test.mjs
+          # And that a sign-in link from somebody else cannot sign this
+          # browser in (K-909): /login/done keeps a session only when the
+          # nonce this browser started with comes back beside it, and /make
+          # takes no session from its URL at all.
+          node docs/landing/studio/signin-test.mjs
 
           mkdir -p _site/app
           cp -R studio/ui/. _site/app/

@@ -26,7 +26,7 @@
     try {
       var q = new URLSearchParams(location.search);
       var next = q.get("next") || "";
-      var fromApp = q.get("from") === "app";
+      var fromApp = q.get("from") === "app" || q.has("app_nonce");
       if (next === "studio" && !fromApp) {
         var token = null;
         try { token = localStorage.getItem("krate_tok"); } catch (e) {}
@@ -171,11 +171,15 @@
     directly, and the email link needs no password at all.</p>
   </div>
 </main>
+<script src="/login/signin.js"></script>
 <script>
 // Signing in FROM the app carries from=app through, so the hub hands the
 // identity back to the desktop through the krate:// scheme.
 (function () {
-  var fromApp = new URLSearchParams(location.search).get("from") === "app";
+  // `app_nonce` alone means the desktop too: newer Studios send only that,
+  // because a second `&from=app` is cut off by Windows' `start` (K-909).
+  var fromApp = new URLSearchParams(location.search).get("from") === "app" ||
+    new URLSearchParams(location.search).has("app_nonce");
   // Where to continue AFTER sign-in (the desk, a checkout). Kept in this
   // origin's storage so it survives the provider round trip.
   var next = new URLSearchParams(location.search).get("next") || "";
@@ -207,10 +211,21 @@
     badge.textContent = "Invite " + ref + " noted -- it counts the moment you sign up.";
     badge.classList.remove("hidden");
   }
-  if (fromApp) {
-    document.getElementById("ghBtn").href = "https://hub.krate.tech/login/start?from=app";
-    document.getElementById("googleBtn").href = "https://hub.krate.tech/login/google/start?from=app";
+  // This browser's proof that it started the sign-in (K-909): /login/done
+  // takes the session only when the same nonce comes back. The desktop
+  // sends one of its own for its side of the krate:// hop; it rides along.
+  var nonce = window.KrateSignIn ? window.KrateSignIn.begin() : "";
+  var appNonce = fromApp ? (new URLSearchParams(location.search).get("app_nonce") || "") : "";
+  function door(path) {
+    var q = new URLSearchParams();
+    if (fromApp) q.set("from", "app");
+    if (nonce) q.set("nonce", nonce);
+    if (appNonce) q.set("app_nonce", appNonce);
+    var query = q.toString();
+    return "https://hub.krate.tech" + path + (query ? "?" + query : "");
   }
+  document.getElementById("ghBtn").href = door("/login/start");
+  document.getElementById("googleBtn").href = door("/login/google/start");
   var form = document.getElementById("emailForm");
   var note = document.getElementById("emailNote");
   form.addEventListener("submit", function (e) {
@@ -224,6 +239,8 @@
       body: JSON.stringify({
         email: document.getElementById("emailInput").value.trim(),
         from: fromApp ? "app" : "web",
+        nonce: nonce,
+        app_nonce: appNonce,
       }),
     })
       .then(function (r) { return r.text().then(function (t) { return { ok: r.ok, t: t }; }); })

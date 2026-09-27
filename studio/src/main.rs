@@ -49,6 +49,81 @@ static DOC_CLAIMED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBoo
 /// document opened into a studio someone is already using.
 static STARTED: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
 
+/// The sign-in this Studio started and is waiting for (K-909).
+///
+/// Any web page can open `krate://signed-in?token=...`, and this app used
+/// to adopt whatever identity arrived that way -- so a link carrying the
+/// ATTACKER's session signed the person's desktop into the attacker's
+/// account, and every app they then made and published went there. Now the
+/// Sign in button writes a random nonce here and sends it along as
+/// `app_nonce`; the hub hands it back through krate.tech/login/done, and a
+/// hand-off is adopted only when it matches.
+///
+/// A file, not memory: on Windows and Linux the krate:// URL arrives in a
+/// NEW process (argv), which must be able to read what the running Studio
+/// wrote. Inside ~/.krate/studio, which is private to the owner.
+const PENDING_SIGN_IN: &str = "pending-sign-in";
+/// Long enough to type a password or open an email; the email link itself
+/// expires in fifteen minutes.
+const PENDING_SIGN_IN_SECS: u64 = 60 * 60;
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// A fresh 128-bit nonce, as hex. std's RandomState is keyed from the OS
+/// random source once per process, which is what an unguessable-from-a-web-
+/// page nonce needs; no new dependency for it.
+fn sign_in_nonce() -> String {
+    use std::hash::{BuildHasher, Hasher};
+    let state = std::collections::hash_map::RandomState::new();
+    let half = |salt: u64| {
+        let mut h = state.build_hasher();
+        h.write_u64(salt);
+        h.write_u128(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0),
+        );
+        h.write_u32(std::process::id());
+        h.finish()
+    };
+    format!("{:016x}{:016x}", half(1), half(2))
+}
+
+/// Remember a new pending sign-in in `dir` and return its nonce.
+fn begin_sign_in(dir: &Path) -> String {
+    let nonce = sign_in_nonce();
+    let _ = std::fs::write(dir.join(PENDING_SIGN_IN), format!("{nonce} {}", unix_now()));
+    nonce
+}
+
+/// Is `offered` the nonce of the sign-in waiting in `dir`? A match is used
+/// up, so the same hand-off cannot be replayed.
+fn take_sign_in(dir: &Path, offered: &str) -> bool {
+    let path = dir.join(PENDING_SIGN_IN);
+    let Ok(stored) = std::fs::read_to_string(&path) else {
+        return false;
+    };
+    let mut parts = stored.split_whitespace();
+    let (Some(nonce), Some(at)) = (
+        parts.next(),
+        parts.next().and_then(|s| s.parse::<u64>().ok()),
+    ) else {
+        return false;
+    };
+    let fresh = unix_now().saturating_sub(at) <= PENDING_SIGN_IN_SECS;
+    if offered.is_empty() || nonce != offered || !fresh {
+        return false;
+    }
+    let _ = std::fs::remove_file(&path);
+    true
+}
+
 /// Parse a krate://signed-in handoff (query or fragment) and store the
 /// identity through the engine. Used by the macOS open event and by the
 /// argv path Windows and Linux deliver scheme URLs through.
@@ -68,6 +143,12 @@ fn adopt_from_uri(uri: &str) -> bool {
         fields.get("login").cloned().unwrap_or_default(),
     );
     if token.is_empty() || login.is_empty() {
+        return false;
+    }
+    // Only the sign-in this Studio asked for (K-909). A hand-off with no
+    // nonce, or somebody else's, is dropped without touching the account.
+    let offered = fields.get("app_nonce").cloned().unwrap_or_default();
+    if !take_sign_in(&studio_dir(), &offered) {
         return false;
     }
     let identity = serde_json::json!({
@@ -2836,7 +2917,13 @@ async fn open_krate(app: tauri::AppHandle) -> Result<(), String> {
 /// in when they return -- no code to type.
 #[tauri::command]
 fn login_browser() -> Result<(), String> {
-    open_url("https://krate.tech/login?from=app")
+    // The nonce the hand-off must come back with (K-909). Plain hex, so it
+    // needs no escaping in the URL. ONE parameter on purpose: on Windows
+    // open_url goes through `cmd /C start`, where a bare `&` ends the
+    // command and the rest of the URL is lost. The page reads `app_nonce`
+    // as "from the app" by itself.
+    let nonce = begin_sign_in(&studio_dir());
+    open_url(&format!("https://krate.tech/login?app_nonce={nonce}"))
 }
 
 /// The hub the studio reads and publishes to. `KRATE_HUB_URL` overrides it,
@@ -5191,6 +5278,48 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    /// K-909: a krate://signed-in hand-off is adopted only when it carries
+    /// the nonce of the sign-in this Studio started, and only once.
+    #[test]
+    fn a_sign_in_hand_off_needs_the_nonce_this_studio_started() {
+        let dir = std::env::temp_dir().join(format!("krate-signin-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = std::fs::remove_file(dir.join(super::PENDING_SIGN_IN));
+
+        // Nothing started: whatever a web page offers is refused.
+        assert!(!super::take_sign_in(
+            &dir,
+            "0123456789abcdef0123456789abcdef"
+        ));
+        assert!(!super::take_sign_in(&dir, ""));
+
+        let nonce = super::begin_sign_in(&dir);
+        assert_eq!(nonce.len(), 32, "128 bits, as hex: {nonce}");
+        assert_ne!(
+            nonce,
+            super::begin_sign_in(&dir),
+            "every start gets its own"
+        );
+        let nonce = super::begin_sign_in(&dir);
+
+        assert!(!super::take_sign_in(&dir, ""), "no nonce, no sign-in");
+        assert!(
+            !super::take_sign_in(&dir, "ffffffffffffffffffffffffffffffff"),
+            "somebody else's"
+        );
+        assert!(super::take_sign_in(&dir, &nonce), "the one it started");
+        assert!(!super::take_sign_in(&dir, &nonce), "and only once");
+
+        // A stale start is not a key.
+        let old = super::unix_now() - super::PENDING_SIGN_IN_SECS - 5;
+        std::fs::write(dir.join(super::PENDING_SIGN_IN), format!("{nonce} {old}")).unwrap();
+        assert!(
+            !super::take_sign_in(&dir, &nonce),
+            "an hour-old start has expired"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// K-900: the build's output is followed from a file, every line of
     /// it, including what arrives just before the engine exits and a last
     /// line with no newline.

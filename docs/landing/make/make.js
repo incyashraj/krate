@@ -513,7 +513,7 @@ function askToSignIn() {
     fetch(`${HUB}/login/email`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email, from: "web" }),
+      body: JSON.stringify({ email, from: "web", nonce: signInNonce() }),
     })
       .then((r) => r.text().then((t) => ({ ok: r.ok, t })))
       .then((res) => {
@@ -538,10 +538,17 @@ function rememberWhereToComeBack() {
   try { localStorage.setItem("krate_next", "make"); } catch (e) {}
 }
 
+/* This browser's proof that it started the sign-in, which /login/done
+ * checks before it keeps the session (K-909). Shared with /login through
+ * /login/signin.js. */
+function signInNonce() {
+  return window.KrateSignIn ? window.KrateSignIn.begin() : "";
+}
+
 function signIn(path) {
   // The browser hand-off, not a code to retype: they come back signed in.
   rememberWhereToComeBack();
-  location.href = `${HUB}${path}`;
+  location.href = `${HUB}${path}?nonce=${encodeURIComponent(signInNonce())}`;
 }
 
 /* We are switched off, and that is OUR fault, not the person's.
@@ -701,14 +708,13 @@ function grow(el) {
 function boot() {
   loadToken();
 
-  // A sign-in hands the token back on the URL. Take it, store it, and get
-  // it out of the address bar so nobody copies a link with their session
-  // in it.
-  const params = new URLSearchParams(location.search);
-  const handed = params.get("token");
-  if (handed) {
-    state.token = handed;
-    try { localStorage.setItem(TOKEN_KEY, handed); } catch (e) {}
+  // No token is ever taken from this page's URL. There used to be a
+  // `?token=` door here, and it took any session it was handed: a link to
+  // /make?token=<someone else's session> signed the visitor into that
+  // account, and whatever they then made landed where its owner could read
+  // it (K-909). Every sign-in finishes at /login/done, which accepts only
+  // one this browser started, and stores it where loadToken reads it.
+  if (new URLSearchParams(location.search).has("token")) {
     history.replaceState({}, "", location.pathname);
   }
 

@@ -411,6 +411,9 @@ h1 .soft { color: var(--faint); }
     document.write('<script src="./mock-hub.js"><\/script>');
   }
 </script>
+<!-- The sign-in nonce (K-909), shared with /login. A plain script, so it
+     has run before the module below reads window.KrateSignIn. -->
+<script src="/login/signin.js"></script>
 <script type="module" src="./make.js"></script>
 </body>
 </html>
