@@ -334,6 +334,149 @@ fn probe_home() -> Option<std::path::PathBuf> {
     agent_home.is_dir().then_some(agent_home)
 }
 
+/// Claude's sign-in for one run: its current access token, never a copy of
+/// the credential (K-882).
+///
+/// Claude's OAuth refresh tokens ROTATE. Every earlier attempt to let a
+/// confined agent sign in handed it a copy of the whole credential -- a
+/// keychain export in the Studio, a keychain export or a link in the engine
+/// -- and a copy with a refresh token is a second owner of one rotating
+/// token. Whichever copy refreshed first killed the other: builds died in
+/// about a second with "OAuth session expired and could not be refreshed",
+/// and signing in again changed nothing, because it refreshed the keychain
+/// and not the copy. Measured on the founder's Mac, 2026-09-27: the build
+/// that failed ran with `CLAUDE_CONFIG_DIR` pointing at a copied
+/// `.credentials.json`, while `claude auth status` said signed in.
+///
+/// So the agent gets only the access token, through the variable Claude
+/// reads for exactly this (`CLAUDE_CODE_OAUTH_TOKEN`), and cannot refresh
+/// anything. When the token is close to expiring, the person's own `claude`
+/// -- real home, its own store -- is asked one trivial question first, which
+/// refreshes it in place. One owner, always.
+pub fn claude_access_token() -> Option<String> {
+    let home = real_home()?;
+    let (token, expires_ms) = claude_credential(&home)?;
+    if !expires_within(expires_ms, CLAUDE_REFRESH_MARGIN) {
+        return Some(token);
+    }
+    refresh_claude_in_place(&home);
+    let (token, expires_ms) = claude_credential(&home)?;
+    // Still expired after asking the real tool: the sign-in itself is gone,
+    // and the agent's own "not logged in" is the true answer.
+    (!expires_within(expires_ms, Duration::ZERO)).then_some(token)
+}
+
+/// Apply [`claude_access_token`] to a command that runs `claude`.
+pub fn with_claude_sign_in(command: &mut ProcessCommand) {
+    if let Some(token) = claude_access_token() {
+        command.env("CLAUDE_CODE_OAUTH_TOKEN", token);
+    }
+}
+
+/// Refresh when less than this is left: a long build or a revise loop must
+/// not outlive its token halfway through.
+const CLAUDE_REFRESH_MARGIN: Duration = Duration::from_secs(45 * 60);
+
+/// The person's own home, even when this process runs in the confined one
+/// (the Studio sets `HOME` to it on Linux and Windows).
+fn real_home() -> Option<std::path::PathBuf> {
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .filter(|h| !h.is_empty())
+        .map(std::path::PathBuf::from)?;
+    real_home_from(home)
+}
+
+fn real_home_from(home: std::path::PathBuf) -> Option<std::path::PathBuf> {
+    let confined = std::path::Path::new(".krate").join("agent-home");
+    if home.ends_with(&confined) {
+        return home.parent()?.parent().map(std::path::Path::to_path_buf);
+    }
+    Some(home)
+}
+
+/// The access token and its expiry (ms since the epoch), from wherever
+/// Claude itself keeps them: the keychain on macOS, else the file.
+fn claude_credential(home: &std::path::Path) -> Option<(String, u64)> {
+    let mut text = None;
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(out) = ProcessCommand::new("/usr/bin/security")
+            .args([
+                "find-generic-password",
+                "-s",
+                "Claude Code-credentials",
+                "-w",
+            ])
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .output()
+        {
+            if out.status.success() {
+                text = String::from_utf8(out.stdout).ok();
+            }
+        }
+    }
+    if text.as_deref().is_none_or(|t| t.trim().is_empty()) {
+        text = std::fs::read_to_string(home.join(".claude").join(".credentials.json")).ok();
+    }
+    parse_claude_credential(text?.trim())
+}
+
+fn parse_claude_credential(text: &str) -> Option<(String, u64)> {
+    let value: serde_json::Value = serde_json::from_str(text).ok()?;
+    let oauth = value.get("claudeAiOauth")?;
+    let token = oauth.get("accessToken")?.as_str()?.to_string();
+    let expires = oauth.get("expiresAt").and_then(|e| e.as_u64()).unwrap_or(0);
+    (!token.is_empty()).then_some((token, expires))
+}
+
+fn expires_within(expires_ms: u64, margin: Duration) -> bool {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    expires_ms <= now.saturating_add(margin.as_millis() as u64)
+}
+
+/// Ask the person's own `claude`, in their own home, one trivial question:
+/// using the session is what refreshes it, in the one place it lives.
+fn refresh_claude_in_place(home: &std::path::Path) {
+    let Some(path) = which_on_path("claude") else {
+        return;
+    };
+    let scratch = std::env::temp_dir();
+    let mut command = ProcessCommand::new(path);
+    with_tool_path(&mut command);
+    hide_child_console(&mut command);
+    command
+        .args([
+            "-p",
+            "Reply with the single word ok",
+            "--output-format",
+            "text",
+        ])
+        .env("HOME", home)
+        .env_remove("CLAUDE_CONFIG_DIR")
+        .env_remove("CLAUDE_CODE_OAUTH_TOKEN")
+        .current_dir(&scratch)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let Ok(mut child) = command.spawn() else {
+        return;
+    };
+    let started = std::time::Instant::now();
+    while started.elapsed() < Duration::from_secs(90) {
+        if let Ok(Some(_)) = child.try_wait() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 pub fn probe(provider: &dyn AgentProvider, timeout: Duration) -> Readiness {
     let Some(path) = which_on_path(provider.program()) else {
         return Readiness::Missing;
@@ -360,6 +503,11 @@ pub fn probe(provider: &dyn AgentProvider, timeout: Duration) -> Readiness {
         if let Some(home) = probe_home() {
             command.env("HOME", home);
         }
+    }
+    // The same sign-in the build will use (K-882), or "ready" means
+    // something different here than there.
+    if provider.name() == "claude" {
+        with_claude_sign_in(&mut command);
     }
     for arg in provider.probe_args() {
         command.arg(arg);
@@ -1781,6 +1929,39 @@ impl AgentProvider for GrokProvider {
 
 #[cfg(test)]
 mod tests {
+    /// K-882: the agent gets the access token and nothing that refreshes.
+    #[test]
+    fn claude_sign_in_is_the_access_token_and_its_expiry_only() {
+        use super::*;
+        let credential = r#"{"claudeAiOauth":{"accessToken":"at-1","refreshToken":"rt-1","expiresAt":1790000000000,"scopes":["user:inference"]}}"#;
+        assert_eq!(
+            parse_claude_credential(credential),
+            Some(("at-1".to_string(), 1_790_000_000_000))
+        );
+        assert_eq!(parse_claude_credential("{}"), None);
+        assert_eq!(parse_claude_credential("not json"), None);
+        assert_eq!(
+            parse_claude_credential(r#"{"claudeAiOauth":{"accessToken":""}}"#),
+            None,
+            "an empty token is no sign-in"
+        );
+        // Long past: expired whatever the margin; far future: not.
+        assert!(expires_within(1_000, Duration::ZERO));
+        assert!(!expires_within(u64::MAX / 2, CLAUDE_REFRESH_MARGIN));
+    }
+
+    #[test]
+    fn the_real_home_is_found_from_inside_the_confined_one() {
+        use super::*;
+        let real = std::path::PathBuf::from("/Users/someone");
+        assert_eq!(real_home_from(real.clone()), Some(real.clone()));
+        assert_eq!(
+            real_home_from(real.join(".krate").join("agent-home")),
+            Some(real),
+            "the Studio runs the engine with HOME set to the agent home on Linux and Windows"
+        );
+    }
+
     /// The bug that made a working eleven-minute run look hung.
     ///
     /// Every Read/Glob/Grep used to collapse to the one sentence "reading

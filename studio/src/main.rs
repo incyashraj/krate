@@ -269,30 +269,23 @@ fn seed_agent_config(agent_home: &Path) {
             );
         }
     }
-    // The credential: keychain first (macOS), else the file form.
-    let dest = agent_home.join(".credentials.json");
-    #[cfg(target_os = "macos")]
-    {
-        if let Ok(out) = Command::new("/usr/bin/security")
-            .args([
-                "find-generic-password",
-                "-s",
-                "Claude Code-credentials",
-                "-w",
-            ])
-            .output()
-        {
-            if out.status.success() && !out.stdout.is_empty() {
-                let _ = std::fs::write(&dest, out.stdout.trim_ascii());
-                let _ = std::fs::set_permissions(&dest, {
-                    use std::os::unix::fs::PermissionsExt;
-                    std::fs::Permissions::from_mode(0o600)
-                });
+    // Claude's credential is NOT copied here (K-882). This wrote the whole
+    // keychain credential, refresh token included, into the agent's config
+    // dir before every build: a second owner of one rotating OAuth token.
+    // The agent refreshed its copy, the person's own sign-in or the copy
+    // died, and builds failed in a second with "OAuth session expired and
+    // could not be refreshed" while `claude` worked in a terminal. The
+    // engine now hands the agent only its current access token at spawn.
+    // Remove what earlier versions left, so it can never be read again.
+    if agent_home != home {
+        for fork in [
+            agent_home.join(".credentials.json"),
+            agent_home.join(".claude").join(".credentials.json"),
+        ] {
+            if fork.is_symlink() || fork.is_file() {
+                let _ = std::fs::remove_file(&fork);
             }
         }
-    }
-    if !dest.exists() {
-        let _ = std::fs::copy(home.join(".claude/.credentials.json"), &dest);
     }
 
     // Every OTHER AI's sign-in, for the same reason Claude's is here.
@@ -1762,8 +1755,9 @@ fn run_author(
         .stderr(Stdio::piped())
         .stdin(Stdio::null());
 
-    // The agent gets an isolated config dir that CARRIES the person's
-    // credentials but NOT their history.
+    // The agent gets an isolated config dir that carries the person's
+    // settings but NOT their history, and NOT their credential: the engine
+    // hands Claude its current access token at spawn (K-882).
     //
     // This is the fix for the Downloads/Documents prompts that kept coming
     // back. The agent stats every project path in its config at startup, and
@@ -1776,9 +1770,7 @@ fn run_author(
     //
     //   1. `.claude.json`: the person's own, minus `projects` -- settings and
     //      onboarding flags ride along, guarded paths do not.
-    //   2. `.credentials.json`: exported from the keychain straight to a
-    //      0600 file (or copied, where it already is a file). It never
-    //      transits anything but this machine's own disk.
+    //   2. no credential: any copy earlier versions wrote is removed (K-882).
     //   3. an empty history, so there is nothing old to stat.
     // ~/.krate/agent-home, the SAME directory the engine confines to and the
     // same one the readiness probe asks about. It used to be

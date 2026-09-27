@@ -7791,6 +7791,9 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
     let wants_session = session_capable.is_some();
     command.args(session_capable.unwrap_or_else(|| provider.plan_args(&prompt)));
     provider.configure(&mut command);
+    if provider.name() == "claude" {
+        agent_provider::with_claude_sign_in(&mut command);
+    }
     let scratch = std::env::temp_dir().join(format!("krate-plan-{}", std::process::id()));
     let _ = fs::create_dir_all(&scratch);
     command.current_dir(&scratch);
@@ -9520,180 +9523,42 @@ fn seed_agent_home(real_home: &Path, agent_home: &Path) -> bool {
         }
     }
 
-    // The credential itself. The keychain is the macOS home for it; a file
-    // is the form everywhere else and the fallback here.
-    let config = agent_home.join(".claude");
-    let _ = fs::create_dir_all(&config);
-    let dest = config.join(".credentials.json");
-    #[allow(unused_mut, unused_assignments)]
-    let mut claude_ready = false;
-    #[cfg(target_os = "macos")]
-    {
-        if let Ok(out) = ProcessCommand::new("/usr/bin/security")
-            .args([
-                "find-generic-password",
-                "-s",
-                "Claude Code-credentials",
-                "-w",
-            ])
-            .output()
-        {
-            if out.status.success() && !out.stdout.is_empty() {
-                {
-                    // Detection only. This used to WRITE the token to the
-                    // file too; with dest now a link to the person's real
-                    // credentials (K-206) that write would stomp their
-                    // file, and the search-list keychain already serves
-                    // the confined agent.
-                    // Deliberately NOT an early return.
-                    //
-                    // It was one, and that single `return true` is why every
-                    // other AI ran signed out: the moment Claude's keychain
-                    // credential was written, the function left, and the
-                    // per-provider copies below never executed. On a machine
-                    // with Claude signed in -- which is every machine we
-                    // develop on -- Grok, Codex, Gemini and Copilot silently
-                    // got nothing (K-189).
-                    claude_ready = true;
-                    // K-202 copied the token into the CONFINED keychain here.
-                    // That fixed the stale read and created K-206: OAuth
-                    // refresh tokens ROTATE, so two live copies means the
-                    // agent's refresh kills the person's own sign-in. The
-                    // sandbox keychain's search list now falls through to the
-                    // real login keychain instead (set where the keychain is
-                    // created), so there is exactly one token and Claude
-                    // refreshes it in place. Nothing to copy anymore; also
-                    // delete any forked copy an older build left behind.
-                    let login = agent_home.join("Library/Keychains/login.keychain-db");
-                    if login.exists() {
-                        let _ = ProcessCommand::new("/usr/bin/security")
-                            .args(["delete-generic-password", "-s", "Claude Code-credentials"])
-                            .arg(&login)
-                            .env("HOME", agent_home)
-                            .output();
-                    }
-                }
+    // Claude's credential is NOT seeded here any more (K-882).
+    //
+    // Every version of this block put a second copy of one rotating OAuth
+    // credential into the confined home -- a keychain export (K-202), a link
+    // (K-206), a keychain export refreshed each seed (K-809) -- and each
+    // copy held a refresh token, so the agent's copy and the person's own
+    // sign-in raced to refresh it, and the loser was dead. Builds failed
+    // with "OAuth session expired and could not be refreshed" while
+    // `claude auth status` said signed in, and signing in again never
+    // helped. The agent now receives only the current access token, in its
+    // environment, at spawn (`agent_provider::with_claude_sign_in`), and
+    // nothing in the confined home can refresh anything.
+    //
+    // What older builds left behind is removed, so no stale copy is ever
+    // read or refreshed again. Never in the real home: when HOME is already
+    // the confined one the two paths are the same directory, and deleting
+    // there would delete the person's actual sign-in.
+    let claude_ready = true;
+    if agent_home != real_home {
+        for fork in [
+            agent_home.join(".claude").join(".credentials.json"),
+            agent_home.join(".credentials.json"),
+        ] {
+            if fork.is_symlink() || fork.is_file() {
+                let _ = fs::remove_file(&fork);
             }
         }
-    }
-    // An older build's COPIED file at dest is exactly the fork K-206
-    // kills: replace it with the link.
-    #[cfg(unix)]
-    if dest.exists() && !dest.is_symlink() {
-        let _ = fs::remove_file(&dest);
-    }
-    // A DANGLING link is worse than no link, and invisible to `exists()`.
-    //
-    // `Path::exists` follows symlinks, so a link whose target is gone
-    // reports false -- and the `!dest.exists()` below then tries to create a
-    // link at a path that is already occupied, which fails with EEXIST. The
-    // error was discarded, so the dead link stayed there forever and the
-    // agent read a credential that was not there.
-    //
-    // That is not hypothetical, and it is how this whole thread started. The
-    // founder's `~/.claude/.credentials.json` was a symlink to ITSELF: this
-    // code ran once while HOME was already the confined home, so `source`
-    // and `dest` were the same path and it linked the file to itself. Claude
-    // could then never save a refreshed token, the session expired, and
-    // every Krate build said "not signed in" while `claude` worked fine in a
-    // terminal. Deleting the loop and signing in again fixed the terminal --
-    // and Krate still said not signed in, because the confined home's link
-    // now pointed at the file that had just been deleted (K-763).
-    //
-    // So: judge the LINK, not what it points at, and clear a dead one.
-    #[cfg(unix)]
-    if dest.is_symlink() && !dest.exists() {
-        let _ = fs::remove_file(&dest);
-    }
-    let source = real_home.join(".claude/.credentials.json");
-    // Never link a path to itself. When HOME is already the confined home,
-    // `real_home` and the agent home are the same directory, and this is
-    // exactly the loop that gets created -- a file that can be neither read
-    // nor written, and that cannot be told apart from a working one without
-    // calling readlink.
-    if !dest.exists() && source != dest && source.exists() {
-        // A LINK, not a copy (K-206): OAuth refresh tokens rotate, so a
-        // copied credential forks -- whichever copy refreshes first kills
-        // the other, and that other was the person's own sign-in. A link
-        // means one file, refreshed in place by whoever uses it.
-        #[cfg(unix)]
-        let _ = std::os::unix::fs::symlink(&source, &dest);
-        #[cfg(windows)]
-        let _ = fs::hard_link(&source, &dest).or_else(|_| fs::copy(&source, &dest).map(|_| ()));
-    }
-
-    // No file to link, but a credential in the keychain: write it out.
-    //
-    // The keychain fall-through this relied on is DEAD on macOS 27. The
-    // design was that the confined keychain's search list would include the
-    // person's real login keychain, so there would be one token, refreshed
-    // in place. Measured on 2026-09-20, macOS silently drops it:
-    //
-    //   $ HOME=<agent-home> security list-keychains -d user -s \
-    //       <agent login.keychain-db> ~/Library/Keychains/login.keychain-db
-    //   $ HOME=<agent-home> security list-keychains
-    //       "<agent-home>/Library/Keychains/login.keychain-db"
-    //       "/Library/Keychains/System.keychain"      <- the real one is gone
-    //
-    // The command exits 0. Setting ONLY the real keychain gives the same
-    // answer. So a signed-in person whose credential lives in the keychain
-    // -- which is now the default, and is what `claude /login` produces --
-    // had an agent that could never see it, while `claude` worked perfectly
-    // in their own terminal. That is the "Claude Code is signed in but Krate
-    // says sign in" report, and the last piece of it (K-763).
-    //
-    // Writing the file is the fork K-206 warns about, and it is accepted
-    // knowingly here because the alternative is an agent that cannot run at
-    // all. Two things keep it honest: this only happens when there is no
-    // file to link, and the file is refreshed from the keychain on every
-    // seed, so the agent's copy cannot drift far behind the real one.
-    //
-    // EVERY seed, not only when the file is missing.
-    //
-    // This was `if !dest.exists()`, which contradicted the sentence above
-    // it: the copy was written once and then never touched again. Claude
-    // Code rotates its OAuth token every few hours and saves the new one to
-    // the KEYCHAIN, so the copy went stale within a day and the agent read
-    // a dead token from then on -- "is installed but not signed in", while
-    // `claude` in the founder's own terminal worked perfectly. Signing in
-    // again did not help: it refreshed the keychain, which this code was no
-    // longer reading. Measured on his Mac 2026-09-21: the sandbox keychain
-    // held no credential at all, the copied file was the only store, and it
-    // was hours old. That is the "it has been ages since Krate saw Claude
-    // ready, and I log in five times a day" report (K-809).
-    //
-    // A symlink is still preferred and still wins: this runs only when
-    // `dest` is not one, so a machine whose Claude keeps a real
-    // ~/.claude/.credentials.json is untouched and keeps the single-token
-    // guarantee K-206 asked for.
-    #[cfg(target_os = "macos")]
-    if !dest.is_symlink() {
-        if let Ok(out) = ProcessCommand::new("/usr/bin/security")
-            .args([
-                "find-generic-password",
-                "-s",
-                "Claude Code-credentials",
-                "-w",
-            ])
-            .output()
+        #[cfg(target_os = "macos")]
         {
-            if out.status.success() && !out.stdout.is_empty() {
-                if let Ok(text) = String::from_utf8(out.stdout) {
-                    let text = text.trim();
-                    // Only if it parses. A keychain read that returns
-                    // something unexpected must not become a file the agent
-                    // then reports as a corrupt sign-in.
-                    if serde_json::from_str::<serde_json::Value>(text).is_ok()
-                        && fs::write(&dest, text).is_ok()
-                    {
-                        #[cfg(unix)]
-                        {
-                            use std::os::unix::fs::PermissionsExt;
-                            let _ = fs::set_permissions(&dest, fs::Permissions::from_mode(0o600));
-                        }
-                        claude_ready = true;
-                    }
-                }
+            let login = agent_home.join("Library/Keychains/login.keychain-db");
+            if login.exists() {
+                let _ = ProcessCommand::new("/usr/bin/security")
+                    .args(["delete-generic-password", "-s", "Claude Code-credentials"])
+                    .arg(&login)
+                    .env("HOME", agent_home)
+                    .output();
             }
         }
     }
@@ -9732,7 +9597,7 @@ fn seed_agent_home(real_home: &Path, agent_home: &Path) -> bool {
         }
     }
 
-    claude_ready || dest.exists()
+    claude_ready
 }
 
 /// Copy the files directly inside `from` into `to`, creating `to`.
@@ -9884,6 +9749,11 @@ fn run_provider_author(
                 command.env("RUSTUP_HOME", home.join(".rustup"));
             }
         }
+    }
+    // Claude signs in with its current access token and nothing that can
+    // refresh, so no copy can race the person's own sign-in (K-882).
+    if provider.name() == "claude" {
+        agent_provider::with_claude_sign_in(&mut command);
     }
     // Hot sessions (the last piece of the speed study): a repair round or a
     // revise RESUMES the session that wrote the app instead of cold-starting
