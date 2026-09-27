@@ -3550,6 +3550,26 @@ function publishWords(err) {
   return "It could not be published just now. Your app is still here, so nothing was lost.";
 }
 
+/* The engine's own last word on a failure.
+ *
+ * The engine ends every failed run with one `error: ...` line, after
+ * everything else it printed. That line is its summary; the lines above it
+ * are the log -- compiler output, the agent's chatter, file paths. Matching
+ * keywords across the whole log is how a compile error in a workspace
+ * under ~/.krate read as "Krate's engine is missing, reinstall" (every
+ * Studio build path contains "krate", and rustc says "not found in this
+ * scope"), and how a log mentioning cargo read as "the build tools aren't
+ * set up" (K-892). rustc's own "could not compile" is not the engine's
+ * verdict and is skipped. */
+function engineVerdict(text) {
+  const lines = String(text).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const m = /^error:\s*(.+)$/i.exec(lines[i]);
+    if (m && !/^could not compile\b/i.test(m[1])) return m[1];
+  }
+  return "";
+}
+
 function plainWords(err) {
   const raw = String(err && err.message ? err.message : err);
   if (raw === "stopped") return "stopped";
@@ -3562,30 +3582,34 @@ function plainWords(err) {
   if (err && err.refusal) return raw;
   // Classify on what the PROVIDER said, never on what Krate said about it.
   const text = providerWords(raw);
+  // The engine's summary when it gave one, else everything. The keyword
+  // rules below read `judged`; only the compiler rule reads the whole log.
+  const judged = engineVerdict(text) || text;
   // A broken install must say so. Falling through to the generic build
   // message told people to "try again" when nothing could ever work.
   if (/could not run the Krate engine|could not start the Krate engine|KRATE_STUDIO_ENGINE/i.test(text))
     return "Krate's engine is missing from this install. Reinstall Krate from krate.tech.";
-  if (/no such file|not found|No such file or directory/i.test(text) && /krate/i.test(text))
-    return "Krate's engine is missing from this install. Reinstall Krate from krate.tech.";
-  if (/is not there any more/i.test(text)) return text;
-  if (/already being made/i.test(text)) return text;
-  if (/no AI|not installed|unknown AI provider/i.test(text))
+  if (/is not there any more/i.test(judged)) return judged;
+  if (/already being made/i.test(judged)) return judged;
+  // The engine's own words for a missing AI, not any "not installed": a
+  // missing wasm target is "not installed" too, and is a toolchain.
+  if (/no AI|command is not installed, so Krate cannot use|AI tool is not installed|unknown AI provider/i.test(judged))
     return "No AI is connected yet. Open the AI menu at the top to set one up.";
   // Specific before general: a rustup install log mentions authentication
   // incidentally, and matching the sign-in guess first told a person with a
   // PATH problem to go sign in -- a wrong door with a confident sign on it.
-  if (/toolchain|rustup|cargo/i.test(text)) return "The build tools aren't set up yet. Trying again lets Krate install them.";
-  if (/quota|rate.?limit/i.test(text)) return "Your AI is out of quota right now. It usually comes back within the hour.";
+  if (/rustup|wasm32-wasip1 target|toolchain|cargo-component is not|build tools/i.test(judged))
+    return "The build tools aren't set up yet. Trying again lets Krate install them.";
+  if (/quota|rate.?limit/i.test(judged)) return "Your AI is out of quota right now. It usually comes back within the hour.";
   // The AI's own sandbox broke: its words, not a guess. Seen live with
   // Codex on Windows (its sandbox helper missing), where every command the
   // agent ran failed and the card blamed sign-in instead (K-124).
-  if (/sandbox.*(helper|launch_failed)|orchestrator_helper/i.test(text))
+  if (/sandbox.*(helper|launch_failed)|orchestrator_helper/i.test(judged))
     return "Your AI's own sandbox is broken on this machine. Reinstall that AI, or pick another one from its menu at the top.";
   // Usage limits read as auth failures to a keyword match but are not one,
   // and telling someone to sign in when they are already signed in is the
   // most confusing thing this card can say. Check for the limit first.
-  if (/usage limit|out of credits|insufficient_quota|too many requests|\b429\b/i.test(text))
+  if (/usage limit|out of credits|insufficient_quota|too many requests|\b429\b/i.test(judged))
     return "Your AI has hit its usage limit. It works again once the limit resets, or pick another AI from the menu at the top.";
   // A real authentication failure, judged on the provider's OWN signal: an
   // HTTP 401/403, or the words a provider uses for an expired session. Our
@@ -3593,7 +3617,7 @@ function plainWords(err) {
   // \bauth catches authentication/unauthorized; the (?!or) guard keeps
   // "author command failed" -- our own generic failure line -- from telling
   // every user to go sign in (K-124: it did exactly that).
-  if (/\b401\b|\b403\b|unauthorized|sign ?in|\bauth(?!or)|logged/i.test(text))
+  if (/\b401\b|\b403\b|unauthorized|sign ?in|\bauth(?!or)|not logged in/i.test(judged))
     return "Your AI is not signed in, or its sign-in expired. Click its name at the top for the fix.";
   // A dropped connection, in every wording a browser uses for one.
   //
@@ -3604,9 +3628,10 @@ function plainWords(err) {
   // line -- "The build failed. Press Details for the engine output" -- about
   // a build that was fine, on a screen with no engine output to show,
   // telling somebody whose wifi dropped that their app was broken.
-  if (/failed to fetch|networkerror|load failed|err_internet|err_network/i.test(text))
+  if (/failed to fetch|networkerror|load failed|err_internet|err_network/i.test(judged))
     return "The connection dropped. Your request is kept, so Try again picks it up.";
-  if (/network|offline|dns|connect/i.test(text)) return "The internet connection dropped mid-build.";
+  if (/\bnetwork\b|offline|dns|could not connect|connection (refused|reset|dropped)/i.test(judged))
+    return "The internet connection dropped mid-build.";
   // Named failures, in the engine's own vocabulary. "Trying again usually
   // works" tells a developer nothing: they want the stage that failed so
   // they know whether to read compiler output, a capability refusal, or the
