@@ -664,48 +664,106 @@ class MetadataTests(unittest.TestCase):
                 self.assertIn('aria-label="Command example"', opening)
 
     def test_scroll_revealed_selectors_are_readable_without_javascript(self):
-        # Anything that starts at opacity 0 and waits for the scroll observer
-        # is invisible to a reader with JavaScript off and to one who asked
-        # for reduced motion. Both fallbacks must therefore name every such
-        # selector. K-726 shipped with .works .tag missing from the noscript
-        # list only -- the heading beside it read correctly, so the gap was
-        # easy to miss by eye. Measured at opacity 0 in a real browser.
+        # Anything that starts hidden and waits for a script -- a reveal on
+        # scroll, the hero's rise, a bar that grows -- is invisible to a
+        # reader with JavaScript off and to one who asked for reduced
+        # motion. The homepage's rule: a style that starts something hidden
+        # is either gated on `.js` (set by the head script, so without
+        # scripts the rule never applies) or restored in the noscript block;
+        # and every `.js`-gated one is restored under reduced motion.
+        #
+        # This reads the stylesheet rather than a hand-kept list of
+        # selectors: K-726 shipped with one selector missing from such a
+        # list, and the heading beside it read correctly, so the gap was easy
+        # to miss by eye. Comments are stripped first -- a sabotage run once
+        # passed because the comment above a lost rule still named it.
         source = LANDING.read_text()
 
-        def rules(block):
-            # Strip CSS comments first. A prose comment that merely mentions a
-            # selector must never satisfy this test -- checking the raw block
-            # let a sabotage run pass, because the explanatory comment above
-            # the rule contained the very selector the rule had lost.
-            block = re.sub(r"/\*.*?\*/", "", block, flags=re.S)
+        def strip(css):
+            return re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+
+        def top_rules(css):
+            # (selector, body) for every rule at the top level and inside
+            # @media blocks, walking braces so nested blocks cannot confuse
+            # a regex. @keyframes and @font-face are skipped.
+            out, depth, i, start, stack = [], 0, 0, 0, []
+            while i < len(css):
+                ch = css[i]
+                if ch == "{":
+                    head = css[start:i].strip()
+                    stack.append((head, i + 1))
+                    depth += 1
+                    start = i + 1
+                elif ch == "}":
+                    head, body_start = stack.pop()
+                    depth -= 1
+                    # A keyframe step ("50% { opacity: 0 }") is not a rule.
+                    inside_frames = any(h.startswith("@keyframes") for h, _ in stack)
+                    if not head.startswith("@") and not inside_frames:
+                        out.append((head, css[body_start:i]))
+                    start = i + 1
+                i += 1
+            return out
+
+        def index(pairs):
             found = {}
-            for selectors, body in re.findall(r"([^{}]+)\{([^{}]*)\}", block):
-                names = [s.strip() for s in selectors.split(",") if s.strip()]
-                for name in names:
-                    found.setdefault(name, []).append(body)
+            for selectors, body in pairs:
+                for name in (s.strip() for s in selectors.split(",")):
+                    if name:
+                        found.setdefault(name, []).append(body)
             return found
+
+        def reduced_blocks(css):
+            out, i = [], 0
+            while True:
+                at = css.find("prefers-reduced-motion", i)
+                if at < 0:
+                    return "\n".join(out)
+                open_at = css.find("{", at)
+                depth, j = 1, open_at + 1
+                while depth and j < len(css):
+                    depth += {"{": 1, "}": -1}.get(css[j], 0)
+                    j += 1
+                out.append(css[open_at + 1:j - 1])
+                i = j
 
         noscript = re.search(r"<noscript><style>(.*?)</style></noscript>", source, re.S)
         self.assertIsNotNone(noscript, "the homepage must keep a noscript fallback")
-        reduced = re.search(
-            r"@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{(.*?)\n\}", source, re.S)
-        self.assertIsNotNone(reduced, "the homepage must keep a reduced-motion fallback")
+        sheet = strip("\n".join(re.findall(
+            r"<style>(.*?)</style>", source.replace(noscript.group(0), ""), re.S)))
+        reduced = index(top_rules(reduced_blocks(sheet)))
+        self.assertTrue(reduced, "the homepage must keep a reduced-motion fallback")
+        fallback = index(top_rules(strip(noscript.group(1))))
 
-        for label, block in (("without JavaScript", noscript.group(1)),
-                             ("under reduced motion", reduced.group(1))):
-            found = rules(block)
-            for selector in (".works h2", ".works .copy", ".works .tag",
-                             ".ctaCard", ".ctaText h2", ".ctaText p", ".ctaActs"):
-                bodies = found.get(selector)
+        HIDES = (("opacity", r"opacity:\s*0(?![.\d])", "opacity: 1"),
+                 ("scale", r"scale[XY]?\(\s*0\s*\)", "transform: none"),
+                 ("clip", r"clip-path:\s*polygon", "clip-path: none"))
+        # Hidden by design, not waiting for a reveal: a shut menu, a quote
+        # mid-swap, a hairline decoration.
+        STATES = {".dlmenu", ".voice.swap blockquote", ".steps .prog"}
+
+        hidden = 0
+        for selector, body in top_rules(sheet):
+            if selector.startswith("@"):
+                continue
+            hides = [h for h in HIDES if re.search(h[1], body)]
+            if not hides:
+                continue
+            for name in (s.strip() for s in selector.split(",")):
+                if not name or name in STATES:
+                    continue
+                hidden += 1
+                if name.startswith(".js "):
+                    where, label = reduced, "under reduced motion"
+                else:
+                    where, label = fallback, "without JavaScript"
+                bodies = where.get(name)
                 self.assertIsNotNone(
-                    bodies, f"{selector} has no rule, so it stays hidden {label}")
+                    bodies, f"{name} starts hidden and has no rule {label}, so it stays hidden")
                 joined = " ".join(bodies)
-                self.assertIn("opacity: 1", joined,
-                              f"{selector} keeps opacity 0 {label}")
-            # .ctaText h2 is clipped to zero width as well as faded, so
-            # clearing opacity alone still leaves it unreadable.
-            self.assertIn("clip-path: none", " ".join(found[".ctaText h2"]),
-                          f".ctaText h2 stays clipped to zero width {label}")
+                for _, _, restore in hides:
+                    self.assertIn(restore, joined, f"{name} is never restored ({restore}) {label}")
+        self.assertGreater(hidden, 0, "the homepage reveals nothing any more; this test is stale")
 
     def test_metadata_is_escaped(self):
         page = dict(PAGES[0], title='A "quoted" <title> & more', description='Keep </script> as text')
