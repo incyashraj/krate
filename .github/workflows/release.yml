@@ -233,7 +233,10 @@ jobs:
           # reproduced locally without a Docker daemon, and a release that
           # blocks on an unverified container fix helps nobody. If rc7 builds,
           # this flag comes off.
-          - os: ubuntu-latest
+          # 22.04 for the same glibc floor as x86_64 (K-928): the engine is
+          # built inside cross's container either way, but cargo-component is
+          # built on the runner with its own arm64 compiler (K-929).
+          - os: ubuntu-22.04
             target: aarch64-unknown-linux-gnu
             ext: tar.gz
             cross: true
@@ -356,7 +359,16 @@ jobs:
         continue-on-error: true
         run: |
           if [[ "${{ matrix.cross }}" == "true" ]]; then
-            cross install cargo-component --locked --version 0.21.1 \
+            # `cross install` is not a cross build: it compiled on the host,
+            # which has no arm64 C compiler, so ring failed and the arm64
+            # archive has never carried cargo-component -- a person's first
+            # app there compiled it from source (K-929). Ubuntu's own arm64
+            # cross compiler links against 22.04's glibc, the release floor.
+            sudo apt-get install -y -q gcc-aarch64-linux-gnu
+            export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
+            export AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar
+            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+            cargo install cargo-component --locked --version 0.21.1 \
               --target "${{ matrix.target }}" --root "$PWD/tooling" || exit 0
           else
             cargo install cargo-component --locked --version 0.21.1 \
@@ -1125,6 +1137,8 @@ jobs:
     name: Verify the published assets (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs: publish
+    # The arm64 Linux build is optional, so its check is too.
+    continue-on-error: ${{ matrix.optional == true }}
     strategy:
       fail-fast: false
       matrix:
@@ -1135,6 +1149,11 @@ jobs:
           # newer glibc fails here instead of on a person's machine (K-928).
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
+          # The arm64 archive was never checked here, which is how it shipped
+          # for months without cargo-component (K-929).
+          - os: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+            optional: true
           - os: windows-2022
             target: x86_64-pc-windows-msvc
     steps:
