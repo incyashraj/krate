@@ -1,0 +1,85 @@
+{
+ "id": "E-E3-REPLAY-44d07d83b-macos",
+ "claims": [
+  "C-PORTED-APPS-EVERY-OS"
+ ],
+ "subject": {
+  "kind": "source tree",
+  "source": {
+   "commit": "44d07d83b40f26e2170aa6e3afc0907d2ee60351",
+   "tree": "7ded6cec968f775479c00a193f1c154705e1eba8"
+  },
+  "binary_digest": null,
+  "package_digest": null,
+  "relationship": "the replay job checked out this commit, built the runtime, and ran every corpus bundle on this host"
+ },
+ "environment": {
+  "kind": "hosted",
+  "os": "macos",
+  "arch": "arm64",
+  "runner": "GitHub-hosted"
+ },
+ "toolchain": {
+  "rust": "as pinned by rust-toolchain.toml at this commit"
+ },
+ "command": "sh scripts/replay-ported-apps.sh",
+ "inputs": {
+  "prerequisites": [
+   "evidence/ported/*.krate"
+  ]
+ },
+ "oracle": {
+  "class": "execution",
+  "description": "each bundle ran headless with its recorded argument and its stdout carried the expected marker; a bundle with no recorded check is a skip, kept as one, and blocks the claim"
+ },
+ "raw_result": {
+  "passed": [
+   "hexyl",
+   "savings",
+   "ddh",
+   "envelope",
+   "grex",
+   "eo2",
+   "mdview",
+   "chart",
+   "bounce",
+   "cubes"
+  ],
+  "failed": [],
+  "skipped": [
+   "rssfwd"
+  ],
+  "audit": [],
+  "tsv": "/Users/yashrajpardeshi/Projects/layer6x6/evidence/e3/run-36383282177-replay-macos.tsv"
+ },
+ "outcome": "pass",
+ "scope": {
+  "supports": "every corpus bundle with a recorded check ran and printed its marker on macos at 44d07d83b",
+  "exclusions": [
+   "bundles with no recorded check, which are listed under skipped rather than counted",
+   "anything about how the apps behave beyond printing their marker"
+  ]
+ },
+ "independence": "first-party API observation",
+ "time": {
+  "start": "2026-09-28T05:55:34Z",
+  "finish": "2026-09-28T05:55:34Z"
+ },
+ "operator": "GitHub Actions, CI workflow, replay-ported-apps job",
+ "privacy": {
+  "audience": "public",
+  "redact": []
+ },
+ "retention": {
+  "raw": "/Users/yashrajpardeshi/Projects/layer6x6/evidence/e3/run-36383282177-replay-macos.tsv",
+  "until": "the results file is deleted"
+ },
+ "expiry": {
+  "triggers": [
+   "source-change"
+  ],
+  "on": null
+ },
+ "supersedes": null,
+ "invalidated_by": null
+}
