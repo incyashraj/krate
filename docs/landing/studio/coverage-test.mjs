@@ -583,8 +583,22 @@ assert.match(bridge, /err\.planMode = true;/,
   "the Plan-mode refusal says which refusal it is");
 assert.match(caughtRefusal.slice(0, 1800), /err\.planMode && typeof window\.setWebMode === "function"/,
   "and Studio offers a button that changes the setting");
-assert.match(caughtRefusal.slice(0, 1800), /window\.setWebMode\("build"\);\s*\n\s*make\(request\);/,
+// It builds the plan that was refused. It used to call make(request), which
+// planned all over again and posted the request -- "(The agreed plan: ...)"
+// and all -- back into the conversation as the person's own words.
+assert.match(caughtRefusal.slice(0, 2400), /window\.setWebMode\("build"\);\s*\n\s*buildNow\(request, files, revising, planSession, starterShape\);/,
   "which switches the mode and then builds what they asked for");
+assert.doesNotMatch(caughtRefusal.slice(0, 2400), /setWebMode\("build"\);\s*\n\s*make\(request\)/,
+  "without planning it a second time");
+// The desktop keeps the same promise, before buildNow says anything.
+{
+  const at = app.indexOf("async function buildNow(");
+  const head = app.slice(at, app.indexOf('say(\n    "KRATE",\n    tauri', at));
+  assert.match(head, /if \(!revising && composerMode\(\) === "plan"\) \{/,
+    "buildNow refuses a new build in Plan mode");
+  assert.ok(head.indexOf('composerMode() === "plan"') < head.indexOf("renderBuilding()"),
+    "before any of the build's own furniture appears");
+}
 
 console.log("ok  a refusal reads as an answer, and Plan mode offers the switch");
 
