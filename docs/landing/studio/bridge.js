@@ -1962,6 +1962,50 @@ function restorePending() {
   try { box.setSelectionRange(box.value.length, box.value.length); } catch (e) {}
 }
 
+/* The homepage's prompt bar, started (krate.tech/#start).
+ *
+ * Different from restorePending on purpose. That one puts words back after
+ * an interruption and leaves the next move to the person; this one is a
+ * request they just made on the front page by pressing Enter, so it starts
+ * -- the same as pressing send here. It is written only by that bar, into
+ * this site's own storage, never read from the URL: no link from anywhere
+ * else can start a build at somebody's expense (K-885). Used once, and
+ * ignored after ten minutes so a stale sentence never fires days later.
+ */
+const START_KEY = "krate_start_request";
+function startFromFrontPage() {
+  let handoff = null;
+  try {
+    handoff = JSON.parse(localStorage.getItem(START_KEY) || "null");
+  } catch (e) {}
+  if (!handoff || typeof handoff.text !== "string" || !handoff.text.trim()) return;
+  if (!(Date.now() - Number(handoff.at || 0) < 10 * 60 * 1000)) {
+    try { localStorage.removeItem(START_KEY); } catch (e) {}
+    return;
+  }
+  // Not signed in: leave it for after sign-in, which returns here.
+  if (!bridge.token) return;
+  try { localStorage.removeItem(START_KEY); } catch (e) {}
+  // The homepage already said what the welcome sheet says.
+  try { localStorage.setItem("krate.welcome.seen.v1", "1"); } catch (e) {}
+  document.getElementById("welcomeSheet")?.classList.add("hidden");
+
+  let tries = 0;
+  (function go() {
+    const box = document.getElementById("homePrompt");
+    const sendBtn = document.getElementById("homeSend");
+    const home = document.getElementById("viewHome");
+    const ready = box && sendBtn && home && !home.classList.contains("hidden");
+    if (!ready) {
+      if (++tries < 40) setTimeout(go, 150);
+      return;
+    }
+    box.value = handoff.text.trim();
+    box.dispatchEvent(new Event("input"));
+    sendBtn.click();
+  })();
+}
+
 /* ---- what you have spent ------------------------------------------------
  *
  * Anybody paying for their own inference is owed the number, per build, not
@@ -2447,6 +2491,9 @@ function speakWeb() {
   // yet when this first runs.
   restorePending();
   setTimeout(restorePending, 900);
+  // After the restore above has run, so a sentence from the front page is
+  // the one in the box when send is pressed.
+  setTimeout(startFromFrontPage, 950);
 }
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", speakWeb);

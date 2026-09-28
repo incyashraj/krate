@@ -245,6 +245,9 @@ jobs:
           # nonce this browser started with comes back beside it, and /make
           # takes no session from its URL at all.
           node docs/landing/studio/signin-test.mjs
+          # And that the homepage's prompt bar starts a build only from its
+          # own fresh handoff, once, and never from a link (K-885).
+          node docs/landing/studio/frontpage-test.mjs
 
           mkdir -p _site/app
           cp -R studio/ui/. _site/app/

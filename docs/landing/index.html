@@ -72,6 +72,69 @@ picture { display: contents; }
 picture source { display: none; }
 ::selection { background: rgba(165, 88, 251, 0.35); }
 
+/* ------------------------------------------------ prompt-first hero
+   The first screen is the product: one bar, a headline and a line under
+   it. Type an app, press Enter, and it opens in Studio (signing in first
+   if needed) and starts from the sentence. The rest of the page follows
+   on scroll. */
+.promptHero {
+  position: relative; min-height: 100svh; display: grid; place-items: center;
+  padding: 96px 20px 72px; overflow: hidden; isolation: isolate;
+}
+.promptHero::before {
+  content: ""; position: absolute; inset: -20% -10% -10%; z-index: -1;
+  background:
+    radial-gradient(70% 42% at 50% 100%, rgba(236, 72, 153, 0.75), transparent 72%),
+    radial-gradient(48% 55% at 8% 82%, rgba(73, 34, 229, 0.85), transparent 70%),
+    radial-gradient(48% 55% at 92% 82%, rgba(165, 88, 251, 0.8), transparent 70%),
+    radial-gradient(55% 34% at 50% 66%, rgba(99, 102, 241, 0.55), transparent 72%),
+    radial-gradient(40% 22% at 50% 48%, rgba(147, 197, 253, 0.16), transparent 70%);
+  filter: blur(28px);
+}
+.promptHero .ph-inner { width: 100%; max-width: 720px; text-align: center; }
+.promptHero h1 {
+  font-family: var(--disp); font-weight: 700; letter-spacing: -0.02em;
+  font-size: clamp(34px, 6vw, 64px); line-height: 1.05; color: #fff;
+}
+.promptHero .ph-sub {
+  margin: 14px auto 30px; max-width: 540px; font-size: clamp(15px, 1.6vw, 18px);
+  line-height: 1.5; color: #d4d4d8;
+}
+.promptBar {
+  text-align: left; background: rgba(24, 24, 27, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 22px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  padding: 16px 16px 12px 20px; transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.promptBar:focus-within { border-color: rgba(196, 181, 253, 0.55);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55), 0 0 0 4px rgba(165, 88, 251, 0.14); }
+.promptBar textarea {
+  display: block; width: 100%; min-height: 56px; max-height: 200px; resize: none;
+  background: transparent; border: 0; outline: none; color: #fff;
+  font: inherit; font-size: 16px; line-height: 1.5;
+}
+.promptBar textarea::placeholder { color: #8b8b95; }
+.promptBar .pb-row { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.promptBar .pb-send {
+  width: 38px; height: 38px; border-radius: 999px; display: grid; place-items: center;
+  background: #fff; color: #0a0a0a; transition: transform 0.15s ease, opacity 0.15s ease;
+}
+.promptBar .pb-send:disabled { opacity: 0.35; cursor: default; }
+.promptBar .pb-send:not(:disabled):hover { transform: translateY(-1px); }
+.promptHero .ph-note { min-height: 22px; margin-top: 14px; font-size: 13.5px; color: #d4d4d8; }
+.promptHero .ph-note a { color: #fff; text-decoration: underline; text-underline-offset: 3px; }
+.promptHero .ph-down {
+  position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%);
+  width: 36px; height: 36px; display: grid; place-items: center; border-radius: 999px;
+  color: #a1a1aa; border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.promptHero .ph-down:hover { color: #fff; }
+@media (prefers-reduced-motion: no-preference) {
+  .promptHero .ph-down { animation: ph-bob 2.4s ease-in-out infinite; }
+}
+@keyframes ph-bob { 0%, 100% { transform: translate(-50%, 0); } 50% { transform: translate(-50%, 5px); } }
+
 /* ------------------------------------------------ progressive blur bar */
 .topblur {
   position: fixed; top: 0; left: 0; width: 100%; height: 120px; z-index: 40;
@@ -1431,6 +1494,28 @@ picture source { display: none; }
   </nav>
 </div>
 
+<!-- ================================================ prompt-first hero -->
+<section class="promptHero" id="start" aria-label="Make an app">
+  <div class="ph-inner">
+    <h1>Build something real.</h1>
+    <p class="ph-sub">Describe an app and Krate's AI builds it: one file that
+    runs on Mac, Windows and Linux.</p>
+    <form class="promptBar" id="promptBar" autocomplete="off">
+      <textarea id="promptBox" rows="2" maxlength="2000" aria-label="Describe the app you want"
+        placeholder="A habit tracker that remembers my streaks"></textarea>
+      <div class="pb-row">
+        <button class="pb-send" id="promptSend" type="submit" aria-label="Make it" disabled>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 12.8V3.6M8 3.6L4.2 7.4M8 3.6l3.8 3.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+    </form>
+    <p class="ph-note" id="promptNote" role="status"></p>
+  </div>
+  <a class="ph-down" href="#heroTrack" aria-label="More about Krate">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 6l4.5 4.5L12.5 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </a>
+</section>
+
 <!-- ================================================================ hero -->
 <div class="heroTrack" id="heroTrack">
   <div class="heroStick">
@@ -1984,7 +2069,10 @@ function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
 function seg(p, a, b) { return clamp01((p - a) / (b - a)); }
 function onScroll() {
   var span = track.offsetHeight - innerHeight;
-  target = span > 0 ? clamp01(scrollY / span) : 0;
+  // From where the track starts, not the top of the page: the prompt-first
+  // screen sits above it now, and measuring from 0 had the hero already
+  // finished by the time anybody scrolled down to it.
+  target = span > 0 ? clamp01((scrollY - track.offsetTop) / span) : 0;
   if (!rafOn) { rafOn = true; requestAnimationFrame(step); }
 }
 function step() {
@@ -2393,6 +2481,103 @@ document.querySelectorAll(".jsTop").forEach(function (b) {
       }
     })
     .catch(function () {});
+})();
+</script>
+<script>
+/* The prompt-first hero (#start).
+ *
+ * The placeholder types an idea, holds it, deletes it and moves on, so the
+ * bar says what it is for without a paragraph. Pressing Enter (or the
+ * arrow) hands the sentence to Studio through the site's own storage --
+ * never the URL, so no link from anywhere else can start a build -- and
+ * Studio starts from it: straight away when signed in, after sign-in when
+ * not. The handoff is used once and goes stale after ten minutes.
+ */
+(function () {
+  var box = document.getElementById("promptBox");
+  var form = document.getElementById("promptBar");
+  var send = document.getElementById("promptSend");
+  var note = document.getElementById("promptNote");
+  if (!box || !form) return;
+
+  var IDEAS = [
+    "A habit tracker that remembers my streaks",
+    "A budget app that starts from my bank's CSV",
+    "A pomodoro timer with a task list",
+    "A flashcard app for learning Spanish",
+    "A recipe box that scales the servings",
+    "A markdown notes app with search",
+    "A JSON viewer for my API responses",
+    "A tip calculator that splits the bill"
+  ];
+  var calm = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var idea = 0, shown = 0, deleting = false;
+  function tick() {
+    // Only while the box is empty: a placeholder under somebody's own words
+    // is not visible anyway, and there is no reason to keep working.
+    if (box.value) return setTimeout(tick, 600);
+    var full = IDEAS[idea];
+    if (calm) {
+      box.placeholder = full;
+      idea = (idea + 1) % IDEAS.length;
+      return setTimeout(tick, 3200);
+    }
+    if (!deleting) {
+      shown++;
+      box.placeholder = full.slice(0, shown);
+      if (shown >= full.length) { deleting = true; return setTimeout(tick, 1700); }
+      return setTimeout(tick, 42 + Math.random() * 40);
+    }
+    shown--;
+    box.placeholder = full.slice(0, shown) || " ";
+    if (shown <= 0) { deleting = false; idea = (idea + 1) % IDEAS.length; return setTimeout(tick, 350); }
+    return setTimeout(tick, 22);
+  }
+  box.placeholder = "";
+  setTimeout(tick, 500);
+
+  function grow() {
+    box.style.height = "auto";
+    box.style.height = Math.min(box.scrollHeight, 200) + "px";
+    send.disabled = !box.value.trim();
+  }
+  box.addEventListener("input", grow);
+  box.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event("submit", { cancelable: true }));
+    }
+  });
+
+  // Whether the browser can make apps right now. Asked once, early, so a
+  // press is answered at once; if the service cannot be reached the door
+  // stays open and Studio says what it finds.
+  var making = null;
+  var builder = window.KRATE_BUILDER || "https://build.krate.tech";
+  if (window.fetch) {
+    fetch(builder + "/health")
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (h) { making = h ? h.authoring !== "off" : null; })
+      .catch(function () {});
+  }
+
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var text = box.value.trim();
+    if (!text) { box.focus(); return; }
+    if (making === false) {
+      note.innerHTML = "Making apps in the browser opens soon. Until then, "
+        + '<a href="/studio/">Studio on your computer</a> builds this with the AI you already have.';
+      return;
+    }
+    var token = null;
+    try {
+      localStorage.setItem("krate_start_request", JSON.stringify({ text: text, at: Date.now() }));
+      token = localStorage.getItem("krate_tok");
+    } catch (err) {}
+    send.disabled = true;
+    location.href = token ? "/app/" : "/login/?next=studio";
+  });
 })();
 </script>
 </body>
