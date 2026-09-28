@@ -5322,8 +5322,12 @@ function openSendSheet(which, version, anchor) {
     items.push({ label: "Share a link", value: "anyone can open it", run: () => openPublishSheet() });
   }
   items.push({ label: "Send the file", value: "a picture with the app inside", run: (row, label) => { sendCard(app, label); return true; } });
-  // The third way opens into the three computers it can be for, in place.
-  items.push({ label: "For someone new to Krate", value: "installs once, then opens", run: (row) => {
+  // The third way: a gift file that installs Krate once and then opens the
+  // app. Only the krate binary on this computer can make one, so in a tab
+  // the row says what does work from here instead of pretending.
+  if (!tauri) {
+    items.push({ label: "For someone new to Krate", value: "share the link: they get Krate once" });
+  } else items.push({ label: "For someone new to Krate", value: "installs once, then opens", run: (row) => {
     if (row.dataset.open) return true;
     row.dataset.open = "1";
     let after = row;

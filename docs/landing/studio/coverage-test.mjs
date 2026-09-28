@@ -613,22 +613,15 @@ console.log("ok  a refusal reads as an answer, and Plan mode offers the switch")
 //
 // The link beside it already does this job here, so the option says that
 // instead, and the OS buttons that lead nowhere are removed.
-assert.match(bridge, /function tellTheTruthAboutTheGift\(\)/,
-  "the browser rewrites the gift option");
 {
-  const gift = bridge.slice(bridge.indexOf("function tellTheTruthAboutTheGift()"));
-  assert.match(gift.slice(0, 1800), /btn\.disabled = true;/,
-    "it is not a button here, so it does not behave like one");
-  assert.match(gift.slice(0, 1800), /os\.remove\(\)/,
-    "and the operating-system buttons that lead nowhere are gone");
-  assert.match(gift.slice(0, 1800), /share a link instead/i,
-    "it names the thing that does work from a tab");
+  const menu = app.slice(app.indexOf("function openSendSheet("));
+  assert.match(menu.slice(0, 2400), /if \(!tauri\) \{\s*items\.push\(\{ label: "For someone new to Krate", value: "share the link: they get Krate once" \}\);/,
+    "in a tab the gift row is a plain line that names what does work from here");
+  assert.match(menu.slice(0, 2400), /\} else items\.push\(\{ label: "For someone new to Krate", value: "installs once, then opens", run:/,
+    "on the desktop it opens into the three computers it can be for");
+  assert.doesNotMatch(bridge, /getElementById\("sendWrapOs"\)/,
+    "the bridge has nothing left to rewrite");
 }
-// Rewritten from the bridge, not from Studio's markup: the desktop makes
-// the gift perfectly well, and changing the markup would lie there instead.
-assert.match(html, /id="sendWrapOs"/,
-  "the desktop still has its operating-system buttons");
-
 console.log("ok  the gift option is honest in a browser");
 
 // Details reads an app that is on screen, even after a reload.
@@ -751,22 +744,24 @@ console.log("ok  a dropped connection is not blamed on the app");
   assert.match(body, /const mine = app && app\.result && app\.result\.path/,
     "the chip captures its own version's file as it settles");
   assert.match(body, /openApp\(mine, version\)/, "Open acts on that version");
-  assert.match(body, /openSendSheet\(mine, version\)/, "and so does Share");
+  assert.match(body, /openSendSheet\(mine, version, share\)/, "and so does Share, as a menu on its own button");
   // The `app` argument was passed in and never read before this. If it goes
   // unused again the capture is gone and both buttons silently follow the
   // newest build, which is exactly how this shipped.
   assert.ok(body.includes("app.result.path"),
     "the session passed to the chip is actually read");
 }
-// Every button inside the share sheet acts on the version the sheet was
-// opened for, not on whatever is newest when the button is pressed.
-assert.match(app, /state\.sharing = \(which && which\.path\) \? which : null;/,
-  "the share sheet pins the version it was opened for");
-for (const fn of ["async function sendCard()", '$("sendRawBtn").addEventListener']) {
-  const at = app.indexOf(fn);
-  assert.ok(at > 0, `${fn} exists`);
-  assert.match(app.slice(at, at + 400), /state\.sharing \|\| currentApp\(\)/,
-    `${fn} shares the pinned version, not the newest`);
+// Every row of the Share menu acts on the version the menu was opened for,
+// not on whatever is newest when the row is pressed: the menu resolves the
+// app once and every row closes over it.
+{
+  const menu = app.slice(app.indexOf("function openSendSheet("));
+  assert.match(menu.slice(0, 600), /const app = \(which && which\.path\) \? which : currentApp\(\);/,
+    "the share menu pins the version it was opened for");
+  assert.match(menu.slice(0, 2600), /sendCard\(app, label\)/, "Send the file sends the pinned version");
+  assert.match(menu.slice(0, 2600), /makeWrap\(app, os, label\)/, "and so does the gift");
+  assert.match(app, /async function sendCard\(app, label\)/, "sendCard takes the version it is given");
+  assert.match(app, /async function makeWrap\(app, os, label\)/, "makeWrap takes the version it is given");
 }
 // And the file says which version it is.
 assert.match(bridge, /\$\{stem\} v\$\{version\}\.krate/,
@@ -774,35 +769,19 @@ assert.match(bridge, /\$\{stem\} v\$\{version\}\.krate/,
 
 console.log("ok  a version chip opens its own version");
 
-// A status message does not wear the share row's heading.
+// A status message is not offered as a link to send.
 //
-// showActionError writes into the share row, whose heading says "Here's
-// your link. Send it to anyone" and whose Copy button is right beside it.
-// So pressing Open put "Downloaded. Double-click the file on your Mac,
-// Windows or Linux" under "Here's your link", with Copy offering to copy
-// that sentence to somebody. Measured: shareHead read "Here's your link",
-// shareLink held the download sentence, and Copy was live.
-{
-  const fn = app.slice(app.indexOf("function showActionError(err)"));
-  const body = fn.slice(0, fn.indexOf("\n}\n"));
-  assert.match(body, /head\.textContent = "";/,
-    "a status message clears the share heading");
-  assert.match(body, /copy\.classList\.add\("hidden"\)/,
-    "and hides Copy, because a status is not something to send");
-}
-// And the paths that put a REAL link there put Copy back, or the fix above
-// would silently cost the feature it protects.
-{
-  const publish = app.indexOf('$("shareHead").textContent = "Here\'s your link. Send it to anyone";');
-  assert.ok(publish > 0, "the publish path sets the share heading");
-  assert.match(app.slice(publish, publish + 400), /shareCopyBtn"\)\?\.classList\.remove\("hidden"\)/,
-    "the publish path restores Copy");
-  const shared = app.indexOf('$("shareHead").textContent = "Anyone with this link can open it";');
-  assert.ok(shared > 0, "the share path sets its own heading");
-  assert.match(app.slice(shared, shared + 400), /shareCopyBtn"\)\?\.classList\.remove\("hidden"\)/,
-    "the share path restores Copy");
-}
-
+// There used to be a link row under the app with its own heading and a
+// Copy button, and showActionError wrote into it -- so pressing Open put
+// "Downloaded. Double-click the file..." under "Here's your link", with
+// Copy live beside it. The row is gone: the link lives in the Share menu
+// as a "Copy link" row, and a status message goes to the composer hint,
+// which has no heading and no Copy.
+assert.match(app, /function showActionError\(err\) \{\s*toastish\(err\);\s*\}/,
+  "a status message goes to the composer hint");
+assert.doesNotMatch(html, /id="shareResult"|id="shareCopyBtn"/,
+  "there is no link row under the app to mistake it for");
+assert.match(app, /label: "Copy link"/, "the link is a row of the Share menu");
 console.log("ok  a status message is not offered as a link to send");
 
 // The shelf's controls are thumb-sized on a phone.

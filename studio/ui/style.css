@@ -5329,15 +5329,19 @@ body:not(.macos).light .side-top .side-toggle:hover { color: #000; }
   .rail .composer-hint { padding-bottom: 6px; }
 }
 
-/* ---- the shelf sits in the page, under the suggestions ------------------
- * It was a glass strip pinned to the window's floor, wider than the column
- * and cut off at the sides. Now it is a card in the column, after the
- * suggestions, and the room needs no clearance for it. */
-.home { padding-bottom: 40px; }
+/* ---- the shelf is the floor of the room ---------------------------------
+ * Not fixed: a fixed box inside the room is positioned by whichever
+ * ancestor happens to carry a transform, which is how it ended up 240px
+ * to the right and off the edge of the window. It is the last thing in
+ * the room's column instead, pushed to the floor by the hero's auto
+ * margins, so it sits where the window ends, centred in the room, and
+ * follows the drawer by construction. */
+.home, .home[data-shelf-open="0"], .home[data-shelf-open="1"] { padding-top: 24px; padding-bottom: 0; }
+.home > .home-hero { margin-top: auto; margin-bottom: auto; }
 .home .shelf, body.side-open .home .shelf {
   position: relative; left: auto; right: auto; bottom: auto; transform: none;
-  width: min(900px, 100%); margin: 36px auto 0; flex: none;
-  border-bottom: 1px solid var(--glass-edge-soft); border-radius: 16px;
-  padding: 10px 14px 14px; z-index: 1;
+  width: min(900px, 100%); margin: 24px auto 0; flex: none;
+  border-bottom: 0; border-radius: 16px 16px 0 0;
+  padding: 10px 14px 16px; z-index: 1;
 }
-.shelf.shut { padding-bottom: 10px; }
+.shelf.shut { padding-bottom: 12px; }
