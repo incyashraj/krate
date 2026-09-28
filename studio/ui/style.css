@@ -3684,6 +3684,9 @@ body.light .send-opt span, body.light .send-done p { color: rgba(0,0,0,0.55); }
   background: rgba(10, 10, 11, 0.88);
   -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
 }
+/* On paper the strip is paper too. It was dark in both themes, so in the
+   light one the app's name sat as dark text on a dark band (K-937). */
+body.light .shot-stage .shot-cap { background: rgba(255, 255, 255, 0.92); }
 /* The band the strip lives in, kept clear of the picture above it.
  *
  * Set on the same rule that sizes the image (`.shot-stage img`, above),
