@@ -2561,15 +2561,7 @@ document.querySelectorAll(".jsTop").forEach(function (b) {
       .catch(function () {});
   }
 
-  form.addEventListener("submit", function (e) {
-    e.preventDefault();
-    var text = box.value.trim();
-    if (!text) { box.focus(); return; }
-    if (making === false) {
-      note.innerHTML = "Making apps in the browser opens soon. Until then, "
-        + '<a href="/studio/">Studio on your computer</a> builds this with the AI you already have.';
-      return;
-    }
+  function go(text) {
     var token = null;
     try {
       localStorage.setItem("krate_start_request", JSON.stringify({ text: text, at: Date.now() }));
@@ -2577,6 +2569,26 @@ document.querySelectorAll(".jsTop").forEach(function (b) {
     } catch (err) {}
     send.disabled = true;
     location.href = token ? "/app/" : "/login/?next=studio";
+  }
+
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var text = box.value.trim();
+    if (!text) { box.focus(); return; }
+    if (making === false) {
+      // Our key is not switched on, but a person's own key still builds
+      // in the browser (the build service lets it through), so that door
+      // stays open; Studio asks for the key when it needs it.
+      note.innerHTML = "Making apps in the browser on our AI opens soon. Until then, "
+        + '<a href="/studio/">Studio on your computer</a> builds this with the AI you already have, '
+        + 'or <a href="/app/" id="promptOwnKey">use your own API key</a> here.';
+      document.getElementById("promptOwnKey").addEventListener("click", function (ev) {
+        ev.preventDefault();
+        go(text);
+      });
+      return;
+    }
+    go(text);
   });
 })();
 </script>

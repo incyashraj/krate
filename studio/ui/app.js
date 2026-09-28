@@ -2294,6 +2294,22 @@ function openKeyPane() {
   if (tab) tab.click();
 }
 
+/* What a wall interrupted, picked up again once a key is saved. The wall
+ * offers "Add my API key"; saving one used to leave the refusal on screen
+ * with its buttons gone and the request unsent, so the person had to type
+ * it again and the key looked like it had done nothing. One slot, tied to
+ * the session it came from: the newest wall is the one on screen, and a
+ * key saved after moving to another session must not start this one. */
+let resumeAfterKey = null;
+
+function resumeWhenKeyed(run) {
+  const session = state.session;
+  resumeAfterKey = () => {
+    if (state.session !== session || state.buildingSession || planning) return;
+    run();
+  };
+}
+
 /* What the wall offers: the key, here, and Studio on your own machine. */
 function wallActions(err) {
   const actions = [{ label: "Add my API key", primary: true, run: openKeyPane }];
@@ -2993,6 +3009,8 @@ let planning = false;
 async function runPlan() {
   if (planning) return;
   planning = true;
+  // Anything new supersedes a wall that was waiting on a key.
+  resumeAfterKey = null;
   try {
     await runPlanInner();
   } finally {
@@ -3134,6 +3152,11 @@ async function runPlanInner() {
         null,
         { variant: "ask", actions: wallActions(err) },
       );
+      const walled = state.planning;
+      resumeWhenKeyed(() => {
+        state.planning = walled;
+        runPlan();
+      });
       state.planning = null;
       setIdleNote("");
       show("idle");
@@ -3309,6 +3332,7 @@ async function resumeRunningBuild(request, reattach) {
 
 async function buildNow(request, files, revising, planSession, starterShape) {
   if (state.buildingSession) { invoke("dbg_log", { line: "buildNow() BAILED: buildingSession set" }).catch(()=>{}); return; }
+  resumeAfterKey = null;
   // The composer stays live during a build so a thought can be queued
   // rather than lost.
   $("prompt").placeholder = "Add a change. It runs when this finishes…";
@@ -3461,6 +3485,7 @@ async function buildNow(request, files, revising, planSession, starterShape) {
         null,
         { variant: "ask", actions: wallActions(err) },
       );
+      resumeWhenKeyed(() => buildNow(request, files, revising, planSession, starterShape));
       // A wall on a CHANGE leaves the app they already made: keep it on
       // screen, and keep the box saying "change it". It went blank ("Your
       // app will appear here") and the box asked for a new app, although
@@ -3958,6 +3983,13 @@ async function paintApiKeys() {
         await paintApiKeys();
         // A key is a new way to author, so the picker has to know about it.
         await refreshAgents();
+        if (resumeAfterKey) {
+          const resume = resumeAfterKey;
+          resumeAfterKey = null;
+          $("aiSheet").classList.add("hidden");
+          say("KRATE", "Thanks. Picking up where that stopped, on your key.", null, { variant: "note" });
+          resume();
+        }
       } catch (err) {
         if (note) note.textContent = String((err && err.message) || err);
         button.disabled = false;
