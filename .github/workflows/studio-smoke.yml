@@ -24,6 +24,9 @@ permissions:
 
 env:
   KRATE_NO_USAGE: "1"
+  # Apps fade in; the first frame of the showcase editor is near-black text
+  # on black. Studio's own thumbnails wait the same way.
+  KRATE_SHOOT_AFTER_MS: "1500"
 
 jobs:
   windows:
