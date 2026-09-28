@@ -93,4 +93,8 @@ pre-build = [
 # form cross documents plainly; the value itself lives beside the build step in
 # release.yml so the two cannot disagree about which LLVM was installed.
 [target.aarch64-unknown-linux-gnu.env]
-passthrough = ["LIBCLANG_PATH"]
+# KRATE_RELEASE_VERSION too: without it the container never saw the release
+# stamp, so the arm64 binary reported the crate's version ("krate 0.5.2" for
+# the v0.5.2-rc2 tag) and, since K-912, counted itself a source build and
+# never reported usage (K-930).
+passthrough = ["LIBCLANG_PATH", "KRATE_RELEASE_VERSION"]
