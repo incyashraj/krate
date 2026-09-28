@@ -2285,6 +2285,28 @@ function finishBuild(result) {
   }
 }
 
+/* The API key pane, opened from anywhere: the wall offers it as the way to
+ * keep going, and a sentence alone ("add your own API key in Settings")
+ * sent people hunting for a sidebar folded away at that width. */
+function openKeyPane() {
+  openAiSheet();
+  const tab = document.querySelector('#aiNav button[data-ai="keys"]');
+  if (tab) tab.click();
+}
+
+/* What the wall offers: the key, here, and Studio on your own machine. */
+function wallActions(err) {
+  const actions = [{ label: "Add my API key", primary: true, run: openKeyPane }];
+  if (err && err.download) {
+    actions.push({
+      label: "Get Krate Studio",
+      // krate.tech/studio/ is the DOWNLOAD page, not the receive page.
+      run: () => invoke("open_external", { url: "https://krate.tech/studio/" }).catch(() => {}),
+    });
+  }
+  return actions;
+}
+
 function setRevisePlaceholders() {
   $("prompt").placeholder = "Want it different? Say what to change…";
   $("composerHint").textContent = "changes edit the app in place · a few minutes, the AI reads before it edits";
@@ -2658,7 +2680,7 @@ function renderFreeCount() {
       : "Free";
     const hint = $("setPlanHint");
     if (hint) hint.textContent = !CHARGING
-      ? "One free app, and one free change to it. Krate Studio on your own machine is free and unlimited with your own AI."
+      ? "One free app, and one free change to it. After that, your own API key keeps you making here, or Krate Studio on your own machine is free and unlimited with your own AI."
       : active
         ? "Unlimited apps. Every one is a file that is yours forever."
         : machineSpentIt()
@@ -3103,17 +3125,7 @@ async function runPlanInner() {
             : "Your work is saved here, and Studio on your own machine opens this session ready to edit."
         }`,
         null,
-        {
-          variant: "ask",
-          actions: err.download
-            ? [{
-                label: "Get Krate Studio",
-                primary: true,
-                run: () =>
-                  invoke("open_external", { url: "https://krate.tech/studio/" }).catch(() => {}),
-              }]
-            : [],
-        },
+        { variant: "ask", actions: wallActions(err) },
       );
       state.planning = null;
       setIdleNote("");
@@ -3440,22 +3452,19 @@ async function buildNow(request, files, revising, planSession, starterShape) {
             : "Your work is saved here, and Studio on your own machine opens this session ready to edit."
         }`,
         null,
-        {
-          variant: "ask",
-          actions: err.download
-            ? [{
-                label: "Get Krate Studio",
-                primary: true,
-                // krate.tech/studio/ is the DOWNLOAD page. This pointed at
-                // /open, which is the receive-an-app page -- the wrong
-                // destination for somebody who wants to keep making.
-                run: () =>
-                  invoke("open_external", { url: "https://krate.tech/studio/" }).catch(() => {}),
-              }]
-            : [],
-        },
+        { variant: "ask", actions: wallActions(err) },
       );
-      show("idle");
+      // A wall on a CHANGE leaves the app they already made: keep it on
+      // screen, and keep the box saying "change it". It went blank ("Your
+      // app will appear here") and the box asked for a new app, although
+      // the next message is still a change to this one.
+      const made = state.session && state.session.result && state.session.result.path;
+      if (made) {
+        show("done");
+        setRevisePlaceholders();
+      } else {
+        show("idle");
+      }
     } else if (refusal) {
       say("KRATE", `This one can't work as a real app: ${refusal[1].trim()}\n\nTell me a different version of the idea and I'll build that.`, null, { variant: "ask" });
       show("idle");
