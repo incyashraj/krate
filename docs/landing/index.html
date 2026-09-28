@@ -81,15 +81,47 @@ picture source { display: none; }
   position: relative; min-height: 100svh; display: grid; place-items: center;
   padding: 96px 20px 72px; overflow: hidden; isolation: isolate;
 }
-.promptHero::before {
-  content: ""; position: absolute; inset: -20% -10% -10%; z-index: -1;
-  background:
-    radial-gradient(70% 42% at 50% 100%, rgba(236, 72, 153, 0.75), transparent 72%),
-    radial-gradient(48% 55% at 8% 82%, rgba(73, 34, 229, 0.85), transparent 70%),
-    radial-gradient(48% 55% at 92% 82%, rgba(165, 88, 251, 0.8), transparent 70%),
-    radial-gradient(55% 34% at 50% 66%, rgba(99, 102, 241, 0.55), transparent 72%),
-    radial-gradient(40% 22% at 50% 48%, rgba(147, 197, 253, 0.16), transparent 70%);
-  filter: blur(28px);
+/* Krate's eclipse, rising: the same four coats as the hero's (a white rim,
+   a purple band, an indigo band, a black core) on a planet BELOW the bar,
+   so the first screen is a horizon with the bar in the sky above it. The
+   next section's eclipse hangs from above, so scrolling passes from one
+   horizon to the other. CSS only: it is visible even where animation
+   frames never arrive, and it rises in once where motion is welcome. */
+.phEclipse {
+  position: absolute; z-index: -1; pointer-events: none; isolation: isolate;
+  left: 50%; width: 230vw; margin-left: -115vw;
+  top: 74%; height: 150vh;
+}
+.phEclipse > i { position: absolute; inset: 0; border-radius: 100%; display: block; }
+.phEclipse .rim {
+  background: #fff;
+  box-shadow:
+    0 -3px 16px 1px rgba(255, 255, 255, 0.55),
+    0 -16px 70px 8px rgba(165, 88, 251, 0.42),
+    0 -70px 220px 60px rgba(73, 34, 229, 0.30);
+}
+.phEclipse .glo1 { background: var(--purple); filter: blur(22px); transform: scale(0.992); }
+.phEclipse .glo2 { background: var(--indigo); filter: blur(26px); transform: scale(0.976); }
+.phEclipse .core { background: #000; filter: blur(48px); transform: scale(0.955); }
+/* A faint haze just above the horizon, where the light would scatter. */
+.promptHero::after {
+  content: ""; position: absolute; z-index: -1; pointer-events: none;
+  left: 0; right: 0; top: 30%; height: 60%;
+  /* Centred in its own box and faded to nothing well inside it, so no
+     edge of the box can ever show as a line across the page. */
+  background: radial-gradient(55% 45% at 50% 72%, rgba(99, 102, 241, 0.2), transparent 100%);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .phEclipse { animation: ph-rise 1.8s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+}
+@keyframes ph-rise {
+  from { opacity: 0; transform: translateY(14vh); filter: blur(12px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+@media (max-width: 700px) {
+  /* A flatter, lower horizon: a phone's tall screen would otherwise put a
+     sharp dome right under the bar. */
+  .phEclipse { width: 420vw; margin-left: -210vw; top: 80%; }
 }
 .promptHero .ph-inner { width: 100%; max-width: 720px; text-align: center; }
 .promptHero h1 {
@@ -1496,6 +1528,7 @@ picture source { display: none; }
 
 <!-- ================================================ prompt-first hero -->
 <section class="promptHero" id="start" aria-label="Make an app">
+  <div class="phEclipse" aria-hidden="true"><i class="rim"></i><i class="glo1"></i><i class="glo2"></i><i class="core"></i></div>
   <div class="ph-inner">
     <h1>Build something real.</h1>
     <p class="ph-sub">Describe an app and Krate's AI builds it: one file that
