@@ -737,10 +737,16 @@ class MetadataTests(unittest.TestCase):
 
         HIDES = (("opacity", r"opacity:\s*0(?![.\d])", "opacity: 1"),
                  ("scale", r"scale[XY]?\(\s*0\s*\)", "transform: none"),
-                 ("clip", r"clip-path:\s*polygon", "clip-path: none"))
+                 # A polygon whose every point sits at x=0 has no area: the
+                 # hidden shape. A full-width polygon is the revealed one.
+                 ("clip", r"clip-path:\s*polygon\((?:\s*0%?\s+[0-9.]+%?\s*,?)+\s*\)", "clip-path: none"))
         # Hidden by design, not waiting for a reveal: a shut menu, a quote
-        # mid-swap, a hairline decoration.
-        STATES = {".dlmenu", ".voice.swap blockquote", ".steps .prog"}
+        # mid-swap, a hairline decoration, a button's hover sheen and its
+        # press ripple.
+        STATES = {".dlmenu", ".voice.swap blockquote", ".steps .prog",
+                  ".btn .hoverco", ".btn .ripple",
+                  # the permission wall after a press: the glass lifted, the sheet gone
+                  ".wall.is-granted .frost", ".wall.is-denied .sheet"}
 
         hidden = 0
         for selector, body in top_rules(sheet):

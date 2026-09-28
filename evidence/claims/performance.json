@@ -55,6 +55,23 @@
       "seal": "evidence/benchmarks/marktext-vs-krate/runs/20260825T085644Z/seal.sha256"
     },
     {
+      "id": "memory-5k",
+      "metric": "memory, 5,000-line document",
+      "workload": "5,000 lines",
+      "them": "366.5 MiB across four processes",
+      "us": "62.0 MiB, one process",
+      "source": "evidence/benchmarks/marktext-vs-krate/runs/20260825T085644Z/analysis.md",
+      "source_row": "5,000 | krate | 1 | 62.0 MiB -- 5,000 | marktext | 4 | 366.5 MiB",
+      "scope": "MarkText 0.17.1 ARM64 vs the Krate notes replica, Apple M4, macOS 27 (build 26A5388g), on AC power; equivalent-workload comparison, not feature parity",
+      "confidence": "reproducible measurement, raw samples and seal retained",
+      "owner": "lead",
+      "measured_on": "2026-08-25",
+      "stale_after_days": 120,
+      "caveat": "settled footprint after the document is open, whole process tree",
+      "evidence_run": "evidence/benchmarks/marktext-vs-krate/runs/20260825T085644Z",
+      "seal": "evidence/benchmarks/marktext-vs-krate/runs/20260825T085644Z/seal.sha256"
+    },
+    {
       "id": "warm-start-50k",
       "metric": "warm start to a visible window, 50,000-line document",
       "workload": "50,000 lines",

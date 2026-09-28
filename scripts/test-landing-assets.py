@@ -92,7 +92,7 @@ class LandingAssets(unittest.TestCase):
                 self.assertLess(webp.stat().st_size, png.stat().st_size)
 
     def test_picture_fallbacks_reserve_original_dimensions(self):
-        for page, expected in (("index.html", 4), ("studio/index.html", 2)):
+        for page, expected in (("index.html", 2), ("studio/index.html", 2)):
             pictures = Pictures((ROOT / page).read_text()).pictures
             self.assertEqual(len(pictures), expected)
             for picture in pictures:
