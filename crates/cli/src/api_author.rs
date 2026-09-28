@@ -1284,9 +1284,15 @@ mod tests {
         // nothing calls saves nothing, and the tests above would still be
         // green. Scoped to the Anthropic arm's body, because OpenAI caches
         // on its own and passes its messages straight through.
+        // The request is built in request_body since K-862 gave the plan
+        // its own shape; scope to that function's Anthropic arm.
         let src = include_str!("api_author.rs");
-        let anthropic = src
-            .split("ApiVendor::Anthropic => (")
+        let builder = src
+            .split("fn request_body(")
+            .nth(1)
+            .expect("request_body is there");
+        let anthropic = builder
+            .split("ApiVendor::Anthropic => {")
             .nth(1)
             .expect("the Anthropic request arm is there");
         let body = &anthropic[..anthropic
