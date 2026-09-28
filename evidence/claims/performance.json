@@ -132,6 +132,21 @@
       "owner": "lead",
       "measured_on": "2026-08-16",
       "stale_after_days": 120
+    },
+    {
+      "id": "store-kv-limits",
+      "metric": "store.kv limits an app is taught",
+      "workload": "any app using store.kv",
+      "them": "",
+      "us": "1 MiB per value, 16 MiB per app, 256-byte keys",
+      "source": "crates/runtime/src/store_host.rs",
+      "source_row": "MAX_KEY_BYTES = 256; MAX_VALUE_BYTES = 1024 * 1024; MAX_TOTAL_BYTES = 16 * 1024 * 1024",
+      "scope": "hard limits enforced by the runtime, stated so AI-written apps check set() (K-869); not a measurement",
+      "confidence": "a constant in the runtime's source, with tests at the limit (store_host.rs tests)",
+      "caveat": "a limit, not a speed or size result; change the prose if the constants change",
+      "owner": "lead",
+      "measured_on": "2026-09-28",
+      "stale_after_days": 365
     }
   ],
   "forbidden": [
