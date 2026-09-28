@@ -227,7 +227,9 @@ capability. Believe this table over your instinct:
 - **The microphone IS real** (`audio.capture`), **the camera IS real**
   (`camera.capture`), **speech-to-text IS real** (`speech`).
 - **Remembering things IS real.** `store.kv` / `store.sql` persist across
-  runs with no fs grant at all.
+  runs with no fs grant at all. A `store.kv` value holds up to 1 MiB and
+  `set` returns an error past it -- check the result and say so on screen.
+  A document the person writes goes in a file (`ui.dialog:file-save`).
 - **Working on the person's own files IS real.** Declare
   `ui.dialog:open-folder`; their pick is the grant.
 
@@ -678,7 +680,11 @@ fn capability_note(pattern: &str) -> &'static str {
         "fs.list" => "list a folder",
         "fs.remove" => "delete under a folder",
         "fs.mkdir" => "make folders",
-        "store.kv" => "the app's own key-value store",
+        // The limits, with numbers (K-869). The pack listed set() with none,
+        // and our own published editor stopped saving a 4.8 MiB document
+        // without a word: set returns too-large past 1 MiB and the app
+        // ignored it. A document belongs in a file; settings in the store.
+        "store.kv" => "the app's own key-value store: keys up to 256 bytes, values up to 1 MiB, 16 MiB per app; set returns an error past these, so check it. Settings and lists go here; a document goes in a file",
         "store.sql" => "the app's own SQL database",
         // Not "OS keychain". The runtime's own module says it is not one:
         // secrets are encrypted at rest under a machine key, which protects

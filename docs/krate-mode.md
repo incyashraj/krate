@@ -520,7 +520,7 @@ to exactly what the app needs, e.g. `fs.read:notes/**`.
 | `fs.read:<path-glob>` | no | read files under a folder |
 | `fs.write:<path-glob>` | no | write files under a folder |
 | `fs.list:<path-glob>` | no | list a folder |
-| `store.kv` | no | the app's own key-value store |
+| `store.kv` | no | the app's own key-value store: keys up to 256 bytes, values up to 1 MiB, 16 MiB per app; set returns an error past these, so check it. Settings and lists go here; a document goes in a file |
 | `store.sql` | no | the app's own SQL database |
 | `store.secret` | no | secrets encrypted at rest (passwords, tokens); not the OS keychain |
 | `store.shared` | no | share a key-value bucket with everyone holding its invite code |
