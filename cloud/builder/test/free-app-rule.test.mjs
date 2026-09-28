@@ -84,6 +84,13 @@ async function fakeKrate(dir) {
   await writeFile(
     bin,
     `#!/bin/sh
+# Whatever runs as a child must never see the service's own secret, and
+# the photograph of a freshly written app must not see any key.
+[ -n "$KRATE_BUILDER_SECRET" ] && [ -n "$KRATE_KEYLOG" ] && echo "LEAK|secret-in-$1" >> "$KRATE_KEYLOG"
+if [ "$1" = "run" ]; then
+  [ -n "$ANTHROPIC_API_KEY" ] && [ -n "$KRATE_KEYLOG" ] && echo "LEAK|key-in-shot" >> "$KRATE_KEYLOG"
+  exit 1
+fi
 if [ "$1" = "create" ]; then
   case "$*" in *FAIL*) echo "the engine fell over" >&2; exit 1;; esac
   out=""; transcript=""; prev=""
@@ -281,6 +288,9 @@ async function run() {
     const retry = await make("carol", "a timer");
     assert.ok(retry.job && retry.job.state === "done",
       `a failed build used up carol's free app: ${JSON.stringify(retry)}`);
+
+    const leaks = readFileSync(KEYLOG, "utf8").split("\n").filter((l) => l.startsWith("LEAK|"));
+    assert.deepStrictEqual(leaks, [], "no child sees the service's secret, and the photograph sees no key");
 
     console.log("ok  the first app is on Krate's key, the second meets a wall that offers a key or Studio");
     console.log("ok  with their own key a person makes app after app, all on their key");

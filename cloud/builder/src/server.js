@@ -344,6 +344,14 @@ const STAGE_ORDER = ["read", "write", "test", "done"];
  */
 const API_AGENTS = { anthropic: "ANTHROPIC_API_KEY", openai: "OPENAI_API_KEY" };
 
+/* A copy of this service's environment for a child, minus what is only the
+ * service's business: the secret it proves itself to the hub with. */
+function withoutServiceSecrets(env) {
+  const copy = { ...env };
+  delete copy.KRATE_BUILDER_SECRET;
+  return copy;
+}
+
 function authoringOff() {
   const needs = API_AGENTS[AGENT];
   if (!needs) return null;
@@ -638,7 +646,9 @@ async function startBuild({ request, token, account, device, revise = null, shap
   const args = revise
     ? ["revise", "--agent", AGENT, "--output", output, ...attachArgs, "--", revise.source, revise.change]
     : ["create", "--output", output, "--agent", AGENT, "--transcript", transcript, ...attachArgs, "--", request];
-  const runEnv = { ...process.env };
+  // The engine needs the model key and nothing of the service's own: the
+  // secret that lets this service fetch a person's key stays here.
+  const runEnv = withoutServiceSecrets(process.env);
   if (theirKey) runEnv[API_AGENTS[AGENT]] = theirKey;
   // The shape the plan picked: the engine seeds that working example as
   // src/lib.rs and the model transforms it rather than writing a file from
@@ -877,7 +887,7 @@ async function planRequest(request, theirKey = null, attachments = []) {
     };
     let out = "";
     let err = "";
-    const env = { ...process.env };
+    const env = withoutServiceSecrets(process.env);
     if (theirKey) env[API_AGENTS[AGENT]] = theirKey;
     const proc = spawn(KRATE, ["plan", "--agent", AGENT, ...attachArgs, "--", request], { env, detached: GROUP });
     const killer = setTimeout(() => killTree(proc, "SIGKILL"), PLAN_TIMEOUT_MS);
@@ -918,8 +928,15 @@ async function takeShot(bundle, shotPath) {
     // an app it just built itself, for one headless second, to photograph it.
     // Nobody is being asked to trust anything -- the consent that matters
     // happens on the person's own machine when they open the file.
+    // Photographing runs the app the model just wrote, so it gets no key
+    // at all: not Krate's, not the person's, not the service's secret. The
+    // sandbox already keeps a guest from reading them; there is no reason
+    // to hand the process them in the first place.
+    const shotEnv = withoutServiceSecrets(process.env);
+    for (const name of Object.values(API_AGENTS)) delete shotEnv[name];
+    shotEnv.KRATE_SHOOT_AFTER_MS = "1200";
     const proc = spawn(KRATE, ["run", bundle, "--shoot", shotPath, "--auto-grant"], {
-      env: { ...process.env, KRATE_SHOOT_AFTER_MS: "1200" },
+      env: shotEnv,
     });
     // Why a picture failed, kept for the log.
     //
