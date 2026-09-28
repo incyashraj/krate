@@ -43,6 +43,9 @@ if (!hasGuard) bad++;
   };
   const helper = src.slice(src.indexOf("function sessionOver("));
   const sessionOverSrc = helper.slice(0, helper.indexOf("\n}\n") + 3);
+  // The session clock the bridge writes with (K-938), lifted like the rest.
+  const nowAt = src.indexOf("function nowSecs()");
+  const nowSecsSrc = src.slice(nowAt, src.indexOf("}", nowAt) + 1);
   for (const name of ["plan_request", "create_app"]) {
     const bridge = { token: "krs_expired" };
     const went = [];
@@ -56,6 +59,7 @@ if (!hasGuard) bad++;
     const COMMANDS = {};
     const run = eval(`(function () {
       ${sessionOverSrc}
+      ${nowSecsSrc}
       const webMode = () => "build";
       const tooLong = () => null;
       const deviceId = () => "dev";

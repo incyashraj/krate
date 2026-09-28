@@ -1,0 +1,386 @@
+/* The session, as two columns with their own headers.
+ *
+ * Left: the conversation -- your words as bubbles on the right, Krate's
+ * answers as plain text, the working-out folded into one line you can
+ * open, and the full prompt bar at the foot. Right: a panel with tabs for
+ * what the app IS -- Preview, Files, Code, Details -- and the two things
+ * you do with it, Run and Share, in its header.
+ *
+ * Loaded after style.css and scoped to #viewSession, so it wins without
+ * !important and touches no other view. Colours are the shared tokens only,
+ * so the light theme follows without a second copy of every rule. */
+
+#viewSession { --film-x: var(--film, rgba(127, 127, 127, 0.1)); }
+
+#viewSession .session-body {
+  flex: 1; display: flex; min-height: 0; height: 100%;
+}
+
+/* ---- the conversation column ----------------------------------------- */
+
+#viewSession .rail {
+  /* Scales with the window until someone drags it; then it is theirs. */
+  width: var(--rail-w, clamp(320px, 31vw, 460px));
+  min-width: var(--rail-w, clamp(320px, 31vw, 460px));
+  max-width: 62vw;
+  display: flex; flex-direction: column; min-height: 0;
+  border-right: 0;
+}
+#viewSession .rail-head { gap: 4px; padding-right: 10px; }
+body.windows #viewSession .rail-head { padding-right: 10px; }
+
+.sess-title {
+  display: inline-flex; align-items: center; gap: 6px; min-width: 0;
+  background: none; border: 0; border-radius: 8px; cursor: pointer;
+  padding: 6px 8px; color: var(--text);
+  -webkit-app-region: no-drag;
+}
+.sess-title:hover { background: var(--film-x); }
+.sess-title .crumb { color: var(--text); font-size: 13.5px; font-weight: 520; max-width: 100%; }
+.sess-title .chev { flex: none; color: var(--faint); }
+
+/* No spine, no dots, no WHO labels: a conversation, not a log. */
+#viewSession .thread {
+  padding: 18px 22px 24px; gap: 18px;
+  overflow-y: auto; overflow-x: hidden;
+}
+#viewSession .thread::before { display: none; }
+#viewSession .thread .msg { padding-left: 0; }
+#viewSession .thread .msg::before { display: none; }
+#viewSession .msg .who { display: none; }
+#viewSession .msg .body { font-size: 14px; line-height: 1.6; }
+
+/* Your words: a bubble on the right. */
+#viewSession .msg.you {
+  align-self: flex-end; max-width: 86%;
+  border: 0; padding: 0; margin: 0;
+}
+#viewSession .msg.you .body {
+  display: block; color: var(--text);
+  background: var(--panel-raised);
+  border: 1px solid var(--line);
+  border-radius: 18px 18px 6px 18px;
+  padding: 10px 14px;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+#viewSession .msg.you .files { text-align: right; }
+
+/* Krate's answers: plain text, full width. */
+#viewSession .msg.krate { max-width: 100%; }
+#viewSession .msg.krate .body { color: var(--reply); white-space: pre-wrap; overflow-wrap: anywhere; }
+#viewSession .msg.ask { padding-left: 0; }
+#viewSession .msg.ask .askbar { border-left: 0; padding: 0; }
+
+/* The working-out: small status lines gather under one line that opens. */
+.thought { align-self: stretch; }
+.thought-head {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+  background: none; border: 0; padding: 2px 0; cursor: pointer;
+  color: var(--faint); font: inherit; font-size: 13px; text-align: left;
+}
+.thought-head:hover { color: var(--muted); }
+.thought-head .t-now { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thought-head .t-caret { flex: none; transition: transform 0.15s; font-size: 14px; line-height: 1; }
+.thought.open .t-caret { transform: rotate(90deg); }
+.thought-steps {
+  margin: 6px 0 2px 3px; padding-left: 12px;
+  border-left: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.thought-steps[hidden] { display: none; }
+#viewSession .thought-steps .msg .body { font-size: 12.5px; color: var(--faint); }
+
+/* The row under an answer: copy, and "..." for the details of that turn. */
+.msg-tools {
+  display: flex; align-items: center; gap: 2px; margin-top: 6px;
+  opacity: 0; transition: opacity 0.15s;
+}
+.msg:hover .msg-tools, .msg-tools:focus-within, .msg.last .msg-tools { opacity: 1; }
+.msg-tools button {
+  display: grid; place-items: center; width: 26px; height: 26px;
+  background: none; border: 0; border-radius: 7px; cursor: pointer;
+  color: var(--faint);
+}
+.msg-tools button:hover { background: var(--film-x); color: var(--text); }
+@media (hover: none) { .msg-tools { opacity: 1; } }
+
+/* A small menu, shared by the title and the "..." buttons. */
+.pop {
+  position: fixed; z-index: 90; min-width: 220px;
+  background: var(--panel); border: 1px solid var(--line-strong);
+  border-radius: 12px; padding: 5px;
+  box-shadow: 0 18px 50px -12px rgba(0, 0, 0, 0.55);
+}
+body.light .pop { box-shadow: 0 18px 50px -18px rgba(12, 16, 23, 0.35); }
+.pop button, .pop .pop-row {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  background: none; border: 0; border-radius: 8px; cursor: pointer;
+  padding: 8px 10px; color: var(--text); font: inherit; font-size: 13px;
+  text-align: left;
+}
+.pop .pop-row { cursor: default; }
+.pop button:hover { background: var(--film-x); }
+.pop .pop-val { margin-left: auto; color: var(--faint); font-variant-numeric: tabular-nums; }
+.pop hr { border: 0; border-top: 1px solid var(--line); margin: 5px 2px; }
+.pop .danger { color: var(--danger); }
+
+/* The prompt bar: the same bar as Home, sized for a column. */
+#viewSession .composer { padding: 8px 14px 12px; border-top: 0; }
+#viewSession .sessbar {
+  width: 100%; border-radius: 18px; padding: 12px 12px 10px;
+  box-shadow: 0 10px 30px -18px rgba(0, 0, 0, 0.7);
+}
+#viewSession .sessbar textarea {
+  font-size: 14.5px; padding: 2px 4px 10px; max-height: 180px;
+}
+#viewSession .sessbar .bigbar-row { gap: 8px; border-top: 0; padding-top: 2px; }
+#viewSession .sessbar .tool.plus {
+  width: 30px; height: 30px; justify-content: center; padding: 0;
+  border: 1px solid var(--line); border-radius: 50%;
+}
+#viewSession .sessbar .tool.plus:hover { border-color: var(--line-strong); }
+#viewSession .sessbar .send { width: 32px; height: 32px; border-radius: 50%; margin-left: 0; }
+#viewSession .sessbar .web-mode { margin-right: 0; }
+#viewSession .composer-hint { margin-top: 7px; text-align: center; min-height: 1.5em; }
+
+/* ---- the divider ---------------------------------------------------- */
+
+#viewSession .divider {
+  width: 9px; margin: 0 -4px; background: none; position: relative; z-index: 2;
+  cursor: col-resize; flex: none;
+}
+#viewSession .divider::after {
+  content: ""; position: absolute; left: 4px; top: 14px; bottom: 14px; width: 1px;
+  background: transparent; transition: background 0.15s;
+}
+#viewSession .divider:hover::after, #viewSession .divider.dragging::after { background: var(--line-strong); }
+
+/* ---- the panel ------------------------------------------------------- */
+
+.panel {
+  flex: 1; min-width: 0; min-height: 0;
+  display: flex; flex-direction: column;
+}
+body.macos #viewSession .panel-bar { padding-left: 8px; }
+#viewSession .panel-bar { gap: 8px; padding-left: 8px; padding-right: 12px; }
+body.windows #viewSession .panel-bar { padding-right: 150px; }
+#viewSession .panel-bar > .ptabs { -webkit-app-region: no-drag; }
+
+.ptabs {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 3px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--panel);
+}
+.ptabs button {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 28px; padding: 0 9px; border-radius: 999px;
+  background: none; border: 0; cursor: pointer;
+  color: var(--faint); font: inherit; font-size: 12.5px; font-weight: 520;
+  transition: background 0.15s, color 0.15s;
+}
+.ptabs button span { display: none; }
+.ptabs button:hover { color: var(--text); }
+.ptabs button.on { background: var(--panel-raised); color: var(--text); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.ptabs button.on span { display: inline; }
+.ptabs button:disabled { opacity: 0.35; cursor: default; }
+
+.btn.btn-sm { padding: 6px 14px; font-size: 12.5px; }
+#viewSession .panel-bar .btn { -webkit-app-region: no-drag; }
+#viewSession .panel-bar .btn.hidden { display: none; }
+
+.panel-body {
+  flex: 1; min-height: 0; position: relative;
+  margin: 0 10px 10px 4px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+}
+.panel-pane { position: absolute; inset: 0; display: flex; flex-direction: column; min-height: 0; }
+.panel-pane.hidden { display: none; }
+
+/* Preview keeps its states; they just fill the panel. */
+#viewSession .stage {
+  position: absolute; inset: 0; padding: 28px;
+  display: grid; place-items: center; align-content: center;
+  overflow: auto;
+}
+#viewSession .done-card { width: min(980px, 100%); }
+#viewSession .done-card .shot-stage img { max-height: calc(100vh - 290px); object-fit: contain; }
+/* Run, Share, Source and Details live in the panel's header and tabs now;
+   the card keeps the app, its name, its verdict and any link it has. */
+#viewSession .done-actions { display: none; }
+
+/* Panes that list things. */
+.pane-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 14px; border-bottom: 1px solid var(--line); flex: none;
+}
+.pane-head .grow { flex: 1; }
+.pane-title { font-size: 13px; font-weight: 560; color: var(--text); margin: 0; }
+.pane-scroll { flex: 1; min-height: 0; overflow: auto; padding: 14px; }
+.pane-empty {
+  margin: auto; padding: 40px 24px; max-width: 360px;
+  text-align: center; color: var(--faint); font-size: 13px; line-height: 1.6;
+}
+.pane-empty.hidden { display: none; }
+
+/* Files */
+.f-group { margin-bottom: 18px; }
+.f-label { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); margin: 0 0 8px 2px; }
+.f-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 10px; border-radius: 10px;
+  font-size: 13px; color: var(--text);
+}
+.f-row:hover { background: var(--film-x); }
+.f-row .f-ico { flex: none; color: var(--faint); display: grid; place-items: center; }
+.f-row .f-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.f-row .f-note { color: var(--faint); font-size: 12px; white-space: nowrap; }
+.f-row button {
+  background: none; border: 1px solid var(--line); border-radius: 999px;
+  padding: 4px 11px; font: inherit; font-size: 12px; color: var(--muted); cursor: pointer;
+}
+.f-row button:hover { color: var(--text); border-color: var(--line-strong); }
+
+/* Code */
+.code-wrap { flex: 1; min-height: 0; display: flex; }
+.code-tree {
+  width: 230px; flex: none; border-right: 1px solid var(--line);
+  display: flex; flex-direction: column; min-height: 0;
+}
+.code-search {
+  margin: 10px; padding: 7px 10px; border-radius: 9px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--text);
+  font: inherit; font-size: 12.5px; outline: none;
+}
+.code-search:focus { border-color: var(--line-strong); }
+.code-files { flex: 1; overflow: auto; padding: 0 6px 10px; }
+.code-dir { font-size: 11.5px; color: var(--faint); padding: 8px 8px 4px; }
+.code-file {
+  display: flex; align-items: center; gap: 7px; width: 100%;
+  background: none; border: 0; border-radius: 7px; cursor: pointer;
+  padding: 6px 8px; color: var(--muted); font: inherit; font-size: 12.5px; text-align: left;
+}
+.code-file:hover { background: var(--film-x); color: var(--text); }
+.code-file.on { background: var(--panel-raised); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
+.code-file .cf-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.code-view { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+.code-head { padding: 8px 12px; }
+.code-path { font-family: var(--mono); font-size: 12px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.code-ro { font-size: 11.5px; color: var(--faint); white-space: nowrap; }
+.code-text {
+  flex: 1; min-height: 0; overflow: auto; margin: 0;
+  padding: 12px 0; font: 12.5px/1.65 var(--mono); color: var(--text);
+  tab-size: 4; counter-reset: ln; outline: none;
+}
+.code-text .ln { display: block; padding: 0 16px 0 0; white-space: pre; }
+.code-text .ln::before {
+  counter-increment: ln; content: counter(ln);
+  display: inline-block; width: 44px; margin-right: 14px; padding-right: 8px;
+  text-align: right; color: var(--ghost); user-select: none;
+}
+.code-text .hit { background: rgba(244, 220, 116, 0.22); border-radius: 3px; }
+
+/* Details: the info sheet's own content, living in the panel. */
+#detailsHost .sheet-info { position: static; width: auto; max-width: 720px; margin: 0 auto; box-shadow: none; border: 0; background: none; padding: 6px 4px; transform: none; animation: none; }
+#detailsHost .sheet-close { display: none; }
+
+/* ---- narrow windows and phones -------------------------------------- */
+
+/* The panel's own width decides, not the window's: with the sidebar open
+   a wide window can still leave the panel narrow. */
+.panel-body { container-type: inline-size; }
+@container (max-width: 640px) {
+  .code-tree { width: 170px; }
+  .code-ro { display: none; }
+}
+.code-pick {
+  display: none; min-width: 0; max-width: 60%;
+  background: var(--bg); color: var(--text); border: 1px solid var(--line);
+  border-radius: 8px; padding: 5px 8px; font: 12px var(--mono);
+}
+@container (max-width: 520px) {
+  .code-tree { display: none; }
+  .code-path { display: none; }
+  .code-pick { display: block; }
+  .code-head .btn { padding: 5px 10px; }
+  .f-row .f-note { display: none; }
+}
+
+@media (max-width: 860px) {
+  /* One column: the header, then the app, then the conversation, then the
+     bar -- the rail's children become the column's own rows so the header
+     can sit above the app. */
+  #viewSession .session-body { flex-direction: column; height: 100dvh; overflow: hidden; }
+  #viewSession .rail { display: contents; }
+  #viewSession .rail-head { order: 0; }
+  #viewSession .panel { order: 1; flex: 0 0 auto; }
+  #viewSession .thread { order: 2; flex: 1 1 auto; min-height: 0; padding: 14px 14px 10px; }
+  #viewSession .composer { order: 3; position: static; padding: 6px 10px calc(10px + env(safe-area-inset-bottom)); background: var(--bg); }
+  #viewSession .divider { display: none; }
+  #viewSession .panel-bar { height: 46px; min-height: 46px; padding: 0 10px; }
+  /* A fixed share of the screen, so the app is seen whole rather than
+     scrolled to its middle inside a strip. The name is on the picture's
+     own caption, so the line under it gives its room to the picture. */
+  #viewSession .panel-body { margin: 0 10px 8px; position: relative; flex: none; height: 40dvh; min-height: 230px; }
+  #viewSession .stage { padding: 12px; }
+  #viewSession .done-card .shot-stage img { max-height: calc(40dvh - 118px); }
+  #viewSession .done-meta .done-name, #viewSession .done-meta .done-sub, #viewSession .done-meta .asks { display: none; }
+  .ptabs button { height: 34px; padding: 0 11px; }
+  #viewSession .composer-hint { display: none; }
+}
+@media (pointer: coarse) {
+  .msg-tools button { width: 36px; height: 36px; }
+}
+
+/* ---- the sidebar, lighter ---------------------------------------------
+ * Flat rows and one quiet fill for where you are. The raised selected row,
+ * the blue bar beside it and the two bordered cards at the foot made the
+ * drawer the heaviest thing in the window, when its job is to be passed
+ * through on the way to the work. */
+.side-row.on {
+  background: var(--film-strong, var(--film)); border: 0; box-shadow: none; padding: 0 8px;
+}
+.side-row.on::before { display: none; }
+.side-label {
+  border-top: 0; margin: 14px 0 4px; padding: 0 9px;
+  text-transform: none; letter-spacing: 0; font-size: 12px; color: var(--faint);
+}
+.side-foot { gap: 1px; padding-top: 10px; }
+.side-card {
+  flex-direction: row-reverse; justify-content: flex-end; gap: 11px;
+  height: 34px; padding: 0 8px; border: 0; border-radius: 8px;
+  background: none; color: var(--muted);
+}
+.side-card:hover { background: var(--film); border: 0; color: var(--text); }
+.side-card .card-text b { font-size: 13.5px; font-weight: 400; color: inherit; }
+.side-card .card-text small { display: none; }
+.side-card .card-icon { color: inherit; opacity: 0.72; }
+.side-card.upsell { background: none; border: 0; color: var(--blue-soft); }
+.side-card.upsell:hover { background: var(--film); }
+
+/* ---- the finished app, inside the panel -------------------------------
+ * The panel is already the frame; a card inside it was a frame in a frame. */
+#viewSession .done-card { background: none; border: 0; box-shadow: none; }
+#viewSession .done-card::before, #viewSession .done-card::after { display: none; }
+#viewSession .done-meta { padding: 14px 4px 0; background: none; border: 0; }
+#viewSession .shot-stage { border-radius: 12px; }
+
+/* A shut drawer casts no shadow. It is parked just off the left edge, and
+   its 60px phone shadow fell onto the page as a grey smear down the side. */
+.side:not([data-open="true"]) { box-shadow: none; }
+
+/* The prompt bar at the width it is given: the send button never leaves
+   the bar. The AI chip gives way first (the AI is one click away in the
+   header's menu and in Settings), then the dictation button. */
+#viewSession .sessbar { container-type: inline-size; }
+#viewSession .sessbar .bigbar-row > * { flex: none; }
+#viewSession .sessbar .bigbar-row > .grow { flex: 1; min-width: 0; }
+#viewSession .sessbar .aichip { white-space: nowrap; }
+@container (max-width: 300px) {
+  #viewSession .sessbar .aichip { display: none; }
+}
+@container (max-width: 250px) {
+  #viewSession .sessbar .tool.wave { display: none; }
+}

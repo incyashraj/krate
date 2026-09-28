@@ -3001,6 +3001,53 @@ fn agent_session_tag(path: String) -> Result<String, String> {
     Ok(tag.trim().to_string())
 }
 
+/// Largest source file the Code tab is sent as text. Anything bigger is
+/// listed with its size; a generated app's lib.rs is tens of kilobytes.
+const CONTENTS_TEXT_LIMIT: u64 = 512 * 1024;
+
+/// What a .krate holds, for the Files and Code tabs: every entry with its
+/// size, and the text of each source file that is UTF-8. Read straight
+/// from the zip -- nothing is run and nothing is written -- so looking
+/// inside a file somebody sent is as safe as its Details. The web bridge
+/// answers the same shape from the same zip.
+fn contents_of(path: &std::path::Path) -> Result<Vec<serde_json::Value>, String> {
+    use std::io::Read;
+    const NOT_READABLE: &str = "that file could not be read as a Krate app";
+    let file = std::fs::File::open(path).map_err(|_| NOT_READABLE.to_string())?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|_| NOT_READABLE.to_string())?;
+    let mut out = Vec::new();
+    for i in 0..archive.len().min(4000) {
+        let mut entry = archive.by_index(i).map_err(|_| NOT_READABLE.to_string())?;
+        let name = entry.name().to_string();
+        let size = entry.size();
+        let mut item = serde_json::json!({ "name": name, "size": size });
+        if name.starts_with("source/") && !entry.is_dir() && size <= CONTENTS_TEXT_LIMIT {
+            let mut bytes = Vec::with_capacity(size as usize);
+            // Bounded by the declared size, so a lying header cannot make
+            // this read more than the limit.
+            if (&mut entry)
+                .take(CONTENTS_TEXT_LIMIT + 1)
+                .read_to_end(&mut bytes)
+                .is_ok()
+                && bytes.len() as u64 <= CONTENTS_TEXT_LIMIT
+            {
+                if let Ok(text) = String::from_utf8(bytes) {
+                    item["text"] = serde_json::Value::String(text);
+                }
+            }
+        }
+        out.push(item);
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+async fn app_contents(path: String) -> Result<Vec<serde_json::Value>, String> {
+    tauri::async_runtime::spawn_blocking(move || contents_of(&existing(&path)?))
+        .await
+        .map_err(|err| err.to_string())?
+}
+
 /// The newest release, fetched by the shell: the webview's CSP blocks the
 /// network on purpose, so the old in-page fetch to GitHub failed every
 /// time and the updates row could only ever say "could not check".
@@ -5104,6 +5151,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             agents,
+            app_contents,
             create_app,
             revise_app,
             stop_build,
@@ -5312,6 +5360,52 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    /// The Files and Code tabs read a .krate as it is: every entry listed,
+    /// source files carried as text, and nothing that is not UTF-8 or is
+    /// over the limit passed off as text.
+    #[test]
+    fn app_contents_lists_every_entry_and_carries_source_as_text() {
+        use std::io::Write;
+        let path =
+            std::env::temp_dir().join(format!("krate-contents-{}.krate", std::process::id()));
+        {
+            let file = std::fs::File::create(&path).unwrap();
+            let mut zip = zip::ZipWriter::new(file);
+            let opts = zip::write::SimpleFileOptions::default();
+            zip.start_file("manifest.toml", opts).unwrap();
+            zip.write_all(b"id = \"x\"\n").unwrap();
+            zip.start_file("code.wasm", opts).unwrap();
+            zip.write_all(&[0, 97, 115, 109]).unwrap();
+            zip.start_file("source/src/lib.rs", opts).unwrap();
+            zip.write_all(b"fn main() {}\n").unwrap();
+            zip.start_file("source/assets/pic.bin", opts).unwrap();
+            zip.write_all(&[0xff, 0xfe, 0x00]).unwrap();
+            zip.start_file("source/big.rs", opts).unwrap();
+            zip.write_all(&vec![b'a'; (super::CONTENTS_TEXT_LIMIT + 1) as usize])
+                .unwrap();
+            zip.finish().unwrap();
+        }
+        let list = super::contents_of(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        let get = |n: &str| list.iter().find(|e| e["name"] == n).cloned().unwrap();
+        assert_eq!(list.len(), 5, "every entry is listed");
+        assert_eq!(get("source/src/lib.rs")["text"], "fn main() {}\n");
+        assert_eq!(get("code.wasm")["size"], 4);
+        assert!(
+            get("code.wasm").get("text").is_none(),
+            "only source is sent as text"
+        );
+        assert!(
+            get("source/assets/pic.bin").get("text").is_none(),
+            "not UTF-8, not text"
+        );
+        assert!(
+            get("source/big.rs").get("text").is_none(),
+            "over the limit, listed only"
+        );
+        assert!(super::contents_of(std::path::Path::new("/nonexistent/x.krate")).is_err());
+    }
+
     /// K-909: a krate://signed-in hand-off is adopted only when it carries
     /// the nonce of the sign-in this Studio started, and only once.
     #[test]

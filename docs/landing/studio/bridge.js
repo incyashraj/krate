@@ -915,6 +915,32 @@ async function downloadSource(path, appName) {
   return files.length;
 }
 
+/* What a .krate holds, for Studio's Files and Code tabs: every entry with
+ * its size, and the text of the source files. The same answer the desktop
+ * gives, read from the same zip. */
+const CONTENTS_TEXT_LIMIT = 512 * 1024;
+async function appContentsOf(path) {
+  const app = currentWebApp(path);
+  if (!app) throw new Error("This app was not made here, so its files are not here either.");
+  const headers = {};
+  if (bridge.token) headers.authorization = `Bearer ${bridge.token}`;
+  const res = await fetch(app.url, { headers });
+  if (!res.ok) throw new Error((await res.text().catch(() => "")) || "the file is not there any more; make it again");
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  const dec = new TextDecoder("utf-8", { fatal: true });
+  const out = [];
+  for (const entry of zipEntries(bytes)) {
+    const item = { name: entry.name, size: entry.size };
+    if (entry.name.startsWith("source/") && !entry.name.endsWith("/") && entry.size <= CONTENTS_TEXT_LIMIT) {
+      const body = await zipRead(bytes, entry);
+      // Text only: a file that is not UTF-8 is listed, never shown as noise.
+      if (body) { try { item.text = dec.decode(body); } catch (e) {} }
+    }
+    out.push(item);
+  }
+  return out;
+}
+
 /* The build id inside an app's URL, `${BUILDER}/build/<id>/file`. */
 function jobIdOf(path) {
   const m = String(path || "").match(/\/build\/([0-9a-f]{32})\/file$/);
@@ -1002,6 +1028,24 @@ function resultFromJob(job) {
   };
 }
 
+/* Session times are SECONDS, as Studio writes them (app.js persistSession).
+ * This file wrote milliseconds in two places, so a session it touched
+ * looked a thousand times newer than any other: it sat at the top of the
+ * list forever, "just now" forever, and -- because the list keeps whichever
+ * copy is newer -- every later save of it from Studio lost to the stale
+ * copy, so a rename or a new message vanished on the next refresh (K-938).
+ * Written in seconds now, and anything already stored in milliseconds is
+ * read as seconds. */
+function nowSecs() { return Math.floor(Date.now() / 1000); }
+function toSecs(v) {
+  const n = Number(v) || 0;
+  return n > 1e11 ? Math.floor(n / 1000) : n;
+}
+function inSeconds(s) {
+  if (!s || typeof s !== "object") return s;
+  return { ...s, updated: toSecs(s.updated), created: toSecs(s.created) };
+}
+
 /* Put a finished app into its session, so the wall's promise ("this
  * session is waiting in Studio") is kept with the file, not only the
  * sentence they typed. Updated in place: what Studio's UI wrote there
@@ -1010,12 +1054,12 @@ function saveResultToSession(sessionId, request, result) {
   if (!sessionId) return;
   const existing = localSessions().find((s) => s && s.id === sessionId);
   const saved = existing
-    ? { ...existing, updated: Date.now(), result }
+    ? { ...existing, updated: nowSecs(), result }
     : {
       id: sessionId,
       title: Array.from(request || "").slice(0, 80).join(""),
-      created: Date.now(),
-      updated: Date.now(),
+      created: nowSecs(),
+      updated: nowSecs(),
       messages: [
         { who: "YOU", body: request || "" },
         { who: "KRATE", body: `Made ${result.name} (${result.size}).` },
@@ -1354,8 +1398,8 @@ const COMMANDS = {
         session: {
           id: sessionId,
           title: (request || "").slice(0, 80),
-          created: Date.now(),
-          updated: Date.now(),
+          created: nowSecs(),
+          updated: nowSecs(),
           messages: [{ who: "YOU", body: request || "" }],
           result: null,
         },
@@ -1539,7 +1583,7 @@ const COMMANDS = {
   },
 
   async sessions_list() {
-    const local = localSessions();
+    const local = localSessions().map(inSeconds);
     if (!bridge.token) return local;
     let remote = [];
     try {
@@ -1549,7 +1593,7 @@ const COMMANDS = {
       return local;
     }
     const byId = new Map();
-    for (const s of [...local, ...remote]) {
+    for (const s of [...local, ...remote.map(inSeconds)]) {
       const seen = byId.get(s.id);
       if (!seen || (s.updated || 0) > (seen.updated || 0)) byId.set(s.id, s);
     }
@@ -1688,6 +1732,9 @@ const COMMANDS = {
    * honest equivalent is the project itself, handed over. Returning a
    * non-empty string keeps the UI's Source button enabled -- it checks for
    * one before offering the button -- and `reveal` below does the work. */
+  async app_contents({ path } = {}) {
+    return appContentsOf(path);
+  },
   async session_source_dir() {
     return currentWebApp(null) ? "source" : "";
   },
@@ -2175,8 +2222,11 @@ function paintMode() {
  * decisions about a message -- who writes it, and whether this is a plan or
  * a build -- belong in the same place, on the bar you are typing into. */
 function mountMode() {
-  const row = document.querySelector("#viewHome .bigbar-row");
-  if (!row || document.querySelector(".web-mode")) return;
+  document.querySelectorAll(".bigbar-row").forEach(mountModeIn);
+  paintMode();
+}
+function mountModeIn(row) {
+  if (!row || row.querySelector(".web-mode")) return;
   const wrap = document.createElement("div");
   wrap.className = "web-mode";
   wrap.setAttribute("role", "group");
@@ -2190,7 +2240,6 @@ function mountMode() {
   const grow = row.querySelector(".grow");
   if (grow) row.insertBefore(wrap, grow.nextSibling);
   else row.appendChild(wrap);
-  paintMode();
 }
 
 /* ---- what a tab must not be offered -------------------------------------

@@ -11,6 +11,7 @@
        every load. The same picture the sidebar's mark uses. -->
   <link rel="icon" href="krate-logo.png" />
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="session.css" />
 </head>
 <body>
   <!-- Nothing behind the app on purpose. The horizon, the starfield canvas
@@ -337,33 +338,74 @@
     </main>
   </div>
 
+  <!-- A session is two columns, each with its own header row: the
+       conversation on the left, and on the right a panel with tabs for
+       what the app IS -- how it looks, what is in it, its code, its
+       details. Both header rows are .titlebar, so both drag the window and
+       both keep clear of the window buttons the system draws. -->
   <div class="view hidden" id="viewSession">
-    <header class="titlebar">
-      <button class="icon-btn" id="backBtn" title="All your apps"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M9.8 3.2L5 8l4.8 4.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-      <span class="crumb" id="railTitle">New app</span>
-      <div class="spacer"></div>
-      <button class="agent-chip" id="agentChip2"><span class="dot" id="agentDot2"></span><span id="agentName2">…</span></button>
-    </header>
-
     <div class="session-body">
       <aside class="rail">
+        <header class="titlebar rail-head">
+          <button class="icon-btn" id="backBtn" title="All your apps"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M9.8 3.2L5 8l4.8 4.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <button class="sess-title" id="sessTitleBtn" title="Rename or remove this app" aria-haspopup="menu">
+            <span class="crumb" id="railTitle">New app</span>
+            <svg class="chev" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4.5 6.5L8 10l3.5-3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <div class="spacer"></div>
+        </header>
         <div class="thread" id="thread"></div>
         <footer class="composer">
-          <div class="attach-row hidden" id="attachRow"></div>
-          <div class="composer-box">
-            <button class="clip" id="attachBtn" title="Attach a file for the AI to read">
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M13 7.5l-4.9 4.9a3.2 3.2 0 01-4.5-4.5l5.3-5.3a2.1 2.1 0 013 3l-5.3 5.3a1 1 0 01-1.5-1.5L9.8 4.7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-            </button>
+          <div class="bigbar sessbar">
+            <div class="attach-row hidden" id="attachRow"></div>
             <textarea id="prompt" rows="1" placeholder="Describe the app you want…" autocomplete="off" spellcheck="false" maxlength="2000"></textarea>
-            <button id="send" class="send" title="Make it (Enter)"><svg class="send-arrow" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 13V3.5M8 3.5L3.8 7.7M8 3.5l4.2 4.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg><svg class="send-square" width="14" height="14" viewBox="0 0 16 16"><rect x="4.4" y="4.4" width="7.2" height="7.2" rx="1.4" fill="currentColor"/></svg></button>
+            <div class="bigbar-row">
+              <button class="tool plus" id="attachBtn" title="Add a picture or file for the AI to read">
+                <svg width="17" height="17" viewBox="0 0 16 16" fill="none"><path d="M8 3.4v9.2M3.4 8h9.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              </button>
+              <button class="aichip" id="agentChip2" title="Which AI writes the code"><span class="dot" id="agentDot2"></span><span id="agentName2">…</span><span class="chev">▾</span></button>
+              <span class="grow"></span>
+              <button class="tool wave" id="voiceBtn" title="Say it out loud">
+                <svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                  <path d="M3 7.6v2.8M6 5.4v7.2M9 3.4v11.2M12 5.9v6.2M15 7.9v2.2"/>
+                </svg>
+              </button>
+              <button id="send" class="send" title="Make it (Enter)"><svg class="send-arrow" width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 12.8V3.6M8 3.6L4.2 7.4M8 3.6l3.8 3.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><svg class="send-square" width="14" height="14" viewBox="0 0 16 16"><rect x="4.4" y="4.4" width="7.2" height="7.2" rx="1.4" fill="currentColor"/></svg></button>
+            </div>
           </div>
           <p class="composer-hint" id="composerHint">↩ to make it · shift-↩ for a new line</p>
         </footer>
-    </aside>
+      </aside>
 
       <div class="divider" id="divider" title="Drag to resize"></div>
 
-      <section class="stage" id="stage">
+      <section class="panel" id="panel">
+        <header class="titlebar panel-bar">
+          <div class="ptabs" role="tablist" aria-label="Your app" id="panelTabs">
+            <button type="button" role="tab" data-pane="preview" class="on" aria-selected="true" title="Preview">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="5.8" stroke="currentColor" stroke-width="1.3"/><path d="M2.4 8h11.2M8 2.2c1.7 1.6 2.5 3.5 2.5 5.8S9.7 12.2 8 13.8M8 2.2C6.3 3.8 5.5 5.7 5.5 8s.8 4.2 2.5 5.8" stroke="currentColor" stroke-width="1.3"/></svg>
+              <span>Preview</span>
+            </button>
+            <button type="button" role="tab" data-pane="files" aria-selected="false" title="Files">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.6 2.4h5.6l3.2 3.2v8H3.6z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 2.6v3.2h3.2" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+              <span>Files</span>
+            </button>
+            <button type="button" role="tab" data-pane="code" aria-selected="false" title="Code">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M5.6 4.4L2 8l3.6 3.6M10.4 4.4L14 8l-3.6 3.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span>Code</span>
+            </button>
+            <button type="button" role="tab" data-pane="details" aria-selected="false" title="Details">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2.2l5.8 3L8 8.2 2.2 5.2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M2.2 8.1L8 11.1l5.8-3M2.2 10.9L8 13.9l5.8-3" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+              <span>Details</span>
+            </button>
+          </div>
+          <div class="spacer"></div>
+          <button class="btn btn-sm hidden" id="barRun" title="Open the app">Run it</button>
+          <button class="btn btn-sm btn-primary hidden" id="barShare" title="Send it, or get a link">Share</button>
+        </header>
+
+        <div class="panel-body">
+      <section class="stage panel-pane" id="stage" data-pane="preview" role="tabpanel">
   
         <div class="stage-state" id="stateIdle">
           <div class="stage-empty">
@@ -525,6 +567,45 @@
               <pre class="fail-raw" id="failRaw"></pre>
             </details>
           </div>
+        </div>
+      </section>
+
+      <!-- What the .krate holds, read from the file itself: the same zip on
+           a desktop and in a tab. Filled when the tab is opened. -->
+      <section class="panel-pane hidden" id="paneFiles" data-pane="files" role="tabpanel">
+        <div class="pane-head">
+          <p class="pane-title">Files</p>
+          <span class="grow"></span>
+          <button class="btn btn-sm" id="filesAttach" title="Give the AI a picture or file with your next message">Add a file</button>
+          <button class="btn btn-sm hidden" id="filesSave">Download the app</button>
+        </div>
+        <div class="pane-scroll" id="filesList"></div>
+      </section>
+
+      <section class="panel-pane hidden" id="paneCode" data-pane="code" role="tabpanel">
+        <div class="code-wrap">
+          <nav class="code-tree" aria-label="Source files">
+            <input class="code-search" id="codeSearch" type="text" placeholder="Search code" autocomplete="off" spellcheck="false" />
+            <div class="code-files" id="codeFiles"></div>
+          </nav>
+          <div class="code-view">
+            <div class="pane-head code-head">
+              <p class="pane-title code-path" id="codePath"></p>
+              <select class="code-pick" id="codePick" aria-label="Source file"></select>
+              <span class="grow"></span>
+              <span class="code-ro">Read only</span>
+              <button class="btn btn-sm" id="codeCopy">Copy</button>
+              <button class="btn btn-sm" id="codeProject">Open the project</button>
+            </div>
+            <pre class="code-text" id="codeText" tabindex="0"></pre>
+          </div>
+        </div>
+        <p class="pane-empty hidden" id="codeEmpty"></p>
+      </section>
+
+      <section class="panel-pane hidden" id="paneDetails" data-pane="details" role="tabpanel">
+        <div class="pane-scroll" id="detailsHost"></div>
+      </section>
         </div>
       </section>
     </div>

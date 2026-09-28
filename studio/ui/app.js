@@ -1028,6 +1028,7 @@ function openSession(s) {
   if (window.__paintDrawerSessions) window.__paintDrawerSessions();
   $("railTitle").textContent = state.session.title;
   $("thread").innerHTML = "";
+  resetPanel();
   const msgs = state.session.messages;
   // The last recorded question in a session that never built gets its
   // Build button back on replay. Without this, reopening showed the
@@ -1070,7 +1071,8 @@ function openSession(s) {
         actions: [{ label: "Build it", run: finishPlanningAndBuild }],
       });
     } else {
-      appendMessage(m.who, m.body, m.files);
+      const note = m.kind === "note" || (m.who === "KRATE" && STATUS_LINES.has(String(m.body || "").trim()));
+      appendMessage(m.who, m.body, m.files, { when: m.when, variant: note ? "note" : undefined });
     }
   });
   // A replayed ask is either the numbered questions or the agreed plan, and
@@ -1174,7 +1176,7 @@ async function persistSession(s) {
 function appendMessage(who, body, files, extra) {
   const el = document.createElement("div");
   const variant = extra && extra.variant ? ` ${extra.variant}` : "";
-  el.className = `msg ${who === "KRATE" ? "krate" : ""}${variant}`;
+  el.className = `msg ${who === "KRATE" ? "krate" : "you"}${variant}`;
   // Built from text nodes, not interpolated into HTML (IC-320). `who` comes
   // from a stored session, and sessions sync through the account -- so it is
   // network-shaped data reaching the DOM, and `${who}` in an innerHTML
@@ -1210,8 +1212,168 @@ function appendMessage(who, body, files, extra) {
     }
     el.appendChild(row);
   }
-  $("thread").appendChild(el);
-  $("thread").scrollTop = $("thread").scrollHeight;
+  const note = who === "KRATE" && extra && extra.variant === "note";
+  placeInThread(el, note);
+  if (who === "KRATE" && !note) addMsgTools(el, body, extra && extra.when);
+}
+
+/* Status lines from before they were marked as such (sessions saved by an
+ * older Studio carry no `kind`). Exact sentences only: a real answer that
+ * happens to start the same way must never be folded away. */
+const STATUS_LINES = new Set([
+  "Looking at your request…",
+  "Picking your build back up where it was.",
+  "Reading your app, then making that change.",
+  "Noted. I'll do that as soon as this one is finished.",
+  "Stopping that one. Building this instead.",
+  "Folding that in and building again.",
+]);
+
+/* Where a line goes in the conversation.
+ *
+ * Status lines ("Looking at your request...", "Reading your app, then
+ * making that change.") are the working-out, not the answer. One after
+ * another they gather under a single line that opens, the way a chat shows
+ * its thinking, so the answers are what the eye lands on. */
+function placeInThread(el, note) {
+  const thread = $("thread");
+  if (note) {
+    let group = thread.lastElementChild;
+    if (!group || !group.classList.contains("thought")) {
+      group = document.createElement("div");
+      group.className = "thought";
+      const head = document.createElement("button");
+      head.type = "button";
+      head.className = "thought-head";
+      head.setAttribute("aria-expanded", "false");
+      const caret = document.createElement("span");
+      caret.className = "t-caret";
+      caret.textContent = "›";
+      const now = document.createElement("span");
+      now.className = "t-now";
+      head.append(now, caret);
+      const steps = document.createElement("div");
+      steps.className = "thought-steps";
+      steps.hidden = true;
+      head.addEventListener("click", () => {
+        const open = steps.hidden;
+        steps.hidden = !open;
+        group.classList.toggle("open", open);
+        head.setAttribute("aria-expanded", String(open));
+      });
+      group.append(head, steps);
+      thread.appendChild(group);
+    }
+    group.querySelector(".thought-steps").appendChild(el);
+    const n = group.querySelectorAll(".thought-steps > .msg").length;
+    const said = (el.querySelector(".body") || el).textContent.trim();
+    group.querySelector(".t-now").textContent = n > 1 ? `${said} · ${n} steps` : said;
+  } else {
+    thread.querySelectorAll(".msg.last").forEach((m) => m.classList.remove("last"));
+    el.classList.add("last");
+    thread.appendChild(el);
+  }
+  thread.scrollTop = thread.scrollHeight;
+}
+
+/* Copy, and "..." for when it was said. Under Krate's answers only: your
+ * own words are already yours to copy, and a status line is not worth it. */
+function addMsgTools(el, body, when) {
+  const text = String(body || "").trim();
+  if (!text) return;
+  const tools = document.createElement("div");
+  tools.className = "msg-tools";
+  const copy = document.createElement("button");
+  copy.type = "button";
+  copy.title = "Copy";
+  copy.setAttribute("aria-label", "Copy this message");
+  copy.innerHTML = ICON_COPY;
+  copy.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      copy.innerHTML = ICON_TICK;
+      setTimeout(() => { copy.innerHTML = ICON_COPY; }, 1200);
+    } catch (e) {}
+  });
+  const more = document.createElement("button");
+  more.type = "button";
+  more.title = "More";
+  more.setAttribute("aria-label", "More about this message");
+  more.innerHTML = ICON_MORE;
+  const at = when ? new Date(when * 1000) : new Date();
+  more.addEventListener("click", () => {
+    popMenu(more, [
+      { label: "Copy the text", run: () => navigator.clipboard.writeText(text).catch(() => {}) },
+      { label: "Said", value: at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) },
+      { label: "AI", value: agentLabel() },
+    ]);
+  });
+  tools.append(copy, more);
+  el.appendChild(tools);
+}
+
+const ICON_COPY = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="5.2" y="5.2" width="8" height="8" rx="1.6" stroke="currentColor" stroke-width="1.3"/><path d="M10.8 5.2V3.9a1.3 1.3 0 00-1.3-1.3H3.9a1.3 1.3 0 00-1.3 1.3v5.6a1.3 1.3 0 001.3 1.3h1.3" stroke="currentColor" stroke-width="1.3"/></svg>';
+const ICON_TICK = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.4l3 3 6-6.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const ICON_MORE = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.6" cy="8" r="1.2"/><circle cx="8" cy="8" r="1.2"/><circle cx="12.4" cy="8" r="1.2"/></svg>';
+
+/* The name of the AI writing this session's code, as the chip shows it. */
+function agentLabel() {
+  const n = $("agentName2") || $("agentName");
+  return (n && n.textContent.trim()) || "—";
+}
+
+/* A small menu under a button. Items are {label, run} for actions and
+ * {label, value} for facts; {rule: true} draws a line. One at a time,
+ * closed by a click anywhere else or by Escape. */
+function popMenu(anchor, items) {
+  document.querySelectorAll(".pop").forEach((p) => p.remove());
+  const pop = document.createElement("div");
+  pop.className = "pop";
+  pop.setAttribute("role", "menu");
+  for (const item of items) {
+    if (item.rule) { pop.appendChild(document.createElement("hr")); continue; }
+    const row = document.createElement(item.run ? "button" : "div");
+    row.className = item.run ? "" : "pop-row";
+    if (item.run) { row.type = "button"; row.setAttribute("role", "menuitem"); }
+    if (item.danger) row.classList.add("danger");
+    const label = document.createElement("span");
+    label.textContent = item.label;
+    row.appendChild(label);
+    if (item.value !== undefined) {
+      const v = document.createElement("span");
+      v.className = "pop-val";
+      v.textContent = item.value;
+      row.appendChild(v);
+    }
+    if (item.run) {
+      row.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const keep = item.run(row, label);
+        if (keep !== true) close();
+      });
+    }
+    pop.appendChild(row);
+  }
+  document.body.appendChild(pop);
+  const r = anchor.getBoundingClientRect();
+  const w = pop.offsetWidth;
+  const h = pop.offsetHeight;
+  const left = Math.max(8, Math.min(r.left, innerWidth - w - 8));
+  const below = r.bottom + 6 + h <= innerHeight - 8;
+  pop.style.left = left + "px";
+  pop.style.top = (below ? r.bottom + 6 : Math.max(8, r.top - h - 6)) + "px";
+  function close() {
+    pop.remove();
+    document.removeEventListener("mousedown", away, true);
+    document.removeEventListener("keydown", esc, true);
+  }
+  function away(e) { if (!pop.contains(e.target) && e.target !== anchor && !anchor.contains(e.target)) close(); }
+  function esc(e) { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); } }
+  setTimeout(() => {
+    document.addEventListener("mousedown", away, true);
+    document.addEventListener("keydown", esc, true);
+  }, 0);
+  return pop;
 }
 
 /* A live build chip on the timeline: v3 building · <phase>. Returns the
@@ -1314,6 +1476,7 @@ function say(who, body, files, extra) {
     body,
     files: files || [],
     when: Math.floor(Date.now() / 1000),
+    ...(extra && extra.variant === "note" ? { kind: "note" } : {}),
   });
 }
 
@@ -1340,6 +1503,7 @@ function show(phase) {
   }
   $({ idle: "stateIdle", planning: "statePlanning", building: "stateBuilding", done: "stateDone", failed: "stateFailed" }[phase])
     .classList.remove("hidden");
+  paintPanelBar();
 }
 
 /// The right pane during the conversation gate: the forming frame in
@@ -2945,7 +3109,7 @@ async function startPlanning(request, files) {
   state.planning = { request, files, qa: [], rounds: 0, lastQuestions: [] };
   // Speak IMMEDIATELY. The plan call can take ten seconds, and ten silent
   // seconds after a person's very first message reads as broken.
-  say("KRATE", "Looking at your request…");
+  say("KRATE", "Looking at your request…", null, { variant: "note" });
   showPlanning("Reading your request", "checking what it needs, a few seconds…");
   await runPlan();
 }
@@ -5491,37 +5655,480 @@ function setupDivider() {
   const divider = $("divider");
   const rail = document.querySelector(".rail");
   if (!divider || !rail) return;
+  const set = (w) => rail.style.setProperty("--rail-w", w + "px");
 
-  const saved = Number(lsGet("krate.railWidth") || 0);
-  if (saved >= 240 && saved <= 720) {
-    rail.style.width = rail.style.minWidth = saved + "px";
-  }
+  const saved = Number(lsGet("krate.railWidth2") || 0);
+  if (saved >= 300 && saved <= 760) set(saved);
 
   // Double-click restores the default split: a person who drags the rail
-  // to an unusable width needs a way back that is not "guess 320px".
+  // to an unusable width needs a way back that is not "guess a number".
   divider.addEventListener("dblclick", () => {
-    rail.style.width = rail.style.minWidth = "320px";
-    lsSet("krate.railWidth", "320");
+    rail.style.removeProperty("--rail-w");
+    lsSet("krate.railWidth2", "");
   });
 
   divider.addEventListener("mousedown", (e) => {
     e.preventDefault();
     document.body.classList.add("resizing");
+    divider.classList.add("dragging");
+    // From the rail's own left edge. This used the pointer's distance from
+    // the window's edge, so with the sidebar open the rail jumped wider by
+    // the sidebar's whole width on the first pixel of a drag.
+    const left = rail.getBoundingClientRect().left;
+    let w = rail.getBoundingClientRect().width;
     const move = (ev) => {
-      // Bounded: a rail narrower than 240 cannot hold a sentence, and one
-      // wider than 720 leaves no room for the app.
-      const w = Math.max(240, Math.min(720, ev.clientX));
-      rail.style.width = rail.style.minWidth = w + "px";
+      // Bounded: narrower than 300 cannot hold the prompt bar's controls,
+      // and wider than 760 leaves the app no room.
+      w = Math.round(Math.max(300, Math.min(760, ev.clientX - left)));
+      set(w);
     };
     const up = () => {
       document.body.classList.remove("resizing");
+      divider.classList.remove("dragging");
       document.removeEventListener("mousemove", move);
       document.removeEventListener("mouseup", up);
-      lsSet("krate.railWidth", parseInt(rail.style.width, 10) || 320);
+      lsSet("krate.railWidth2", String(w));
     };
     document.addEventListener("mousemove", move);
     document.addEventListener("mouseup", up);
   });
+}
+
+/* ---- the panel: Preview, Files, Code, Details --------------------------
+ *
+ * Preview is the stage it always was. The other three are read from the
+ * .krate itself (app_contents: the same zip on a desktop and in a tab), so
+ * what they show is what the person would send, not a guess at it. Each is
+ * filled when opened and kept until the app changes. */
+const panel = { pane: "preview", filledFor: {}, contents: null, contentsFor: "", codeFile: "" };
+
+function resetPanel() {
+  panel.filledFor = {};
+  panel.contents = null;
+  panel.contentsFor = "";
+  panel.codeFile = "";
+  if (panel.pane !== "preview") fillPane(panel.pane);
+  paintPanelBar();
+}
+
+function setPane(name) {
+  panel.pane = name;
+  document.querySelectorAll("#panelTabs button").forEach((b) => {
+    const on = b.dataset.pane === name;
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-selected", String(on));
+  });
+  document.querySelectorAll("#panel .panel-pane").forEach((p) => {
+    p.classList.toggle("hidden", p.dataset.pane !== name);
+  });
+  if (name !== "preview") fillPane(name);
+}
+
+/* Run and Share in the panel's header: the finished app's two verbs,
+ * shown only when there is a finished app. They press the card's own
+ * buttons, so everything those do -- the web's download, the send sheet,
+ * a version's own file -- stays in one place. */
+function paintPanelBar() {
+  const run = $("barRun");
+  const share = $("barShare");
+  if (!run || !share) return;
+  const ready = state.phase === "done" && !!currentApp();
+  run.classList.toggle("hidden", !ready);
+  share.classList.toggle("hidden", !ready);
+  const label = $("openBtn") && $("openBtn").textContent.trim();
+  if (label) run.textContent = label;
+}
+
+async function appContents(app) {
+  if (!app) return null;
+  if (panel.contents && panel.contentsFor === app.path) return panel.contents;
+  const list = await invoke("app_contents", { path: app.path });
+  panel.contents = Array.isArray(list) ? list : [];
+  panel.contentsFor = app.path;
+  return panel.contents;
+}
+
+async function fillPane(name) {
+  const app = currentApp();
+  const key = app ? app.path : "";
+  if (panel.filledFor[name] === key && name !== "details") return;
+  panel.filledFor[name] = key;
+  try {
+    if (name === "files") await fillFiles(app);
+    else if (name === "code") await fillCode(app);
+    else if (name === "details") await fillDetails(app);
+  } catch (err) {
+    panel.filledFor[name] = null;
+    const where = name === "files" ? $("filesList") : name === "code" ? $("codeEmpty") : $("detailsHost");
+    if (where) {
+      if (name === "code") { $("codeEmpty").classList.remove("hidden"); document.querySelector("#paneCode .code-wrap").classList.add("hidden"); }
+      where.textContent = `Could not read the app: ${clip(err && err.message ? err.message : err, 200)}`;
+    }
+  }
+}
+
+const FILE_NOTES = {
+  "manifest.toml": "what it is and what it may use",
+  "code.wasm": "the app itself, compiled",
+  "closure.json": "the interfaces it was built against",
+  "derived-from.json": "what it was made from",
+  "signature": "who made it",
+  "assets/icon.png": "its icon",
+};
+
+function prettyBytes(n) {
+  n = Number(n) || 0;
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function fileRow(icon, name, note, action) {
+  const row = document.createElement("div");
+  row.className = "f-row";
+  const ico = document.createElement("span");
+  ico.className = "f-ico";
+  ico.innerHTML = icon;
+  const n = document.createElement("span");
+  n.className = "f-name";
+  n.textContent = name;
+  n.title = name;
+  row.append(ico, n);
+  if (note) {
+    const t = document.createElement("span");
+    t.className = "f-note";
+    t.textContent = note;
+    row.appendChild(t);
+  }
+  if (action) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = action.label;
+    b.addEventListener("click", action.run);
+    row.appendChild(b);
+  }
+  return row;
+}
+
+const ICON_FILE = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3.6 2.4h5.6l3.2 3.2v8H3.6z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9 2.6v3.2h3.2" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>';
+const ICON_APP = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2.4" y="2.4" width="11.2" height="11.2" rx="2.6" stroke="currentColor" stroke-width="1.3"/><path d="M2.6 5.8h10.8" stroke="currentColor" stroke-width="1.3"/></svg>';
+const ICON_CODE = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M5.6 4.4L2 8l3.6 3.6M10.4 4.4L14 8l-3.6 3.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const ICON_CLIP = '<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M13 7.5l-4.9 4.9a3.2 3.2 0 01-4.5-4.5l5.3-5.3a2.1 2.1 0 013 3l-5.3 5.3a1 1 0 01-1.5-1.5L9.8 4.7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
+
+function group(label, rows) {
+  const g = document.createElement("div");
+  g.className = "f-group";
+  const l = document.createElement("p");
+  l.className = "f-label";
+  l.textContent = label;
+  g.append(l, ...rows);
+  return g;
+}
+
+async function fillFiles(app) {
+  const host = $("filesList");
+  host.replaceChildren();
+  $("filesSave").classList.toggle("hidden", !app);
+  $("filesSave").textContent = tauri ? "Show in folder" : "Download the app";
+  // What the person handed the AI, from their own messages.
+  const given = [];
+  for (const m of (state.session && state.session.messages) || []) {
+    for (const f of m.files || []) if (!given.includes(f)) given.push(f);
+  }
+  if (!app) {
+    if (given.length) host.appendChild(group("You gave the AI", given.map((f) => fileRow(ICON_CLIP, baseName(f)))));
+    const empty = document.createElement("p");
+    empty.className = "pane-empty";
+    empty.textContent = "The app's files appear here once it is built: the file you send, and everything inside it.";
+    host.appendChild(empty);
+    return;
+  }
+  host.appendChild(group("Your app", [
+    fileRow(ICON_APP, app.name || baseName(app.path), app.size || "", {
+      label: tauri ? "Show in folder" : "Download",
+      run: () => invoke("reveal", { path: app.path }).catch((e) => toastish(e)),
+    }),
+  ]));
+  const list = await appContents(app);
+  const inside = list.filter((e) => !e.name.startsWith("source/") && e.name !== "krate-profile" && !e.name.endsWith("/"));
+  const source = list.filter((e) => e.name.startsWith("source/") && !e.name.endsWith("/") && !baseName(e.name).startsWith("."));
+  const rows = inside.map((e) => fileRow(ICON_FILE, e.name, FILE_NOTES[e.name] ? `${FILE_NOTES[e.name]} · ${prettyBytes(e.size)}` : prettyBytes(e.size)));
+  if (source.length) {
+    rows.push(fileRow(ICON_CODE, "source/", `${source.length} file${source.length === 1 ? "" : "s"} · the Rust project it was built from`, {
+      label: "View code",
+      run: () => setPane("code"),
+    }));
+  }
+  host.appendChild(group("Inside the .krate", rows));
+  if (given.length) host.appendChild(group("You gave the AI", given.map((f) => fileRow(ICON_CLIP, baseName(f)))));
+}
+
+function toastish(err) {
+  const hint = $("composerHint");
+  if (hint) hint.textContent = clip(err && err.message ? err.message : String(err), 160);
+}
+
+/* The source, in the order a person reads it: the code first, the
+ * project files after, the lockfile last. */
+function sourceOrder(a, b) {
+  const rank = (n) => (n.startsWith("src/") ? 0 : n === "Cargo.toml" ? 1 : n === "manifest.toml" ? 2 : n === "Cargo.lock" ? 9 : 5);
+  return rank(a) - rank(b) || a.localeCompare(b);
+}
+
+async function fillCode(app) {
+  const wrap = document.querySelector("#paneCode .code-wrap");
+  const empty = $("codeEmpty");
+  $("codeProject").textContent = tauri ? "Open the project" : "Download the project";
+  if (!app) {
+    wrap.classList.add("hidden");
+    empty.classList.remove("hidden");
+    empty.textContent = "The code appears here once the app is built. It is a Rust project you can read, copy, or open in your own editor.";
+    return;
+  }
+  const list = await appContents(app);
+  const files = list
+    .filter((e) => e.name.startsWith("source/") && !e.name.endsWith("/") && !baseName(e.name).startsWith("."))
+    .map((e) => ({ ...e, rel: e.name.slice("source/".length) }))
+    .sort((a, b) => sourceOrder(a.rel, b.rel));
+  if (!files.length) {
+    wrap.classList.add("hidden");
+    empty.classList.remove("hidden");
+    empty.textContent = "This app does not carry its source.";
+    return;
+  }
+  empty.classList.add("hidden");
+  wrap.classList.remove("hidden");
+  panel.codeFiles = files;
+  if (!files.some((f) => f.rel === panel.codeFile)) {
+    panel.codeFile = (files.find((f) => f.rel === "src/lib.rs") || files.find((f) => f.rel.startsWith("src/")) || files[0]).rel;
+  }
+  paintCodeTree();
+  showCodeFile(panel.codeFile);
+}
+
+function paintCodeTree() {
+  // The same list as a picker, for a panel too narrow to show the tree.
+  const pick = $("codePick");
+  if (pick) {
+    pick.replaceChildren(...(panel.codeFiles || []).map((f) => {
+      const o = document.createElement("option");
+      o.value = f.rel;
+      o.textContent = f.rel;
+      o.selected = f.rel === panel.codeFile;
+      return o;
+    }));
+  }
+  const host = $("codeFiles");
+  const q = ($("codeSearch").value || "").trim().toLowerCase();
+  host.replaceChildren();
+  let dir = null;
+  for (const f of panel.codeFiles || []) {
+    if (q && !f.rel.toLowerCase().includes(q) && !(f.text || "").toLowerCase().includes(q)) continue;
+    const d = f.rel.includes("/") ? f.rel.slice(0, f.rel.lastIndexOf("/") + 1) : "";
+    if (d !== dir) {
+      dir = d;
+      if (d) {
+        const label = document.createElement("div");
+        label.className = "code-dir";
+        label.textContent = d;
+        host.appendChild(label);
+      }
+    }
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "code-file" + (f.rel === panel.codeFile ? " on" : "");
+    const name = document.createElement("span");
+    name.className = "cf-name";
+    name.textContent = baseName(f.rel);
+    b.title = f.rel;
+    b.appendChild(name);
+    b.addEventListener("click", () => { panel.codeFile = f.rel; paintCodeTree(); showCodeFile(f.rel); });
+    host.appendChild(b);
+  }
+  if (!host.children.length) {
+    const none = document.createElement("div");
+    none.className = "code-dir";
+    none.textContent = "Nothing matches.";
+    host.appendChild(none);
+  }
+}
+
+function showCodeFile(rel) {
+  const f = (panel.codeFiles || []).find((x) => x.rel === rel);
+  const pre = $("codeText");
+  $("codePath").textContent = rel || "";
+  pre.replaceChildren();
+  if (!f) return;
+  if (typeof f.text !== "string") {
+    pre.textContent = `${prettyBytes(f.size)} -- not text, so it is not shown here.`;
+    return;
+  }
+  const q = ($("codeSearch").value || "").trim();
+  const lines = f.text.replace(/\r\n/g, "\n").split("\n");
+  if (lines.length && lines[lines.length - 1] === "") lines.pop();
+  const frag = document.createDocumentFragment();
+  let firstHit = null;
+  for (const line of lines.slice(0, 20000)) {
+    const ln = document.createElement("span");
+    ln.className = "ln";
+    if (q && line.toLowerCase().includes(q.toLowerCase())) {
+      // Text nodes around each match: source is data, never markup.
+      const low = line.toLowerCase();
+      const needle = q.toLowerCase();
+      let at = 0;
+      for (let i = low.indexOf(needle); i >= 0; i = low.indexOf(needle, at)) {
+        ln.appendChild(document.createTextNode(line.slice(at, i)));
+        const hit = document.createElement("mark");
+        hit.className = "hit";
+        hit.textContent = line.slice(i, i + q.length);
+        ln.appendChild(hit);
+        at = i + q.length;
+      }
+      ln.appendChild(document.createTextNode(line.slice(at)));
+      if (!firstHit) firstHit = ln;
+    } else {
+      ln.textContent = line || " ";
+    }
+    frag.appendChild(ln);
+  }
+  pre.appendChild(frag);
+  pre.scrollTop = 0;
+  if (firstHit) firstHit.scrollIntoView({ block: "center" });
+}
+
+/* Details is the info sheet's own content, moved into the panel once.
+ * showInfo fills it the way it always has; the overlay it lived in stays
+ * shut. */
+async function fillDetails(app) {
+  const host = $("detailsHost");
+  const card = document.querySelector("#infoSheet .sheet-info") || host.querySelector(".sheet-info");
+  if (!app) {
+    host.replaceChildren();
+    if (card) host.appendChild(card);
+    card && card.classList.add("hidden");
+    let empty = host.querySelector(".pane-empty");
+    if (!empty) {
+      empty = document.createElement("p");
+      empty.className = "pane-empty";
+      host.appendChild(empty);
+    }
+    empty.textContent = "Details appear once the app is built: what it may use, its size, where it is, and how to build it again from a terminal.";
+    return;
+  }
+  host.querySelector(".pane-empty")?.remove();
+  if (card && card.parentElement !== host) host.appendChild(card);
+  card && card.classList.remove("hidden");
+  await showInfo();
+  $("infoSheet").classList.add("hidden");
+}
+
+function setupPanel() {
+  document.querySelectorAll("#panelTabs button").forEach((b) => {
+    b.addEventListener("click", () => setPane(b.dataset.pane));
+  });
+  // Arrow keys move between tabs, the way a tab list does.
+  $("panelTabs")?.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    const tabs = [...document.querySelectorAll("#panelTabs button")];
+    const i = tabs.findIndex((t) => t.dataset.pane === panel.pane);
+    const next = tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
+    setPane(next.dataset.pane);
+    next.focus();
+  });
+  $("barRun")?.addEventListener("click", () => $("openBtn").click());
+  $("barShare")?.addEventListener("click", () => $("shareBtn").click());
+  $("filesAttach")?.addEventListener("click", () => $("attachBtn").click());
+  $("filesSave")?.addEventListener("click", () => {
+    const app = currentApp();
+    if (app) invoke("reveal", { path: app.path }).catch((e) => toastish(e));
+  });
+  $("codeSearch")?.addEventListener("input", () => { paintCodeTree(); showCodeFile(panel.codeFile); });
+  $("codePick")?.addEventListener("change", (e) => {
+    panel.codeFile = e.target.value;
+    paintCodeTree();
+    showCodeFile(panel.codeFile);
+  });
+  $("codeCopy")?.addEventListener("click", async () => {
+    const f = (panel.codeFiles || []).find((x) => x.rel === panel.codeFile);
+    if (!f || typeof f.text !== "string") return;
+    try {
+      await navigator.clipboard.writeText(f.text);
+      $("codeCopy").textContent = "Copied";
+      setTimeout(() => { $("codeCopy").textContent = "Copy"; }, 1200);
+    } catch (e) {}
+  });
+  $("codeProject")?.addEventListener("click", () => openSourceFolder());
+  // The app's name, and what can be done to the session itself.
+  $("sessTitleBtn")?.addEventListener("click", (e) => {
+    const btn = e.currentTarget;
+    popMenu(btn, [
+      { label: "Rename", run: () => { renameSessionTitle(); } },
+      { label: "Change the AI", value: agentLabel(), run: () => { openAiSheet(); } },
+      { rule: true },
+      {
+        label: "Remove this app",
+        danger: true,
+        run: (row, label) => {
+          if (!row.dataset.armed) {
+            row.dataset.armed = "1";
+            label.textContent = "Click again to remove it";
+            return true;
+          }
+          removeCurrentSession();
+        },
+      },
+    ]);
+  });
+}
+
+function renameSessionTitle() {
+  const s = state.session;
+  const name = $("railTitle");
+  if (!s || !name) return;
+  const before = name.textContent;
+  name.contentEditable = "plaintext-only";
+  if (name.contentEditable !== "plaintext-only") name.contentEditable = "true";
+  name.focus();
+  const range = document.createRange();
+  range.selectNodeContents(name);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  let done = false;
+  const finish = async (keep) => {
+    if (done) return;
+    done = true;
+    name.contentEditable = "false";
+    const next = name.textContent.replace(/\s+/g, " ").trim().slice(0, 120);
+    if (!keep || !next || next === before) { name.textContent = before; return; }
+    name.textContent = next;
+    s.title = next;
+    await persistSession(s);
+    if (window.__paintDrawerSessions) window.__paintDrawerSessions();
+  };
+  name.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); finish(true); }
+    else if (e.key === "Escape") { e.preventDefault(); finish(false); }
+    e.stopPropagation();
+  });
+  name.addEventListener("blur", () => finish(true), { once: true });
+}
+
+async function removeCurrentSession() {
+  const s = state.session;
+  if (!s) return;
+  if (state.buildingSession && state.buildingSession.id === s.id) {
+    toastish("It is still building. Stop the build first, then remove it.");
+    return;
+  }
+  try {
+    await invoke("session_delete", { id: s.id });
+  } catch (err) {
+    toastish(err);
+    return;
+  }
+  if (window.__paintDrawerSessions) window.__paintDrawerSessions();
+  $("backBtn").click();
 }
 
 /* ---- wiring ----------------------------------------------------------- */
@@ -5835,6 +6442,7 @@ $("homeSend").addEventListener("click", startFromHome);
   const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
   const pairs = [
     { btn: $("homeVoiceBtn"), field: $("homePrompt"), hint: $("homeHint") },
+    { btn: $("voiceBtn"), field: $("prompt"), hint: $("composerHint") },
   ].filter((x) => x.btn && x.field);
   if (!pairs.length) return;
 
@@ -7115,6 +7723,7 @@ function mockShot() {
 
 startRotator();
 setupDivider();
+setupPanel();
 
 boot().then(async () => {
   // Automation hook: KRATE_STUDIO_AUTORUN makes the studio drive one real
@@ -7472,6 +8081,17 @@ function setShelfOpen(open) {
       const go = goes[row.dataset.side];
       if (go) go();
     });
+  });
+
+  // Where the drawer covers the page (a phone), choosing somewhere to go
+  // closes it: it stayed open over the app you had just picked, so the
+  // pick looked like it had done nothing. Not remembered -- on a wide
+  // window the drawer beside the work is the person's choice to keep.
+  side.addEventListener("click", (e) => {
+    if (!window.matchMedia("(max-width: 760px)").matches) return;
+    if (!e.target.closest(".side-row, .sess-row, .side-card")) return;
+    if (e.target.closest(".sess-kebab") || e.target.isContentEditable) return;
+    setTimeout(() => setOpen(false, false), 0);
   });
 
   /* The avatar opens the profile PAGE, not the sign-out sheet. The page
