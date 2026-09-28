@@ -1373,6 +1373,18 @@ picture source { display: none; }
        on every page (it goes home). */
     a.btn, a.pill, a.cta, .brandbar .name { min-height: 44px; display: inline-flex; align-items: center; }
   }
+/* A class that sets display must not beat the hidden attribute: the
+   browser door stays hidden while making is off. */
+[hidden] { display: none !important; }
+/* The no-install door: the one way in that needs nothing downloaded, so it
+   reads as a button, not a footnote -- as dim text over the glow it was
+   nearly invisible. */
+.secondDoor.webDoor { display: inline-block; margin-top: 16px; padding: 7px 16px;
+  border-radius: 999px; font-size: 14px; color: #e4e4e7;
+  background: rgba(139, 92, 246, 0.22); border: 1px solid rgba(196, 181, 253, 0.45);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.secondDoor.webDoor a { color: #fff; font-weight: 600; text-decoration: none; }
+.secondDoor.webDoor a:hover { text-decoration: underline; }
 </style>
 <noscript><style>
   /* .works .tag belongs in both lists below. The three chips start at
@@ -1409,6 +1421,7 @@ picture source { display: none; }
   </a>
   <nav class="bnav" aria-label="Primary">
     <a href="/docs/quickstart.html">Start building</a>
+    <a href="/studio/">Studio</a>
     <a href="#receipts">Why Krate</a>
     <a href="/cloud/">Apps</a>
     <a href="/docs/">Docs</a>
@@ -1482,6 +1495,13 @@ picture source { display: none; }
               </div>
             </div>
         </div>
+        <!-- Studio in the browser, the door with no install. Shown only when
+             the build service says making is on, so nobody is invited to
+             sign in for something switched off (K-860); the day the key is
+             set it appears by itself. A phone gets the one-box page. -->
+        <p class="secondDoor webDoor" id="webDoor" hidden>No install:
+        <a href="/login/?next=studio">make an app in your browser</a>.
+        Your first one is on us.</p>
         <p class="secondDoor">Someone sent you a file?
         <a href="/open/">Here's how it opens.</a></p>
       </div>
@@ -2341,6 +2361,24 @@ document.querySelectorAll(".jsTop").forEach(function (b) {
       mode: "cors",
     }).catch(function () {});
   } catch (e) {}
+})();
+</script>
+<script>
+/* The browser door (#webDoor): shown when the build service is making apps. */
+(function () {
+  var door = document.getElementById("webDoor");
+  if (!door || !window.fetch) return;
+  var builder = window.KRATE_BUILDER || "https://build.krate.tech";
+  fetch(builder + "/health")
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (h) {
+      if (!h || h.authoring === "off") return;
+      if (window.matchMedia && window.matchMedia("(max-width: 700px)").matches) {
+        door.querySelector("a").href = "/make/";
+      }
+      door.hidden = false;
+    })
+    .catch(function () {});
 })();
 </script>
 </body>

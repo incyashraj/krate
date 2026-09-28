@@ -336,6 +336,9 @@ p.sub { color: #a1a1aa; margin-top: 12px; max-width: 62ch; line-height: 1.65; }
        on every page (it goes home). */
     a.btn, a.pill, a.cta, .brandbar .name { min-height: 44px; display: inline-flex; align-items: center; }
   }
+/* A class that sets display must not beat the hidden attribute: the
+   browser door stays hidden while making is off. */
+[hidden] { display: none !important; }
 </style>
 </head>
 <body>
@@ -365,14 +368,16 @@ p.sub { color: #a1a1aa; margin-top: 12px; max-width: 62ch; line-height: 1.65; }
   Windows and Linux. Recipients install a compatible Krate runtime to open it.</p>
   <div class="sCtas">
     <a class="pill pill-primary" href="/#ctaSec" id="dlBtn">Download Studio</a>
+    <a class="pill" href="/login/?next=studio" id="webBtn" hidden>Use it in your browser</a>
     <a class="pill" href="https://github.com/incyashraj/krate">Read the source</a>
   </div>
   <p class="freeline">The runtime is free and
   <a href="https://github.com/incyashraj/krate">MIT or Apache-2.0 licensed</a>.
   Your AI provider and optional hosted services have separate terms.</p>
-  <p class="freeline" id="webLine">Not ready to install? <a href="/login/?next=studio">Sign
-  in to use Studio in your browser</a>, or
-  <a href="/docs/quickstart.html">build directly with the developer tools</a>.</p>
+  <p class="freeline" id="webLine">Not ready to install? <a href="/login/?next=studio">Make
+  an app in your browser</a>: your first one is on us, and with your own API
+  key you can keep going. On your computer, Studio uses the AI you already
+  have, as much as you like.</p>
 
   <!-- Studio, doing its job. Recaptured from the real app after the
        2026-09 redesign (K-217). A short screen recording would suit this
@@ -588,6 +593,15 @@ p.sub { color: #a1a1aa; margin-top: 12px; max-width: 62ch; line-height: 1.65; }
     fetch(builder + "/health")
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (h) {
+        var webBtn = $("webBtn");
+        if (h && h.authoring !== "off" && webBtn) {
+          // Studio is laid out for a computer screen; a phone gets the
+          // one-box page, as on the homepage.
+          if (window.matchMedia && window.matchMedia("(max-width: 700px)").matches) {
+            webBtn.href = "/make/";
+          }
+          webBtn.hidden = false;
+        }
         if (!h || h.authoring !== "off") return;
         line.innerHTML = "Making apps in the browser is paused for now, so nothing "
           + "can be made here until it is back on. Studio on your computer makes "
