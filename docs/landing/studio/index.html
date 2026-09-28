@@ -405,7 +405,7 @@ p.sub { color: #a1a1aa; margin-top: 12px; max-width: 62ch; line-height: 1.65; }
     <div class="tool">
       <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
       <h3>AI-assisted, source included</h3>
-      <p>Use a supported coding provider in Studio, then inspect and revise the source. Prefer your editor? The CLI supports the build and packaging workflow.</p>
+      <p>Claude, Codex, Grok or Gemini on your computer, or Krate's own AI in your browser. Then read and change the source. Prefer your editor? The CLI does the build and packaging.</p>
     </div>
     <div class="tool">
       <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 4.5-3.2 7.8-8 9-4.8-1.2-8-4.5-8-9V7z"/><path d="M9 12l2 2 4-4"/></svg>
@@ -548,6 +548,7 @@ p.sub { color: #a1a1aa; margin-top: 12px; max-width: 62ch; line-height: 1.65; }
   The runtime is open source; hosted services are optional.</p>
   <div class="sCtas">
     <a class="pill pill-primary" href="/#ctaSec">Download Studio</a>
+    <a class="pill" href="/login/?next=studio" id="webBtnClose" hidden>Use it in your browser</a>
     <a class="pill" href="/docs/">Read the docs</a>
   </div>
 </section>
@@ -593,14 +594,16 @@ p.sub { color: #a1a1aa; margin-top: 12px; max-width: 62ch; line-height: 1.65; }
     fetch(builder + "/health")
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (h) {
-        var webBtn = $("webBtn");
-        if (h && h.authoring !== "off" && webBtn) {
+        if (h && h.authoring !== "off") {
           // Studio is laid out for a computer screen; a phone gets the
           // one-box page, as on the homepage.
-          if (window.matchMedia && window.matchMedia("(max-width: 700px)").matches) {
-            webBtn.href = "/make/";
-          }
-          webBtn.hidden = false;
+          var phone = window.matchMedia && window.matchMedia("(max-width: 700px)").matches;
+          ["webBtn", "webBtnClose"].forEach(function (id) {
+            var b = $(id);
+            if (!b) return;
+            if (phone) b.href = "/make/";
+            b.hidden = false;
+          });
         }
         if (!h || h.authoring !== "off") return;
         line.innerHTML = "Making apps in the browser is paused for now, so nothing "
