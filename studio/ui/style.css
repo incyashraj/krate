@@ -2883,24 +2883,6 @@ body.light .set-side { background: rgba(12, 16, 23, 0.03); }
  *
  * Written the same way rather than as 620px, so the two cannot drift apart
  * again the next time one of them is adjusted. */
-.sugg-list { width: min(620px, 86vw); margin-top: 14px; }
-.sugg-list button {
-  width: 100%; display: flex; align-items: center; gap: 11px; font-family: var(--sans);
-  font-size: 13.5px; color: var(--muted); background: transparent; border: 0;
-  border-radius: 11px; padding: 11px 13px; cursor: pointer; text-align: left;
-  transition: background 0.16s, color 0.16s;
-}
-.sugg-list button:hover { background: var(--film); color: var(--text); }
-.sugg-list .ic {
-  width: 24px; height: 24px; border-radius: 7px; border: 1px solid rgba(255, 255, 255, 0.1);
-  display: grid; place-items: center; flex: none;
-}
-.sugg-list .ic i {
-  width: 9px; height: 9px; border: 1.3px solid rgba(255, 255, 255, 0.35);
-  border-radius: 3px; transform: rotate(45deg); display: block;
-}
-.sugg-list .go { margin-left: auto; opacity: 0; transition: opacity 0.16s, transform 0.16s; transform: translateX(-4px); }
-.sugg-list button:hover .go { opacity: 0.6; transform: none; }
 
 /* ---- corrections after seeing it run ----------------------------------
  * Four things the running app showed that the mockup could not:
@@ -2937,8 +2919,6 @@ body.light .set-side { background: rgba(12, 16, 23, 0.03); }
 .dockwrap { z-index: 9000; }
 
 /* Suggestions: the text is the thing. */
-.sugg-list .ic { display: none; }
-.sugg-list button { padding-left: 15px; }
 
 
 /* ---- round three: what the screenshots showed --------------------------
@@ -2952,11 +2932,6 @@ body.light .set-side { background: rgba(12, 16, 23, 0.03); }
 
 /* A trending mark in front of each suggestion: these are the things people
  * are actually making, so the icon says "popular", not "generic bullet". */
-.sugg-list .trend {
-  width: 22px; height: 22px; flex: none; display: grid; place-items: center;
-  color: var(--blue); opacity: 0.85;
-}
-.sugg-list button:hover .trend { opacity: 1; }
 
 /* Settings that are not wired to anything yet read as unavailable rather
  * than pretending to work. */
@@ -4502,7 +4477,6 @@ body.side-resizing .shelf { transition: none; }
   .bigbar-row .aichip { display: none; }
   .bigbar-row .web-mode { margin-right: 0; }
   .bigbar { padding-bottom: 10px; }
-  .sugg-list button { font-size: 13px; padding: 11px 12px; }
   /* The ambient mark is sized off the smaller axis, which on a tall phone
      is the width -- so it filled the screen. Held back. */
 
