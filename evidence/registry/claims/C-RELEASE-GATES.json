@@ -6,7 +6,7 @@
   "release"
  ],
  "subject": {
-  "commit": "c2f9a1e08"
+  "commit": "44d07d83b"
  },
  "requires": {
   "evidence_classes": [
@@ -21,11 +21,11 @@
   "same_bytes": false
  },
  "evidence": [
-  "E-CI-c2f9a1e08-full-test-macos-latest-r2",
-  "E-CI-c2f9a1e08-full-test-ubuntu-latest-r2",
-  "E-CI-c2f9a1e08-full-test-windows-2022-r2",
-  "E-CI-c2f9a1e08-dependency-audit-cargo-deny-r2",
-  "E-CI-c2f9a1e08-fuzz-evidence-freshness-r2"
+  "E-CI-44d07d83b-full-test-macos-latest",
+  "E-CI-44d07d83b-full-test-ubuntu-latest",
+  "E-CI-44d07d83b-full-test-windows-2022",
+  "E-CI-44d07d83b-dependency-audit-cargo-deny",
+  "E-CI-44d07d83b-fuzz-evidence-freshness"
  ],
  "declared_state": "UNSUPPORTED",
  "exclusions": [
