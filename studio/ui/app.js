@@ -7404,7 +7404,15 @@ function setShelfOpen(open) {
   // Escape closes it, the way it closes every other panel here. A drawer
   // the keyboard cannot back out of reads as a trap.
   document.addEventListener("keydown", (e) => {
-    if ((e.key === "Escape" || e.key === "Esc") && side.dataset.open === "true") setOpen(false);
+    if (!(e.key === "Escape" || e.key === "Esc") || side.dataset.open !== "true") return;
+    // Escape closes the topmost thing only. With a sheet open (Settings,
+    // Ship it) it closed the sheet AND folded the drawer away, so the
+    // navigation vanished every time somebody backed out of a dialog.
+    const sheetOpen = [...document.querySelectorAll(".sheet-wrap")].some(
+      (w) => !w.classList.contains("hidden"),
+    );
+    if (sheetOpen || e.defaultPrevented) return;
+    setOpen(false);
   });
 
   // The drawer STAYS OPEN when you navigate with it.
