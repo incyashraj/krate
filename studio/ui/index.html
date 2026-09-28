@@ -254,6 +254,7 @@
     </header>
 
     <main class="home">
+      <div class="home-glow" aria-hidden="true"><i class="g1"></i><i class="g2"></i><i class="g3"></i><i class="g4"></i><i class="g5"></i></div>
 
       <div class="home-hero">
         <!-- The mark and the person's name on one small line, then the
@@ -519,18 +520,7 @@
               <div class="done-actions">
                 <button class="btn btn-primary" id="openBtn">Run it</button>
                 <button class="btn" id="sourceBtn" title="Open the Cargo project this was built from">Source</button>
-                <button class="btn" id="shareBtn">Ship it</button>
                 <button class="btn btn-ghost" id="infoBtn">Details</button>
-              </div>
-              <div class="share-result hidden" id="shareResult">
-                <p class="share-head" id="shareHead">Here's your link. Send it to anyone</p>
-                <div class="share-row">
-                  <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6.5 9.5l3-3"/><path d="M7.5 4.7l1.2-1.2a2.33 2.33 0 013.3 3.3l-1.2 1.2M8.5 11.3l-1.2 1.2a2.33 2.33 0 01-3.3-3.3l1.2-1.2"/></svg>
-                  <span class="link" id="shareLink"></span>
-                  <button class="share-copy" id="shareCopyBtn">Copy</button>
-                </div>
-                <p class="share-sub">It opens on Mac, Windows and Linux. They get
-                Krate once, like a video player. After that it just opens.</p>
               </div>
             </div>
           </div>
@@ -1042,43 +1032,6 @@
     </div>
   </div>
 
-  <div class="sheet-wrap hidden" id="sendSheet">
-    <div class="sheet sheet-send">
-      <h2>Ship it</h2>
-      <p class="sheet-sub">Three ways to hand this app to someone.</p>
-      <div class="send-opts">
-        <button class="send-opt" id="sendCardBtn" type="button">
-          <b>Send the file</b>
-          <span>Email or message it like a photo. It arrives as a picture of
-          your app, and the app is inside it.</span>
-        </button>
-        <button class="send-opt" id="sendLinkBtn" type="button">
-          <b>Share a link</b>
-          <span>Post it anywhere. Anyone who opens the link gets the app, and
-          the link keeps working when you make changes.</span>
-        </button>
-        <button class="send-opt send-opt-quiet" id="sendWrapBtn" type="button">
-          <b>For someone new to Krate</b>
-          <span>They double-click once and it sets itself up. After that,
-          every Krate app just opens.</span>
-        </button>
-        <div class="send-wrap-os hidden" id="sendWrapOs">
-          <button class="btn" data-wrap="mac" type="button">Mac</button>
-          <button class="btn" data-wrap="windows" type="button">Windows</button>
-          <button class="btn" data-wrap="linux" type="button">Linux</button>
-        </div>
-      </div>
-      <div class="send-done hidden" id="sendCardDone">
-        <img id="sendCardImg" alt="The card: your app's picture with the app inside" />
-        <p id="sendCardNote"></p>
-        <button class="send-quiet-link" id="sendRawBtn" type="button">Use the plain file instead</button>
-      </div>
-      <div class="detail-actions">
-        <button class="btn btn-ghost sheet-close" data-close="sendSheet">Close</button>
-      </div>
-      <p class="detail-note" id="sendNote"></p>
-    </div>
-  </div>
 
   <!-- The first time somebody presses Run it in a browser.
        A tab cannot open a native app, and it cannot tell whether this

@@ -1213,7 +1213,7 @@ function appendMessage(who, body, files, extra) {
     el.appendChild(row);
   }
   const note = who === "KRATE" && extra && extra.variant === "note";
-  placeInThread(el, note);
+  placeInThread(el, note, extra && extra.when);
   if (who === "KRATE" && !note) addMsgTools(el, body, extra && extra.when);
 }
 
@@ -1235,13 +1235,15 @@ const STATUS_LINES = new Set([
  * making that change.") are the working-out, not the answer. One after
  * another they gather under a single line that opens, the way a chat shows
  * its thinking, so the answers are what the eye lands on. */
-function placeInThread(el, note) {
+function placeInThread(el, note, when) {
   const thread = $("thread");
+  const at = when ? when * 1000 : Date.now();
   if (note) {
     let group = thread.lastElementChild;
     if (!group || !group.classList.contains("thought")) {
       group = document.createElement("div");
       group.className = "thought";
+      group.dataset.t0 = String(at);
       const head = document.createElement("button");
       head.type = "button";
       head.className = "thought-head";
@@ -1263,17 +1265,62 @@ function placeInThread(el, note) {
       });
       group.append(head, steps);
       thread.appendChild(group);
+      // Live only when it is happening now: a replayed transcript carries
+      // its times and gets no running clock.
+      if (!when) {
+        group.classList.add("live");
+        group._clock = setInterval(() => paintThoughtHead(group), 1000);
+      }
     }
+    // Every step keeps the moment it happened, counted from the first one,
+    // so opening the fold reads as a record of the work, not one line twice.
+    const stamp = document.createElement("time");
+    stamp.className = "t-at";
+    stamp.textContent = clockText(Math.max(0, Math.round((at - Number(group.dataset.t0)) / 1000)));
+    el.insertBefore(stamp, el.firstChild);
     group.querySelector(".thought-steps").appendChild(el);
-    const n = group.querySelectorAll(".thought-steps > .msg").length;
-    const said = (el.querySelector(".body") || el).textContent.trim();
-    group.querySelector(".t-now").textContent = n > 1 ? `${said} · ${n} steps` : said;
+    paintThoughtHead(group);
   } else {
+    // The answer closes whatever was being thought about.
+    const live = thread.querySelector(".thought.live");
+    if (live) settleThought(live, at);
     thread.querySelectorAll(".msg.last").forEach((m) => m.classList.remove("last"));
     el.classList.add("last");
     thread.appendChild(el);
   }
   thread.scrollTop = thread.scrollHeight;
+}
+
+function clockText(secs) {
+  return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+}
+function durationText(secs) {
+  if (secs < 60) return `${secs} s`;
+  const m = Math.floor(secs / 60), s = secs % 60;
+  return s ? `${m} min ${s} s` : `${m} min`;
+}
+
+/* The fold's one line: the latest step and, while it is live, the clock. */
+function paintThoughtHead(group) {
+  const steps = group.querySelectorAll(".thought-steps > .msg");
+  const last = steps[steps.length - 1];
+  const said = last ? (last.querySelector(".body") || last).textContent.trim().replace(/[.…]+$/, "") : "";
+  const now = group.querySelector(".t-now");
+  if (group.classList.contains("live")) {
+    const secs = Math.max(0, Math.round((Date.now() - Number(group.dataset.t0)) / 1000));
+    now.textContent = `${said} · ${clockText(secs)}`;
+  } else {
+    now.textContent = steps.length > 1 ? `${said} · ${steps.length} steps` : said;
+  }
+}
+
+/* When the answer lands: how long it took and how many steps there were. */
+function settleThought(group, endMs) {
+  clearInterval(group._clock);
+  group.classList.remove("live");
+  const n = group.querySelectorAll(".thought-steps > .msg").length;
+  const secs = Math.max(1, Math.round((endMs - Number(group.dataset.t0)) / 1000));
+  group.querySelector(".t-now").textContent = `Thought for ${durationText(secs)} · ${n} step${n === 1 ? "" : "s"}`;
 }
 
 /* Copy, and "..." for when it was said. Under Krate's answers only: your
@@ -1445,7 +1492,7 @@ function settleChipOk(el, version, sizeLabel, minsLabel, app) {
   const share = document.createElement("button");
   share.className = "vact vg";
   share.textContent = "Share";
-  share.addEventListener("click", () => openSendSheet(mine, version));
+  share.addEventListener("click", () => openSendSheet(mine, version, share));
   chip.appendChild(share);
 }
 
@@ -2361,16 +2408,6 @@ function fillDone(result, opts) {
     shot.removeAttribute("src");
     shot.classList.add("hidden");
     stage.classList.add("no-shot");
-  }
-  $("shareResult").classList.toggle("hidden", !result.share_url);
-  $("shareResult").classList.remove("error");
-  if (result.share_url) {
-    $("shareHead").textContent = "Anyone with this link can open it";
-    $("shareLink").textContent = result.share_url;
-    // showActionError hides Copy, because a status message is not something
-    // to copy and send. A real link puts it back.
-    $("shareCopyBtn")?.classList.remove("hidden");
-    resetShareCopy();
   }
   const card = $("doneCard");
   card.classList.remove("in");
@@ -5260,103 +5297,88 @@ async function openApp(which, version) {
 /// already looking -- the share row, which is the only line on this card
 /// that can carry a sentence.
 function showActionError(err) {
-  const text = String(err && err.message ? err.message : err);
-  $("shareLink").textContent = text;
-  $("shareResult").classList.remove("hidden");
-  $("shareResult").classList.add("error");
-  // This row is the share row, and its heading says "Here's your link. Send
-  // it to anyone." A message that is not a link inherited that heading and
-  // the Copy button beside it -- so pressing Open put "Downloaded.
-  // Double-click the file on your Mac, Windows or Linux" under "Here's your
-  // link", with Copy offering to copy that sentence to send to somebody.
-  //
-  // So the heading follows the content, and Copy is only offered for
-  // something worth copying.
-  const head = $("shareHead");
-  if (head) head.textContent = "";
-  const copy = $("shareCopyBtn");
-  if (copy) copy.classList.add("hidden");
+  toastish(err);
 }
-
-
-/* One button owns copying the link; every path that fills the link row
- * resets it back to "Copy". */
-function resetShareCopy() {
-  const b = $("shareCopyBtn");
-  b.classList.remove("done");
-  b.textContent = "Copy";
-}
-function markShareCopied() {
-  const b = $("shareCopyBtn");
-  b.classList.add("done");
-  b.textContent = "Copied \u2713";
-  clearTimeout(state.shareCopyTimer);
-  state.shareCopyTimer = setTimeout(resetShareCopy, 2600);
-}
-$("shareCopyBtn").addEventListener("click", async () => {
-  try {
-    await navigator.clipboard.writeText($("shareLink").textContent);
-    markShareCopied();
-  } catch (e) {}
-});
 /* The publish sheet: what the person is about to put in the store, shown
    before it goes -- name, one line, screenshot, optional logo. Publishing
    again later replaces the listing server-side, so this is also the edit
    path. */
 const pubState = { shotPath: null, iconPath: null };
 
-function openSendSheet(which, version) {
-  // The version this sheet is about, so every button inside it acts on the
-  // same one. Without this the sheet opened from v1's chip and then shared
-  // whatever the newest build was, because each button re-read the session.
-  state.sharing = (which && which.path) ? which : null;
-  const app = state.sharing || currentApp();
+/* Share: a small menu on the Share button, not a sheet. Three things you can
+ * do with the app, each one row; the link, once there is one, is the first
+ * row and pressing it copies. `which` is the version a chip asked about. */
+function openSendSheet(which, version, anchor) {
+  const app = (which && which.path) ? which : currentApp();
   if (!app) return;
-  $("sendCardDone").classList.add("hidden");
-  $("sendNote").textContent = "";
-  $("sendCardBtn").disabled = false;
-  // Say which version this is when it is not the newest, so nobody sends an
-  // old build believing it is the one on screen.
-  const note = $("sendNote");
-  const newest = state.session && state.session.builds;
-  if (note && version && newest && version < newest) {
-    note.textContent = `Sharing v${version}. The newest is v${newest}.`;
+  const url = !which && state.session && state.session.result && state.session.result.share_url;
+  const items = [];
+  if (url) {
+    items.push({ label: "Copy link", value: url.replace(/^https?:\/\//, ""), run: (row, label) => {
+      navigator.clipboard.writeText(url).then(() => { label.textContent = "Copied"; setTimeout(() => { label.textContent = "Copy link"; }, 1200); }).catch(() => {});
+      return true;
+    } });
+  } else {
+    items.push({ label: "Share a link", value: "anyone can open it", run: () => openPublishSheet() });
   }
-  $("sendSheet").classList.remove("hidden");
+  items.push({ label: "Send the file", value: "a picture with the app inside", run: (row, label) => { sendCard(app, label); return true; } });
+  // The third way opens into the three computers it can be for, in place.
+  items.push({ label: "For someone new to Krate", value: "installs once, then opens", run: (row) => {
+    if (row.dataset.open) return true;
+    row.dataset.open = "1";
+    let after = row;
+    for (const [os, name] of [["mac", "Mac"], ["windows", "Windows"], ["linux", "Linux"]]) {
+      const b = document.createElement("button");
+      b.type = "button"; b.setAttribute("role", "menuitem"); b.className = "pop-sub";
+      const label = document.createElement("span"); label.textContent = `For a ${name}`;
+      b.appendChild(label);
+      b.addEventListener("click", (e) => { e.stopPropagation(); makeWrap(app, os, label); });
+      after.insertAdjacentElement("afterend", b); after = b;
+    }
+    return true;
+  } });
+  if (version && state.session && state.session.builds && version < state.session.builds) {
+    items.push({ rule: true });
+    items.push({ label: `Sharing v${version}`, value: `newest is v${state.session.builds}` });
+  }
+  popMenu(anchor || $("barShare"), items);
 }
 
-async function sendCard() {
-  // The version the sheet was opened for, when it was opened from a
-  // version chip. Re-reading currentApp() here sent the NEWEST build from
-  // a sheet whose chip said v1.
-  const app = state.sharing || currentApp();
-  if (!app) return;
-  $("sendCardBtn").disabled = true;
-  $("sendNote").textContent = "Photographing your app\u2026 a few seconds.";
+async function sendCard(app, label) {
+  const was = label.textContent;
+  label.textContent = "Photographing your app…";
   try {
     const cardPath = await invoke("make_card", { path: app.path });
-    const data = await invoke("read_image", { path: cardPath });
-    $("sendCardImg").src = data;
-    $("sendCardDone").classList.remove("hidden");
     const name = cardPath.split(/[\\/]/).pop();
-    $("sendNote").textContent = "";
     // The file in their hand: the OS share sheet with the card, so AirDrop,
     // Mail and Messages are one tap away. Where the sheet is not available,
-    // the Finder reveal is the honest fallback -- and the note says which
-    // world they are in.
+    // the Finder reveal is the honest fallback.
     try {
       await invoke("share_file", { path: cardPath });
-      $("sendCardNote").textContent = name +
-        ", pick where it goes. Send it as a file, not as a photo.";
+      label.textContent = `${name} · pick where it goes`;
     } catch (e) {
-      $("sendCardNote").textContent = name +
-        " is in the folder that just opened. Drag it into mail, AirDrop, or a " +
-        "chat's paperclip. Send it as a file, not as a photo.";
+      label.textContent = `${name} · in the folder that opened`;
       try { await invoke("reveal", { path: cardPath }); } catch (e2) {}
     }
   } catch (err) {
-    $("sendNote").textContent = plainWords(err);
-    $("sendCardBtn").disabled = false;
+    label.textContent = plainWords(err);
+    setTimeout(() => { label.textContent = was; }, 2500);
+  }
+}
+
+async function makeWrap(app, os, label) {
+  const was = label.textContent;
+  label.textContent = "Making it…";
+  try {
+    const wrapPath = await invoke("make_wrap", { path: app.path, target: os });
+    const name = wrapPath.split(/[\\/]/).pop();
+    // The Mac gift is a FOLDER -- an opener Apple has notarized, with the
+    // app beside it, because a downloaded script cannot pass Gatekeeper.
+    label.textContent = os === "mac" ? `${name} · send the whole folder` : `${name} · in the folder that opened`;
+    try { await invoke("reveal", { path: wrapPath }); } catch (e) {}
+  } catch (err) {
+    label.textContent = plainWords(err);
+    setTimeout(() => { label.textContent = was; }, 2500);
   }
 }
 
@@ -5542,12 +5564,9 @@ async function publishFromSheet() {
     });
     state.session.result.share_url = url;
     $("publishSheet").classList.add("hidden");
-    $("shareHead").textContent = "Here's your link. Send it to anyone";
-    $("shareLink").textContent = url;
-    $("shareResult").classList.remove("hidden", "error");
-    $("shareCopyBtn")?.classList.remove("hidden");
-    resetShareCopy();
-    try { await navigator.clipboard.writeText(url); markShareCopied(); } catch (e) {}
+    // Copied at once; it stays one press away under Share.
+    try { await navigator.clipboard.writeText(url); } catch (e) {}
+    toastish("Link copied. It's under Share whenever you need it.");
     persist();
   } catch (err) {
     // The raw engine words go to the log even when the sheet shows plainer
@@ -6114,7 +6133,7 @@ function setupPanel() {
     next.focus();
   });
   $("barRun")?.addEventListener("click", () => $("openBtn").click());
-  $("barShare")?.addEventListener("click", () => $("shareBtn").click());
+  $("barShare")?.addEventListener("click", () => openSendSheet(null, null, $("barShare")));
   $("filesAttach")?.addEventListener("click", () => $("attachBtn").click());
   $("filesSave")?.addEventListener("click", () => {
     const app = currentApp();
@@ -6970,49 +6989,6 @@ $("openBtn").addEventListener("click", () => openApp());
 // would pass the MouseEvent as the version to share -- harmless in browsers
 // where an event has no `path`, and not something to depend on, since older
 // Chrome gave events exactly that property.
-$("shareBtn").addEventListener("click", () => openSendSheet());
-$("sendCardBtn").addEventListener("click", sendCard);
-$("sendLinkBtn").addEventListener("click", () => {
-  $("sendSheet").classList.add("hidden");
-  openPublishSheet();
-});
-$("sendWrapBtn").addEventListener("click", () => {
-  $("sendWrapOs").classList.toggle("hidden");
-});
-document.querySelectorAll("#sendWrapOs [data-wrap]").forEach((b) => {
-  b.addEventListener("click", async () => {
-    const app = currentApp();
-    if (!app) return;
-    const os = b.dataset.wrap;
-    b.disabled = true;
-    $("sendNote").textContent = "Making the wrap…";
-    try {
-      const wrapPath = await invoke("make_wrap", { path: app.path, target: os });
-      const name = wrapPath.split(/[\\/]/).pop();
-      const machine = os === "mac" ? "Mac" : os === "windows" ? "Windows PC" : "Linux machine";
-      // The Mac gift is a FOLDER -- an opener Apple has notarized, with the
-      // app beside it, because a downloaded script cannot pass Gatekeeper.
-      // Telling someone to send a file when they must send a folder is how
-      // a friend receives an opener with nothing to open.
-      $("sendNote").textContent = os === "mac"
-        ? name + " just opened in Finder. Send the WHOLE folder: zip it, or "
-          + "drop it in a shared drive. Their first double-click installs Krate "
-          + "once, then opens this app."
-        : name + " is in the folder that just opened. It installs Krate once on "
-          + "their " + machine + ", then opens this app. The player is "
-          + "downloaded, never bundled.";
-      try { await invoke("reveal", { path: wrapPath }); } catch (e) {}
-    } catch (err) {
-      $("sendNote").textContent = plainWords(err);
-    }
-    b.disabled = false;
-  });
-});
-$("sendRawBtn").addEventListener("click", async () => {
-  const app = state.sharing || currentApp();
-  if (!app) return;
-  try { await invoke("reveal", { path: app.path }); } catch (e) {}
-});
 $("pubGo").addEventListener("click", publishFromSheet);
 document.querySelector('[data-close="publishSheet"]').addEventListener("click", () => {
   state.loginSurface = "gate";
@@ -8749,6 +8725,9 @@ document.addEventListener("click", (event) => {
 $("profSignOut")?.addEventListener("click", async () => {
   try { await invoke("account_logout"); } catch (e) {}
   state.account = null;
+  // In a tab, signing out is leaving: the site's front page is where a
+  // signed-out person belongs, and it is one press from signing back in.
+  if (!tauri) { location.replace("/"); return; }
   loadProfilePage();
   paintGreeting();
 });

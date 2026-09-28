@@ -14,6 +14,9 @@
 
 #viewSession .session-body {
   flex: 1; display: flex; min-height: 0; height: 100%;
+  /* Room between the columns and the window's edge: a panel flush against
+     the frame read as part of the frame. */
+  padding: 4px 6px 8px 4px;
 }
 
 /* ---- the conversation column ----------------------------------------- */
@@ -26,7 +29,7 @@
   display: flex; flex-direction: column; min-height: 0;
   border-right: 0;
 }
-#viewSession .rail-head { gap: 4px; padding-right: 10px; }
+#viewSession .rail-head { gap: 4px; padding-left: 10px; padding-right: 10px; }
 body.windows #viewSession .rail-head { padding-right: 10px; }
 
 .sess-title {
@@ -80,6 +83,10 @@ body.windows #viewSession .rail-head { padding-right: 10px; }
 }
 .thought-head:hover { color: var(--muted); }
 .thought-head .t-now { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thought.live .t-now::after { content: ""; display: inline-block; width: 1.2em; text-align: left; animation: t-dots 1.2s steps(4, end) infinite; }
+@keyframes t-dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+.thought-steps .t-at { flex: none; min-width: 34px; font-variant-numeric: tabular-nums; font-size: 11.5px; color: var(--ghost, var(--faint)); }
+#viewSession .thought-steps .msg { display: flex; gap: 10px; align-items: baseline; }
 .thought-head .t-caret { flex: none; transition: transform 0.15s; font-size: 14px; line-height: 1; }
 .thought.open .t-caret { transform: rotate(90deg); }
 .thought-steps {
@@ -93,7 +100,7 @@ body.windows #viewSession .rail-head { padding-right: 10px; }
 /* The row under an answer: copy, and "..." for the details of that turn. */
 .msg-tools {
   display: flex; align-items: center; gap: 2px; margin-top: 6px;
-  opacity: 0; transition: opacity 0.15s;
+  opacity: 0.6; transition: opacity 0.15s;
 }
 .msg:hover .msg-tools, .msg-tools:focus-within, .msg.last .msg-tools { opacity: 1; }
 .msg-tools button {
@@ -106,7 +113,7 @@ body.windows #viewSession .rail-head { padding-right: 10px; }
 
 /* A small menu, shared by the title and the "..." buttons. */
 .pop {
-  position: fixed; z-index: 90; min-width: 220px;
+  position: fixed; z-index: 90; min-width: 240px;
   background: var(--panel); border: 1px solid var(--line-strong);
   border-radius: 12px; padding: 5px;
   box-shadow: 0 18px 50px -12px rgba(0, 0, 0, 0.55);
@@ -119,6 +126,7 @@ body.light .pop { box-shadow: 0 18px 50px -18px rgba(12, 16, 23, 0.35); }
   text-align: left;
 }
 .pop .pop-row { cursor: default; }
+.pop .pop-sub { padding-left: 24px; color: var(--muted, var(--text)); }
 .pop button:hover { background: var(--film-x); }
 .pop .pop-val { margin-left: auto; color: var(--faint); font-variant-numeric: tabular-nums; }
 .pop hr { border: 0; border-top: 1px solid var(--line); margin: 5px 2px; }
@@ -162,7 +170,7 @@ body.light .pop { box-shadow: 0 18px 50px -18px rgba(12, 16, 23, 0.35); }
   display: flex; flex-direction: column;
 }
 body.macos #viewSession .panel-bar { padding-left: 8px; }
-#viewSession .panel-bar { gap: 8px; padding-left: 8px; padding-right: 12px; }
+#viewSession .panel-bar { gap: 8px; padding-left: 10px; padding-right: 10px; }
 body.windows #viewSession .panel-bar { padding-right: 150px; }
 #viewSession .panel-bar > .ptabs { -webkit-app-region: no-drag; }
 
@@ -190,7 +198,7 @@ body.windows #viewSession .panel-bar { padding-right: 150px; }
 
 .panel-body {
   flex: 1; min-height: 0; position: relative;
-  margin: 0 10px 10px 4px;
+  margin: 0 4px 6px 4px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 16px;
