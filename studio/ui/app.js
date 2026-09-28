@@ -3497,6 +3497,26 @@ async function resumeRunningBuild(request, reattach) {
 async function buildNow(request, files, revising, planSession, starterShape) {
   if (state.buildingSession) { invoke("dbg_log", { line: "buildNow() BAILED: buildingSession set" }).catch(()=>{}); return; }
   resumeAfterKey = null;
+  // Plan mode means no new app, whatever the path here: a stray "build it"
+  // in the chat, or a plan's own Build it button. Said before anything
+  // else, so no "while I work..." precedes a build that never starts. The
+  // web bridge refuses in create_app as well, for any path that skips this.
+  if (!revising && composerMode() === "plan") {
+    say("KRATE", "You are in Plan mode, so nothing was built. Switch to Build and I will make this app.", null, {
+      variant: "ask",
+      actions: [{
+        label: "Switch to Build and make it",
+        primary: true,
+        run: () => {
+          setComposerMode("build");
+          buildNow(request, files, revising, planSession, starterShape);
+        },
+      }],
+    });
+    show("idle");
+    unlockComposer("Describe the app you want…");
+    return;
+  }
   // The composer stays live during a build so a thought can be queued
   // rather than lost.
   $("prompt").placeholder = "Add a change. It runs when this finishes…";
@@ -3569,15 +3589,6 @@ async function buildNow(request, files, revising, planSession, starterShape) {
   }
 
   try {
-    // Plan mode means no new app, whatever the path here: a stray "build
-    // it" in the chat, or a plan's own Build it button. Refused as the web
-    // bridge refuses it, so both get the same "Switch to Build" answer.
-    if (!revising && composerMode() === "plan") {
-      const refused = new Error("You are in Plan mode, so nothing was built. Switch to Build and I will make this app.");
-      refused.refusal = true;
-      refused.planMode = true;
-      throw refused;
-    }
     const result = revising
       ? await invoke("revise_app", {
           path: currentApp().path,
