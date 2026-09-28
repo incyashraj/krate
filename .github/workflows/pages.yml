@@ -248,6 +248,8 @@ jobs:
           # And that the homepage's prompt bar starts a build only from its
           # own fresh handoff, once, and never from a link (K-885).
           node docs/landing/studio/frontpage-test.mjs
+          # A signed-in visitor lands in Studio, never on a link's say-so.
+          node docs/landing/studio/home-redirect-test.mjs
 
           mkdir -p _site/app
           cp -R studio/ui/. _site/app/

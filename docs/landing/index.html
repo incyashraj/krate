@@ -2,6 +2,25 @@
 <html lang="en" class="dark">
 <head>
 <meta charset="utf-8" />
+<script>
+/* Signed in, and arriving from anywhere but this site: go straight to
+   Studio, the way an app you use opens on your work rather than its own
+   advert. A link within the site (the logo, a docs page's "Home"), a
+   #section link, or ?home still shows the page. Only the site's own
+   sign-in token decides; nothing in the address can send anyone anywhere. */
+(function () {
+  document.documentElement.classList.add("js");
+  try {
+    if (!localStorage.getItem("krate_tok")) return;
+    if (/[?&]home\b/.test(location.search) || location.hash) return;
+    var ref = document.referrer;
+    if (ref) {
+      try { if (new URL(ref).origin === location.origin) return; } catch (e) {}
+    }
+    location.replace("/app/");
+  } catch (e) {}
+})();
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="theme-color" content="#000000" />
 <title>Krate: build desktop apps once, ship one file</title>
@@ -1493,6 +1512,226 @@ picture source { display: none; }
 .secondDoor.webDoor a { color: #fff; font-weight: 600; text-decoration: none; }
 .secondDoor.webDoor a:hover { text-decoration: underline; }
 </style>
+<style>
+/* ================================================= below the first screen
+   One idea per section, a lot of black between them, and motion that
+   only ever means "this just arrived". Everything that starts hidden is
+   gated on .js (set in the head), so a reader without scripts sees it all. */
+.kx { position: relative; z-index: 2; width: 100%; background: #000; padding: clamp(80px, 12vw, 140px) 24px 0; }
+.kxHead { max-width: 760px; margin: 0 auto 48px; text-align: center; }
+.kxHead h2, .howCopy h2 {
+  font-family: var(--disp); font-weight: 600; letter-spacing: -0.01em;
+  font-size: clamp(28px, 4.2vw, 48px); line-height: 1.12; color: #fff;
+}
+.kxHead p { margin-top: 16px; font-size: clamp(15px, 1.5vw, 17px); line-height: 1.6; color: #a1a1aa; }
+.kxHead code, .kxMade code { font-family: var(--mono, ui-monospace, monospace); color: #d4d4d8; }
+.kx h3 { font-size: 17px; font-weight: 600; color: #fff; letter-spacing: -0.005em; }
+.kx p a { color: #d4d4d8; text-decoration: underline; text-underline-offset: 3px; }
+.kx p a:hover { color: #fff; }
+
+.js .reveal { opacity: 0; transform: translateY(26px); filter: blur(6px); }
+.js .reveal.in { opacity: 1; transform: none; filter: none;
+  transition: opacity 0.9s ease, transform 0.9s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.9s ease; }
+.wCards .reveal:nth-child(2), .facts .reveal:nth-child(2), .ways .reveal:nth-child(2) { transition-delay: 0.12s; }
+.wCards .reveal:nth-child(3), .facts .reveal:nth-child(3) { transition-delay: 0.24s; }
+
+/* ---- three cards: describe, build, send */
+.wCards { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.wCard {
+  border-radius: 22px; padding: 14px 14px 26px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.015));
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.wCard h3 { margin: 22px 12px 8px; }
+.wCard p { margin: 0 12px; font-size: 14.5px; line-height: 1.6; color: #a1a1aa; }
+.wVis {
+  position: relative; height: 230px; border-radius: 14px; overflow: hidden;
+  display: grid; place-items: center;
+  background:
+    radial-gradient(80% 90% at 50% 110%, rgba(165, 88, 251, 0.26), transparent 70%),
+    radial-gradient(60% 60% at 20% 0%, rgba(73, 34, 229, 0.18), transparent 70%),
+    #07070a;
+}
+.miniBar {
+  width: 82%; display: flex; align-items: center; gap: 2px;
+  padding: 14px 12px 14px 16px; border-radius: 16px;
+  background: rgba(24, 24, 27, 0.92); border: 1px solid rgba(255,255,255,0.14);
+  box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+  font-size: 14px; color: #e4e4e7; white-space: nowrap; overflow: hidden;
+}
+.miniText { overflow: hidden; text-overflow: clip; }
+.miniCaret { width: 2px; height: 17px; background: #c4b5fd; flex: none; animation: caretBlink 1s steps(1) infinite; }
+.miniSend { margin-left: auto; width: 28px; height: 28px; border-radius: 50%; flex: none; display: grid; place-items: center; background: #fff; color: #000; }
+@keyframes caretBlink { 50% { opacity: 0; } }
+.miniWin {
+  position: relative; width: 58%; aspect-ratio: 720 / 880; max-height: 88%;
+  border-radius: 12px; overflow: hidden; background: #0b0b0f;
+  border: 1px solid rgba(255,255,255,0.14); box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+}
+.miniWin .dots { position: absolute; top: 8px; left: 10px; display: flex; gap: 5px; z-index: 2; }
+.miniWin .dots i { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,0.22); }
+.miniWin img { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
+.miniWin .scan {
+  position: absolute; left: 0; right: 0; height: 36%; top: -40%;
+  background: linear-gradient(180deg, transparent, rgba(165, 88, 251, 0.35), transparent);
+  animation: scanDown 3.2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+.miniWin .tag {
+  position: absolute; left: 8px; bottom: 8px; font-size: 10.5px; color: #e9d5ff;
+  background: rgba(10,10,14,0.8); border: 1px solid rgba(196,181,253,0.3); border-radius: 999px; padding: 3px 8px;
+}
+@keyframes scanDown { to { top: 110%; } }
+.kFile { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.kFile img { width: 64px; height: 64px; filter: drop-shadow(0 12px 30px rgba(165, 88, 251, 0.45)); animation: fileFloat 4s ease-in-out infinite; }
+.kFile b { font-family: var(--mono, ui-monospace, monospace); font-size: 13px; font-weight: 500; color: #e4e4e7; }
+.kFile .oses { display: flex; gap: 6px; margin-top: 6px; }
+.kFile .oses span {
+  font-size: 11.5px; color: #a1a1aa; padding: 4px 10px; border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.1); animation: osLight 3.6s ease-in-out infinite;
+}
+.kFile .oses span:nth-child(2) { animation-delay: 1.2s; }
+.kFile .oses span:nth-child(3) { animation-delay: 2.4s; }
+@keyframes fileFloat { 50% { transform: translateY(-6px); } }
+@keyframes osLight {
+  0%, 60%, 100% { color: #a1a1aa; border-color: rgba(255,255,255,0.1); background: transparent; }
+  15%, 40% { color: #fff; border-color: rgba(196,181,253,0.55); background: rgba(165, 88, 251, 0.16); }
+}
+
+/* ---- the focused panel */
+.kxHow { height: 420vh; padding-top: clamp(80px, 10vw, 120px); }
+.howPin { position: sticky; top: 72px; height: calc(100vh - 96px); min-height: 560px; display: flex; }
+.howCard {
+  --rise: 0; --glow: 0;
+  width: min(1240px, 100%); margin: 0 auto; height: 100%;
+  display: grid; grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.25fr); gap: clamp(24px, 4vw, 56px);
+  padding: clamp(28px, 4vw, 56px); border-radius: 30px; overflow: hidden;
+  background:
+    radial-gradient(70% 60% at 75% 110%, rgba(165, 88, 251, calc(0.22 * var(--glow))), transparent 70%),
+    radial-gradient(50% 40% at 10% 0%, rgba(73, 34, 229, calc(0.18 * var(--glow))), transparent 70%),
+    #0c0c11;
+  border: 1px solid rgba(255,255,255,0.09);
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.6), 0 -30px 120px -40px rgba(165, 88, 251, calc(0.5 * var(--glow)));
+  transform: translateY(calc((1 - var(--rise)) * 90px)) scale(calc(0.92 + 0.08 * var(--rise)));
+  transform-origin: 50% 100%;
+}
+.howCopy { display: flex; flex-direction: column; min-height: 0; }
+.howLead { margin-top: 14px; font-size: 15.5px; line-height: 1.6; color: #a1a1aa; max-width: 420px; }
+.steps { list-style: none; margin: auto 0 0; padding: 28px 0 0; }
+.steps li { position: relative; border-top: 1px solid rgba(255,255,255,0.08); padding: 14px 0 16px; }
+.steps li:last-child { border-bottom: 1px solid rgba(255,255,255,0.08); }
+.steps button {
+  appearance: none; background: none; border: 0; padding: 0; cursor: pointer;
+  font: inherit; font-size: 16px; font-weight: 500; color: #71717a; text-align: left;
+  transition: color 0.3s;
+}
+.steps li.on button, .steps button:hover { color: #fff; }
+.steps li p {
+  max-height: 0; overflow: hidden; opacity: 0; margin-top: 0;
+  font-size: 14px; line-height: 1.6; color: #a1a1aa;
+  transition: max-height 0.45s ease, opacity 0.45s ease, margin-top 0.45s ease;
+}
+.steps li.on p { max-height: 90px; opacity: 1; margin-top: 8px; }
+.steps .prog { position: absolute; left: 0; bottom: -1px; width: 38%; height: 2px; opacity: 0; transition: opacity 0.3s; }
+.steps .prog i { display: block; height: 100%; width: calc(var(--p, 0) * 100%); background: linear-gradient(90deg, #7c3aed, #c4b5fd); border-radius: 2px; }
+.steps li.on .prog { opacity: 1; }
+.howStage { position: relative; min-height: 0; border-radius: 18px; }
+.hs {
+  position: absolute; inset: 0; margin: 0; display: grid; place-items: center;
+  opacity: 0; transform: translateY(18px) scale(0.97);
+  transition: opacity 0.6s ease, transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.hs.on { opacity: 1; transform: none; }
+.hs picture, .hs > img { width: 100%; }
+.hs img { width: 100%; height: auto; max-height: 100%; object-fit: contain; border-radius: 14px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 30px 80px rgba(0,0,0,0.6); display: block; }
+.mockChat, .mockShare {
+  width: min(460px, 92%); padding: 24px; border-radius: 18px;
+  background: #121218; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+  display: flex; flex-direction: column; gap: 14px;
+}
+.mockChat .you { align-self: flex-end; max-width: 85%; padding: 10px 14px; border-radius: 16px 16px 5px 16px; background: #1f1f28; border: 1px solid rgba(255,255,255,0.08); color: #fff; font-size: 14px; }
+.mockChat .krate { color: #e4e4e7; font-size: 14px; line-height: 1.6; }
+.mockChat .dim { color: #a1a1aa; }
+.mockBtn { align-self: flex-start; padding: 7px 16px; border-radius: 999px; background: #fff; color: #000; font-size: 13px; font-weight: 600; }
+.mockApp { height: 220px; border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.08); }
+.mockApp img { width: 100%; height: 100%; object-fit: cover; object-position: top; border: 0; box-shadow: none; border-radius: 0; }
+.mockLink { display: flex; align-items: center; gap: 10px; padding: 10px 12px 10px 14px; border-radius: 12px; background: #0b0b0f; border: 1px solid rgba(255,255,255,0.1); font-family: var(--mono, ui-monospace, monospace); font-size: 13px; color: #d4d4d8; }
+.mockLink b { margin-left: auto; font-family: var(--sans, inherit); font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 999px; background: #fff; color: #000; }
+.mockShare p { font-size: 13px; color: #a1a1aa; }
+
+/* ---- made with Krate: a bento of the best, then a quiet row */
+.bento { max-width: 1240px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.bx, .sx { margin: 0; border-radius: 22px; overflow: hidden; background: #0b0b10; border: 1px solid rgba(255,255,255,0.08);
+  transition: border-color 0.3s, transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.5s; }
+.bx.bxWide { grid-column: span 2; }
+.bxImg { position: relative; overflow: hidden; aspect-ratio: 16 / 10; background: #07070a; }
+/* One picture height across a row, wide or not, so the captions line up
+   and no card is left with an empty band under its words. */
+.bento .bxImg { aspect-ratio: auto; height: clamp(220px, 25vw, 340px); }
+.bxImg img { width: 100%; height: 100%; object-fit: cover; display: block; transform: scale(1.001); transition: transform 1.2s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.bxImg::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(180deg, transparent 55%, rgba(11,11,16,0.85)); }
+.bx figcaption, .sx figcaption { padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 4px; }
+.bx figcaption b, .sx figcaption b { font-size: 16px; font-weight: 600; color: #fff; }
+.bx figcaption span, .sx figcaption span { font-size: 14px; line-height: 1.5; color: #a1a1aa; }
+.bx:hover, .sx:hover { border-color: rgba(196,181,253,0.35); transform: translateY(-4px); box-shadow: 0 30px 80px -30px rgba(165, 88, 251, 0.45); }
+.bx:hover .bxImg img, .sx:hover .bxImg img { transform: scale(1.04); }
+.smallRow { max-width: 1240px; margin: 16px auto 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.sx .bxImg { aspect-ratio: 16 / 10.5; }
+.sx figcaption { padding: 12px 16px 16px; }
+.sx figcaption b { font-size: 14.5px; }
+.sx figcaption span { font-size: 13px; }
+.kxMore { text-align: center; margin-top: 36px; }
+.bento .reveal:nth-child(3n+2) { transition-delay: 0.1s; }
+.bento .reveal:nth-child(3n) { transition-delay: 0.2s; }
+
+/* ---- facts and the two ways in */
+.facts { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.fact { padding: 28px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.02); }
+.fIc { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; color: #c4b5fd; background: rgba(165, 88, 251, 0.12); border: 1px solid rgba(196,181,253,0.2); }
+.fIc svg { width: 20px; height: 20px; }
+.fact h3 { margin: 18px 0 8px; }
+.fact p { font-size: 14.5px; line-height: 1.6; color: #a1a1aa; }
+.ways { max-width: 980px; margin: 0 auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.way { padding: 32px; border-radius: 22px; border: 1px solid rgba(255,255,255,0.1); background: linear-gradient(180deg, rgba(165,88,251,0.08), rgba(255,255,255,0.015) 60%); display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.wayK { font-size: 12.5px; letter-spacing: 0.04em; text-transform: uppercase; color: #a78bfa; }
+.way p { font-size: 14.5px; line-height: 1.6; color: #a1a1aa; }
+.way .btn, .way .ctaRow { margin-top: auto; padding-top: 14px; }
+.way .ctaRow { justify-content: flex-start; }
+
+/* ---- the closing prompt */
+.ctaInner { align-items: center; text-align: center; }
+.ctaInner .ctaText { max-width: 640px; margin: 0 auto; }
+.endBar { position: relative; z-index: 1; width: min(640px, 100%); }
+.endNote { position: relative; z-index: 1; margin-top: -32px; min-height: 22px; font-size: 13.5px; color: #d4d4d8; }
+.endNote a { color: #fff; text-decoration: underline; text-underline-offset: 3px; }
+
+@media (max-width: 900px) {
+  .wCards, .facts { grid-template-columns: minmax(0, 1fr); max-width: 520px; }
+  .ways { grid-template-columns: minmax(0, 1fr); max-width: 520px; }
+  /* No pinned scroll on a phone: the panel is a normal block, the steps
+     all open, the picture advancing on its own. */
+  .kxHow { height: auto; }
+  .howPin { position: relative; top: 0; height: auto; min-height: 0; }
+  .howCard { grid-template-columns: minmax(0, 1fr); transform: none; --glow: 1; }
+  /* The pictures get a box of their own under the words, clipped, so a
+     tall one can never lie over the heading. */
+  .howStage { height: 340px; overflow: hidden; }
+  .mockChat, .mockShare { padding: 18px; gap: 10px; }
+  .mockApp { height: 150px; }
+  .steps li p { max-height: none; opacity: 1; margin-top: 6px; }
+  .steps li button { color: #fff; }
+  .bento { grid-template-columns: minmax(0, 1fr); max-width: 560px; }
+  .bx.bxWide { grid-column: auto; }
+  .bento .bxImg { height: auto; aspect-ratio: 16 / 10; }
+  .smallRow { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 560px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .js .reveal { opacity: 1; transform: none; filter: none; }
+  .bx, .sx, .bxImg img { transition: none; }
+  .miniCaret, .miniWin .scan, .kFile img, .kFile .oses span { animation: none; }
+  .howCard { transform: none; }
+}
+</style>
 <noscript><style>
   /* .works .tag belongs in both lists below. The three chips start at
      opacity 0 and are cleared by the scroll observer, so without this they
@@ -1560,343 +1799,206 @@ picture source { display: none; }
     </form>
     <p class="ph-note" id="promptNote" role="status"></p>
   </div>
-  <a class="ph-down" href="#heroTrack" aria-label="More about Krate">
+  <a class="ph-down" href="#what" aria-label="More about Krate">
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 6l4.5 4.5L12.5 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
   </a>
 </section>
 
 <!-- ================================================================ hero -->
-<div class="heroTrack" id="heroTrack">
-  <div class="heroStick">
-
-    <div class="eclipse" id="eclipse">
-      <i class="rim"></i><i class="glo1"></i><i class="glo2"></i><i class="core"></i>
-    </div>
-
-    <div class="heroContent" id="heroContent">
-      <h1 id="heroH1">
-        <span>Build once.</span>
-        <span class="heroCycle" id="heroCycle"><span class="glyph" id="heroGlyph"></span></span>
-        <span class="dim">Ship one file.</span>
-      </h1>
-      <p class="heroSub" id="heroSub">Build desktop software once. Share one
-      <code>.krate</code> file that runs on Mac, Windows and Linux.
-      No separate builds for each OS.</p>
-      <!-- The same promise, said forwards.
-           The line above opens with three things Krate is NOT, which lands
-           for somebody who has felt those problems and means nothing to
-           anybody else. On a desktop that is fine: the marquee sits
-           directly beneath it and explains. On a phone the marquee is gone
-           and the explanation is 660px further down, so the first thing a
-           visitor reads is a list of denials about a product they cannot
-           yet name. This says what it is first; the phone shows this one
-           and the desktop shows the other. -->
-      <!-- Three sentences and 36 words filled 93px under a 34px headline
-           on a phone. The denials that came after ("no installer, no app
-           store, no version for each machine") are the FIRST thing a
-           reader met, before they knew what the thing was -- and they are
-           already made, in full, in "What you get" immediately below.
-           One sentence that lands the idea; the list does the rest. -->
-      <p class="heroSub heroSubPhone">Build desktop software. Share one
-      <code>.krate</code> file that runs on Mac, Windows and Linux.</p>
-      <div class="heroCtas" id="heroCtas">
-        <div class="ctaRow">
-          <a class="btn btn-primary" id="makeBtn" data-pressed="false"
-             href="/docs/quickstart.html">
-            <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>Start building</span>
-            <span class="hoverco"></span><span class="ripple"></span>
-          </a>
-          <a class="btn btn-ghost" id="srcBtn" data-pressed="false"
-             href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">
-            <span><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>Source</span>
-            <span class="hoverco"></span><span class="ripple"></span>
-          </a>
-        </div>
-        <div class="secondDoor dlLine"><span>Build with AI? <a href="/studio/">Meet Studio</a></span>
-            <div class="split">
-              <button class="btn btn-primary main" id="dlMain" data-pressed="false">
-                <span><svg id="dlOsIcon" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg><span id="dlLabel">Download for macOS</span></span>
-                <span class="hoverco"></span><span class="ripple"></span>
-              </button>
-              <button class="btn btn-primary more" id="dlMore" data-pressed="false" data-open="false" aria-label="Download for other platforms">
-                <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
-                <span class="hoverco"></span><span class="ripple"></span>
-              </button>
-              <div class="dlmenu" id="dlMenu">
-                <a data-dl="krate-studio|universal|dmg" href="https://github.com/incyashraj/krate/releases/latest"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>macOS -- universal</a>
-                <a data-dl="krate-studio|windows-x64-setup|exe" href="https://github.com/incyashraj/krate/releases/latest"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.55 10.5 4.5v7H3v-5.95zM3 18.45V12.5h7.5v7L3 18.45zM11.5 4.36 21 3v8.5h-9.5v-7.14zM21 12.5V21l-9.5-1.36V12.5H21z"/></svg>Windows -- x64</a>
-                <a data-dl="krate-studio|linux-x86_64|AppImage" href="https://github.com/incyashraj/krate/releases/latest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 15c.5-2.5.5-4.5 2-6m6 6c-.5-2.5-.5-4.5-2-6"/></svg>Linux -- x86_64</a>
-                <div class="sep"></div>
-                <a href="#downloads">All downloads &rarr;</a>
-              </div>
-            </div>
-        </div>
-        <!-- Studio in the browser, the door with no install. Shown only when
-             the build service says making is on, so nobody is invited to
-             sign in for something switched off (K-860); the day the key is
-             set it appears by itself. A phone gets the one-box page. -->
-        <p class="secondDoor webDoor" id="webDoor" hidden>No install:
-        <a href="/login/?next=studio">make an app in your browser</a>.
-        Your first one is on us.</p>
-        <p class="secondDoor">Someone sent you a file?
-        <a href="/open/">Here's how it opens.</a></p>
-      </div>
-    </div>
-
-    <div class="shotWrap" id="shotWrap">
-      <div class="shotBox">
-        <div class="frame"><picture><source srcset="/app-shots/studio-session.webp" type="image/webp" /><img src="/app-shots/studio-session.png" width="2480" height="1600" alt="Krate Studio building a hex viewer from one sentence" /></picture></div>
-        <div class="chip c1" title="Claude">
-          <span class="float"><svg viewBox="0 0 24 24" fill="#D97757"><path d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z"/></svg></span>
-        </div>
-        <div class="chip c2" title="One .krate file out">
-          <span class="float"><img src="/krate-document-icon.png" alt="" /></span>
-        </div>
-        <div class="chip c3" title="ChatGPT">
-          <span class="float"><svg viewBox="0 0 24 24" fill="#fff"><path d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.985 5.985 0 0 0-3.998 2.9 6.046 6.046 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.997-2.9 6.056 6.056 0 0 0-.747-7.073zM13.26 22.43a4.476 4.476 0 0 1-2.876-1.04l.141-.081 4.779-2.758a.795.795 0 0 0 .392-.681v-6.737l2.02 1.168a.071.071 0 0 1 .038.052v5.583a4.504 4.504 0 0 1-4.494 4.494zM3.6 18.304a4.47 4.47 0 0 1-.535-3.014l.142.085 4.783 2.759a.771.771 0 0 0 .78 0l5.843-3.369v2.332a.08.08 0 0 1-.033.062L9.74 19.95a4.5 4.5 0 0 1-6.14-1.646zM2.34 7.896a4.485 4.485 0 0 1 2.366-1.973V11.6a.766.766 0 0 0 .388.676l5.815 3.355-2.02 1.168a.076.076 0 0 1-.071 0l-4.83-2.786A4.504 4.504 0 0 1 2.34 7.872zm16.597 3.855-5.833-3.387L15.119 7.2a.076.076 0 0 1 .071 0l4.83 2.791a4.494 4.494 0 0 1-.676 8.105v-5.678a.79.79 0 0 0-.407-.667zm2.01-3.023-.141-.085-4.774-2.782a.776.776 0 0 0-.785 0L9.409 9.23V6.897a.066.066 0 0 1 .028-.061l4.83-2.787a4.5 4.5 0 0 1 6.68 4.66zm-12.64 4.135-2.02-1.164a.08.08 0 0 1-.038-.057V6.075a4.5 4.5 0 0 1 7.375-3.453l-.142.08L8.704 5.46a.795.795 0 0 0-.393.681zm1.097-2.365 2.602-1.5 2.607 1.5v2.999l-2.597 1.5-2.607-1.5z"/></svg></span>
-        </div>
-        <div class="chip c4" title="Grok">
-          <span class="float"><svg viewBox="0 0 24 24" fill="#fff"><path d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z"/></svg></span>
-        </div>
-        <div class="chip c5" title="Gemini">
-          <span class="float"><svg viewBox="0 0 24 24" fill="#fff"><path d="M12 24A14.3 14.3 0 0 0 0 12 14.3 14.3 0 0 0 12 0a14.3 14.3 0 0 0 12 12 14.3 14.3 0 0 0-12 12z"/></svg></span>
-        </div>
-      </div>
-    </div>
-
-    <div class="marqWrap" id="marqWrap">
-      <div class="marqMask">
-        <div class="marqTrack" id="marqTrack"></div>
-      </div>
-    </div>
-    <p class="marqLabel" id="marqLabel">One application artifact. Native runtimes on three desktops.</p>
-
+<!-- ============================================================ what
+     Below the prompt, the product in the order a person meets it: what
+     happens, then the whole path in one focused dark panel, then real
+     apps, then the plain facts and the two ways in. Each part says one
+     thing; nothing repeats the first screen. -->
+<section class="kx kxWhat" id="what">
+  <div class="kxHead reveal">
+    <h2>From a sentence to an app you can send.</h2>
+    <p>Say what you want. Krate's AI writes it, opens it, fixes what it sees, and hands you one file that runs on Mac, Windows and Linux.</p>
   </div>
-</div>
-
-<!-- ==================================================== what it is (phone)
-     The desktop answers "what is Krate?" with a marquee of seven cards
-     scrolling sideways under the hero. That marquee lives inside the
-     sticky hero box and cannot work on a phone, so it is hidden there --
-     which quietly took the seven clearest sentences on the site away from
-     every phone visitor. 241 words, the best explanation the page has.
-
-     Here they are as a list, on the phone only, in the position where the
-     question is actually asked: straight after the headline, before any
-     argument about AI or toolchains. The desktop keeps its marquee and
-     never renders this. -->
-<section class="whatis" id="whatis" aria-label="What a Krate app is">
-  <!-- This heading used to read "One file. It just opens." directly under
-       a hero reading "Build once. Ship one file." -- two headlines making
-       the same promise back to back, so the second one bought nothing. The
-       hero makes the promise; this section answers the question a reader
-       actually has next, which is what they get for it. -->
-  <h2>What you get</h2>
-  <p class="lead">How a Krate app gets from your machine to someone else's.</p>
-  <ul class="whatisList" id="whatisList">
-    <li data-icon="photo"><span class="wIc" aria-hidden="true"></span><span class="wTx"><b>The app, in a file</b><span>Your application, permissions and source, together in one .krate.</span></span></li>
-    <li data-icon="laptop"><span class="wIc" aria-hidden="true"></span><span class="wTx"><b>Same bytes, three desktops</b><span>Build once. The same file runs on Mac, Windows and Linux.</span></span></li>
-    <li data-icon="click"><span class="wIc" aria-hidden="true"></span><span class="wTx"><b>Install the runtime once</b><span>Your users install the open-source player for their system. You send the application file.</span></span></li>
-    <li data-icon="shield"><span class="wIc" aria-hidden="true"></span><span class="wTx"><b>Your computer, your permissions</b><span>File and network access start off. You decide what an app can use.</span></span></li>
-    <li data-icon="clock"><span class="wIc" aria-hidden="true"></span><span class="wTx"><b>Your editor. Or your AI.</b><span>Write Rust yourself or make apps with AI in Krate Studio. The source stays with the app.</span></span></li>
-    <li data-icon="inf"><span class="wIc" aria-hidden="true"></span><span class="wTx"><b>Keep your software</b><span>Your apps run locally. Krate Cloud is optional.</span></span></li>
-    <li data-icon="link"><span class="wIc" aria-hidden="true"></span><span class="wTx"><b>Share the file</b><span>Send it to someone. Put it on your website. You choose how your software reaches people.</span></span></li>
-  </ul>
+  <div class="wCards">
+    <article class="wCard reveal">
+      <div class="wVis">
+        <div class="miniBar" aria-hidden="true">
+          <span class="miniText" id="miniText">A pomodoro timer with a task list</span><span class="miniCaret"></span>
+          <span class="miniSend"><svg viewBox="0 0 16 16" width="12" height="12" fill="none"><path d="M8 12.8V3.6M8 3.6L4.2 7.4M8 3.6l3.8 3.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        </div>
+      </div>
+      <h3>You describe it.</h3>
+      <p>Plain words, a sketch, a spreadsheet. Change your mind at any point, even while it builds.</p>
+    </article>
+    <article class="wCard reveal">
+      <div class="wVis">
+        <div class="miniWin" aria-hidden="true">
+          <span class="dots"><i></i><i></i><i></i></span>
+          <img src="/app-shots/pomodoro.png" alt="" loading="lazy" width="720" height="880" />
+          <span class="scan"></span>
+          <span class="tag">testing it…</span>
+        </div>
+      </div>
+      <h3>Krate builds and tests it.</h3>
+      <p>The AI opens the app, looks at every screen, and fixes what it finds before you see it.</p>
+    </article>
+    <article class="wCard reveal">
+      <div class="wVis">
+        <div class="kFile" aria-hidden="true">
+          <img src="/krate-document-icon.png" alt="" width="64" height="64" />
+          <b>pomodoro.krate</b>
+          <span class="oses"><span>macOS</span><span>Windows</span><span>Linux</span></span>
+        </div>
+      </div>
+      <h3>You send one file.</h3>
+      <p>The same file opens on all three desktops, and asks before it uses anything.</p>
+    </article>
+  </div>
 </section>
 
-<!-- ================================================== works-with-your-AI -->
-<section class="works" id="works">
-  <div class="worksGrid">
-    <div>
-      <h2>Your editor. Or your AI.</h2>
-      <p class="copy">Write against Krate's Rust APIs yourself, or describe an
-      app to Krate Studio and let an AI build it. In your browser, your first
-      app is on us, and your own API key keeps you going. On your computer,
-      Studio uses the AI you already have -- Claude, Codex, Grok or Gemini --
-      as much as you like. Either way you get the source, and one file that
-      runs on Mac, Windows and Linux.</p>
-      <div class="tagRow">
-        <div class="tag">Works with your AI</div>
-        <div class="tag">Plain words in</div>
-        <div class="tag">A real app out</div>
+<!-- ============================================================= how
+     The one dark panel on the page. It rises and settles as it arrives,
+     then holds still while the steps on the left walk through the path,
+     each with its own picture on the right. -->
+<section class="kx kxHow" id="how">
+  <div class="howPin">
+    <div class="howCard" id="howCard">
+      <div class="howCopy">
+        <h2>Watch it happen.</h2>
+        <p class="howLead">Studio is where apps get made: on your computer with the AI you already use, or right here in your browser.</p>
+        <ol class="steps" id="howSteps">
+          <li class="on"><button type="button">Describe it</button><p>Type it or say it. Add a picture or a file for the AI to read.</p><i class="prog"><i></i></i></li>
+          <li><button type="button">Agree the plan</button><p>Krate says what it will build and what it will ask permission for. Change it, or build it.</p><i class="prog"><i></i></i></li>
+          <li><button type="button">Watch it build</button><p>A few minutes. The app takes shape on screen, and you can ask for changes while it works.</p><i class="prog"><i></i></i></li>
+          <li><button type="button">Send it</button><p>Share the file, or a link anyone can open. Every change becomes the next version.</p><i class="prog"><i></i></i></li>
+        </ol>
       </div>
-      <!-- The two ways into Studio. The browser one appears only when the
-           build service is making apps (same rule as the hero pill). -->
-      <div class="worksDoors">
-        <a class="btn btn-primary" id="worksWeb" href="/login/?next=studio" hidden><span>Make one in your browser</span></a>
-        <a class="btn btn-ghost" href="/studio/"><span>Studio for your computer</span></a>
-      </div>
-    </div>
-    <div class="orbitStage">
-      <div class="orbitBox">
-        <div class="ring r1">
-          <div class="orbArm" style="--a0:-60deg; animation: orbit-cw 25s linear infinite;">
-            <div class="counter" style="--a0:-60deg; animation: counter-cw 25s linear infinite;">
-              <div class="orbIcon d1" title="Claude"><svg viewBox="0 0 24 24" fill="#D97757"><path d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z"/></svg></div>
-            </div>
+      <div class="howStage" aria-hidden="true">
+        <figure class="hs on">
+          <picture><source srcset="/app-shots/studio-home.webp" type="image/webp" /><img src="/app-shots/studio-home.png" width="2536" height="1656" alt="" loading="lazy" /></picture>
+        </figure>
+        <figure class="hs hsPlan">
+          <div class="mockChat">
+            <p class="you">A pomodoro timer with a task list</p>
+            <p class="krate">Here's what I'll build: a 25-minute timer with a break, and a task list beside it that remembers what you finished.</p>
+            <p class="krate dim">It will ask your permission to: save its own settings.</p>
+            <span class="mockBtn">Build it</span>
           </div>
-          <div class="orbArm" style="--a0:60deg; animation: orbit-cw 25s linear infinite;">
-            <div class="counter" style="--a0:60deg; animation: counter-cw 25s linear infinite;">
-              <div class="orbIcon d2" title="ChatGPT"><svg viewBox="0 0 24 24" fill="#fff"><path d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.985 5.985 0 0 0-3.998 2.9 6.046 6.046 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.997-2.9 6.056 6.056 0 0 0-.747-7.073zM13.26 22.43a4.476 4.476 0 0 1-2.876-1.04l.141-.081 4.779-2.758a.795.795 0 0 0 .392-.681v-6.737l2.02 1.168a.071.071 0 0 1 .038.052v5.583a4.504 4.504 0 0 1-4.494 4.494zM3.6 18.304a4.47 4.47 0 0 1-.535-3.014l.142.085 4.783 2.759a.771.771 0 0 0 .78 0l5.843-3.369v2.332a.08.08 0 0 1-.033.062L9.74 19.95a4.5 4.5 0 0 1-6.14-1.646zM2.34 7.896a4.485 4.485 0 0 1 2.366-1.973V11.6a.766.766 0 0 0 .388.676l5.815 3.355-2.02 1.168a.076.076 0 0 1-.071 0l-4.83-2.786A4.504 4.504 0 0 1 2.34 7.872zm16.597 3.855-5.833-3.387L15.119 7.2a.076.076 0 0 1 .071 0l4.83 2.791a4.494 4.494 0 0 1-.676 8.105v-5.678a.79.79 0 0 0-.407-.667zm2.01-3.023-.141-.085-4.774-2.782a.776.776 0 0 0-.785 0L9.409 9.23V6.897a.066.066 0 0 1 .028-.061l4.83-2.787a4.5 4.5 0 0 1 6.68 4.66zm-12.64 4.135-2.02-1.164a.08.08 0 0 1-.038-.057V6.075a4.5 4.5 0 0 1 7.375-3.453l-.142.08L8.704 5.46a.795.795 0 0 0-.393.681zm1.097-2.365 2.602-1.5 2.607 1.5v2.999l-2.597 1.5-2.607-1.5z"/></svg></div>
-            </div>
+        </figure>
+        <figure class="hs">
+          <picture><source srcset="/app-shots/studio-session.webp" type="image/webp" /><img src="/app-shots/studio-session.png" width="2480" height="1600" alt="" loading="lazy" /></picture>
+        </figure>
+        <figure class="hs hsShare">
+          <div class="mockShare">
+            <div class="mockApp"><img src="/app-shots/pomodoro.png" alt="" loading="lazy" width="720" height="880" /></div>
+            <div class="mockLink"><span>krate.tech/a/pomodoro</span><b>Copy</b></div>
+            <p>Opens on Mac, Windows and Linux.</p>
           </div>
-          <div class="orbArm" style="--a0:180deg; animation: orbit-cw 25s linear infinite;">
-            <div class="counter" style="--a0:180deg; animation: counter-cw 25s linear infinite;">
-              <div class="orbIcon d3" title="Grok"><svg viewBox="0 0 24 24" fill="#fff"><path d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z"/></svg></div>
-            </div>
-          </div>
-        </div>
-        <div class="ring r2">
-          <div class="orbArm" style="--a0:-45deg; animation: orbit-ccw 20s linear infinite;">
-            <div class="counter" style="--a0:-45deg; animation: counter-ccw 20s linear infinite;">
-              <div class="orbIcon d4" title="Gemini"><svg viewBox="0 0 24 24" fill="#fff"><path d="M12 24A14.3 14.3 0 0 0 0 12 14.3 14.3 0 0 0 12 0a14.3 14.3 0 0 0 12 12 14.3 14.3 0 0 0-12 12z"/></svg></div>
-            </div>
-          </div>
-          <div class="orbArm" style="--a0:135deg; animation: orbit-ccw 20s linear infinite;">
-            <div class="counter" style="--a0:135deg; animation: counter-ccw 20s linear infinite;">
-              <div class="orbIcon d5" title="Any agent CLI"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></div>
-            </div>
-          </div>
-        </div>
-        <div class="centerGlyph"><div class="inner"><picture><source srcset="/krate-logo.webp" type="image/webp" /><img src="/krate-logo.png" width="415" height="410" alt="Krate" /></picture></div></div>
+        </figure>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ========================================================= how it works -->
-<section class="how" id="how">
-  <h2>Write it. Pack it. Ship it.</h2>
-  <p class="lead">Your code, your toolchain, your editor.
-  One file for all three desktop operating systems.</p>
-  <div class="stepGrid">
-    <div class="step">
-      <div class="n">1</div>
-      <h3>Write it</h3>
-      <p>Rust today, compiled to WebAssembly. Assess an existing project
-      with <code>krate port</code>, follow the quickstart, or let an AI draft
-      it and take over from there -- on your machine, or
-      <a href="/login/?next=studio">in your browser</a>.</p>
-    </div>
-    <div class="step">
-      <div class="n">2</div>
-      <h3>Pack it</h3>
-      <p>One command produces one <code>.krate</code>: your app, its manifest,
-      and the source that made it. No separate Mac, Windows or Linux builds.</p>
-    </div>
-    <div class="step">
-      <div class="n">3</div>
-      <h3>Ship it</h3>
-      <p>Send the file, a link, or a card. Your user needs the player once --
-      free and open source -- then opens the apps you share.</p>
-    </div>
+<!-- ============================================================ made -->
+<!-- ============================================================ made
+     A showcase, not a filler strip: the best apps built on Krate, each a
+     frame taken from the running app itself (krate run --shoot), each a
+     single .krate file. -->
+<section class="kx kxMade" id="made">
+  <div class="kxHead reveal">
+    <h2>Made with Krate.</h2>
+    <p>Games, editors, tools and dashboards. Every one is a single <code>.krate</code> file, and every picture here is the app itself, running.</p>
   </div>
-  <p class="note"><a href="/portable-desktop-app-format.html">How the file format works</a>
-  &middot; <a href="/docs/porting.html">Bring an existing app</a>
-  &middot; <a href="/desktop-app-distribution.html">Compare distribution models</a></p>
+  <div class="bento">
+    <figure class="bx bxWide reveal">
+      <div class="bxImg"><img src="/showcase/orbit.webp" width="1600" height="1030" alt="Orbit, a Krate app" loading="lazy" style="object-position:top left" /></div>
+      <figcaption><b>Orbit</b><span>A live globe of a network: a rotating Earth, packets crossing between cities, every node's latency beside it.</span></figcaption>
+    </figure>
+    <figure class="bx  reveal">
+      <div class="bxImg"><img src="/showcase/aurora.webp" width="1600" height="1067" alt="Aurora, a Krate app" loading="lazy" style="object-position:left center" /></div>
+      <figcaption><b>Aurora</b><span>Northern lights computed pixel by pixel, every frame, reflected in a still lake.</span></figcaption>
+    </figure>
+    <figure class="bx  reveal">
+      <div class="bxImg"><img src="/showcase/player.webp" width="1600" height="1030" alt="Player, a Krate app" loading="lazy" style="object-position:top left" /></div>
+      <figcaption><b>Player</b><span>A music player whose music is made inside the app, with a live spectrum.</span></figcaption>
+    </figure>
+    <figure class="bx bxWide reveal">
+      <div class="bxImg"><img src="/showcase/editor.webp" width="1600" height="1030" alt="Editor, a Krate app" loading="lazy" style="object-position:top left" /></div>
+      <figcaption><b>Editor</b><span>A code editor: file tree, tabs, syntax colours, a minimap and a status bar.</span></figcaption>
+    </figure>
+    <figure class="bx  reveal">
+      <div class="bxImg"><img src="/showcase/drift.webp" width="1600" height="900" alt="Drift, a Krate app" loading="lazy" style="object-position:center" /></div>
+      <figcaption><b>Drift</b><span>A 3D racing game on a closed circuit: three laps, five rivals.</span></figcaption>
+    </figure>
+    <figure class="bx  reveal">
+      <div class="bxImg"><img src="/showcase/query.webp" width="1600" height="1030" alt="Query, a Krate app" loading="lazy" style="object-position:top left" /></div>
+      <figcaption><b>Query</b><span>A SQL client for the app's own database: tables, a query, results.</span></figcaption>
+    </figure>
+    <figure class="bx  reveal">
+      <div class="bxImg"><img src="/showcase/pulse.webp" width="1600" height="1037" alt="Pulse, a Krate app" loading="lazy" style="object-position:top left" /></div>
+      <figcaption><b>Pulse</b><span>A spending dashboard: balance, a 30-day chart, categories and recent activity.</span></figcaption>
+    </figure>
+  </div>
+  <div class="smallRow">
+    <figure class="sx reveal">
+      <div class="bxImg"><img src="/showcase/trace.webp" width="1600" height="1030" alt="Trace, a Krate app" loading="lazy" /></div>
+      <figcaption><b>Trace</b><span>A live log viewer</span></figcaption>
+    </figure>
+    <figure class="sx reveal">
+      <div class="bxImg"><img src="/showcase/probe.webp" width="1600" height="1030" alt="Probe, a Krate app" loading="lazy" /></div>
+      <figcaption><b>Probe</b><span>An API client</span></figcaption>
+    </figure>
+    <figure class="sx reveal">
+      <div class="bxImg"><img src="/showcase/ledger.webp" width="1600" height="1021" alt="Ledger, a Krate app" loading="lazy" /></div>
+      <figcaption><b>Ledger</b><span>A finance tracker</span></figcaption>
+    </figure>
+    <figure class="sx reveal">
+      <div class="bxImg"><img src="/showcase/quill.webp" width="1600" height="996" alt="Quill, a Krate app" loading="lazy" /></div>
+      <figcaption><b>Quill</b><span>A text editor</span></figcaption>
+    </figure>
+  </div>
+  <p class="kxMore reveal"><a class="btn btn-ghost" href="/cloud/"><span>More in the gallery &rarr;</span><span class="hoverco"></span><span class="ripple"></span></a></p>
 </section>
 
-<!-- ============================================================ receipts -->
-<section class="price" id="receipts">
-  <h2>One file. Less baggage. Your control.</h2>
-  <p class="lead">A shared runtime, portable applications and permissions
-  you approve. The measurements and source are public.</p>
-
-  <div class="priceGrid">
-    <div class="plan">
-      <div class="top"><h3>Size and performance</h3><span class="badge">evidence</span></div>
-      <div class="amount">Measure it</div>
-      <ul>
-        <li>A notes workload compared with MarkText on the same ARM64 Mac</li>
-        <li>Published benchmark protocol, analysis and application source</li>
-        <li>App payload, full bundle and installed runtime counted separately</li>
-        <li>Results describe those workloads, not every app built with Krate</li>
-      </ul>
-      <p class="note" style="margin:10px 0 0;text-align:left"><a href="/reports/">Read the measurements and reproduce them &rarr;</a></p>
+<!-- ======================================================= receipts -->
+<section class="kx kxFacts" id="receipts">
+  <div class="kxHead reveal">
+    <h2>Yours, all the way down.</h2>
+  </div>
+  <div class="facts">
+    <div class="fact reveal">
+      <span class="fIc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path d="M9 11.5l2.2 2.2L15.5 9"/></svg></span>
+      <h3>It asks first.</h3>
+      <p>An app gets a window and nothing else until you say yes: files, the network, the camera, each one asked for by name. <a href="/run-ai-generated-code-safely.html">How that works.</a></p>
     </div>
-
-    <div class="plan">
-      <div class="top"><h3>Portability</h3><span class="badge">desktop</span></div>
-      <div class="amount">1 file</div>
-      <ul>
-        <li>One .krate application file for Mac, Windows and Linux</li>
-        <li>No separate application builds for each operating system</li>
-        <li>Native runtimes handle the platform underneath</li>
-        <li>Send the file directly or distribute it from your website</li>
-      </ul>
-      <p class="note" style="margin:10px 0 0;text-align:left"><a href="/docs/limits.html">Check supported capabilities and current limits &rarr;</a></p>
+    <div class="fact reveal">
+      <span class="fIc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/></svg></span>
+      <h3>The source comes with it.</h3>
+      <p>Every app carries the Rust project it was built from. Read it, change it, build it again yourself.</p>
     </div>
-
-    <div class="plan">
-      <div class="top"><h3>Permissions</h3><span class="badge">explicit</span></div>
-      <div class="amount">Your call</div>
-      <ul>
-        <li>Apps declare the system resources they need</li>
-        <li>Declarations do not grant access on their own</li>
-        <li>The runtime checks approved capabilities at host boundaries</li>
-        <li>See what an app requests before you open it</li>
-      </ul>
-      <p class="note" style="margin:10px 0 0;text-align:left">Read what any
-      app asks for without running it: <code>krate run app.krate --dump-caps</code></p>
+    <div class="fact reveal">
+      <span class="fIc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v9M7.5 12h9"/></svg></span>
+      <h3>The player is open source.</h3>
+      <p>Krate, the part that runs the apps, is MIT or Apache licensed. <a href="/reports/">The measurements are public.</a></p>
     </div>
   </div>
-
-  <p class="note">Explore the <a href="/run-ai-generated-code-safely.html">permission model</a>,
-  <a href="/reports/">benchmarks</a> and <a href="/progress/">what ships today</a>.</p>
 </section>
 
-<!-- ============================================================= pricing -->
-<section class="price" id="free">
-  <h2>An open-source runtime.</h2>
-  <p class="lead">Build and distribute apps with the free Krate runtime.
-  AI provider charges and optional hosted services are separate from running
-  the software you ship.</p>
-  <div class="priceGrid">
-    <div class="plan">
-      <div class="top"><h3>The player</h3><span class="badge">open source</span></div>
-      <div class="amount">$0</div>
-      <ul>
-        <li>MIT and Apache licensed</li>
-        <li>Runs .krate apps on Mac, Windows and Linux</li>
-        <li>Every capability an app asks for is enforced by the runtime</li>
-        <li>Build it from source if you would rather</li>
-      </ul>
-      <a class="btn ghosty" href="https://github.com/incyashraj/krate"><span>Read the source</span><span class="hoverco"></span><span class="ripple"></span></a>
-    </div>
-    <div class="plan hot">
-      <div class="top"><h3>Build your way</h3><span class="badge">Studio or CLI</span></div>
-      <div class="amount">Your tools</div>
-      <ul>
-        <li>Write Rust directly or use AI-assisted authoring</li>
-        <li>Inspect and test your app before sharing it</li>
-        <li>Use your configured AI provider on your own machine</li>
-        <li>Build locally or use Studio in your browser</li>
-      </ul>
-      <button class="btn btn-primary jsTop" data-pressed="false"><span>Get Krate</span><span class="hoverco"></span><span class="ripple"></span></button>
-    </div>
+<!-- ============================================================ free -->
+<section class="kx kxWays" id="free">
+  <div class="kxHead reveal">
+    <h2>Two ways to start.</h2>
   </div>
-  <p class="note">Someone sent you a .krate?
-  <a href="/open/">Get the free runtime and open the file</a>.</p>
-</section>
-
-<!-- ================================================================= cta -->
-<section class="ctaSec" id="ctaSec">
-  <div class="ctaCard">
-    <div class="ctaInner">
-      <canvas id="pixels"></canvas>
-      <div class="ctaText">
-        <h2>Ready to ship<br />without the port?</h2>
-        <!-- "no installer" was not true: the person receiving a .krate
-             installs the Krate player once, and only then does every app
-             after it arrive as one file with nothing to install (IC-401).
-             The open page already said this correctly -- "nothing to
-             install per app" -- and this page did not. -->
-        <p>Make it once. Send it anywhere. One <code>.krate</code> file
-        for Mac, Windows and Linux. Start building with your editor or AI.</p>
-      </div>
-      <div class="ctaActs">
-        <div class="ctaRow">
-          <div class="split">
+  <div class="ways">
+    <div class="way reveal">
+      <p class="wayK">In your browser</p>
+      <h3>Nothing to install.</h3>
+      <p>Your first app is on us. After that, add your own API key and keep going.</p>
+      <a class="btn btn-primary" href="#start" id="wayWeb"><span>Start building</span><span class="hoverco"></span><span class="ripple"></span></a>
+    </div>
+    <div class="way reveal">
+      <p class="wayK">On your computer</p>
+      <h3>Krate Studio, with your AI.</h3>
+      <p>Uses the AI you already have: Claude, Codex, Grok or Gemini. As many apps as you like.</p>
+      <div class="ctaRow">
+        <div class="split">
             <button class="btn btn-primary main dl2main" data-pressed="false">
               <span><svg class="dl2icon" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg><span class="dl2label">Download for macOS</span></span>
               <span class="hoverco"></span><span class="ripple"></span>
@@ -1913,12 +2015,30 @@ picture source { display: none; }
               <a href="#downloads">All downloads &rarr;</a>
             </div>
           </div>
-          <a class="btn btn-ghost" href="https://github.com/incyashraj/krate" target="_blank" rel="noopener">
-            <span><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>Source</span>
-            <span class="hoverco"></span><span class="ripple"></span>
-          </a>
-        </div>
       </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================= cta -->
+<section class="ctaSec" id="ctaSec">
+  <div class="ctaCard">
+    <div class="ctaInner">
+      <canvas id="pixels"></canvas>
+      <div class="ctaText">
+        <h2>Ready to build yours?</h2>
+        <p>Describe it. Krate does the rest.</p>
+      </div>
+      <form class="promptBar endBar" id="endBar" autocomplete="off">
+        <textarea id="endBox" rows="2" maxlength="2000" aria-label="Describe the app you want"
+          placeholder="A flashcard app for learning Spanish"></textarea>
+        <div class="pb-row">
+          <button type="submit" class="pb-send" id="endSend" aria-label="Start building" disabled>
+            <svg viewBox="0 0 16 16" width="16" height="16" fill="none"><path d="M8 12.8V3.6M8 3.6L4.2 7.4M8 3.6l3.8 3.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </form>
+      <p class="ph-note endNote" id="endNote" aria-live="polite"></p>
     </div>
   </div>
   <!-- Every file a release ships, in one place (K-783). The download menus
@@ -2007,65 +2127,8 @@ function $(id) { return document.getElementById(id); }
 addEventListener("load", function () {
   setTimeout(function () { $("brandbar").classList.add("in"); }, 150);
 });
-var ecl = $("eclipse");
-
-/* Reveal the hero, and never leave it hidden.
- *
- * The words start at `opacity: 0` with a blur and are uncovered by an
- * `.in` class. That class used to be added ONLY from inside a double
- * requestAnimationFrame, which ran the eclipse's entrance -- so the
- * headline's legibility depended on a decoration's animation frame
- * arriving. On a phone it often does not: Safari defers rAF callbacks
- * when a tab is restored, backgrounded during load, or under memory
- * pressure, and the whole hero then sits at opacity 0 with blur(8px)
- * forever. Measured on this page: heroH1 opacity=0 filter=blur(8px)
- * with no `.in` class, on a fully loaded page with reduced-motion off.
- * That is what made "Build once." read as permanently out of focus
- * while "Ship one file." -- further from the header, and so judged
- * against a different background -- looked sharp.
- *
- * So the reveal is its own function, driven by a plain timer that always
- * runs, and a belt-and-braces `load` fallback that forces it if anything
- * above was skipped. Decoration may fail; the words may not. */
-function revealHero() {
-  $("heroH1").classList.add("in");
-  /* Both subtitles: CSS decides which one is displayed, so the class goes
-     on either and only the visible one is ever seen fading in. */
-  document.querySelectorAll(".heroSub").forEach(function (e) { e.classList.add("in"); });
-  $("heroCtas").classList.add("in");
-  var m = $("marqWrap"), ml = $("marqLabel");
-  if (m) m.classList.add("in");
-  if (ml) ml.classList.add("in");
-}
-
-if (reduced) {
-  revealHero();
-} else {
-  setTimeout(function () { $("heroH1").classList.add("in"); }, 250);
-  setTimeout(function () {
-    document.querySelectorAll(".heroSub").forEach(function (e) { e.classList.add("in"); });
-  }, 420);
-  setTimeout(function () { $("heroCtas").classList.add("in"); }, 580);
-  setTimeout(function () {
-    var m = $("marqWrap"), ml = $("marqLabel");
-    if (m) m.classList.add("in");
-    if (ml) ml.classList.add("in");
-  }, 800);
-  /* If the timers above were throttled or the tab was restored mid-load,
-     this guarantees the text is readable regardless. */
-  addEventListener("load", function () { setTimeout(revealHero, 1200); });
-}
-
-/* The eclipse is decoration and keeps its rAF: if these frames never
-   arrive the glow simply stays where CSS put it, and no words are lost
-   with it. */
-requestAnimationFrame(function () { requestAnimationFrame(function () {
-  if (reduced) return;
-  ecl.style.transition = "opacity 1.4s ease, filter 1.4s ease, transform 1.6s cubic-bezier(0.2, 0.8, 0.2, 1)";
-  ecl.style.opacity = "1"; ecl.style.filter = "blur(0px)";
-  ecl.style.transform = "translateY(-143vh) scaleY(1)";
-  setTimeout(function () { ecl.style.transition = ""; }, 1700);
-}); });
+/* The old scroll-driven hero, its eclipse entrance and its headline
+   reveal went with it: the first screen is the prompt now. */
 /* The reduced-motion reveal moved up into revealHero(), which this block
    used to duplicate. */
 
@@ -2080,9 +2143,8 @@ var GLYPHS = [
   '<svg viewBox="0 0 24 24" fill="#fff"><path d="M12 24A14.3 14.3 0 0 0 0 12 14.3 14.3 0 0 0 12 0a14.3 14.3 0 0 0 12 12 14.3 14.3 0 0 0-12 12z"/></svg>',
   '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>'
 ];
-/* Both headlines -- the first screen's and the hero's -- cycle the same
-   logos in step. */
-var gi = 0, glyphs = [$("phGlyph"), $("heroGlyph")].filter(Boolean);
+/* The headline's logos, cycling between its two sentences. */
+var gi = 0, glyphs = [$("phGlyph")].filter(Boolean);
 glyphs.forEach(function (g) { g.innerHTML = GLYPHS[0]; });
 if (!reduced) setInterval(function () {
   glyphs.forEach(function (g) { g.classList.add("out"); });
@@ -2110,128 +2172,6 @@ fetch("https://api.github.com/repos/incyashraj/krate")
       if (p < 1) requestAnimationFrame(tick);
     })(t0);
   }).catch(function () {});
-
-/* ------------------------------------------------ scroll choreography */
-// One progress value over the tall hero drives everything: the text bows
-// out, the studio rises in, the eclipse sinks. Damped so it glides.
-var track = $("heroTrack"), content = $("heroContent"),
-    shot = $("shotWrap"), marq = $("marqWrap"),
-    chips = document.querySelectorAll(".chip");
-var target = 0, eased = 0, rafOn = false;
-function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
-function seg(p, a, b) { return clamp01((p - a) / (b - a)); }
-function onScroll() {
-  var span = track.offsetHeight - innerHeight;
-  // From where the track starts, not the top of the page: the prompt-first
-  // screen sits above it now, and measuring from 0 had the hero already
-  // finished by the time anybody scrolled down to it.
-  target = span > 0 ? clamp01((scrollY - track.offsetTop) / span) : 0;
-  if (!rafOn) { rafOn = true; requestAnimationFrame(step); }
-}
-function step() {
-  eased += (target - eased) * 0.14;
-  if (Math.abs(target - eased) < 0.0005) { eased = target; rafOn = false; }
-  else requestAnimationFrame(step);
-  apply(eased);
-}
-function apply(p) {
-  var tOut = seg(p, 0.04, 0.34);
-  content.style.opacity = 1 - tOut;
-  content.style.filter = "blur(" + (tOut * 8).toFixed(2) + "px)";
-  content.style.transform = "translateY(" + (-60 * tOut).toFixed(1) + "px)";
-  content.style.pointerEvents = tOut > 0.5 ? "none" : "auto";
-  var mOut = seg(p, 0.04, 0.3);
-  marq.style.opacity = 1 - mOut;
-  marq.style.pointerEvents = mOut > 0.5 ? "none" : "auto";
-  var mlab = $("marqLabel");
-  if (p > 0.001) mlab.style.transition = "none";
-  mlab.style.opacity = 1 - mOut;
-  var sIn = seg(p, 0.22, 0.58);
-  var e = 1 - Math.pow(1 - sIn, 2);
-  shot.style.opacity = e;
-  shot.style.transform = "translateY(" + (60 * (1 - e)).toFixed(1) + "px) scale(" + (0.85 + 0.15 * e).toFixed(4) + ")";
-  if (!reduced) {
-    var eDown = seg(p, 0, 0.7);
-    ecl.style.transform = "translateY(" + (-143 + 30 * eDown).toFixed(2) + "vh) scaleY(1)";
-    ecl.style.opacity = (1 - seg(p, 0.45, 0.8) * 0.85).toFixed(3);
-  }
-  var on = p > 0.5;
-  chips.forEach(function (c) { c.classList.toggle("in", on); });
-}
-/* The hero cross-fade is a desktop mechanism, and on a phone it costs a
-   whole screen of height to animate one screen of content: the headline
-   and the Studio shot are stacked absolutely inside a sticky 100vh box,
-   so the tall `.heroTrack` exists only to give the fade somewhere to run.
-   Below 760px the phone rules stack the two as ordinary blocks instead,
-   and this driver must stand down -- it writes inline opacity, filter and
-   transform on every frame, which beats any stylesheet rule and would
-   leave the headline faded out and the shot invisible.
-
-   Matched to the same 760px breakpoint as the CSS. Re-evaluated on
-   resize, so rotating a phone or dragging a desktop window narrow moves
-   between the two treatments instead of keeping whichever was true at
-   load. */
-var heroStatic = matchMedia("(max-width: 760px)");
-function heroStaticApply() {
-  if (!heroStatic.matches) return;
-  /* Leave the hero exactly as the stylesheet draws it: no inline styles
-     from a previous wide-window frame left behind. */
-  [content, shot, marq].forEach(function (el) {
-    if (!el) return;
-    el.style.opacity = "";
-    el.style.filter = "";
-    el.style.transform = "";
-    el.style.pointerEvents = "";
-  });
-  var mlab = $("marqLabel");
-  if (mlab) { mlab.style.opacity = ""; mlab.style.transition = ""; }
-  if (ecl) { ecl.style.transform = ""; ecl.style.opacity = ""; }
-  chips.forEach(function (c) { c.classList.add("in"); });
-}
-addEventListener("scroll", function () {
-  if (heroStatic.matches) return;
-  onScroll();
-}, { passive: true });
-heroStatic.addEventListener("change", function () {
-  if (heroStatic.matches) heroStaticApply(); else onScroll();
-});
-if (reduced) { apply = function () {}; }
-if (heroStatic.matches) heroStaticApply(); else onScroll();
-
-/* ----------------------------------------------------------- marquee */
-// Receipts, not tweets: every number here was measured, and dated code
-// or release notes back each one.
-var IC = {
-  photo: '<svg viewBox="0 0 24 24" fill="none" stroke="#b6abd8" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.6"/><path d="M3.5 17.5 9 13l4 3.5 3.5-3 4 4"/></svg>',
-  click: '<svg viewBox="0 0 24 24" fill="none" stroke="#b6abd8" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5v10.5l2.6-2 1.8 4.3 2.2-.9-1.8-4.3 3.3-.3z"/></svg>',
-  laptop: '<svg viewBox="0 0 24 24" fill="none" stroke="#b6abd8" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="10" rx="2"/><path d="M3 19h18"/></svg>',
-  shield: '<svg viewBox="0 0 24 24" fill="none" stroke="#b6abd8" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path d="M9 11.5l2.2 2.2L15.5 9"/></svg>',
-  inf: '<svg viewBox="0 0 24 24" fill="none" stroke="#b6abd8" stroke-width="1.4" stroke-linecap="round"><path d="M8.5 15.5c-2 0-3.5-1.6-3.5-3.5S6.5 8.5 8.5 8.5c3.5 0 3.5 7 7 7 2 0 3.5-1.6 3.5-3.5s-1.5-3.5-3.5-3.5c-3.5 0-3.5 7-7 7z"/></svg>',
-  clock: '<svg viewBox="0 0 24 24" fill="none" stroke="#b6abd8" stroke-width="1.4" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2.5"/></svg>',
-  game: '<svg viewBox="0 0 24 24" fill="none" stroke="#b6abd8" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6.8 8.5h10.4a3.8 3.8 0 013.7 4.7l-.8 3.3a2.3 2.3 0 01-4 .9l-1.5-2.2h-5.2l-1.5 2.2a2.3 2.3 0 01-4-.9l-.8-3.3a3.8 3.8 0 013.7-4.7z"/><path d="M9 11.2v2.2M7.9 12.3h2.2M15 11.5h.01M17 13h.01"/></svg>',
-  link: '<svg viewBox="0 0 24 24" fill="none" stroke="#b6abd8" stroke-width="1.4" stroke-linecap="round"><path d="M9.5 14.5l5-5"/><path d="M7.5 12.5l-2 2a3.5 3.5 0 105 5l2-2M16.5 11.5l2-2a3.5 3.5 0 10-5-5l-2 2"/></svg>'
-};
-var STATS = Array.from(document.querySelectorAll("#whatisList > li")).map(function (item) {
-  var icon = item.dataset.icon;
-  item.querySelector(".wIc").innerHTML = IC[icon];
-  return [icon, item.querySelector("b").textContent, item.querySelector(".wTx > span").textContent];
-});
-var trackEl = $("marqTrack");
-var cardHTML = STATS.map(function (s) {
-  return '<div class="stat"><div class="head"><span class="ic">' + IC[s[0]] +
-    '</span><span class="val">' + s[1] + '</span></div><p class="note">' + s[2] + '</p></div>';
-}).join("");
-// The second copy only exists so the band can loop without a gap. A
-// screen reader was given both -- fourteen cards for seven facts -- so
-// the duplicate is hidden from it (K-791).
-trackEl.innerHTML = cardHTML + cardHTML.replace(/<div class="stat">/g, '<div class="stat" aria-hidden="true">');
-
-/* The same seven facts, as a list, for the phone section above. Built
-   from STATS rather than written out again in the markup: two copies of
-   these sentences would drift, and the marquee's copy is the one the
-   desktop shows. */
-// The phone list is already readable HTML; JavaScript only supplies icons
-// and the desktop marquee from that same copy.
 
 /* --------------------------------------------------- tactile buttons */
 document.querySelectorAll(".btn").forEach(function (b) {
@@ -2298,13 +2238,13 @@ if (phone) {
     menu.insertBefore(copy, menu.firstChild);
   });
 }
-$("dlLabel").textContent = meta.label;
+if ($("dlLabel")) $("dlLabel").textContent = meta.label;
 document.querySelectorAll(".dl2label").forEach(function (e) { e.textContent = meta.label; });
 if (meta.icon) {
-  $("dlOsIcon").innerHTML = meta.icon;
+  if ($("dlOsIcon")) $("dlOsIcon").innerHTML = meta.icon;
   document.querySelectorAll(".dl2icon").forEach(function (e) { e.innerHTML = meta.icon; });
 }
-$("dlMain").addEventListener("click", goMain);
+if ($("dlMain")) $("dlMain").addEventListener("click", goMain);
 document.querySelectorAll(".dl2main").forEach(function (b) { b.addEventListener("click", goMain); });
 document.querySelectorAll(".split .more").forEach(function (more) {
   var menu = more.parentElement.querySelector(".dlmenu");
@@ -2401,7 +2341,7 @@ var io = new IntersectionObserver(function (entries) {
 }, { threshold: 0.15, rootMargin: "0px 0px -10% 0px" });
 
 function revealIfOnScreen() {
-  ["works", "how", "receipts", "pricing", "ctaSec"].forEach(function (id) {
+  ["ctaSec"].forEach(function (id) {
     var el = $(id);
     if (!el || el.classList.contains("in")) return;
     var b = el.getBoundingClientRect();
@@ -2415,7 +2355,7 @@ setTimeout(revealIfOnScreen, 400);
 // left off this list keeps its text at opacity 0 forever and reads as a
 // screen of empty black -- which is exactly what the receipts section did
 // when it was added and this line was not updated.
-["works", "how", "receipts", "pricing", "ctaSec"].forEach(function (id) {
+["ctaSec"].forEach(function (id) {
   var el = $(id);
   if (el) io.observe(el);
 });
@@ -2512,28 +2452,6 @@ document.querySelectorAll(".jsTop").forEach(function (b) {
       mode: "cors",
     }).catch(function () {});
   } catch (e) {}
-})();
-</script>
-<script>
-/* The browser door (#webDoor): shown when the build service is making apps. */
-(function () {
-  var door = document.getElementById("webDoor");
-  if (!door || !window.fetch) return;
-  var builder = window.KRATE_BUILDER || "https://build.krate.tech";
-  fetch(builder + "/health")
-    .then(function (r) { return r.ok ? r.json() : null; })
-    .then(function (h) {
-      if (!h || h.authoring === "off") return;
-      var phone = window.matchMedia && window.matchMedia("(max-width: 700px)").matches;
-      if (phone) door.querySelector("a").href = "/make/";
-      door.hidden = false;
-      var works = document.getElementById("worksWeb");
-      if (works) {
-        if (phone) works.href = "/make/";
-        works.hidden = false;
-      }
-    })
-    .catch(function () {});
 })();
 </script>
 <script>
@@ -2643,6 +2561,131 @@ document.querySelectorAll(".jsTop").forEach(function (b) {
     }
     go(text);
   });
+})();
+</script>
+<script>
+/* Below the first screen: reveals, the cards' small motions, the dark
+   panel's rise and steps, and the wall of apps. */
+(function () {
+  var reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function $(id) { return document.getElementById(id); }
+
+  /* Reveal on arrival, with a floor: anything still hidden after a moment
+     on screen is shown, so an observer that never fires cannot leave a
+     section blank. */
+  var items = [].slice.call(document.querySelectorAll(".reveal"));
+  function show(el) { el.classList.add("in"); }
+  if ("IntersectionObserver" in window && !reduced) {
+    var io = new IntersectionObserver(function (es) {
+      es.forEach(function (e) { if (e.isIntersecting) { show(e.target); io.unobserve(e.target); } });
+    }, { threshold: 0.12, rootMargin: "0px 0px -8% 0px" });
+    items.forEach(function (el) { io.observe(el); });
+  } else {
+    items.forEach(show);
+  }
+  function floor() {
+    items.forEach(function (el) {
+      if (el.classList.contains("in")) return;
+      var r = el.getBoundingClientRect();
+      if (r.top < innerHeight && r.bottom > 0) setTimeout(function () { show(el); }, 700);
+    });
+  }
+  addEventListener("scroll", floor, { passive: true });
+  setTimeout(floor, 800);
+
+  /* Card one types what people ask for. */
+  var mini = $("miniText");
+  var ASKS = ["A pomodoro timer with a task list", "A budget app from my bank's CSV",
+              "A flashcard app for Spanish", "A log viewer for my team"];
+  if (mini && !reduced) {
+    var ai = 0, ci = ASKS[0].length, del = true;
+    setInterval(function () {
+      var t = ASKS[ai];
+      if (del) { ci--; if (ci <= 0) { del = false; ai = (ai + 1) % ASKS.length; } }
+      else { ci++; if (ci >= ASKS[ai].length) { del = true; ci = ASKS[ai].length + 18; } }
+      mini.textContent = ASKS[ai].slice(0, Math.max(0, Math.min(ci, ASKS[ai].length)));
+    }, 70);
+  }
+
+  /* The dark panel: rises as it arrives, then the steps follow the scroll. */
+  var how = $("how"), card = $("howCard");
+  var steps = [].slice.call(document.querySelectorAll("#howSteps li"));
+  var shots = [].slice.call(document.querySelectorAll(".howStage .hs"));
+  var narrow = matchMedia("(max-width: 900px)");
+  var current = -1;
+  function setStep(i, p) {
+    if (i !== current) {
+      current = i;
+      steps.forEach(function (li, k) { li.classList.toggle("on", k === i); });
+      shots.forEach(function (f, k) { f.classList.toggle("on", k === i); });
+    }
+    if (steps[i]) steps[i].style.setProperty("--p", p.toFixed(3));
+  }
+  function onScroll() {
+    if (!how || !card || narrow.matches) return;
+    var r = how.getBoundingClientRect();
+    var rise = Math.max(0, Math.min(1, (innerHeight - r.top) / (innerHeight * 0.9)));
+    card.style.setProperty("--rise", reduced ? 1 : rise.toFixed(3));
+    card.style.setProperty("--glow", rise.toFixed(3));
+    var span = how.offsetHeight - innerHeight;
+    var t = span > 0 ? Math.max(0, Math.min(0.9999, -r.top / span)) : 0;
+    var f = t * steps.length;
+    setStep(Math.floor(f), f - Math.floor(f));
+  }
+  steps.forEach(function (li, k) {
+    li.querySelector("button").addEventListener("click", function () {
+      if (narrow.matches) { setStep(k, 1); return; }
+      var span = how.offsetHeight - innerHeight;
+      var top = how.getBoundingClientRect().top + scrollY + span * (k + 0.05) / steps.length;
+      scrollTo({ top: top, behavior: reduced ? "auto" : "smooth" });
+    });
+  });
+  addEventListener("scroll", onScroll, { passive: true });
+  addEventListener("resize", onScroll, { passive: true });
+  onScroll();
+  if (current < 0) setStep(0, 0);
+  /* On a phone the panel is not pinned, so the pictures advance on their own. */
+  setInterval(function () {
+    if (!narrow.matches || reduced) return;
+    setStep((current + 1) % steps.length, 1);
+  }, 3600);
+
+  /* The closing bar hands its words to the first screen's, which already
+     knows how to sign in, check the service and start the build. */
+  var endBox = $("endBox"), endBar = $("endBar"), endSend = $("endSend");
+  var box = $("promptBox"), bar = $("promptBar"), note = $("promptNote");
+  if (endBox && endBar && box && bar) {
+    endBox.addEventListener("input", function () { endSend.disabled = !endBox.value.trim(); });
+    endBox.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        endBar.requestSubmit ? endBar.requestSubmit() : endBar.dispatchEvent(new Event("submit", { cancelable: true }));
+      }
+    });
+    endBar.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var text = endBox.value.trim();
+      if (!text) { endBox.focus(); return; }
+      box.value = text;
+      box.dispatchEvent(new Event("input"));
+      bar.requestSubmit ? bar.requestSubmit() : bar.dispatchEvent(new Event("submit", { cancelable: true }));
+      // Still here: the first bar answered in words (making is off, say);
+      // show the same answer where the person is looking.
+      setTimeout(function () {
+        if (!note || !note.innerHTML) return;
+        var end = $("endNote");
+        end.innerHTML = note.innerHTML.replace('id="promptOwnKey"', 'id="endOwnKey"');
+        // The copied link has no listener of its own: it presses the
+        // original, which carries the request into Studio.
+        var own = $("endOwnKey");
+        if (own) own.addEventListener("click", function (ev) {
+          ev.preventDefault();
+          var first = $("promptOwnKey");
+          if (first) first.click();
+        });
+      }, 60);
+    });
+  }
 })();
 </script>
 </body>
