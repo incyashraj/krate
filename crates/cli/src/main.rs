@@ -8844,6 +8844,7 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
         .unwrap_or(&req.request)
         .trim()
         .to_string();
+    let judged_request = person_words_only(&judged_request);
     let mut acceptance = krate_author::acceptance::judge(&judged_request, &name, &app_source);
     // A CHANGE is judged by whether it happened, not by its words (K-915).
     //
@@ -17677,6 +17678,36 @@ fn manifest_overreach(manifest: &krate_manifest::Manifest, imports: &[String]) -
     None
 }
 
+/// The request with Studio's planning wrapper taken off, the person's answer
+/// kept.
+///
+/// Studio folds each planning answer in as `(When asked "Q" the person
+/// answered: "A")`. The answer is part of what was asked for; the wrapper is
+/// Krate's own prose, and judging it demanded "asked", "person", "answered"
+/// and "plan" of a flashcard app (K-925, the same shape as K-833 and K-893).
+fn person_words_only(request: &str) -> String {
+    const OPEN: &str = "(When asked \"";
+    const MID: &str = "\" the person answered: \"";
+    const CLOSE: &str = "\")";
+    let mut out = String::with_capacity(request.len());
+    let mut rest = request;
+    while let Some(start) = rest.find(OPEN) {
+        let after_open = &rest[start + OPEN.len()..];
+        let Some(mid) = after_open.find(MID) else {
+            break;
+        };
+        let answer_and_rest = &after_open[mid + MID.len()..];
+        let Some(close) = answer_and_rest.find(CLOSE) else {
+            break;
+        };
+        out.push_str(&rest[..start]);
+        out.push_str(&answer_and_rest[..close]);
+        rest = &answer_and_rest[close + CLOSE.len()..];
+    }
+    out.push_str(rest);
+    out
+}
+
 /// The skeleton's Cargo.toml, made to agree with the starter it seeds.
 ///
 /// The skeleton is a `std` app, so its Cargo.toml turns on the SDK's `std`
@@ -21129,6 +21160,46 @@ mod revision_change_tests {
         fs::create_dir_all(app.join("assets")).expect("assets");
         fs::write(app.join("assets/logo.png"), "png").expect("asset");
         assert_ne!(before, source_fingerprint(app), "a new asset is a change");
+    }
+}
+
+#[cfg(test)]
+mod person_words_tests {
+    use super::person_words_only;
+
+    /// Studio's planning wrapper is not the person's request; their answer
+    /// is (K-925). The words it had judged, from a real flashcard build.
+    #[test]
+    fn the_planning_wrapper_is_removed_and_the_answer_kept() {
+        let stitched = "a flashcard app for learning Spanish words\n\n\
+            (When asked \"anything to change about the plan?\" the person answered: \
+            \"also show a progress bar of how many words are known\")";
+        let judged = person_words_only(stitched);
+        assert!(judged.contains("a flashcard app for learning Spanish words"));
+        assert!(judged.contains("also show a progress bar of how many words are known"));
+        for krate_word in [
+            "When asked",
+            "the person answered",
+            "anything to change about the plan",
+        ] {
+            assert!(
+                !judged.contains(krate_word),
+                "{krate_word:?} is Krate's prose: {judged}"
+            );
+        }
+        // Two answers, and text that merely mentions a parenthesis, survive.
+        let two = "a timer\n\n(When asked \"how long?\" the person answered: \"5 minutes\")\n\n\
+                   (When asked \"a sound?\" the person answered: \"a bell (soft)\")";
+        let judged = person_words_only(two);
+        assert!(
+            judged.contains("5 minutes") && judged.contains("a bell (soft)"),
+            "{judged}"
+        );
+        assert!(!judged.contains("When asked"), "{judged}");
+        assert_eq!(
+            person_words_only("a plain request (with brackets)"),
+            "a plain request (with brackets)"
+        );
     }
 }
 
