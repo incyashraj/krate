@@ -4874,16 +4874,26 @@ fn main() {
     // would resolve back to `/` and quietly undo this. Only move if the
     // directory is real and absolute, and fall back to the OS temp dir,
     // which always is.
-    let home_work = studio_dir().join("work");
-    let target = if home_work.is_absolute() {
-        home_work
-    } else {
-        std::env::temp_dir().join("krate-studio")
-    };
-    if std::fs::create_dir_all(&target).is_ok() {
-        let _ = std::env::set_current_dir(&target);
-    } else {
-        let _ = std::env::set_current_dir(std::env::temp_dir());
+    //
+    // macOS only. On Linux the AppImage's launcher changes into the bundle
+    // and its WebKit finds its helper processes RELATIVE to that directory
+    // ("././/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitNetworkProcess"), so
+    // moving away made the Linux Studio die at launch: "Failed to spawn
+    // child process ... (No such file or directory)" (K-931). Children get
+    // their own directory from silent_cmd on every OS anyway.
+    #[cfg(target_os = "macos")]
+    {
+        let home_work = studio_dir().join("work");
+        let target = if home_work.is_absolute() {
+            home_work
+        } else {
+            std::env::temp_dir().join("krate-studio")
+        };
+        if std::fs::create_dir_all(&target).is_ok() {
+            let _ = std::env::set_current_dir(&target);
+        } else {
+            let _ = std::env::set_current_dir(std::env::temp_dir());
+        }
     }
 
     // Register the file type and the krate:// scheme BEFORE the early
