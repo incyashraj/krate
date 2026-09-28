@@ -206,7 +206,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          # 22.04, not latest: a binary asks for the glibc of the machine
+          # that built it, and ubuntu-latest (24.04) made the Linux engine and
+          # the Studio AppImage need glibc 2.39 -- so neither started on
+          # Ubuntu 22.04, Debian 12 or Mint 21, a large share of Linux
+          # desktops (K-928). 22.04's 2.35 is the floor, and the verify job
+          # below refuses anything newer.
+          - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             ext: tar.gz
           # Missing from every release so far, and the reason is now known
@@ -270,7 +276,7 @@ jobs:
           ref: ${{ inputs.tag || github.ref }}
 
       - name: Install Linux audio development files
-        if: matrix.os == 'ubuntu-latest' && matrix.cross != true
+        if: startsWith(matrix.os, 'ubuntu') && matrix.cross != true
         run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev libwayland-dev libxkbcommon-dev libudev-dev
 
       - name: Install Rust toolchain
@@ -1125,7 +1131,9 @@ jobs:
         include:
           - os: macos-latest
             target: aarch64-apple-darwin
-          - os: ubuntu-latest
+          # The oldest Linux the release promises, so a binary that needs a
+          # newer glibc fails here instead of on a person's machine (K-928).
+          - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
           - os: windows-2022
             target: x86_64-pc-windows-msvc
@@ -1203,6 +1211,27 @@ jobs:
             *) echo "::error::published binary reports '$reported', tag is $TAG"; exit 1 ;;
           esac
           echo "bin=$bin" >> "$GITHUB_ENV"
+
+      - name: The Linux Studio starts on the oldest Linux we promise (K-928)
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd verify
+          gh release download "$TAG" --repo "${{ github.repository }}" --pattern "krate-studio-*-linux-x86_64.AppImage"
+          chmod +x krate-studio-*.AppImage
+          ./krate-studio-*.AppImage --appimage-extract >/dev/null
+          newest="$(find squashfs-root -type f -perm -u+x -exec strings {} \; 2>/dev/null \
+            | grep -oE '^GLIBC_2\.[0-9]+$' | sort -t. -k2 -n -u | tail -1)"
+          echo "the AppImage needs at most $newest; this machine has $(ldd --version | head -1)"
+          minor="${newest#GLIBC_2.}"
+          if [ "${minor:-0}" -gt 35 ]; then
+            echo "::error::the Studio AppImage needs $newest, newer than Ubuntu 22.04's 2.35 -- it will not start there"
+            exit 1
+          fi
 
       - name: The archive unpacks into a folder, not backslash-named files
         shell: bash
