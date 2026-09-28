@@ -451,6 +451,8 @@ picture source { display: none; }
      content width. Larger screens keep the existing single row. */
   .tagRow { flex-wrap: wrap; row-gap: 6px; }
 }
+.worksDoors { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
+.worksDoors .btn-ghost { border: 1px solid rgba(255,255,255,0.18); }
 .works.in .tag { opacity: 1; filter: blur(0); transform: none;
   transition: opacity 0.7s ease, filter 0.7s ease, transform 0.7s cubic-bezier(0.2,0.8,0.2,1.2); }
 .works.in .tag:nth-child(1) { transition-delay: 0.22s; }
@@ -1573,14 +1575,22 @@ picture source { display: none; }
   <div class="worksGrid">
     <div>
       <h2>Your editor. Or your AI.</h2>
-      <p class="copy">Write against Krate's Rust APIs, or describe an app in
-      Krate Studio and build it with an AI coding provider. Inspect the source,
-      test the app and share the resulting file. The local authoring path uses
-      your configured provider; hosted Studio has its own account and usage terms.</p>
+      <p class="copy">Write against Krate's Rust APIs yourself, or describe an
+      app to Krate Studio and let an AI build it. In your browser, your first
+      app is on us, and your own API key keeps you going. On your computer,
+      Studio uses the AI you already have -- Claude, Codex, Grok or Gemini --
+      as much as you like. Either way you get the source, and one file that
+      runs on Mac, Windows and Linux.</p>
       <div class="tagRow">
         <div class="tag">Works with your AI</div>
         <div class="tag">Plain words in</div>
         <div class="tag">A real app out</div>
+      </div>
+      <!-- The two ways into Studio. The browser one appears only when the
+           build service is making apps (same rule as the hero pill). -->
+      <div class="worksDoors">
+        <a class="btn btn-primary" id="worksWeb" href="/login/?next=studio" hidden><span>Make one in your browser</span></a>
+        <a class="btn btn-ghost" href="/studio/"><span>Studio for your computer</span></a>
       </div>
     </div>
     <div class="orbitStage">
@@ -2373,10 +2383,14 @@ document.querySelectorAll(".jsTop").forEach(function (b) {
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (h) {
       if (!h || h.authoring === "off") return;
-      if (window.matchMedia && window.matchMedia("(max-width: 700px)").matches) {
-        door.querySelector("a").href = "/make/";
-      }
+      var phone = window.matchMedia && window.matchMedia("(max-width: 700px)").matches;
+      if (phone) door.querySelector("a").href = "/make/";
       door.hidden = false;
+      var works = document.getElementById("worksWeb");
+      if (works) {
+        if (phone) works.href = "/make/";
+        works.hidden = false;
+      }
     })
     .catch(function () {});
 })();
