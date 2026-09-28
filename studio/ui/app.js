@@ -3569,6 +3569,15 @@ async function buildNow(request, files, revising, planSession, starterShape) {
   }
 
   try {
+    // Plan mode means no new app, whatever the path here: a stray "build
+    // it" in the chat, or a plan's own Build it button. Refused as the web
+    // bridge refuses it, so both get the same "Switch to Build" answer.
+    if (!revising && composerMode() === "plan") {
+      const refused = new Error("You are in Plan mode, so nothing was built. Switch to Build and I will make this app.");
+      refused.refusal = true;
+      refused.planMode = true;
+      throw refused;
+    }
     const result = revising
       ? await invoke("revise_app", {
           path: currentApp().path,
@@ -3693,9 +3702,13 @@ async function buildNow(request, files, revising, planSession, starterShape) {
         ? [{
             label: "Switch to Build and make it",
             primary: true,
+            // The same build that was refused: the plan is already agreed.
+            // This called make(request), which planned all over again and
+            // posted the request -- with its "(The agreed plan: ...)"
+            // annotation -- back into the conversation as the person's own.
             run: () => {
               window.setWebMode("build");
-              make(request);
+              buildNow(request, files, revising, planSession, starterShape);
             },
           }]
         : [];
@@ -5692,6 +5705,60 @@ function setupDivider() {
     document.addEventListener("mousemove", move);
     document.addEventListener("mouseup", up);
   });
+}
+
+/* ---- Build or Plan, chosen in the prompt bar ----------------------------
+ *
+ * Build: a question or two when the answer would change the app, a plan,
+ * then the app. Plan: a plan and nothing else -- no build, no file.
+ *
+ * Plan is a promise, so it is kept where a new build starts (buildNow, and
+ * the web bridge's create_app), not only by the switch. The switch sits in
+ * every prompt bar, on the desktop and in a tab, and the choice is
+ * remembered under the key the web used first so nobody's setting resets. */
+const COMPOSER_MODE_KEY = "krate_web_mode";
+function composerMode() {
+  return lsGet(COMPOSER_MODE_KEY) === "plan" ? "plan" : "build";
+}
+function setComposerMode(mode) {
+  lsSet(COMPOSER_MODE_KEY, mode === "plan" ? "plan" : "build");
+  paintModes();
+}
+window.setWebMode = setComposerMode;
+
+function paintModes() {
+  const mode = composerMode();
+  document.querySelectorAll(".web-mode button").forEach((b) => {
+    b.setAttribute("aria-pressed", String(b.dataset.mode === mode));
+  });
+  const box = $("homePrompt");
+  if (box) {
+    box.placeholder = mode === "plan"
+      ? "Describe an app. You will get a plan, not a build…"
+      : "Describe an app, or paste code to port…";
+  }
+  const send = $("homeSend");
+  if (send) send.title = mode === "plan" ? "Plan it (Enter)" : "Make it (Enter)";
+}
+
+function mountModes() {
+  document.querySelectorAll(".bigbar-row").forEach((row) => {
+    if (row.querySelector(".web-mode")) return;
+    const wrap = document.createElement("div");
+    wrap.className = "web-mode";
+    wrap.setAttribute("role", "group");
+    wrap.setAttribute("aria-label", "Plan or build");
+    wrap.innerHTML = `
+      <button type="button" data-mode="build" title="A question or two if needed, then the app">Build</button>
+      <button type="button" data-mode="plan" title="A plan only, nothing is built">Plan</button>`;
+    wrap.querySelectorAll("button").forEach((b) => {
+      b.addEventListener("click", () => setComposerMode(b.dataset.mode));
+    });
+    const grow = row.querySelector(".grow");
+    if (grow) row.insertBefore(wrap, grow.nextSibling);
+    else row.appendChild(wrap);
+  });
+  paintModes();
 }
 
 /* ---- the panel: Preview, Files, Code, Details --------------------------
@@ -7724,6 +7791,7 @@ function mockShot() {
 startRotator();
 setupDivider();
 setupPanel();
+mountModes();
 
 boot().then(async () => {
   // Automation hook: KRATE_STUDIO_AUTORUN makes the studio drive one real

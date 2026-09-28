@@ -2174,73 +2174,9 @@ const MODE_KEY = "krate_web_mode";
 function webMode() {
   try { return localStorage.getItem(MODE_KEY) === "plan" ? "plan" : "build"; } catch (e) { return "build"; }
 }
-function setWebMode(mode) {
-  try { localStorage.setItem(MODE_KEY, mode === "plan" ? "plan" : "build"); } catch (e) {}
-  paintMode();
-}
-
-const MODE_CSS = `
-.web-mode { display: inline-flex; align-items: center; gap: 2px;
-  padding: 2px; border-radius: 999px; background: var(--film);
-  border: 1px solid var(--line); margin-right: 8px; }
-.web-mode button {
-  appearance: none; border: 0; background: none; cursor: pointer;
-  font: inherit; font-size: 11.5px; font-weight: 500; line-height: 1;
-  color: var(--muted); padding: 5px 11px; border-radius: 999px;
-  transition: background 0.15s, color 0.15s;
-}
-.web-mode button:hover { color: var(--text); }
-.web-mode button[aria-pressed="true"] { background: var(--text); color: var(--bg); }
-.web-mode-hint { font-size: 11px; color: var(--muted); margin-left: 2px; }
-/* A thumb needs 44. Set here rather than in style.css because this block
-   is injected into the head at runtime and so wins on source order --
-   a rule in the stylesheet for these buttons would be silently overridden.
-   Build and Plan are the choice the composer is built around, so they are
-   not the place to save eight pixels. */
-@media (pointer: coarse) {
-  .web-mode button { min-height: 44px; padding: 8px 16px; }
-  .web-mode-hint { font-size: 11.5px; }
-}
-`;
-
-function paintMode() {
-  const mode = webMode();
-  document.querySelectorAll(".web-mode button").forEach((b) => {
-    b.setAttribute("aria-pressed", String(b.dataset.mode === mode));
-  });
-  const box = document.getElementById("homePrompt");
-  if (box) {
-    box.placeholder = mode === "plan"
-      ? "Describe an app. You will get a plan, not a build…"
-      : "Describe an app, or paste code to port…";
-  }
-  const send = document.getElementById("homeSend");
-  if (send) send.title = mode === "plan" ? "Plan it (Enter)" : "Make it (Enter)";
-}
-
-/* The toggle lives in the composer row, beside the AI chip: the two
- * decisions about a message -- who writes it, and whether this is a plan or
- * a build -- belong in the same place, on the bar you are typing into. */
-function mountMode() {
-  document.querySelectorAll(".bigbar-row").forEach(mountModeIn);
-  paintMode();
-}
-function mountModeIn(row) {
-  if (!row || row.querySelector(".web-mode")) return;
-  const wrap = document.createElement("div");
-  wrap.className = "web-mode";
-  wrap.setAttribute("role", "group");
-  wrap.setAttribute("aria-label", "Plan or build");
-  wrap.innerHTML = `
-    <button type="button" data-mode="build" title="Answer a question or two, then build the app">Build</button>
-    <button type="button" data-mode="plan" title="Get a plan only, nothing is built">Plan</button>`;
-  wrap.querySelectorAll("button").forEach((b) => {
-    b.addEventListener("click", () => setWebMode(b.dataset.mode));
-  });
-  const grow = row.querySelector(".grow");
-  if (grow) row.insertBefore(wrap, grow.nextSibling);
-  else row.appendChild(wrap);
-}
+/* The switch itself -- drawn in every prompt bar, remembered under
+ * MODE_KEY -- lives in Studio (app.js), because the desktop has it too.
+ * What stays here is the promise, enforced in create_app above. */
 
 /* ---- what a tab must not be offered -------------------------------------
  *
@@ -2485,14 +2421,11 @@ function speakWeb() {
   }
   try {
     const sheet = document.createElement("style");
-    sheet.textContent = SPEND_CSS + MODE_CSS;
+    sheet.textContent = SPEND_CSS;
     document.head.appendChild(sheet);
   } catch (e) {}
   // Studio paints its home a beat after boot, so the composer may not
   // exist yet when this first runs.
-  mountMode();
-  setTimeout(mountMode, 400);
-  setTimeout(mountMode, 1200);
   trimDesktopOnly();
   speakWebWording();
   speakTouchWording();

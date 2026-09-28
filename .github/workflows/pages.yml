@@ -253,6 +253,9 @@ jobs:
           # And that session times are seconds on every side, so a rename
           # saved from Studio is not lost to an older copy (K-938).
           node docs/landing/studio/session-time-test.mjs
+          # And that app.js and the bridge, one global scope in a tab, never
+          # declare the same top-level name (a clash blanks the whole page).
+          node docs/landing/studio/scope-test.mjs
 
           mkdir -p _site/app
           cp -R studio/ui/. _site/app/
