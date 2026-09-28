@@ -194,6 +194,49 @@ fn show_main_window(app: &tauri::AppHandle) {
 ///    shell in one directory, versioned together.
 /// 3. `krate` on PATH -- a plain CLI install, last because it is the least
 ///    certain of the three.
+/// The engine that shipped with the Studio at `me`, wherever this
+/// platform's bundler put it.
+fn engine_near(me: &std::path::Path, name: &str) -> Option<PathBuf> {
+    let dir = me.parent()?;
+    // Beside the executable: a dev build, or a Windows install where the
+    // bundler puts resources alongside the binary.
+    let sibling = dir.join(name);
+    if sibling.exists() {
+        return Some(sibling);
+    }
+    // A dev studio lives at <repo>/studio/target/debug/; the engine it
+    // belongs with lives at <repo>/target/debug/. Resolving it by
+    // construction beats hoping PATH agrees -- the bare name has picked
+    // stale installed binaries before (K-180).
+    if let Some(repo) = dir.ancestors().nth(3) {
+        let dev_engine = repo.join("target").join("debug").join(name);
+        if dev_engine.exists() {
+            return Some(dev_engine);
+        }
+    }
+    // Where each bundler puts the resources:
+    //   bin                   Windows (resources beside the .exe)
+    //   ../Resources/bin      macOS .app (Contents/Resources, not MacOS)
+    //   ../lib/Krate/bin      Linux AppImage and .deb (usr/bin/krate-studio
+    //                         with resources in usr/lib/<productName>/).
+    //                         Missing, so Linux Studio fell back to a bare
+    //                         `krate` on PATH and said "could not run the
+    //                         Krate engine: No such file or directory" on
+    //                         every machine without a separate install (K-932).
+    for rel in [
+        "bin",
+        "../Resources/bin",
+        "../Resources",
+        "../lib/Krate/bin",
+    ] {
+        let candidate = dir.join(rel).join(name);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
 fn engine() -> Result<PathBuf, String> {
     if let Ok(explicit) = std::env::var("KRATE_STUDIO_ENGINE") {
         let path = PathBuf::from(explicit);
@@ -208,37 +251,8 @@ fn engine() -> Result<PathBuf, String> {
 
     let name = if cfg!(windows) { "krate.exe" } else { "krate" };
     if let Ok(me) = std::env::current_exe() {
-        if let Some(dir) = me.parent() {
-            // Beside the executable: a dev build, or a Windows/Linux install
-            // where the bundler puts resources alongside the binary.
-            let sibling = dir.join(name);
-            if sibling.exists() {
-                return Ok(sibling);
-            }
-            // A dev studio lives at <repo>/studio/target/debug/; the engine
-            // it belongs with lives at <repo>/target/debug/. Resolving it
-            // by construction beats hoping PATH agrees -- the bare name
-            // below has picked stale installed binaries before (K-180).
-            let dev_engine = dir
-                .ancestors()
-                .nth(3)
-                .map(|repo| repo.join("target").join("debug").join(name));
-            if let Some(dev_engine) = dev_engine {
-                if dev_engine.exists() {
-                    return Ok(dev_engine);
-                }
-            }
-            // Inside a macOS .app the bundler puts resources in
-            // Contents/Resources/, NOT Contents/MacOS/ beside the binary.
-            // Checking only for a sibling meant a bundled Krate.app shipped
-            // its engine and then failed to find it -- the app would install
-            // cleanly and be unable to make anything.
-            for rel in ["bin", "../Resources/bin", "../Resources"] {
-                let candidate = dir.join(rel).join(name);
-                if candidate.exists() {
-                    return Ok(candidate);
-                }
-            }
+        if let Some(found) = engine_near(&me, name) {
+            return Ok(found);
         }
     }
     Ok(PathBuf::from(name))
@@ -5374,8 +5388,8 @@ mod tests {
     }
 
     use super::{
-        agent_home_env, copy_dir_shallow, first_run_read, first_run_write, plan_answer,
-        probe_speaks_plan, slugify, studio_dir_in, write_private_atomic,
+        agent_home_env, copy_dir_shallow, engine_near, first_run_read, first_run_write,
+        plan_answer, probe_speaks_plan, slugify, studio_dir_in, write_private_atomic,
     };
     use std::path::{Path, PathBuf};
 
@@ -5614,6 +5628,39 @@ mod tests {
     /// Shallow: the credential at the top travels, the session history in
     /// the subdirectories does not, because keeping that away from the agent
     /// is the whole point of confining the home.
+    /// Each bundler's layout finds the engine it shipped (K-932): the Linux
+    /// AppImage keeps it in usr/lib/Krate/bin beside usr/bin/krate-studio.
+    #[test]
+    fn studio_finds_its_engine_in_every_bundle_layout() {
+        let base = std::env::temp_dir().join(format!("krate-engine-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        for (exe, engine) in [
+            (
+                "appimage/usr/bin/krate-studio",
+                "appimage/usr/lib/Krate/bin/krate",
+            ),
+            (
+                "mac/Krate.app/Contents/MacOS/krate-studio",
+                "mac/Krate.app/Contents/Resources/bin/krate",
+            ),
+            ("win/Krate/krate-studio.exe", "win/Krate/bin/krate"),
+        ] {
+            let exe = base.join(exe);
+            let engine = base.join(engine);
+            std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
+            std::fs::create_dir_all(engine.parent().unwrap()).unwrap();
+            std::fs::write(&exe, "").unwrap();
+            std::fs::write(&engine, "").unwrap();
+            assert_eq!(
+                engine_near(&exe, "krate").map(|p| std::fs::canonicalize(p).unwrap()),
+                Some(std::fs::canonicalize(&engine).unwrap()),
+                "no engine found for {}",
+                exe.display()
+            );
+        }
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
     #[test]
     fn a_credential_travels_but_the_history_under_it_does_not() {
         let base = std::env::temp_dir().join(format!("krate-seed-{}", std::process::id()));
