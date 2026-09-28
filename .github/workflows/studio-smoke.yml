@@ -1,0 +1,148 @@
+# Does Studio open on Windows and Linux, from the installer a person downloads?
+#
+# release.yml's verify job installs and opens the Mac .dmg, and builds and runs
+# an app with the published engine on all three systems. Nothing opened the
+# Windows installer or the Linux AppImage and looked at Studio itself -- so a
+# Studio that crashed at launch on either would ship green. This installs the
+# published files exactly as a person would, launches Studio, checks it is
+# still running after it has had time to draw, and keeps a picture of the
+# screen for a human to look at. It also opens a published app by its link,
+# the receive half of sharing.
+#
+#   gh workflow run studio-smoke.yml -f tag=v0.5.2-rc1
+name: Studio smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to test, e.g. v0.5.2-rc1"
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  KRATE_NO_USAGE: "1"
+
+jobs:
+  windows:
+    name: Studio on Windows, from the installer
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - name: Download the installer and the engine
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ inputs.tag }}"
+          v="${tag#v}"
+          gh release download "$tag" --repo "${{ github.repository }}" \
+            --pattern "krate-studio-${v}-windows-x64-setup.exe" \
+            --pattern "krate-${v}-x86_64-pc-windows-msvc.zip"
+          ls -la
+
+      - name: Install Studio silently, as the installer would for a person
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem -Filter "krate-studio-*-windows-x64-setup.exe" | Select-Object -First 1
+          Start-Process -FilePath $setup.FullName -ArgumentList "/S" -Wait
+          $exe = Get-ChildItem -Path "$env:LOCALAPPDATA","$env:ProgramFiles" -Recurse -Filter "krate-studio.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) { Write-Error "the installer put no krate-studio.exe anywhere"; exit 1 }
+          "installed at $($exe.FullName)"
+          "STUDIO_EXE=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          # The engine Studio ships beside itself.
+          Get-ChildItem -Path $exe.DirectoryName -Recurse -Filter "krate.exe" | Select-Object -First 3 | ForEach-Object { "engine: $($_.FullName)" }
+
+      - name: Launch Studio and keep a picture of it
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath $env:STUDIO_EXE -PassThru
+          Start-Sleep -Seconds 25
+          $p.Refresh()
+          if ($p.HasExited) { Write-Error "Studio exited within 25 s (code $($p.ExitCode))"; exit 1 }
+          "Studio is running (pid $($p.Id)) after 25 s"
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          $g = [System.Drawing.Graphics]::FromImage($bmp)
+          $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+          New-Item -ItemType Directory -Force -Path shots | Out-Null
+          $bmp.Save("shots/windows-studio.png", [System.Drawing.Imaging.ImageFormat]::Png)
+          Stop-Process -Id $p.Id -Force
+
+      - name: Open a published app by its link, and picture its first frame
+        shell: bash
+        run: |
+          mkdir -p engine && cd engine && unzip -q ../krate-*-x86_64-pc-windows-msvc.zip && cd ..
+          krate=$(find engine -name krate.exe | head -1)
+          "$krate" --version
+          # The gallery's own showcase app, by URL -- the way a link someone
+          # sent opens.
+          app=$(curl -s https://hub.krate.tech/apps | python -c "import json,sys; a=json.load(sys.stdin)['apps']; print(a[0]['url'])")
+          echo "opening $app"
+          "$krate" run "$app" --auto-grant --shoot shots/windows-received-app.png
+          ls -la shots
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: studio-smoke-windows
+          path: shots/
+
+  linux:
+    name: Studio on Linux, from the AppImage
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Download the AppImage and the engine
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ inputs.tag }}"
+          v="${tag#v}"
+          gh release download "$tag" --repo "${{ github.repository }}" \
+            --pattern "krate-studio-${v}-linux-x86_64.AppImage" \
+            --pattern "krate-${v}-x86_64-unknown-linux-gnu.tar.gz"
+          ls -la
+
+      - name: What a Linux desktop provides
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q xvfb imagemagick libfuse2 libwebkit2gtk-4.1-0 libgtk-3-0 \
+            dbus-x11 at-spi2-core fonts-dejavu-core
+
+      - name: Launch Studio and keep a picture of it
+        run: |
+          mkdir -p shots
+          chmod +x krate-studio-*.AppImage
+          export DISPLAY=:99
+          Xvfb :99 -screen 0 1440x900x24 &
+          sleep 2
+          dbus-launch --exit-with-session ./krate-studio-*.AppImage > studio.log 2>&1 &
+          pid=$!
+          sleep 25
+          if ! kill -0 "$pid" 2>/dev/null; then
+            echo "Studio exited within 25 s:"; cat studio.log; exit 1
+          fi
+          echo "Studio is running after 25 s"
+          import -window root shots/linux-studio.png
+          kill "$pid" || true
+          tail -20 studio.log
+
+      - name: Open a published app by its link, and picture its first frame
+        run: |
+          tar -xzf krate-*-x86_64-unknown-linux-gnu.tar.gz
+          krate=$(find . -path ./shots -prune -o -name krate -type f -print | head -1)
+          "$krate" --version
+          app=$(curl -s https://hub.krate.tech/apps | python3 -c "import json,sys; a=json.load(sys.stdin)['apps']; print(a[0]['url'])")
+          echo "opening $app"
+          "$krate" run "$app" --auto-grant --shoot shots/linux-received-app.png
+          ls -la shots
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: studio-smoke-linux
+          path: shots/
