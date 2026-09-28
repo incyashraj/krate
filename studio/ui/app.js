@@ -3060,8 +3060,15 @@ async function runPlanInner() {
       state.planning.plan = answer.plan;
       state.planning.planShown = true;
       const needs = (answer.needs || []).filter(Boolean);
+      // In words, not capability ids: "From you it needs: store.kv" was
+      // the first thing a stranger read about their own app.
       const needsLine = needs.length
-        ? `\n\nFrom you it needs: ${needs.join("; ")}.`
+        ? `\n\nIt will ask your permission to: ${needs
+            .map((c) => {
+              const w = capWords(c);
+              return w.charAt(0).toLowerCase() + w.slice(1);
+            })
+            .join("; ")}.`
         : "";
       // The plan is the one KRATE message a person reads closely -- it is
       // what they are agreeing to. Marked so it is set as substance rather
@@ -5163,7 +5170,7 @@ function openPublishSheet() {
         .replace(/^Here's what I'll build:\s*/i, "")
         // The plan ends with the permissions it needs, which the app's own
         // page already lists beside the download. Not description.
-        .replace(/\s*From you it needs:.*$/i, "")
+        .replace(/\s*(From you it needs|It will ask your permission to):.*$/i, "")
         .trim()
     : "";
   // One sentence, not the whole plan: this is a card in a gallery.
@@ -6315,7 +6322,16 @@ async function openSourceFolder() {
     }
     return;
   }
-  try { await invoke("reveal", { path: dir }); } catch (e) {}
+  try {
+    await invoke("reveal", { path: dir });
+  } catch (e) {
+    // In a tab there is no folder to reveal: the bridge downloads the
+    // project and answers with a sentence saying so ("Downloaded the
+    // project: 4 files ..."), delivered as a refusal. Swallowing it made
+    // Source look dead on the web -- the zip arrived with no word about it.
+    const words = String((e && e.message) || e || "").trim();
+    if (words) say("KRATE", words, null, { variant: "note" });
+  }
 }
 $("sourceBtn")?.addEventListener("click", openSourceFolder);
 $("infoOpenSource")?.addEventListener("click", openSourceFolder);
@@ -7360,7 +7376,14 @@ function setShelfOpen(open) {
   // Restore it before anything paints, so the window does not open closed
   // and then visibly slide the rail in.
   try {
-    if (localStorage.getItem(OPEN_KEY) === "1") {
+    // Nothing remembered yet: open on a screen wide enough to hold it. A
+    // first visit with the drawer shut hid Your apps, Gallery and Settings
+    // behind an icon -- the web wall said "add your key in Settings" to
+    // people who could not see a Settings anywhere. A narrow screen still
+    // starts shut, because there the drawer covers the page.
+    const stored = localStorage.getItem(OPEN_KEY);
+    const wide = window.matchMedia && window.matchMedia("(min-width: 1100px)").matches;
+    if (stored === "1" || (stored === null && wide)) {
       document.body.classList.add("side-restoring");
       setOpen(true, false);
       // One frame with transitions off, then hand animation back for every
@@ -8219,7 +8242,9 @@ function paintExamples() {
  * onboarding name is the fallback for anyone who skipped signing in. */
 function paintGreeting() {
   const greet = $("homeGreet");
-  const fromAccount = state.account && state.account.name;
+  // The login when there is no display name, as /make already does
+  // ("What should we make, carol?"); an email sign-in has neither.
+  const fromAccount = state.account && (state.account.name || state.account.login);
   const saved = lsGet("krate-name") || "";
   const name = (fromAccount || saved || "").trim();
   const initial = name ? name.trim().charAt(0).toUpperCase() : "";

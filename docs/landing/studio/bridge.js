@@ -595,7 +595,9 @@ async function downloadApp(url, fileName) {
   const blob = await res.blob();
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
-  link.download = fileName || "app.krate";
+  // Nothing a file name cannot hold on Windows: a name taken from the
+  // request ("Small toolbox: generate") carried a colon (K-933).
+  link.download = String(fileName || "app.krate").replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim() || "app.krate";
   document.body.appendChild(link);
   link.click();
   link.remove();
@@ -2663,6 +2665,42 @@ console.info("krate: studio bridge ready (hub + builder)");
     sheet.classList.add("hidden");
     window.open("https://krate.tech/open/", "_blank", "noopener");
   });
+})();
+
+/* "Send the file", in a tab.
+ *
+ * On a desktop it makes a card -- a picture of the app with the app inside
+ * -- and that needs the engine, which a tab does not have. So the option
+ * was offered here and then refused ("The card is made in Studio on your
+ * computer"). The app file itself can be emailed or messaged like any
+ * other, so in a tab this option hands it over, and says what it does.
+ * Captured before Studio's own handler so the refusal never runs.
+ */
+(function sendTheFileFromATab() {
+  const btn = document.getElementById("sendCardBtn");
+  if (!btn) return;
+  const line = btn.querySelector("span");
+  if (line) {
+    line.textContent =
+      "Download the app, then email or message it like any file. "
+      + "Whoever gets it opens it with Krate.";
+  }
+  btn.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const app = currentWebApp(null);
+    if (!app) return;
+    try {
+      await downloadApp(app.url, app.name);
+      document.getElementById("sendSheet")?.classList.add("hidden");
+      if (typeof say === "function") {
+        say("KRATE", `Downloaded ${app.name}. Attach it to an email or a message; whoever gets it double-clicks it to open it with Krate.`, null, { variant: "note" });
+      }
+    } catch (err) {
+      const note = document.getElementById("sendCardNote");
+      if (note) note.textContent = String((err && err.message) || err);
+    }
+  }, true);
 })();
 
 /* "For someone new to Krate", in a tab.

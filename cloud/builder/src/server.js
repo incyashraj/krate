@@ -763,8 +763,13 @@ async function startBuild({ request, token, account, device, revise = null, shap
       // and, when the app is not what was asked, the reason.
       let verdict = null;
       let asks = [];
+      let engineName = "";
       try {
         const written = JSON.parse(await readFile(transcript, "utf8"));
+        // The engine's own name for the app, which it chose with the whole
+        // request in view -- better than the request's first four words,
+        // which named a toolbox "Small toolbox: generate" (K-933).
+        engineName = String((written.app && written.app.name) || "");
         asks = Array.isArray(written.requested_permissions)
           ? written.requested_permissions.map((p) => (typeof p === "string" ? p : p.cap || p.capability || "")).filter(Boolean)
           : [];
@@ -775,7 +780,7 @@ async function startBuild({ request, token, account, device, revise = null, shap
       if (offRequest) job.line = "built, but it is not what you asked for";
       job.result = {
         id,
-        name: revise ? revise.name : prettyName(request),
+        name: revise ? revise.name : prettyName(engineName ? engineName.replace(/[-_]+/g, " ") : request),
         size: prettySize(info.size),
         asks,
         shot: job.shot,
@@ -1161,8 +1166,13 @@ function plainFailure(tail) {
 }
 
 function prettyName(request) {
-  const words = String(request).trim().split(/\s+/).slice(0, 4).join(" ");
-  const clean = words.replace(/^(a|an|the|make|build|create)\s+/i, "");
+  // The first clause only ("a small toolbox: generate UUIDs, ..." is a
+  // toolbox), no characters a file name cannot hold on Windows, and at most
+  // four words -- the card title and the download's name come from this.
+  const clause = String(request).trim().split(/[:;,.!?()\[\]{}"\n]/)[0];
+  const bare = clause.replace(/[\\/*<>|]+/g, " ").trim()
+    .replace(/^((a|an|the|me|my|make|build|create)\s+)+/i, "");
+  const clean = bare.split(/\s+/).filter(Boolean).slice(0, 4).join(" ");
   return clean ? clean[0].toUpperCase() + clean.slice(1) : "Your app";
 }
 
