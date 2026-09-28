@@ -981,6 +981,23 @@ The section after next applies, and applies fully. A game or a visualiser \
 that is flat and grey has failed in the other direction: it is supposed to be \
 looked at.\n\n\
 ## Not looking like it was generated\n\n\
+**This is a rule, not taste. An app showing any tell below is not finished.** \
+The person asked for an app, not for evidence that a model made it. The last \
+thing you do before packing is to shoot a frame and check it against this \
+list; if one line matches, fix it and shoot again. No rule elsewhere in this \
+file outranks this one, and \"the checks passed\" is not an answer to it.\n\n\
+Banned outright, in a tool: a gradient or glow behind content; a hero heading \
+or tagline inside the window; emoji as icons; a pill or badge on every \
+row; every corner rounded; text centred that reads left to right; \
+placeholder copy (\"Welcome to your dashboard\", \"Get started\", lorem); the \
+host's default 13px grey for everything; four cards holding one number each. \
+Banned in a piece: unmeasured text, guessed spacing, a square outline round \
+a round thing, a flat grey scene that never moves.\n\n\
+Required, in a tool: a named page colour; a type scale of three sizes; two \
+greys and one accent that means something; the data region separated by a \
+border or a shade; the data given the room. Required, in a piece: motion \
+that reads as polish (see above), measured text, real rounded rects, a \
+shadow under what floats, and something happening in the first second.\n\n\
 People can tell, and they do not like it. The tells are consistent, and every \
 one comes from reaching for decoration to signal effort:\n\n\
 - **A marketing headline on a utility.** \"Every byte, in view.\" over a hex \
