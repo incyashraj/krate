@@ -2187,6 +2187,10 @@ function trimDesktopOnly() {
   // is a control that cannot change anything.
   const aiRefresh = document.getElementById("aiRefresh");
   if (aiRefresh) aiRefresh.closest(".ai-actions")?.remove();
+  // "Open a file" runs a .krate from this computer, and a tab runs nothing:
+  // it fell through to the run sheet for the latest app, which is not what
+  // anybody pressing it asked for.
+  document.getElementById("openKrateBtn")?.remove();
   // A settings group whose every row has gone should go too, or the sheet
   // grows headings standing over nothing.
   document.querySelectorAll(".set-group, .set-panel").forEach((group) => {
