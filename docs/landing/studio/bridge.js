@@ -1167,9 +1167,8 @@ const COMMANDS = {
         try { localStorage.removeItem(TOKEN_KEY); } catch (e2) {}
         // An expired session goes to sign in once, here, instead of
         // running the whole Studio signed out and bouncing on the first
-        // Make (K-793). ?stay keeps the look-around door open.
-        const params = new URLSearchParams(location.search);
-        if (!params.has("stay")) goSignIn();
+        // Make (K-793).
+        goSignIn();
         return { signed_in: false };
       }
       return { signed_in: false, offline: true };
@@ -2492,13 +2491,10 @@ if (document.readyState === "loading") {
  * exist. Arriving signed out now goes straight to the sign-in and comes
  * back to a Studio that is ready to work.
  *
- * `?stay` is the way back in for anyone who deliberately signed out and
- * wants to look around, and /login itself must never bounce: without that
- * guard a failed sign-in would ping-pong between the two pages. */
+ * /login itself must never bounce: it shows its card when there is no
+ * token, so a failed sign-in cannot ping-pong between the two pages. */
 function requireSignIn() {
   if (bridge.token) return;
-  const params = new URLSearchParams(location.search);
-  if (params.has("stay")) return;
   location.replace("/login/?next=studio");
 }
 requireSignIn();

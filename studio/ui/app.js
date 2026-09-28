@@ -6057,70 +6057,251 @@ function paintCodeTree() {
 function showCodeFile(rel) {
   const f = (panel.codeFiles || []).find((x) => x.rel === rel);
   const pre = $("codeText");
+  const stats = $("codeStats");
   $("codePath").textContent = rel || "";
   pre.replaceChildren();
+  if (stats) stats.textContent = "";
   if (!f) return;
   if (typeof f.text !== "string") {
     pre.textContent = `${prettyBytes(f.size)} -- not text, so it is not shown here.`;
     return;
   }
   const q = ($("codeSearch").value || "").trim();
+  const lang = codeLang(rel);
   const lines = f.text.replace(/\r\n/g, "\n").split("\n");
   if (lines.length && lines[lines.length - 1] === "") lines.pop();
   const frag = document.createDocumentFragment();
-  let firstHit = null;
+  const st = { block: false };
+  let firstHit = null, hits = 0;
   for (const line of lines.slice(0, 20000)) {
     const ln = document.createElement("span");
     ln.className = "ln";
-    if (q && line.toLowerCase().includes(q.toLowerCase())) {
-      // Text nodes around each match: source is data, never markup.
-      const low = line.toLowerCase();
-      const needle = q.toLowerCase();
-      let at = 0;
-      for (let i = low.indexOf(needle); i >= 0; i = low.indexOf(needle, at)) {
-        ln.appendChild(document.createTextNode(line.slice(at, i)));
-        const hit = document.createElement("mark");
-        hit.className = "hit";
-        hit.textContent = line.slice(i, i + q.length);
-        ln.appendChild(hit);
-        at = i + q.length;
-      }
-      ln.appendChild(document.createTextNode(line.slice(at)));
-      if (!firstHit) firstHit = ln;
-    } else {
-      ln.textContent = line || " ";
+    if (line) ln.appendChild(highlightLine(line, lang, st)); else ln.textContent = " ";
+    if (q) {
+      const n = markHits(ln, q);
+      if (n) { hits += n; if (!firstHit) firstHit = ln; }
     }
     frag.appendChild(ln);
   }
   pre.appendChild(frag);
   pre.scrollTop = 0;
+  if (stats) {
+    stats.textContent = `${lines.length} line${lines.length === 1 ? "" : "s"} · ${LANG_NAME[lang] || "text"}` + (q ? ` · ${hits} match${hits === 1 ? "" : "es"}` : "");
+  }
   if (firstHit) firstHit.scrollIntoView({ block: "center" });
+}
+
+/* ---- a small highlighter: one line at a time, text nodes only ---------
+ * Source is data. Every token becomes a span holding a text node; nothing
+ * from the file is ever parsed as markup. Block comments carry over lines
+ * through `st.block`. Three grammars, which is what a .krate holds. */
+const LANG_NAME = { rust: "Rust", toml: "TOML", json: "JSON", md: "Markdown", text: "text" };
+function codeLang(rel) {
+  const n = (rel || "").toLowerCase();
+  if (n.endsWith(".rs")) return "rust";
+  if (n.endsWith(".toml") || n.endsWith(".lock")) return "toml";
+  if (n.endsWith(".json")) return "json";
+  if (n.endsWith(".md")) return "md";
+  return "text";
+}
+const RUST_KW = new Set(("as break const continue crate else enum extern false fn for if impl in let loop match mod move mut pub ref return self Self static struct super trait true type unsafe use where while async await dyn").split(" "));
+const RUST_TY = new Set(("u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize f32 f64 bool char str String Vec Option Result Box Some None Ok Err").split(" "));
+function tok(frag, cls, text) {
+  const s = document.createElement("span");
+  if (cls) s.className = "tk-" + cls;
+  s.textContent = text;
+  frag.appendChild(s);
+}
+function highlightLine(line, lang, st) {
+  const frag = document.createDocumentFragment();
+  if (lang === "text" || lang === "md") { frag.appendChild(document.createTextNode(line)); return frag; }
+  let i = 0;
+  const n = line.length;
+  while (i < n) {
+    const rest = line.slice(i);
+    if (st.block) {
+      const end = rest.indexOf("*/");
+      if (end < 0) { tok(frag, "cm", rest); return frag; }
+      tok(frag, "cm", rest.slice(0, end + 2)); i += end + 2; st.block = false; continue;
+    }
+    let m;
+    if (lang === "rust" && rest.startsWith("/*")) { st.block = true; continue; }
+    if (lang === "rust" && rest.startsWith("//")) { tok(frag, "cm", rest); return frag; }
+    if ((lang === "toml") && rest.startsWith("#")) { tok(frag, "cm", rest); return frag; }
+    if ((m = /^"(?:[^"\\]|\\.)*"?/.exec(rest)) || (lang === "rust" && (m = /^b?'(?:[^'\\]|\\.)'/.exec(rest)))) { tok(frag, "str", m[0]); i += m[0].length; continue; }
+    if (lang === "rust" && (m = /^#!?\[[^\]]*\]?/.exec(rest))) { tok(frag, "attr", m[0]); i += m[0].length; continue; }
+    if (lang === "toml" && i === 0 && (m = /^\s*\[\[?[^\]]*\]\]?/.exec(rest))) { tok(frag, "ty", m[0]); i += m[0].length; continue; }
+    if ((m = /^(?:0x[0-9a-fA-F_]+|\d[\d_]*(?:\.\d[\d_]*)?(?:e[+-]?\d+)?(?:_?[iuf](?:8|16|32|64|128|size))?)/.exec(rest))) { tok(frag, "num", m[0]); i += m[0].length; continue; }
+    if ((m = /^[A-Za-z_][A-Za-z0-9_]*!?/.exec(rest))) {
+      const w = m[0];
+      let cls = "";
+      if (lang === "rust") {
+        if (w.endsWith("!")) cls = "mac";
+        else if (RUST_KW.has(w)) cls = "kw";
+        else if (RUST_TY.has(w) || /^[A-Z]/.test(w)) cls = "ty";
+        else if (line[i + w.length] === "(") cls = "fn";
+      } else if (lang === "toml") {
+        if (w === "true" || w === "false") cls = "num";
+        else if (/^\s*$/.test(line.slice(0, i)) || /[.\s]$/.test(line.slice(0, i))) cls = "key";
+      } else if (lang === "json") {
+        if (w === "true" || w === "false" || w === "null") cls = "num";
+      }
+      tok(frag, cls, w); i += w.length; continue;
+    }
+    if (lang === "json" && (m = /^"(?:[^"\\]|\\.)*"(?=\s*:)/.exec(rest))) { tok(frag, "key", m[0]); i += m[0].length; continue; }
+    if ((m = /^\s+/.exec(rest))) { frag.appendChild(document.createTextNode(m[0])); i += m[0].length; continue; }
+    if ((m = /^(?:->|=>|::|[-+*\/%=<>!&|^~?:;,.(){}\[\]@$#'`\\])/.exec(rest))) { tok(frag, /[(){}\[\]]/.test(m[0]) ? "" : "op", m[0]); i += m[0].length; continue; }
+    frag.appendChild(document.createTextNode(rest[0])); i += 1;
+  }
+  return frag;
+}
+/* Wrap each match inside the line's text nodes in <mark>; returns how many. */
+function markHits(root, q) {
+  const needle = q.toLowerCase();
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  let count = 0;
+  for (const node of nodes) {
+    const text = node.nodeValue;
+    const low = text.toLowerCase();
+    let at = 0, idx = low.indexOf(needle);
+    if (idx < 0) continue;
+    const frag = document.createDocumentFragment();
+    while (idx >= 0) {
+      if (idx > at) frag.appendChild(document.createTextNode(text.slice(at, idx)));
+      const hit = document.createElement("mark");
+      hit.className = "hit";
+      hit.textContent = text.slice(idx, idx + q.length);
+      frag.appendChild(hit);
+      count += 1;
+      at = idx + q.length;
+      idx = low.indexOf(needle, at);
+    }
+    if (at < text.length) frag.appendChild(document.createTextNode(text.slice(at)));
+    node.parentNode.replaceChild(frag, node);
+  }
+  return count;
 }
 
 /* Details is the info sheet's own content, moved into the panel once.
  * showInfo fills it the way it always has; the overlay it lived in stays
  * shut. */
+/* Details: what the app is, in cards. Built fresh each time from the same
+ * facts the info sheet reads: what it asks for, what it imports, where it
+ * lives, how to build it again. Text nodes only -- the manifest is the
+ * app's own, so its words are untrusted. */
 async function fillDetails(app) {
   const host = $("detailsHost");
-  const card = document.querySelector("#infoSheet .sheet-info") || host.querySelector(".sheet-info");
+  host.replaceChildren();
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
   if (!app) {
-    host.replaceChildren();
-    if (card) host.appendChild(card);
-    card && card.classList.add("hidden");
-    let empty = host.querySelector(".pane-empty");
-    if (!empty) {
-      empty = document.createElement("p");
-      empty.className = "pane-empty";
-      host.appendChild(empty);
-    }
-    empty.textContent = "Details appear once the app is built: what it may use, its size, where it is, and how to build it again from a terminal.";
+    host.appendChild(el("p", "pane-empty", "Details appear once the app is built: what it may use, its size, where it is, and how to build it again from a terminal."));
     return;
   }
-  host.querySelector(".pane-empty")?.remove();
-  if (card && card.parentElement !== host) host.appendChild(card);
-  card && card.classList.remove("hidden");
-  await showInfo();
-  $("infoSheet").classList.add("hidden");
+  const wrap = el("div", "dt");
+  const head = el("div", "dt-head");
+  head.appendChild(el("h2", "dt-name", app.name || "Your app"));
+  const trust = el("p", "dt-trust", "Reading the app…");
+  head.appendChild(trust);
+  const chips = el("div", "dt-chips");
+  head.appendChild(chips);
+  wrap.appendChild(head);
+  const grid = el("div", "dt-grid");
+  wrap.appendChild(grid);
+  host.appendChild(wrap);
+
+  const card = (title, note) => {
+    const c = el("section", "dt-card");
+    const h = el("div", "dt-card-head");
+    h.appendChild(el("h3", "", title));
+    if (note !== undefined) h.appendChild(el("span", "dt-count", note));
+    c.appendChild(h);
+    grid.appendChild(c);
+    return c;
+  };
+  const copyBtn = (label, text) => {
+    const b = el("button", "btn btn-sm", label);
+    b.type = "button";
+    b.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(text); b.textContent = "Copied"; } catch (e) {}
+      setTimeout(() => { b.textContent = label; }, 1400);
+    });
+    return b;
+  };
+
+  let info = null;
+  try { info = await invoke("app_info", { path: app.path }); } catch (err) { trust.textContent = plainWords(err); return; }
+  const asks = info.asks || [];
+  trust.textContent = trustLine(asks.map((a) => a.cap || a.words));
+  const kb = Math.round((info.size || 0) / 1024);
+  const builds = state.session && state.session.builds;
+  for (const t of [`${kb} KB`, "Mac · Windows · Linux", builds ? `v${builds}` : null, "one file"].filter(Boolean)) chips.appendChild(el("span", "dt-chip", t));
+
+  // Permissions: what the app asked for, by name.
+  const perm = card("Permissions", asks.length ? `${asks.length}` : "none");
+  const ul = el("ul", "dt-list");
+  if (!asks.length) {
+    const li = el("li", "", "Nothing beyond drawing its own window.");
+    li.prepend(el("i", "dt-dot ok"));
+    ul.appendChild(li);
+  }
+  for (const a of asks) {
+    const li = el("li", "", a.words);
+    li.title = a.cap || "";
+    li.prepend(el("i", "dt-dot"));
+    ul.appendChild(li);
+  }
+  perm.appendChild(ul);
+  perm.appendChild(el("p", "dt-note", "Declared in the manifest, enforced by the runtime. Nothing else reaches your computer."));
+
+  // Interfaces: the krate:* world it imports.
+  const caps = info.capabilities || [];
+  const ifc = card("Imported interfaces", `${caps.length}`);
+  const cl = el("ul", "dt-list dt-mono");
+  for (const c of caps) { const li = el("li", "", capWords(c)); li.title = c; cl.appendChild(li); }
+  if (!caps.length) cl.appendChild(el("li", "", "None listed."));
+  ifc.appendChild(cl);
+  ifc.appendChild(el("p", "dt-note", "Only krate:* interfaces. A build that reaches wasi:* is refused before it packs."));
+
+  // Source: the Rust project it was built from.
+  const src = await sourceDirOf(app);
+  const sc = card("Source");
+  sc.appendChild(el("p", "dt-note", tauri
+    ? (src ? "The Rust project it was built from, on this computer." : "No source folder for this app.")
+    : "The Rust project it was built from, ready to download."));
+  const sa = el("div", "dt-actions");
+  if (tauri && src) {
+    const open = el("button", "btn btn-sm", "Open the folder"); open.type = "button";
+    open.addEventListener("click", () => openSourceFolder());
+    sa.appendChild(open);
+    sa.appendChild(copyBtn("Copy the path", src));
+  } else if (!tauri) {
+    const dl = el("button", "btn btn-sm", "Download the project"); dl.type = "button";
+    dl.addEventListener("click", () => openSourceFolder());
+    sa.appendChild(dl);
+  }
+  if (sa.children.length) sc.appendChild(sa);
+
+  // Build it again from a terminal.
+  const cmdText = buildCommandFor(state.session, app);
+  const bc = card("Build it from the terminal");
+  bc.appendChild(el("pre", "dt-cmd", cmdText));
+  const ba = el("div", "dt-actions");
+  ba.appendChild(copyBtn("Copy the command", cmdText));
+  bc.appendChild(ba);
+
+  // The file itself.
+  const fc = card("The file");
+  const dl = el("dl", "dt-rows");
+  for (const [k, v] of [["Name", app.name || ""], ["Size", `${kb} KB`], ["Where", info.path || ""], ["Fingerprint", (info.identity || "").slice(0, 16) || "unknown"]]) {
+    dl.appendChild(el("dt", "", k));
+    dl.appendChild(el("dd", "", v));
+  }
+  fc.appendChild(dl);
+  const fa = el("div", "dt-actions");
+  if (info.path) fa.appendChild(copyBtn("Copy the file path", info.path));
+  fc.appendChild(fa);
 }
 
 function setupPanel() {
@@ -7048,7 +7229,7 @@ $("infoCopyCmd")?.addEventListener("click", async () => {
   setTimeout(() => { btn.textContent = "Copy the command"; }, 1400);
 });
 
-$("infoBtn").addEventListener("click", showInfo);
+$("infoBtn").addEventListener("click", () => setPane("details"));
 // The welcome note closes and puts the cursor where the work starts.
 $("welcomeGo")?.addEventListener("click", () => {
   $("welcomeSheet").classList.add("hidden");

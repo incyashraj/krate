@@ -17,6 +17,7 @@ const signinJs = readFileSync("docs/landing/login/signin.js", "utf8");
 const loginHtml = readFileSync("docs/landing/login/index.html", "utf8");
 const doneHtml = readFileSync("docs/landing/login/done/index.html", "utf8");
 const makeJs = readFileSync("docs/landing/make/make.js", "utf8");
+const bridgeJs = readFileSync("docs/landing/studio/bridge.js", "utf8");
 
 /// The last inline <script> in a page: its behaviour, not its markup.
 function inlineScript(html) {
@@ -154,18 +155,13 @@ const fragment = (fields) => "#" + new URLSearchParams(fields).toString();
   check(b.localStorage.getItem("krate_tok") === null, "a desktop sign-in is not stored as the website's session");
 }
 
-/* ---- /login has a way out (K-859) --------------------------------------- */
+/* ---- /login has no skip: it is only reached when an account is needed ---- */
 {
-  const where = (search) => (browser().visit("https://krate.tech/login/" + search, loginHtml).els.notNow || {}).href;
-  check(where("?next=studio") === "/app/?stay", "Not now from the Studio goes back to it, without bouncing here again");
-  check(where("?next=make") === "/make/", "Not now from /make goes back to /make");
-  check(where("?next=publish") === "/publish/", "Not now from publishing goes back there");
-  check(where("") === "/", "Not now from nowhere goes home");
   const b = browser();
   const page = b.visit("https://krate.tech/login/?next=studio", loginHtml);
-  check(b.localStorage.getItem("krate_next") === "studio", "the continuation is kept while they decide");
-  if (page.els.notNow) page.els.notNow.click();
-  check(b.localStorage.getItem("krate_next") === null, "and dropped when they say Not now");
+  check(!page.els.notNow && !/id="notNow"|login-skip/.test(loginHtml), "there is no Not now on the sign-in card");
+  check(b.localStorage.getItem("krate_next") === "studio", "the continuation is kept for after sign-in");
+  check(!/params\.has\("stay"\)/.test(bridgeJs), "the Studio has no look-around door past its sign-in check");
   check(/<a href="\/"[^>]*><img src="\/krate-logo\.png"/.test(loginHtml), "the logo is a link home");
 }
 
