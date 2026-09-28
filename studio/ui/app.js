@@ -1120,7 +1120,7 @@ function openSession(s) {
     } else {
       showPlanning(
         "Waiting on you",
-        "the plan is on the left: change it, or start the work from here",
+        "the plan is in the conversation: change it, or start the work from here",
         "paused",
         null,
         [{ label: "Build it", primary: true, run: finishPlanningAndBuild }],
@@ -3093,7 +3093,7 @@ async function runPlanInner() {
       $("prompt").placeholder = "Anything to change? Your next message starts the build";
       showPlanning(
         "The plan is ready",
-        "read it on the left, or start the work from here",
+        "read it in the conversation, or start the work from here",
         "waiting on you",
         null,
         [{ label: "Build it", primary: true, run: finishPlanningAndBuild }],
