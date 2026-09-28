@@ -1172,7 +1172,13 @@ function prettyName(request) {
   const clause = String(request).trim().split(/[:;,.!?()\[\]{}"\n]/)[0];
   const bare = clause.replace(/[\\/*<>|]+/g, " ").trim()
     .replace(/^((a|an|the|me|my|make|build|create)\s+)+/i, "");
-  const clean = bare.split(/\s+/).filter(Boolean).slice(0, 4).join(" ");
+  const words = bare.split(/\s+/).filter(Boolean).slice(0, 4);
+  // Cutting at four words can end on a joining word ("Pomodoro timer with
+  // a"), which reads as a name somebody forgot to finish.
+  while (words.length > 1 && /^(a|an|the|and|or|with|for|of|to|in|on|at|by|from|that|which|so)$/i.test(words[words.length - 1])) {
+    words.pop();
+  }
+  const clean = words.join(" ");
   return clean ? clean[0].toUpperCase() + clean.slice(1) : "Your app";
 }
 
